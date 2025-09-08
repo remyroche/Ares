@@ -17,9 +17,8 @@ from src.utils.logger import system_logger
 from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
 import optuna
-import logging
-import lightgbm as lgb
 
+import lightgbm as lgb
 
 class HMMModelTrainer:
     """Trains HMM-based models with various algorithms."""

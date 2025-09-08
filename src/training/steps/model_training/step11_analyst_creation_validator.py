@@ -1,6 +1,5 @@
 # src/training/steps/step11_*.py
 
-
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +12,8 @@ import json
 import logging
 from ..standardized_parquet_handler import standardized_parquet_handler
 
-logger = system_logger.getChild("Step11AnalystCreationValidator")
 
+logger = system_logger.getChild("Step11AnalystCreationValidator")
 
 class Step11AnalystCreationValidator:
     """Validator for Step 11: Analyst Creation."""
@@ -165,7 +164,6 @@ class Step11AnalystCreationValidator:
         except Exception as e:
             self.logger.exception(f"❌ Error validating metadata file {metadata_file}: {e}")
             return False
-
 
 @validates()
 def step11_analyst_creation_validator(

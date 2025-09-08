@@ -1,7 +1,6 @@
 from ...core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 4: Triple Barrier Method.
-from src.utils.logger import system_logger
 
 This module applies the triple barrier method to create trading signals and labels.
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
@@ -14,7 +13,7 @@ from src.training.steps.model_training.step04_common_types import (
 import asyncio
 import sys
 import time
-from datetime import datetime
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -50,7 +49,6 @@ from src.utils.enhanced_memory_management import (
     chunk_dataframe
 )
 from src.utils.data_streaming_manager import DataStreamingManager
-from src.utils.logger import system_logger
 
 # Project setup
 project_root = Path(__file__).parent.parent.parent
@@ -892,7 +890,6 @@ class TripleBarrierMethodStep:
                 'execution_time': time.time() - step_start
             }
 
-
     def _get_triple_barrier_config(self) -> Dict[str, Union[float, int]]:
         """Extract triple barrier configuration parameters with safe defaults, validation, and volatility-based suggestions."""
         triple_barrier_config = safe_dict_get(self.config, 'triple_barrier', {})
@@ -1261,7 +1258,6 @@ async def run_step(
         data_dir=data_dir, 
         force_rerun=force_rerun
     )
-
 
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> StepResult:
     """Run Step 4: Triple Barrier Method with standardized return types.

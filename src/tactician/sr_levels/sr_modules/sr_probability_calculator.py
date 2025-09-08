@@ -12,9 +12,8 @@ from typing import Any, Dict, Optional
 
 from ...utils.logger import system_logger
 import numpy as np
-import logging
-import pandas as pd
 
+import pandas as pd
 
 class SRProbabilityCalculator:
     """Calculates S/R probabilities using optimized parameters."""

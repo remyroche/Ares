@@ -18,12 +18,11 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 import psutil
 import os
-import typing
+
 from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
 )
-
 
 class MonitorStatus(Enum):
     """Monitor status states."""
@@ -33,7 +32,6 @@ class MonitorStatus(Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
-
 
 class MetricType(Enum):
     """Types of metrics to monitor."""
@@ -46,7 +44,6 @@ class MetricType(Enum):
     SUCCESS_RATE = "SUCCESS_RATE"
     THROUGHPUT = "THROUGHPUT"
 
-
 @dataclass
 class MetricData:
     """Metric data point."""
@@ -55,7 +52,6 @@ class MetricData:
     value: float
     unit: str
     context: Dict[str, Any]
-
 
 @dataclass
 class StepMetrics:
@@ -71,7 +67,6 @@ class StepMetrics:
     errors: int
     warnings: int
     custom_metrics: Dict[str, Any]
-
 
 @dataclass
 class PipelineMetrics:
@@ -90,7 +85,6 @@ class PipelineMetrics:
     total_warnings: int
     step_metrics: List[StepMetrics]
     custom_metrics: Dict[str, Any]
-
 
 class PerformanceMonitor:
     """Monitor system performance metrics."""
@@ -196,7 +190,6 @@ class PerformanceMonitor:
             self.logger.exception(f"Error getting current metrics: {e}")
             return {}
 
-
 class StepMonitor:
     """Monitor individual pipeline steps."""
     
@@ -276,7 +269,6 @@ class StepMonitor:
             warnings = self.warnings,
             custom_metrics = self.custom_metrics
         )
-
 
 class PipelineMonitor:
     """Monitor the entire pipeline execution."""
@@ -462,7 +454,6 @@ class PipelineMonitor:
         
         print("="*80)
 
-
 class RealTimeMonitor:
     """Real-time monitoring with live updates."""
     
@@ -500,7 +491,6 @@ class RealTimeMonitor:
             except Exception as e:
                 self.logger.exception(f"Error in real-time monitoring loop: {e}")
                 await asyncio.sleep(self.update_interval)
-
 
 # Export main classes
 __all__ = [

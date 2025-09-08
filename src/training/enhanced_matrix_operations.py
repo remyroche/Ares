@@ -45,7 +45,6 @@ from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
 from src.utils.logger import system_logger
-import logging
 
 try:
 

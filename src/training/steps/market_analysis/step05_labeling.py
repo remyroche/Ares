@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
-import warnings
+
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
@@ -18,7 +18,7 @@ Key Enhancements:
 - Function-to-Function Call Tracking: Monitors all inter-function calls with detailed outcome reporting
 - Detailed Completion Reporting: Provides comprehensive reports on function execution outcomes
 """
-import logging
+
 from src.core.decorators import traced, validates, cached, log_execution_time
 from src.utils.enhanced_error_handler import EnhancedErrorHandler, handle_errors_with_tracking
 
@@ -44,7 +44,7 @@ except ImportError as e:
     system_logger.warning(f"⚠️ Some optimization utilities not available: {e}")
 
 import asyncio
-import sys
+
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import time
@@ -53,22 +53,18 @@ import json
 import hashlib
 import numpy as np
 import pandas as pd
-import traceback
-import inspect
+
 from functools import wraps
 from dataclasses import dataclass, field
-from enum import Enum
+
 import re
-import os
-import gc
+
 from collections import defaultdict, Counter
-import threading
-import multiprocessing
+
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from src.utils.common_operations import ensure_directory, safe_json_dump
 from src.utils.pipeline_standards import pipeline_standards
 from src.utils.logger import system_logger
-import psutil
 
 # Simplified monitoring - removed complex FunctionCallMonitor
 
@@ -1373,7 +1369,6 @@ class LabelingStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 5 artifacts and reports: {e}')
 
-
     async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:
         """Create composite label from multiple labeling strategies."""
         try:
@@ -1461,7 +1456,6 @@ class LabelingStep:
         except Exception as e:
             self.logger.warning(f'⚠️ Regime-aware labeling failed: {e}')
             return None
-
 
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=None, force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> bool:
     """Run the labeling step with standardized data quality management."

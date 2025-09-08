@@ -381,12 +381,10 @@ class Step03HMMRegimeDiscovery(BaseStep):
         import asyncio
         return asyncio.run(self._prepare_regime_features_optimized(data))
 
-
     @optimized_step(operation_type="matrix_operations", enable_gpu=True, enable_parallel=True)
     async def _discover_regimes_optimized(self, features: np.ndarray, data: pd.DataFrame) -> Dict[str, Any]:
         """Discover market regimes using HMM with comprehensive M1 optimizations."""
         self.logger.info('🎯 Discovering market regimes with M1 optimizations...')
-
 
         # Use memory optimization for large datasets
         if self.memory_optimizer and features.shape[0] > 10000:

@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 import pandas as pd
 
-
 from .utils.logger import get_logger
 from .utils.validation import (
     validate_data_quality,
@@ -26,9 +25,6 @@ from src.training.steps.step06_labeling_components.fractional_triple_barrier_lab
 )
 from .training.steps.fractional_differentiation import FractionalFeatureGenerator
 import numpy as np
-import datetime
-import logging
-
 
 class HMMFractionalIntegration:
     """Integrate fractional systems with existing HMM regime system."""
@@ -207,7 +203,6 @@ class HMMFractionalIntegration:
             Dictionary of regime metrics
         """
         return self.regime_metrics.copy()
-
 
 class CombinedFractionalSystem:
     """Unified system combining fractional labeling and differentiation."
@@ -492,7 +487,6 @@ class CombinedFractionalSystem:
         except Exception as e:
             self.logger.error(f"Failed to export performance report: {e}")
             return ""
-
 
 # Configuration helper
 def get_combined_fractional_config(

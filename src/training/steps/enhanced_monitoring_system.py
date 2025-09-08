@@ -10,14 +10,13 @@ This module provides comprehensive monitoring that ensures:
 """
 
 import asyncio
-import logging
+
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
+
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-import json
 
 from src.utils.logger import system_logger
 from .enhanced_error_handling import (
@@ -28,14 +27,12 @@ from .enhanced_error_handling import (
     ErrorRecord
 )
 
-
 class AlertLevel(Enum):
     """Alert levels for monitoring."""
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
-
 
 class ProcessStatus(Enum):
     """Process status for monitoring."""
@@ -45,7 +42,6 @@ class ProcessStatus(Enum):
     FAILED = "failed"
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
-
 
 @dataclass
 class ProcessMetrics:
@@ -63,7 +59,6 @@ class ProcessMetrics:
     success_rate: Optional[float] = None
     details: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class Alert:
     """Alert for monitoring system."""
@@ -75,7 +70,6 @@ class Alert:
     details: Dict[str, Any] = field(default_factory=dict)
     acknowledged: bool = False
     resolved: bool = False
-
 
 class EnhancedMonitoringSystem:
     """Enhanced monitoring system with comprehensive tracking and alerting."""
@@ -476,21 +470,17 @@ class EnhancedMonitoringSystem:
         self.logger.warning(f'⚠️ Alert not found: {alert_id}')
         return False
 
-
 # Global monitoring system instance
 _global_monitoring_system = EnhancedMonitoringSystem()
-
 
 def get_global_monitoring_system() -> EnhancedMonitoringSystem:
     """Get the global monitoring system instance."""
     return _global_monitoring_system
 
-
 def set_global_monitoring_system(system: EnhancedMonitoringSystem) -> None:
     """Set the global monitoring system instance."""
     global _global_monitoring_system
     _global_monitoring_system = system
-
 
 # Monitoring decorators
 def monitor_process(process_name: str):
@@ -510,7 +500,6 @@ def monitor_process(process_name: str):
         
         return wrapper
     return decorator
-
 
 def monitor_critical_process(process_name: str):
     """Decorator to monitor a critical process with fail-fast behavior."""

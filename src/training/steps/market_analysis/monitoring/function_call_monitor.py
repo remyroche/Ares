@@ -12,11 +12,7 @@ from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Dict, List, Optional
 
-import numpy as np
-import collections
-import time
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-
 
 class FunctionCallStatus(Enum):
     """Status of function call execution."""
@@ -26,7 +22,6 @@ class FunctionCallStatus(Enum):
     FAILED = "failed"
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
-
 
 @dataclass
 class FunctionCallRecord:
@@ -49,7 +44,6 @@ class FunctionCallRecord:
     error_details: Optional[str] = None
     stack_trace: Optional[str] = None
 
-
 @dataclass
 class FunctionCallReport:
     """Comprehensive report of function call execution."""
@@ -62,7 +56,6 @@ class FunctionCallReport:
     performance_summary: Dict[str, float] = field(default_factory=dict)
     error_summary: Dict[str, int] = field(default_factory=dict)
     validation_summary: Dict[str, bool] = field(default_factory=dict)
-
 
 class FunctionCallMonitor:
     """Comprehensive function call monitoring and validation system."""
@@ -259,7 +252,6 @@ class FunctionCallMonitor:
                 validation_status = "✅" if all(call.validation_results.values()) else "⚠️"
                 self.logger.info(f"    Validation: {validation_status} {call.validation_results}")
 
-
 def comprehensive_function_monitor(monitor: FunctionCallMonitor):
     """Decorator for comprehensive function call monitoring."""
     def decorator(func: Callable) -> Callable:
@@ -295,7 +287,6 @@ def comprehensive_function_monitor(monitor: FunctionCallMonitor):
         
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
     return decorator
-
 
 def function_to_function_tracker(monitor: FunctionCallMonitor, parent_call_id: str = None):
     """Decorator for tracking function-to-function calls."""

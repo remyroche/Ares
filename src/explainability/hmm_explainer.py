@@ -7,7 +7,6 @@ from typing import Union
 import numpy as np
 'HMM model explainer for SHAP and LIME integration.\n\nThis module provides explainability for HMM regime discovery models, enabling\ntraceability of regime classification decisions back to individual factors.\n'
 from .explainability.base_explainer import BaseExplainer, ExplanationResult
-import logging
 
 try:
     SHAP_AVAILABLE = True

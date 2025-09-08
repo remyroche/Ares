@@ -7,7 +7,6 @@ Monitoring Integration Manager (minimal scaffold)
 Coordinates monitoring components.
 """
 
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -15,8 +14,6 @@ from ...utils.logger import system_logger
 
 if TYPE_CHECKING:
     import asyncio
-import logging
-
 
 @dataclass
 class MonitoringComponents:
@@ -26,7 +23,6 @@ class MonitoringComponents:
     ml_monitor: MLMonitor | None = None
     report_scheduler: ReportScheduler | None = None
     tracking_system: TrackingSystem | None = None
-
 
 class MonitoringIntegrationManager:
     """Unified monitoring integration manager."""

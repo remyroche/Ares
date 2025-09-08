@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-
 class RegimeAwareLabeling:
     """Regime-aware triple barrier labeling component."""
 
@@ -125,7 +124,6 @@ class RegimeAwareLabeling:
             self.logger.exception(f'❌ Error in regime-aware labeling: {e}')
             return None
 
-
 class MetaLabeling:
     """Meta-labeling system component."""
     @log_important_calls
@@ -188,7 +186,6 @@ class MetaLabeling:
         except Exception as e:
             self.logger.warning(f'⚠️ Tactician labeling failed: {e}')
             return None
-
 
 class CompositeLabeling:
     """Composite labeling strategy component."""
@@ -263,7 +260,6 @@ class CompositeLabeling:
         except Exception as e:
             self.logger.warning(f'⚠️ Error determining label source: {e}')
             return pd.Series('unknown', index = data.index)
-
 
 class ComprehensiveLabeling:
     """Comprehensive labeling orchestrator that combines all labeling strategies."""
@@ -349,7 +345,6 @@ class ComprehensiveLabeling:
         except Exception as e:
             self.logger.exception(f'❌ Error generating comprehensive labels: {e}')
             return None
-
 
 __all__ = [
     "RegimeAwareLabeling",

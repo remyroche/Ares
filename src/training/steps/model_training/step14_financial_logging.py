@@ -7,7 +7,7 @@ Enhanced with per-HMM regime logging and fail-fast validation.
 """
 
 import pandas as pd
-import numpy as np
+
 from typing import Dict, Any, Optional, List
 from src.utils.financial_metrics_logger import (
     get_financial_metrics_logger, 
@@ -30,7 +30,6 @@ except ImportError:
     validate_and_log_regime_data = None
 
 logger = system_logger.getChild('Step14Financiallogging')
-
 
 class Step14FinancialloggingFinancialLogger:
     """Independent financial metrics logger for Step14_Financial with enhanced regime logging."""
@@ -241,7 +240,6 @@ class Step14FinancialloggingFinancialLogger:
             logger.info("📁 File paths logged for Step14_Financial")
         except Exception as e:
             logger.warning(f"Could not log file paths: {e}")
-
 
 # Enhanced Step14Financiallogging Financial Logger with Regime-Aware Decorator Support
 class EnhancedStep14FinancialloggingFinancialLogger(Step14FinancialloggingFinancialLogger):

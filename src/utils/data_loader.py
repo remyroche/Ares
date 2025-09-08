@@ -12,10 +12,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-
 from src.core.decorators import validates, with_tracing_span
 from .logger import system_logger
-import numpy as np
+
 import pandas as pd
 
 try:

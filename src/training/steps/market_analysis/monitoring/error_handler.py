@@ -15,9 +15,6 @@ from src.utils.comprehensive_function_logger import (
 )
 
 import asyncio
-import numpy as np
-import time
-
 
 class EnhancedErrorHandler:
     """Enhanced error handling system with detailed function-level error reporting."""
@@ -250,7 +247,6 @@ class EnhancedErrorHandler:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log error summary report: {e}")
-
 
 def enhanced_error_handler(handler: EnhancedErrorHandler):
     """Decorator for enhanced error handling with detailed reporting."""

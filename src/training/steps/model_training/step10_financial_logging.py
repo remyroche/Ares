@@ -7,7 +7,7 @@ Enhanced with per-HMM regime logging and fail-fast validation.
 """
 
 import pandas as pd
-import numpy as np
+
 from typing import Dict, Any, Optional, List
 from src.utils.financial_metrics_logger import (
     get_financial_metrics_logger, 
@@ -30,7 +30,6 @@ except ImportError:
     validate_and_log_regime_data = None
 
 logger = system_logger.getChild('Step10FinancialLogging')
-
 
 class Step10FinancialLogger:
     """Independent financial metrics logger for Step10 Unified Regime Intelligence with enhanced regime logging."""

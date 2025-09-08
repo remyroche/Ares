@@ -7,13 +7,10 @@ Trade Conditions Monitor (minimal scaffold)
 Scaffolding for monitoring trade conditions and decisions.
 """
 
-
 from enum import Enum
 from typing import Any
 
 from ...utils.logger import system_logger
-import logging
-
 
 class TradeAction(Enum):
     ENTER_LONG = "enter_long"
@@ -22,7 +19,6 @@ class TradeAction(Enum):
     EXIT_SHORT = "exit_short"
     HOLD = "hold"
     CANCEL_ORDER = "cancel_order"
-
 
 class TradeConditionsMonitor:
     """Trade conditions monitor scaffold."""

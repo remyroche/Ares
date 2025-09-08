@@ -8,7 +8,7 @@ This version integrates:
 2. Performance optimizations (caching, vectorization, incremental updates)
 3. Better ML integration through richer feature sets
 """
-import os
+
 from datetime import datetime
 from typing import Any, List, Dict, Optional, Tuple
 import numpy as np
@@ -24,7 +24,6 @@ from .tactician.sr_breakout_predictor import SRBreakoutPredictor
 from ...utils.logger import system_logger
 import logging
 import asyncio
-import time
 
 class UnifiedRegimeClassifierFractalEnhanced:
     """

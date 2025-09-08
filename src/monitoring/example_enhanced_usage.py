@@ -7,9 +7,9 @@ information, daily summaries, and GUI integration.
 """
 
 import asyncio
-import logging
+
 import numpy as np
-import time
+
 from datetime import datetime, date, timedelta
 
 from .monitoring_orchestrator import (
@@ -18,7 +18,6 @@ from .monitoring_orchestrator import (
     TradeDecision, TradingMode, ModelType, ModelPerformanceMetrics,
     EnsemblePerformanceMetrics, HMMRegimeInfo, DailyTradeSummary
 )
-
 
 async def example_enhanced_monitoring_with_hmm():
     """Example of using the enhanced monitoring system with HMM regime information."""
@@ -303,7 +302,6 @@ async def example_enhanced_monitoring_with_hmm():
     print("  ✅ Real-time monitoring and statistics")
     print("  ✅ Ensemble performance tracking")
 
-
 async def example_gui_launch():
     """Example of launching the GUI dashboard."""
     print("\n🖥️ Launching Enhanced Monitoring Dashboard GUI...")
@@ -324,7 +322,6 @@ async def example_gui_launch():
         print("Make sure matplotlib, seaborn, and tkinter are installed")
     except Exception as e:
         print(f"❌ Error launching GUI: {e}")
-
 
 if __name__ == "__main__":
     print("🚀 Enhanced ML Monitoring System Examples")

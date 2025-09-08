@@ -6,7 +6,7 @@ file naming and specialized formatting for trading and financial data.
 """
 
 import logging
-import os
+
 import sys
 import json
 import csv
@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 import pandas as pd
-import numpy as np
+
 from dataclasses import dataclass, asdict
 import threading
 from contextlib import contextmanager
@@ -25,7 +25,6 @@ try:
 except ImportError:
     system_logger = None
     get_logger = lambda name: logging.getLogger(name)
-
 
 @dataclass
 class FinancialMetric:
@@ -40,7 +39,6 @@ class FinancialMetric:
     step_name: str
     regime_id: Optional[str] = None
     additional_data: Optional[Dict[str, Any]] = None
-
 
 @dataclass
 class TradingPerformanceMetrics:
@@ -81,7 +79,6 @@ class TradingPerformanceMetrics:
     model_version: Optional[str] = None
     confidence_score: Optional[float] = None
     additional_metrics: Optional[Dict[str, Any]] = None
-
 
 class FinancialMetricsLogger:
     """
@@ -1028,10 +1025,8 @@ class FinancialMetricsLogger:
                 if self.fallback_logger:
                     self.fallback_logger.error(f"Error closing financial metrics logger: {e}")
 
-
 # Global instance
 _financial_metrics_logger: Optional[FinancialMetricsLogger] = None
-
 
 def get_financial_metrics_logger() -> FinancialMetricsLogger:
     """Get the global financial metrics logger instance."""
@@ -1040,13 +1035,11 @@ def get_financial_metrics_logger() -> FinancialMetricsLogger:
         _financial_metrics_logger = FinancialMetricsLogger()
     return _financial_metrics_logger
 
-
 def setup_financial_metrics_logging(log_dir: str = "logs/financial_metrics", **kwargs) -> FinancialMetricsLogger:
     """Setup the global financial metrics logger."""
     global _financial_metrics_logger
     _financial_metrics_logger = FinancialMetricsLogger(log_dir=log_dir, **kwargs)
     return _financial_metrics_logger
-
 
 @contextmanager
 def financial_metrics_context(step_name: str, symbol: str, exchange: str, timeframe: str):
@@ -1060,7 +1053,6 @@ def financial_metrics_context(step_name: str, symbol: str, exchange: str, timefr
     except Exception as e:
         logger.log_step_end(step_name, symbol, exchange, timeframe, success=False, error_message=str(e))
         raise
-
 
 # Convenience functions for common operations
 def log_return_metric(symbol: str, exchange: str, timeframe: str, step_name: str, 
@@ -1078,7 +1070,6 @@ def log_return_metric(symbol: str, exchange: str, timeframe: str, step_name: str
         regime_id=regime_id
     )
 
-
 def log_risk_metric(symbol: str, exchange: str, timeframe: str, step_name: str,
                    risk_value: float, risk_type: str = "volatility", regime_id: Optional[str] = None) -> None:
     """Log a risk metric."""
@@ -1093,7 +1084,6 @@ def log_risk_metric(symbol: str, exchange: str, timeframe: str, step_name: str,
         step_name=step_name,
         regime_id=regime_id
     )
-
 
 def log_sharpe_ratio(symbol: str, exchange: str, timeframe: str, step_name: str,
                     sharpe_value: float, regime_id: Optional[str] = None) -> None:
@@ -1110,7 +1100,6 @@ def log_sharpe_ratio(symbol: str, exchange: str, timeframe: str, step_name: str,
         regime_id=regime_id
     )
 
-
 def log_drawdown_metric(symbol: str, exchange: str, timeframe: str, step_name: str,
                        drawdown_value: float, regime_id: Optional[str] = None) -> None:
     """Log a drawdown metric."""
@@ -1125,7 +1114,6 @@ def log_drawdown_metric(symbol: str, exchange: str, timeframe: str, step_name: s
         step_name=step_name,
         regime_id=regime_id
     )
-
 
 # Import enhanced functionality if available
 try:
@@ -1157,7 +1145,6 @@ except ImportError:
     auto_regime_aware_logging = None
     is_post_hmm_step = None
 
-
 def get_smart_financial_metrics_logger(use_enhanced: bool = True) -> Union[FinancialMetricsLogger, EnhancedFinancialMetricsLogger]:
     """
     Get the appropriate financial metrics logger based on availability and preference.
@@ -1172,7 +1159,6 @@ def get_smart_financial_metrics_logger(use_enhanced: bool = True) -> Union[Finan
         return get_enhanced_financial_metrics_logger()
     else:
         return get_financial_metrics_logger()
-
 
 def log_financial_metric_with_regime_awareness(
     symbol: str,
@@ -1264,7 +1250,6 @@ def log_financial_metric_with_regime_awareness(
             if system_logger:
                 system_logger.error(f"Failed to log financial metric: {e}, fallback also failed: {fallback_error}")
             return False
-
 
 # Export main classes and functions
 __all__ = [

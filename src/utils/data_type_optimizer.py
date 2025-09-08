@@ -9,11 +9,8 @@ and improve computational efficiency in feature engineering.
 import logging
 import numpy as np
 import pandas as pd
-import typing
-
 
 logger = logging.getLogger(__name__)
-
 
 def optimize_dataframe_dtypes(
     df: pd.DataFrame,
@@ -107,7 +104,6 @@ def optimize_dataframe_dtypes(
 
     return optimized_df
 
-
 def get_optimal_dtypes_for_features() -> dict[str, str]:
     """
     Get optimal data types for common feature engineering outputs.
@@ -152,7 +148,6 @@ def get_optimal_dtypes_for_features() -> dict[str, str]:
         "price_impact": "float32",
         "volume_impact": "float32",
     }
-
 
 def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -201,7 +196,6 @@ def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
                 break
 
     return optimized_df
-
 
 def optimize_feature_engineering_pipeline(
     df: pd.DataFrame,

@@ -793,7 +793,6 @@ class EnhancedHMMRegimeDiscoveryStep:
         
         return bb_features
 
-
 @monitor_step03_functions
 @handle_step03_errors
 @enhanced_validates()
@@ -936,7 +935,6 @@ async def run_enhanced_step(symbol: str, exchange: str, timeframe: str = "1m",
         logger.info('=' * 80)
         
         return False
-
 
 if __name__ == "__main__":
     # Example usage

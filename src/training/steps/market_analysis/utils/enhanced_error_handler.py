@@ -9,9 +9,6 @@ recovery mechanisms, and error pattern tracking.
 import traceback
 from datetime import datetime
 from typing import Any, Dict, List
-import logging
-import time
-
 
 class EnhancedErrorHandler:
     """Enhanced error handling with detailed context and recovery mechanisms."""
@@ -96,6 +93,5 @@ class EnhancedErrorHandler:
             'recovery_attempts': self.recovery_attempts,
             'recent_errors': self.error_history[-5:] if self.error_history else []
         }
-
 
 __all__ = ['EnhancedErrorHandler']

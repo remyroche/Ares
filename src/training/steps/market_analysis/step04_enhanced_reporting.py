@@ -8,7 +8,7 @@ data quality assessments, and trading signal analysis.
 """
 
 import json
-import os
+
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -25,7 +25,6 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild('Step04EnhancedReporting')
 
-
 @dataclass
 class RegimeStatistics:
     """Detailed statistics for individual market regimes."""
@@ -39,7 +38,6 @@ class RegimeStatistics:
     win_rate: float
     profit_factor: float
     sharpe_ratio: float
-
 
 @dataclass
 class DataSplittingPerformanceMetrics:
@@ -59,7 +57,6 @@ class DataSplittingPerformanceMetrics:
     data_retention_rate: float
     duplicate_handling_efficiency: float
 
-
 @dataclass
 class TripleBarrierPerformanceMetrics:
     """Performance metrics for triple barrier method execution."""
@@ -78,7 +75,6 @@ class TripleBarrierPerformanceMetrics:
     stop_loss_hit: int
     timeout_reached: int
 
-
 @dataclass
 class TradingSignalQualityMetrics:
     """Quality assessment of trading signals generated."""
@@ -94,7 +90,6 @@ class TradingSignalQualityMetrics:
     signal_purity_score: float
     false_signal_rate: float
     signal_effectiveness_score: float
-
 
 @dataclass
 class DataQualityAssessment:
@@ -114,7 +109,6 @@ class DataQualityAssessment:
     quality_warnings: List[str]
     quality_improvements: List[str]
 
-
 @dataclass
 class RegimeDataAnalysis:
     """Analysis of regime-based data characteristics."""
@@ -128,7 +122,6 @@ class RegimeDataAnalysis:
     regime_stability_score: float
     regime_predictability_score: float
     regime_transition_patterns: Dict[str, int]
-
 
 class Step04EnhancedReporter:
     """
@@ -2448,4 +2441,3 @@ class Step04EnhancedReporter:
         except Exception as e:
             self.logger.warning(f"Could not generate market timing signals: {e}")
             return {'error': str(e)}
-

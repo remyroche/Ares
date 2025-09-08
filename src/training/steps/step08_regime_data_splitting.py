@@ -40,11 +40,8 @@ else:
 
     def get_unified_data_loader(config: Dict[str, Any]) -> Union[pd.DataFrame, Dict[str, Any]]:
         raise ImportError('unified_data_loader module not available')
-import logging
+
 import pandas as pd
-import collections
-import numpy as np
-import time
 
 # Fallback utilities now imported from src.utils.common_operations
 if system_logger is None:

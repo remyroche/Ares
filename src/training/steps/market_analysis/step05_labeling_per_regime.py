@@ -13,7 +13,6 @@ from src.training.steps.market_analysis.regime_handler import regime_handler
 from src.training.steps.market_analysis.regime_processing_decorator import per_regime_processing, aggregate_regime_results, RegimeProcessingContext
 from src.utils.pipeline_standards import pipeline_standards
 from src.utils.common_operations import get_logger
-import logging
 
 logger = get_logger('Step5LabelingPerRegime')
 

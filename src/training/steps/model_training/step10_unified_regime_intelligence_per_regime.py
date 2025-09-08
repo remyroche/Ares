@@ -21,12 +21,8 @@ from .training.steps.regime_processing_utils import (
 from .training.steps.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
 import numpy as np
-import logging
-import typing
-
 
 logger = get_logger('Step10UnifiedRegimeIntelligencePerRegime')
-
 
 class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
     """Unified regime intelligence step that processes each regime separately."""
@@ -972,7 +968,6 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
             self.logger.error(f"❌ Error saving regime intelligence results for regime {regime_id}: {e}")
             return False
 
-
 @traced(span_name='run_per_regime_regime_intelligence_step')
 @validates()
 @handles_errors
@@ -1025,7 +1020,6 @@ async def run_per_regime_step(
         logger.error("❌ Step 10: Per-Regime Unified Regime Intelligence failed")
         
     return success
-
 
 if __name__ == '__main__':
     async def test():

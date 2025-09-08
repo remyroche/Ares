@@ -8,7 +8,7 @@ integrating validation, financial calculations, and error handling modules.
 
 import json
 import pandas as pd
-import numpy as np
+
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -22,7 +22,6 @@ from .step05_error_handling import Step05ErrorHandler, ErrorSeverity, ErrorCateg
 
 logger = system_logger.getChild('Step05Reporting')
 financial_logger = get_financial_metrics_logger()
-
 
 class Step05Reporter:
     """Focused reporter for Step05 labeling operations."""

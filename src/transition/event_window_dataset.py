@@ -1,18 +1,14 @@
 # src/transition/event_window_dataset.py
 
-
 import json
 import os
 from dataclasses import dataclass
 from typing import Any
 
-
 from .transition.state_sequence_builder import StateSequenceBuilder
 from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
-import logging
-
 
 @dataclass
 class WindowDatasetConfig:
@@ -21,7 +17,6 @@ class WindowDatasetConfig:
     max_events_per_label: int
     duplicate_similarity_threshold: float
     downsample_near_duplicates: bool
-
 
 class EventWindowDatasetBuilder:
     """

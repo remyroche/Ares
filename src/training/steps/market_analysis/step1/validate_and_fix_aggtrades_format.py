@@ -21,14 +21,13 @@ from typing import Any, Dict, List
 import threading
 import time
 
-
 from src.utils.logger import system_logger
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 import pandas as pd
-import logging
+
 import numpy as np
 
 logger = system_logger.getChild("AggtradesFormatValidator")
@@ -1095,7 +1094,6 @@ class AggtradesFormatValidator:
 
         return report
 
-
 class MemoryMonitor:
     """Monitor memory usage and provide memory management utilities."""
 
@@ -1126,7 +1124,6 @@ class MemoryMonitor:
             "percent": self.process.memory_percent(),
             "gc_stats": gc.get_stats(),
         }
-
 
 class ErrorRecoveryHandler:
     """Handle errors with retry logic and circuit breaker pattern."""
@@ -1197,7 +1194,6 @@ class ErrorRecoveryHandler:
                 else:
                     raise e
 
-
 class ConcurrentProcessor:
     """Handle concurrent processing with proper synchronization."""
 
@@ -1233,7 +1229,6 @@ class ConcurrentProcessor:
     def shutdown(self) -> None:
         """Shutdown the executor."""
         self.executor.shutdown(wait=True)
-
 
 class StabilityMetrics:
     """Track stability metrics for monitoring and optimization."""
@@ -1301,7 +1296,6 @@ class StabilityMetrics:
                     reverse=True
                 )[:5]
             }
-
 
 # Enhanced validation method with stability features
 @traced(span_name="validate_file_with_stability")
@@ -1388,7 +1382,6 @@ async def validate_file_with_stability(
             "processing_time": processing_time,
             "error_type": type(e).__name__,
         }
-
 
 def calculate_stability_score(validation_result: Dict[str, Any]) -> float:
     """Calculate a stability score based on validation results."""

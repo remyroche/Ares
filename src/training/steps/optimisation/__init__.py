@@ -10,9 +10,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 from src.utils.decorators import validates, traced
 from src.training.reports import save_training_report
 import time
-import collections
-import json
-import logging
+
 import pandas as pd
 import os
 from ..standardized_parquet_handler import standardized_parquet_handler
@@ -280,9 +278,6 @@ async def run_optimisation_pipeline(symbol, exchange, timeframe, data_dir, **con
             logger.info(f"💾 [{timestamp}] MEMORY - {step_name}: {memory_usage:.2f}MB")
             print(f"💾 [{timestamp}] MEMORY - {step_name}: {memory_usage:.2f}MB")
 
-
-    
-    
     @handles_errors(fallback = False, context="optimisation_pipeline_step")
     @traced(span_name="optimisation_pipeline_step")
     async def execute_optimisation_step(step_name: str, step_func, *args, **kwargs):

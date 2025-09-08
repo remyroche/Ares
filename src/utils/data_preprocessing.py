@@ -13,13 +13,11 @@ import warnings
 from datetime import timedelta
 from typing import Any
 
-
 from .logger import system_logger
-import numpy as np
+
 import pandas as pd
 
 warnings.filterwarnings("ignore")
-
 
 def regularize_timestamps(
     data: pd.DataFrame,
@@ -120,7 +118,6 @@ def regularize_timestamps(
         logger.exception(f"🚨 Error regularizing timestamps: {e}")
         return data
 
-
 def _get_frequency_string(interval: timedelta) -> str:
     """Convert timedelta to pandas frequency string."""
     total_seconds = interval.total_seconds()
@@ -136,7 +133,6 @@ def _get_frequency_string(interval: timedelta) -> str:
     if total_seconds <= 14400:
         return "4H"  # 4 hours
     return "1D"  # 1 day
-
 
 def preprocess_data_for_multi_timeframe(
     price_data: pd.DataFrame,
@@ -175,7 +171,6 @@ def preprocess_data_for_multi_timeframe(
     except Exception as e:
         logger.exception(f"🚨 Error preprocessing data for multi-timeframe: {e}")
         return price_data, volume_data, order_flow_data
-
 
 def validate_and_fix_data_quality(
     data: pd.DataFrame,
@@ -222,7 +217,6 @@ def validate_and_fix_data_quality(
         logger.exception(f"🚨 Error in data quality validation: {e}")
         validation_results["errors"].append(str(e))
         return data, validation_results
-
 
 def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     """Fix common OHLCV data issues."""

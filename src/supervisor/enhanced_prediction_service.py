@@ -1,6 +1,6 @@
 
 import pandas as pd
-import numpy as np
+
 from src.core.decorators import handles_errors
 
 """

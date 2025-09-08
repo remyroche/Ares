@@ -12,8 +12,6 @@ from src.utils.decorators import (
 from src.utils.logger import system_logger
 
 # Removed trading_decorators imports - using core decorators instead
-import logging
-import time
 
 from src.utils.warning_symbols import (
     error,
@@ -23,7 +21,6 @@ from src.utils.warning_symbols import (
 )
 
 # src/training/ensemble_manager.py
-
 
 class EnsembleManager:
     """Ensemble manager responsible for creating and managing model ensembles."
@@ -693,5 +690,3 @@ class EnsembleManager:
             error_msg = f"Failed to stop Ensemble Manager: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
-
-

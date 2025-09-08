@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -25,12 +24,9 @@ sys.path.insert(0, str(project_root))
 from .training.steps.config import CONFIG  # noqa: E402
 from .training.steps.utils.base_validator import BaseValidator  # noqa: E402
 
-
-import logging
 import pandas as pd
-import time
-import numpy as np
 
+import numpy as np
 
 class Step8TacticianLabelingValidator(BaseValidator):
     """Validator for Step 8: Tactician Labeling."""
@@ -646,7 +642,6 @@ class Step8TacticianLabelingValidator(BaseValidator):
             )
             return False
 
-
 async def run_validator(
     training_input: dict[str, Any], pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
@@ -670,7 +665,6 @@ async def run_validator(
         "duration": 0,  # Could be enhanced to track actual duration
         "timestamp": asyncio.get_event_loop().time(),
     }
-
 
 if __name__ == "__main__":
     import asyncio as _asyncio

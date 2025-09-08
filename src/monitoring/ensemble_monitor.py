@@ -8,16 +8,11 @@ Monitors ensemble performance, model weights, and individual model contributions
 with detailed tracking and analysis.
 """
 
-
 from collections import defaultdict, deque
 
 from src.utils.logger import system_logger
 import numpy as np
 import datetime
-import logging
-import time
-import typing
-
 
 @dataclass
 class ModelWeight:
@@ -29,7 +24,6 @@ class ModelWeight:
     performance_score: float
     last_updated: datetime
     weight_history: List[Tuple[datetime, float]] = None
-
 
 @dataclass
 class EnsembleState:
@@ -43,7 +37,6 @@ class EnsembleState:
     performance_trend: str  # "improving", "stable", "declining"
     last_rebalance: Optional[datetime] = None
 
-
 @dataclass
 class ModelContribution:
     """Individual model contribution to ensemble performance."""
@@ -56,7 +49,6 @@ class ModelContribution:
     prediction_agreement: float
     feature_diversity: float
     timestamp: datetime
-
 
 @dataclass
 class EnsemblePerformanceSnapshot:
@@ -86,7 +78,6 @@ class EnsemblePerformanceSnapshot:
     # Weight distribution
     weight_entropy: float
     dominant_model_share: float
-
 
 class EnsembleMonitor:
     """

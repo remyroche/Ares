@@ -1,6 +1,5 @@
 # src/transition/baseline_rf.py
 
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,13 +9,11 @@ from sklearn.metrics import classification_report
 from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
-import logging
 
 try:
     import shap  # type: ignore
 except Exception:  # pragma: no cover
     shap = None  # type: ignore
-
 
 @dataclass
 class RFConfig:
@@ -27,7 +24,6 @@ class RFConfig:
     random_state: int
     max_train_samples: int
     enable_shap: bool
-
 
 class TransitionRandomForest:
     # TODO: Add proper implementation

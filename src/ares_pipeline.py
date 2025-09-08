@@ -1,37 +1,61 @@
 import argparse
 import asyncio
+from datetime import datetime
 import os
+from pathlib import Path
 import signal
 import sys
-from datetime import datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
-from .exchange.binance import BinanceExchange as RootExchangeFactory
-from .analyst.analyst import Analyst
-from .config import get_dual_model_config
-from .config.environment import get_environment_settings
-from .core.config_service import ConfigurationService
-from .core.dependency_injection import DependencyContainer
-from .database.sqlite_manager import SQLiteManager
-from .interfaces.base_interfaces import IAnalyst, IEventBus, IStateManager, IStrategist, ISupervisor, ITactician
-from .interfaces.event_bus import EventBus
-from .training.dual_model_system import DualModelSystem, setup_dual_model_system
-from .monitoring.performance_dashboard import PerformanceDashboard, setup_performance_dashboard
-from .monitoring.performance_monitor import PerformanceMonitor, setup_performance_monitor
-from .monitoring.enhanced_monitoring_orchestrator import EnhancedMonitoringOrchestrator
-from .monitoring.auto_monitoring_launcher import launch_auto_monitoring, get_auto_monitoring, stop_auto_monitoring
-from .strategist import Strategist
-from .supervisor import Supervisor
-from .tactician import Tactician
-from .utils.logger import system_logger, setup_logging
-from .utils.observability import init_observability
-from .utils.state_manager import StateManager
-from .utils.warning_symbols import critical, error, failed, warning
-from .core.errors import handles_errors
+from typing import Any
+from typing import TYPE_CHECKING
+
+from analyst.analyst import Analyst
+from config import get_dual_model_config
+from config.environment import get_environment_settings
+from core.config_service import ConfigurationService
+from core.decorators import handles_errors
+from core.dependency_injection import DependencyContainer
+from database.sqlite_manager import SQLiteManager
+from exchange.binance import BinanceExchange as RootExchangeFactory
+from interfaces.base_interfaces import IAnalyst
+from interfaces.base_interfaces import IEventBus
+from interfaces.base_interfaces import IStateManager
+from interfaces.base_interfaces import IStrategist
+from interfaces.base_interfaces import ISupervisor
+from interfaces.base_interfaces import ITactician
+from interfaces.event_bus import EventBus
+from monitoring.auto_monitoring_launcher import get_auto_monitoring
+from monitoring.auto_monitoring_launcher import launch_auto_monitoring
+from monitoring.auto_monitoring_launcher import stop_auto_monitoring
+from monitoring.enhanced_monitoring_orchestrator import EnhancedMonitoringOrchestrator
+from monitoring.performance_dashboard import PerformanceDashboard
+from monitoring.performance_dashboard import setup_performance_dashboard
+from monitoring.performance_monitor import PerformanceMonitor
+from monitoring.performance_monitor import setup_performance_monitor
 import pandas as pd
-import logging
-import time
-from .core.decorators import handles_errors
+from strategist import Strategist
+from supervisor import Supervisor
+from tactician import Tactician
+from training.dual_model_system import DualModelSystem
+from training.dual_model_system import setup_dual_model_system
+from utils.dependency_manager import get_dependency_manager
+from utils.dependency_manager import optional_package
+from utils.dependency_manager import requires_package
+from utils.logger import setup_logging
+from utils.logger import system_logger
+from utils.lookahead_bias_detector import get_global_detector
+from utils.observability import init_observability
+from utils.regime_transition_handler import RegimeTransitionHandler
+from utils.regime_transition_handler import handle_regime_transition
+from utils.regime_transition_handler import set_global_handler
+from utils.service_discovery import discover_and_register_services
+from utils.state_manager import StateManager
+from utils.warning_symbols import critical
+from utils.warning_symbols import error
+from utils.warning_symbols import failed
+from utils.warning_symbols import warning
+
+    RegimeTransitionHandler, set_global_handler, handle_regime_transition
+)
 
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
@@ -66,6 +90,7 @@ class AresPipeline:
         self.performance_dashboard: PerformanceDashboard | None = None
         self.enhanced_monitoring: EnhancedMonitoringOrchestrator | None = None
         self.auto_monitoring_launcher = None
+        self.regime_transition_handler: RegimeTransitionHandler | None = None
         self.is_running: bool = False
         self.start_time: datetime | None = None
         self.cycle_count: int = 0
@@ -89,6 +114,9 @@ class AresPipeline:
             await self._initialize_performance_monitoring()
             await self._initialize_enhanced_monitoring()
             await self._launch_auto_monitoring()
+            await self._initialize_regime_transition_handler()
+            await self._discover_and_register_services()
+            await self._check_optional_dependencies()
             self._setup_signal_handlers()
             self.logger.info('✅ Ares Pipeline initialization completed successfully')
             return True
@@ -394,8 +422,32 @@ class AresPipeline:
             if self.analyst:
                 print('   🔍 Executing market analysis...')
                 self.logger.info('   🔍 Executing market analysis...')
+                
+                # Set current timestamp for lookahead bias detection
+                current_time = datetime.now()
+                bias_detector = get_global_detector()
+                bias_detector.set_current_timestamp(current_time)
+                
                 analysis_input = {'symbol': 'ETHUSDT', 'timeframe': '1h', 'limit': 100, 'analysis_type': 'technical', 'include_indicators': True, 'include_patterns': True}
                 analysis_result = await self.analyst.execute_analysis(analysis_input)
+                
+                # Handle regime transitions with position protection
+                if analysis_result and self.regime_transition_handler:
+                    regime_info = analysis_result.get('regime_analysis', {})
+                    current_regime = regime_info.get('current_regime', 'unknown')
+                    regime_confidence = regime_info.get('confidence', 0.5)
+                    market_volatility = regime_info.get('volatility', 0.02)
+                    
+                    transition_result = handle_regime_transition(
+                        current_regime=current_regime,
+                        regime_confidence=regime_confidence,
+                        market_volatility=market_volatility
+                    )
+                    
+                    if transition_result['transition_detected']:
+                        self.logger.info(f"🔄 Regime transition detected: {transition_result['transition_type']}")
+                        if transition_result['should_exit']:
+                            self.logger.warning("⚠️ Emergency position exit recommended due to regime transition")
                 if analysis_result:
                     print('   ✅ Market analysis completed successfully')
                     self.logger.info('   ✅ Market analysis completed successfully')
@@ -737,6 +789,52 @@ class AresPipeline:
                 self.logger.warning('⚠️ Failed to launch Auto Enhanced Monitoring System')
         except Exception:
             self.logger.exception('Error launching auto monitoring system')
+
+    async def _initialize_regime_transition_handler(self) -> None:
+        """Initialize regime transition handler with position protection."""
+        try:
+            self.logger.info('🔄 Initializing regime transition handler...')
+            regime_config = self.config.get('regime_transition_handler', {})
+            self.regime_transition_handler = RegimeTransitionHandler(regime_config)
+            set_global_handler(self.regime_transition_handler)
+            self.logger.info('✅ Regime transition handler initialized successfully')
+        except Exception as e:
+            self.logger.exception(f'Error initializing regime transition handler: {e}')
+            raise
+
+    async def _discover_and_register_services(self) -> None:
+        """Discover and register services automatically."""
+        try:
+            self.logger.info('🔍 Discovering and registering services automatically...')
+            discover_and_register_services(self.container, "src")
+            self.logger.info('✅ Service discovery and registration completed')
+        except Exception as e:
+            self.logger.exception(f'Error in service discovery: {e}')
+            raise
+
+    @optional_package('numpy', 'pandas', 'scipy', 'sklearn')
+    async def _check_optional_dependencies(self) -> None:
+        """Check and report on optional dependencies."""
+        try:
+            self.logger.info('📦 Checking optional dependencies...')
+            dep_manager = get_dependency_manager()
+            available_packages = dep_manager.get_available_packages()
+            
+            self.logger.info(f'Available packages: {len(available_packages)}')
+            for package in sorted(available_packages):
+                self.logger.debug(f'  ✅ {package}')
+            
+            # Check for critical missing packages
+            critical_packages = ['numpy', 'pandas']
+            missing_critical = dep_manager.get_missing_packages(critical_packages)
+            if missing_critical:
+                self.logger.warning(f'⚠️ Missing critical packages: {missing_critical}')
+            else:
+                self.logger.info('✅ All critical packages available')
+                
+        except Exception as e:
+            self.logger.exception(f'Error checking dependencies: {e}')
+            raise
 
     def _get_dual_model_config(self) -> dict[str, Any]:
         """Get dual model system configuration."""

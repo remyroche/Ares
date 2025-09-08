@@ -1,5 +1,4 @@
 
-
 from logging import error
 from ..utils.logger import system_logger
 from src.core.decorators import handles_errors
@@ -15,10 +14,8 @@ from typing import Any
 from src.utils.compat import handle_specific_errors
 from ..utils.logger import system_logger
 from ..utils.warning_symbols import initialization_error, invalid
-import time
 
 # src/supervisor/global_portfolio_manager.py
-
 
 class GlobalPortfolioManager:
     """
@@ -1223,10 +1220,8 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(error("Error stopping global portfolio manager: {e}"))
 
-
 # Global portfolio manager instance
 global_portfolio_manager: GlobalPortfolioManager | None = None
-
 
 @handles_errors(
     exceptions=(Exception,),

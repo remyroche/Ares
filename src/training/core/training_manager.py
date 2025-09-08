@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 from ..simplified_training_manager import SimplifiedTrainingManager
 from src.utils.logger import system_logger
 from src.core.decorators.errors import handles_errors
-import logging
 
 class TrainingManager:
     """Main training manager for the ML pipeline.

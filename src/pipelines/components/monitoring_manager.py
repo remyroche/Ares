@@ -7,12 +7,10 @@ from ..core.decorators import (
 )
 from .core.domain import PerformanceLevel
 from ..utils.logger import system_logger
-import logging
 
 """
 Monitoring manager for pipeline components (minimal scaffold).
 """
-
 
 class MonitoringManager:
     def __init__(self, config: dict[str, Any]) -> None:

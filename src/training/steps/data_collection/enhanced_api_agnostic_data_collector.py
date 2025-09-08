@@ -20,13 +20,11 @@ Features:
 - Integration with enhanced validation framework
 """
 
-
 import asyncio
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -37,12 +35,8 @@ from src.utils.enhanced_data_validation import (
     DataType, EnhancedDataValidator, get_validator, ValidationSeverity
 )
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-import logging
-import numpy as np
-import typing
 
 logger = system_logger.getChild("EnhancedAPIAgnosticDataCollector")
-
 
 class DataGapDetector:
     """Comprehensive data gap detection and analysis."""
@@ -140,7 +134,6 @@ class DataGapDetector:
         self.logger.info(f"   📊 Average Gap: {summary['average_gap_minutes']:.1f} minutes")
         
         return summary
-
 
 class IncrementalDataDownloader:
     """Incremental data downloader with gap detection and batch management."""
@@ -440,7 +433,6 @@ class IncrementalDataDownloader:
         self.logger.info(f"   ⏱️ Duration: {summary['total_duration']:.2f}s")
         
         return summary
-
 
 class EnhancedAPIAgnosticDataCollector:
     """Enhanced API-agnostic data collector with comprehensive features."""
@@ -888,7 +880,6 @@ class EnhancedAPIAgnosticDataCollector:
         
         return summary
 
-
 # Convenience functions
 @handles_errors(fallback = False, context="collect_data_for_period")
 @traced(span_name="collect_data_for_period", log_args = False, log_result_len_only = True)
@@ -905,7 +896,6 @@ async def collect_data_for_period(
     collector = EnhancedAPIAgnosticDataCollector(exchange, symbol, timeframe)
     return await collector.collect_data_for_period(start_time, end_time, data_types, data_dir)
 
-
 @handles_errors(fallback = False, context="collect_incremental_data")
 @traced(span_name="collect_incremental_data", log_args = False, log_result_len_only = True)
 async def collect_incremental_data(
@@ -920,7 +910,6 @@ async def collect_incremental_data(
     collector = EnhancedAPIAgnosticDataCollector(exchange, symbol, timeframe)
     return await collector.collect_incremental_data(data_types, data_dir, max_batches)
 
-
 @handles_errors(fallback = False, context="detect_and_fill_gaps")
 @traced(span_name="detect_and_fill_gaps", log_args = False, log_result_len_only = True)
 async def detect_and_fill_gaps(
@@ -933,7 +922,6 @@ async def detect_and_fill_gaps(
     """Detect and fill gaps in existing data."""
     collector = EnhancedAPIAgnosticDataCollector(exchange, symbol, timeframe)
     return await collector.detect_and_fill_gaps(data_dir, data_types)
-
 
 if __name__ == "__main__":
     # Example usage

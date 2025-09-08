@@ -6,7 +6,6 @@ This module provides logging configuration for Step 12.
 """
 
 import logging
-from typing import Optional
 
 from .imports import system_logger
 

@@ -14,9 +14,9 @@ import functools
 import inspect
 import logging
 import psutil
-import sys
+
 import time
-import traceback
+
 import uuid
 from contextvars import ContextVar
 from datetime import datetime
@@ -24,7 +24,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from pathlib import Path
 from .compose import P, R, uniform_wrapper
-import numpy as np
 
 function_call_stack: ContextVar[List[str]] = ContextVar('function_call_stack', default=[])
 execution_report: ContextVar[Dict[str, Any]] = ContextVar('execution_report', default={})

@@ -1,5 +1,4 @@
 
-
 """Monitoring Module."
 
 This module provides system-wide monitoring capabilities for the trading system,
@@ -14,10 +13,8 @@ from src.core.decorators import handles_errors
 from src.utils.compat import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid
-import time
 
 # src/supervisor/monitoring.py
-
 
 class Monitoring:
     """
@@ -192,9 +189,7 @@ class Monitoring:
     def get_alerts(self) -> list[dict[str, Any]]:
         return self.alerts.copy()
 
-
 monitoring: Monitoring | None = None
-
 
 @handles_errors(
     exceptions=(Exception,),

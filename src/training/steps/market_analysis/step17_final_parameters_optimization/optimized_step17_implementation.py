@@ -27,8 +27,6 @@ try:
 except ImportError:
     MLFLOW_AVAILABLE = False
 
-import time
-
 try:
     import optuna
     OPTUNA_AVAILABLE = True

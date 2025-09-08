@@ -1,5 +1,4 @@
 
-from functools import cached_property
 from ...utils.logger import system_logger
 from src.core.decorators import handles_errors
 #!/usr/bin/env python3
@@ -17,10 +16,6 @@ from typing import Any
 from ...utils.logger import system_logger
 
 import json
-import logging
-import time
-
-
 
 class CSVExporter:
     """Centralized CSV export system for monitoring data."""

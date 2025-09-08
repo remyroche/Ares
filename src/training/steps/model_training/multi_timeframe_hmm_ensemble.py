@@ -40,11 +40,9 @@ from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
     from sklearn.preprocessing import LabelEncoder, StandardScaler
-import logging
 
 # Enhanced logging setup
 logger = system_logger.getChild("MultiTimeframeHMMEnsemble")
-
 
 @dataclass
 class TimeframeConfig:
@@ -58,7 +56,6 @@ class TimeframeConfig:
         False  # Hazard models are for regime transitions only
     )
 
-
 @dataclass
 class EnsembleConfig:
     """Configuration for the multi-timeframe ensemble."""
@@ -71,7 +68,6 @@ class EnsembleConfig:
     ensemble_method: str = (
         "weighted_average"  # "weighted_average", "meta_learner", "stacking"
     )
-
 
 class MultiTimeframeHMMEnsemble:
     """Multi-timeframe HMM cluster ensemble that combines predictions from HMM clusters

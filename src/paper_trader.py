@@ -18,8 +18,6 @@ from enum import Enum
 from typing import Any, Dict, List
 from dataclasses import dataclass
 
-from copy import copy
-
 # Simple trade tracker stub
 @dataclass
 class TradeTracker:
@@ -48,11 +46,6 @@ from .utils.decorators import (
 )
 from .utils.compat import handle_specific_errors
 from .utils.logger import system_logger
-import logging
-import os
-import pandas as pd
-import time
-
 
 class ExecutionMode(Enum):
     """Execution mode enumeration."""
@@ -61,7 +54,6 @@ class ExecutionMode(Enum):
     BACKTEST = "backtest"
     PAPER = "paper"
     SIMULATION = "simulation"
-
 
 class PaperTrader:
     """
@@ -847,10 +839,8 @@ class PaperTrader:
         except Exception as e:
             self.logger.exception(execution_error(f"Error stopping paper trader: {e}"))
 
-
 # Global paper trader instance
 paper_trader: PaperTrader | None = None
-
 
 @handles_errors(
     exceptions=(Exception,),

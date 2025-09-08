@@ -1,4 +1,3 @@
-import numpy as np
 
 '\nRetry, timeout, and circuit breaker decorators.\n\nProvides resilience patterns for handling transient failures,\ntimeouts, and cascading failures.\n'
 import asyncio

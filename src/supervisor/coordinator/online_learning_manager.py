@@ -7,15 +7,11 @@ This module manages online learning for model weighting based on performance,
 adapting model weights dynamically based on their recent performance.
 """
 
-
 from collections import defaultdict
 from typing import Any, Dict, List
 
 from ...utils.logger import system_logger
 from .utils.warning_symbols import error
-import numpy as np
-import logging
-
 
 class OnlineLearningManager:
     """Manages online learning for model weighting based on performance."""

@@ -8,8 +8,6 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 import functools
 from src.training.steps.market_analysis.regime_handler import regime_handler
 import pandas as pd
-import logging
-import numpy as np
 
 from src.utils.common_operations import get_logger
 

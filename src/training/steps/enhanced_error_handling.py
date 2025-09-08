@@ -10,19 +10,15 @@ This module provides comprehensive error handling that ensures:
 5. Comprehensive error reporting and monitoring
 """
 
-import asyncio
-import logging
 import traceback
 import functools
-import sys
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union, Callable, Type, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 
 from src.utils.logger import system_logger
-
 
 class ErrorSeverity(Enum):
     """Error severity levels for proper handling."""
@@ -30,7 +26,6 @@ class ErrorSeverity(Enum):
     MEDIUM = "medium"     # Important, should be logged but can continue
     HIGH = "high"         # Critical, should fail fast
     CRITICAL = "critical" # Fatal, must stop immediately
-
 
 class ErrorCategory(Enum):
     """Error categories for proper classification."""
@@ -45,7 +40,6 @@ class ErrorCategory(Enum):
     TIMEOUT = "timeout"
     UNKNOWN = "unknown"
 
-
 @dataclass
 class ErrorContext:
     """Context information for error handling."""
@@ -55,7 +49,6 @@ class ErrorContext:
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     additional_context: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class ErrorRecord:
@@ -72,13 +65,11 @@ class ErrorRecord:
     resolution_timestamp: Optional[datetime] = None
     should_fail_fast: bool = False
 
-
 class CriticalProcessError(Exception):
     """Exception raised when a critical process fails and should stop execution."""
     def __init__(self, message: str, error_record: ErrorRecord):
         super().__init__(message)
         self.error_record = error_record
-
 
 class EnhancedErrorHandler:
     """Enhanced error handler with fail-fast capabilities and comprehensive logging."""
@@ -418,7 +409,6 @@ class EnhancedErrorHandler:
             self.logger.error(f"❌ Error summary generation failed: {e}")
             return {'error': str(e)}
 
-
 def enhanced_error_handler(error_severity: ErrorSeverity = ErrorSeverity.MEDIUM,
                           error_category: ErrorCategory = ErrorCategory.UNKNOWN,
                           recovery_action: Optional[str] = None,
@@ -481,7 +471,6 @@ def enhanced_error_handler(error_severity: ErrorSeverity = ErrorSeverity.MEDIUM,
         return wrapper
     return decorator
 
-
 def enhanced_async_error_handler(error_severity: ErrorSeverity = ErrorSeverity.MEDIUM,
                                 error_category: ErrorCategory = ErrorCategory.UNKNOWN,
                                 recovery_action: Optional[str] = None,
@@ -538,7 +527,6 @@ def enhanced_async_error_handler(error_severity: ErrorSeverity = ErrorSeverity.M
         return wrapper
     return decorator
 
-
 def critical_process(step_name: str):
     """
     Decorator to mark a function as a critical process that should fail fast.
@@ -587,7 +575,6 @@ def critical_process(step_name: str):
         
         return wrapper
     return decorator
-
 
 def critical_async_process(step_name: str):
     """
@@ -639,15 +626,12 @@ def critical_async_process(step_name: str):
         return wrapper
     return decorator
 
-
 # Global error handler instance
 _global_error_handler = EnhancedErrorHandler()
-
 
 def get_global_error_handler() -> EnhancedErrorHandler:
     """Get the global error handler instance."""
     return _global_error_handler
-
 
 def set_global_error_handler(handler: EnhancedErrorHandler) -> None:
     """Set the global error handler instance."""

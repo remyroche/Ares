@@ -6,7 +6,6 @@ Centralized technical indicator calculations to eliminate code duplication
 across modules. All indicators are vectorized and optimized for performance.
 """
 
-import numpy as np
 import pandas as pd
 from typing import Dict, Tuple, Optional, Union, List
 import warnings
@@ -17,7 +16,6 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
-
 
 class TechnicalIndicators:
     """Centralized technical indicator calculations."""
@@ -313,10 +311,8 @@ class TechnicalIndicators:
         
         return indicators
 
-
 # Global instance for easy access
 _global_indicators = TechnicalIndicators()
-
 
 def get_technical_indicators(config: Optional[Dict] = None) -> TechnicalIndicators:
     """Get global technical indicators instance."""
@@ -324,27 +320,22 @@ def get_technical_indicators(config: Optional[Dict] = None) -> TechnicalIndicato
         _global_indicators.config.update(config)
     return _global_indicators
 
-
 # Convenience functions for backward compatibility
 def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
     """Calculate RSI using global instance."""
     return _global_indicators.calculate_rsi(prices, window)
 
-
 def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, pd.Series]:
     """Calculate MACD using global instance."""
     return _global_indicators.calculate_macd(prices, fast, slow, signal)
-
 
 def calculate_bollinger_bands(prices: pd.Series, window: int = 20, num_std: float = 2) -> Dict[str, pd.Series]:
     """Calculate Bollinger Bands using global instance."""
     return _global_indicators.calculate_bollinger_bands(prices, window, num_std)
 
-
 def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14) -> pd.Series:
     """Calculate ATR using global instance."""
     return _global_indicators.calculate_atr(high, low, close, window)
-
 
 def calculate_adx(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14) -> pd.Series:
     """Calculate ADX using global instance."""

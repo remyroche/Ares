@@ -18,9 +18,6 @@ from src.utils.logger import system_logger
 import numpy as np
 
 from .utils.linear_confidence_scaling import LinearConfidenceScaler
-import logging
-
-
 
 @dataclass
 class BarrierPrediction:
@@ -32,7 +29,6 @@ class BarrierPrediction:
     expected_profit: float
     risk_score: float
 
-
 @dataclass
 class EntryDecision:
     """Container for position entry decision."""
@@ -43,7 +39,6 @@ class EntryDecision:
     confidence_score: float
     risk_adjusted_confidence: float
     reasoning: str
-
 
 class ConfidenceBasedEntryLogic:
     """Implements confidence-based position entry logic with optimized barrier selection."""

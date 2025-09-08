@@ -10,11 +10,8 @@ from src.utils.warning_symbols import (
     invalid,
 )
 from .core.decorators import handles_errors
-import logging
-import time
 
 # src/training/optimization_manager.py
-
 
 class OptimizationManager:
     """Optimization manager responsible for hyperparameter optimization and model tuning."
@@ -652,5 +649,3 @@ class OptimizationManager:
             self.logger.info("✅ Optimization Manager stopped successfully")
         except Exception as e:
             self.print_message(failed(f"❌ Failed to stop Optimization Manager: {e}"))
-
-

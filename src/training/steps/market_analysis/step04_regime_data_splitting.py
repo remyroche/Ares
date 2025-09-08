@@ -7,6 +7,13 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 )
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 """Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring.
 
@@ -342,7 +349,6 @@ def log_comprehensive_error_report(error: Exception, context: Dict[str, Any]=Non
     return error_context
 
 # MemoryMonitor class replaced with M1MemoryOptimizer integration
-
 
 class RegimeDataSplittingStep:
     """Step 4: Regime Data Splitting with standardized data quality management."""
@@ -1372,6 +1378,12 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = N
         StepResult: Standardized result with success status and details
     """
     logger.info('🚀 Starting Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring')
+    
+    # Initialize lookahead bias detector
+    from datetime import datetime
+    current_time = datetime.now()
+    bias_detector = get_global_detector()
+    bias_detector.set_current_timestamp(current_time)
     if data_dir is None:
         data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     

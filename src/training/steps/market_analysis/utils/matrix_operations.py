@@ -7,8 +7,6 @@ SR-specific analysis, and enhanced SR analysis.
 from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
-import logging
-import time
 
 # Import decorators with fallback
 try:
@@ -45,7 +43,6 @@ except ImportError:
     SCIPY_SPARSE_AVAILABLE = False
     sp = None
     spla = None
-
 
 class MatrixOperations:
     """Matrix operations for enhanced analysis."""
@@ -621,6 +618,5 @@ class MatrixOperations:
             return group_correlations
         except Exception as e:
             return {'error': str(e)}
-
 
 __all__ = ['MatrixOperations']

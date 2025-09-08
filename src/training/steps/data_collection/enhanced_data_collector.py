@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-import src.utils.enhanced_data_validation
-import numpy as np
+
 from src.utils.logger import system_logger
 from ..standardized_parquet_handler import standardized_parquet_handler
 
@@ -15,12 +14,10 @@ This module provides enhanced data collection with:
 - Integration with existing data collection pipeline
 """
 
-
 import asyncio
 import sys
 import time
 from pathlib import Path
-
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -34,10 +31,8 @@ from src.utils.enhanced_data_validation import (
 )
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 import pandas as pd
-import logging
 
 logger = system_logger.getChild("EnhancedDataCollector")
-
 
 class EnhancedDataCollector:
     """Enhanced data collector with real-time validation."""
@@ -202,7 +197,6 @@ class EnhancedDataCollector:
         """Get all validation errors."""
         return self.validator.validation_stats['validation_errors']
 
-
 class EnhancedDataCollectionManager:
     """Manager for enhanced data collection across multiple data types."""
     @log_important_calls
@@ -300,7 +294,6 @@ class EnhancedDataCollectionManager:
             for data_type, collector in self.collectors.items()
         }
 
-
 # Integration functions for existing pipeline
 async def collect_data_with_validation(
     data_type: DataType,
@@ -333,7 +326,6 @@ async def collect_data_with_validation(
     summary['validated_dataframe'] = collector.get_validated_dataframe()
     
     return summary
-
 
 async def collect_all_data_with_validation(
     exchange: str,
@@ -374,7 +366,6 @@ async def collect_all_data_with_validation(
     summary['validation_errors'] = manager.get_all_validation_errors()
     
     return summary
-
 
 if __name__ == "__main__":
     # Example usage

@@ -9,11 +9,7 @@ from typing import Any, Callable, Dict, Optional
 import numpy as np
 import pandas as pd
 
-from src.utils.logger import system_logger
-
 # Import decorators
-from src.core.decorators.logging import log_execution_time
-from src.core.decorators.cache import cached
 
 # Placeholder decorators for compatibility
 def monitor_feature_engineering(*args, **kwargs):
@@ -36,24 +32,20 @@ def secure_step_execution(*args, **kwargs):
         return func
     return decorator
 
-
 def create_fallback_logger() -> Any:
     """Create a fallback logger if system_logger is not available."""
     logging.basicConfig(level = logging.INFO)
     return logging.getLogger(__name__)
-
 
 def ensure_directory(path: Path) -> Path:
     """Ensure directory exists and return the path."""
     path.mkdir(parents = True, exist_ok = True)
     return path
 
-
 def safe_json_dump(data: Any, file_path: Path, **kwargs) -> None:
     """Safely dump data to JSON file."""
     with open(file_path, 'w') as f:
         json.dump(data, f, **kwargs)
-
 
 class TechnicalIndicators:
     """Collection of technical indicator calculation methods."""
@@ -146,7 +138,6 @@ class TechnicalIndicators:
         low_strength = (current_price - low_swing) / low_swing
         sr_strength = (high_strength + low_strength) / 2
         return sr_strength
-
 
 class FeatureCalculator:
     """Handles feature calculation and preparation for HMM analysis."""
@@ -284,7 +275,6 @@ class FeatureCalculator:
         
         self.logger.info(f'✅ Feature cleaning completed: {final_rows:,} rows, {len(hmm_features.columns)} features')
         return hmm_features
-
 
 class RegimeAnalyzer:
     """Handles regime analysis and interpretation."""

@@ -11,13 +11,10 @@ into the live trading pipeline with performance monitoring.
 import time
 from typing import Any
 
-
 from .trading.live_wavelet_analyzer import LiveWaveletAnalyzer, WaveletSignal
 from ..utils.logger import system_logger
 import numpy as np
 import pandas as pd
-import logging
-
 
 class LiveWaveletIntegration:
     """

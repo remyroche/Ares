@@ -1,9 +1,7 @@
 # src/transition/event_trigger_indexer.py
 
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-
 
 from .analyst.meta_labeling_system import CompositeHMMRegimeSystem
 from ..utils.logger import system_logger
@@ -13,8 +11,6 @@ from .training.training_manager import TrainingManager
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-import logging
-
 
 @dataclass
 class EventConfig:
@@ -25,7 +21,6 @@ class EventConfig:
     use_reliability_weighting: bool
     use_rising_edge_only: bool
     preserve_secondary_labels: bool
-
 
 class EventTriggerIndexer:
     """

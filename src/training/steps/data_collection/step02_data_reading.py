@@ -1,6 +1,26 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.reports import save_training_report
+from src.utils.common_operations import (
+    safe_read_parquet, safe_to_parquet, ensure_directory, safe_json_dump, safe_json_load,
+    safe_mean, safe_std, safe_fillna, safe_rolling, create_empty_dataframe,
+    get_current_datetime, format_datetime, parse_datetime, safe_file_exists
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, validate_positive,
+    validate_range, safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
+    validate_correlation_matrix, safe_matrix_inverse, math_safe
+)
+from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+from src.core.errors.base import ValidationError, DataQualityError, FileNotFoundError
+from src.core.errors.mapping import ErrorMapping
 
 """Step 2: Data Reading and Validation with Comprehensive Function Monitoring.
 from src.utils.logger import system_logger
@@ -836,9 +856,11 @@ class DataReadingStep:
                 return None
             self.logger.info(f'📁 Found {len(parquet_files)} parquet files')
             dataframes = []
+            # Use parquet_utils for safe reading
+            parquet_utils = get_parquet_utils()
             for file_path in sorted(parquet_files):
                 self.logger.info(f'📖 Reading {file_path.name}')
-                df = standardized_parquet_handler.read_parquet_standardized(file_path, 'unified')
+                df = parquet_utils.safe_read_parquet(str(file_path))
                 if df is not None:
                     dataframes.append(df)
             if dataframes:
@@ -916,18 +938,25 @@ class DataReadingStep:
             self.logger.info(f"   - Issues: {len(validation_results['issues'])}")
             self.logger.info(f"   - Warnings: {len(validation_results['warnings'])}")
             
-            # Check quality thresholds
+            # Check quality thresholds using math_validation
             thresholds = self.config.get('step02_quality_thresholds', {
                 'min_rows': 100000, 
                 'max_null_ratio': 0.01, 
                 'min_quality_score': 0.8
             })
             rows = computed_data_info['rows']
-            null_ratio = float(data.isnull().sum().sum()) / (max(1, rows) * max(1, len(data.columns))) if rows else 1.0
-            quality_score = float(validation_results['quality_score'])
+            total_cells = max(1, rows) * max(1, len(data.columns))
+            null_count = data.isnull().sum().sum()
+            null_ratio = safe_divide(null_count, total_cells, default=1.0)
+            quality_score = validate_finite(validation_results['quality_score'], "quality_score")
             
-            if rows < thresholds['min_rows'] or null_ratio > thresholds['max_null_ratio'] or quality_score < thresholds['min_quality_score']:
-                self.logger.error(f"⛔ Early gating: rows={rows} (<{thresholds['min_rows']}), null_ratio={null_ratio:.4f} (>{thresholds['max_null_ratio']}), quality={quality_score:.2f} (<{thresholds['min_quality_score']})")
+            # Use math_validation for range checks
+            min_rows_valid = validate_positive(thresholds['min_rows'], "min_rows")
+            max_null_ratio_valid = validate_range(thresholds['max_null_ratio'], 0.0, 1.0, "max_null_ratio")
+            min_quality_score_valid = validate_range(thresholds['min_quality_score'], 0.0, 1.0, "min_quality_score")
+            
+            if rows < min_rows_valid or null_ratio > max_null_ratio_valid or quality_score < min_quality_score_valid:
+                self.logger.error(f"⛔ Early gating: rows={rows} (<{min_rows_valid}), null_ratio={null_ratio:.4f} (>{max_null_ratio_valid}), quality={quality_score:.2f} (<{min_quality_score_valid})")
                 validation_results['passed'] = False
             self._log_step_timing('validate_data_quality', step_start)
         except Exception as e:

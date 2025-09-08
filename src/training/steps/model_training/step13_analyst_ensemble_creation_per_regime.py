@@ -416,6 +416,10 @@ class PerRegimeAnalystEnsembleCreationStep(Step13AnalystEnsembleCreation):
         try:
             self.logger.info(f"🔧 Applying optimized analyst ensemble creation for regime {regime_id}")
 
+            # Fast fail validation for enhancement data
+            if not self._validate_enhancement_data_fast_fail(enhancement_data, regime_id):
+                return None
+
             # Extract enhanced analysts
             enhanced_analysts = enhancement_data.get('enhanced_analysts', {})
             if not enhanced_analysts:
@@ -442,15 +446,22 @@ class PerRegimeAnalystEnsembleCreationStep(Step13AnalystEnsembleCreation):
                         task = self._create_ensemble_parallel(ensemble_type, enhanced_analysts, regime_config, regime_id)
                         ensemble_tasks.append(task)
 
-                # Execute in parallel
+                # Execute in parallel with timeout
                 if ensemble_tasks:
-                    parallel_results = await asyncio.gather(*ensemble_tasks, return_exceptions=True)
-                    for i, result in enumerate(parallel_results):
-                        if isinstance(result, Exception):
-                            self.logger.warning(f"Ensemble creation failed: {result}")
-                        else:
-                            ensemble_type = ['weighted', 'stacked', 'voting', 'boosting', 'bagging', 'dynamic'][i]
-                            results['created_ensembles'][f'{ensemble_type}_ensemble'] = result
+                    try:
+                        parallel_results = await asyncio.wait_for(
+                            asyncio.gather(*ensemble_tasks, return_exceptions=True),
+                            timeout=300.0  # 5 minute timeout
+                        )
+                        for i, result in enumerate(parallel_results):
+                            if isinstance(result, Exception):
+                                self.logger.warning(f"Ensemble creation failed: {result}")
+                            else:
+                                ensemble_type = ['weighted', 'stacked', 'voting', 'boosting', 'bagging', 'dynamic'][i]
+                                results['created_ensembles'][f'{ensemble_type}_ensemble'] = result
+                    except asyncio.TimeoutError:
+                        self.logger.error(f"❌ Ensemble creation timed out for regime {regime_id}")
+                        return None
             else:
                 # Sequential ensemble creation with optimization
                 await self._apply_regime_analyst_ensemble_creation(enhancement_data, regime_config, regime_id)
@@ -474,6 +485,47 @@ class PerRegimeAnalystEnsembleCreationStep(Step13AnalystEnsembleCreation):
         except Exception as e:
             self.logger.error(f"❌ Error applying optimized analyst ensemble creation for regime {regime_id}: {e}")
             return None
+    
+    def _validate_enhancement_data_fast_fail(self, enhancement_data: Dict[str, Any], regime_id: int) -> bool:
+        """Fast fail validation for enhancement data."""
+        try:
+            if not enhancement_data:
+                self.logger.error(f"❌ Empty enhancement data for regime {regime_id}")
+                return False
+            
+            # Check required keys
+            required_keys = ['enhanced_analysts']
+            missing_keys = [key for key in required_keys if key not in enhancement_data]
+            
+            if missing_keys:
+                self.logger.error(f"❌ Missing required keys in enhancement data for regime {regime_id}: {missing_keys}")
+                return False
+            
+            # Check enhanced analysts structure
+            enhanced_analysts = enhancement_data.get('enhanced_analysts', {})
+            if not isinstance(enhanced_analysts, dict):
+                self.logger.error(f"❌ Enhanced analysts must be a dictionary for regime {regime_id}")
+                return False
+            
+            if not enhanced_analysts:
+                self.logger.error(f"❌ No enhanced analysts found for regime {regime_id}")
+                return False
+            
+            # Validate each analyst data structure
+            for analyst_name, analyst_data in enhanced_analysts.items():
+                if not isinstance(analyst_data, dict):
+                    self.logger.error(f"❌ Analyst data for {analyst_name} must be a dictionary")
+                    return False
+                
+                # Check for required analyst data fields
+                if 'enhanced_performance_metrics' not in analyst_data:
+                    self.logger.warning(f"⚠️ Missing performance metrics for analyst {analyst_name}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating enhancement data for regime {regime_id}: {e}")
+            return False
 
     async def _create_ensemble_parallel(self, ensemble_type: str, enhanced_analysts: Dict[str, Any],
                                       regime_config: Dict[str, Any], regime_id: int) -> Optional[Dict[str, Any]]:
@@ -788,7 +840,7 @@ class PerRegimeAnalystEnsembleCreationStep(Step13AnalystEnsembleCreation):
             ensemble_params = regime_config.get('ensemble_parameters', {}).get('weighted_ensemble', {})
             
             # Calculate analyst weights based on performance and regime characteristics
-            analyst_weights = self._calculate_analyst_weights(enhanced_analysts, ensemble_params, regime_id)
+            analyst_weights = await self._calculate_analyst_weights_optimized(enhanced_analysts, ensemble_params, regime_id)
             
             # Create weighted ensemble
             weighted_ensemble = {
@@ -823,13 +875,13 @@ class PerRegimeAnalystEnsembleCreationStep(Step13AnalystEnsembleCreation):
             return None
     @log_all_calls
     
-    def _calculate_analyst_weights(
+    async def _calculate_analyst_weights_optimized(
         self,
         enhanced_analysts: Dict[str, Any],
         ensemble_params: Dict[str, Any],
         regime_id: int
     ) -> Dict[str, float]:
-        """Calculate analyst weights for ensemble.
+        """Calculate analyst weights for ensemble using vectorized operations.
         
         Args:
             enhanced_analysts: Enhanced analyst data
@@ -840,52 +892,122 @@ class PerRegimeAnalystEnsembleCreationStep(Step13AnalystEnsembleCreation):
             Dictionary of analyst weights
         """
         try:
-            weights = {}
+            if not enhanced_analysts:
+                return {}
             
-            # Get performance-based weights
-            for analyst_name, analyst_data in enhanced_analysts.items():
+            # Extract performance data using vectorized operations
+            analyst_names = list(enhanced_analysts.keys())
+            performance_scores = []
+            base_weights = []
+            
+            for analyst_name in analyst_names:
+                analyst_data = enhanced_analysts[analyst_name]
                 performance_metrics = analyst_data.get('enhanced_performance_metrics', {})
                 
-                # Calculate average performance
-                performance_scores = []
-                for metric_name, metric_value in performance_metrics.items():
-                    if isinstance(metric_value, (int, float)) and 0 <= metric_value <= 1:
-                        performance_scores.append(metric_value)
+                # Vectorized performance score calculation
+                metric_values = [
+                    float(metric_value) for metric_value in performance_metrics.values()
+                    if isinstance(metric_value, (int, float)) and 0 <= metric_value <= 1
+                ]
                 
-                if performance_scores:
-                    avg_performance = np.mean(performance_scores)
+                if metric_values:
+                    avg_performance = np.mean(metric_values)
                 else:
                     avg_performance = 0.5  # Default performance
                 
-                # Apply regime-specific weight adjustments
-                base_weight = ensemble_params.get(f'{analyst_name}_weight', 0.1)
-                
-                # Adjust weight based on performance and regime characteristics
-                if regime_id <= 2:  # Trending regimes
-                    if 'trend' in analyst_name.lower() or 'momentum' in analyst_name.lower():
-                        performance_multiplier = 1.2
-                    else:
-                        performance_multiplier = 0.8
-                elif regime_id >= 5:  # Volatile regimes
-                    if 'volatility' in analyst_name.lower() or 'risk' in analyst_name.lower():
-                        performance_multiplier = 1.2
-                    else:
-                        performance_multiplier = 0.8
-                else:  # Balanced regimes
-                    performance_multiplier = 1.0
-                
-                weights[analyst_name] = base_weight * avg_performance * performance_multiplier
+                performance_scores.append(avg_performance)
+                base_weights.append(ensemble_params.get(f'{analyst_name}_weight', 0.1))
+            
+            # Convert to numpy arrays for vectorized operations
+            performance_array = np.array(performance_scores)
+            base_weights_array = np.array(base_weights)
+            
+            # Calculate regime-specific multipliers using vectorized operations
+            regime_multipliers = self._calculate_regime_multipliers_vectorized(
+                analyst_names, regime_id
+            )
+            
+            # Calculate final weights using vectorized operations
+            final_weights = base_weights_array * performance_array * regime_multipliers
             
             # Normalize weights to sum to 1.0
-            total_weight = sum(weights.values())
-            if total_weight > 0:
-                weights = {name: weight / total_weight for name, weight in weights.items()}
+            if final_weights.sum() > 0:
+                final_weights = final_weights / final_weights.sum()
+            else:
+                final_weights = np.ones_like(final_weights) / len(final_weights)
+            
+            # Create weight dictionary
+            weights = {
+                name: float(weight) 
+                for name, weight in zip(analyst_names, final_weights)
+            }
+            
+            # Validate weights
+            if not self._validate_analyst_weights(weights):
+                self.logger.warning("⚠️ Analyst weight validation failed, using equal weights")
+                return {name: 1.0 / len(enhanced_analysts) for name in enhanced_analysts.keys()}
             
             return weights
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating analyst weights: {e}")
             return {name: 1.0 / len(enhanced_analysts) for name in enhanced_analysts.keys()}
+    
+    def _calculate_regime_multipliers_vectorized(self, analyst_names: List[str], regime_id: int) -> np.ndarray:
+        """Calculate regime-specific multipliers using vectorized operations."""
+        try:
+            multipliers = np.ones(len(analyst_names))
+            
+            # Define regime-specific patterns
+            if regime_id <= 2:  # Trending regimes
+                trend_keywords = ['trend', 'momentum']
+                for i, name in enumerate(analyst_names):
+                    if any(keyword in name.lower() for keyword in trend_keywords):
+                        multipliers[i] = 1.2
+                    else:
+                        multipliers[i] = 0.8
+            elif regime_id >= 5:  # Volatile regimes
+                volatility_keywords = ['volatility', 'risk']
+                for i, name in enumerate(analyst_names):
+                    if any(keyword in name.lower() for keyword in volatility_keywords):
+                        multipliers[i] = 1.2
+                    else:
+                        multipliers[i] = 0.8
+            # Balanced regimes (regime_id 3-4) use default multiplier of 1.0
+            
+            return multipliers
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating regime multipliers: {e}")
+            return np.ones(len(analyst_names))
+    
+    def _validate_analyst_weights(self, weights: Dict[str, float]) -> bool:
+        """Validate analyst weights."""
+        try:
+            if not weights:
+                return False
+            
+            # Check weight sum is approximately 1.0
+            weight_sum = sum(weights.values())
+            if not np.isclose(weight_sum, 1.0, atol=1e-6):
+                self.logger.error(f"❌ Analyst weights sum to {weight_sum}, not 1.0")
+                return False
+            
+            # Check all weights are non-negative
+            if any(w < 0 for w in weights.values()):
+                self.logger.error("❌ Negative analyst weights found")
+                return False
+            
+            # Check for NaN or infinite values
+            if any(not np.isfinite(w) for w in weights.values()):
+                self.logger.error("❌ Non-finite analyst weights found")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating analyst weights: {e}")
+            return False
     
     async def _create_stacked_ensemble(
         self,

@@ -1,85 +1,103 @@
-# Enhanced ML Monitoring System
+# Enhanced Monitoring System
 
-A comprehensive monitoring system for ML models and ensembles with detailed explanations using SHAP/LIME, designed for backtesting, paper trading, and live trading environments.
+A comprehensive monitoring system for trading decisions that provides detailed tracking and explanations across backtesting, paper trading, and live trading modes.
 
 ## Overview
 
-The Enhanced ML Monitoring System provides:
+The Enhanced Monitoring System captures and analyzes every aspect of trading decisions, providing:
 
-- **Comprehensive Trade Decision Tracking**: Captures complete context, indicators, and ML model details for every trade decision
-- **SHAP/LIME Integration**: Detailed model explanations for understanding decision-making processes
-- **Ensemble Monitoring**: Tracks individual model weights, performance, and contributions
-- **Multi-Mode Support**: Works across backtesting, paper trading, and live trading
-- **Automated CSV Export**: Monthly reports with detailed breakdowns and statistics
-- **Real-time Performance Tracking**: Continuous monitoring of model and ensemble performance
+1. **Context Capture** - Exchange, token, time, price, and market conditions
+2. **Trade Indicators** - Confidence, risk, and technical indicators
+3. **Per-Ensemble Indicators** - Weight of each ML model in ensemble decisions
+4. **Per-ML Indicators** - Individual model confidence, risk, and performance
+5. **Per-ML Decision Making** - Weight of each trading indicator per model
+6. **SHAP/LIME Explanations** - Detailed model interpretability
+7. **Monthly CSV Exports** - Comprehensive monthly reports
+8. **Daily Ongoing CSV** - Real-time daily metrics tracking
+
+## Features
+
+### 🎯 Comprehensive Decision Tracking
+- **Context**: Exchange, token, timestamp, price, volume, timeframe
+- **Market Conditions**: Technical indicators, volatility, volume analysis
+- **HMM Regime Context**: Regime identification, probabilities, stability
+- **Trading Signals**: Signal strength, confidence, quality, risk assessment
+- **Model Decisions**: Individual model predictions, confidence, feature importance
+- **Ensemble Decisions**: Model weights, consensus, disagreement analysis
+
+### 🔍 Model Interpretability
+- **SHAP Explanations**: Feature importance and contribution analysis
+- **LIME Explanations**: Local interpretable model-agnostic explanations
+- **Combined Explanations**: Consensus between SHAP and LIME
+- **Feature Analysis**: Top contributing features per model
+- **Decision Tracing**: Complete decision path from data to action
+
+### 📊 Performance Monitoring
+- **Model Performance**: Accuracy, precision, recall, F1-score, AUC
+- **Trading Performance**: Win rate, profit factor, Sharpe ratio, drawdown
+- **Ensemble Performance**: Diversity, consensus quality, weight stability
+- **Risk Metrics**: VaR, expected shortfall, maximum drawdown
+- **Regime Analysis**: Performance by HMM regime
+
+### 📈 Export and Reporting
+- **Monthly Reports**: Comprehensive monthly analysis with detailed breakdowns
+- **Daily Ongoing CSV**: Real-time daily metrics (date, exchange, asset, trades, shorts vs long, HMM clusters, Sharpe, PnL)
+- **Model Performance CSV**: Individual model performance tracking
+- **Ensemble Analysis CSV**: Ensemble performance and weight analysis
+- **Decision Traces**: Complete decision history with explanations
+
+### 🔄 Trading Mode Integration
+- **Backtesting**: Full integration with backtesting systems
+- **Paper Trading**: Real-time monitoring of paper trading decisions
+- **Live Trading**: Production monitoring with risk alerts
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                Monitoring Orchestrator                     │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
-│  │ Enhanced ML     │  │ Explainability  │  │ Ensemble     │ │
-│  │ Monitor         │  │ Integrator      │  │ Monitor      │ │
-│  └─────────────────┘  └─────────────────┘  └──────────────┘ │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
-│  │ CSV Export      │  │ Trading System  │  │ Performance  │ │
-│  │ Manager         │  │ Integrator      │  │ Tracker      │ │
-│  └─────────────────┘  └─────────────────┘  └──────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+Enhanced Monitoring Orchestrator
+├── Trade Decision Context Capture
+│   ├── Market Conditions Analysis
+│   ├── HMM Regime Context
+│   ├── Trading Signal Context
+│   ├── Model Decision Context
+│   └── Ensemble Decision Context
+├── SHAP/LIME Integration
+│   ├── SHAP Analyzer
+│   ├── LIME Analyzer
+│   └── Explainability Integrator
+├── Enhanced ML Monitoring
+│   ├── Trade Decision Tracking
+│   ├── Model Performance Tracking
+│   └── Ensemble Performance Tracking
+├── Daily Summary Tracker
+│   ├── Daily Metrics Calculation
+│   ├── Regime Performance Analysis
+│   └── Real-time Updates
+└── Trading System Integration
+    ├── Backtesting Integration
+    ├── Paper Trading Integration
+    └── Live Trading Integration
 ```
 
-## Key Components
+## Installation
 
-### 1. Enhanced ML Monitor (`enhanced_ml_monitoring.py`)
-- Records complete trade decisions with context and explanations
-- Tracks model and ensemble performance metrics
-- Manages memory and export scheduling
+### Dependencies
 
-### 2. Explainability Integration (`explainability_integration.py`)
-- Integrates SHAP and LIME for model explanations
-- Generates feature-level importance scores
-- Provides ensemble-level explanation aggregation
-
-### 3. Ensemble Monitor (`ensemble_monitor.py`)
-- Tracks individual model weights and performance
-- Monitors ensemble diversity and consensus
-- Provides weight optimization recommendations
-
-### 4. CSV Export Manager (`csv_export_manager.py`)
-- Exports comprehensive monthly reports
-- Creates detailed breakdowns by component
-- Generates summary statistics and analysis
-
-### 5. Trading System Integration (`trading_integration.py`)
-- Integrates with backtesting, paper trading, and live trading systems
-- Automatically captures trade decisions
-- Hooks into existing trading workflows
-
-### 6. Monitoring Orchestrator (`monitoring_orchestrator.py`)
-- Coordinates all monitoring components
-- Provides unified interface for the entire system
-- Manages initialization and shutdown
-
-## Data Structures
-
-### Trade Decision Hierarchy
-
+```bash
+pip install numpy pandas scikit-learn shap lime matplotlib seaborn
 ```
-Trade Decision
-├── Context (exchange, token, time, price, volume, timeframe, regime)
-├── Trading Indicators (RSI, MACD, Bollinger Bands, etc.)
-│   ├── Name, Value, Weight, Confidence, Risk Score
-├── Ensemble Decision
-│   ├── Final Prediction, Confidence, Risk Score
-│   ├── Model Weights (per-model contribution)
-│   └── Individual Model Decisions
-│       ├── Model ID, Type, Prediction, Confidence
-│       ├── Feature Importance
-│       ├── SHAP Values (if available)
-│       └── LIME Explanation (if available)
-└── Final Action (buy/sell/hold, position size, stop loss, take profit)
+
+### Optional Dependencies
+
+```bash
+# For enhanced visualizations
+pip install plotly dash
+
+# For database storage
+pip install sqlalchemy psycopg2-binary
+
+# For API endpoints
+pip install fastapi uvicorn
 ```
 
 ## Configuration
@@ -90,292 +108,328 @@ Trade Decision
 enhanced_monitoring:
   enable_monitoring: true
   enable_explanations: true
-  enable_ensemble_monitoring: true
-  enable_csv_export: true
-  export_interval_days: 30
-  max_memory_decisions: 10000
-  export_directory: "monitoring_exports"
+  enable_real_time_tracking: true
+  monthly_export_enabled: true
+  daily_export_enabled: true
+  export_directory: "enhanced_monitoring_exports"
+  max_decisions_in_memory: 50000
+  data_retention_days: 365
 ```
 
 ### SHAP/LIME Configuration
 
 ```yaml
-explainability_integration:
+shap_analysis:
   enable_shap: true
+  max_features: 50
+  explanation_timeout: 30
+
+lime_analysis:
   enable_lime: true
-  max_features_explained: 20
-  explanation_cache_size: 1000
+  max_features: 20
+  num_samples: 1000
+  explanation_timeout: 30
 ```
 
-### Ensemble Monitoring Configuration
+### Trading Integration Configuration
 
 ```yaml
-ensemble_monitoring:
-  weight_update_frequency_hours: 24
-  performance_window_days: 30
-  min_weight_threshold: 0.01
-  max_weight_threshold: 0.8
-  rebalance_threshold: 0.1
+trading_integration:
+  enable_monitoring: true
+  capture_explanations: true
+  capture_performance_metrics: true
+  real_time_export: false
+  export_interval_minutes: 60
 ```
 
-## Usage Examples
+## Usage
 
 ### Basic Usage
 
 ```python
-from src.monitoring import create_monitoring_orchestrator
+import asyncio
+from src.monitoring.enhanced_monitoring_orchestrator import EnhancedMonitoringOrchestrator
 
-# Initialize monitoring system
-config = {
-    "enhanced_monitoring": {
-        "enable_monitoring": True,
-        "export_interval_days": 30
-    }
-}
+# Load configuration
+with open('enhanced_monitoring_config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
 
-orchestrator = await create_monitoring_orchestrator(config)
+# Initialize orchestrator
+orchestrator = EnhancedMonitoringOrchestrator(config)
 
-# Record a trade decision
-from src.monitoring import TradeDecision, TradeContext, EnsembleDecision
-
-context = TradeContext(
-    exchange="binance",
-    token="BTCUSDT",
-    timestamp=datetime.now(),
-    price=45000.0,
-    volume=0.1,
-    timeframe="1h"
-)
-
-ensemble_decision = EnsembleDecision(
-    ensemble_id="main_ensemble",
-    final_prediction=0.75,
-    final_confidence=0.85,
-    model_weights={"model_1": 0.6, "model_2": 0.4},
-    model_decisions=[],
-    voting_mechanism="weighted_average",
-    consensus_score=0.8,
-    disagreement_level=0.15
-)
-
-trade_decision = TradeDecision(
-    decision_id="trade_001",
-    context=context,
-    trading_mode=TradingMode.PAPER,
-    timestamp=datetime.now(),
-    trading_indicators=[],
-    overall_confidence=0.82,
-    overall_risk_score=0.18,
+# Record a comprehensive trade decision
+decision = await orchestrator.record_comprehensive_decision(
+    context=trade_context,
+    trading_mode=TradingMode.LIVE,
+    trading_indicators=trading_indicators,
     ensemble_decision=ensemble_decision,
+    individual_model_decisions=model_decisions,
+    model_indicator_weights=indicator_weights,
     action="buy",
-    position_size=0.1
+    position_size=0.1,
+    stop_loss=100.0,
+    take_profit=110.0
 )
 
-await orchestrator.record_trade_decision(trade_decision)
+# Export monitoring data
+await orchestrator.export_monthly_report()
+await orchestrator.export_daily_ongoing_csv()
 ```
 
 ### Trading System Integration
 
 ```python
-# Integrate with existing trading systems
-await orchestrator.integrate_trading_system(backtesting_system, "backtesting")
-await orchestrator.integrate_trading_system(paper_trading_system, "paper_trading")
-await orchestrator.integrate_trading_system(live_trading_system, "live_trading")
-
-# All trades will now be automatically monitored
-```
-
-### Ensemble Weight Updates
-
-```python
-# Update ensemble weights based on performance
-model_performances = {
-    "model_1": {"accuracy": 0.78, "win_rate": 0.72},
-    "model_2": {"accuracy": 0.75, "win_rate": 0.68}
-}
-
-current_weights = {"model_1": 0.6, "model_2": 0.4}
-new_weights = await orchestrator.update_ensemble_weights(
-    "main_ensemble", model_performances, current_weights
+# Integrate with trading systems
+await orchestrator.integrate_trading_systems(
+    backtesting_system=backtesting_system,
+    paper_trading_system=paper_trading_system,
+    live_trading_system=live_trading_system
 )
 ```
 
-### Getting Analysis
+### SHAP/LIME Explanations
 
 ```python
-# Get comprehensive ensemble analysis
-analysis = await orchestrator.get_ensemble_analysis("main_ensemble")
+from src.monitoring.shap_lime_integration import ModelExplanationRequest
 
-# Get monitoring statistics
-stats = orchestrator.get_comprehensive_stats()
+# Create explanation request
+request = ModelExplanationRequest(
+    model_id="hmm_model",
+    model_type="hmm",
+    features=np.array([100.0]),
+    feature_names=['price'],
+    prediction=0.7,
+    model=hmm_model,
+    training_data=training_data
+)
 
-# Force export monitoring data
-await orchestrator.export_monitoring_data()
+# Generate explanations
+explanations = await explainability_integrator.explain_model_prediction(request)
 ```
 
-## CSV Export Structure
+## Data Structures
 
-The system generates comprehensive CSV reports with the following structure:
+### ComprehensiveTradeDecision
 
-### Main Files
-- `trade_decisions_YYYYMMDD_HHMMSS_main.csv` - Complete trade decisions
-- `model_performances_YYYYMMDD_HHMMSS_main.csv` - Model performance metrics
-- `ensemble_performances_YYYYMMDD_HHMMSS_main.csv` - Ensemble performance metrics
+```python
+@dataclass
+class ComprehensiveTradeDecision:
+    decision_id: str
+    timestamp: datetime
+    trading_mode: TradingMode
+    context: TradeContext
+    trading_indicators: List[TradingIndicator]
+    overall_confidence: float
+    overall_risk_score: float
+    ensemble_decision: EnsembleDecision
+    individual_model_decisions: List[MLModelDecision]
+    model_indicator_weights: Dict[str, Dict[str, float]]
+    shap_explanations: Optional[Dict[str, Any]]
+    lime_explanations: Optional[Dict[str, Any]]
+    action: str
+    position_size: float
+    stop_loss: Optional[float]
+    take_profit: Optional[float]
+    execution_time_ms: float
+    success_metrics: Optional[Dict[str, float]]
+```
 
-### Breakdown Files
-- `trade_decisions_YYYYMMDD_HHMMSS_trading_indicators.csv` - Trading indicators breakdown
-- `trade_decisions_YYYYMMDD_HHMMSS_ensemble_breakdown.csv` - Ensemble decision breakdown
-- `trade_decisions_YYYYMMDD_HHMMSS_model_breakdown.csv` - Individual model breakdown
-- `trade_decisions_YYYYMMDD_HHMMSS_context_analysis.csv` - Market context analysis
+### MarketConditions
 
-### Summary Files
-- `trade_decisions_YYYYMMDD_HHMMSS_summary.csv` - Summary statistics
-- `model_performances_YYYYMMDD_HHMMSS_summary.csv` - Model performance summary
-- `monitoring_summary_YYYYMMDD_HHMMSS.json` - Overall monitoring summary
+```python
+@dataclass
+class MarketConditions:
+    current_price: float
+    price_change_1h: float
+    price_change_24h: float
+    price_change_7d: float
+    current_volume: float
+    volume_change_1h: float
+    volume_avg_24h: float
+    volatility_1h: float
+    volatility_24h: float
+    atr_14: float
+    rsi_14: float
+    macd_signal: float
+    macd_histogram: float
+    bollinger_position: float
+    adx_14: float
+    bid_ask_spread: float
+    order_book_imbalance: float
+    market_depth: float
+```
 
-## Key Features
+### HMMRegimeContext
 
-### 1. Comprehensive Context Capture
-- Exchange, token, timestamp, price, volume
-- Timeframe and market regime
-- Market conditions (volatility, trend, volume profile)
+```python
+@dataclass
+class HMMRegimeContext:
+    regime_id: str
+    regime_name: str
+    regime_probability: float
+    regime_transition_probability: float
+    regime_duration: int
+    regime_stability_score: float
+    next_regime_probabilities: Dict[str, float]
+    regime_volatility: float
+    regime_trend_strength: float
+    regime_momentum: float
+    regime_win_rate: float
+    regime_avg_return: float
+    regime_sharpe_ratio: float
+```
 
-### 2. Trading Indicators Tracking
-- RSI, MACD, Bollinger Bands, Moving Averages
-- Volume profile, Support/Resistance levels
-- Momentum and volatility indicators
-- Each with weight, confidence, and risk scores
+## Export Formats
 
-### 3. ML Model Decision Details
-- Individual model predictions and confidence
-- Feature importance scores
-- SHAP values for feature contributions
-- LIME explanations for local interpretability
-- Processing time and model version tracking
+### Monthly Report Structure
 
-### 4. Ensemble Analysis
-- Model weight distribution and stability
-- Consensus and disagreement metrics
-- Performance-based weight optimization
-- Model diversity and contribution analysis
+```
+enhanced_monitoring_exports/
+├── monthly_reports_2024-01/
+│   ├── comprehensive_decisions_2024-01.csv
+│   ├── daily_summaries_2024-01.csv
+│   ├── model_performance_2024-01.csv
+│   ├── ensemble_analysis_2024-01.csv
+│   └── monthly_report_summary_2024-01.json
+└── ongoing_daily_metrics.csv
+```
 
-### 5. Performance Monitoring
-- Accuracy, precision, recall, F1-score
-- Trading performance (win rate, profit factor, Sharpe ratio)
-- Model stability and drift detection
-- Feature importance stability tracking
+### Daily Ongoing CSV Columns
 
-### 6. Automated Reporting
-- Monthly CSV exports with detailed breakdowns
-- Summary statistics and trend analysis
-- Performance comparisons across models and ensembles
-- Export metadata and compression options
-
-## Integration Points
-
-### Backtesting Integration
-- Hooks into trade execution methods
-- Captures prediction contexts
-- Records performance metrics
-- Tracks model behavior over time
-
-### Paper Trading Integration
-- Monitors simulated trades
-- Records decision-making process
-- Tracks performance without risk
-- Validates model behavior
-
-### Live Trading Integration
-- Captures real trade decisions
-- Monitors actual performance
-- Tracks model reliability
-- Provides real-time insights
-
-## Dependencies
-
-### Required Libraries
-- `pandas` - Data manipulation and CSV export
-- `numpy` - Numerical computations
-- `asyncio` - Asynchronous operations
-- `dataclasses` - Data structure definitions
-- `pathlib` - File system operations
-
-### Optional Libraries
-- `shap` - SHAP explanations (install with `pip install shap`)
-- `lime` - LIME explanations (install with `pip install lime`)
+- `date`: Trading date
+- `exchange`: Exchange name
+- `asset`: Trading asset
+- `total_trades`: Total number of trades
+- `long_trades`: Number of long trades
+- `short_trades`: Number of short trades
+- `hold_trades`: Number of hold decisions
+- `dominant_hmm_clusters`: Dominant HMM regime
+- `sharpe_ratio`: Daily Sharpe ratio
+- `pnl_absolute`: Absolute PnL
+- `pnl_percentage`: Percentage PnL
+- `win_rate`: Win rate
+- `profit_factor`: Profit factor
+- `max_drawdown`: Maximum drawdown
+- `avg_confidence`: Average confidence
+- `avg_risk_score`: Average risk score
+- `model_accuracy_avg`: Average model accuracy
+- `ensemble_consensus_avg`: Average ensemble consensus
 
 ## Performance Considerations
 
 ### Memory Management
-- Configurable memory limits for decision storage
-- Automatic cleanup of old data
+- Configurable memory limits for in-memory storage
+- Automatic cleanup of old data based on retention policy
 - Efficient data structures for large-scale monitoring
 
-### Export Optimization
-- Configurable export intervals
-- Compression options for large datasets
-- Batch processing for efficient I/O
+### Processing Speed
+- Asynchronous processing for non-blocking operations
+- Caching of model explainers for faster explanations
+- Batch processing for export operations
 
-### Caching
-- Explanation caching to avoid recomputation
-- Model performance caching
-- Configurable cache sizes
+### Scalability
+- Modular architecture for easy scaling
+- Configurable export frequencies
+- Optional database storage for large datasets
 
-## Error Handling
+## Monitoring and Alerts
 
-The system includes comprehensive error handling:
-- Graceful degradation when SHAP/LIME unavailable
-- Fallback mechanisms for missing data
-- Detailed logging for debugging
-- Recovery from component failures
+### Built-in Monitoring
+- Real-time performance metrics
+- Memory usage tracking
+- Processing time monitoring
+- Error rate tracking
 
-## Monitoring and Debugging
+### Alerting (Optional)
+- Risk threshold breaches
+- Model performance degradation
+- System health issues
+- Export failures
+
+## Examples
+
+### Complete Example
+
+See `example_enhanced_monitoring_usage.py` for a comprehensive example that demonstrates:
+
+1. System initialization and configuration
+2. Mock trading system integration
+3. Trade decision recording
+4. SHAP/LIME explanation generation
+5. Data export and reporting
+6. Statistics and monitoring
+
+### Backtesting Integration
+
+```python
+# Integrate with backtesting system
+await orchestrator.integrate_trading_systems(backtesting_system=backtesting_system)
+
+# Backtesting system will automatically capture all decisions
+# and record them in the monitoring system
+```
+
+### Paper Trading Integration
+
+```python
+# Integrate with paper trading system
+await orchestrator.integrate_trading_systems(paper_trading_system=paper_trading_system)
+
+# Paper trading decisions are automatically monitored
+# with real-time updates to daily summaries
+```
+
+### Live Trading Integration
+
+```python
+# Integrate with live trading system
+await orchestrator.integrate_trading_systems(live_trading_system=live_trading_system)
+
+# Live trading decisions are monitored with risk alerts
+# and real-time performance tracking
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **SHAP/LIME not available**: Install required dependencies
+2. **Memory issues**: Reduce `max_decisions_in_memory` in config
+3. **Export failures**: Check export directory permissions
+4. **Performance issues**: Adjust export frequencies and cleanup intervals
+
+### Debug Mode
+
+```yaml
+development:
+  enable_debug_mode: true
+  enable_profiling: true
+```
 
 ### Logging
-- Comprehensive logging at all levels
-- Performance metrics tracking
-- Error reporting and debugging information
 
-### Statistics
-- Real-time monitoring statistics
-- Component health monitoring
-- Performance trend analysis
+```yaml
+logging:
+  log_level: "DEBUG"
+  enable_console_logging: true
+  enable_file_logging: true
+```
 
-### Debugging Tools
-- Export functionality for data analysis
-- Comprehensive statistics reporting
-- Component status monitoring
+## Contributing
 
-## Future Enhancements
+1. Follow the existing code structure and patterns
+2. Add comprehensive tests for new features
+3. Update documentation for any API changes
+4. Ensure backward compatibility
 
-### Planned Features
-- Real-time dashboard integration
-- Advanced visualization tools
-- Machine learning-based anomaly detection
-- Automated model retraining triggers
-- Integration with external monitoring systems
+## License
 
-### Extensibility
-- Plugin architecture for custom metrics
-- Custom explanation methods
-- Flexible export formats
-- Integration with external databases
+This enhanced monitoring system is part of the Ares trading framework and follows the same licensing terms.
 
-## Support and Maintenance
+## Support
 
-### Configuration Updates
-- Hot-reloadable configuration
-- Runtime parameter adjustments
-- Component enable/disable options
-
-### Data Management
-- Automated cleanup of old data
-- Backup and restore functionality
-- Data migration tools
-
-### Performance Tuning
-- Configurable performance parameters
-- Memory usage optimization
-- Export scheduling optimization
-
-This enhanced monitoring system provides a comprehensive solution for tracking and analyzing ML model performance across all trading modes, with detailed explanations and automated reporting capabilities.
+For issues and questions:
+1. Check the troubleshooting section
+2. Review the example usage files
+3. Check the configuration options
+4. Create an issue with detailed information about your setup

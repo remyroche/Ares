@@ -884,7 +884,10 @@ class HMMLMGeneralistTrainingStep:
 
             # Purged time-based split with embargo to avoid leakage across adjacent sequences
             n = len(X)
-            embargo = max(1, int(0.01 * n))
+            # Increased embargo to prevent data leakage - minimum 5% or 10 samples
+            embargo_percentage = self.config.get('embargo_percentage', 0.05)  # 5% default
+            min_embargo_samples = self.config.get('min_embargo_samples', 10)
+            embargo = max(min_embargo_samples, int(embargo_percentage * n))
             split_idx = int(0.8 * n)
             train_end = max(0, split_idx - embargo)
 

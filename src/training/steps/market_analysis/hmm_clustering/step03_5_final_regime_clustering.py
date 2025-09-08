@@ -27,10 +27,103 @@ from src.core.decorators import (
     handles_errors,
     validates,
     log_execution_time,
-    traced
+    traced,
+    error_boundary,
+    converts_errors,
+    retry,
+    timeout,
+    circuit_breaker,
+    fallback,
+    cached,
+    memoize,
+    monitor_function_calls,
+    handle_errors_enhanced
+)
+from src.core.errors import (
+    AppError,
+    ValidationError,
+    DataIntegrityError,
+    BusinessRuleError,
+    ErrorCode,
+    ErrorMapper,
+    error_mapper
 )
 from src.utils.logger import system_logger
 from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
+from src.utils.common_operations import (
+    safe_mean,
+    safe_std,
+    safe_divide,
+    safe_fillna,
+    safe_rolling,
+    safe_copy,
+    safe_deepcopy,
+    safe_resample,
+    align_dataframes,
+    ensure_directory,
+    safe_file_exists,
+    safe_json_dump,
+    safe_json_load,
+    safe_read_parquet,
+    safe_to_parquet,
+    list_parquet_files,
+    generate_hash,
+    generate_cache_key,
+    validate_dataframe,
+    validate_numeric_range,
+    validate_dataframe_schema,
+    validate_data_quality,
+    optimize_dataframe_dtypes,
+    timed_operation,
+    format_bytes,
+    chunked_iterable,
+    parallel_map,
+    safe_log_metric,
+    safe_log_params,
+    safe_log_artifact,
+    get_current_datetime,
+    get_today,
+    format_datetime,
+    parse_datetime,
+    create_empty_dataframe,
+    safe_append,
+    safe_extend,
+    safe_dict_get,
+    safe_dict_items,
+    safe_lower,
+    safe_upper,
+    safe_join,
+    get_logger,
+    setup_basic_logging,
+    create_argument_parser,
+    add_common_arguments,
+    safe_exception_handler,
+    safe_float,
+    safe_int,
+    suggest_float_uniform,
+    suggest_int_uniform,
+    standardize_price_action_probabilities
+)
+from src.utils.math_validation import (
+    MathValidationError,
+    safe_divide as math_safe_divide,
+    safe_log,
+    safe_sqrt,
+    safe_power,
+    validate_finite,
+    validate_positive,
+    validate_range,
+    safe_kelly_calculation,
+    safe_weighted_average,
+    safe_percentage_change,
+    validate_correlation_matrix,
+    safe_matrix_inverse,
+    math_safe
+)
+from src.utils.parquet_utils import (
+    ParquetUtils,
+    get_parquet_utils
+)
 
 # Enhanced optimization imports
 from src.utils.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
@@ -163,22 +256,23 @@ class FastFailValidator:
         self.logger = logger
     
     def validate_data_quality_fast_fail(self, df: pd.DataFrame) -> bool:
-        """Fast-fail data quality validation with specific timestamp criteria."""
+        """Fast-fail data quality validation with specific timestamp criteria using common operations."""
         # Check data size
         if len(df) < 100:
-            raise ValueError(f"Insufficient data: {len(df)} rows (minimum: 100)")
+            raise ValidationError(f"Insufficient data: {len(df)} rows (minimum: 100)", error_code=ErrorCode.INVALID_INPUT)
         
-        # Check for required columns
+        # Check for required columns using common operations
         required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            raise ValueError(f"Missing required columns: {missing_cols}")
+        is_valid, errors = validate_dataframe_schema(df, required_cols)
+        if not is_valid:
+            raise DataIntegrityError(f"Schema validation failed: {errors}", error_code=ErrorCode.DATA_INTEGRITY_VIOLATION)
         
-        # Check for data quality issues
-        if df['close'].isna().sum() > len(df) * 0.1:  # More than 10% NaN
-            raise ValueError("Too many missing price values")
+        # Use common operations for data quality validation
+        quality_report = validate_data_quality(df, max_nan_ratio=0.1, check_duplicates=True)
+        if not quality_report['is_valid']:
+            raise DataIntegrityError(f"Data quality issues: {quality_report['issues']}", error_code=ErrorCode.DATA_QUALITY_ISSUE)
         
-        # Check for price anomalies
+        # Check for price anomalies using safe operations
         price_changes = df['close'].pct_change()
         extreme_changes = (abs(price_changes) > 0.5).sum()  # >50% price changes
         if extreme_changes > len(df) * 0.01:  # More than 1% extreme changes
@@ -437,6 +531,10 @@ class FinalRegimeClusteringStep:
         # Initialize feature caching
         self.feature_cache = FeatureCache(cache_size_mb=500, logger=self.logger)
         
+        # Initialize utility modules
+        self.parquet_utils = get_parquet_utils()
+        self.math_validator = MathValidationError
+        
         # Initialize error recovery mechanisms
         self.circuit_breakers = {
             'hmm_training': CircuitBreaker(failure_threshold=3, recovery_timeout=30),
@@ -672,6 +770,14 @@ class FinalRegimeClusteringStep:
         exceptions=(Exception,),
         context="regime_clustering_execution"
     )
+    @handles_errors(
+        exceptions=(Exception,),
+        context="FinalRegimeClusteringStep.execute",
+        default_return=False
+    )
+    @log_execution_time
+    @traced
+    @monitor_function_calls
     async def execute(self) -> bool:
         """Execute the final regime clustering step."""
         # Get symbol, exchange, and timeframe from config
@@ -824,6 +930,9 @@ class FinalRegimeClusteringStep:
             }
         }
 
+    @retry(max_attempts=3, delay=1.0, backoff=2.0)
+    @timeout(seconds=30)
+    @fallback(default_return=None)
     async def _load_data_with_optimization(self, data_id: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load data using optimized data manager."""
         try:
@@ -832,11 +941,13 @@ class FinalRegimeClusteringStep:
                 self.logger.info(f"📋 Loading cached data: {data_id}")
                 return self.data_manager.load_data(data_id)
             
-            # Load from file with optimization
+            # Load from file with optimization using parquet utils
             file_path = Path(data_dir) / f"{data_id}.parquet"
             
-            if not file_path.exists():
-                raise FileNotFoundError(f"Data file not found: {file_path}")
+            # Validate parquet file first
+            validation_result = self.parquet_utils.validate_parquet_file(str(file_path))
+            if not validation_result["valid"]:
+                raise FileNotFoundError(f"Invalid parquet file: {file_path}, error: {validation_result.get('error', 'Unknown error')}")
             
             # Load with memory-efficient chunking if needed
             file_size_mb = file_path.stat().st_size / (1024**2)
@@ -845,7 +956,11 @@ class FinalRegimeClusteringStep:
                 self.logger.info(f"📦 Large file detected ({file_size_mb:.1f}MB), using chunked loading")
                 df = self.data_manager.load_large_file(file_path, chunk_size=50000)
             else:
-                df = standardized_parquet_handler.read_parquet_standardized(file_path)
+                # Use parquet utils for safe loading
+                df = self.parquet_utils.safe_read_parquet(str(file_path))
+                if df is None:
+                    # Fallback to standardized handler
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
             
             # Cache the data for future use
             if df is not None and not df.empty:
@@ -946,11 +1061,19 @@ class FinalRegimeClusteringStep:
         """Create volatility-based features in parallel."""
         features = pd.DataFrame()
 
-        # Volatility features with optimized parameters
+        # Volatility features with optimized parameters using safe operations
         volatility_window = self.optimized_params.get("volatility_window", 20)
-        features["volatility"] = df["close"].pct_change().rolling(window=volatility_window).std()
-        features["volatility_short"] = df["close"].pct_change().rolling(window=10).std()
-        features["volatility_long"] = df["close"].pct_change().rolling(window=50).std()
+        price_changes = df["close"].pct_change()
+        
+        # Use safe rolling and std operations
+        rolling_vol = safe_rolling(price_changes, window=volatility_window)
+        features["volatility"] = rolling_vol.std() if rolling_vol is not None else pd.Series(index=df.index, dtype=float)
+        
+        rolling_vol_short = safe_rolling(price_changes, window=10)
+        features["volatility_short"] = rolling_vol_short.std() if rolling_vol_short is not None else pd.Series(index=df.index, dtype=float)
+        
+        rolling_vol_long = safe_rolling(price_changes, window=50)
+        features["volatility_long"] = rolling_vol_long.std() if rolling_vol_long is not None else pd.Series(index=df.index, dtype=float)
 
         return features
 
@@ -1097,6 +1220,8 @@ class FinalRegimeClusteringStep:
         self.logger.info(f"✅ Features prepared with vectorized operations: {len(features.columns)} features")
         return features
     
+    @cached
+    @memoize
     def _calculate_features_vectorized(self, df: pd.DataFrame, params: dict) -> pd.DataFrame:
         """Vectorized feature calculation for 3-5x performance improvement."""
         self.logger.info("⚡ Using vectorized feature calculation...")
@@ -2573,30 +2698,24 @@ class FinalRegimeClusteringStep:
         try:
             self.logger.info("💾 Saving final regime clustering results...")
             
-            # Create results directory
-            results_dir = Path("data/regime_clustering")
-            results_dir.mkdir(parents=True, exist_ok=True)
+            # Create results directory using common operations
+            results_dir = ensure_directory("data/regime_clustering")
+            reports_dir = ensure_directory("reports/regime_clustering")
             
-            # Create reports directory
-            reports_dir = Path("reports/regime_clustering")
-            reports_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Save clustering results
+            # Save clustering results using safe JSON operations
             clustering_file = results_dir / "final_clustering_results.json"
-            with open(clustering_file, 'w') as f:
-                # Convert numpy arrays to lists for JSON serialization
-                serializable_results = clustering_results.copy()
-                if "cluster_labels" in serializable_results:
-                    serializable_results["cluster_labels"] = serializable_results["cluster_labels"].tolist()
-                if "state_sequence" in serializable_results.get("hmm_results", {}):
-                    serializable_results["hmm_results"]["state_sequence"] = serializable_results["hmm_results"]["state_sequence"].tolist()
-                
-                json.dump(serializable_results, f, indent=2, default=str)
+            # Convert numpy arrays to lists for JSON serialization
+            serializable_results = clustering_results.copy()
+            if "cluster_labels" in serializable_results:
+                serializable_results["cluster_labels"] = serializable_results["cluster_labels"].tolist()
+            if "state_sequence" in serializable_results.get("hmm_results", {}):
+                serializable_results["hmm_results"]["state_sequence"] = serializable_results["hmm_results"]["state_sequence"].tolist()
             
-            # Save regime analysis
+            safe_json_dump(serializable_results, clustering_file, indent=2, default=str)
+            
+            # Save regime analysis using safe JSON operations
             analysis_file = results_dir / "regime_analysis_results.json"
-            with open(analysis_file, 'w') as f:
-                json.dump(regime_analysis, f, indent=2, default=str)
+            safe_json_dump(regime_analysis, analysis_file, indent=2, default=str)
             
             # Import centralized reporting system
             from src.training.reports import save_training_report
@@ -2672,11 +2791,15 @@ class FinalRegimeClusteringStep:
         context="calculate_rsi"
     )
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index."""
+        """Calculate Relative Strength Index using safe mathematical operations."""
         delta = prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-        rs = gain / loss
+        
+        # Use safe division to prevent division by zero
+        rs = gain.apply(lambda x: math_safe_divide(x, loss.iloc[gain.index.get_loc(x.name)] if x.name in loss.index else 1.0, default=1.0))
+        
+        # Use safe division for RSI calculation
         rsi = 100 - (100 / (1 + rs))
         return rsi
 

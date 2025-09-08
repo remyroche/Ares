@@ -79,9 +79,9 @@ try:
 except ImportError:
     ENHANCED_REPORTING_AVAILABLE = False
 
-# Import financial metrics logger
+# Import financial metrics logger directly
 try:
-    from .step05_financial_logging import Step05FinancialLogger
+    from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
     FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False
@@ -132,6 +132,13 @@ class LabelingStep:
 
         # Initialize financial metrics logger
         self.financial_logger = None
+        if FINANCIAL_LOGGING_AVAILABLE:
+            try:
+                self.financial_logger = get_financial_metrics_logger()
+                self.logger.info('✅ Financial metrics logger initialized')
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to initialize financial logger: {e}')
+                self.financial_logger = None
 
     def _init_optimization_components(self) -> None:
         """Initialize M1 optimization components."""
@@ -715,14 +722,9 @@ class LabelingStep:
             data_dir = training_input.get('data_dir', 'data')
             force_rerun = training_input.get('force_rerun', False)
 
-            # Initialize financial logger if available
-            if FINANCIAL_LOGGING_AVAILABLE and self.financial_logger is None:
-                try:
-                    self.financial_logger = Step05FinancialLogger(symbol, exchange, timeframe)
-                    self.logger.info('✅ Financial metrics logger initialized')
-                except Exception as e:
-                    self.logger.warning(f'⚠️ Failed to initialize financial logger: {e}')
-                    self.financial_logger = None
+            # Log step start if financial logger is available
+            if FINANCIAL_LOGGING_AVAILABLE and self.financial_logger is not None:
+                self.financial_logger.log_step_start('step05_labeling', symbol, exchange, timeframe)
 
             # Get data from pipeline state
             data = pipeline_state.get('dataframe') or pipeline_state.get('validated_data')
@@ -775,30 +777,94 @@ class LabelingStep:
                         # Calculate label statistics
                         label_stats = self._calculate_label_statistics(labeled_data)
                         
-                        # Prepare execution data
-                        execution_data = {
-                            'execution_time': execution_time,
-                            'optimization_metrics': result.get('optimization_metrics', {}),
-                            'optimizations_used': result.get('optimizations_used', False)
-                        }
-                        
-                        # Prepare labeling results
-                        labeling_results = {
-                            'label_stats': label_stats,
-                            'success': success,
-                            'step_name': 'step05_labeling'
-                        }
-                        
-                        # Log financial metrics
-                        self.financial_logger.log_step_execution(
-                            labeled_data=labeled_data,
-                            label_stats=label_stats,
-                            execution_data=execution_data,
-                            labeling_results=labeling_results
+                        # Log individual financial metrics
+                        self.financial_logger.log_financial_metric(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            metric_name='total_samples',
+                            metric_value=float(label_stats.get('total_samples', 0)),
+                            metric_type='performance',
+                            step_name='step05_labeling'
                         )
+                        
+                        self.financial_logger.log_financial_metric(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            metric_name='buy_signals',
+                            metric_value=float(label_stats.get('buy_signals', 0)),
+                            metric_type='performance',
+                            step_name='step05_labeling'
+                        )
+                        
+                        self.financial_logger.log_financial_metric(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            metric_name='sell_signals',
+                            metric_value=float(label_stats.get('sell_signals', 0)),
+                            metric_type='performance',
+                            step_name='step05_labeling'
+                        )
+                        
+                        self.financial_logger.log_financial_metric(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            metric_name='avg_confidence',
+                            metric_value=float(label_stats.get('avg_confidence', 0)),
+                            metric_type='quality',
+                            step_name='step05_labeling'
+                        )
+                        
+                        # Log execution metrics
+                        self.financial_logger.log_financial_metric(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            metric_name='execution_time',
+                            metric_value=execution_time,
+                            metric_type='performance',
+                            step_name='step05_labeling'
+                        )
+                        
+                        # Log optimization metrics if available
+                        if result.get('optimizations_used', False):
+                            opt_metrics = result.get('optimization_metrics', {})
+                            if 'memory_usage_gb' in opt_metrics:
+                                self.financial_logger.log_financial_metric(
+                                    symbol=symbol,
+                                    exchange=exchange,
+                                    timeframe=timeframe,
+                                    metric_name='memory_usage_gb',
+                                    metric_value=float(opt_metrics['memory_usage_gb']),
+                                    metric_type='performance',
+                                    step_name='step05_labeling'
+                                )
+                        
+                        # Log file paths for generated data
+                        labeled_data_path = f"data/training/labeled_data/{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
+                        self.financial_logger.log_financial_metric(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            metric_name='labeled_data_path',
+                            metric_value=0.0,  # File path doesn't have a numeric value
+                            metric_type='file_path',
+                            step_name='step05_labeling',
+                            additional_data={'file_path': labeled_data_path}
+                        )
+                        
+                        # Log step end
+                        self.financial_logger.log_step_end('step05_labeling', symbol, exchange, timeframe, success=True)
+                        
                         self.logger.info('✅ Financial metrics logged successfully')
                 except Exception as e:
                     self.logger.warning(f'⚠️ Failed to log financial metrics: {e}')
+                    # Log step end with error
+                    if self.financial_logger is not None:
+                        self.financial_logger.log_step_end('step05_labeling', symbol, exchange, timeframe, success=False, error_message=str(e))
 
             self.logger.info(f"🏷️ Enhanced labeling step completed in {execution_time:.2f}s")
             return result

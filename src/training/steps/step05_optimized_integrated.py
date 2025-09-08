@@ -230,16 +230,22 @@ class Step05OptimizedIntegrated:
                                               data_dir: str, force_rerun: bool) -> Optional[pd.DataFrame]:
         """Load and validate data with optimizations."""
         try:
-            # Fast fail file validation
+            # Fast fail file validation using safe file operations
             triple_barrier_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
+            
+            # Use safe file existence check
+            if not safe_file_exists(triple_barrier_path):
+                self.logger.error(f"❌ Triple barrier file does not exist: {triple_barrier_path}")
+                return None
             
             if not self.optimized_validator.fast_fail_validation(None, triple_barrier_path):
                 return None
             
             self.logger.info(f'📁 Loading data from {triple_barrier_path}')
             
-            # Check if we should use streaming processing
-            file_size_mb = triple_barrier_path.stat().st_size / (1024 * 1024)
+            # Check if we should use streaming processing using safe math operations
+            file_size_bytes = triple_barrier_path.stat().st_size
+            file_size_mb = safe_divide(file_size_bytes, 1024 * 1024, 0.0)
             use_streaming = file_size_mb > 100  # Use streaming for files > 100MB
             
             if use_streaming:
@@ -451,29 +457,30 @@ class Step05OptimizedIntegrated:
             position_sizes = self.optimized_financial.calculate_position_sizing_vectorized(labeled_data)
             self.performance_metrics['vectorized_operations'] += 1
             
+            # Use safe math operations for financial analysis
             financial_analysis = {
                 'trading_performance': trading_performance,
                 'risk_metrics': risk_metrics,
                 'transaction_costs': {
-                    'total_costs': transaction_costs.sum(),
-                    'avg_cost_per_trade': transaction_costs.mean(),
+                    'total_costs': validate_finite(transaction_costs.sum(), "total_costs"),
+                    'avg_cost_per_trade': validate_finite(transaction_costs.mean(), "avg_cost_per_trade"),
                     'cost_distribution': {
-                        'min': transaction_costs.min(),
-                        'max': transaction_costs.max(),
-                        'median': transaction_costs.median(),
-                        'std': transaction_costs.std()
+                        'min': validate_finite(transaction_costs.min(), "cost_min"),
+                        'max': validate_finite(transaction_costs.max(), "cost_max"),
+                        'median': validate_finite(transaction_costs.median(), "cost_median"),
+                        'std': validate_finite(transaction_costs.std(), "cost_std")
                     }
                 },
                 'position_sizing': {
-                    'avg_position_size': position_sizes.mean(),
+                    'avg_position_size': validate_finite(position_sizes.mean(), "avg_position_size"),
                     'position_size_distribution': {
-                        'min': position_sizes.min(),
-                        'max': position_sizes.max(),
-                        'median': position_sizes.median(),
-                        'std': position_sizes.std()
+                        'min': validate_finite(position_sizes.min(), "position_min"),
+                        'max': validate_finite(position_sizes.max(), "position_max"),
+                        'median': validate_finite(position_sizes.median(), "position_median"),
+                        'std': validate_finite(position_sizes.std(), "position_std")
                     }
                 },
-                'vectorization_efficiency': trading_performance.vectorization_efficiency
+                'vectorization_efficiency': validate_finite(trading_performance.vectorization_efficiency, "vectorization_efficiency")
             }
             
             self.logger.info(f"✅ Vectorized financial analysis completed")

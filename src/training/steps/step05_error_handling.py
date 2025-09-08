@@ -23,6 +23,9 @@ import time
 
 logger = system_logger.getChild('Step05ErrorHandling')
 
+# Use core error types instead of local enums
+from src.core.errors import AppError, ValidationError, DataIntegrityError, BusinessRuleError, NotFoundError, ConflictError, RateLimitError, TimeoutError, ServiceUnavailableError, ErrorCode
+
 class ErrorSeverity(Enum):
     """Error severity levels."""
     LOW = "low"

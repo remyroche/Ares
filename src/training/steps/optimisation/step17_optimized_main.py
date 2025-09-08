@@ -1,5 +1,5 @@
 """
-Optimized Step17 Main Implementation
+Optimized Step17 Main Implementation with Utility Integration
 
 This is the main optimized step17 class that integrates all the improvements:
 - Proper variable initialization and caching
@@ -10,6 +10,7 @@ This is the main optimized step17 class that integrates all the improvements:
 - Advanced optimization strategies
 - Intelligent parameter grouping
 - Thread-safe configuration updates
+- Integration with utility modules
 """
 
 import asyncio
@@ -24,6 +25,39 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import optuna
 
+# Import utility modules
+from src.utils.common_operations import (
+    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+    safe_mean, safe_std, safe_float, safe_int, get_current_datetime,
+    format_datetime, safe_dict_get, safe_dict_items, safe_append,
+    safe_extend, get_logger, setup_basic_logging, generate_hash,
+    generate_cache_key, safe_deepcopy, safe_copy, validate_dataframe,
+    validate_numeric_range, safe_sleep, safe_gather, create_async_task,
+    timed_operation, format_bytes, chunked_iterable, parallel_map
+)
+
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, validate_correlation_matrix,
+    safe_matrix_inverse, math_safe, MathValidationError
+)
+
+from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+
+# Import core decorators and errors
+from src.core.decorators import (
+    handles_errors, error_boundary, retry, timeout, circuit_breaker,
+    log_call, log_execution_time, traced, cached, memoize,
+    validate_dataframe as validate_df_decorator, validates
+)
+
+from src.core.errors import (
+    AppError, ValidationError, NotFoundError, TimeoutError,
+    ServiceUnavailableError, BusinessRuleError, DataIntegrityError,
+    ErrorCode, ErrorMapper, error_mapper
+)
+
 from src.utils.comprehensive_function_logger import (
     log_step_functions, log_important_calls, log_all_calls
 )
@@ -31,8 +65,8 @@ from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
 
-# Import our optimized components
-from .step17_optimized_implementation import (
+# Import our optimized components with utility integration
+from .step17_optimized_with_utils import (
     ThreadSafeConfigManager, ParameterResultCache, AdvancedOptimizationStrategies,
     IntelligentParameterGrouper, ResourceValidator, InputValidator, ResultValidator,
     ValidationResult, OptimizationMetrics, ParameterGroup,
@@ -46,9 +80,9 @@ class OptimizedStep17FinalParametersOptimization:
     @log_important_calls
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
-        self.logger = system_logger.getChild('OptimizedStep17')
+        self.logger = get_logger('OptimizedStep17')
         
-        # Initialize components
+        # Initialize components with utility integration
         self.config_manager = ThreadSafeConfigManager()
         self.parameter_cache = ParameterResultCache(max_size=10000)
         self.optimization_strategies = AdvancedOptimizationStrategies(self.logger)
@@ -56,6 +90,9 @@ class OptimizedStep17FinalParametersOptimization:
         self.resource_validator = ResourceValidator(self.logger)
         self.input_validator = InputValidator(self.logger)
         self.result_validator = ResultValidator(self.logger)
+        
+        # Initialize parquet utilities
+        self.parquet_utils = get_parquet_utils()
         
         # Initialize optimization state
         self.optimization_results = {}
@@ -69,11 +106,11 @@ class OptimizedStep17FinalParametersOptimization:
             cpu_usage=0.0
         )
         
-        # Initialize configuration
+        # Initialize configuration using utility functions
         self.optimizable_params = self._get_optimizable_parameters()
         self.search_spaces = self._get_search_spaces()
         
-        self.logger.info('✅ Optimized Step17 initialized with all improvements')
+        self.logger.info('✅ Optimized Step17 initialized with utility integration')
     
     @handles_errors(fallback=False)
     async def initialize(self) -> None:
@@ -118,10 +155,10 @@ class OptimizedStep17FinalParametersOptimization:
             if not pipeline_validation.is_valid:
                 raise Step17ValidationError(f"Pipeline validation failed: {pipeline_validation.errors}")
             
-            # Extract parameters with proper initialization
-            symbol = training_input.get('symbol', 'ETHUSDT')
-            exchange = training_input.get('exchange', 'BINANCE')
-            data_dir = training_input.get('data_dir', 'data/training')
+            # Extract parameters with proper initialization using utility functions
+            symbol = safe_dict_get(training_input, 'symbol', 'ETHUSDT')
+            exchange = safe_dict_get(training_input, 'exchange', 'BINANCE')
+            data_dir = safe_dict_get(training_input, 'data_dir', 'data/training')
             
             # Load calibration results with error handling
             calibration_results = await self._load_calibration_results(symbol, exchange, data_dir)
@@ -372,71 +409,73 @@ class OptimizedStep17FinalParametersOptimization:
             self.logger.error(f'Error evaluating configuration for {category}: {e}')
             return 0.0
     
+    @math_safe
     def _evaluate_confidence_params_optimized(
         self, 
         params: Dict[str, Any], 
         calibration_results: Dict[str, Any]
     ) -> float:
-        """Optimized confidence parameter evaluation."""
+        """Optimized confidence parameter evaluation using math validation utilities."""
         score = 0.0
         
         if 'base_entry_threshold' in params:
-            threshold = params['base_entry_threshold']
-            # More sophisticated scoring
-            if 0.6 <= threshold <= 0.8:
-                score += 0.4  # Higher weight for optimal range
-            elif 0.5 <= threshold <= 0.9:
-                score += 0.3
+            threshold = safe_float(params['base_entry_threshold'], 0.5)
+            # More sophisticated scoring using safe math operations
+            if validate_range(threshold, 0.6, 0.8, "base_entry_threshold"):
+                score = safe_divide(score + 0.4, 1.0, score)  # Higher weight for optimal range
+            elif validate_range(threshold, 0.5, 0.9, "base_entry_threshold"):
+                score = safe_divide(score + 0.3, 1.0, score)
             else:
-                score += 0.1
+                score = safe_divide(score + 0.1, 1.0, score)
         
         if 'analyst_confidence_threshold' in params and 'tactician_confidence_threshold' in params:
-            analyst_thresh = params['analyst_confidence_threshold']
-            tactician_thresh = params['tactician_confidence_threshold']
+            analyst_thresh = safe_float(params['analyst_confidence_threshold'], 0.5)
+            tactician_thresh = safe_float(params['tactician_confidence_threshold'], 0.5)
             
-            # Validate threshold ordering
+            # Validate threshold ordering using safe math operations
             if tactician_thresh > analyst_thresh:
-                score += 0.3
+                score = safe_divide(score + 0.3, 1.0, score)
                 # Bonus for optimal separation
                 separation = tactician_thresh - analyst_thresh
-                if 0.1 <= separation <= 0.2:
-                    score += 0.2
-                elif 0.05 <= separation <= 0.3:
-                    score += 0.1
+                if validate_range(separation, 0.1, 0.2, "threshold_separation"):
+                    score = safe_divide(score + 0.2, 1.0, score)
+                elif validate_range(separation, 0.05, 0.3, "threshold_separation"):
+                    score = safe_divide(score + 0.1, 1.0, score)
         
         return min(score, 1.0)  # Cap at 1.0
     
+    @math_safe
     def _evaluate_position_sizing_params_optimized(
         self, 
         params: Dict[str, Any], 
         calibration_results: Dict[str, Any]
     ) -> float:
-        """Optimized position sizing parameter evaluation."""
+        """Optimized position sizing parameter evaluation using math validation utilities."""
         score = 0.0
         
         if 'base_position_size' in params:
-            base_size = params['base_position_size']
-            # Risk-adjusted scoring
-            if 0.02 <= base_size <= 0.1:
-                score += 0.4
-            elif 0.01 <= base_size <= 0.15:
-                score += 0.3
+            base_size = safe_float(params['base_position_size'], 0.05)
+            # Risk-adjusted scoring using safe math operations
+            if validate_range(base_size, 0.02, 0.1, "base_position_size"):
+                score = safe_divide(score + 0.4, 1.0, score)
+            elif validate_range(base_size, 0.01, 0.15, "base_position_size"):
+                score = safe_divide(score + 0.3, 1.0, score)
             else:
-                score += 0.1
+                score = safe_divide(score + 0.1, 1.0, score)
         
         if 'max_position_size' in params:
-            max_size = params['max_position_size']
-            if 0.15 <= max_size <= 0.3:
-                score += 0.3
+            max_size = safe_float(params['max_position_size'], 0.2)
+            if validate_range(max_size, 0.15, 0.3, "max_position_size"):
+                score = safe_divide(score + 0.3, 1.0, score)
             else:
-                score += 0.1
+                score = safe_divide(score + 0.1, 1.0, score)
         
-        # Validate position size relationship
+        # Validate position size relationship using safe math operations
         if 'base_position_size' in params and 'max_position_size' in params:
-            base_size = params['base_position_size']
-            max_size = params['max_position_size']
+            base_size = safe_float(params['base_position_size'], 0.05)
+            max_size = safe_float(params['max_position_size'], 0.2)
             if max_size > base_size:
-                score += 0.2
+                score = safe_divide(score + 0.2, 1.0, score)
         
         return min(score, 1.0)
     
@@ -486,28 +525,30 @@ class OptimizedStep17FinalParametersOptimization:
         
         return min(score, 1.0)
     
+    @math_safe
     def _evaluate_ensemble_params_optimized(
         self, 
         params: Dict[str, Any], 
         calibration_results: Dict[str, Any]
     ) -> float:
-        """Optimized ensemble parameter evaluation."""
+        """Optimized ensemble parameter evaluation using math validation utilities."""
         score = 0.0
         
         weight_params = ['analyst_weight', 'tactician_weight', 'strategist_weight']
-        weights = [params.get(param, 0.0) for param in weight_params]
+        weights = [safe_float(params.get(param, 0.0), 0.0) for param in weight_params]
         
-        # Validate weight normalization
+        # Validate weight normalization using safe math operations
         total_weight = sum(weights)
-        if abs(total_weight - 1.0) < 0.1:
-            score += 0.4
+        weight_diff = abs(total_weight - 1.0)
+        if weight_diff < 0.1:
+            score = safe_divide(score + 0.4, 1.0, score)
         else:
-            score += 0.1
+            score = safe_divide(score + 0.1, 1.0, score)
         
-        # Validate individual weights
+        # Validate individual weights using safe math operations
         for weight in weights:
-            if 0.1 <= weight <= 0.6:  # Reasonable weight range
-                score += 0.1
+            if validate_range(weight, 0.1, 0.6, "ensemble_weight"):  # Reasonable weight range
+                score = safe_divide(score + 0.1, 1.0, score)
         
         return min(score, 1.0)
     
@@ -530,13 +571,13 @@ class OptimizedStep17FinalParametersOptimization:
         return min(score, 1.0)
     
     def _generate_calibration_hash(self, calibration_results: Dict[str, Any]) -> str:
-        """Generate hash for calibration results for caching."""
-        import hashlib
+        """Generate hash for calibration results for caching using utility functions."""
         calibration_str = json.dumps(calibration_results, sort_keys=True)
-        return hashlib.md5(calibration_str.encode()).hexdigest()
+        return generate_hash(calibration_str, 'md5')
     
+    @math_safe
     def _calculate_convergence_score(self, study: optuna.Study) -> float:
-        """Calculate convergence score for the study."""
+        """Calculate convergence score for the study using math validation utilities."""
         if len(study.trials) < 10:
             return 0.0
         
@@ -552,7 +593,14 @@ class OptimizedStep17FinalParametersOptimization:
         if not recent_scores or not early_scores:
             return 0.0
         
-        improvement = (np.mean(recent_scores) - np.mean(early_scores)) / abs(np.mean(early_scores))
+        # Use safe math operations for convergence calculation
+        recent_mean = safe_mean(recent_scores)
+        early_mean = safe_mean(early_scores)
+        
+        # Calculate improvement using safe division
+        improvement = safe_divide(recent_mean - early_mean, abs(early_mean), 0.0)
+        
+        # Clamp to [0, 1] range
         return max(0.0, min(1.0, improvement))
     
     def _get_fallback_result(self, category: str) -> Dict[str, Any]:
@@ -674,25 +722,24 @@ class OptimizedStep17FinalParametersOptimization:
             return None
     
     async def _save_optimization_results(self, optimization_results: Dict[str, Any], symbol: str, exchange: str, data_dir: str) -> None:
-        """Save optimization results with error handling."""
+        """Save optimization results with error handling using utility functions."""
         try:
             optimization_dir = f'{data_dir}/optimization_results'
-            os.makedirs(optimization_dir, exist_ok=True)
+            ensure_directory(optimization_dir)
             
             # Save as pickle
             results_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters_optimized.pkl'
             with open(results_file, 'wb') as f:
                 pickle.dump(optimization_results, f)
             
-            # Save as JSON for readability
+            # Save as JSON for readability using utility function
             json_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters_optimized.json'
-            with open(json_file, 'w') as f:
-                json.dump(optimization_results, f, indent=2, default=str)
+            safe_json_dump(optimization_results, json_file, indent=2, default=str)
             
-            self.logger.info(f'Optimization results saved to {results_file}')
+            self.logger.info(f'✅ Optimization results saved to {results_file}')
             
         except Exception as e:
-            self.logger.error(f'Error saving optimization results: {e}')
+            self.logger.error(f'❌ Error saving optimization results: {e}')
             raise Step17ResourceError(f"Failed to save results: {e}")
     
     async def _generate_optimization_report(

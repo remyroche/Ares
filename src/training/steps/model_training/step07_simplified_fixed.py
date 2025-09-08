@@ -15,28 +15,15 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# Use the import fix module
-try:
-    from src.utils.step07_import_fix import (
-        numpy as np, pandas as pd, torch, numba, psutil,
-        system_logger, handles_errors, BaseStep, check_dependencies
-    )
-except ImportError:
-    # Fallback imports
-    import logging
-    system_logger = logging.getLogger('step07_simplified')
-    logging.basicConfig(level=logging.INFO)
-    
-    def handles_errors(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    class BaseStep:
-        def __init__(self, config, step_id, step_name):
-            self.config = config
-            self.step_id = step_id
-            self.step_name = step_name
+# Required dependencies - no fallbacks
+import numpy as np
+import pandas as pd
+import torch
+import numba
+import psutil
+from src.utils.logger import system_logger
+from ...core.decorators import handles_errors
+from src.training.base_step import BaseStep
 
 class SimplifiedMatrixOperationsStep(BaseStep):
     """Simplified Step07 with fixed imports and reduced complexity."""
@@ -45,9 +32,7 @@ class SimplifiedMatrixOperationsStep(BaseStep):
         super().__init__(config, '07', 'simplified_matrix_operations')
         self.logger = system_logger.getChild('SimplifiedMatrixOperations')
         
-        # Check dependencies
-        if not check_dependencies():
-            self.logger.warning("⚠️ Some dependencies missing, using fallback implementations")
+        # All dependencies are required and available
         
         # Configuration
         self.matrix_config = config.get('matrix_operations_config', {
@@ -105,10 +90,7 @@ class SimplifiedMatrixOperationsStep(BaseStep):
                     path = advanced_features[split]
                     if isinstance(path, str) and Path(path).exists():
                         try:
-                            if pd is not None:
-                                data_dict[split] = pd.read_parquet(path)
-                            else:
-                                self.logger.warning(f"⚠️ pandas not available, cannot load {split} data")
+                            data_dict[split] = pd.read_parquet(path)
                         except Exception as e:
                             self.logger.warning(f"⚠️ Failed to load {split} data: {e}")
             
@@ -128,7 +110,7 @@ class SimplifiedMatrixOperationsStep(BaseStep):
         matrices = {}
         
         try:
-            if pd is not None and isinstance(data, pd.DataFrame):
+            if isinstance(data, pd.DataFrame):
                 # Get numeric columns
                 numeric_cols = data.select_dtypes(include=['number']).columns
                 if len(numeric_cols) == 0:

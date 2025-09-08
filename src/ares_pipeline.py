@@ -18,6 +18,8 @@ from .interfaces.event_bus import EventBus
 from .training.dual_model_system import DualModelSystem, setup_dual_model_system
 from .monitoring.performance_dashboard import PerformanceDashboard, setup_performance_dashboard
 from .monitoring.performance_monitor import PerformanceMonitor, setup_performance_monitor
+from .monitoring.enhanced_monitoring_orchestrator import EnhancedMonitoringOrchestrator
+from .monitoring.auto_monitoring_launcher import launch_auto_monitoring, get_auto_monitoring, stop_auto_monitoring
 from .strategist import Strategist
 from .supervisor import Supervisor
 from .tactician import Tactician
@@ -62,6 +64,8 @@ class AresPipeline:
         self.dual_model_system: DualModelSystem | None = None
         self.performance_monitor: PerformanceMonitor | None = None
         self.performance_dashboard: PerformanceDashboard | None = None
+        self.enhanced_monitoring: EnhancedMonitoringOrchestrator | None = None
+        self.auto_monitoring_launcher = None
         self.is_running: bool = False
         self.start_time: datetime | None = None
         self.cycle_count: int = 0
@@ -83,6 +87,8 @@ class AresPipeline:
             await self._initialize_components()
             await self._initialize_dual_model_system()
             await self._initialize_performance_monitoring()
+            await self._initialize_enhanced_monitoring()
+            await self._launch_auto_monitoring()
             self._setup_signal_handlers()
             self.logger.info('✅ Ares Pipeline initialization completed successfully')
             return True
@@ -453,6 +459,9 @@ class AresPipeline:
                     print(f'   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x')
                     self.logger.info(f'   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}')
                     self.logger.info(f'   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x')
+                    
+                    # Record trade decision in enhanced monitoring system
+                    await self._record_trade_decision_in_monitoring(decision_result, integrated_decision, market_data, current_price)
                     if self.dual_model_system.should_trigger_training():
                         print('   🔄 Model training conditions met - triggering training...')
                         self.logger.info('   🔄 Model training conditions met - triggering training...')
@@ -529,6 +538,55 @@ class AresPipeline:
             self.logger.exception('Error integrating dual model with tactician')
             return {'error': str(e), 'dual_model_decision': dual_model_decision, 'integrated': False}
 
+    async def _record_trade_decision_in_monitoring(self, decision_result: dict[str, Any], integrated_decision: dict[str, Any], market_data: pd.DataFrame, current_price: float) -> None:
+        """
+        Record trade decision in enhanced monitoring system.
+
+        Args:
+            decision_result: Decision from dual model system
+            integrated_decision: Integrated tactical decision
+            market_data: Current market data
+            current_price: Current market price
+        """
+        try:
+            if not self.enhanced_monitoring:
+                return
+
+            # Get trading mode from environment
+            trading_mode = os.environ.get('TRADING_MODE', 'PAPER').upper()
+            
+            # Create comprehensive trade decision context
+            trade_decision = {
+                'timestamp': datetime.now(),
+                'trading_mode': trading_mode,
+                'exchange': 'BINANCE',  # Default exchange
+                'symbol': 'ETHUSDT',    # Default symbol
+                'price': current_price,
+                'action': decision_result.get('action', 'HOLD'),
+                'confidence': decision_result.get('final_confidence', 0.0),
+                'analyst_confidence': decision_result.get('analyst_confidence', 0.0),
+                'tactician_confidence': decision_result.get('tactician_confidence', 0.0),
+                'position_size': integrated_decision.get('position_sizing', {}).get('final_position_size', 0.0),
+                'leverage': integrated_decision.get('leverage_sizing', {}).get('final_leverage', 1.0),
+                'market_data': market_data.to_dict() if not market_data.empty else {},
+                'decision_metadata': {
+                    'dual_model_decision': decision_result,
+                    'integrated_decision': integrated_decision,
+                    'cycle_count': self.cycle_count
+                }
+            }
+
+            # Record the trade decision using auto monitoring launcher
+            if self.auto_monitoring_launcher:
+                await self.auto_monitoring_launcher.capture_trade_decision(trade_decision)
+            elif self.enhanced_monitoring:
+                await self.enhanced_monitoring.record_comprehensive_trade_decision(trade_decision)
+            
+            self.logger.info('📊 Trade decision recorded in enhanced monitoring system')
+            
+        except Exception as e:
+            self.logger.exception(f'Error recording trade decision in monitoring: {e}')
+
     def get_pipeline_status(self) -> dict[str, Any]:
         """
         Get current pipeline status.
@@ -536,7 +594,7 @@ class AresPipeline:
         Returns:
             Dict[str, Any]: Pipeline status information
         """
-        status = {'is_running': self.is_running, 'start_time': self.start_time, 'cycle_count': self.cycle_count, 'last_cycle_time': self.last_cycle_time, 'components': {'analyst': self.analyst is not None, 'strategist': self.strategist is not None, 'tactician': self.tactician is not None, 'supervisor': self.supervisor is not None, 'state_manager': self.state_manager is not None, 'event_bus': self.event_bus is not None, 'dual_model_system': self.dual_model_system is not None}}
+        status = {'is_running': self.is_running, 'start_time': self.start_time, 'cycle_count': self.cycle_count, 'last_cycle_time': self.last_cycle_time, 'components': {'analyst': self.analyst is not None, 'strategist': self.strategist is not None, 'tactician': self.tactician is not None, 'supervisor': self.supervisor is not None, 'state_manager': self.state_manager is not None, 'event_bus': self.event_bus is not None, 'dual_model_system': self.dual_model_system is not None, 'enhanced_monitoring': self.enhanced_monitoring is not None, 'auto_monitoring_launcher': self.auto_monitoring_launcher is not None}}
         if self.dual_model_system:
             try:
                 dual_model_status = self.dual_model_system.get_system_info()
@@ -555,6 +613,18 @@ class AresPipeline:
                 status['performance_dashboard_status'] = dashboard_status
             except Exception as e:
                 status['performance_dashboard_status'] = {'error': str(e)}
+        if self.enhanced_monitoring:
+            try:
+                monitoring_status = self.enhanced_monitoring.get_system_status()
+                status['enhanced_monitoring_status'] = monitoring_status
+            except Exception as e:
+                status['enhanced_monitoring_status'] = {'error': str(e)}
+        if self.auto_monitoring_launcher:
+            try:
+                auto_monitoring_status = self.auto_monitoring_launcher.get_system_status()
+                status['auto_monitoring_launcher_status'] = auto_monitoring_status
+            except Exception as e:
+                status['auto_monitoring_launcher_status'] = {'error': str(e)}
         return status
 
     @handles_errors(default_return = None, context='pipeline cleanup')
@@ -563,6 +633,10 @@ class AresPipeline:
         self.logger.info('🛑 Stopping Ares Pipeline...')
         try:
             self.is_running = False
+            if self.auto_monitoring_launcher:
+                await self.auto_monitoring_launcher.stop()
+            if self.enhanced_monitoring:
+                await self.enhanced_monitoring.stop()
             if self.dual_model_system:
                 await self.dual_model_system.stop()
             if self.performance_dashboard:
@@ -621,6 +695,48 @@ class AresPipeline:
                 self.logger.warning('⚠️ Failed to initialize Performance Monitor')
         except Exception:
             self.logger.exception('Error initializing performance monitoring')
+
+    async def _initialize_enhanced_monitoring(self) -> None:
+        """Initialize enhanced monitoring system."""
+        try:
+            self.logger.info('🔍 Initializing Enhanced Monitoring System...')
+            
+            # Get trading mode from environment
+            trading_mode = os.environ.get('TRADING_MODE', 'PAPER').upper()
+            
+            # Initialize enhanced monitoring orchestrator
+            self.enhanced_monitoring = EnhancedMonitoringOrchestrator()
+            await self.enhanced_monitoring.initialize()
+            
+            if self.enhanced_monitoring:
+                self.logger.info('✅ Enhanced Monitoring System initialized successfully')
+                self.logger.info(f'   📊 Trading Mode: {trading_mode}')
+                self.logger.info('   🔍 SHAP/LIME explanations enabled')
+                self.logger.info('   📈 Ensemble and ML model tracking active')
+                self.logger.info('   📋 Daily and monthly CSV exports configured')
+            else:
+                self.logger.warning('⚠️ Failed to initialize Enhanced Monitoring System')
+        except Exception:
+            self.logger.exception('Error initializing enhanced monitoring system')
+
+    async def _launch_auto_monitoring(self) -> None:
+        """Launch auto monitoring system."""
+        try:
+            self.logger.info('🚀 Launching Auto Enhanced Monitoring System...')
+            
+            # Launch the auto monitoring system
+            success = await launch_auto_monitoring()
+            
+            if success:
+                self.auto_monitoring_launcher = await get_auto_monitoring()
+                self.logger.info('✅ Auto Enhanced Monitoring System launched successfully')
+                self.logger.info('   🎯 Automatic trade decision capture enabled')
+                self.logger.info('   📊 Performance tracking active')
+                self.logger.info('   🔍 SHAP/LIME explanations ready')
+            else:
+                self.logger.warning('⚠️ Failed to launch Auto Enhanced Monitoring System')
+        except Exception:
+            self.logger.exception('Error launching auto monitoring system')
 
     def _get_dual_model_config(self) -> dict[str, Any]:
         """Get dual model system configuration."""

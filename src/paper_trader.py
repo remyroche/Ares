@@ -4,6 +4,7 @@ from .core.error_classes import execution_error, initialization_error, validatio
 from .utils.logger import system_logger
 from .core.decorators import handles_errors
 from .utils.warning_symbols import invalid
+from .monitoring.enhanced_monitoring_orchestrator import EnhancedMonitoringOrchestrator
 
 # src/paper_trader.py
 """
@@ -106,6 +107,9 @@ class PaperTrader:
 
         # Trade tracking
         self.trade_tracker = get_trade_tracker()
+        
+        # Enhanced monitoring integration
+        self.enhanced_monitoring: EnhancedMonitoringOrchestrator | None = None
 
     @handle_specific_errors(
         error_handlers={
@@ -136,6 +140,9 @@ class PaperTrader:
 
             # Initialize trading state
             await self._initialize_trading_state()
+            
+            # Initialize enhanced monitoring
+            await self._initialize_enhanced_monitoring()
 
             self.logger.info("✅ Paper Trader initialization completed successfully")
             return True
@@ -243,6 +250,79 @@ class PaperTrader:
                 initialization_error(f"Error initializing trading state: {e}"),
             )
 
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="enhanced monitoring initialization",
+    )
+    async def _initialize_enhanced_monitoring(self) -> None:
+        """Initialize enhanced monitoring system."""
+        try:
+            self.logger.info("🔍 Initializing Enhanced Monitoring for Paper Trader...")
+            
+            # Initialize enhanced monitoring orchestrator
+            self.enhanced_monitoring = EnhancedMonitoringOrchestrator()
+            await self.enhanced_monitoring.initialize()
+            
+            if self.enhanced_monitoring:
+                self.logger.info("✅ Enhanced Monitoring initialized for Paper Trader")
+                self.logger.info("   📊 Trade decisions will be automatically captured")
+                self.logger.info("   🔍 SHAP/LIME explanations will be generated")
+                self.logger.info("   📈 Performance metrics will be tracked")
+            else:
+                self.logger.warning("⚠️ Failed to initialize Enhanced Monitoring for Paper Trader")
+                
+        except Exception as e:
+            self.logger.exception(
+                initialization_error(f"Error initializing enhanced monitoring: {e}"),
+            )
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="trade monitoring recording",
+    )
+    async def _record_trade_in_monitoring(self, trade_record: dict[str, Any], side: str) -> None:
+        """Record trade in enhanced monitoring system."""
+        try:
+            if not self.enhanced_monitoring:
+                return
+
+            # Create comprehensive trade decision context for monitoring
+            trade_decision = {
+                'timestamp': trade_record['timestamp'],
+                'trading_mode': 'PAPER',
+                'exchange': 'BINANCE',  # Default exchange
+                'symbol': trade_record['symbol'],
+                'price': trade_record['price'],
+                'action': side,
+                'quantity': trade_record['quantity'],
+                'confidence': 0.8,  # Default confidence for paper trades
+                'position_size': trade_record['quantity'],
+                'leverage': 1.0,  # Default leverage for paper trades
+                'trade_metadata': {
+                    'trade_id': trade_record['trade_id'],
+                    'commission': trade_record.get('commission', 0.0),
+                    'slippage': trade_record.get('slippage', 0.0),
+                    'balance_after': trade_record.get('balance_after', 0.0),
+                    'model_weights': trade_record.get('model_weights', {}),
+                    'model_confidences': trade_record.get('model_confidences', {}),
+                    'regime_analysis': trade_record.get('regime_analysis', {}),
+                    'hmm_regime': trade_record.get('hmm_regime', ''),
+                    'support_resistance_levels': trade_record.get('support_resistance_levels', {}),
+                    'market_conditions': trade_record.get('market_conditions', {}),
+                    'risk_metrics': trade_record.get('risk_metrics', {})
+                }
+            }
+
+            # Record the trade decision
+            await self.enhanced_monitoring.record_comprehensive_trade_decision(trade_decision)
+            
+            self.logger.info(f"📊 {side} trade recorded in enhanced monitoring system")
+            
+        except Exception as e:
+            self.logger.exception(f"Error recording {side} trade in monitoring: {e}")
+
     @handles_errors(fallback=False)
     @log_execution_time()
     @log_call(level="INFO")
@@ -340,6 +420,9 @@ class PaperTrader:
                 "risk_metrics": trade_context.risk_metrics if trade_context else {},
             }
             self.trade_history.append(trade_record)
+
+            # Record trade decision in enhanced monitoring system
+            await self._record_trade_in_monitoring(trade_record, "BUY")
 
             self.logger.info(
                 f"✅ Buy order executed: {quantity} {symbol} @ ${price:.4f}",
@@ -455,6 +538,9 @@ class PaperTrader:
                 "risk_metrics": trade_context.risk_metrics if trade_context else {},
             }
             self.trade_history.append(trade_record)
+
+            # Record trade decision in enhanced monitoring system
+            await self._record_trade_in_monitoring(trade_record, "SELL")
 
             self.logger.info(
                 f"✅ Sell order executed: {quantity} {symbol} @ ${price:.4f}",
@@ -744,6 +830,11 @@ class PaperTrader:
         self.logger.info("🛑 Stopping Paper Trader...")
 
         try:
+            # Stop enhanced monitoring
+            if self.enhanced_monitoring:
+                await self.enhanced_monitoring.stop()
+                self.logger.info("🔍 Enhanced monitoring stopped")
+
             # Close all positions
             if self.positions:
                 self.logger.info(f"Closing {len(self.positions)} positions...")

@@ -547,3 +547,37 @@ class Step09FinancialLogger:
             logger.info("📁 File paths logged for Step09")
         except Exception as e:
             logger.warning(f"Could not log file paths: {e}")
+
+
+# Enhanced Step09 Financial Logger with Regime-Aware Decorator Support
+class EnhancedStep09FinancialLogger(Step09FinancialLogger):
+    """Enhanced Step09 Financial Logger with automatic regime-aware logging decorator support."""
+    
+    def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
+        super().__init__(symbol, exchange, timeframe, enable_enhanced_logging)
+        
+        # Import regime-aware decorator if available
+        try:
+            from src.utils.regime_aware_financial_logging_decorator import (
+                regime_aware_financial_logging,
+                auto_regime_aware_logging
+            )
+            self.regime_aware_decorator = regime_aware_financial_logging
+            self.auto_regime_aware_decorator = auto_regime_aware_logging
+            self.decorator_available = True
+        except ImportError:
+            self.decorator_available = False
+    
+    def get_decorated_execute_method(self, original_execute_method):
+        """Get the execute method decorated with regime-aware logging."""
+        if self.decorator_available:
+            return self.auto_regime_aware_decorator(
+                enable_regime_validation=True,
+                enable_fail_fast=True,
+                min_regime_samples=100,
+                max_regime_imbalance=0.8,
+                regime_column='composite_cluster_id',
+                min_data_quality=0.7
+            )(original_execute_method)
+        else:
+            return original_execute_method

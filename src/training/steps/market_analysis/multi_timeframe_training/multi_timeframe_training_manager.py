@@ -1295,8 +1295,3 @@ class MultiTimeframeTrainingManager:
 multi_timeframe_training_manager: MultiTimeframeTrainingManager | None = None
 
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="multi-timeframe training manager setup",
-)

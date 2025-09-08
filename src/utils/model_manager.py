@@ -584,8 +584,3 @@ class ModelManager:
 # Global model manager instance
 model_manager: ModelManager | None = None
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="model manager setup",
-)

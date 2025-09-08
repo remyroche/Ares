@@ -691,8 +691,3 @@ class TrainingOrchestrator:
         except Exception as e:
             self.logger.error(failed(f"❌ Failed to stop Training Orchestrator: {e}"))
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="training orchestrator setup",
-)

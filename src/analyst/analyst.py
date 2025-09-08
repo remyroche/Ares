@@ -1488,9 +1488,3 @@ class Analyst:
         except Exception:
             self.logger.error("❌ Error stopping Analyst: {e}")
 
-
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="analyst setup",
-)

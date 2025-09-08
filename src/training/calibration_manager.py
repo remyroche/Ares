@@ -576,8 +576,3 @@ class CalibrationManager:
         except Exception:
             self.print(failed("❌ Failed to stop Calibration Manager: {e}"))
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="calibration manager setup",
-)

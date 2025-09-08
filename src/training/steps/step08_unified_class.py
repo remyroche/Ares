@@ -3,11 +3,65 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 Unified Step08 Class Implementation - Part 2
 """
 
+# Comprehensive utility imports for extensive integration
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
-    validate_positive, validate_range, MathValidationError
+    validate_positive, validate_range, MathValidationError,
+    safe_power, safe_weighted_average, safe_percentage_change,
+    validate_correlation_matrix, safe_matrix_inverse, math_safe
+)
+from src.utils.common_operations import (
+    get_current_datetime, get_today, format_datetime, parse_datetime,
+    create_empty_dataframe, safe_fillna, safe_rolling, safe_copy, safe_deepcopy,
+    safe_mean, safe_std, ensure_directory, safe_file_exists,
+    safe_json_dump, safe_json_load, safe_sleep, safe_gather,
+    create_async_task, safe_append, safe_extend, safe_dict_get,
+    safe_dict_items, safe_lower, safe_upper, safe_join,
+    get_logger, setup_basic_logging, safe_exception_handler,
+    safe_float, safe_int, suggest_float_uniform, suggest_int_uniform,
+    validate_dataframe, validate_numeric_range, optimize_dataframe_dtypes,
+    timed_operation, format_bytes, chunked_iterable, parallel_map,
+    safe_log_metric, safe_log_params, safe_log_artifact,
+    safe_read_parquet, safe_to_parquet, list_parquet_files,
+    generate_hash, generate_cache_key, standardize_price_action_probabilities
+)
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_apply_function, create_summary_statistics, safe_drop_columns,
+    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+    get_dataframe_info, safe_filter_dataframe, create_data_quality_report
+)
+from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+from src.utils.serialization_utils import (
+    JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer,
+    save_json, load_json, save_pickle, load_pickle, save_parquet, load_parquet,
+    save_data, load_data, SerializationError
+)
+from src.utils.data_processing_utils import (
+    DataFrameValidator, DataFrameCleaner, DataFrameTransformer,
+    DataQualityLevel, DataQualityIssue, DataQualityReport,
+    validate_dataframe as validate_df_comprehensive, clean_dataframe,
+    transform_dataframe, get_dataframe_info as get_df_info_comprehensive
+)
+from src.utils.m1_gpu_utils import (
+    M1GPUManager, M1PerformanceOptimizer, initialize_m1_gpu,
+    get_m1_gpu_manager, m1_tensor_multiply, m1_batch_process,
+    m1_monte_carlo_simulate, create_m1_optimized_config
+)
+from src.utils.m1_memory_optimizer import (
+    M1MemoryOptimizer, M1DataManager, get_m1_memory_optimizer,
+    create_memory_efficient_dataframe, memory_efficient_groupby
+)
+from src.utils.m1_cpu_optimizer import (
+    M1CPUOptimizer, M1BatchProcessor, get_m1_cpu_optimizer,
+    initialize_m1_cpu_optimizer, parallel_map, parallel_dataframe_operation,
+    parallel_monte_carlo_simulation, optimized_monte_carlo_worker
 )
 from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
+
 import datetime
 import logging
 import numpy as np
@@ -16,9 +70,12 @@ import pandas as pd
 import pathlib as Path
 import time
 import typing
-
-    get_global_detector, validate_no_future_data, LookaheadBiasError
-)
+from typing import Dict, List, Optional, Any, Union, Tuple, Callable
+import asyncio
+import concurrent.futures
+from dataclasses import dataclass, field
+from enum import Enum
+import warnings
 
 class UnifiedStep08:
     """
@@ -32,17 +89,40 @@ class UnifiedStep08:
     - Comprehensive risk assessment with explicit risk metrics
     """
 
-    def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize unified Step08 with comprehensive configuration."""
+    def __init__(self, config: Dict[str, Any], 
+                 parquet_utils: Optional[ParquetUtils] = None,
+                 memory_optimizer: Optional[M1MemoryOptimizer] = None,
+                 gpu_manager: Optional[M1GPUManager] = None,
+                 cpu_optimizer: Optional[M1CPUOptimizer] = None,
+                 data_validator: Optional[DataFrameValidator] = None,
+                 data_cleaner: Optional[DataFrameCleaner] = None,
+                 data_transformer: Optional[DataFrameTransformer] = None) -> None:
+        """Initialize unified Step08 with comprehensive configuration and dependency injection."""
         self.config = config
-        self.logger = system_logger.getChild('UnifiedStep08')
+        self.logger = get_logger('UnifiedStep08')
+        
+        # Dependency injection for utilities
+        self.parquet_utils = parquet_utils or get_parquet_utils()
+        self.memory_optimizer = memory_optimizer or get_m1_memory_optimizer()
+        self.gpu_manager = gpu_manager or get_m1_gpu_manager()
+        self.cpu_optimizer = cpu_optimizer or get_m1_cpu_optimizer()
+        self.data_validator = data_validator or DataFrameValidator()
+        self.data_cleaner = data_cleaner or DataFrameCleaner()
+        self.data_transformer = data_transformer or DataFrameTransformer()
+        
+        # Initialize serialization utilities
+        self.json_serializer = JSONSerializer()
+        self.pickle_serializer = PickleSerializer()
+        self.parquet_serializer = ParquetSerializer()
+        self.universal_serializer = UniversalSerializer()
         
         # Initialize components
         self._initialize_optimizations()
         self._initialize_configuration()
         self._initialize_metrics()
+        self._initialize_utility_integration()
         
-        self.logger.info('🚀 Unified Step08 initialized successfully')
+        self.logger.info('🚀 Unified Step08 initialized successfully with extensive utility integration')
 
     def _initialize_optimizations(self) -> None:
         """Initialize enhanced optimization components."""
@@ -127,6 +207,47 @@ class UnifiedStep08:
         self.feature_validation = FeatureSelectionValidation()
         self.results = Step08Results()
 
+    def _initialize_utility_integration(self) -> None:
+        """Initialize comprehensive utility integration."""
+        self.logger.info("🔧 Initializing comprehensive utility integration...")
+        
+        # Initialize data quality monitoring
+        self.data_quality_monitor = {
+            'validation_reports': [],
+            'cleaning_reports': [],
+            'transformation_reports': [],
+            'memory_usage_history': [],
+            'performance_metrics': {}
+        }
+        
+        # Initialize utility health status
+        self.utility_health = {
+            'common_operations': get_common_operations_health_status(),
+            'memory_optimizer': self.memory_optimizer.get_memory_report(),
+            'gpu_manager': {'device': str(self.gpu_manager.device), 'memory_info': self.gpu_manager.memory_info},
+            'cpu_optimizer': self.cpu_optimizer.get_cpu_usage_report(),
+            'parquet_utils': {'status': 'initialized'},
+            'serialization_utils': {'status': 'initialized'}
+        }
+        
+        # Initialize performance tracking
+        self.performance_tracker = {
+            'operation_times': {},
+            'memory_usage': {},
+            'gpu_utilization': {},
+            'cpu_utilization': {}
+        }
+        
+        # Initialize cache for utility operations
+        self.utility_cache = {
+            'dataframe_validations': {},
+            'parquet_operations': {},
+            'serialization_operations': {},
+            'memory_optimizations': {}
+        }
+        
+        self.logger.info("✅ Comprehensive utility integration initialized")
+
     @with_tracing_span('step08_unified.execute', log_args=False)
     @handle_errors(exceptions=(Exception,), default_return={'success': False, 'error': 'Execution failed'}, context='step08_unified_execution')
     async def execute(self, training_input: Dict[str, Any] = None, pipeline_state: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -183,29 +304,347 @@ class UnifiedStep08:
             self.logger.exception(f'❌ Unified Step08 execution failed: {e}')
             return {'success': False, 'error': str(e)}
 
+    @timed_operation("data_loading_and_validation")
     async def _load_and_validate_data(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Load and validate unified data with comprehensive checks."""
+        """Load and validate unified data with comprehensive utility integration."""
         try:
-            # Load data using unified data loader
-            if UNIFIED_DATA_LOADER_AVAILABLE:
-                data_loader = UnifiedDataLoader(self.config)
-                unified_data = await data_loader.load_unified_data(
-                    symbol=self.config.get('symbol', 'ETHUSDT'),
-                    exchange=self.config.get('exchange', 'BINANCE'),
-                    timeframe=self.config.get('timeframe', '1m'),
-                    data_dir=self.config.get('data_dir', 'data_cache')
-                )
-            else:
-                # Fallback to pipeline state data
-                if pipeline_state and 'dataframe' in pipeline_state:
-                    unified_data = pipeline_state['dataframe']
+            self.logger.info("📊 Loading and validating data with extensive utility integration...")
+            
+            # Memory checkpoint for data loading
+            with self.memory_optimizer.memory_checkpoint("data_loading_start"):
+                # Load data using unified data loader with utility integration
+                if UNIFIED_DATA_LOADER_AVAILABLE:
+                    data_loader = UnifiedDataLoader(self.config)
+                    unified_data = await data_loader.load_unified_data(
+                        symbol=self.config.get('symbol', 'ETHUSDT'),
+                        exchange=self.config.get('exchange', 'BINANCE'),
+                        timeframe=self.config.get('timeframe', '1m'),
+                        data_dir=self.config.get('data_dir', 'data_cache')
+                    )
                 else:
-                    self.logger.error('No data available and unified data loader not available')
+                    # Fallback to pipeline state data with utility integration
+                    if pipeline_state and 'dataframe' in pipeline_state:
+                        unified_data = pipeline_state['dataframe']
+                    else:
+                        self.logger.error('No data available and unified data loader not available')
+                        return None
+                
+                # Comprehensive data validation using utility integration
+                self.logger.info("🔍 Performing comprehensive data validation...")
+                
+                # Basic DataFrame validation
+                if not validate_dataframe(unified_data, ['timestamp', 'composite_cluster_id']):
+                    self.logger.error("DataFrame validation failed - missing required columns")
                     return None
+                
+                # Comprehensive data quality validation
+                quality_report = self.data_validator.validate_dataframe(unified_data)
+                self.data_quality_monitor['validation_reports'].append(quality_report)
+                
+                # Log data quality issues
+                if quality_report.issues:
+                    self.logger.warning(f"Data quality issues found: {len(quality_report.issues)}")
+                    for issue in quality_report.issues:
+                        if issue.level == DataQualityLevel.CRITICAL:
+                            self.logger.error(f"Critical issue: {issue.description}")
+                        elif issue.level == DataQualityLevel.WARNING:
+                            self.logger.warning(f"Warning: {issue.description}")
+                
+                # Data cleaning with utility integration
+                if quality_report.issues:
+                    self.logger.info("🧹 Applying data cleaning...")
+                    unified_data = self.data_cleaner.clean_dataframe(unified_data)
+                    cleaning_report = create_data_quality_report(unified_data)
+                    self.data_quality_monitor['cleaning_reports'].append(cleaning_report)
+                
+                # Memory optimization for large datasets
+                data_size_mb = unified_data.memory_usage(deep=True).sum() / (1024**2)
+                if self.memory_optimizer.should_chunk_data(data_size_mb, "general"):
+                    self.logger.info(f"📦 Large dataset detected ({data_size_mb:.1f}MB), applying memory optimization...")
+                    unified_data = optimize_dataframe_dtypes(unified_data)
+                    unified_data = create_memory_efficient_dataframe(unified_data)
+                
+                # Timestamp validation and conversion
+                timestamp_valid, timestamp_error = validate_timestamp_column(unified_data, 'timestamp')
+                if not timestamp_valid:
+                    self.logger.warning(f"Timestamp validation issue: {timestamp_error}")
+                    unified_data = safe_timestamp_conversion(unified_data, 'timestamp')
+                
+                # Generate comprehensive DataFrame info
+                df_info = get_dataframe_info(unified_data)
+                self.logger.info(f"📊 Data loaded successfully: {df_info['shape']} shape, {df_info['memory_usage_mb']:.1f}MB memory")
+                
+                # Cache validation results
+                cache_key = generate_cache_key("data_validation", str(unified_data.shape), str(unified_data.columns.tolist()))
+                self.utility_cache['dataframe_validations'][cache_key] = {
+                    'quality_report': quality_report,
+                    'df_info': df_info,
+                    'timestamp': get_current_datetime().isoformat()
+                }
+                
+                return unified_data
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load and validate data: {e}")
+            return None
+        finally:
+            # Memory cleanup after data loading
+            self.memory_optimizer.optimize_memory()
             
             if unified_data is None or len(unified_data) == 0:
                 self.logger.error('Unified data is empty or None')
                 return None
+
+    @timed_operation("financial_metrics_calculation")
+    async def _calculate_financial_metrics(self, data: pd.DataFrame, selected_features: Dict[str, List[str]]) -> FinancialMetrics:
+        """Calculate financial metrics with extensive utility integration."""
+        try:
+            self.logger.info("💰 Calculating financial metrics with utility integration...")
+            
+            # Memory checkpoint for financial calculations
+            with self.memory_optimizer.memory_checkpoint("financial_metrics_start"):
+                metrics = FinancialMetrics()
+                
+                # Extract price data with safe operations
+                price_columns = [col for col in data.columns if 'close' in col.lower() or 'price' in col.lower()]
+                if not price_columns:
+                    self.logger.warning("No price columns found, using first numeric column")
+                    numeric_cols = data.select_dtypes(include=[np.number]).columns
+                    price_columns = [numeric_cols[0]] if len(numeric_cols) > 0 else []
+                
+                if not price_columns:
+                    self.logger.error("No numeric columns found for financial calculations")
+                    return metrics
+                
+                price_data = data[price_columns[0]].dropna()
+                
+                # Calculate returns using safe mathematical operations
+                returns = price_data.pct_change().dropna()
+                
+                # Daily returns
+                daily_returns = safe_mean(returns.tolist()) if len(returns) > 0 else 0.0
+                metrics.returns['daily'] = safe_float(daily_returns)
+                
+                # Annualized returns using safe power operation
+                if len(returns) > 0:
+                    annualized_return = safe_power(1 + daily_returns, 252) - 1
+                    metrics.returns['annualized'] = safe_float(annualized_return)
+                
+                # Volatility calculations using safe mathematical operations
+                if len(returns) > 1:
+                    daily_volatility = safe_std(returns.tolist())
+                    metrics.volatility['daily'] = safe_float(daily_volatility)
+                    
+                    # Annualized volatility using safe square root
+                    annualized_volatility = safe_sqrt(252) * daily_volatility
+                    metrics.volatility['annualized'] = safe_float(annualized_volatility)
+                
+                # Sharpe ratio calculation using safe division
+                if metrics.volatility.get('annualized', 0) > 0:
+                    excess_return = metrics.returns.get('annualized', 0) - self.risk_free_rate
+                    sharpe_ratio = safe_divide(excess_return, metrics.volatility['annualized'])
+                    metrics.sharpe_ratio['overall'] = safe_float(sharpe_ratio)
+                
+                # Maximum drawdown calculation
+                if len(price_data) > 1:
+                    cumulative_returns = (1 + returns).cumprod()
+                    running_max = cumulative_returns.expanding().max()
+                    drawdown = (cumulative_returns - running_max) / running_max
+                    max_drawdown = drawdown.min()
+                    metrics.max_drawdown['overall'] = safe_float(max_drawdown)
+                
+                # VaR calculations using safe mathematical operations
+                if len(returns) > 0:
+                    for confidence_level in self.var_confidence_levels:
+                        var_percentile = (1 - confidence_level) * 100
+                        var_value = np.percentile(returns, var_percentile)
+                        metrics.var_95[f'{confidence_level}'] = safe_float(var_value)
+                
+                # Kelly criterion calculation for position sizing
+                if len(returns) > 0:
+                    win_rate = len(returns[returns > 0]) / len(returns)
+                    avg_win = safe_mean(returns[returns > 0].tolist()) if len(returns[returns > 0]) > 0 else 0
+                    avg_loss = abs(safe_mean(returns[returns < 0].tolist())) if len(returns[returns < 0]) > 0 else 0
+                    
+                    if avg_loss > 0:
+                        kelly_fraction = safe_kelly_calculation(win_rate, avg_win, avg_loss)
+                        metrics.kelly_criterion = safe_float(kelly_fraction)
+                
+                # Monte Carlo simulation using M1 GPU optimization
+                if self.gpu_manager and len(returns) > 100:
+                    self.logger.info("🎲 Running Monte Carlo simulation with M1 GPU optimization...")
+                    try:
+                        mc_results = m1_monte_carlo_simulate(
+                            returns.values, 
+                            n_simulations=1000,
+                            trading_days=252,
+                            use_mps=True
+                        )
+                        
+                        # Store Monte Carlo results
+                        metrics.monte_carlo = {
+                            'mean_return': safe_mean(mc_results.get('returns', [])),
+                            'mean_sharpe': safe_mean(mc_results.get('sharpe_ratios', [])),
+                            'mean_max_drawdown': safe_mean(mc_results.get('max_drawdowns', [])),
+                            'var_95_mc': safe_mean(mc_results.get('var_95', [])),
+                            'convergence_history': mc_results.get('convergence_history', [])
+                        }
+                    except Exception as e:
+                        self.logger.warning(f"Monte Carlo simulation failed: {e}")
+                
+                # Log metrics using safe operations
+                self.logger.info(f"✅ Financial metrics calculated:")
+                self.logger.info(f"   Daily return: {metrics.returns.get('daily', 0):.4f}")
+                self.logger.info(f"   Annualized return: {metrics.returns.get('annualized', 0):.4f}")
+                self.logger.info(f"   Annualized volatility: {metrics.volatility.get('annualized', 0):.4f}")
+                self.logger.info(f"   Sharpe ratio: {metrics.sharpe_ratio.get('overall', 0):.4f}")
+                self.logger.info(f"   Max drawdown: {metrics.max_drawdown.get('overall', 0):.4f}")
+                
+                return metrics
+                
+        except Exception as e:
+            self.logger.error(f"Failed to calculate financial metrics: {e}")
+            return FinancialMetrics()
+        finally:
+            # Memory cleanup after financial calculations
+            self.memory_optimizer.optimize_memory()
+
+    @timed_operation("parallel_feature_processing")
+    async def _parallel_feature_processing(self, data: pd.DataFrame, feature_groups: List[List[str]]) -> Dict[str, Any]:
+        """Process feature groups in parallel using M1 CPU optimization."""
+        try:
+            self.logger.info("⚡ Processing feature groups in parallel with M1 CPU optimization...")
+            
+            # Memory checkpoint for parallel processing
+            with self.memory_optimizer.memory_checkpoint("parallel_processing_start"):
+                
+                # Define processing function for each feature group
+                def process_feature_group(feature_group: List[str]) -> Dict[str, Any]:
+                    """Process a single feature group."""
+                    try:
+                        group_data = data[feature_group].dropna()
+                        
+                        # Calculate basic statistics
+                        stats = {
+                            'group_name': '_'.join(feature_group[:3]),  # Use first 3 features as name
+                            'feature_count': len(feature_group),
+                            'data_points': len(group_data),
+                            'mean_values': group_data.mean().to_dict(),
+                            'std_values': group_data.std().to_dict(),
+                            'correlation_matrix': group_data.corr().to_dict() if len(feature_group) > 1 else {},
+                            'memory_usage_mb': group_data.memory_usage(deep=True).sum() / (1024**2)
+                        }
+                        
+                        # Calculate feature importance using safe operations
+                        if len(group_data) > 0:
+                            # Simple variance-based importance
+                            variances = group_data.var()
+                            total_variance = variances.sum()
+                            if total_variance > 0:
+                                importance_scores = (variances / total_variance).to_dict()
+                                stats['importance_scores'] = importance_scores
+                        
+                        return stats
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Failed to process feature group {feature_group}: {e}")
+                        return {'error': str(e), 'group_name': '_'.join(feature_group[:3])}
+                
+                # Process feature groups in parallel using M1 CPU optimizer
+                if len(feature_groups) > 1:
+                    # Use parallel processing for multiple groups
+                    results = self.cpu_optimizer.parallel_process(
+                        feature_groups,
+                        process_feature_group,
+                        task_type="cpu_bound",
+                        timeout=300.0  # 5 minute timeout
+                    )
+                else:
+                    # Single group processing
+                    results = [process_feature_group(feature_groups[0])] if feature_groups else []
+                
+                # Combine results
+                combined_results = {
+                    'total_groups_processed': len(results),
+                    'successful_groups': len([r for r in results if 'error' not in r]),
+                    'failed_groups': len([r for r in results if 'error' in r]),
+                    'group_results': results,
+                    'total_memory_usage_mb': sum(r.get('memory_usage_mb', 0) for r in results if 'memory_usage_mb' in r),
+                    'processing_timestamp': get_current_datetime().isoformat()
+                }
+                
+                # Log processing results
+                self.logger.info(f"✅ Parallel feature processing completed:")
+                self.logger.info(f"   Groups processed: {combined_results['total_groups_processed']}")
+                self.logger.info(f"   Successful: {combined_results['successful_groups']}")
+                self.logger.info(f"   Failed: {combined_results['failed_groups']}")
+                self.logger.info(f"   Total memory usage: {combined_results['total_memory_usage_mb']:.1f}MB")
+                
+                return combined_results
+                
+        except Exception as e:
+            self.logger.error(f"Failed to process feature groups in parallel: {e}")
+            return {'error': str(e), 'total_groups_processed': 0}
+        finally:
+            # Memory cleanup after parallel processing
+            self.memory_optimizer.optimize_memory()
+
+    @timed_operation("monte_carlo_parallel_simulation")
+    async def _parallel_monte_carlo_simulation(self, returns_data: np.ndarray, n_simulations: int = 1000) -> Dict[str, Any]:
+        """Run Monte Carlo simulation in parallel using M1 CPU optimization."""
+        try:
+            self.logger.info("🎲 Running parallel Monte Carlo simulation with M1 CPU optimization...")
+            
+            # Memory checkpoint for Monte Carlo simulation
+            with self.memory_optimizer.memory_checkpoint("monte_carlo_start"):
+                
+                # Use parallel Monte Carlo simulation
+                mc_results = parallel_monte_carlo_simulation(
+                    returns_data,
+                    n_simulations=n_simulations,
+                    simulation_func=optimized_monte_carlo_worker,
+                    trading_days=252,
+                    max_workers=self.cpu_optimizer.max_workers
+                )
+                
+                # Process results using safe mathematical operations
+                processed_results = {
+                    'n_simulations': n_simulations,
+                    'mean_return': safe_mean(mc_results.get('returns', [])),
+                    'std_return': safe_std(mc_results.get('returns', [])),
+                    'mean_sharpe': safe_mean(mc_results.get('sharpe_ratios', [])),
+                    'mean_max_drawdown': safe_mean(mc_results.get('max_drawdowns', [])),
+                    'mean_win_rate': safe_mean(mc_results.get('win_rates', [])),
+                    'mean_volatility': safe_mean(mc_results.get('volatilities', [])),
+                    'var_95': safe_mean(mc_results.get('var_95', [])),
+                    'cvar_95': safe_mean(mc_results.get('cvar_95', [])),
+                    'convergence_history': mc_results.get('convergence_history', []),
+                    'simulation_timestamp': get_current_datetime().isoformat()
+                }
+                
+                # Calculate confidence intervals using safe operations
+                returns_array = np.array(mc_results.get('returns', []))
+                if len(returns_array) > 0:
+                    processed_results['confidence_intervals'] = {
+                        'return_95_ci': [np.percentile(returns_array, 2.5), np.percentile(returns_array, 97.5)],
+                        'return_99_ci': [np.percentile(returns_array, 0.5), np.percentile(returns_array, 99.5)]
+                    }
+                
+                # Log simulation results
+                self.logger.info(f"✅ Parallel Monte Carlo simulation completed:")
+                self.logger.info(f"   Simulations: {n_simulations}")
+                self.logger.info(f"   Mean return: {processed_results['mean_return']:.4f}")
+                self.logger.info(f"   Mean Sharpe: {processed_results['mean_sharpe']:.4f}")
+                self.logger.info(f"   Mean max drawdown: {processed_results['mean_max_drawdown']:.4f}")
+                
+                return processed_results
+                
+        except Exception as e:
+            self.logger.error(f"Failed to run parallel Monte Carlo simulation: {e}")
+            return {'error': str(e), 'n_simulations': 0}
+        finally:
+            # Memory cleanup after Monte Carlo simulation
+            self.memory_optimizer.optimize_memory()
             
             # Validate required columns
             required_columns = ['timestamp', 'composite_cluster_id']

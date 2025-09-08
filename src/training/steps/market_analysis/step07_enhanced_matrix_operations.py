@@ -1497,9 +1497,9 @@ class Step7EnhancedMatrixOperations:
         results = {}
         
         # Fail-fast validation: Check data requirements
-        if len(df) < 10:  # Minimum rows for matrix operations
+        if len(df) < 500:  # Minimum rows for matrix operations
             raise CriticalProcessError(
-                f"Insufficient data for matrix operations: {len(df)} rows (minimum 10 required)",
+                f"Insufficient data for matrix operations: {len(df)} rows (minimum 500 required)",
                 severity=ErrorSeverity.CRITICAL,
                 category=ErrorCategory.DATA_VALIDATION
             )

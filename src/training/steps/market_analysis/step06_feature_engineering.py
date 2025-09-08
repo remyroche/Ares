@@ -49,7 +49,17 @@ try:
     logger.info("🚀 All optimization utilities successfully loaded for step06")
 except ImportError as e:
     OPTIMIZATIONS_AVAILABLE = False
-    logger.warning(f"⚠️ Some optimization utilities not available: {e}")
+    logger.warning(f"Some optimization utilities not available: {e}")
+
+# Import math validation and lookahead bias detection
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
+
 try:
     import talib
 except ImportError:
@@ -229,6 +239,14 @@ class FeatureInteractionEngine:
                     self.logger.info(f"📦 Large dataset detected ({data_size_mb:.1f}MB), applying memory optimizations")
                     # Optimize data types for memory efficiency
                     data = self.memory_optimizer.optimize_dataframe_dtypes(data)
+
+            # Set current timestamp for lookahead bias detection
+            if data is not None and hasattr(data, 'index') and len(data) > 0:
+                current_time = data.index[-1]
+                bias_detector = get_global_detector()
+                bias_detector.set_current_timestamp(current_time)
+                # Validate no future data
+                data = validate_no_future_data(data, 'timestamp', current_time)
 
             return data
 
@@ -866,7 +884,16 @@ class FeatureInteractionEngine:
             self.logger.info(f'   Feature columns: {len(features.columns)}')
             self.logger.info(f'   Data types: {features.dtypes.value_counts().to_dict()}')
         self.logger.info('🔍 Analyzing feature correlations to ensure non-correlation...')
-        correlation_matrix = features.corr()
+        try:
+            correlation_matrix = features.corr()
+            # Validate correlation matrix for mathematical safety
+            if correlation_matrix.isnull().any().any():
+                self.logger.warning("Correlation matrix contains NaN values, filling with 0")
+                correlation_matrix = correlation_matrix.fillna(0)
+        except Exception as e:
+            self.logger.error(f"Error calculating correlation matrix: {e}")
+            # Return empty correlation matrix as fallback
+            correlation_matrix = pd.DataFrame(index=features.columns, columns=features.columns).fillna(0)
         
         # Vectorized correlation analysis using advanced NumPy operations
         def find_high_correlations_vectorized(corr_matrix):

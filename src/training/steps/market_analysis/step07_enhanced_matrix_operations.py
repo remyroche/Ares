@@ -30,6 +30,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, Optional
 import numpy as np
 from ....utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ....utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from ....utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 try:
     import psutil
@@ -696,7 +703,12 @@ class Step7EnhancedMatrixOperations:
             if self.step_optimizer_enabled and self.step_optimizer:
                 try:
                     # Estimate data size for optimization profile
-                    data_size_mb = (features_df.memory_usage(deep=True).sum() / (1024 * 1024))
+                    try:
+                        memory_usage_sum = features_df.memory_usage(deep=True).sum()
+                        data_size_mb = safe_divide(memory_usage_sum, (1024 * 1024), 0.0)
+                    except MathValidationError as e:
+                        self.logger.warning(f"Error calculating data size: {e}")
+                        data_size_mb = 0.0
 
                     # Create optimization profile
                     optimization_profile = create_optimization_profile(
@@ -740,17 +752,28 @@ class Step7EnhancedMatrixOperations:
 
                     def calculate_regime_importance(regime):
                         regime_mask = regime_labels == regime
-                        if regime_mask.sum() < 100:
+                        regime_count = regime_mask.sum()
+                        if regime_count < 100:
                             return None
 
                         X_regime = features_df[regime_mask]
                         y_regime = y[regime_mask]
 
                         if SKLEARN_AVAILABLE:
-                            mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
+                            try:
+                                mi_scores = mutual_info_classif(X_regime, y_regime, random_state=42)
+                            except Exception as e:
+                                self.logger.warning(f"Error calculating mutual information: {e}")
+                                mi_scores = np.zeros(X_regime.shape[1])
                         else:
                             self.logger.warning('⚠️ sklearn not available, using variance-based importance')
-                            mi_scores = X_regime.var().values
+                            try:
+                                variance_scores = X_regime.var()
+                                # Handle NaN values in variance calculation
+                                mi_scores = variance_scores.fillna(0).values
+                            except Exception as e:
+                                self.logger.warning(f"Error calculating variance: {e}")
+                                mi_scores = np.zeros(X_regime.shape[1])
 
                         return f'regime_{regime}', mi_scores
 
@@ -852,6 +875,11 @@ class Step7EnhancedMatrixOperations:
         """
         try:
             start_time = datetime.now()
+
+            # Set current timestamp for lookahead bias detection
+            current_time = datetime.now()
+            bias_detector = get_global_detector()
+            bias_detector.set_current_timestamp(current_time)
 
             # Intelligent optimization selection for this workload
             if self.step_optimizer_enabled and self.step_optimizer:

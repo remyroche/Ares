@@ -1010,11 +1010,26 @@ class HMMRegimeDiscoveryStep:
                 else:
                     # If gap is at the beginning, use a small epsilon
                     df.loc[group, 'volume'] = 1e-10
-            else:  # Long gap: mark for data re-collection
-                self.logger.warning(f'     → Long gap ({gap_minutes:.1f} min): marking for data re-collection')
-                # For now, use a small epsilon but log the issue
+            else:  # Long gap: trigger data re-collection via quality manager
+                self.logger.warning(f'     → Long gap ({gap_minutes:.1f} min): triggering data re-collection')
+                # Temporarily fill with small epsilon to keep continuity
                 df.loc[group, 'volume'] = 1e-10
-                self.logger.warning(f'     ⚠️ Data gap from {df.iloc[start_idx]["timestamp"]} to {df.iloc[end_idx]["timestamp"]} - consider re-running step01/step01_5')
+                try:
+                    # Attempt auto-invocation of step01/step01_5 using quality manager
+                    if hasattr(self, 'data_quality_manager') and self.data_quality_manager:
+                        symbol = self.config.get('SYMBOL', 'UNKNOWN')
+                        exchange = self.config.get('EXCHANGE', 'BINANCE')
+                        timeframe_cfg = self.config.get('TIMEFRAME', '1m')
+                        # Run fix sequence (async) and ignore result if it fails
+                        import asyncio as _asyncio
+                        _asyncio.create_task(
+                            self.data_quality_manager.get_data_for_step3_step4(symbol = symbol, exchange = exchange, timeframe = timeframe_cfg)
+                        )
+                        self.logger.info('     🔄 Invoked quality manager to re-collect missing data in background')
+                    else:
+                        self.logger.warning('     ⚠️ Data quality manager not available; unable to auto re-collect')
+                except Exception as _e:
+                    self.logger.warning(f'     ⚠️ Auto re-collection attempt failed: {_e}')
         
         # Final validation
         remaining_zeros = (df['volume'] == 0).sum()
@@ -1782,20 +1797,70 @@ class HMMRegimeDiscoveryStep:
             return await self._prepare_hmm_features(df)
 
     def _calculate_distance_to_levels(self, prices: pd.Series, levels: list) -> pd.Series:
-        """Calculate normalized distance to nearest SR level."""
-        if not levels:
-            return pd.Series([1.0] * len(prices), index=prices.index)
+        """Calculate normalized distance to nearest SR level.
 
-        distances = []
-        for price in prices:
-            if levels:
-                nearest_level = min(levels, key=lambda x: abs(price - x))
-                distance = abs(price - nearest_level) / price  # Normalized distance
+        Accepts levels in multiple formats:
+          - list[float]
+          - list[dict] with key 'price'
+          - numpy arrays shaped (N, 2) where second column is price
+        """
+        if not levels or len(prices) == 0:
+            return pd.Series([1.0] * len(prices), index = prices.index)
+
+        # Normalize levels to a flat numpy array of prices
+        level_prices: list[float] = []
+        try:
+            # If ndarray of shape (N, 2) -> take price column index 1
+            if hasattr(levels, 'ndim'):
+                import numpy as _np
+                lvl_arr = _np.asarray(levels)
+                if lvl_arr.ndim == 2 and lvl_arr.shape[1] >= 2:
+                    level_prices = lvl_arr[:, 1].astype(float).tolist()
+                else:
+                    level_prices = lvl_arr.astype(float).tolist()
             else:
-                distance = 1.0
-            distances.append(distance)
+                for lvl in levels:
+                    if isinstance(lvl, dict):
+                        # Common schema from SR detectors
+                        if 'price' in lvl:
+                            level_prices.append(float(lvl['price']))
+                        elif 'level' in lvl:
+                            level_prices.append(float(lvl['level']))
+                    elif isinstance(lvl, (list, tuple)) and len(lvl) >= 2:
+                        # (index, price)
+                        level_prices.append(float(lvl[1]))
+                    else:
+                        # Assume raw numeric
+                        level_prices.append(float(lvl))
+        except Exception:
+            # Fallback: attempt best-effort cast
+            try:
+                level_prices = [float(getattr(l, 'price', l)) for l in levels]
+            except Exception:
+                level_prices = []
 
-        return pd.Series(distances, index=prices.index)
+        if not level_prices:
+            return pd.Series([1.0] * len(prices), index = prices.index)
+
+        level_prices_arr = np.asarray(level_prices, dtype = float)
+
+        # Vectorized nearest distance calculation
+        prices_arr = prices.values.astype(float)
+        # For large arrays, compute efficiently by broadcasting in chunks
+        chunk_size = 50000
+        distances: list[np.ndarray] = []
+        for i in range(0, len(prices_arr), chunk_size):
+            p_chunk = prices_arr[i:i + chunk_size][:, None]
+            # Compute absolute distances to all levels, then min across axis=1
+            d_min = np.min(np.abs(p_chunk - level_prices_arr[None, :]), axis = 1)
+            # Normalize by price (avoid division by zero)
+            p_norm = np.where(p_chunk[:, 0] == 0.0, np.nan, p_chunk[:, 0])
+            distances.append(d_min / p_norm)
+
+        distances_arr = np.concatenate(distances)
+        # Replace NaNs (from zero price) with 1.0 sentinel
+        distances_arr = np.where(np.isfinite(distances_arr), distances_arr, 1.0)
+        return pd.Series(distances_arr, index = prices.index)
 
     def _calculate_sr_bounce_signal(self, df: pd.DataFrame, levels: list, level_type: str) -> pd.Series:
         """Calculate SR bounce signals based on price action near levels."""
@@ -2005,16 +2070,25 @@ class HMMRegimeDiscoveryStep:
 
             self.logger.info('📊 Scaling features for HMM...')
 
-            # Final validation: ensure no infinity or zero values remain
+            # Ensure only numeric columns are used and clean feature matrix
+            if isinstance(features, pd.DataFrame):
+                features = features.select_dtypes(include=[np.number]).copy()
+
+            # Final validation: ensure no infinity values remain, and only warn on zeros beyond warmup rows
             inf_count = np.isinf(features).sum().sum()
-            zero_count = (features == 0).sum().sum()
+            warmup_rows = min(50, features.shape[0]) if hasattr(features, 'shape') else 50
+            try:
+                zero_count = (features.iloc[warmup_rows:] == 0).sum().sum() if hasattr(features, 'iloc') else 0
+                total_values = features.iloc[warmup_rows:].shape[0] * features.iloc[warmup_rows:].shape[1] if hasattr(features, 'iloc') else 0
+            except Exception:
+                zero_count = (features == 0).sum().sum()
+                total_values = features.shape[0] * features.shape[1]
             if inf_count > 0:
                 self.logger.error(f'❌ Found {inf_count} infinity values in features after cleaning')
                 return {'success': False, 'error': f'Infinity values remain in features: {inf_count}'}
-            if zero_count > 0:
-                total_values = features.shape[0] * features.shape[1]
+            if zero_count > 0 and total_values > 0:
                 zero_percentage = (zero_count / total_values) * 100
-                self.logger.warning(f'⚠️ Found {zero_count} zero values in features after cleaning ({zero_percentage:.3f}%)')
+                self.logger.info(f'ℹ️ Zeros (beyond warmup {warmup_rows} rows): {zero_count} ({zero_percentage:.3f}%)')
 
             # Features should now be clean (no infinity values due to root cause fixes)
             scaler = StandardScaler()
@@ -2104,7 +2178,11 @@ class HMMRegimeDiscoveryStep:
 
             model_ckpt_dir = Path(self.config.get('hmm', {}).get('checkpoint_dir', 'data/hmm_ckpts'))
             model_ckpt_dir.mkdir(parents = True, exist_ok = True)
-            ckpt_path = model_ckpt_dir / f"{self.config.get('EXCHANGE', 'EX')}_{self.config.get('SYMBOL', 'SYM')}_{self.config.get('TIMEFRAME', '1m')}_hmm_{n_hmm_states}.npz"
+            # Normalize naming to uppercase exchange/symbol and lowercase timeframe
+            ex = str(self.config.get('EXCHANGE', 'EX')).upper()
+            sym = str(self.config.get('SYMBOL', 'SYM')).upper()
+            tf = str(self.config.get('TIMEFRAME', '1m')).lower()
+            ckpt_path = model_ckpt_dir / f"{ex}_{sym}_{tf}_hmm_{n_hmm_states}.npz"
             try:
                 if ckpt_path.exists():
                     self.logger.info(f'♻️  Loading HMM checkpoint: {ckpt_path}')
@@ -2151,14 +2229,18 @@ class HMMRegimeDiscoveryStep:
             except Exception as e:
                 self.logger.warning(f'⚠️ Failed to save HMM checkpoint: {e}')
 
-            hmm_state_sequence = hmm_model.predict(features_scaled)
-            hmm_state_probs = hmm_model.predict_proba(features_scaled)
+            hmm_state_sequence = hmm_model.predict(features_init if (not needs_refinement) else features_scaled)
+            hmm_state_probs = hmm_model.predict_proba(features_init if (not needs_refinement) else features_scaled)
 
             # Store HMM score before cleanup since it's needed later
-            hmm_log_likelihood = hmm_model.score(features_scaled) if hasattr(hmm_model, 'score') else 0.0
+            hmm_log_likelihood = hmm_model.score(features_init if (not needs_refinement) else features_scaled) if hasattr(hmm_model, 'score') else 0.0
 
             # Memory cleanup: free features_scaled after predictions if we're done with it
-            del features_scaled
+            # Free the largest arrays that are no longer needed
+            try:
+                del features_scaled
+            except Exception:
+                pass
             self.logger.info("🧹 Cleaned up features_scaled after HMM predictions")
 
             self.logger.info('🎯 Phase 2: Creating 20-cluster composite analysis...')
@@ -2244,7 +2326,7 @@ class HMMRegimeDiscoveryStep:
                     'failed_ops': 0,
                     'error_rate': 0.0,
                     'convergence_iterations': getattr(hmm_model, 'n_iter', 0),
-                    'log_likelihood': hmm_model.score(features_scaled) if hasattr(hmm_model, 'score') else 0.0
+                    'log_likelihood': hmm_log_likelihood
                 }
 
                 # Log financial metrics using the new financial logger

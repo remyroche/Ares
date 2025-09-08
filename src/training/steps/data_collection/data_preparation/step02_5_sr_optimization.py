@@ -466,8 +466,8 @@ class SROptimizationStep(BaseStep):
                 return result
             
             # Check 2: Minimum data size
-            if len(data) < 100:
-                result['errors'].append(f'Insufficient data: {len(data)} rows (minimum: 100)')
+            if len(data) < 500:
+                result['errors'].append(f'Insufficient data: {len(data)} rows (minimum: 500)')
                 result['valid'] = False
                 return result
             
@@ -3134,8 +3134,8 @@ class SROptimizationStep(BaseStep):
         """Run SR detection with comprehensive fast-fail checks."""
         try:
             # Fast-fail: Check if we have sufficient data for SR detection
-            if len(features_data) < 1000:
-                self.logger.warning(f'⚠️ Insufficient data for SR detection: {len(features_data)} rows (minimum: 1000)')
+            if len(features_data) < 500:
+                self.logger.warning(f'⚠️ Insufficient data for SR detection: {len(features_data)} rows (minimum: 500)')
                 return self._get_fallback_sr_levels()
             
             # Fast-fail: Check memory usage before SR detection
@@ -3144,15 +3144,8 @@ class SROptimizationStep(BaseStep):
                 self.logger.warning(f'⚠️ High memory usage before SR detection: {memory_usage:.1%}')
                 return self._get_fallback_sr_levels()
             
-            # Run SR detection with timeout
-            try:
-                sr_levels = await asyncio.wait_for(
-                    self._run_sr_detection(features_data),
-                    timeout=600  # 10 minutes timeout
-                )
-            except asyncio.TimeoutError:
-                self.logger.error('⏰ SR detection timed out after 10 minutes')
-                return self._get_fallback_sr_levels()
+            # Run SR detection without timeout (let it complete naturally)
+            sr_levels = await self._run_sr_detection(features_data)
             
             # Fast-fail: Check if SR detection produced meaningful results
             if not self._validate_sr_results(sr_levels):
@@ -3220,8 +3213,8 @@ class SROptimizationStep(BaseStep):
 
         try:
             # Fast-fail: Check if we have sufficient data for ML training
-            if len(features_data) < 500:
-                self.logger.warning(f'⚠️ Insufficient data for ML training: {len(features_data)} rows (minimum: 500)')
+            if len(features_data) < 10000:
+                self.logger.warning(f'⚠️ Insufficient data for ML training: {len(features_data)} rows (minimum: 10,000)')
                 return self._get_fallback_ml_result(features_data, sr_levels)
             
             # Fast-fail: Check if we have SR levels
@@ -3558,8 +3551,8 @@ class SROptimizationStep(BaseStep):
                 return {}
             
             # Fast-fail: Check if we have sufficient data for optimization
-            if len(X) < 1000:
-                self.logger.warning(f'⚠️ Insufficient data for hyperparameter optimization: {len(X)} samples (minimum: 1000)')
+            if len(X) < 500:
+                self.logger.warning(f'⚠️ Insufficient data for hyperparameter optimization: {len(X)} samples (minimum: 500)')
                 return self._get_default_hyperparameters()
             
             # Fast-fail: Check memory usage before optimization
@@ -3705,13 +3698,13 @@ class SROptimizationStep(BaseStep):
             from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
             from sklearn.ensemble import RandomForestClassifier
             
-            # Reduced parameter grid for faster execution
+            # Optimized parameter grid - balanced for performance and coverage
             param_grid = {
-                'n_estimators': [50, 100],  # Reduced from [50, 100, 200]
-                'max_depth': [5, 10, None],  # Reduced from [5, 10, 15, None]
-                'min_samples_split': [2, 5],  # Reduced from [2, 5, 10]
-                'min_samples_leaf': [1, 2],  # Reduced from [1, 2, 4]
-                'max_features': ['sqrt', 'log2']  # Reduced from ['sqrt', 'log2', None]
+                'n_estimators': [50, 100, 200],  # Restored for better coverage
+                'max_depth': [5, 10, 15, None],  # Restored for better coverage
+                'min_samples_split': [2, 5, 10],  # Restored for better coverage
+                'min_samples_leaf': [1, 2, 4],  # Restored for better coverage
+                'max_features': ['sqrt', 'log2', None]  # Restored for better coverage
             }
             
             # Use time series split with fewer folds
@@ -3754,13 +3747,13 @@ class SROptimizationStep(BaseStep):
             from sklearn.ensemble import RandomForestClassifier
             from scipy.stats import randint
             
-            # Reduced parameter distributions
+            # Balanced parameter distributions for better coverage
             param_distributions = {
-                'n_estimators': randint(50, 200),  # Reduced range
-                'max_depth': [5, 10, 15, None],  # Reduced options
-                'min_samples_split': randint(2, 10),  # Reduced range
-                'min_samples_leaf': randint(1, 5),  # Reduced range
-                'max_features': ['sqrt', 'log2'],  # Reduced options
+                'n_estimators': randint(50, 300),  # Expanded range for better coverage
+                'max_depth': [5, 10, 15, 20, None],  # More options for better coverage
+                'min_samples_split': randint(2, 20),  # Expanded range for better coverage
+                'min_samples_leaf': randint(1, 10),  # Expanded range for better coverage
+                'max_features': ['sqrt', 'log2', None],  # More options for better coverage
                 'bootstrap': [True, False]
             }
             
@@ -4117,8 +4110,8 @@ class SROptimizationStep(BaseStep):
         """Optimize feature selection with incremental filtering and caching for best performance."""
         try:
             # Fast-fail: Check if we have sufficient data for feature selection
-            if len(X) < 100:
-                self.logger.warning(f'⚠️ Insufficient data for feature selection: {len(X)} samples (minimum: 100)')
+            if len(X) < 500:
+                self.logger.warning(f'⚠️ Insufficient data for feature selection: {len(X)} samples (minimum: 500)')
                 return X, feature_names, self._get_fallback_feature_selection_info(feature_names)
             
             # Fast-fail: Check if we have too many features (memory constraint)
@@ -4266,13 +4259,13 @@ class SROptimizationStep(BaseStep):
             # Sort features by importance
             sorted_features = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)
             
-            # Adaptive target features based on data size
-            if len(X) < 1000:
-                target_features = min(20, len(feature_names))
-            elif len(X) < 10000:
-                target_features = min(50, len(feature_names))
+            # Adaptive target features based on data size (more conservative)
+            if len(X) < 5000:
+                target_features = min(30, len(feature_names))
+            elif len(X) < 20000:
+                target_features = min(60, len(feature_names))
             else:
-                target_features = min(100, len(feature_names))
+                target_features = min(120, len(feature_names))
             
             top_feature_names = [name for name, _ in sorted_features[:target_features]]
             

@@ -2182,15 +2182,15 @@ class HMMRegimeDiscoveryStep:
             self.logger.info('🎯 Phase 5: Generating comprehensive reports...')
             # Use Step03EnhancedReporter for proper HMM reporting
             try:
-                from src.training.steps.market_analysis.hmm_clustering.step03_enhanced_reporting import Step03EnhancedReporter
+                from src.training.steps.market_analysis.hmm_clustering.step03_financial_logging import Step03FinancialLogger
 
                 # Get symbol, exchange, timeframe from config
                 symbol = self.config.get('SYMBOL', 'UNKNOWN')
                 exchange = self.config.get('EXCHANGE', 'UNKNOWN')
                 timeframe = self.config.get('TIMEFRAME', '30m')
 
-                # Initialize the enhanced reporter
-                reporter = Step03EnhancedReporter()
+                # Initialize the financial logger
+                financial_logger = Step03FinancialLogger()
 
                 # Prepare HMM results for enhanced reporting
                 hmm_results = {
@@ -2247,8 +2247,8 @@ class HMMRegimeDiscoveryStep:
                     'log_likelihood': hmm_model.score(features_scaled) if hasattr(hmm_model, 'score') else 0.0
                 }
 
-                # Generate comprehensive report
-                reports = reporter.generate_comprehensive_report(
+                # Log financial metrics using the new financial logger
+                financial_logger.log_step_execution(
                     hmm_results=hmm_results,
                     clustering_results=clustering_results,
                     performance_data=performance_data,
@@ -2257,11 +2257,19 @@ class HMMRegimeDiscoveryStep:
                     exchange=exchange,
                     timeframe=timeframe
                 )
+                
+                # Create minimal reports for compatibility
+                reports = {
+                    'hmm_results': hmm_results,
+                    'clustering_results': clustering_results,
+                    'performance_data': performance_data,
+                    'financial_metrics_logged': True
+                }
 
                 self.logger.info('✅ Enhanced Step03 reporting completed successfully')
 
             except ImportError as e:
-                self.logger.warning(f"Could not import Step03EnhancedReporter: {e}, falling back to basic reporting")
+                self.logger.warning(f"Could not import Step03FinancialLogger: {e}, falling back to basic reporting")
                 # Fallback to basic reporting if import fails
                 reports = {
                     'hmm_states': n_hmm_states,

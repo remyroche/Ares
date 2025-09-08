@@ -9,7 +9,7 @@ and generates comprehensive reports with proper data.
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from src.training.steps.data_collection.data_preparation.step02_5_enhanced_reporting import Step02_5EnhancedReporter
+from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
 from src.training.reports import save_training_report
 
 def create_test_data():
@@ -142,57 +142,23 @@ def main():
 
         # Initialize reporter
         print("\n📝 Initializing enhanced reporter...")
-        reporter = Step02_5EnhancedReporter('BTCUSDT', 'binance', '1h')
+        reporter = Step02_5FinancialLogger('BTCUSDT', 'binance', '1h')
         print("✅ Enhanced reporter initialized")
 
-        # Generate comprehensive report
-        print("\n📈 Generating comprehensive report...")
-        report = reporter.generate_comprehensive_report(
+        # Log financial metrics
+        print("\n📈 Logging financial metrics...")
+        reporter.log_step_execution(
             sr_levels=sr_levels,
             ml_results=ml_results,
             execution_data=execution_data,
             data=test_data
         )
-        print("✅ Comprehensive report generated")
-        print(f"   Report keys: {list(report.keys())}")
+        print("✅ Financial metrics logged successfully")
 
-        # Save reports
-        print("\n💾 Saving reports...")
-        saved_reports = reporter.save_comprehensive_report(
-            report_data=report,
-            include_visualizations=False  # Skip visualizations for faster testing
-        )
-
-        print("✅ Reports saved successfully:")
-        for report_type, file_path in saved_reports.items():
-            print(f"   - {report_type}: {file_path}")
-
-        # Verify report content
-        print("\n🔍 Verifying report content...")
-        if 'report_metadata' in report:
-            metadata = report['report_metadata']
-            print(f"   - Symbol: {metadata.get('symbol')}")
-            print(f"   - Exchange: {metadata.get('exchange')}")
-            print(f"   - Current Price: ${metadata.get('current_price', 'N/A')}")
-
-        if 'sr_level_analysis' in report:
-            sr_analysis = report['sr_level_analysis']
-            support_analysis = sr_analysis.get('support_analysis', {})
-            resistance_analysis = sr_analysis.get('resistance_analysis', {})
-            print(f"   - Support levels: {support_analysis.get('total_levels', 0)}")
-            print(f"   - Resistance levels: {resistance_analysis.get('total_levels', 0)}")
-
-        if 'ml_model_insights' in report:
-            ml_insights = report['ml_model_insights']
-            print(f"   - ML Model Type: {ml_insights.get('model_type', 'Unknown')}")
-            print(f"   - Direction Accuracy: {ml_insights.get('direction_accuracy', 0):.3f}")
-
-        print("\n🎉 All tests passed! Enhanced reporting is working correctly.")
+        print("\n🎉 All tests passed! Financial logging is working correctly.")
         print("📋 Summary:")
-        print("   ✅ Reporter initialization: SUCCESS")
-        print("   ✅ Report generation: SUCCESS")
-        print("   ✅ Report saving: SUCCESS")
-        print("   ✅ Content verification: SUCCESS")
+        print("   ✅ Financial logger initialization: SUCCESS")
+        print("   ✅ Financial metrics logging: SUCCESS")
 
         return True
 

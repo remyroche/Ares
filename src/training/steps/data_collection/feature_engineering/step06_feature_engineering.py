@@ -103,7 +103,7 @@ class FeatureEngineeringStep(BaseStep):
             config: Configuration dictionary
         """
         super().__init__(config, '06', 'feature_engineering')
-        self.feature_config = config.get('feature_engineering_config', {'use_technical_indicators': True, 'use_interaction_features': True, 'use_regime_features': True, 'use_dynamic_lookback': True, 'lookback_periods': {'short': [5, 10, 20], 'medium': [50, 100], 'long': [200]}, 'feature_selection': {'enabled': True, 'max_features': 100, 'importance_threshold': 0.01}})
+        self.feature_config = config.get('feature_engineering_config', {'use_technical_indicators': True, 'use_interaction_features': True, 'use_regime_features': True, 'use_sr_features': True, 'use_dynamic_lookback': True, 'lookback_periods': {'short': [5, 10, 20], 'medium': [50, 100], 'long': [200]}, 'feature_selection': {'enabled': True, 'max_features': 100, 'importance_threshold': 0.01}, 'sr_config': {'atr_period': 14, 'atr_multiplier': 1.0, 'pivot_period': 4, 'prominence_threshold': 0.5, 'width_threshold': 1, 'max_levels_per_type': 10, 'tolerance_atr_multiplier': 0.5}})
         self.technical_engine = None
         self.interaction_engine = None
         self.regime_engine = None
@@ -120,6 +120,7 @@ class FeatureEngineeringStep(BaseStep):
                 self.regime_engine = RegimeAwareFeatureEngine()
             if self.feature_config.get('use_sr_features', True):
                 self.sr_engine = SupportResistanceFeatureEngine(self.feature_config.get('sr_config', {}))
+                self.logger.info('✅ S/R feature engine initialized')
             self.logger.info('✅ Feature engineering components initialized')
         except ImportError as e:
             self.logger.warning(f'⚠️ Some feature components not available: {e}')
@@ -358,6 +359,19 @@ class FeatureEngineeringStep(BaseStep):
             data['sr_price_position'] = (data['close'] - data['low'].rolling(20).min()) / (data['high'].rolling(20).max() - data['low'].rolling(20).min())
             data['sr_near_high'] = (data['close'] >= data['high'].rolling(20).max() * 0.98).astype(int)
             data['sr_near_low'] = (data['close'] <= data['low'].rolling(20).min() * 1.02).astype(int)
+            
+            # Basic distance features
+            data['sr_dist_to_high'] = (data['high'].rolling(20).max() - data['close']) / data['close']
+            data['sr_dist_to_low'] = (data['close'] - data['low'].rolling(20).min()) / data['close']
+            
+            # Basic momentum features
+            data['sr_momentum_5'] = data['close'].pct_change(5)
+            data['sr_momentum_10'] = data['close'].pct_change(10)
+            
+            # Basic breakout/rejection flags
+            data['sr_breakout_high'] = (data['close'] > data['high'].rolling(20).max().shift(1)).astype(int)
+            data['sr_breakout_low'] = (data['close'] < data['low'].rolling(20).min().shift(1)).astype(int)
+            
             return data
         except Exception as e:
             self.logger.warning(f'Basic S/R features creation failed: {e}')

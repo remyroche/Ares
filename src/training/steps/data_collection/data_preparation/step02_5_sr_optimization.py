@@ -1028,7 +1028,25 @@ class SROptimizationStep(BaseStep):
             # Return success with all results
             print("✅ STEP02_5: Execution completed successfully, about to return results")
             self.logger.info('✅ Step 2.5 SR optimization completed successfully')
-            success_result = {'success': True, 'step02_5_sr_optimization_completed': True, 'sr_levels': sr_levels, 'sr_optimization_results': optimization_results, 'features_data': features_data, 'ml_results': ml_results, 'execution_time': execution_time, 'execution_report': execution_report, 'internal_call_tracker': internal_call_tracker, 'unified_performance_summary': performance_summary, 'step_name': 'step02_5_sr_optimization', 'pipeline_state_update': {'sr_levels': sr_levels}}
+            self.logger.info(f'📊 S/R levels detected: {len(sr_levels.get("support_levels", []))} support, {len(sr_levels.get("resistance_levels", []))} resistance')
+            
+            # Ensure S/R levels are properly formatted for step06
+            formatted_sr_levels = self._format_sr_levels_for_pipeline(sr_levels)
+            
+            success_result = {
+                'success': True, 
+                'step02_5_sr_optimization_completed': True, 
+                'sr_levels': formatted_sr_levels, 
+                'sr_optimization_results': optimization_results, 
+                'features_data': features_data, 
+                'ml_results': ml_results, 
+                'execution_time': execution_time, 
+                'execution_report': execution_report, 
+                'internal_call_tracker': internal_call_tracker, 
+                'unified_performance_summary': performance_summary, 
+                'step_name': 'step02_5_sr_optimization', 
+                'pipeline_state_update': {'sr_levels': formatted_sr_levels}
+            }
 
         except Exception as e:
             self.logger.error(f'❌ SR optimization failed: {e}')
@@ -2403,6 +2421,79 @@ class SROptimizationStep(BaseStep):
             # Fallback to simple price range
             return (data['high'] - data['low']).rolling(window=period).mean()
 
+    def _format_sr_levels_for_pipeline(self, sr_levels: Dict[str, Any]) -> Dict[str, Any]:
+        """Format S/R levels for pipeline state consumption by step06."""
+        try:
+            formatted_levels = {
+                'support_levels': [],
+                'resistance_levels': [],
+                'metadata': {
+                    'total_support': len(sr_levels.get('support_levels', [])),
+                    'total_resistance': len(sr_levels.get('resistance_levels', [])),
+                    'detection_timestamp': pd.Timestamp.now().isoformat()
+                }
+            }
+            
+            # Format support levels
+            for level in sr_levels.get('support_levels', []):
+                if hasattr(level, 'price'):  # SRLevel object
+                    formatted_level = {
+                        'price': level.price,
+                        'strength': level.strength,
+                        'touch_count': level.touch_count,
+                        'first_touch_time': level.first_touch_time.isoformat() if level.first_touch_time else None,
+                        'last_touch_time': level.last_touch_time.isoformat() if level.last_touch_time else None,
+                        'age_bars': level.age_bars,
+                        'avg_bounce_ratio': level.avg_bounce_ratio,
+                        'max_bounce_ratio': level.max_bounce_ratio,
+                        'volume_confirmation_score': level.volume_confirmation_score,
+                        'consistency_score': level.consistency_score,
+                        'confidence_score': level.confidence_score,
+                        'confluence_score': level.confluence_score,
+                        'type': 'support'
+                    }
+                else:  # Dictionary format
+                    formatted_level = {
+                        'price': level.get('price', level),
+                        'strength': level.get('strength', 0.5),
+                        'touch_count': level.get('touch_count', 1),
+                        'type': 'support'
+                    }
+                formatted_levels['support_levels'].append(formatted_level)
+            
+            # Format resistance levels
+            for level in sr_levels.get('resistance_levels', []):
+                if hasattr(level, 'price'):  # SRLevel object
+                    formatted_level = {
+                        'price': level.price,
+                        'strength': level.strength,
+                        'touch_count': level.touch_count,
+                        'first_touch_time': level.first_touch_time.isoformat() if level.first_touch_time else None,
+                        'last_touch_time': level.last_touch_time.isoformat() if level.last_touch_time else None,
+                        'age_bars': level.age_bars,
+                        'avg_bounce_ratio': level.avg_bounce_ratio,
+                        'max_bounce_ratio': level.max_bounce_ratio,
+                        'volume_confirmation_score': level.volume_confirmation_score,
+                        'consistency_score': level.consistency_score,
+                        'confidence_score': level.confidence_score,
+                        'confluence_score': level.confluence_score,
+                        'type': 'resistance'
+                    }
+                else:  # Dictionary format
+                    formatted_level = {
+                        'price': level.get('price', level),
+                        'strength': level.get('strength', 0.5),
+                        'touch_count': level.get('touch_count', 1),
+                        'type': 'resistance'
+                    }
+                formatted_levels['resistance_levels'].append(formatted_level)
+            
+            self.logger.info(f'✅ Formatted {len(formatted_levels["support_levels"])} support and {len(formatted_levels["resistance_levels"])} resistance levels for pipeline')
+            return formatted_levels
+            
+        except Exception as e:
+            self.logger.error(f'❌ Failed to format S/R levels for pipeline: {e}')
+            return {'support_levels': [], 'resistance_levels': [], 'metadata': {'error': str(e)}}
 
     def _prepare_sr_targets(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> pd.DataFrame:
         """Prepare target variables from SR levels for ML training with enhanced features."""

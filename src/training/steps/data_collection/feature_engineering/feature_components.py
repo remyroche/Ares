@@ -2331,6 +2331,14 @@ class SupportResistanceFeatureEngine:
             sr_features = self._create_time_features(sr_features, data, sr_levels)
             sr_features = self._create_volume_features(sr_features, data, sr_levels)
             
+            # Create advanced S/R features
+            sr_features = self._create_signed_distance_change_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_velocity_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_proximity_direction_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_breakout_rejection_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_relative_momentum_features(sr_features, data, sr_levels, current_atr)
+            sr_features = self._create_time_since_approach_features(sr_features, data, sr_levels, current_atr)
+            
             self.logger.info(f'✅ Created {len(sr_features.columns)} S/R features')
             return sr_features
             
@@ -2669,4 +2677,286 @@ class SupportResistanceFeatureEngine:
             
         except Exception as e:
             self.logger.warning(f'Volume features creation failed: {e}')
+            return features
+
+    def _create_signed_distance_change_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                                              sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create signed distance change features (Δdist = dist_t - dist_{t-1})."""
+        try:
+            # Calculate distance changes
+            if 'sr_dist_to_nearest_support_atr' in features.columns:
+                features['sr_delta_dist_support'] = features['sr_dist_to_nearest_support_atr'].diff()
+                features['sr_delta_dist_support_positive'] = (features['sr_delta_dist_support'] > 0).astype(int)
+                features['sr_delta_dist_support_negative'] = (features['sr_delta_dist_support'] < 0).astype(int)
+            
+            if 'sr_dist_to_nearest_resistance_atr' in features.columns:
+                features['sr_delta_dist_resistance'] = features['sr_dist_to_nearest_resistance_atr'].diff()
+                features['sr_delta_dist_resistance_positive'] = (features['sr_delta_dist_resistance'] > 0).astype(int)
+                features['sr_delta_dist_resistance_negative'] = (features['sr_delta_dist_resistance'] < 0).astype(int)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Signed distance change features creation failed: {e}')
+            return features
+
+    def _create_velocity_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                                sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create velocity toward S/R features (normalized by ATR)."""
+        try:
+            # Calculate velocity (distance change per time unit, normalized by ATR)
+            if 'sr_delta_dist_support' in features.columns:
+                # Use price change as time proxy (1 bar = 1 time unit)
+                price_change = data['close'].pct_change().abs()
+                features['sr_velocity_toward_support'] = features['sr_delta_dist_support'] / (price_change + 1e-8)
+                features['sr_velocity_toward_support_atr'] = features['sr_velocity_toward_support'] / atr
+            
+            if 'sr_delta_dist_resistance' in features.columns:
+                price_change = data['close'].pct_change().abs()
+                features['sr_velocity_toward_resistance'] = features['sr_delta_dist_resistance'] / (price_change + 1e-8)
+                features['sr_velocity_toward_resistance_atr'] = features['sr_velocity_toward_resistance'] / atr
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Velocity features creation failed: {e}')
+            return features
+
+    def _create_proximity_direction_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                                           sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create proximity + direction categorical features."""
+        try:
+            tolerance = atr * self.tolerance_atr_multiplier
+            
+            # Determine proximity and direction states
+            proximity_states = []
+            
+            for i in range(len(data)):
+                current_price = data['close'].iloc[i]
+                
+                # Get distances to nearest levels
+                dist_support = features['sr_dist_to_nearest_support_atr'].iloc[i] * atr if 'sr_dist_to_nearest_support_atr' in features.columns else float('inf')
+                dist_resistance = features['sr_dist_to_nearest_resistance_atr'].iloc[i] * atr if 'sr_dist_to_nearest_resistance_atr' in features.columns else float('inf')
+                
+                # Determine state
+                if dist_support <= tolerance and dist_resistance <= tolerance:
+                    # Near both - determine which is closer
+                    if dist_support < dist_resistance:
+                        state = 'approaching_support'
+                    else:
+                        state = 'approaching_resistance'
+                elif dist_support <= tolerance:
+                    # Check direction of movement
+                    if i > 0:
+                        prev_price = data['close'].iloc[i-1]
+                        if current_price < prev_price:
+                            state = 'approaching_support'
+                        else:
+                            state = 'moving_away_from_support'
+                    else:
+                        state = 'approaching_support'
+                elif dist_resistance <= tolerance:
+                    # Check direction of movement
+                    if i > 0:
+                        prev_price = data['close'].iloc[i-1]
+                        if current_price > prev_price:
+                            state = 'approaching_resistance'
+                        else:
+                            state = 'moving_away_from_resistance'
+                    else:
+                        state = 'approaching_resistance'
+                else:
+                    state = 'neutral'
+                
+                proximity_states.append(state)
+            
+            # Create one-hot encoded features
+            state_dummies = pd.get_dummies(proximity_states, prefix='sr_proximity_state')
+            for col in state_dummies.columns:
+                features[col] = state_dummies[col].values
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Proximity direction features creation failed: {e}')
+            return features
+
+    def _create_breakout_rejection_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                                          sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create breakout vs rejection flags."""
+        try:
+            tolerance = atr * self.tolerance_atr_multiplier
+            breakout_support = []
+            breakout_resistance = []
+            rejection_support = []
+            rejection_resistance = []
+            
+            for i in range(len(data)):
+                if i < 2:  # Need at least 2 previous bars
+                    breakout_support.append(0)
+                    breakout_resistance.append(0)
+                    rejection_support.append(0)
+                    rejection_resistance.append(0)
+                    continue
+                
+                current_price = data['close'].iloc[i]
+                prev_price = data['close'].iloc[i-1]
+                prev2_price = data['close'].iloc[i-2]
+                
+                # Get nearest levels
+                support_levels = sr_levels.get('support_levels', [])
+                resistance_levels = sr_levels.get('resistance_levels', [])
+                
+                # Find nearest support and resistance
+                nearest_support = None
+                nearest_resistance = None
+                
+                if support_levels:
+                    support_prices = [level.get('price', level) for level in support_levels if isinstance(level.get('price', level), (int, float))]
+                    if support_prices:
+                        nearest_support = min(support_prices, key=lambda x: abs(current_price - x))
+                
+                if resistance_levels:
+                    resistance_prices = [level.get('price', level) for level in resistance_levels if isinstance(level.get('price', level), (int, float))]
+                    if resistance_prices:
+                        nearest_resistance = min(resistance_prices, key=lambda x: abs(current_price - x))
+                
+                # Check for breakouts and rejections
+                support_breakout = 0
+                support_rejection = 0
+                resistance_breakout = 0
+                resistance_rejection = 0
+                
+                if nearest_support is not None:
+                    # Check if price broke below support
+                    if prev_price > nearest_support and current_price < nearest_support:
+                        support_breakout = 1
+                    # Check if price bounced off support
+                    elif abs(prev_price - nearest_support) <= tolerance and current_price > prev_price:
+                        support_rejection = 1
+                
+                if nearest_resistance is not None:
+                    # Check if price broke above resistance
+                    if prev_price < nearest_resistance and current_price > nearest_resistance:
+                        resistance_breakout = 1
+                    # Check if price bounced off resistance
+                    elif abs(prev_price - nearest_resistance) <= tolerance and current_price < prev_price:
+                        resistance_rejection = 1
+                
+                breakout_support.append(support_breakout)
+                breakout_resistance.append(resistance_breakout)
+                rejection_support.append(support_rejection)
+                rejection_resistance.append(resistance_rejection)
+            
+            features['sr_breakout_support'] = breakout_support
+            features['sr_breakout_resistance'] = breakout_resistance
+            features['sr_rejection_support'] = rejection_support
+            features['sr_rejection_resistance'] = rejection_resistance
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Breakout rejection features creation failed: {e}')
+            return features
+
+    def _create_relative_momentum_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                                         sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create relative momentum to level features."""
+        try:
+            # Calculate momentum
+            momentum_short = data['close'].pct_change(5)  # 5-period momentum
+            momentum_medium = data['close'].pct_change(10)  # 10-period momentum
+            
+            # Relative momentum features
+            relative_momentum_support = []
+            relative_momentum_resistance = []
+            
+            for i in range(len(data)):
+                current_momentum = momentum_short.iloc[i] if not pd.isna(momentum_short.iloc[i]) else 0
+                
+                # Get distance to nearest levels
+                dist_support = features['sr_dist_to_nearest_support_atr'].iloc[i] if 'sr_dist_to_nearest_support_atr' in features.columns else float('inf')
+                dist_resistance = features['sr_dist_to_nearest_resistance_atr'].iloc[i] if 'sr_dist_to_nearest_resistance_atr' in features.columns else float('inf')
+                
+                # Calculate relative momentum
+                # Positive momentum approaching resistance = high breakout likelihood
+                # Negative momentum approaching support = high breakout likelihood
+                if dist_support < dist_resistance:
+                    # Closer to support
+                    relative_momentum_support.append(current_momentum * (1 / (dist_support + 1e-8)))
+                    relative_momentum_resistance.append(0)
+                else:
+                    # Closer to resistance
+                    relative_momentum_support.append(0)
+                    relative_momentum_resistance.append(current_momentum * (1 / (dist_resistance + 1e-8)))
+            
+            features['sr_relative_momentum_support'] = relative_momentum_support
+            features['sr_relative_momentum_resistance'] = relative_momentum_resistance
+            
+            # Momentum direction features
+            features['sr_momentum_approaching_support'] = ((momentum_short < 0) & (features['sr_delta_dist_support'] < 0)).astype(int)
+            features['sr_momentum_approaching_resistance'] = ((momentum_short > 0) & (features['sr_delta_dist_resistance'] < 0)).astype(int)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Relative momentum features creation failed: {e}')
+            return features
+
+    def _create_time_since_approach_features(self, features: pd.DataFrame, data: pd.DataFrame,
+                                           sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
+        """Create time since last approach features."""
+        try:
+            tolerance = atr * self.tolerance_atr_multiplier
+            
+            time_since_approach_support = []
+            time_since_approach_resistance = []
+            
+            for i in range(len(data)):
+                current_price = data['close'].iloc[i]
+                
+                # Find last time price was within tolerance of support
+                last_support_approach = -1
+                for j in range(max(0, i-100), i):  # Look back up to 100 bars
+                    if abs(data['close'].iloc[j] - current_price) <= tolerance:
+                        # Check if there was a support level nearby
+                        support_levels = sr_levels.get('support_levels', [])
+                        for level in support_levels:
+                            if isinstance(level.get('price', level), (int, float)):
+                                if abs(data['close'].iloc[j] - level.get('price', level)) <= tolerance:
+                                    last_support_approach = i - j
+                                    break
+                        if last_support_approach != -1:
+                            break
+                
+                # Find last time price was within tolerance of resistance
+                last_resistance_approach = -1
+                for j in range(max(0, i-100), i):  # Look back up to 100 bars
+                    if abs(data['close'].iloc[j] - current_price) <= tolerance:
+                        # Check if there was a resistance level nearby
+                        resistance_levels = sr_levels.get('resistance_levels', [])
+                        for level in resistance_levels:
+                            if isinstance(level.get('price', level), (int, float)):
+                                if abs(data['close'].iloc[j] - level.get('price', level)) <= tolerance:
+                                    last_resistance_approach = i - j
+                                    break
+                        if last_resistance_approach != -1:
+                            break
+                
+                time_since_approach_support.append(last_support_approach if last_support_approach != -1 else 999)
+                time_since_approach_resistance.append(last_resistance_approach if last_resistance_approach != -1 else 999)
+            
+            features['sr_time_since_approach_support'] = time_since_approach_support
+            features['sr_time_since_approach_resistance'] = time_since_approach_resistance
+            
+            # Categorical features for fresh vs stale levels
+            features['sr_fresh_support_test'] = (features['sr_time_since_approach_support'] <= 5).astype(int)
+            features['sr_fresh_resistance_test'] = (features['sr_time_since_approach_resistance'] <= 5).astype(int)
+            features['sr_stale_support_level'] = (features['sr_time_since_approach_support'] > 20).astype(int)
+            features['sr_stale_resistance_level'] = (features['sr_time_since_approach_resistance'] > 20).astype(int)
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f'Time since approach features creation failed: {e}')
             return features

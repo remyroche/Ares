@@ -22,6 +22,50 @@ import warnings
 # Avoid circular import - import these functions when needed
 # from src.training.reports import save_training_report, CentralizedReportManager
 from src.utils.logger import system_logger
+
+# Standardized imports from utils
+from src.utils.common_operations import (
+    safe_read_parquet,
+    safe_file_exists,
+    get_logger,
+    safe_dict_get,
+    safe_float,
+    safe_int,
+    safe_json_dump,
+    safe_json_load,
+    optimize_dataframe_dtypes,
+    validate_dataframe_schema,
+    validate_data_quality
+)
+from src.utils.math_validation import (
+    safe_divide,
+    safe_log,
+    safe_sqrt,
+    safe_kelly_calculation,
+    validate_positive,
+    validate_range,
+    MathValidationError
+)
+from src.utils.parquet_utils import get_parquet_utils
+# Core decorators imports
+from src.core.decorators import (
+    handles_errors,
+    traced,
+    validates,
+    log_execution_time,
+    cached,
+    error_boundary,
+    timeout,
+    retry
+)
+# Core errors imports
+from src.core.errors import (
+    AppError,
+    ValidationError,
+    DataIntegrityError,
+    NotFoundError,
+    TimeoutError
+)
 import logging
 import time
 

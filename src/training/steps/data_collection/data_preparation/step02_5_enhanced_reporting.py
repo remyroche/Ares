@@ -690,10 +690,42 @@ class Step02_5EnhancedReporter:
                     confidence_score=direction_accuracy
                 )
             
+            # Log file paths that were created during this step
+            self._log_created_file_paths()
+            
             logger.info("💰 Financial metrics logged successfully from Step02_5 results")
             
         except Exception as e:
             logger.warning(f"Could not log financial metrics from results: {e}")
+
+    def _log_created_file_paths(self) -> None:
+        """Log file paths that were created during this step."""
+        try:
+            # Get the financial logger to access its file paths
+            financial_logger = get_financial_metrics_logger()
+            
+            # Log the main financial metrics file path
+            if hasattr(financial_logger, 'current_file_path') and financial_logger.current_file_path:
+                logger.info(f"📁 Financial metrics file created: {financial_logger.current_file_path}")
+                
+                # Log this as a financial metric for tracking
+                financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="metrics_file_path",
+                    metric_value=0.0,  # No numeric value for file path
+                    metric_type="file_path",
+                    step_name="Step02_5_SR_Optimization",
+                    additional_data={'file_path': str(financial_logger.current_file_path)}
+                )
+            
+            # Log any other files that might have been created
+            # (This would be expanded based on what files are actually created in the step)
+            logger.info("📁 File paths logged for Step02_5")
+            
+        except Exception as e:
+            logger.warning(f"Could not log file paths: {e}")
 
     def _generate_trading_recommendations(self,
                                          sr_analysis: Dict[str, Any],

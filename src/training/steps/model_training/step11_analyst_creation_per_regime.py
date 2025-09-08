@@ -122,6 +122,18 @@ class PerRegimeAnalystCreationStep(Step11AnalystCreation):
             Regime intelligence data or None
         """
         try:
+            # Fast fail: Validate inputs
+            if not symbol or not exchange or not timeframe:
+                self.logger.error("❌ Missing required parameters: symbol, exchange, or timeframe")
+                return None
+            
+            if not data_dir or not Path(data_dir).exists():
+                self.logger.error(f"❌ Invalid data directory: {data_dir}")
+                return None
+            
+            if regime_id is None or regime_id < 0:
+                self.logger.error(f"❌ Invalid regime_id: {regime_id}")
+                return None
             # Try per-regime intelligence data first
             intelligence_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_regime_intelligence_regime_{regime_id}.json'
             
@@ -365,6 +377,22 @@ class PerRegimeAnalystCreationStep(Step11AnalystCreation):
             self.logger.error(f"❌ Error applying analyst creation for regime {regime_id}: {e}")
             return None
     
+    def _create_base_analyst_template(self, analyst_type: str, regime_id: int, specialization: str) -> Dict[str, Any]:
+        """Create base analyst template to reduce code duplication."""
+        return {
+            'analyst_type': analyst_type,
+            'regime_id': regime_id,
+            'specialization': specialization,
+            'capabilities': {},
+            'parameters': {},
+            'intelligence_integration': {},
+            'performance_metrics': {
+                f'{specialization}_accuracy': 0.0,
+                f'{specialization}_precision': 0.0,
+                f'{specialization}_recall': 0.0
+            }
+        }
+
     async def _create_trend_analyst(
         self,
         intelligence_components: Dict[str, Any],
@@ -388,10 +416,11 @@ class PerRegimeAnalystCreationStep(Step11AnalystCreation):
             # Create trend analyst based on regime characteristics
             analyst_params = regime_config.get('analyst_parameters', {}).get('trend_analyst', {})
             
-            trend_analyst = {
-                'analyst_type': 'trend_analyst',
-                'regime_id': regime_id,
-                'specialization': 'trend_analysis',
+            # Use base template
+            trend_analyst = self._create_base_analyst_template('trend_analyst', regime_id, 'trend_analysis')
+            
+            # Customize for trend analysis
+            trend_analyst.update({
                 'capabilities': {
                     'trend_detection': True,
                     'trend_strength_measurement': True,
@@ -407,13 +436,8 @@ class PerRegimeAnalystCreationStep(Step11AnalystCreation):
                     'pattern_rules': pattern_intelligence.get('pattern_rules', {}),
                     'confidence_thresholds': pattern_intelligence.get('confidence_thresholds', {}),
                     'pattern_types': pattern_intelligence.get('pattern_types', [])
-                },
-                'performance_metrics': {
-                    'trend_accuracy': 0.0,  # Will be calculated during training
-                    'trend_precision': 0.0,
-                    'trend_recall': 0.0
                 }
-            }
+            })
             
             self.logger.info(f"✅ Created trend analyst for regime {regime_id}")
             return trend_analyst

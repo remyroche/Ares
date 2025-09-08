@@ -62,6 +62,16 @@ class Step11FinancialloggingFinancialLogger:
             True if logging succeeded, False if fail-fast conditions triggered
         """
         try:
+            # Fast fail: Validate critical parameters
+            if not self.symbol or not self.exchange or not self.timeframe:
+                logger.error("❌ Missing critical parameters for financial logging")
+                return False
+            
+            # Validate data if provided
+            if data is not None and not isinstance(data, pd.DataFrame):
+                logger.error("❌ Invalid data type for financial logging")
+                return False
+            
             # Use enhanced logging if available and data is provided
             if self.enhanced_logger and data is not None:
                 return self._log_with_enhanced_regime_validation(*args, data=data, **kwargs)
@@ -69,7 +79,21 @@ class Step11FinancialloggingFinancialLogger:
                 # Fallback to standard logging
                 return self._log_with_standard_method(*args, **kwargs)
         except Exception as e:
-            logger.error(f"Failed to log financial metrics: {e}")
+            logger.error(f"❌ Failed to log financial metrics: {e}")
+            # Log the error to financial metrics for tracking
+            try:
+                self.financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="logging_error",
+                    metric_value=1.0,
+                    metric_type="error",
+                    step_name="Step11_Financial",
+                    additional_data={'error_message': str(e)}
+                )
+            except:
+                pass  # Don't let logging errors cascade
             return False
     
     def _log_with_enhanced_regime_validation(self, *args, data: pd.DataFrame, **kwargs) -> bool:

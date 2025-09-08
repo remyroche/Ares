@@ -21,8 +21,10 @@ import warnings
 # Avoid circular import - import these functions when needed
 # from src.training.reports import save_training_report, CentralizedReportManager
 from src.utils.logger import system_logger
+from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
 
 logger = system_logger.getChild('Step05EnhancedReporting')
+financial_logger = get_financial_metrics_logger()
 
 
 @dataclass
@@ -172,34 +174,42 @@ class Step05EnhancedReporter:
         Returns:
             Comprehensive report dictionary
         """
-        try:
-            self.logger.info("🔍 Generating comprehensive Step05 (Labeling) report...")
+        # Use financial metrics context for this step
+        with financial_metrics_context("Step05_Enhanced_Reporting", symbol, exchange, timeframe):
+            try:
+                self.logger.info("🔍 Generating comprehensive Step05 (Labeling) report...")
+                financial_logger.log_step_start("Step05_Enhanced_Reporting", symbol, exchange, timeframe)
 
-            # Generate all report sections
-            report = {
-                'metadata': self._generate_metadata(symbol, exchange, timeframe),
-                'label_quality_assessment': self._generate_label_quality_assessment(labeled_data),
-                'performance_metrics': self._generate_performance_metrics(performance_data),
-                'meta_labeling_analysis': self._generate_meta_labeling_analysis(meta_labeling_analysis),
-                'validation_results': self._generate_validation_results(validation_results),
-                'label_distribution_analysis': self._generate_label_distribution_analysis(labeled_data),
-                'trading_strategy_implications': self._generate_trading_strategy_implications(labeled_data, labeling_results),
-                'labeling_efficiency_analysis': self._generate_labeling_efficiency_analysis(performance_data),
-                'optimization_recommendations': self._generate_optimization_recommendations(performance_data, labeling_results),
-                'visualization_data': self._generate_visualization_data(labeled_data, labeling_results)
-            }
+                # Generate all report sections
+                report = {
+                    'metadata': self._generate_metadata(symbol, exchange, timeframe),
+                    'label_quality_assessment': self._generate_label_quality_assessment(labeled_data),
+                    'performance_metrics': self._generate_performance_metrics(performance_data),
+                    'meta_labeling_analysis': self._generate_meta_labeling_analysis(meta_labeling_analysis),
+                    'validation_results': self._generate_validation_results(validation_results),
+                    'label_distribution_analysis': self._generate_label_distribution_analysis(labeled_data),
+                    'trading_strategy_implications': self._generate_trading_strategy_implications(labeled_data, labeling_results),
+                    'labeling_efficiency_analysis': self._generate_labeling_efficiency_analysis(performance_data),
+                    'optimization_recommendations': self._generate_optimization_recommendations(performance_data, labeling_results),
+                    'visualization_data': self._generate_visualization_data(labeled_data, labeling_results)
+                }
 
-            self.logger.info("✅ Comprehensive Step05 report generated successfully")
-            return report
+                # Log key financial metrics from the report
+                self._log_financial_metrics_from_report(report, symbol, exchange, timeframe)
 
-        except Exception as e:
-            self.logger.error(f"❌ Failed to generate comprehensive report: {e}")
-            # Return minimal report on error
-            return {
-                'metadata': self._generate_metadata(symbol, exchange, timeframe),
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
-            }
+                self.logger.info("✅ Comprehensive Step05 report generated successfully")
+                financial_logger.log_step_end("Step05_Enhanced_Reporting", symbol, exchange, timeframe, success=True)
+                return report
+
+            except Exception as e:
+                self.logger.error(f"❌ Failed to generate comprehensive report: {e}")
+                financial_logger.log_step_end("Step05_Enhanced_Reporting", symbol, exchange, timeframe, success=False, error_message=str(e))
+                # Return minimal report on error
+                return {
+                    'metadata': self._generate_metadata(symbol, exchange, timeframe),
+                    'error': str(e),
+                    'timestamp': datetime.now().isoformat()
+                }
 
     def _generate_metadata(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Generate report metadata."""
@@ -213,6 +223,156 @@ class Step05EnhancedReporter:
             'step_name': 'Step 5',
             'step_description': 'Enhanced Labeling with Meta-Labeling and Validation'
         }
+
+    def _log_financial_metrics_from_report(self, report: Dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
+        """Log key financial metrics from the comprehensive report."""
+        try:
+            # Log trading strategy implications as financial metrics
+            trading_data = report.get('trading_strategy_implications', {})
+            if trading_data and 'strategy_implications' in trading_data:
+                implications = trading_data['strategy_implications']
+                
+                # Log key performance metrics
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="expected_win_rate",
+                    metric_value=implications.get('expected_win_rate', 0.0),
+                    metric_type="performance",
+                    step_name="Step05_Enhanced_Reporting"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="expected_profit_factor",
+                    metric_value=implications.get('expected_profit_factor', 0.0),
+                    metric_type="performance",
+                    step_name="Step05_Enhanced_Reporting"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="expected_max_drawdown",
+                    metric_value=implications.get('expected_max_drawdown', 0.0),
+                    metric_type="risk",
+                    step_name="Step05_Enhanced_Reporting"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="strategy_confidence_score",
+                    metric_value=implications.get('strategy_confidence_score', 0.0),
+                    metric_type="performance",
+                    step_name="Step05_Enhanced_Reporting"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="risk_adjusted_return_expectation",
+                    metric_value=implications.get('risk_adjusted_return_expectation', 0.0),
+                    metric_type="performance",
+                    step_name="Step05_Enhanced_Reporting"
+                )
+            
+            # Log label quality metrics
+            quality_data = report.get('label_quality_assessment', {})
+            if quality_data and 'quality_metrics' in quality_data:
+                metrics = quality_data['quality_metrics']
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="label_confidence_score",
+                    metric_value=metrics.get('label_confidence_score', 0.0),
+                    metric_type="quality",
+                    step_name="Step05_Enhanced_Reporting"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="label_accuracy_estimate",
+                    metric_value=metrics.get('label_accuracy_estimate', 0.0),
+                    metric_type="quality",
+                    step_name="Step05_Enhanced_Reporting"
+                )
+            
+            # Log performance metrics
+            perf_data = report.get('performance_metrics', {})
+            if perf_data and 'metrics' in perf_data:
+                metrics = perf_data['metrics']
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="processing_efficiency",
+                    metric_value=metrics.get('processing_efficiency', 0.0),
+                    metric_type="performance",
+                    step_name="Step05_Enhanced_Reporting"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="error_rate",
+                    metric_value=metrics.get('error_rate', 0.0),
+                    metric_type="risk",
+                    step_name="Step05_Enhanced_Reporting"
+                )
+            
+            # Log comprehensive trading performance if we have enough data
+            if trading_data and 'strategy_implications' in trading_data:
+                implications = trading_data['strategy_implications']
+                
+                # Create performance data dictionary for comprehensive logging
+                performance_data = {
+                    'total_return': implications.get('expected_win_rate', 0.0) * implications.get('expected_profit_factor', 1.0) - 1.0,
+                    'annualized_return': implications.get('expected_win_rate', 0.0) * implications.get('expected_profit_factor', 1.0) - 1.0,
+                    'volatility': 0.2,  # Default volatility estimate
+                    'sharpe_ratio': implications.get('risk_adjusted_return_expectation', 0.0),
+                    'sortino_ratio': implications.get('risk_adjusted_return_expectation', 0.0) * 1.2,  # Estimate
+                    'calmar_ratio': implications.get('expected_win_rate', 0.0) / max(implications.get('expected_max_drawdown', 0.1), 0.01),
+                    'max_drawdown': implications.get('expected_max_drawdown', 0.0),
+                    'max_drawdown_duration': 30,  # Default estimate
+                    'var_95': implications.get('expected_max_drawdown', 0.0) * 0.8,  # Estimate
+                    'cvar_95': implications.get('expected_max_drawdown', 0.0) * 0.9,  # Estimate
+                    'win_rate': implications.get('expected_win_rate', 0.0),
+                    'profit_factor': implications.get('expected_profit_factor', 1.0),
+                    'avg_win': implications.get('expected_profit_factor', 1.0) * 0.02,  # Estimate
+                    'avg_loss': 0.01,  # Default estimate
+                    'largest_win': implications.get('expected_profit_factor', 1.0) * 0.05,  # Estimate
+                    'largest_loss': implications.get('expected_max_drawdown', 0.0) * 0.5,  # Estimate
+                    'total_trades': 100,  # Default estimate
+                    'winning_trades': int(implications.get('expected_win_rate', 0.5) * 100),
+                    'losing_trades': int((1 - implications.get('expected_win_rate', 0.5)) * 100)
+                }
+                
+                financial_logger.log_trading_performance(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    step_name="Step05_Enhanced_Reporting",
+                    performance_data=performance_data,
+                    confidence_score=implications.get('strategy_confidence_score', 0.0)
+                )
+            
+            self.logger.info("💰 Financial metrics logged successfully from Step05 report")
+            
+        except Exception as e:
+            self.logger.warning(f"Could not log financial metrics from report: {e}")
 
     def _generate_label_quality_assessment(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
         """Assess the quality of generated labels."""

@@ -353,24 +353,32 @@ class FeatureEngineeringStep(BaseStep):
     @log_all_calls
 
     def _create_basic_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Create basic S/R features as fallback."""
+        """Create basic S/R features as fallback using percentage returns."""
         try:
-            # Simple distance-based features
+            # Simple distance-based features using percentage returns
             data['sr_price_position'] = (data['close'] - data['low'].rolling(20).min()) / (data['high'].rolling(20).max() - data['low'].rolling(20).min())
             data['sr_near_high'] = (data['close'] >= data['high'].rolling(20).max() * 0.98).astype(int)
             data['sr_near_low'] = (data['close'] <= data['low'].rolling(20).min() * 1.02).astype(int)
             
-            # Basic distance features
-            data['sr_dist_to_high'] = (data['high'].rolling(20).max() - data['close']) / data['close']
-            data['sr_dist_to_low'] = (data['close'] - data['low'].rolling(20).min()) / data['close']
+            # Basic distance features using percentage returns
+            data['sr_dist_to_high_pct'] = (data['high'].rolling(20).max() - data['close']) / data['close']
+            data['sr_dist_to_low_pct'] = (data['close'] - data['low'].rolling(20).min()) / data['close']
             
-            # Basic momentum features
+            # Basic momentum features (already percentage returns)
             data['sr_momentum_5'] = data['close'].pct_change(5)
             data['sr_momentum_10'] = data['close'].pct_change(10)
             
-            # Basic breakout/rejection flags
+            # Basic breakout/rejection flags using percentage returns
             data['sr_breakout_high'] = (data['close'] > data['high'].rolling(20).max().shift(1)).astype(int)
             data['sr_breakout_low'] = (data['close'] < data['low'].rolling(20).min().shift(1)).astype(int)
+            
+            # Basic velocity features using percentage returns
+            data['sr_velocity_to_high'] = data['sr_dist_to_high_pct'].diff() / (data['close'].pct_change().abs() + 1e-8)
+            data['sr_velocity_to_low'] = data['sr_dist_to_low_pct'].diff() / (data['close'].pct_change().abs() + 1e-8)
+            
+            # Basic relative momentum features
+            data['sr_relative_momentum_high'] = data['sr_momentum_5'] * (1 / (data['sr_dist_to_high_pct'].abs() + 1e-8))
+            data['sr_relative_momentum_low'] = data['sr_momentum_5'] * (1 / (data['sr_dist_to_low_pct'].abs() + 1e-8))
             
             return data
         except Exception as e:

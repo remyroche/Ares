@@ -2422,31 +2422,57 @@ class SupportResistanceFeatureEngine:
     
     def _create_distance_features(self, features: pd.DataFrame, data: pd.DataFrame, 
                                 sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
-        """Create distance-based features normalized by ATR."""
+        """Create distance-based features using percentage returns and ATR normalization."""
         try:
             support_levels = sr_levels.get('support_levels', [])
             resistance_levels = sr_levels.get('resistance_levels', [])
             current_prices = data['close'].values
             
-            # Distance to nearest support/resistance (ATR-normalized)
-            nearest_support_distances = []
-            nearest_resistance_distances = []
+            # Distance to nearest support/resistance (percentage returns + ATR-normalized)
+            nearest_support_distances_pct = []
+            nearest_resistance_distances_pct = []
+            nearest_support_distances_atr = []
+            nearest_resistance_distances_atr = []
             
             for price in current_prices:
                 # Find nearest support
                 support_distances = [abs(price - level.get('price', level)) for level in support_levels 
                                    if isinstance(level.get('price', level), (int, float))]
                 nearest_support_dist = min(support_distances) if support_distances else float('inf')
-                nearest_support_distances.append(nearest_support_dist / atr if atr > 0 else 0)
+                
+                # Calculate percentage return: (level - price) / price
+                if support_distances:
+                    nearest_support_price = min([level.get('price', level) for level in support_levels 
+                                               if isinstance(level.get('price', level), (int, float))], 
+                                              key=lambda x: abs(price - x))
+                    support_pct = (nearest_support_price - price) / price
+                    nearest_support_distances_pct.append(support_pct)
+                else:
+                    nearest_support_distances_pct.append(0.0)
+                
+                nearest_support_distances_atr.append(nearest_support_dist / atr if atr > 0 else 0)
                 
                 # Find nearest resistance
                 resistance_distances = [abs(price - level.get('price', level)) for level in resistance_levels 
                                       if isinstance(level.get('price', level), (int, float))]
                 nearest_resistance_dist = min(resistance_distances) if resistance_distances else float('inf')
-                nearest_resistance_distances.append(nearest_resistance_dist / atr if atr > 0 else 0)
+                
+                # Calculate percentage return: (level - price) / price
+                if resistance_distances:
+                    nearest_resistance_price = min([level.get('price', level) for level in resistance_levels 
+                                                  if isinstance(level.get('price', level), (int, float))], 
+                                                 key=lambda x: abs(price - x))
+                    resistance_pct = (nearest_resistance_price - price) / price
+                    nearest_resistance_distances_pct.append(resistance_pct)
+                else:
+                    nearest_resistance_distances_pct.append(0.0)
+                
+                nearest_resistance_distances_atr.append(nearest_resistance_dist / atr if atr > 0 else 0)
             
-            features['sr_dist_to_nearest_support_atr'] = nearest_support_distances
-            features['sr_dist_to_nearest_resistance_atr'] = nearest_resistance_distances
+            features['sr_dist_to_nearest_support_pct'] = nearest_support_distances_pct
+            features['sr_dist_to_nearest_resistance_pct'] = nearest_resistance_distances_pct
+            features['sr_dist_to_nearest_support_atr'] = nearest_support_distances_atr
+            features['sr_dist_to_nearest_resistance_atr'] = nearest_resistance_distances_atr
             
             return features
             
@@ -2650,25 +2676,32 @@ class SupportResistanceFeatureEngine:
             support_levels = sr_levels.get('support_levels', [])
             resistance_levels = sr_levels.get('resistance_levels', [])
             
-            # Calculate average volume near S/R levels
+            # Calculate volume ratios (normalized by average volume)
             volume_at_support = []
             volume_at_resistance = []
+            
+            # Calculate average volume for normalization
+            avg_volume = data['volume'].rolling(20).mean()
             
             for i in range(len(data)):
                 current_price = data['close'].iloc[i]
                 current_volume = data['volume'].iloc[i]
+                current_avg_volume = avg_volume.iloc[i] if not pd.isna(avg_volume.iloc[i]) else 1
                 
-                # Check if near support levels
-                near_support = any(abs(current_price - level.get('price', level)) <= current_price * 0.01 
+                # Normalize volume by average volume (percentage of average)
+                volume_ratio = current_volume / current_avg_volume if current_avg_volume > 0 else 0
+                
+                # Check if near support levels (using percentage-based tolerance)
+                near_support = any(abs(current_price - level.get('price', level)) / current_price <= 0.01 
                                  for level in support_levels 
                                  if isinstance(level.get('price', level), (int, float)))
-                volume_at_support.append(current_volume if near_support else 0)
+                volume_at_support.append(volume_ratio if near_support else 0)
                 
-                # Check if near resistance levels
-                near_resistance = any(abs(current_price - level.get('price', level)) <= current_price * 0.01 
+                # Check if near resistance levels (using percentage-based tolerance)
+                near_resistance = any(abs(current_price - level.get('price', level)) / current_price <= 0.01 
                                     for level in resistance_levels 
                                     if isinstance(level.get('price', level), (int, float)))
-                volume_at_resistance.append(current_volume if near_resistance else 0)
+                volume_at_resistance.append(volume_ratio if near_resistance else 0)
             
             features['sr_volume_at_support'] = volume_at_support
             features['sr_volume_at_resistance'] = volume_at_resistance
@@ -2681,18 +2714,25 @@ class SupportResistanceFeatureEngine:
 
     def _create_signed_distance_change_features(self, features: pd.DataFrame, data: pd.DataFrame,
                                               sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
-        """Create signed distance change features (Δdist = dist_t - dist_{t-1})."""
+        """Create signed distance change features using percentage returns (Δdist = dist_t - dist_{t-1})."""
         try:
-            # Calculate distance changes
+            # Calculate distance changes using percentage returns
+            if 'sr_dist_to_nearest_support_pct' in features.columns:
+                features['sr_delta_dist_support_pct'] = features['sr_dist_to_nearest_support_pct'].diff()
+                features['sr_delta_dist_support_positive'] = (features['sr_delta_dist_support_pct'] > 0).astype(int)
+                features['sr_delta_dist_support_negative'] = (features['sr_delta_dist_support_pct'] < 0).astype(int)
+            
+            if 'sr_dist_to_nearest_resistance_pct' in features.columns:
+                features['sr_delta_dist_resistance_pct'] = features['sr_dist_to_nearest_resistance_pct'].diff()
+                features['sr_delta_dist_resistance_positive'] = (features['sr_delta_dist_resistance_pct'] > 0).astype(int)
+                features['sr_delta_dist_resistance_negative'] = (features['sr_delta_dist_resistance_pct'] < 0).astype(int)
+            
+            # Also calculate ATR-normalized changes for comparison
             if 'sr_dist_to_nearest_support_atr' in features.columns:
-                features['sr_delta_dist_support'] = features['sr_dist_to_nearest_support_atr'].diff()
-                features['sr_delta_dist_support_positive'] = (features['sr_delta_dist_support'] > 0).astype(int)
-                features['sr_delta_dist_support_negative'] = (features['sr_delta_dist_support'] < 0).astype(int)
+                features['sr_delta_dist_support_atr'] = features['sr_dist_to_nearest_support_atr'].diff()
             
             if 'sr_dist_to_nearest_resistance_atr' in features.columns:
-                features['sr_delta_dist_resistance'] = features['sr_dist_to_nearest_resistance_atr'].diff()
-                features['sr_delta_dist_resistance_positive'] = (features['sr_delta_dist_resistance'] > 0).astype(int)
-                features['sr_delta_dist_resistance_negative'] = (features['sr_delta_dist_resistance'] < 0).astype(int)
+                features['sr_delta_dist_resistance_atr'] = features['sr_dist_to_nearest_resistance_atr'].diff()
             
             return features
             
@@ -2702,19 +2742,28 @@ class SupportResistanceFeatureEngine:
 
     def _create_velocity_features(self, features: pd.DataFrame, data: pd.DataFrame,
                                 sr_levels: Dict[str, Any], atr: float) -> pd.DataFrame:
-        """Create velocity toward S/R features (normalized by ATR)."""
+        """Create velocity toward S/R features using percentage returns (normalized by ATR)."""
         try:
-            # Calculate velocity (distance change per time unit, normalized by ATR)
-            if 'sr_delta_dist_support' in features.columns:
+            # Calculate velocity using percentage returns (distance change per time unit)
+            if 'sr_delta_dist_support_pct' in features.columns:
                 # Use price change as time proxy (1 bar = 1 time unit)
                 price_change = data['close'].pct_change().abs()
-                features['sr_velocity_toward_support'] = features['sr_delta_dist_support'] / (price_change + 1e-8)
-                features['sr_velocity_toward_support_atr'] = features['sr_velocity_toward_support'] / atr
+                features['sr_velocity_toward_support_pct'] = features['sr_delta_dist_support_pct'] / (price_change + 1e-8)
+                features['sr_velocity_toward_support_atr'] = features['sr_velocity_toward_support_pct'] / atr
             
-            if 'sr_delta_dist_resistance' in features.columns:
+            if 'sr_delta_dist_resistance_pct' in features.columns:
                 price_change = data['close'].pct_change().abs()
-                features['sr_velocity_toward_resistance'] = features['sr_delta_dist_resistance'] / (price_change + 1e-8)
-                features['sr_velocity_toward_resistance_atr'] = features['sr_velocity_toward_resistance'] / atr
+                features['sr_velocity_toward_resistance_pct'] = features['sr_delta_dist_resistance_pct'] / (price_change + 1e-8)
+                features['sr_velocity_toward_resistance_atr'] = features['sr_velocity_toward_resistance_pct'] / atr
+            
+            # Also calculate velocity using ATR-normalized distances
+            if 'sr_delta_dist_support_atr' in features.columns:
+                price_change = data['close'].pct_change().abs()
+                features['sr_velocity_toward_support_atr_raw'] = features['sr_delta_dist_support_atr'] / (price_change + 1e-8)
+            
+            if 'sr_delta_dist_resistance_atr' in features.columns:
+                price_change = data['close'].pct_change().abs()
+                features['sr_velocity_toward_resistance_atr_raw'] = features['sr_delta_dist_resistance_atr'] / (price_change + 1e-8)
             
             return features
             
@@ -2734,34 +2783,37 @@ class SupportResistanceFeatureEngine:
             for i in range(len(data)):
                 current_price = data['close'].iloc[i]
                 
-                # Get distances to nearest levels
-                dist_support = features['sr_dist_to_nearest_support_atr'].iloc[i] * atr if 'sr_dist_to_nearest_support_atr' in features.columns else float('inf')
-                dist_resistance = features['sr_dist_to_nearest_resistance_atr'].iloc[i] * atr if 'sr_dist_to_nearest_resistance_atr' in features.columns else float('inf')
+                # Get distances to nearest levels (use percentage returns for better normalization)
+                dist_support_pct = abs(features['sr_dist_to_nearest_support_pct'].iloc[i]) if 'sr_dist_to_nearest_support_pct' in features.columns else float('inf')
+                dist_resistance_pct = abs(features['sr_dist_to_nearest_resistance_pct'].iloc[i]) if 'sr_dist_to_nearest_resistance_pct' in features.columns else float('inf')
                 
-                # Determine state
-                if dist_support <= tolerance and dist_resistance <= tolerance:
+                # Convert to ATR units for tolerance comparison
+                tolerance_pct = (atr * self.tolerance_atr_multiplier) / current_price
+                
+                # Determine state using percentage-based tolerance
+                if dist_support_pct <= tolerance_pct and dist_resistance_pct <= tolerance_pct:
                     # Near both - determine which is closer
-                    if dist_support < dist_resistance:
+                    if dist_support_pct < dist_resistance_pct:
                         state = 'approaching_support'
                     else:
                         state = 'approaching_resistance'
-                elif dist_support <= tolerance:
-                    # Check direction of movement
+                elif dist_support_pct <= tolerance_pct:
+                    # Check direction of movement using percentage returns
                     if i > 0:
-                        prev_price = data['close'].iloc[i-1]
-                        if current_price < prev_price:
+                        price_change_pct = (current_price - data['close'].iloc[i-1]) / data['close'].iloc[i-1]
+                        if price_change_pct < 0:  # Price falling
                             state = 'approaching_support'
-                        else:
+                        else:  # Price rising
                             state = 'moving_away_from_support'
                     else:
                         state = 'approaching_support'
-                elif dist_resistance <= tolerance:
-                    # Check direction of movement
+                elif dist_resistance_pct <= tolerance_pct:
+                    # Check direction of movement using percentage returns
                     if i > 0:
-                        prev_price = data['close'].iloc[i-1]
-                        if current_price > prev_price:
+                        price_change_pct = (current_price - data['close'].iloc[i-1]) / data['close'].iloc[i-1]
+                        if price_change_pct > 0:  # Price rising
                             state = 'approaching_resistance'
-                        else:
+                        else:  # Price falling
                             state = 'moving_away_from_resistance'
                     else:
                         state = 'approaching_resistance'
@@ -2874,28 +2926,28 @@ class SupportResistanceFeatureEngine:
             for i in range(len(data)):
                 current_momentum = momentum_short.iloc[i] if not pd.isna(momentum_short.iloc[i]) else 0
                 
-                # Get distance to nearest levels
-                dist_support = features['sr_dist_to_nearest_support_atr'].iloc[i] if 'sr_dist_to_nearest_support_atr' in features.columns else float('inf')
-                dist_resistance = features['sr_dist_to_nearest_resistance_atr'].iloc[i] if 'sr_dist_to_nearest_resistance_atr' in features.columns else float('inf')
+                # Get distance to nearest levels (use percentage returns for better normalization)
+                dist_support_pct = abs(features['sr_dist_to_nearest_support_pct'].iloc[i]) if 'sr_dist_to_nearest_support_pct' in features.columns else float('inf')
+                dist_resistance_pct = abs(features['sr_dist_to_nearest_resistance_pct'].iloc[i]) if 'sr_dist_to_nearest_resistance_pct' in features.columns else float('inf')
                 
-                # Calculate relative momentum
+                # Calculate relative momentum using percentage returns
                 # Positive momentum approaching resistance = high breakout likelihood
                 # Negative momentum approaching support = high breakout likelihood
-                if dist_support < dist_resistance:
+                if dist_support_pct < dist_resistance_pct:
                     # Closer to support
-                    relative_momentum_support.append(current_momentum * (1 / (dist_support + 1e-8)))
+                    relative_momentum_support.append(current_momentum * (1 / (dist_support_pct + 1e-8)))
                     relative_momentum_resistance.append(0)
                 else:
                     # Closer to resistance
                     relative_momentum_support.append(0)
-                    relative_momentum_resistance.append(current_momentum * (1 / (dist_resistance + 1e-8)))
+                    relative_momentum_resistance.append(current_momentum * (1 / (dist_resistance_pct + 1e-8)))
             
             features['sr_relative_momentum_support'] = relative_momentum_support
             features['sr_relative_momentum_resistance'] = relative_momentum_resistance
             
-            # Momentum direction features
-            features['sr_momentum_approaching_support'] = ((momentum_short < 0) & (features['sr_delta_dist_support'] < 0)).astype(int)
-            features['sr_momentum_approaching_resistance'] = ((momentum_short > 0) & (features['sr_delta_dist_resistance'] < 0)).astype(int)
+            # Momentum direction features using percentage returns
+            features['sr_momentum_approaching_support'] = ((momentum_short < 0) & (features['sr_delta_dist_support_pct'] < 0)).astype(int)
+            features['sr_momentum_approaching_resistance'] = ((momentum_short > 0) & (features['sr_delta_dist_resistance_pct'] < 0)).astype(int)
             
             return features
             
@@ -2915,29 +2967,34 @@ class SupportResistanceFeatureEngine:
             for i in range(len(data)):
                 current_price = data['close'].iloc[i]
                 
-                # Find last time price was within tolerance of support
+                # Find last time price was within tolerance of support (using percentage returns)
                 last_support_approach = -1
+                tolerance_pct = tolerance / current_price
                 for j in range(max(0, i-100), i):  # Look back up to 100 bars
-                    if abs(data['close'].iloc[j] - current_price) <= tolerance:
+                    price_change_pct = abs(data['close'].iloc[j] - current_price) / current_price
+                    if price_change_pct <= tolerance_pct:
                         # Check if there was a support level nearby
                         support_levels = sr_levels.get('support_levels', [])
                         for level in support_levels:
                             if isinstance(level.get('price', level), (int, float)):
-                                if abs(data['close'].iloc[j] - level.get('price', level)) <= tolerance:
+                                level_dist_pct = abs(data['close'].iloc[j] - level.get('price', level)) / data['close'].iloc[j]
+                                if level_dist_pct <= tolerance_pct:
                                     last_support_approach = i - j
                                     break
                         if last_support_approach != -1:
                             break
                 
-                # Find last time price was within tolerance of resistance
+                # Find last time price was within tolerance of resistance (using percentage returns)
                 last_resistance_approach = -1
                 for j in range(max(0, i-100), i):  # Look back up to 100 bars
-                    if abs(data['close'].iloc[j] - current_price) <= tolerance:
+                    price_change_pct = abs(data['close'].iloc[j] - current_price) / current_price
+                    if price_change_pct <= tolerance_pct:
                         # Check if there was a resistance level nearby
                         resistance_levels = sr_levels.get('resistance_levels', [])
                         for level in resistance_levels:
                             if isinstance(level.get('price', level), (int, float)):
-                                if abs(data['close'].iloc[j] - level.get('price', level)) <= tolerance:
+                                level_dist_pct = abs(data['close'].iloc[j] - level.get('price', level)) / data['close'].iloc[j]
+                                if level_dist_pct <= tolerance_pct:
                                     last_resistance_approach = i - j
                                     break
                         if last_resistance_approach != -1:

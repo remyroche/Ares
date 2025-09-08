@@ -51,6 +51,16 @@ from .trading_integration import (
     TradingSystemIntegrator, TradingSystemConfig
 )
 
+# Trading Mode Monitoring Integration
+from .trading_mode_monitoring_integration import (
+    TradingModeMonitoringIntegration
+)
+
+# Auto Monitoring Launcher
+from .auto_monitoring_launcher import (
+    AutoMonitoringLauncher, launch_auto_monitoring, get_auto_monitoring, stop_auto_monitoring
+)
+
 # GUI components
 from .gui.monitoring_dashboard import (
     MonitoringDashboard, EnhancedMonitoringDashboard,
@@ -118,6 +128,15 @@ __all__ = [
     # Trading Integration
     "TradingSystemIntegrator",
     "TradingSystemConfig",
+    
+    # Trading Mode Monitoring Integration
+    "TradingModeMonitoringIntegration",
+    
+    # Auto Monitoring Launcher
+    "AutoMonitoringLauncher",
+    "launch_auto_monitoring",
+    "get_auto_monitoring",
+    "stop_auto_monitoring",
     
     # GUI components
     "MonitoringDashboard",

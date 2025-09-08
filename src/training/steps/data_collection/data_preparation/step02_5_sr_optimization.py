@@ -441,8 +441,23 @@ class SROptimizationStep(BaseStep):
             
         Returns:
             Validated and fixed DataFrame
+            
+        Raises:
+            ValueError: If data is None, empty, or fails validation
         """
         self.logger.info('🔍 Validating input data using pipeline standards...')
+        
+        # CRITICAL: Validate input data before processing
+        if data is None:
+            raise ValueError("CRITICAL: Input data is None. Cannot proceed with data validation.")
+        
+        if data.empty:
+            raise ValueError("CRITICAL: Input data is empty. Cannot proceed with data validation.")
+        
+        if len(data) < 10:  # Minimum 10 rows for any meaningful processing
+            raise ValueError(f"CRITICAL: Insufficient data for validation. Only {len(data)} rows available, minimum 10 required.")
+        
+        self.logger.info(f'✅ Input data validation passed: {len(data)} rows, {len(data.columns)} columns')
         
         # Create a copy to work with
         fixed_data = data.copy()
@@ -727,6 +742,7 @@ class SROptimizationStep(BaseStep):
         # pipeline_state['sr_quality_evaluation'] = quality_results
 
         try:
+            # CRITICAL: Validate data availability before any processing
             self.logger.info('📊 Retrieving data from pipeline state...')
             data = pipeline_state.get('dataframe')
             if data is None:
@@ -831,7 +847,69 @@ class SROptimizationStep(BaseStep):
                     self.logger.info(f'📊 Data sample: {data.head(2).to_dict() if len(data) > 0 else "No data"}')
                 except Exception as e:
                     self.logger.error(f'❌ Failed to load data from files: {e}')
-                    raise ValueError(f"No DataFrame available from step 2. Expected 'dataframe' or 'validated_data' in pipeline_state or training_input, or valid data files at {data_path}. Error: {e}")
+                    # FAIL FAST: Don't continue with empty data
+                    error_msg = f"CRITICAL: No data available for S/R optimization. Expected 'dataframe' or 'validated_data' in pipeline_state or training_input, or valid data files at {data_path}. Error: {e}"
+                    self.logger.critical(error_msg)
+                    return {
+                        'success': False, 
+                        'error': error_msg,
+                        'error_type': 'DATA_UNAVAILABLE',
+                        'execution_time': time.time() - self.start_time,
+                        'step_name': 'step02_5_sr_optimization',
+                        'data_availability': False,
+                        'recommendation': 'Ensure data collection pipeline is working and data files exist before running S/R optimization'
+                    }
+            
+            # CRITICAL: Validate data before processing
+            if data is None or data.empty:
+                error_msg = "CRITICAL: Data is None or empty after loading. Cannot proceed with S/R optimization."
+                self.logger.critical(error_msg)
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'error_type': 'EMPTY_DATA',
+                    'execution_time': time.time() - self.start_time,
+                    'step_name': 'step02_5_sr_optimization',
+                    'data_availability': False,
+                    'recommendation': 'Check data loading pipeline and ensure valid data is available'
+                }
+            
+            # Validate minimum data requirements
+            if len(data) < 100:  # Minimum 100 rows for meaningful S/R analysis
+                error_msg = f"CRITICAL: Insufficient data for S/R optimization. Only {len(data)} rows available, minimum 100 required."
+                self.logger.critical(error_msg)
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'error_type': 'INSUFFICIENT_DATA',
+                    'execution_time': time.time() - self.start_time,
+                    'step_name': 'step02_5_sr_optimization',
+                    'data_availability': True,
+                    'data_rows': len(data),
+                    'minimum_required': 100,
+                    'recommendation': 'Collect more data or use a different timeframe with sufficient historical data'
+                }
+            
+            # Validate required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                error_msg = f"CRITICAL: Missing required columns for S/R optimization: {missing_columns}. Available columns: {list(data.columns)}"
+                self.logger.critical(error_msg)
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'error_type': 'MISSING_COLUMNS',
+                    'execution_time': time.time() - self.start_time,
+                    'step_name': 'step02_5_sr_optimization',
+                    'data_availability': True,
+                    'data_rows': len(data),
+                    'missing_columns': missing_columns,
+                    'available_columns': list(data.columns),
+                    'recommendation': 'Ensure data contains OHLCV columns (open, high, low, close, volume)'
+                }
+            
+            self.logger.info(f'✅ Data validation passed: {len(data)} rows, {len(data.columns)} columns')
             data = self._validate_and_fix_input_data(data)
             self.logger.info(f'📊 Processing {len(data)} rows of data')
             self.logger.info(f'📊 Data columns: {list(data.columns)}')
@@ -1049,64 +1127,234 @@ class SROptimizationStep(BaseStep):
             }
 
         except Exception as e:
-            self.logger.error(f'❌ SR optimization failed: {e}')
             execution_time = time.time() - self.start_time
-
+            
+            # Determine error type and severity
+            error_type = 'UNKNOWN_ERROR'
+            error_severity = 'HIGH'
+            
+            if 'DATA_UNAVAILABLE' in str(e) or 'No data available' in str(e):
+                error_type = 'DATA_UNAVAILABLE'
+                error_severity = 'CRITICAL'
+            elif 'EMPTY_DATA' in str(e) or 'empty' in str(e).lower():
+                error_type = 'EMPTY_DATA'
+                error_severity = 'CRITICAL'
+            elif 'INSUFFICIENT_DATA' in str(e) or 'Insufficient data' in str(e):
+                error_type = 'INSUFFICIENT_DATA'
+                error_severity = 'HIGH'
+            elif 'MISSING_COLUMNS' in str(e) or 'Missing required columns' in str(e):
+                error_type = 'MISSING_COLUMNS'
+                error_severity = 'HIGH'
+            elif 'ImportError' in str(e) or 'ModuleNotFoundError' in str(e):
+                error_type = 'IMPORT_ERROR'
+                error_severity = 'MEDIUM'
+            elif 'ValueError' in str(e):
+                error_type = 'VALUE_ERROR'
+                error_severity = 'HIGH'
+            
+            self.logger.error(f'❌ SR optimization failed with {error_type}: {e}')
+            self.logger.error(f'🚨 Error severity: {error_severity}')
+            
+            # Generate appropriate error report based on error type
             try:
-                self.logger.info('📝 Generating error recovery report...')
-
-                # Try to get results from failed execution, use defaults
-                sr_levels = locals().get('sr_levels', {})
-                optimization_results = locals().get('optimization_results', {})
-                ml_results = locals().get('ml_results', {})
-                execution_report = locals().get('execution_report', {})
-                performance_summary = locals().get('performance_summary', {})
-
-                # Initialize enhanced reporter for error recovery
                 symbol = training_input.get('symbol', 'UNKNOWN')
                 exchange = training_input.get('exchange', 'UNKNOWN')
                 timeframe = training_input.get('timeframe', '30m')
-
-                financial_logger = Step02_5FinancialLogger(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe
-                )
-
-                # Prepare error recovery data
-                error_execution_data = {
-                    'execution_time': execution_time,
-                    'memory_usage': 0,
-                    'cpu_usage': 0,
-                    'function_calls': 0,
-                    'error_occurred': True,
+                
+                # Create comprehensive error report
+                error_report = {
+                    'success': False,
+                    'error_type': error_type,
+                    'error_severity': error_severity,
                     'error_message': str(e),
-                    'partial_results': bool(sr_levels or ml_results),
-                    'processing_timestamp': datetime.now().isoformat()
+                    'execution_time': execution_time,
+                    'step_name': 'step02_5_sr_optimization',
+                    'timestamp': datetime.now().isoformat(),
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'data_availability': error_type in ['DATA_UNAVAILABLE', 'EMPTY_DATA'],
+                    'recommendations': self._get_error_recommendations(error_type, str(e)),
+                    'troubleshooting_steps': self._get_troubleshooting_steps(error_type),
+                    'next_actions': self._get_next_actions(error_type)
                 }
-
-                # Log error recovery financial metrics
-                financial_logger.log_step_execution(
-                    sr_levels=sr_levels,
-                    ml_results=ml_results,
-                    execution_data=error_execution_data,
-                    data=None  # No data available in error case
+                
+                # Save error report
+                error_report_path = save_training_report(
+                    data=error_report,
+                    step_name='step02_5_sr_optimization',
+                    report_type='error_report',
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    file_format='json'
                 )
-
-                self.logger.info('✅ Error recovery financial metrics logged successfully')
-
+                self.logger.info(f'💾 Error report saved: {error_report_path}')
+                
+                # Log error details for debugging
+                self.logger.error(f'📋 Error details: {error_report}')
+                
             except Exception as report_error:
-                self.logger.warning(f'⚠️ Failed to generate error recovery report: {report_error}')
+                self.logger.error(f'❌ Failed to generate error report: {report_error}')
                 import traceback
-                self.logger.warning(f'Error recovery report traceback: {traceback.format_exc()}')
-                # Final fallback - just log the error
-                self.logger.error(f'❌ Complete failure in step02_5_sr_optimization: {str(e)}')
-
-            # Return error result
-            return {'success': False, 'error': str(e), 'execution_time': execution_time, 'step_name': 'step02_5_sr_optimization'}
+                self.logger.error(f'Error report generation traceback: {traceback.format_exc()}')
+            
+            # Return comprehensive error result
+            return {
+                'success': False,
+                'error': str(e),
+                'error_type': error_type,
+                'error_severity': error_severity,
+                'execution_time': execution_time,
+                'step_name': 'step02_5_sr_optimization',
+                'data_availability': error_type in ['DATA_UNAVAILABLE', 'EMPTY_DATA'],
+                'recommendations': self._get_error_recommendations(error_type, str(e)),
+                'troubleshooting_steps': self._get_troubleshooting_steps(error_type)
+            }
 
         # Return success result if no exception occurred
         return success_result
+
+    def _get_error_recommendations(self, error_type: str, error_message: str) -> List[str]:
+        """Get specific recommendations based on error type."""
+        recommendations = []
+        
+        if error_type == 'DATA_UNAVAILABLE':
+            recommendations = [
+                "Check if data collection pipeline is running correctly",
+                "Verify that data files exist in the expected directory",
+                "Ensure the data collection step (step02) completed successfully",
+                "Check file permissions and disk space",
+                "Consider running data collection manually before S/R optimization"
+            ]
+        elif error_type == 'EMPTY_DATA':
+            recommendations = [
+                "Verify data files are not corrupted",
+                "Check if data files contain valid market data",
+                "Ensure data collection retrieved actual market data",
+                "Verify the data format matches expected schema"
+            ]
+        elif error_type == 'INSUFFICIENT_DATA':
+            recommendations = [
+                "Collect more historical data for the symbol/timeframe",
+                "Use a different timeframe with more available data",
+                "Check if the data collection period is too short",
+                "Verify the symbol has sufficient trading history"
+            ]
+        elif error_type == 'MISSING_COLUMNS':
+            recommendations = [
+                "Ensure data contains OHLCV columns (open, high, low, close, volume)",
+                "Check data schema and column naming conventions",
+                "Verify data preprocessing steps are working correctly",
+                "Ensure data format matches expected structure"
+            ]
+        elif error_type == 'IMPORT_ERROR':
+            recommendations = [
+                "Install missing Python packages",
+                "Check Python environment and dependencies",
+                "Verify all required modules are available",
+                "Update package versions if needed"
+            ]
+        elif error_type == 'VALUE_ERROR':
+            recommendations = [
+                "Check data quality and format",
+                "Verify all required parameters are provided",
+                "Ensure data values are within expected ranges",
+                "Check for data type mismatches"
+            ]
+        else:
+            recommendations = [
+                "Check system logs for detailed error information",
+                "Verify all dependencies are installed correctly",
+                "Ensure system resources are available",
+                "Contact support if the issue persists"
+            ]
+        
+        return recommendations
+
+    def _get_troubleshooting_steps(self, error_type: str) -> List[str]:
+        """Get specific troubleshooting steps based on error type."""
+        steps = []
+        
+        if error_type in ['DATA_UNAVAILABLE', 'EMPTY_DATA']:
+            steps = [
+                "1. Check if data_cache directory exists and contains files",
+                "2. Verify data collection pipeline is working",
+                "3. Run data collection step manually",
+                "4. Check file permissions and disk space",
+                "5. Verify data format and schema"
+            ]
+        elif error_type == 'INSUFFICIENT_DATA':
+            steps = [
+                "1. Check available data range for the symbol",
+                "2. Try a different timeframe (1h, 4h, 1d)",
+                "3. Verify data collection period settings",
+                "4. Check if symbol has sufficient trading history"
+            ]
+        elif error_type == 'MISSING_COLUMNS':
+            steps = [
+                "1. Check data schema and column names",
+                "2. Verify data preprocessing steps",
+                "3. Ensure OHLCV columns are present",
+                "4. Check data format consistency"
+            ]
+        elif error_type == 'IMPORT_ERROR':
+            steps = [
+                "1. Check Python environment",
+                "2. Install missing packages",
+                "3. Verify import paths",
+                "4. Check package versions"
+            ]
+        else:
+            steps = [
+                "1. Check system logs for detailed errors",
+                "2. Verify all dependencies",
+                "3. Check system resources",
+                "4. Review configuration settings"
+            ]
+        
+        return steps
+
+    def _get_next_actions(self, error_type: str) -> List[str]:
+        """Get next actions to take based on error type."""
+        actions = []
+        
+        if error_type in ['DATA_UNAVAILABLE', 'EMPTY_DATA']:
+            actions = [
+                "Run data collection pipeline first",
+                "Verify data files exist and are accessible",
+                "Check data collection configuration",
+                "Ensure sufficient disk space"
+            ]
+        elif error_type == 'INSUFFICIENT_DATA':
+            actions = [
+                "Collect more historical data",
+                "Use a different timeframe",
+                "Check data collection period settings",
+                "Verify symbol trading history"
+            ]
+        elif error_type == 'MISSING_COLUMNS':
+            actions = [
+                "Fix data schema issues",
+                "Ensure OHLCV columns are present",
+                "Check data preprocessing pipeline",
+                "Verify data format consistency"
+            ]
+        elif error_type == 'IMPORT_ERROR':
+            actions = [
+                "Install missing packages",
+                "Check Python environment",
+                "Verify import paths",
+                "Update dependencies"
+            ]
+        else:
+            actions = [
+                "Review error logs",
+                "Check system configuration",
+                "Verify all dependencies",
+                "Contact support if needed"
+            ]
+        
+        return actions
 
     def _generate_final_report(self, sr_levels: Dict[str, Any], optimization_results: Dict[str, Any],
                               ml_results: Dict[str, Any], execution_report: Dict[str, Any],
@@ -1327,6 +1575,24 @@ class SROptimizationStep(BaseStep):
         """Engineer comprehensive features for SR analysis using advanced modules."""
         self.logger.info('🔧 FEATURE ENGINEERING STARTED - Data shape: {}'.format(data.shape))
         feature_start_time = time.time()
+        
+        # CRITICAL: Validate input data before feature engineering
+        if data is None:
+            raise ValueError("CRITICAL: Input data is None for feature engineering. Cannot proceed.")
+        
+        if data.empty:
+            raise ValueError("CRITICAL: Input data is empty for feature engineering. Cannot proceed.")
+        
+        if len(data) < 50:  # Minimum 50 rows for meaningful feature engineering
+            raise ValueError(f"CRITICAL: Insufficient data for feature engineering. Only {len(data)} rows available, minimum 50 required.")
+        
+        # Validate required columns for feature engineering
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise ValueError(f"CRITICAL: Missing required columns for feature engineering: {missing_columns}. Available columns: {list(data.columns)}")
+        
+        self.logger.info(f'✅ Feature engineering input validation passed: {len(data)} rows, {len(data.columns)} columns')
         
         try:
             # Try to use advanced feature engineering module
@@ -2159,6 +2425,24 @@ class SROptimizationStep(BaseStep):
     def _detect_sr_levels(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Detect support and resistance levels using Enhanced SR Detection."""
         self.logger.info('🎯 Using Enhanced SR Detection with multiple advanced algorithms...')
+
+        # CRITICAL: Validate input data before S/R detection
+        if data is None:
+            raise ValueError("CRITICAL: Input data is None for S/R detection. Cannot proceed.")
+        
+        if data.empty:
+            raise ValueError("CRITICAL: Input data is empty for S/R detection. Cannot proceed.")
+        
+        if len(data) < 100:  # Minimum 100 rows for meaningful S/R detection
+            raise ValueError(f"CRITICAL: Insufficient data for S/R detection. Only {len(data)} rows available, minimum 100 required.")
+        
+        # Validate required columns for S/R detection
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise ValueError(f"CRITICAL: Missing required columns for S/R detection: {missing_columns}. Available columns: {list(data.columns)}")
+        
+        self.logger.info(f'✅ S/R detection input validation passed: {len(data)} rows, {len(data.columns)} columns')
 
         # Check if enhanced detector is available
         if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None:

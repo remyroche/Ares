@@ -67,6 +67,11 @@ class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
         self.per_regime_enabled = config.get('per_regime_tactician_labeling', True)
         self.regime_specific_configs = config.get('regime_specific_tactician_configs', {})
         self.adaptive_tactician_strategies = config.get('adaptive_tactician_strategies_per_regime', True)
+        
+        # Enhanced resource management for per-regime processing
+        self.max_concurrent_regimes = config.get('max_concurrent_regimes', 4)
+        self.regime_memory_limit_mb = config.get('regime_memory_limit_mb', 500)
+        self.regime_processing_timeout = config.get('regime_processing_timeout', 300)
 
         # Enhanced optimization components
         self.optimizations_available = OPTIMIZATIONS_AVAILABLE
@@ -95,6 +100,25 @@ class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
             self.logger.info(f"📊 GPU: {self.enable_gpu_acceleration}, Parallel: {self.enable_parallel_processing}")
         else:
             self.logger.info("⚠️ Enhanced Step14 initialized without optimizations (fallback mode)")
+
+    def _validate_per_regime_constraints(self, regime_id: int, data_size: int) -> bool:
+        """Validate per-regime processing constraints."""
+        try:
+            # Check memory constraints
+            if data_size * 8 / (1024**2) > self.regime_memory_limit_mb:
+                self.logger.error(f"❌ Regime {regime_id} data too large: {data_size * 8 / (1024**2):.1f}MB > {self.regime_memory_limit_mb}MB")
+                return False
+            
+            # Check concurrent regime limit
+            if hasattr(self, '_active_regimes') and len(self._active_regimes) >= self.max_concurrent_regimes:
+                self.logger.error(f"❌ Too many concurrent regimes: {len(self._active_regimes)} >= {self.max_concurrent_regimes}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Per-regime constraint validation failed: {e}")
+            return False
 
     @log_important_calls
     @per_regime_step('step14_tactician_labeling')
@@ -133,6 +157,10 @@ class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
 
         try:
             self.logger.info(f"🚀 Starting enhanced per-regime tactician labeling for regime {regime_id}")
+
+            # Fast-fail validation for per-regime constraints
+            if not self._validate_per_regime_constraints(regime_id, 1000):  # Estimate data size
+                return False
 
             # Initialize optimization context
             if self.step_optimizer:

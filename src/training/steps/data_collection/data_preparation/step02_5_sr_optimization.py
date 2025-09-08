@@ -1250,8 +1250,8 @@ class SROptimizationStep(BaseStep):
                 'feature_engineering': {
                     'enable_wavelets': enable_wavelets,
                     'enable_multi_timeframe': True,
-                    'enable_feature_interactions': False,  # Disable feature interactions for step02_5
-                    'enable_regime_features': False,  # Disable regime features for SR optimization
+                    'enable_feature_interactions': True,  # Re-enable interactions
+                    'enable_regime_features': True,  # Re-enable regime features (best-effort)
                     'timeframes': ['30m', '1h', '4h', '1d'],
                     'chunk_size': 500000,
                     'max_features': 500,  # Allow more features
@@ -1271,8 +1271,8 @@ class SROptimizationStep(BaseStep):
             # Use individual advanced feature methods
             self.logger.info('🚀 Executing advanced feature engineering...')
             self.logger.info('📋 Step02_5 Feature Access Policy:')
-            self.logger.info('   INCLUDED: Technical indicators, Microstructure features, Multi-timeframe features')
-            self.logger.info('   EXCLUDED: Feature interactions, Regime-aware features, Wavelet features')
+            self.logger.info('   INCLUDED: Technical indicators, Microstructure features, Multi-timeframe features, Interactions, Regime-aware (best-effort)')
+            self.logger.info('   EXCLUDED: Wavelet features')
             all_advanced_features = {}
 
             # 1. Technical indicators (from step06)
@@ -1310,20 +1310,30 @@ class SROptimizationStep(BaseStep):
                 except Exception as e:
                     self.logger.warning(f'Wavelet features failed: {e}')
 
-            # 5. Feature interactions - DISABLED for step02_5
-            self.logger.info('🔗 Feature interactions: DISABLED for step02_5 (excluded from SR optimization)')
-
-            # 6. Regime-aware features - DISABLED for step02_5
-            if not advanced_fe.enable_regime_features:
-                self.logger.info('🎭 Regime-aware features: DISABLED for step02_5 (excluded from SR optimization)')
-            elif advanced_fe.enable_regime_features and advanced_fe.regime_engine is not None:
-                self.logger.info('🎭 Creating regime-aware features...')
+            # 5. Feature interactions - ENABLED (best-effort)
+            if advanced_fe.enable_feature_interactions:
+                self.logger.info('🔗 Creating feature interactions...')
                 try:
-                    regime_features = advanced_fe._create_regime_aware_features(data, {})
-                    all_advanced_features['regime'] = regime_features
-                    self.logger.info(f'✅ Regime features: {len(regime_features.columns)} features')
+                    interactions = advanced_fe._create_feature_interactions(data)
+                    if interactions is not None and hasattr(interactions, 'columns') and len(interactions.columns) > 0:
+                        all_advanced_features['interactions'] = interactions
+                        self.logger.info(f'✅ Interactions features: {len(interactions.columns)} features')
                 except Exception as e:
-                    self.logger.warning(f'Regime features failed: {e}')
+                    self.logger.warning(f'Feature interactions failed: {e}')
+
+            # 6. Regime-aware features - ENABLED (best-effort)
+            if advanced_fe.enable_regime_features:
+                if getattr(advanced_fe, 'regime_engine', None) is not None:
+                    self.logger.info('🎭 Creating regime-aware features...')
+                    try:
+                        regime_features = advanced_fe._create_regime_aware_features(data, {})
+                        if regime_features is not None and hasattr(regime_features, 'columns') and len(regime_features.columns) > 0:
+                            all_advanced_features['regime'] = regime_features
+                            self.logger.info(f'✅ Regime features: {len(regime_features.columns)} features')
+                    except Exception as e:
+                        self.logger.warning(f'Regime features failed: {e}')
+                else:
+                    self.logger.info('🎭 Regime engine not available; skipping regime-aware features')
 
             # Count total features
             total_advanced_count = sum(len(df.columns) for df in all_advanced_features.values() if df is not None and hasattr(df, 'columns'))
@@ -1377,7 +1387,9 @@ class SROptimizationStep(BaseStep):
         self.logger.info(f'✅ Filtered features: {len(final_columns)} columns ({len(numeric_columns)} numeric + {len([col for col in essential_cols if col in features_data.columns])} essential)')
         self.logger.info(f'🗑️ Removed {len(features_data.columns) - len(final_columns)} non-numeric columns')
 
-        return features_data_filtered
+        # Ensure only numeric columns proceed downstream
+        numeric_cols_final = features_data_filtered.select_dtypes(include=[np.number]).columns
+        return features_data_filtered[numeric_cols_final].copy()
     
     def _engineer_features_enhanced_basic(self, data: pd.DataFrame) -> pd.DataFrame:
         """Enhanced basic feature engineering with market microstructure features."""
@@ -2656,7 +2668,10 @@ class SROptimizationStep(BaseStep):
                     'colsample_bytree': 0.8,
                     'random_state': 42,
                     'n_jobs': -1,
-                    'base_score': 0.5  # Default base score for binary classification
+                    'eval_metric': 'logloss',
+                    # Ensure base_score is valid in (0,1) and not overridden to 0 accidentally
+                    'base_score': 0.5,
+                    'use_label_encoder': False
                 }
 
                 if use_gpu:
@@ -2963,9 +2978,11 @@ class SROptimizationStep(BaseStep):
                             'n_estimators': stats.randint(100, 300),
                             'subsample': stats.uniform(0.6, 0.4),
                             'colsample_bytree': stats.uniform(0.6, 0.4),
-                            'min_child_weight': stats.randint(1, 10)
+                            'min_child_weight': stats.randint(1, 10),
+                            # Keep base_score strictly within (0,1)
+                            'base_score': stats.uniform(0.05, 0.9)
                         }
-                        base_model = xgb.XGBClassifier(random_state=42, n_jobs=-1)
+                        base_model = xgb.XGBClassifier(random_state=42, n_jobs=-1, objective='binary:logistic', eval_metric='logloss', use_label_encoder=False)
                     except ImportError:
                         continue
 

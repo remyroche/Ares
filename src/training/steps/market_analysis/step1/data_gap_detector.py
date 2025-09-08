@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-from . import missing_data_downloader_and_gap_filler
+from . import missing_data_downloader_and_gap_filler  # noqa: F401
 import pandas as pd
 from src.utils.logger import system_logger
-from ....core.decorators import handles_errors
+from ....core.decorators import handles_errors, traced, validates
 
 """Data Gap Detector for Step1.
 
@@ -12,16 +12,9 @@ Detects missing data gaps in aggtrades, klines, and futures files.
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-
-    handles_errors, 
-    traced, 
-    validates,
-    comprehensive_data_validation,
-    handle_errors,
-    validate_data_structure,
-    with_tracing_span
-)
-from src.utils.logger import system_logger
+import logging
+import time
+import typing
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -39,14 +32,10 @@ class DataGapDetector:
         # Import the gap filler for immediate gap filling
         try:
             from .missing_data_downloader_and_gap_filler import (
-import logging
-import time
-import typing
-
                 MissingDataDownloaderAndGapFiller,
             )
             self.gap_filler = MissingDataDownloaderAndGapFiller(data_cache_path)
-        except ImportError:
+        except Exception:
             logger.warning("⚠️ MissingDataDownloaderAndGapFiller not available - gap filling disabled")
             self.gap_filler = None
 

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 1: Data Collection - Refactored to use BaseStep.
 
 This module handles the data collection step of the training pipeline.
@@ -93,7 +94,7 @@ class DataCollectionStep(BaseStep):
         if consolidated_file.exists() and (not training_input.get('force_download', False)):
             self.logger.info(f'📁 Found existing data: {consolidated_file}')
             try:
-                data = pd.read_parquet(consolidated_file)
+                data = standardized_parquet_handler.read_parquet_standardized(consolidated_file)
                 self.logger.info(f'✅ Loaded {len(data)} rows of existing data')
                 pipeline_state['raw_market_data'] = consolidated_file
                 pipeline_state['data_shape'] = data.shape
@@ -110,7 +111,7 @@ class DataCollectionStep(BaseStep):
                 self.logger.info(f'📥 Downloading data from {start_date.date()} to {end_date.date()}')
                 success = await self.data_downloader(symbol = symbol, exchange = exchange, interval = timeframe, start_date = start_date, end_date = end_date, output_dir = str(output_dir))
                 if success and consolidated_file.exists():
-                    data = pd.read_parquet(consolidated_file)
+                    data = standardized_parquet_handler.read_parquet_standardized(consolidated_file)
                     self.logger.info(f'✅ Downloaded {len(data)} rows of data')
                     pipeline_state['raw_market_data'] = str(consolidated_file)
                     pipeline_state['data_shape'] = data.shape

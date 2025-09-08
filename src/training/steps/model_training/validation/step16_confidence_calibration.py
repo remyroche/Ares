@@ -15,6 +15,7 @@ from src.utils.warning_symbols import error
 import numpy as np
 import pandas as pd
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 try:
     pass
@@ -25,9 +26,6 @@ try:
     import joblib
 except Exception:
     joblib = None
-
-import collections
-import logging
 
 # Decorator imports with fallbacks
 try:

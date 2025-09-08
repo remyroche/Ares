@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Pipeline Orchestrator with Fail-Fast Behavior
 
@@ -9,9 +10,9 @@ This module provides a comprehensive pipeline orchestrator that ensures:
 """
 
 import asyncio
-import logging
+
 import time
-from datetime import datetime
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from dataclasses import dataclass, field
@@ -27,7 +28,6 @@ from .enhanced_error_handling import (
     ErrorRecord
 )
 
-
 class PipelineStatus(Enum):
     """Pipeline execution status."""
     PENDING = 'pending'
@@ -36,7 +36,6 @@ class PipelineStatus(Enum):
     FAILED = 'failed'
     FAILED_FAST = 'failed_fast'
     ROLLED_BACK = 'rolled_back'
-
 
 @dataclass
 class PipelineStep:
@@ -50,7 +49,6 @@ class PipelineStep:
     retry_count: int = 0
     max_retries: int = 0
 
-
 @dataclass
 class PipelineResult:
     """Result of pipeline execution."""
@@ -63,7 +61,6 @@ class PipelineResult:
     data_quality_score: Optional[float] = None
     rollback_required: bool = False
     retry_count: int = 0
-
 
 @dataclass
 class PipelineConfig:
@@ -81,7 +78,6 @@ class PipelineConfig:
     timeout_seconds: int = 3600
     fail_fast_enabled: bool = True
     critical_processes_only: bool = False
-
 
 class EnhancedPipelineOrchestrator:
     """Enhanced orchestrator with fail-fast behavior and comprehensive error handling."""
@@ -526,7 +522,6 @@ class EnhancedPipelineOrchestrator:
             self.logger.exception(f'Backtesting failed: {e}')
             return False
 
-
 async def run_enhanced_pipeline(symbol: str = 'ETHUSDT', 
                               exchange: str = 'BINANCE', 
                               timeframe: str = '1m', 
@@ -561,7 +556,6 @@ async def run_enhanced_pipeline(symbol: str = 'ETHUSDT',
     
     orchestrator = EnhancedPipelineOrchestrator(pipeline_config)
     return await orchestrator.run_all_pipelines()
-
 
 if __name__ == '__main__':
     async def main():

@@ -6,15 +6,10 @@ This module handles various risk metric calculations including VaR, CVaR,
 and other risk measures.
 """
 
-
 from typing import Any, Dict
-
-
 
 from .base import PnLLossFunctionsBase
 import numpy as np
-import logging
-
 
 class RiskMetricsCalculator(PnLLossFunctionsBase):
     """

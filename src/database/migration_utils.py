@@ -10,9 +10,6 @@ from ..utils.logger import system_logger
 
 import sqlite3
 import sys
-import logging
-import time
-
 
 class DatabaseMigrationUtils:
     """

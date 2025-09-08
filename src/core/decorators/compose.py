@@ -9,7 +9,6 @@ preserving signature and metadata.
 import asyncio
 import functools
 from typing import ParamSpec, TypeVar, cast, Callable, Any
-import logging
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -17,16 +16,13 @@ R = TypeVar("R")
 # Marker to track wrapped functions
 WRAPPER_MARKER = "_decorator_wrapped"
 
-
 def is_wrapped(func: Callable[..., Any]) -> bool:
     """Check if a function has been wrapped by our decorator system."""
     return hasattr(func, WRAPPER_MARKER)
 
-
 def mark_wrapped(func: Callable[..., Any]) -> None:
     """Mark a function as wrapped to prevent double-application."""
     setattr(func, WRAPPER_MARKER, True)
-
 
 def uniform_wrapper(
     decorator_name: str,
@@ -77,7 +73,6 @@ def uniform_wrapper(
 
     return decorator
 
-
 def compose(
     *decorators: Callable[[Callable[P, R]], Callable[P, R]]
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
@@ -111,7 +106,6 @@ def compose(
 
     return composed_decorator
 
-
 def ensure_async(func: Callable[P, R]) -> Callable[P, R | Callable[..., R]]:
     """
     Ensure a function is async, wrapping sync functions in an async wrapper.
@@ -131,7 +125,6 @@ def ensure_async(func: Callable[P, R]) -> Callable[P, R | Callable[..., R]]:
         )
 
     return cast("Callable[P, R]", async_wrapped)
-
 
 def ensure_sync(func: Callable[P, R]) -> Callable[P, R]:
     """
@@ -158,7 +151,6 @@ def ensure_sync(func: Callable[P, R]) -> Callable[P, R]:
 
     return cast("Callable[P, R]", sync_wrapped)
 
-
 # Decorator metadata helpers
 def get_decorator_metadata(
     func: Callable[..., Any], key: str, default: Any = None
@@ -166,11 +158,9 @@ def get_decorator_metadata(
     """Get metadata stored by decorators on a function."""
     return getattr(func, f"_decorator_meta_{key}", default)
 
-
 def set_decorator_metadata(func: Callable[..., Any], key: str, value: Any) -> None:
     """Set metadata on a function for decorators to use."""
     setattr(func, f"_decorator_meta_{key}", value)
-
 
 def copy_decorator_metadata(
     source: Callable[..., Any], target: Callable[..., Any]

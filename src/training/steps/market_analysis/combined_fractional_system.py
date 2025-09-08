@@ -1,5 +1,6 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # src/training/steps/combined_fractional_system.py
 
@@ -11,7 +12,6 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 import pandas as pd
-
 
 from .utils.logger import get_logger
 from .utils.validation import (
@@ -25,9 +25,6 @@ from src.training.steps.step06_labeling_components.fractional_triple_barrier_lab
 )
 from .training.steps.fractional_differentiation import FractionalFeatureGenerator
 import numpy as np
-import datetime
-import logging
-
 
 class HMMFractionalIntegration:
     """Integrate fractional systems with existing HMM regime system."""
@@ -206,7 +203,6 @@ class HMMFractionalIntegration:
             Dictionary of regime metrics
         """
         return self.regime_metrics.copy()
-
 
 class CombinedFractionalSystem:
     """Unified system combining fractional labeling and differentiation."
@@ -491,7 +487,6 @@ class CombinedFractionalSystem:
         except Exception as e:
             self.logger.error(f"Failed to export performance report: {e}")
             return ""
-
 
 # Configuration helper
 def get_combined_fractional_config(

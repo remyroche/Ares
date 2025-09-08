@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Advanced Ensemble Clustering with Hierarchical Consensus and Dynamic Weighting.
 
@@ -15,9 +16,9 @@ from scipy.spatial.distance import pdist, squareform
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from sklearn.cluster import SpectralClustering, AgglomerativeClustering, Birch, OPTICS
 from sklearn.mixture import GaussianMixture, BayesianGaussianMixture
-from sklearn.neighbors import NearestNeighbors
+
 import warnings
-import concurrent.futures
+
 import threading
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
@@ -42,7 +43,6 @@ from .step03_memory_manager import get_memory_manager, memory_aware_processing
 hmmlearn = safe_import('hmmlearn')
 sklearn = safe_import('sklearn')
 
-
 @dataclass
 class ClusteringAlgorithm:
     """Configuration for a clustering algorithm."""
@@ -51,7 +51,6 @@ class ClusteringAlgorithm:
     parameter_ranges: Dict[str, Any]
     weight: float = 1.0
     stability_threshold: float = 0.7
-
 
 @dataclass
 class ParallelClusteringConfig:
@@ -62,7 +61,6 @@ class ParallelClusteringConfig:
     min_algorithms_for_consensus: int = 3
     parallel_chunk_size: int = 1000
     thread_timeout_seconds: int = 300
-
 
 @dataclass
 class EarlyConsensusDetector:
@@ -123,7 +121,6 @@ class EarlyConsensusDetector:
         from scipy.cluster.hierarchy import linkage, fcluster
         linkage_matrix = linkage(1 - self.consensus_matrix, method='average')
         return fcluster(linkage_matrix, n_clusters, criterion='maxclust')
-
 
 class ParallelClusteringProcessor:
     """Parallel processor for ensemble clustering algorithms."""
@@ -366,7 +363,6 @@ class ParallelClusteringProcessor:
                 'completed_algorithms': self.completed_algorithms
             }
         }
-
 
 class AdvancedEnsembleClustering:
     """Advanced ensemble clustering with hierarchical consensus and dynamic weighting."""

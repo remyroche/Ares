@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import numpy as np
+
 from ..utils.logger import system_logger
 from .core.decorators import handles_errors
 
@@ -33,8 +33,6 @@ from .paper_trader import PaperTrader, setup_paper_trader
 
 if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted modules
     from .reports.paper_trading_reporter import PaperTradingReporter
-import logging
-import time
 
 class PaperTradingIntegration:
     """

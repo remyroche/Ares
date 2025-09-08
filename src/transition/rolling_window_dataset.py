@@ -1,15 +1,13 @@
 # src/transition/rolling_window_dataset.py
 
-
 from dataclasses import dataclass
 from typing import Any
-
 
 from .transition.path_targets import PathTargetEngineer
 from .transition.state_sequence_builder import StateSequenceBuilder
 from ..utils.logger import system_logger
 import numpy as np
-import logging
+
 import pandas as pd
 
 FEATURE_POOL_COLUMNS, [
@@ -27,7 +25,6 @@ FEATURE_POOL_COLUMNS, [
     "volatility_acceleration",
 ]
 
-
 @dataclass
 class RollingWindowConfig:
     pre_window: int
@@ -36,7 +33,6 @@ class RollingWindowConfig:
     end_horizon_bars: int
     include_direction_horizons: list[int]
     max_samples: int | None
-
 
 class RollingWindowDatasetBuilder:
     """

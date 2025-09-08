@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Validator for Step 16: Saving."""
 
@@ -25,11 +26,6 @@ if str(project_root) not in sys.path:
 from .config import CONFIG
 
 import asyncio as _asyncio
-import json
-import logging
-import time
-
-
 
 class Step21SavingValidator(BaseValidator):
     """Validator for Step 21: Extended Saving."""
@@ -483,7 +479,6 @@ class Step21SavingValidator(BaseValidator):
             )
             return False
 
-
 async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
@@ -508,7 +503,6 @@ async def run_validator(
         "duration": 0,  # Could be enhanced to track actual duration
         "timestamp": asyncio.get_event_loop().time(),
     }
-
 
 if __name__ == "__main__":
 

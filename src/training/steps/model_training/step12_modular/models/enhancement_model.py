@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step 12 Modular: Core Enhancement Model
 
@@ -5,7 +6,6 @@ This module contains the core RegimeAwareAnalystEnhancementStep class.
 """
 
 from typing import Dict, Any, List, Set
-import asyncio
 
 from ..base.imports import (
     log_important_calls, log_all_calls, handles_errors,

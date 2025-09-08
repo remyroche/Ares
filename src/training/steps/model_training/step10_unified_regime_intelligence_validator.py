@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 # src/training/steps/step10_unified_regime_intelligence_validator.py
 
 """Step 10 Unified Regime Intelligence Validator.
@@ -21,14 +22,10 @@ from sklearn.preprocessing import LabelEncoder
 
 from src.utils.logger import system_logger
 from src.utils.common_operations import ensure_directory, safe_json_dump
-import json
-import logging
-import time
 
 warnings.filterwarnings("ignore")
 
 logger = system_logger.getChild("Step5_5_UnifiedRegimeIntelligenceValidator")
-
 
 class UnifiedRegimeIntelligenceValidator:
     """Validator for the Unified Regime Intelligence step."""
@@ -134,7 +131,7 @@ class UnifiedRegimeIntelligenceValidator:
     		for tf in timeframes:
     			hmm_file = f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
     			if os.path.exists(hmm_file):
-    				hmm_data = pd.read_parquet(hmm_file)
+    				hmm_data = standardized_parquet_handler.read_parquet_standardized(hmm_file)
     				if (
     					not hmm_data.empty
     					and "composite_cluster_id" in hmm_data.columns
@@ -150,7 +147,7 @@ class UnifiedRegimeIntelligenceValidator:
     				f"data/BINANCE_ETHUSDT_hmm_composite_intensity_{tf}.parquet"
     			)
     			if os.path.exists(intensity_file):
-    				intensity_data = pd.read_parquet(intensity_file)
+    				intensity_data = standardized_parquet_handler.read_parquet_standardized(intensity_file)
     				if not intensity_data.empty:
     					intensity_files_found += 1
 
@@ -177,7 +174,7 @@ class UnifiedRegimeIntelligenceValidator:
     				f"data/BINANCE_ETHUSDT_hmm_composite_clusters_{base_tf}.parquet"
     			)
     			if os.path.exists(base_file):
-    				base_data = pd.read_parquet(base_file)
+    				base_data = standardized_parquet_handler.read_parquet_standardized(base_file)
     				validation_results["data_alignment"] = 1.0 if not base_data.empty else 0.0
     			else:
     				validation_results["data_alignment"] = 0.0
@@ -694,7 +691,6 @@ class UnifiedRegimeIntelligenceValidator:
 
     	except Exception as e:
     		self.logger.exception(f"Failed to generate validation report: {e}")
-
 
 @handles_errors(
     exceptions=(Exception,), default_return=False, context="step5_5 validation",

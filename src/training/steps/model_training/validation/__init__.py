@@ -2,8 +2,7 @@
 
 # Only import step20_ab_testing to avoid pandas dependencies from other files
 # Use importlib to avoid loading other modules in the directory
-import importlib.util
-import sys
+
 from pathlib import Path
 
 # Get the path to step20_ab_testing.py

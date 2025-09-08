@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Sequence Builder.
 
 This module handles sequence creation for the unified regime intelligence system.
@@ -8,7 +9,6 @@ from typing import Dict, Any, Optional, List
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild('Step10SequenceBuilder')
-
 
 class SequenceBuilder:
     """Sequence building coordinator for Step 10.

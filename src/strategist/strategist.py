@@ -1,9 +1,7 @@
 import pandas as pd
-import numpy as np
+
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
-import logging
-import time
 
 from ..utils.compat import handle_specific_errors
 from ..utils.logger import system_logger
@@ -37,9 +35,6 @@ if TYPE_CHECKING:
     from .analyst.analyst import Analyst
     from .tactician.tactician import Tactician
 from typing import Any
-import logging
-import time
-
 
 class Strategist:
     """
@@ -575,7 +570,6 @@ class Strategist:
         except Exception as e:
             self.logger.error(f"Failed to apply regime adjustments: {e}")
             return strategy
-
 
     @handles_errors(Exception, fallback = False)
 

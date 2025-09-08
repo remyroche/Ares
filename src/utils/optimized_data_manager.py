@@ -9,22 +9,22 @@ import pandas as pd
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pyarrow.compute as pc
+
 import pyarrow.dataset as ds
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Iterator
 import logging
 from pathlib import Path
 import json
 import pickle
-import lzma
+
 import gzip
 from concurrent.futures import ThreadPoolExecutor
 import time
-import psutil
+
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from collections import defaultdict
+
 import hashlib
 import sqlite3
 import os
@@ -37,7 +37,6 @@ except Exception:
     PipelineStandards = None  # type: ignore
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class DataMetadata:
@@ -220,7 +219,6 @@ class DataMetadata:
             'nan_percentage': (np.count_nonzero(np.isnan(array)) / array.size) * 100 if array.size > 0 else 0,
             'inf_percentage': (np.count_nonzero(np.isinf(array)) / array.size) * 100 if array.size > 0 else 0
         }
-
 
 class MetadataStore:
     """Advanced metadata storage and query system."""
@@ -546,7 +544,6 @@ class MetadataStore:
         if self.connection:
             self.connection.close()
             self.connection = None
-
 
 class OptimizedDataManager:
     """Optimized data manager with efficient storage and access patterns."""
@@ -1504,7 +1501,6 @@ class OptimizedDataManager:
 
         return stats
 
-
 # Global instance
 _optimized_data_manager = None
 
@@ -1515,26 +1511,22 @@ def get_optimized_data_manager() -> OptimizedDataManager:
         _optimized_data_manager = OptimizedDataManager()
     return _optimized_data_manager
 
-
 # Convenience functions
 def save_dataframe(df: pd.DataFrame, filename: str, **kwargs) -> str:
     """Save DataFrame with optimization."""
     manager = get_optimized_data_manager()
     return manager.save_dataframe_optimized(df, filename, **kwargs)
 
-
 def load_dataframe(filepath: str, **kwargs) -> pd.DataFrame:
     """Load DataFrame with optimization."""
     manager = get_optimized_data_manager()
     return manager.load_dataframe_optimized(filepath, **kwargs)
-
 
 def parallel_data_processing(data_list: List[pd.DataFrame],
                            processing_func: Callable[[pd.DataFrame], pd.DataFrame]) -> List[pd.DataFrame]:
     """Parallel data processing."""
     manager = get_optimized_data_manager()
     return manager.parallel_data_processing(data_list, processing_func)
-
 
 def query_data_by_metadata(filters: Dict[str, Any] = None,
                           order_by: str = 'created_at',
@@ -1543,31 +1535,26 @@ def query_data_by_metadata(filters: Dict[str, Any] = None,
     manager = get_optimized_data_manager()
     return manager.query_data_by_metadata(filters, order_by, limit)
 
-
 def update_data_lineage(data_name: str, operation: str,
                        inputs: List[str], parameters: Dict[str, Any] = None):
     """Update lineage information for data."""
     manager = get_optimized_data_manager()
     manager.update_data_lineage(data_name, operation, inputs, parameters)
 
-
 def add_data_tags(data_name: str, tags: List[str]):
     """Add tags to data metadata."""
     manager = get_optimized_data_manager()
     manager.add_data_tags(data_name, tags)
-
 
 def get_data_dependencies(data_name: str) -> List[str]:
     """Get dependencies for data."""
     manager = get_optimized_data_manager()
     return manager.get_data_dependencies(data_name)
 
-
 def get_data_quality_report(data_name: str) -> Dict[str, Any]:
     """Get quality report for data."""
     manager = get_optimized_data_manager()
     return manager.get_data_quality_report(data_name)
-
 
 def get_metadata_statistics() -> Dict[str, Any]:
     """Get comprehensive metadata statistics."""

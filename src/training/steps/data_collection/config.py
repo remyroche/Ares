@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Configuration module for data collection steps."""
 
 CONFIG = {

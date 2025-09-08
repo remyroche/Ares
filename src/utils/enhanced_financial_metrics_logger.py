@@ -9,10 +9,9 @@ This module extends the existing financial_metrics_logger to provide:
 """
 
 import logging
-import os
+
 import sys
-import json
-import csv
+
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union, Tuple
@@ -45,7 +44,6 @@ except ImportError:
     system_logger = None
     get_logger = lambda name: logging.getLogger(name)
 
-
 @dataclass
 class RegimeValidationResult:
     """Result of regime validation checks."""
@@ -56,7 +54,6 @@ class RegimeValidationResult:
     empty_regimes: List[str]
     validation_errors: List[str]
     quality_score: float
-
 
 @dataclass
 class FailFastValidationResult:
@@ -79,7 +76,6 @@ class FailFastValidationResult:
             self.validation_categories = {}
         if self.recommendations is None:
             self.recommendations = []
-
 
 class EnhancedFinancialMetricsLogger:
     """
@@ -1093,10 +1089,8 @@ class EnhancedFinancialMetricsLogger:
                 if self.fallback_logger:
                     self.fallback_logger.error(f"Error closing enhanced financial metrics logger: {e}")
 
-
 # Global instance
 _enhanced_financial_metrics_logger: Optional[EnhancedFinancialMetricsLogger] = None
-
 
 def get_enhanced_financial_metrics_logger() -> EnhancedFinancialMetricsLogger:
     """Get the global enhanced financial metrics logger instance."""
@@ -1105,13 +1099,11 @@ def get_enhanced_financial_metrics_logger() -> EnhancedFinancialMetricsLogger:
         _enhanced_financial_metrics_logger = EnhancedFinancialMetricsLogger()
     return _enhanced_financial_metrics_logger
 
-
 def setup_enhanced_financial_metrics_logging(log_dir: str = "logs/financial_metrics", **kwargs) -> EnhancedFinancialMetricsLogger:
     """Setup the global enhanced financial metrics logger."""
     global _enhanced_financial_metrics_logger
     _enhanced_financial_metrics_logger = EnhancedFinancialMetricsLogger(log_dir=log_dir, **kwargs)
     return _enhanced_financial_metrics_logger
-
 
 @contextmanager
 def enhanced_financial_metrics_context(step_name: str, symbol: str, exchange: str, timeframe: str, 
@@ -1149,7 +1141,6 @@ def enhanced_financial_metrics_context(step_name: str, symbol: str, exchange: st
             logger.base_logger.log_step_end(step_name, symbol, exchange, timeframe, success=False, error_message=str(e))
         raise
 
-
 # Convenience functions for enhanced operations
 def log_regime_metric_with_validation(symbol: str, exchange: str, timeframe: str, step_name: str, 
                                     regime_id: str, metric_name: str, metric_value: float, 
@@ -1167,7 +1158,6 @@ def log_regime_metric_with_validation(symbol: str, exchange: str, timeframe: str
         regime_id=regime_id,
         data=data
     )
-
 
 def validate_and_log_regime_data(symbol: str, exchange: str, timeframe: str, step_name: str,
                                data: pd.DataFrame, regime_column: str = 'composite_cluster_id') -> bool:
@@ -1201,7 +1191,6 @@ def validate_and_log_regime_data(symbol: str, exchange: str, timeframe: str, ste
     )
     
     return validation_result.is_valid
-
 
 # Export main classes and functions
 __all__ = [

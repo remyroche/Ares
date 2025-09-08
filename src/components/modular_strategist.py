@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from typing import Any
 import numpy as np
-import time
+
 from logging import error
 
 from ..utils.logger import system_logger
@@ -10,7 +10,6 @@ from ..utils.warning_symbols import initialization_error, invalid, missing
 from ..core.decorators import handles_errors
 
 # src/components/modular_strategist.py
-
 
 class ModularStrategist:
     """
@@ -992,10 +991,8 @@ class ModularStrategist:
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular strategist: {e}"))
 
-
 # Global modular strategist instance
 modular_strategist: ModularStrategist | None = None
-
 
 async def setup_modular_strategist(
     config: dict[str, Any] | None = None,

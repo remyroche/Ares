@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Critical Training Steps with Fail-Fast Behavior
 
@@ -8,14 +9,10 @@ This module provides enhanced versions of critical training steps that ensure:
 4. Comprehensive validation and monitoring
 """
 
-import asyncio
-import logging
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
-import numpy as np
 
 from src.utils.logger import system_logger
 from .enhanced_error_handling import (
@@ -27,7 +24,6 @@ from .enhanced_error_handling import (
     ErrorSeverity,
     ErrorCategory
 )
-
 
 class EnhancedHMMClusteringStep:
     """Enhanced HMM clustering step with fail-fast behavior."""
@@ -62,7 +58,7 @@ class EnhancedHMMClusteringStep:
                 raise FileNotFoundError(f"Required data file not found: {data_path}")
             
             # Load and validate data
-            data = pd.read_parquet(data_path)
+            data = standardized_parquet_handler.read_parquet_standardized(data_path)
             if data.empty:
                 raise ValueError("Loaded data is empty")
             
@@ -133,7 +129,6 @@ class EnhancedHMMClusteringStep:
             self.logger.exception(f'HMM clustering algorithm failed: {e}')
             return False
 
-
 class EnhancedFeatureGenerationStep:
     """Enhanced feature generation step with fail-fast behavior."""
     
@@ -169,7 +164,7 @@ class EnhancedFeatureGenerationStep:
             if not data_path.exists():
                 raise FileNotFoundError(f"Required data file not found: {data_path}")
             
-            data = pd.read_parquet(data_path)
+            data = standardized_parquet_handler.read_parquet_standardized(data_path)
             if data.empty:
                 raise ValueError("Loaded data is empty")
             
@@ -223,7 +218,7 @@ class EnhancedFeatureGenerationStep:
             
             # Save features
             features_path = Path(data_dir) / f"{exchange}_{symbol}_features.parquet"
-            features.to_parquet(features_path)
+            standardized_parquet_handler.write_parquet_standardized(features, features_path)
             
             self.logger.info(f'✅ Features generated and saved: {features.shape}')
             return True
@@ -231,7 +226,6 @@ class EnhancedFeatureGenerationStep:
         except Exception as e:
             self.logger.exception(f'Feature generation algorithm failed: {e}')
             return False
-
 
 class EnhancedMatrixOperationsStep:
     """Enhanced matrix operations step with fail-fast behavior."""
@@ -268,7 +262,7 @@ class EnhancedMatrixOperationsStep:
             if not features_path.exists():
                 raise FileNotFoundError(f"Required features file not found: {features_path}")
             
-            features = pd.read_parquet(features_path)
+            features = standardized_parquet_handler.read_parquet_standardized(features_path)
             if features.empty:
                 raise ValueError("Loaded features are empty")
             
@@ -317,7 +311,7 @@ class EnhancedMatrixOperationsStep:
             
             # Save results
             result_path = Path(data_dir) / f"{exchange}_{symbol}_matrix_operations.parquet"
-            result.to_parquet(result_path)
+            standardized_parquet_handler.write_parquet_standardized(result, result_path)
             
             self.logger.info(f'✅ Matrix operations completed and saved: {result.shape}')
             return True
@@ -325,7 +319,6 @@ class EnhancedMatrixOperationsStep:
         except Exception as e:
             self.logger.exception(f'Matrix operations algorithm failed: {e}')
             return False
-
 
 class EnhancedMLModelTrainingStep:
     """Enhanced ML model training step with fail-fast behavior."""
@@ -362,7 +355,7 @@ class EnhancedMLModelTrainingStep:
             if not data_path.exists():
                 raise FileNotFoundError(f"Required processed data file not found: {data_path}")
             
-            data = pd.read_parquet(data_path)
+            data = standardized_parquet_handler.read_parquet_standardized(data_path)
             if data.empty:
                 raise ValueError("Loaded processed data is empty")
             
@@ -423,7 +416,6 @@ class EnhancedMLModelTrainingStep:
             self.logger.exception(f'ML model training algorithm failed: {e}')
             return False
 
-
 class EnhancedSRLevelsDetectionStep:
     """Enhanced SR levels detection step with fail-fast behavior."""
     
@@ -455,7 +447,7 @@ class EnhancedSRLevelsDetectionStep:
             if not data_path.exists():
                 raise FileNotFoundError(f"Required data file not found: {data_path}")
             
-            data = pd.read_parquet(data_path)
+            data = standardized_parquet_handler.read_parquet_standardized(data_path)
             if data.empty:
                 raise ValueError("Loaded data is empty")
             
@@ -507,7 +499,6 @@ class EnhancedSRLevelsDetectionStep:
             self.logger.exception(f'SR levels detection algorithm failed: {e}')
             return False
 
-
 # Factory function to create enhanced steps
 def create_enhanced_step(step_name: str, config: Dict[str, Any]):
     """Create an enhanced step instance."""
@@ -523,7 +514,6 @@ def create_enhanced_step(step_name: str, config: Dict[str, Any]):
         raise ValueError(f"Unknown step name: {step_name}")
     
     return step_classes[step_name](config)
-
 
 # Main execution function
 async def run_enhanced_critical_step(step_name: str, 

@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Step06 Validation Orchestrator
@@ -45,8 +46,6 @@ except ImportError as e:
         COMPLETED = 'completed'
         FAILED = 'failed'
         TIMEOUT = 'timeout'
-
-import time
 
 try:
     from src.training.steps.market_analysis.step06_feature_engineering import FeatureInteractionEngine

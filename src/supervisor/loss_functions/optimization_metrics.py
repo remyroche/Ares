@@ -5,15 +5,10 @@ Optimization Metrics Calculator Module.
 This module handles metrics used for strategy optimization and parameter tuning.
 """
 
-
 from typing import Any, Dict
-
-
 
 from .base import PnLLossFunctionsBase
 import numpy as np
-import logging
-
 
 class OptimizationMetricsCalculator(PnLLossFunctionsBase):
     """

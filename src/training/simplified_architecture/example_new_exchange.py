@@ -10,7 +10,6 @@ from typing import List
 import numpy as np
 import pandas as pd
 from .modular_components import BaseExchangeDataSource, ExchangeDataSourceFactory, ModelTrainerFactory
-import json
 
 class BybitDataSource(BaseExchangeDataSource):
     """Bybit exchange data source implementation."""
@@ -62,7 +61,6 @@ from .modular_components import BaseModelTrainer, IModel
 
 from catboost import CatBoostClassifier
 import asyncio
-
 
 class CatBoostModel(IModel):
     """Wrapper for CatBoost model with standard interface."""

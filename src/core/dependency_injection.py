@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 from typing import TypeVar, Any, Callable
+from datetime import datetime
 from src.interfaces import IAnalyst, IStrategist, ISupervisor, ITactician
 from src.utils.logger import system_logger
-import logging
-import time
 
 T = TypeVar('T')
 
@@ -38,6 +37,8 @@ class DependencyContainer:
         self._current_scope: str | None = None
         self._config: dict[str, Any] = config or {}
         self._factories: dict[Any, Callable] = {}
+        self._resolution_stack: list[Any] = []  # For circular dependency detection
+        self._service_health: dict[Any, dict[str, Any]] = {}  # Service health monitoring
         self.logger = system_logger.getChild('DependencyContainer')
 
     def register(self, service_name: Any, service_type: type, implementation: type | None = None, singleton: bool = True, config: dict[str, Any] | None = None, dependencies: dict[str, str] | None = None, lifetime: str = ServiceLifetime.SINGLETON) -> None:
@@ -91,30 +92,46 @@ class DependencyContainer:
         return {}
 
     def resolve(self, service_name: Any) -> Any:
-        """Resolve a service with enhanced error handling."""
+        """Resolve a service with enhanced error handling and circular dependency detection."""
         try:
-            if service_name in self._instances:
-                return self._instances[service_name]
-            if self._current_scope and service_name in self._scoped_instances.get(self._current_scope, {}):
-                return self._scoped_instances[self._current_scope][service_name]
-            service_reg = self._services.get(service_name)
-            if not service_reg and service_name in self._factories:
-                self.register_factory(service_name, self._factories[service_name])
+            # Check for circular dependency
+            if service_name in self._resolution_stack:
+                circular_path = " -> ".join([str(s) for s in self._resolution_stack] + [str(service_name)])
+                raise ValueError(f"Circular dependency detected: {circular_path}")
+            
+            # Add to resolution stack
+            self._resolution_stack.append(service_name)
+            
+            try:
+                if service_name in self._instances:
+                    return self._instances[service_name]
+                if self._current_scope and service_name in self._scoped_instances.get(self._current_scope, {}):
+                    return self._scoped_instances[self._current_scope][service_name]
                 service_reg = self._services.get(service_name)
-            if not service_reg:
-                msg = f"Service '{getattr(service_name, '__name__', service_name)}' not registered"
-                raise ValueError(msg)
-            if service_reg.instance is not None:
-                instance = service_reg.instance
-            else:
-                instance = self._create_instance(service_reg)
-            if service_reg.lifetime == ServiceLifetime.SINGLETON:
-                self._instances[service_name] = instance
-            elif service_reg.lifetime == ServiceLifetime.SCOPED and self._current_scope:
-                self._scoped_instances[self._current_scope][service_name] = instance
-            return instance
+                if not service_reg and service_name in self._factories:
+                    self.register_factory(service_name, self._factories[service_name])
+                    service_reg = self._services.get(service_name)
+                if not service_reg:
+                    msg = f"Service '{getattr(service_name, '__name__', service_name)}' not registered"
+                    raise ValueError(msg)
+                if service_reg.instance is not None:
+                    instance = service_reg.instance
+                else:
+                    instance = self._create_instance(service_reg)
+                if service_reg.lifetime == ServiceLifetime.SINGLETON:
+                    self._instances[service_name] = instance
+                elif service_reg.lifetime == ServiceLifetime.SCOPED and self._current_scope:
+                    self._scoped_instances[self._current_scope][service_name] = instance
+                return instance
+            finally:
+                # Remove from resolution stack
+                self._resolution_stack.pop()
+                
         except Exception as e:
             self.logger.exception(f"Failed to resolve service '{getattr(service_name, '__name__', service_name)}': {e}")
+            # Clean up resolution stack on error
+            if service_name in self._resolution_stack:
+                self._resolution_stack.remove(service_name)
             raise
 
     def _create_instance(self, service_reg: ServiceRegistration) -> Any:
@@ -160,6 +177,70 @@ class DependencyContainer:
             instance.configure(config)
         elif hasattr(instance, 'config'):
             instance.config.update(config)
+
+    def get_service_health(self, service_name: Any) -> dict[str, Any]:
+        """Get health status of a service."""
+        health = self._service_health.get(service_name, {})
+        service_reg = self._services.get(service_name)
+        
+        if service_reg:
+            health.update({
+                'registered': True,
+                'lifetime': service_reg.lifetime,
+                'has_instance': service_name in self._instances,
+                'has_factory': service_reg.factory is not None,
+                'has_config': service_reg.config is not None
+            })
+        else:
+            health.update({
+                'registered': False,
+                'error': 'Service not registered'
+            })
+        
+        return health
+
+    def get_all_service_health(self) -> dict[str, dict[str, Any]]:
+        """Get health status of all registered services."""
+        health_status = {}
+        for service_name in self._services.keys():
+            health_status[str(service_name)] = self.get_service_health(service_name)
+        return health_status
+
+    def update_service_health(self, service_name: Any, status: str, details: dict[str, Any] | None = None) -> None:
+        """Update health status of a service."""
+        if service_name not in self._service_health:
+            self._service_health[service_name] = {}
+        
+        self._service_health[service_name].update({
+            'status': status,
+            'last_updated': datetime.now().isoformat(),
+            'details': details or {}
+        })
+        
+        self.logger.debug(f"Updated health for {service_name}: {status}")
+
+    def check_service_health(self, service_name: Any) -> bool:
+        """Check if a service is healthy."""
+        try:
+            # Try to resolve the service
+            instance = self.resolve(service_name)
+            if instance is not None:
+                self.update_service_health(service_name, 'healthy')
+                return True
+            else:
+                self.update_service_health(service_name, 'unhealthy', {'error': 'Resolved to None'})
+                return False
+        except Exception as e:
+            self.update_service_health(service_name, 'unhealthy', {'error': str(e)})
+            return False
+
+    def get_unhealthy_services(self) -> list[str]:
+        """Get list of unhealthy services."""
+        unhealthy = []
+        for service_name in self._services.keys():
+            if not self.check_service_health(service_name):
+                unhealthy.append(str(service_name))
+        return unhealthy
 
 class ComponentFactory:
     """Factory for creating trading system components."""

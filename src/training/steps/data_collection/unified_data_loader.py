@@ -1,5 +1,6 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Unified Data Loader for Step1_5 Data.
 from src.utils.logger import system_logger
@@ -13,10 +14,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Optional, Callable, Dict, List
 
-
 import pandas as pd
-import src.core.domain
-import numpy as np
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -83,7 +81,6 @@ except ImportError:
     class ParquetDatasetManager:
         def __init__(self, *args, **kwargs):
             pass
-
 
 class UnifiedDataLoader:
     """Secure data loader for step1_5 unified data with comprehensive validation."""
@@ -359,7 +356,6 @@ class UnifiedDataLoader:
                 'warnings': [],
                 'stats': {}
             }
-
 
 # Example usage
 if __name__ == "__main__":

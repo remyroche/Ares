@@ -1,5 +1,6 @@
 from ....core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step1 Orchestrator - Coordinates data collection and validation processes.
 from src.utils.logger import system_logger
@@ -25,9 +26,6 @@ from .comprehensive_gap_filler import ComprehensiveGapFiller
 from .data_gap_detector import DataGapDetector
 from .data_resampler import DataPreparation
 from .missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
-import collections
-import logging
-import time
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent

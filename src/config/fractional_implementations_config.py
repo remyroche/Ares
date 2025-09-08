@@ -5,8 +5,6 @@
 
 from dataclasses import dataclass, field
 from typing import Any
-import numpy as np
-
 
 @dataclass
 class FractionalLabelingConfig:
@@ -54,7 +52,6 @@ class FractionalLabelingConfig:
         }
     )
 
-
 @dataclass
 class FractionalDifferentiationConfig:
     """Configuration for fractional differentiation."""
@@ -88,7 +85,6 @@ class FractionalDifferentiationConfig:
     enable_batch_processing: bool = True
     enable_parallel_processing: bool = True
     max_parallel_workers: int = 4
-
 
 @dataclass
 class FractionalImplementationsConfig:
@@ -129,10 +125,8 @@ class FractionalImplementationsConfig:
         default_factory = FractionalDifferentiationConfig
     )
 
-
 # Default configuration instance
 DEFAULT_FRACTIONAL_CONFIG = FractionalImplementationsConfig()
-
 
 def get_fractional_config(
     config_dict: dict[str, Any] = None,
@@ -168,7 +162,6 @@ def get_fractional_config(
                 setattr(config.fractional_differentiation, key, value)
 
     return config
-
 
 def validate_fractional_config(config: FractionalImplementationsConfig) -> list[str]:
     """Validate fractional implementations configuration.

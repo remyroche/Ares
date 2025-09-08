@@ -1,7 +1,7 @@
 # src/training/steps/model_training/validation/step19_monte_carlo_validation.py
 
 import asyncio
-import json
+
 import os
 import pandas as pd
 from datetime import datetime
@@ -25,6 +25,7 @@ from src.utils.optimized_data_manager import OptimizedDataManager
 from src.utils.m1_gpu_utils import get_m1_gpu_manager, m1_monte_carlo_simulate
 from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, parallel_monte_carlo_simulation, optimized_monte_carlo_worker
 from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 class OptimizedMonteCarloEngine:
     """Optimized Monte Carlo engine with M1 hardware acceleration and vectorized processing."""
@@ -225,17 +226,13 @@ class OptimizedMonteCarloEngine:
 
         return results
 
-
 # Backward compatibility
 class MonteCarloEngine(OptimizedMonteCarloEngine):
     """Legacy Monte Carlo engine for backward compatibility."""
     pass
 
-
 class Step19MonteCarloValidation(BaseStep):
     """Step 19: Monte Carlo Validation with comprehensive statistical analysis."""
-
-    
 
     @log_all_calls
     def _validate_environment(self) -> None:
@@ -588,7 +585,7 @@ class Step19MonteCarloValidation(BaseStep):
                     df = await self.optimized_data_manager.load_data_async(
                         file_path=data_path,
                         data_type="dataframe",
-                        columns=["close"] if "close" in pd.read_parquet(data_path, nrows=1).columns else None
+                        columns=["close"] if "close" in standardized_parquet_handler.read_parquet_standardized(data_path, nrows=1).columns else None
                     )
 
                     if 'close' in df.columns and len(df) > 100:
@@ -700,7 +697,6 @@ class Step19MonteCarloValidation(BaseStep):
         self.logger.info(f"   📈 Current Usage: {memory_report['current_usage_gb']:.2f}GB")
         self.logger.info(f"   🏔️ Peak Usage: {memory_report['peak_usage_gb']:.2f}GB")
         self.logger.info(f"   💯 Memory Efficiency: {memory_report['memory_efficiency']:.2%}")
-
 
     def _calculate_monte_carlo_results(
         self,
@@ -842,7 +838,6 @@ class Step19MonteCarloValidation(BaseStep):
             },
         }
 
-
 # For backward compatibility with existing step structure
 @timeout(7200)
 @validates
@@ -890,7 +885,6 @@ async def run_step(
 
     except Exception:  # pragma: no cover - defensive
         return False
-
 
 if __name__ == "__main__":
     # Test the enhanced step with optimizations

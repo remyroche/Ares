@@ -6,7 +6,7 @@ when the trading system is launched in any mode (BACKTEST, PAPER, LIVE).
 """
 
 import os
-import asyncio
+
 from typing import Any, Dict, Optional
 from datetime import datetime
 
@@ -14,7 +14,6 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.config.environment import get_environment_settings
 from .trading_mode_monitoring_integration import TradingModeMonitoringIntegration
-
 
 class AutoMonitoringLauncher:
     """
@@ -254,10 +253,8 @@ class AutoMonitoringLauncher:
         except Exception as e:
             self.logger.exception(f'Error stopping auto monitoring launcher: {e}')
 
-
 # Global instance for easy access
 _auto_monitoring_launcher: Optional[AutoMonitoringLauncher] = None
-
 
 async def launch_auto_monitoring() -> bool:
     """
@@ -277,7 +274,6 @@ async def launch_auto_monitoring() -> bool:
         system_logger.exception(f'Error launching auto monitoring: {e}')
         return False
 
-
 async def get_auto_monitoring() -> Optional[AutoMonitoringLauncher]:
     """
     Get the global auto monitoring launcher instance.
@@ -286,7 +282,6 @@ async def get_auto_monitoring() -> Optional[AutoMonitoringLauncher]:
         Optional[AutoMonitoringLauncher]: Global launcher instance
     """
     return _auto_monitoring_launcher
-
 
 async def auto_capture_trade_decision(trade_data: Dict[str, Any]) -> None:
     """
@@ -301,7 +296,6 @@ async def auto_capture_trade_decision(trade_data: Dict[str, Any]) -> None:
             await launcher.capture_trade_decision(trade_data)
     except Exception as e:
         system_logger.exception(f'Error in automatic trade decision capture: {e}')
-
 
 async def auto_update_performance(performance_data: Dict[str, Any], model_id: Optional[str] = None) -> None:
     """
@@ -318,7 +312,6 @@ async def auto_update_performance(performance_data: Dict[str, Any], model_id: Op
     except Exception as e:
         system_logger.exception(f'Error in automatic performance update: {e}')
 
-
 async def auto_update_ensemble(ensemble_data: Dict[str, Any], ensemble_id: Optional[str] = None) -> None:
     """
     Automatically update ensemble performance using the global launcher.
@@ -334,7 +327,6 @@ async def auto_update_ensemble(ensemble_data: Dict[str, Any], ensemble_id: Optio
     except Exception as e:
         system_logger.exception(f'Error in automatic ensemble update: {e}')
 
-
 async def stop_auto_monitoring() -> None:
     """Stop the global auto monitoring system."""
     try:
@@ -344,7 +336,6 @@ async def stop_auto_monitoring() -> None:
             _auto_monitoring_launcher = None
     except Exception as e:
         system_logger.exception(f'Error stopping auto monitoring: {e}')
-
 
 def is_auto_monitoring_active() -> bool:
     """

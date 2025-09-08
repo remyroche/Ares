@@ -1,20 +1,31 @@
 """
+import contextlib
+from datetime import datetime
+import math
+from typing import Any
+
+from core.decorators import handles_errors
+from core.domain.decorators import validate_data_quality
+from kelly_criterion_fix import calculate_correct_kelly_position_size
+from utils.confidence import normalize_dual_confidence
+from utils.linear_confidence_scaling import LinearConfidenceScaler
+from utils.logger import system_logger
+from utils.math_validation import MathValidationError
+from utils.math_validation import safe_divide
+from utils.math_validation import safe_kelly_calculation
+from utils.math_validation import safe_log
+from utils.math_validation import validate_positive
+from utils.math_validation import validate_range
+from utils.warning_symbols import error
+from utils.warning_symbols import initialization_error
+from utils.warning_symbols import missing
+
 Simplified Position Sizer for high leverage trading.
 Uses ML confidence scores and Kelly criterion for position sizing.
 """
-import contextlib
-from datetime import datetime
-from typing import Any
-from kelly_criterion_fix import calculate_correct_kelly_position_size
-from ...utils.confidence import normalize_dual_confidence
-from ...utils.linear_confidence_scaling import LinearConfidenceScaler
-from ...utils.logger import system_logger
-from ...utils.warning_symbols import error, initialization_error, missing
-from ...core.domain.decorators import validate_data_quality
-from ...core.decorators import handles_errors
-import numpy as np
-import logging
-import time
+    safe_divide, safe_log, safe_kelly_calculation, 
+    validate_positive, validate_range, MathValidationError
+)
 
 def core_handles_errors(*_args, **kwargs) -> None:
     fallback = kwargs.get('default_return', kwargs.get('fallback', None))
@@ -174,27 +185,45 @@ class PositionSizer:
                 risk = adversarial_confidences.get(closest_level, 0.3)
                 adverse_risks.append(risk)
             avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
-            confidence_factor = avg_confidence / self.confidence_threshold
+            
+            # Use safe division to prevent division by zero
+            confidence_factor = safe_divide(avg_confidence, self.confidence_threshold, 1.0)
             risk_factor = 1.0 - avg_adverse_risk
+            
+            # Validate risk factor is positive
+            risk_factor = max(0.0, min(1.0, risk_factor))
+            
             base_position_size = self.min_position_size + (self.max_position_size - self.min_position_size) * confidence_factor * risk_factor
             return max(self.min_position_size, min(self.max_position_size, base_position_size))
         except (ValueError, TypeError, KeyError) as e:
             self.logger.exception(f'Error calculating ML position size: {e}')
             return self.min_position_size
-        except ZeroDivisionError as e:
-            self.logger.exception(f'Division by zero in ML position calculation: {e}')
+        except MathValidationError as e:
+            self.logger.warning(f'Mathematical validation error in ML position calculation: {e}')
             return self.min_position_size
 
     def _calculate_weighted_position_size(self, kelly_position_size: float, ml_position_size: float) -> float:
         """Calculate weighted position size using logarithmic computations to prevent multiplicative compounding."""
         try:
-            import math
-            epsilon = 1e-08
-            log_kelly = math.log(kelly_position_size + epsilon)
-            log_ml = math.log(ml_position_size + epsilon)
-            weighted_log = (1 - self.ml_weight) * log_kelly + self.ml_weight * log_ml
+            # Use safe logarithm to prevent log of zero or negative numbers
+            log_kelly = safe_log(kelly_position_size, default=0.0)
+            log_ml = safe_log(ml_position_size, default=0.0)
+            
+            # Validate weights are in valid range
+            ml_weight = validate_range(self.ml_weight, 0.0, 1.0, "ml_weight")
+            
+            weighted_log = (1 - ml_weight) * log_kelly + ml_weight * log_ml
             weighted_size = math.exp(weighted_log)
+            
+            # Ensure result is finite
+            if not math.isfinite(weighted_size):
+                self.logger.warning(f"Non-finite result in weighted position size calculation")
+                return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
+            
             return max(self.min_position_size, min(self.max_position_size, weighted_size))
+        except MathValidationError as e:
+            self.logger.warning(f'Mathematical validation error in weighted position size: {e}')
+            return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
         except Exception as e:
             self.print(error(f'Error calculating weighted position size: {e}'))
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
@@ -202,7 +231,6 @@ class PositionSizer:
     def _apply_position_size_modifiers(self, base_size: float, *, market_health_analysis: dict[str, Any] | None, strategist_risk_parameters: dict[str, Any] | None, analyst_confidence: float, tactician_confidence: float) -> float:
         """Adjust position size using logarithmic computations to prevent multiplicative compounding."""
         try:
-            import math
 
             epsilon = 1e-08
             log_adjusted = math.log(base_size + epsilon)

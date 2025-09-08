@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Validator for Step 9: Tactician Specialist Training."""
 
@@ -7,7 +8,6 @@ import pickle
 import sys
 from pathlib import Path
 from typing import Any
-
 
 from src.utils.warning_symbols import (
     error,
@@ -24,11 +24,6 @@ from .utils.common_operations import safe_json_load
 import numpy as np
 
 import asyncio as _asyncio
-import json
-import logging
-import time
-
-
 
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     """Validator for Step 9: Tactician Specialist Training."""
@@ -513,7 +508,6 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         except Exception:
             return artifact
 
-
 async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
@@ -537,7 +531,6 @@ async def run_validator(
         "duration": 0,  # Could be enhanced to track actual duration
         "timestamp": asyncio.get_event_loop().time(),
     }
-
 
 if __name__ == "__main__":
 

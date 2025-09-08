@@ -1,18 +1,15 @@
-from functools import cached_property
+
 from typing import Dict, Any, Optional, Callable
 import pandas as pd
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Unified Regime Handler for Consistent Per-HMM Regime Data Processing.\n\nThis module provides a centralized way to handle regime data across all training steps,\nensuring that steps 4-21 perform tasks on a per-HMM regime basis with consistent methods.\n'
 import asyncio
 from pathlib import Path
 from .utils.common_operations import ensure_directory, safe_json_dump, safe_json_load
 from .utils.pipeline_standards import pipeline_standards
-import numpy as np
-import datetime
-import json
-import logging
 
 logger = get_logger('RegimeHandler')
 
@@ -52,7 +49,7 @@ class RegimeHandler:
             if not unified_file.exists():
                 self.logger.error(f'❌ Unified regime data not found: {unified_file}')
                 return None
-            data = pd.read_parquet(unified_file)
+            data = standardized_parquet_handler.read_parquet_standardized(unified_file)
             self.logger.info(f'✅ Loaded unified regime data: {len(data)} rows from {unified_file}')
             cache_key = f'{exchange}_{symbol}_{timeframe}'
             self._cached_regime_data[cache_key] = data
@@ -219,7 +216,7 @@ class RegimeHandler:
                 if isinstance(result, pd.DataFrame):
                     filename = f'{exchange}_{symbol}_{timeframe}_regime_{regime_id}_{result_type}.parquet'
                     filepath = output_dir / filename
-                    result.to_parquet(filepath, index=False)
+                    standardized_parquet_handler.write_parquet_standardized(result, filepath, index=False)
                     self.logger.info(f'✅ Saved regime {regime_id} DataFrame: {filepath}')
                 elif isinstance(result, dict):
                     filename = f'{exchange}_{symbol}_{timeframe}_regime_{regime_id}_{result_type}.json'
@@ -269,7 +266,7 @@ class RegimeHandler:
                 parquet_file = results_dir / f'{exchange}_{symbol}_{timeframe}_regime_{regime_id}_{result_type}.parquet'
                 json_file = results_dir / f'{exchange}_{symbol}_{timeframe}_regime_{regime_id}_{result_type}.json'
                 if parquet_file.exists():
-                    results[regime_id] = pd.read_parquet(parquet_file)
+                    results[regime_id] = standardized_parquet_handler.read_parquet_standardized(parquet_file)
                 elif json_file.exists():
                     results[regime_id] = safe_json_load(json_file)
                 else:

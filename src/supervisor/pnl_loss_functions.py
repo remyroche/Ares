@@ -7,7 +7,6 @@ This module provides backward compatibility for the refactored loss functions.
 The actual implementations are now in the src/supervisor/loss_functions/ package.
 """
 
-
 from datetime import datetime
 from typing import Any, Dict
 
@@ -22,9 +21,6 @@ from .loss_functions.performance_metrics import PerformanceMetricsCalculator
 # Import all calculator classes
 from .loss_functions.pnl_calculator import PnLCalculator
 from .loss_functions.risk_metrics import RiskMetricsCalculator
-import logging
-import time
-
 
 class PnLLossFunctions:
     """
@@ -261,7 +257,6 @@ class PnLLossFunctions:
         self.logger.info("Stopping PnL Loss Functions...")
         self.is_calculating = False
         self.logger.info("PnL Loss Functions stopped successfully")
-
 
 # Import asyncio for the async methods
 import asyncio

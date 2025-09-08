@@ -3,7 +3,6 @@ from src.utils.logger import system_logger
 from .core.decorators import handles_errors
 # src/training/vectorized_training_pipeline.py
 
-
 """Vectorized Training Pipeline for enhanced ML training processes."
 Integrates matrix enhancements with existing training workflows to improve
 performance, accuracy, and computational efficiency.
@@ -12,7 +11,6 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-
 from .training.matrix_enhancement_manager import MatrixEnhancementManager
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
@@ -20,8 +18,6 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
 from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
-import logging
-
 
 @dataclass
 class VectorizedTrainingConfig:
@@ -44,7 +40,6 @@ class VectorizedTrainingConfig:
     # Integration settings
     integrate_with_existing_pipeline: bool = True
     preserve_original_features: bool = True
-
 
 class VectorizedTrainingPipeline:
     """Vectorized training pipeline with matrix enhancements."""

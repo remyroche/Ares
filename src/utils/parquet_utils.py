@@ -4,13 +4,11 @@ import shutil
 from typing import Any
 import pandas as pd
 
-
 from .logger import system_logger
-import logging
+
 from src.core.decorators import handles_errors
 
 # src/utils/parquet_utils.py
-
 
 class ParquetUtils:
     """Utility class for safe parquet file operations with comprehensive error handling."""
@@ -148,9 +146,6 @@ class ParquetUtils:
         self.logger.error(f"❌ Could not read file for repair: {file_path}")
         return False
 
-
 def get_parquet_utils() -> ParquetUtils:
     """Get a fresh instance of ParquetUtils to avoid global state issues."""
     return ParquetUtils()
-
-

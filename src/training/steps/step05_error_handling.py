@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step05 Standardized Error Handling Module
 
@@ -5,7 +6,6 @@ This module provides standardized error handling patterns for Step05 labeling,
 including centralized error logging, recovery mechanisms, and error classification.
 """
 
-import logging
 import traceback
 import functools
 from datetime import datetime
@@ -16,14 +16,12 @@ from src.utils.logger import system_logger
 
 logger = system_logger.getChild('Step05ErrorHandling')
 
-
 class ErrorSeverity(Enum):
     """Error severity levels."""
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
-
 
 class ErrorCategory(Enum):
     """Error categories for classification."""
@@ -36,7 +34,6 @@ class ErrorCategory(Enum):
     BUSINESS_LOGIC = "business_logic"
     UNKNOWN = "unknown"
 
-
 @dataclass
 class ErrorContext:
     """Context information for error handling."""
@@ -46,7 +43,6 @@ class ErrorContext:
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     additional_context: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class ErrorRecord:
@@ -61,7 +57,6 @@ class ErrorRecord:
     recovery_action: Optional[str] = None
     resolved: bool = False
     resolution_timestamp: Optional[datetime] = None
-
 
 class Step05ErrorHandler:
     """Standardized error handler for Step05 operations."""
@@ -345,7 +340,6 @@ class Step05ErrorHandler:
         except Exception as e:
             self.logger.error(f"❌ Error clearing failed: {e}")
 
-
 def step05_error_handler(error_severity: ErrorSeverity = ErrorSeverity.MEDIUM,
                         error_category: ErrorCategory = ErrorCategory.UNKNOWN,
                         recovery_action: Optional[str] = None):
@@ -403,7 +397,6 @@ def step05_error_handler(error_severity: ErrorSeverity = ErrorSeverity.MEDIUM,
         
         return wrapper
     return decorator
-
 
 def step05_async_error_handler(error_severity: ErrorSeverity = ErrorSeverity.MEDIUM,
                               error_category: ErrorCategory = ErrorCategory.UNKNOWN,

@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """
 Enhanced Error Handling System for Data Collection Pipeline
@@ -20,11 +21,6 @@ from src.utils.common_operations import (
     safe_json_load
 )
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-import json
-import numpy as np
-import time
-import typing
-
 
 class ErrorSeverity(Enum):
     """Error severity levels."""
@@ -32,7 +28,6 @@ class ErrorSeverity(Enum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
     CRITICAL = "CRITICAL"
-
 
 class ErrorCategory(Enum):
     """Error categories."""
@@ -46,7 +41,6 @@ class ErrorCategory(Enum):
     TIMEOUT = "TIMEOUT"
     UNKNOWN = "UNKNOWN"
 
-
 class RecoveryStrategy(Enum):
     """Recovery strategies for errors."""
     RETRY = "RETRY"
@@ -54,7 +48,6 @@ class RecoveryStrategy(Enum):
     FALLBACK = "FALLBACK"
     ABORT = "ABORT"
     MANUAL_INTERVENTION = "MANUAL_INTERVENTION"
-
 
 @dataclass
 class ErrorContext:
@@ -67,7 +60,6 @@ class ErrorContext:
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     additional_info: Optional[Dict[str, Any]] = None
-
 
 @dataclass
 class ErrorReport:
@@ -85,7 +77,6 @@ class ErrorReport:
     resolved: bool = False
     resolution_time: Optional[str] = None
     resolution_notes: Optional[str] = None
-
 
 class DataCollectionError(Exception):
     """Base exception for data collection errors."""
@@ -107,7 +98,6 @@ class DataCollectionError(Exception):
         self.recovery_strategy = recovery_strategy
         self.additional_info = kwargs
 
-
 class DataQualityError(DataCollectionError):
     """Exception for data quality issues."""
     @log_important_calls
@@ -121,7 +111,6 @@ class DataQualityError(DataCollectionError):
             recovery_strategy = RecoveryStrategy.SKIP,
             **kwargs
         )
-
 
 class NetworkError(DataCollectionError):
     """Exception for network-related errors."""
@@ -137,7 +126,6 @@ class NetworkError(DataCollectionError):
             **kwargs
         )
 
-
 class StorageError(DataCollectionError):
     """Exception for storage-related errors."""
     @log_important_calls
@@ -151,7 +139,6 @@ class StorageError(DataCollectionError):
             recovery_strategy = RecoveryStrategy.RETRY,
             **kwargs
         )
-
 
 class ValidationError(DataCollectionError):
     """Exception for validation errors."""
@@ -167,7 +154,6 @@ class ValidationError(DataCollectionError):
             **kwargs
         )
 
-
 class ProcessingError(DataCollectionError):
     """Exception for data processing errors."""
     @log_important_calls
@@ -181,7 +167,6 @@ class ProcessingError(DataCollectionError):
             recovery_strategy = RecoveryStrategy.RETRY,
             **kwargs
         )
-
 
 class ConfigurationError(DataCollectionError):
     """Exception for configuration errors."""
@@ -197,7 +182,6 @@ class ConfigurationError(DataCollectionError):
             **kwargs
         )
 
-
 class PermissionError(DataCollectionError):
     """Exception for permission errors."""
     @log_important_calls
@@ -212,7 +196,6 @@ class PermissionError(DataCollectionError):
             **kwargs
         )
 
-
 class TimeoutError(DataCollectionError):
     """Exception for timeout errors."""
     @log_important_calls
@@ -226,7 +209,6 @@ class TimeoutError(DataCollectionError):
             recovery_strategy = RecoveryStrategy.RETRY,
             **kwargs
         )
-
 
 class EnhancedErrorHandler:
     """Enhanced error handler with comprehensive error management."""
@@ -559,7 +541,6 @@ class EnhancedErrorHandler:
                 print(f"  {error['timestamp']} | {error['severity']} | {error['category']} | {error['operation']} | {error['message']}")
         
         print("="*80)
-
 
 # Export main classes and functions
 __all__ = [

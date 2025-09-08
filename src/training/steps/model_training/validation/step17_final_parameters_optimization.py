@@ -13,10 +13,10 @@ import numpy as np
 from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.core.decorators.logging import log_execution_time
 
 # Placeholder decorators for compatibility
 def comprehensive_data_validation(*args, **kwargs):
@@ -110,7 +110,6 @@ def failed(msg: Any) -> None:
 
 def missing(msg: Any) -> None:
     return f'🔍 {msg}'
-from functools import cached_property
 
 class FinalParametersOptimizationStep:
     """Step 17: Final Parameters Optimization using Optuna with advanced features."""

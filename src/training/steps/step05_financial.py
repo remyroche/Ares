@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step05 Financial Calculations Module
 
@@ -16,7 +17,6 @@ from src.core.decorators import handles_errors, traced, validates
 
 logger = system_logger.getChild('Step05Financial')
 
-
 @dataclass
 class TransactionCosts:
     """Transaction cost parameters for financial calculations."""
@@ -26,7 +26,6 @@ class TransactionCosts:
     funding_rate: float = 0.0001  # 0.01% funding rate (for perpetuals)
     min_trade_size: float = 10.0  # Minimum trade size in USD
     max_trade_size: float = 100000.0  # Maximum trade size in USD
-
 
 @dataclass
 class TradingPerformance:
@@ -50,7 +49,6 @@ class TradingPerformance:
     net_return: float
     cost_impact: float
 
-
 @dataclass
 class RiskMetrics:
     """Risk assessment metrics."""
@@ -62,7 +60,6 @@ class RiskMetrics:
     correlation_to_market: float
     tail_risk: float
     downside_deviation: float
-
 
 class Step05FinancialCalculator:
     """Comprehensive financial calculator for Step05 labeling results."""

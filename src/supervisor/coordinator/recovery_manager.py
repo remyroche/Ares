@@ -7,7 +7,6 @@ This module handles automatic recovery and fallback mechanisms for
 system components when failures occur.
 """
 
-
 import asyncio
 import time
 from collections import defaultdict
@@ -16,9 +15,6 @@ from typing import Any, Dict, List, Optional
 
 from ...utils.logger import system_logger
 from .utils.warning_symbols import error, failed, warning
-import numpy as np
-import logging
-
 
 class RecoveryManager:
     """Manages automatic recovery and fallback mechanisms."""

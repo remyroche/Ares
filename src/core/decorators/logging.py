@@ -13,7 +13,6 @@ from contextvars import ContextVar
 from typing import Any, Callable
 
 from .compose import P, R, uniform_wrapper
-import numpy as np
 
 # Context variable for correlation ID
 correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default = None)
@@ -39,7 +38,6 @@ SENSITIVE_FIELDS = {
     "tax_id",
 }
 
-
 def get_correlation_id() -> str:
     """Get current correlation ID or generate a new one."""
     cid = correlation_id_var.get()
@@ -48,16 +46,13 @@ def get_correlation_id() -> str:
         correlation_id_var.set(cid)
     return cid
 
-
 def set_correlation_id(correlation_id: str) -> None:
     """Set correlation ID for current context."""
     correlation_id_var.set(correlation_id)
 
-
 def clear_correlation_id() -> None:
     """Clear correlation ID from current context."""
     correlation_id_var.set(None)
-
 
 def mask_sensitive_data(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
     """
@@ -96,7 +91,6 @@ def mask_sensitive_data(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
         return data
 
     return data
-
 
 def log_call(
     *,
@@ -235,7 +229,6 @@ def log_call(
 
     return uniform_wrapper(f"log_call({level})", sync_handler, async_handler)
 
-
 def log_execution_time(
     *,
     threshold_ms: float | None = None,
@@ -300,7 +293,6 @@ def log_execution_time(
                 )
 
     return uniform_wrapper("log_execution_time", sync_handler, async_handler)
-
 
 def audit_log(
     *,

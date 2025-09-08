@@ -1,12 +1,9 @@
 # src/training/calibration_manager.py
 
-
 from datetime import datetime
 from typing import Any
 
 from src.utils.logger import system_logger
-import logging
-import time
 
 from src.utils.warning_symbols import (
     error,
@@ -575,4 +572,3 @@ class CalibrationManager:
             self.logger.info("✅ Calibration Manager stopped successfully")
         except Exception:
             self.print(failed("❌ Failed to stop Calibration Manager: {e}"))
-

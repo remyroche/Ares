@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Data Integrity Checker - Validates data integrity and relationships."""
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
@@ -9,8 +10,6 @@ import pandas as pd
 from typing import Any
 import numpy as np
 from typing import Optional
-import logging
-import time
 
 class DataIntegrityChecker:
     """Checks data integrity including relationships, constraints, and consistency."""

@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.utils.common_operations import create_fallback_logger, create_fallback_decorator
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # Enhanced reporting system is no longer used - using financial metrics logger directly
 ENHANCED_REPORTING_AVAILABLE = False
@@ -39,11 +40,8 @@ else:
 
     def get_unified_data_loader(config: Dict[str, Any]) -> Union[pd.DataFrame, Dict[str, Any]]:
         raise ImportError('unified_data_loader module not available')
-import logging
+
 import pandas as pd
-import collections
-import numpy as np
-import time
 
 # Fallback utilities now imported from src.utils.common_operations
 if system_logger is None:
@@ -481,7 +479,7 @@ class RegimeDataSplittingStep:
             exchange = self.config.get('exchange', 'BINANCE')
             timeframe = self.config.get('timeframe', '1m')
             unified_file = os.path.join(data_dir, f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet')
-            unified_data.to_parquet(unified_file, index = True)
+            standardized_parquet_handler.write_parquet_standardized(unified_data, unified_file, index = True)
             self.logger.info(f'✅ Saved unified regime dataset: {len(unified_data)} rows -> {unified_file}')
             regime_labels = {'regime_column': 'composite_cluster_id', 'regime_ids': sorted(unique_clusters), 'total_regimes': len(unique_clusters), 'data_shape': unified_data.shape, 'timestamp_range': {'start': unified_data.index.min().isoformat(), 'end': unified_data.index.max().isoformat()}, 'usage_instructions': {'description': 'Load the unified dataset and filter by composite_cluster_id for regime-specific processing', 'example': "regime_data = data[data['composite_cluster_id'] == regime_id]", 'benefits': ['Maintains temporal continuity for trading indicators', 'Preserves lookback periods', 'Eliminates need for multiple file management', 'Enables regime-aware processing with single dataset']}}
             labels_file = os.path.join(data_dir, f'{exchange}_{symbol}_{timeframe}_regime_labels.json')

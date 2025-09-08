@@ -9,10 +9,9 @@ import optuna
 from src.config.config_manager import get_config_manager, get_optimizable_parameters, get_search_space, update_optimizable_config
 from src.utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
-import numpy as np
-import logging
-import time
+
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""

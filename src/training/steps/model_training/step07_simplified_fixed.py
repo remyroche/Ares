@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step07 Enhanced Matrix Operations - Simplified with Fixed Imports
 
@@ -6,7 +7,7 @@ identified in the audit while maintaining core functionality.
 """
 
 import sys
-import warnings
+
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -16,11 +17,9 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # Required dependencies - no fallbacks
-import numpy as np
+
 import pandas as pd
-import torch
-import numba
-import psutil
+
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
 from src.training.base_step import BaseStep
@@ -90,7 +89,7 @@ class SimplifiedMatrixOperationsStep(BaseStep):
                     path = advanced_features[split]
                     if isinstance(path, str) and Path(path).exists():
                         try:
-                            data_dict[split] = pd.read_parquet(path)
+                            data_dict[split] = standardized_parquet_handler.read_parquet_standardized(path)
                         except Exception as e:
                             self.logger.warning(f"⚠️ Failed to load {split} data: {e}")
             

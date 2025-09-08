@@ -1,4 +1,3 @@
-import numpy as np
 
 '\nAuthentication and authorization decorators.\n\nProvides decorators for enforcing authentication and permission\npolicies in a framework-agnostic way.\n'
 from abc import ABC, abstractmethod

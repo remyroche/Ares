@@ -19,8 +19,6 @@ from .config_driven_architecture import ConfigLoader
 from .dependency_injection import DIContainer, inject
 from .modular_components import DataQualityValidator, ExchangeDataSourceFactory, IDataSource, IDataValidator, IFeatureCalculator, IModelTrainer, LocalDataSource, ModelTrainerFactory, PriceFeatureCalculator, SchemaValidator, VolumeFeatureCalculator
 from .standard_interfaces import BasePipelineStep, IPipelineStep, StepConfig, StepResult
-import json
-import time
 
 @inject(data_source='data_source', logger='logger')
 class DataLoadingStep(BasePipelineStep):

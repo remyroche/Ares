@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Performance Monitoring System for Step 7 Enhanced Matrix Operations.
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -8,8 +9,6 @@ for all functions and operations.
 import time
 import gc
 from typing import Any, Dict
-import logging
-import numpy as np
 
 # Optional dependencies with fallback handling
 try:
@@ -18,7 +17,6 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
-
 
 class PerformanceMonitor:
     """Performance monitoring and resource usage tracking for all functions."""
@@ -146,6 +144,5 @@ class PerformanceMonitor:
             'current_system_resources': self.get_system_resources(),
             'function_metrics': self.performance_metrics
         }
-
 
 __all__ = ['PerformanceMonitor']

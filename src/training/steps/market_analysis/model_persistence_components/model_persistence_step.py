@@ -1,5 +1,6 @@
 from ....core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 21: Model Persistence - Migrated to use BaseStep pattern.
 
@@ -14,9 +15,6 @@ from .model_serializer import ModelSerializer
 from .version_manager import VersionManager
 from .metadata_tracker import MetadataTracker
 from .model_registry import ModelRegistry
-import numpy as np
-import logging
-import time
 
 class ModelPersistenceStep(BaseStep):
     """Step 21: Model Persistence with comprehensive saving and versioning."""

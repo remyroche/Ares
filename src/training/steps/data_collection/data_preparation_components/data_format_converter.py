@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Data Format Converter Component
 
 Handles conversion between different data formats, particularly focusing on Parquet operations.
@@ -7,7 +8,7 @@ import contextlib
 import os
 from datetime import UTC, datetime
 from typing import Any, Optional
-import numpy as np
+
 import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -24,9 +25,8 @@ except ImportError:
     pq = None
 from src.core.decorators import traced, validates
 from src.utils.file_operations import ensure_directory, safe_json_dump, safe_json_load
-import json
+
 import logging
-import time
 
 class DataFormatConverter:
     """Handles conversion between different data formats with focus on Parquet operations.

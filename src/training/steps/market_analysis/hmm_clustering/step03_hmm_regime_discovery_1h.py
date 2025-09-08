@@ -5,6 +5,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Enhanced Step 3: HMM Regime Discovery using 1h timeframe only.
 
@@ -21,9 +22,6 @@ sys.path.insert(0, str(project_root))
 from .utils.common_operations import ensure_directory, safe_json_dump
 from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
-import json
-import logging
-import time
 
 logger = system_logger.getChild('HMMRegimeDiscovery1H')
 
@@ -71,7 +69,7 @@ class HMMRegimeDiscovery1H:
         path_1h = Path(data_dir) / f'{exchange}_{symbol}_1h_unified.parquet'
         if path_1h.exists():
             self.logger.info(f'Loading existing 1h data from {path_1h}')
-            data_1h = pd.read_parquet(path_1h)
+            data_1h = standardized_parquet_handler.read_parquet_standardized(path_1h)
             data_1h = self.standards.standardize_timestamp(data_1h, 'timestamp')
             return data_1h
         self.logger.info('1h data not found, resampling from lower timeframe...')
@@ -80,10 +78,10 @@ class HMMRegimeDiscovery1H:
             raise FileNotFoundError(f'No unified data found for {symbol}')
         smallest_tf_file = min(available_files, key = lambda x: self._timeframe_to_minutes(x.stem.split('_')[2]))
         self.logger.info(f'Resampling from {smallest_tf_file}')
-        data = pd.read_parquet(smallest_tf_file)
+        data = standardized_parquet_handler.read_parquet_standardized(smallest_tf_file)
         data = self.standards.standardize_timestamp(data, 'timestamp')
         data_1h = self._resample_to_1h(data)
-        data_1h.to_parquet(path_1h)
+        standardized_parquet_handler.write_parquet_standardized(data_1h, path_1h)
         self.logger.info(f'Saved resampled 1h data to {path_1h}')
         return data_1h
     @log_all_calls
@@ -216,7 +214,7 @@ class HMMRegimeDiscovery1H:
         target_path = Path(data_dir) / f'{exchange}_{symbol}_{target_timeframe}_unified.parquet'
         if not target_path.exists():
             raise FileNotFoundError(f'Target timeframe data not found: {target_path}')
-        target_data = pd.read_parquet(target_path)
+        target_data = standardized_parquet_handler.read_parquet_standardized(target_path)
         target_data = self.standards.standardize_timestamp(target_data, 'timestamp')
         merged = pd.merge_asof(target_data[['timestamp']].sort_values('timestamp'), regime_df.sort_values('timestamp'), on='timestamp', direction='backward')
         mode_regime = regime_df['regime'].mode().iloc[0]

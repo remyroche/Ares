@@ -1,5 +1,6 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_important_calls, log_all_calls
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 17: Final Parameters Optimization - Per-Regime Implementation with Hardware Acceleration.
 
@@ -44,12 +45,8 @@ except ImportError:
     per_regime_step = None
     pipeline_standards = None
 import numpy as np
-import logging
-import typing
-
 
 logger = get_logger('Step17FinalParametersOptimizationPerRegime')
-
 
 class PerRegimeFinalParametersOptimizationStep(Step17FinalParametersOptimization):
     """Final parameters optimization step that processes each regime separately."""
@@ -1011,7 +1008,6 @@ class PerRegimeFinalParametersOptimizationStep(Step17FinalParametersOptimization
             self.logger.error(f"❌ Error saving parameters optimization results for regime {regime_id}: {e}")
             return False
 
-
 @traced(span_name='run_per_regime_parameters_optimization_step')
 @validates()
 @handles_errors
@@ -1043,7 +1039,7 @@ async def run_per_regime_step(
         
     if data_dir is None:
         if pipeline_standards:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
         else:
             # Fallback if pipeline_standards is not available
             data_dir = f'data_cache/{exchange}_{symbol}'
@@ -1068,7 +1064,6 @@ async def run_per_regime_step(
         logger.error("❌ Step 17: Per-Regime Final Parameters Optimization failed")
         
     return success
-
 
 if __name__ == '__main__':
     async def test():

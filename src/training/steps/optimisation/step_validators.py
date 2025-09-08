@@ -2,6 +2,7 @@
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.config.environment import get_environment_settings
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step Validators for Optimisation Pipeline.
 
@@ -55,9 +56,8 @@ except ImportError:
 
 import psutil
 import pandas as pd
-import logging
-from typing import Dict, Any, List, Optional
 
+from typing import Dict, Any, List, Optional
 
 logger = system_logger.getChild('OptimisationStepValidators')
 
@@ -166,7 +166,7 @@ class ConfidenceCalibrationStepValidator(BaseValidator):
         
         # Validate data quality
         try:
-            tactician_data = pd.read_parquet(tactician_files[0])
+            tactician_data = standardized_parquet_handler.read_parquet_standardized(tactician_files[0])
             if tactician_data.empty:
                 self.logger.error("❌ Tactician data is empty")
                 return False

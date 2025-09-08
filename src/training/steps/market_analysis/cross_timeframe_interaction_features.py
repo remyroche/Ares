@@ -1,4 +1,5 @@
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 '\nRefactored cross-timeframe and interaction feature generation with reduced complexity.\nThis module breaks down the high-complexity feature generation methods into smaller,\nfocused functions with proper type annotations.\n'
 import logging
@@ -7,7 +8,6 @@ from dataclasses import dataclass
 from enum import Enum
 import numpy as np
 import pandas as pd
-import typing
 
 class TimeframeType(Enum):
     """Types of timeframes for analysis"""

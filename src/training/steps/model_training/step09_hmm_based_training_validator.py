@@ -1,4 +1,5 @@
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """HMM-Based Training Step Validator"""
 
@@ -8,7 +9,6 @@ from pathlib import Path
 
 from src.utils.logger import system_logger
 from ....utils.common_operations import safe_file_exists, validate_dataframe_schema
-import logging
 
 class HMMTrainingValidator:
     """Validator for HMM-based training step."""
@@ -155,7 +155,7 @@ class HMMTrainingValidator:
         main_data_file = f"{data_dir}/{required_files[0]}"
         if safe_file_exists(main_data_file):
             try:
-                df = pd.read_parquet(main_data_file)
+                df = standardized_parquet_handler.read_parquet_standardized(main_data_file)
                 required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
                 schema_valid, schema_errors = validate_dataframe_schema(df, required_columns)
                 if not schema_valid:

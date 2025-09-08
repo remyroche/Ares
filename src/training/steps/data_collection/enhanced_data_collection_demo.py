@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced Data Collection Demo
@@ -27,7 +28,6 @@ from .utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging
 from src.utils.enhanced_data_validation import DataType, get_validator, validate_data_batch, ValidationSeverity
 from .exchange_field_mappings import get_exchange_mapper, list_supported_exchanges
 from .enhanced_api_agnostic_data_collector import EnhancedAPIAgnosticDataCollector, collect_data_for_period, collect_incremental_data, detect_and_fill_gaps
-import logging
 
 logger = system_logger.getChild('EnhancedDataCollectionDemo')
 

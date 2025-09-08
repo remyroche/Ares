@@ -1,6 +1,5 @@
 # src/training/steps/step9_5_hmm_lm_generalist_training_validator.py
 
-
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +10,10 @@ from .utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
 import json
 import logging
+from ..standardized_parquet_handler import standardized_parquet_handler
+
 
 logger = system_logger.getChild("Step9_5HMMLMGeneralistTrainingValidator")
-
 
 class Step9_5HMMLMGeneralistTrainingValidator:
     """Validator for Step 9.5: HMM LM Generalist Training."""
@@ -160,7 +160,6 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         except Exception as e:
             self.logger.exception(f"❌ Error validating metadata file {metadata_file}: {e}")
             return False
-
 
 @validates()
 def step9_5_hmm_lm_generalist_training_validator(

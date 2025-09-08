@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Step 8: Advanced Feature Selection with M1 Hardware Optimizations
 
@@ -11,10 +12,9 @@ import numpy as np
 import asyncio
 import json
 import os
-import warnings
+
 from datetime import datetime
 from pathlib import Path
-from contextlib import nullcontext
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
@@ -507,8 +507,8 @@ class EnhancedStep08AdvancedFeatureSelection:
             'use_threads': True
         }
 
-        df_train = pd.read_parquet(filtered_train_path, **parquet_read_options)
-        df_val = pd.read_parquet(filtered_val_path, **parquet_read_options)
+        df_train = standardized_parquet_handler.read_parquet_standardized(filtered_train_path, **parquet_read_options)
+        df_val = standardized_parquet_handler.read_parquet_standardized(filtered_val_path, **parquet_read_options)
         df = pd.concat([df_train, df_val], ignore_index=True)
 
         self.logger.info(f'📈 Loaded {len(df)} rows with {len(df.columns)} columns')
@@ -1065,8 +1065,8 @@ class Step08AdvancedFeatureSelection(EnhancedStep08AdvancedFeatureSelection):
                 'engine': 'pyarrow' if hasattr(pd, 'ArrowDtype') else 'fastparquet',
                 'use_threads': True  # Enable multi-threading
             }
-            df_train = pd.read_parquet(filtered_train_path, **parquet_read_options)
-            df_val = pd.read_parquet(filtered_val_path, **parquet_read_options)
+            df_train = standardized_parquet_handler.read_parquet_standardized(filtered_train_path, **parquet_read_options)
+            df_val = standardized_parquet_handler.read_parquet_standardized(filtered_val_path, **parquet_read_options)
             df = pd.concat([df_train, df_val], ignore_index = True)
             self.logger.info(f'📈 Loaded {len(df)} rows with {len(df.columns)} columns')
             label_columns = ['target', 'direction', 'profit', 'outcome', 'returns', 'timestamp', 'open', 'high', 'low', 'close', 'volume']
@@ -1086,7 +1086,7 @@ class Step08AdvancedFeatureSelection(EnhancedStep08AdvancedFeatureSelection):
             if os.path.exists(hmm_path):
                 self.logger.info(f'🎭 Loading regime labels from: {hmm_path}')
                 # Optimized HMM data reading
-                hmm_data = pd.read_parquet(hmm_path, **parquet_read_options)
+                hmm_data = standardized_parquet_handler.read_parquet_standardized(hmm_path, **parquet_read_options)
                 try:
                     from src.utils.regime_data_access import get_regime_column
                     regime_col = get_regime_column(hmm_data)
@@ -1710,12 +1710,12 @@ class Step08AdvancedFeatureSelection(EnhancedStep08AdvancedFeatureSelection):
             train_features = phase1_features[selected_features].iloc[:train_size]
             train_data = pd.concat([train_features, labels_df.iloc[:train_size]], axis = 1)
             train_path = os.path.join(self.output_dir, f'{exchange}_{symbol}_{timeframe}_top{target_size}_train.parquet')
-            train_data.to_parquet(train_path)
+            standardized_parquet_handler.write_parquet_standardized(train_data, train_path)
             output_files[f'top{target_size}_train'] = train_path
             val_features = phase1_features[selected_features].iloc[train_size:]
             val_data = pd.concat([val_features, labels_df.iloc[train_size:]], axis = 1)
             val_path = os.path.join(self.output_dir, f'{exchange}_{symbol}_{timeframe}_top{target_size}_val.parquet')
-            val_data.to_parquet(val_path)
+            standardized_parquet_handler.write_parquet_standardized(val_data, val_path)
             output_files[f'top{target_size}_val'] = val_path
         interp_path = os.path.join(self.output_dir, f'{exchange}_{symbol}_{timeframe}_interpretability_report.json')
         safe_json_dump(interpretability_results, interp_path)
@@ -1783,7 +1783,6 @@ class Step08AdvancedFeatureSelection(EnhancedStep08AdvancedFeatureSelection):
         except Exception as e:
             self.logger.warning(f"Sparse matrix feature selection failed: {e}")
             return X, {'error': str(e), 'method': 'dense_fallback'}
-
 
 async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     try:

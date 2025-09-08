@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Comprehensive Validation Framework for Step 7 Enhanced Matrix Operations.
 
 This module provides validation capabilities for input data, matrix operations,
@@ -6,7 +7,6 @@ and feature importance results.
 from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
-import logging
 
 # Optional dependencies with fallback handling
 try:
@@ -20,7 +20,6 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
     np = None
-
 
 class ComprehensiveValidator:
     """Comprehensive validation framework for step07 operations."""
@@ -141,6 +140,5 @@ class ComprehensiveValidator:
             'validation_rules': self.validation_rules,
             'total_validations': len(self.validation_results)
         }
-
 
 __all__ = ['ComprehensiveValidator']

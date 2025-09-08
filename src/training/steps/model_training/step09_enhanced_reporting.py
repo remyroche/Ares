@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Reporting System for Step09: HMM-Based Training Per Regime
 
@@ -5,18 +6,12 @@ This module provides comprehensive analysis and reporting for per-regime HMM-bas
 including model performance evaluation, ensemble analysis, training metrics, and regime-specific insights.
 """
 
-import logging
-import json
-import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
+
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Union, Tuple
 from dataclasses import dataclass, field
-from collections import defaultdict
-import warnings
 
 from src.utils.logger import system_logger
 

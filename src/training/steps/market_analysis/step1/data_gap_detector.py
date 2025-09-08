@@ -3,6 +3,7 @@ from . import missing_data_downloader_and_gap_filler  # noqa: F401
 import pandas as pd
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors, traced, validates
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Data Gap Detector for Step1.
 
@@ -12,9 +13,6 @@ Detects missing data gaps in aggtrades, klines, and futures files.
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-import logging
-import time
-import typing
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -326,7 +324,7 @@ class DataGapDetector:
                 if file_path.suffix.lower() == ".csv":
                     df = pd.read_csv(file_path, parse_dates=["timestamp"])
                 else:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
 
                 if len(df) < 2:
                     continue

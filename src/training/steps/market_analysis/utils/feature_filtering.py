@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Feature Filtering Module for Step 7 Enhanced Matrix Operations.
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -37,16 +38,12 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
     lgb = None
 
-import logging
-import time
-
 try:
     from scipy.stats import rankdata
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False
     rankdata = None
-
 
 class FeatureFiltering:
     """Regime-aware feature filtering with comprehensive selection algorithms."""
@@ -348,7 +345,6 @@ class FeatureFiltering:
         except Exception as e:
             self.logger.error(f"❌ Combined filtering failed: {e}")
             return features_df, {'error': str(e)}
-
 
 __all__ = ['FeatureFiltering']
 

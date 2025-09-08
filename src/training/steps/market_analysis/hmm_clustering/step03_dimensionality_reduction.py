@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Advanced Dimensionality Reduction for Feature Matrices.
 
@@ -35,7 +36,6 @@ from .step03_memory_manager import get_memory_manager, memory_aware_processing
 # Import optional dependencies
 umap = safe_import('umap')
 sklearn = safe_import('sklearn')
-
 
 @dataclass
 class DimensionalityReductionConfig:
@@ -84,7 +84,6 @@ class DimensionalityReductionConfig:
     def __post_init__(self):
         if self.ensemble_methods is None:
             self.ensemble_methods = ['univariate', 'recursive', 'embedded']
-
 
 class AdvancedDimensionalityReducer:
     """Advanced dimensionality reduction with multiple strategies."""

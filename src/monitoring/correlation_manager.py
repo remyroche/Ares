@@ -8,16 +8,12 @@ Centralized correlation ID management and request/response correlation tracking
 for the Ares trading bot.
 """
 
-
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
 from ...utils.logger import system_logger
-import logging
-import time
-
 
 class CorrelationStatus(Enum):
     """Correlation status enumeration."""
@@ -25,7 +21,6 @@ class CorrelationStatus(Enum):
     ACTIVE = "active"
     COMPLETED = "completed"
     FAILED = "failed"
-
 
 @dataclass
 class CorrelationRequest:
@@ -41,7 +36,6 @@ class CorrelationRequest:
     error_info: dict[str, Any] | None = None
     performance_metrics: dict[str, float] = None
     metadata: dict[str, Any] = None
-
 
 class CorrelationManager:
     """

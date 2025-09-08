@@ -5,9 +5,7 @@ Thin integrator to unify enhanced scenario probabilities with multi-output targe
 Provides helpers to map scenario analyses into price target hit probabilities.
 """
 
-
 from typing import Any, Dict
-import numpy as np
 
 def map_scenario_to_target_probabilities(scenario_analysis: Dict[str, Any]) -> Dict[str, float]:
     """

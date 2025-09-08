@@ -7,14 +7,13 @@ This is the refactored version of ares_launcher.py that uses modular components
 to reduce complexity from 634 to a much more manageable level.
 """
 
-import argparse
 import asyncio
 import json
 import logging
 import os
 import subprocess
 import sys
-import time
+
 from pathlib import Path
 
 # Import common operations
@@ -45,7 +44,6 @@ from src.launcher.configuration_manager import ConfigurationManager
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-
 
 class AresLauncher:
     """Simplified launcher for Ares trading bot using modular components."""
@@ -504,7 +502,6 @@ class AresLauncher:
         self.logger.info(f"🖥️ Running GUI with mode: {mode}")
         return self.launch_gui(mode, symbol, exchange)
 
-
 # Command execution functions (simplified)
 def execute_command(launcher, args):
     """Execute the requested command using command handlers."""
@@ -572,7 +569,6 @@ def execute_command(launcher, args):
         launcher.logger.exception(f"❌ Failed to execute command {args.command}: {e}")
         return False
 
-
 def execute_gui_command(launcher, args):
     """Execute GUI-specific commands."""
     if args.mode:
@@ -590,7 +586,6 @@ def execute_gui_command(launcher, args):
     launcher.wait_for_user_input()
     return True
 
-
 def initialize_launcher():
     """Initialize launcher with signal handling."""
     signal_handler = setup_signal_handlers()
@@ -598,7 +593,6 @@ def initialize_launcher():
     launcher.setup_logging()
     launcher.setup_signal_handling()
     return launcher, signal_handler
-
 
 def main():
     """Main entry point for the refactored Ares launcher."""
@@ -644,7 +638,6 @@ def main():
     finally:
         if "launcher" in locals():
             launcher.cleanup()
-
 
 if __name__ == "__main__":
     main()

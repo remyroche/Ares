@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
-import pandas as pd
+
 from enum import Enum
 import json
 from .dependency_injection import EnhancedDIContainer, ServiceLifetime

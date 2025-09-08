@@ -1,6 +1,15 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Unified Step08 Class Implementation - Part 2
 """
+
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 class UnifiedStep08:
     """

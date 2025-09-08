@@ -27,9 +27,6 @@ except ImportError:
     LIME_AVAILABLE = False
     print('Warning: LIME not available, LIME explanations disabled')
 
-import logging
-import time
-
 @dataclass
 class ExplanationResult:
     """Result of model explanation."""

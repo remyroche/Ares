@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step 12 Modular: Base Utilities
 
@@ -6,7 +7,7 @@ This module contains shared utility functions for Step 12.
 
 import os
 import json
-import logging
+
 from typing import Any, Dict, List, Union
 
 from .imports import system_logger

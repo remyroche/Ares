@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
+from ..standardized_parquet_handler import standardized_parquet_handler
+
 
 """
 Comprehensive Pipeline Validators for Data Collection
@@ -22,13 +24,11 @@ from src.core.domain.decorators import (
     ensure_data_integrity
 )
 import pandas as pd
-import datetime
-import typing
+
 from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
 )
-
 
 class ValidationResult(Enum):
     """Validation result status."""
@@ -36,7 +36,6 @@ class ValidationResult(Enum):
     FAILED = "FAILED"
     WARNING = "WARNING"
     SKIPPED = "SKIPPED"
-
 
 @dataclass
 class ValidationReport:
@@ -49,7 +48,6 @@ class ValidationReport:
     execution_time: float
     warnings: List[str]
     errors: List[str]
-
 
 class DataCollectionValidator:
     """Comprehensive validator for data collection pipeline steps."""
@@ -122,7 +120,7 @@ class DataCollectionValidator:
                     # Try to read the file to check structure
                     if file_path.endswith('.parquet'):
                         try:
-                            df = pd.read_parquet(file_path)
+                            df = standardized_parquet_handler.read_parquet_standardized(file_path)
                             file_validations[file_path] = {
                                 "rows": len(df),
                                 "columns": list(df.columns),
@@ -236,7 +234,7 @@ class DataCollectionValidator:
             
             # Validate converted data structure and quality
             try:
-                df = pd.read_parquet(converted_file)
+                df = standardized_parquet_handler.read_parquet_standardized(converted_file)
                 
                 # Check required columns
                 required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
@@ -403,7 +401,7 @@ class DataCollectionValidator:
                     continue
                 
                 try:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     
                     # Basic structure validation
                     if len(df) == 0:
@@ -574,7 +572,6 @@ class DataCollectionValidator:
         
         print("="*80)
 
-
 class PipelineStepValidator:
     """Validator for individual pipeline steps with comprehensive checks."""
     
@@ -635,7 +632,6 @@ class PipelineStepValidator:
         # This would be implemented based on specific step requirements
         # For now, return True as a placeholder
         return True
-
 
 # Export main classes
 __all__ = [

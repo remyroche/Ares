@@ -7,13 +7,10 @@ Tracking System (minimal scaffold)
 Provides scaffolding for comprehensive tracking.
 """
 
-
 from enum import Enum
 from typing import Any
 
 from ...utils.logger import system_logger
-import logging
-
 
 class TrackingType(Enum):
     ENSEMBLE_DECISION = "ensemble_decision"
@@ -21,7 +18,6 @@ class TrackingType(Enum):
     FEATURE_IMPORTANCE = "feature_importance"
     DECISION_PATH = "decision_path"
     MODEL_BEHAVIOR = "model_behavior"
-
 
 class TrackingSystem:
     """Comprehensive tracking system (scaffold)."""

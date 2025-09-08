@@ -4,11 +4,8 @@ Time utilities for Ares Trading System
 
 import os
 from datetime import UTC, datetime
-import time
-import typing
 
 UTC = UTC
-
 
 def parse_datetime_to_ms(dt_str: str | None) -> int | None:
     """Parse datetime string to milliseconds timestamp.
@@ -50,7 +47,6 @@ def parse_datetime_to_ms(dt_str: str | None) -> int | None:
         return int(dt.timestamp() * 1000)
     except Exception:
         return None
-
 
 def resolve_time_window_ms(
     config: dict | None = None,
@@ -100,7 +96,6 @@ def resolve_time_window_ms(
 
     return t0, t1
 
-
 def format_timestamp_ms(timestamp_ms: int) -> str:
     """Format milliseconds timestamp to ISO string.
 
@@ -113,7 +108,6 @@ def format_timestamp_ms(timestamp_ms: int) -> str:
     dt = datetime.fromtimestamp(timestamp_ms / 1000, tz = UTC)
     return dt.isoformat()
 
-
 def get_current_timestamp_ms() -> int:
     """Get current timestamp in milliseconds.
 
@@ -121,7 +115,6 @@ def get_current_timestamp_ms() -> int:
         Current timestamp in milliseconds
     """
     return int(datetime.now(UTC).timestamp() * 1000)
-
 
 def is_valid_timestamp_ms(timestamp_ms: int) -> bool:
     """Check if timestamp is valid (positive and reasonable).
@@ -138,7 +131,6 @@ def is_valid_timestamp_ms(timestamp_ms: int) -> bool:
     # Check if timestamp is not too far in the future (e.g., 10 years)
     return not timestamp_ms > max_future
 
-
 def calculate_duration_ms(start_ms: int, end_ms: int) -> int:
     """Calculate duration between two timestamps in milliseconds.
 
@@ -150,7 +142,6 @@ def calculate_duration_ms(start_ms: int, end_ms: int) -> int:
         Duration in milliseconds
     """
     return end_ms - start_ms
-
 
 def format_duration_ms(duration_ms: int) -> str:
     """Format duration in milliseconds to human readable string.

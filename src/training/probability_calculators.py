@@ -2,9 +2,9 @@
 import logging
 from sklearn.metrics import accuracy_score
 import numpy as np
-import os
+
 import pandas as pd
-import typing
+
 from typing import Any, Union
 
 logger = logging.getLogger(__name__)

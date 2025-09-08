@@ -2,6 +2,7 @@
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Validate and Fix Aggtrades Format for Step1.
 
@@ -20,14 +21,13 @@ from typing import Any, Dict, List
 import threading
 import time
 
-
 from src.utils.logger import system_logger
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 import pandas as pd
-import logging
+
 import numpy as np
 
 logger = system_logger.getChild("AggtradesFormatValidator")
@@ -171,7 +171,7 @@ class AggtradesFormatValidator:
             if file_path.suffix.lower() == '.csv':
                 df = pd.read_csv(file_path, parse_dates=['timestamp'])
             elif file_path.suffix.lower() == '.parquet':
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
             else:
                 result['issues'].append(f"Unsupported file format: {file_path.suffix}")
                 return result
@@ -459,7 +459,7 @@ class AggtradesFormatValidator:
                     df = pd.read_csv(file_path, encoding='latin1', low_memory=False)
             elif file_path.suffix.lower() == '.parquet':
                 try:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 except Exception as e:
                     logger.warning(f"❌ Failed to read parquet file {file_path.name}: {e}")
                     return None
@@ -775,7 +775,7 @@ class AggtradesFormatValidator:
             if file_path.suffix.lower() == '.csv':
                 df.to_csv(file_path, index=False)
             else:
-                df.to_parquet(file_path, compression="zstd", index=False)
+                standardized_parquet_handler.write_parquet_standardized(df, file_path, compression="zstd", index=False)
 
             # Verify the saved file
             if file_path.exists():
@@ -1094,7 +1094,6 @@ class AggtradesFormatValidator:
 
         return report
 
-
 class MemoryMonitor:
     """Monitor memory usage and provide memory management utilities."""
 
@@ -1125,7 +1124,6 @@ class MemoryMonitor:
             "percent": self.process.memory_percent(),
             "gc_stats": gc.get_stats(),
         }
-
 
 class ErrorRecoveryHandler:
     """Handle errors with retry logic and circuit breaker pattern."""
@@ -1196,7 +1194,6 @@ class ErrorRecoveryHandler:
                 else:
                     raise e
 
-
 class ConcurrentProcessor:
     """Handle concurrent processing with proper synchronization."""
 
@@ -1232,7 +1229,6 @@ class ConcurrentProcessor:
     def shutdown(self) -> None:
         """Shutdown the executor."""
         self.executor.shutdown(wait=True)
-
 
 class StabilityMetrics:
     """Track stability metrics for monitoring and optimization."""
@@ -1300,7 +1296,6 @@ class StabilityMetrics:
                     reverse=True
                 )[:5]
             }
-
 
 # Enhanced validation method with stability features
 @traced(span_name="validate_file_with_stability")
@@ -1387,7 +1382,6 @@ async def validate_file_with_stability(
             "processing_time": processing_time,
             "error_type": type(e).__name__,
         }
-
 
 def calculate_stability_score(validation_result: Dict[str, Any]) -> float:
     """Calculate a stability score based on validation results."""

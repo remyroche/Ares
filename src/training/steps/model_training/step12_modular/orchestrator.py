@@ -1,10 +1,10 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step 12 Modular: Main Orchestrator
 
 This module contains the main orchestrator for Step 12 analyst enhancement.
 """
 
-import asyncio
 from typing import Dict, Any, List
 
 from .base.imports import (

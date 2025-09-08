@@ -6,6 +6,7 @@ from typing import Optional
 import numpy as np
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Labeling components for the labeling step.
 
@@ -13,7 +14,6 @@ This module contains specialized labeling components including
 triple barrier labeling with regime awareness.
 """
 from src.utils.logger import system_logger
-import logging
 
 class TripleBarrierLabeler:
     """Implements triple barrier labeling method."""

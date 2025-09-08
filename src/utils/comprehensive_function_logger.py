@@ -8,7 +8,7 @@ log their entry, exit, internal calls, and completion with descriptive messages.
 import functools
 import time
 import inspect
-import logging
+
 import traceback
 from typing import Any, Callable, Dict, List, Optional, Union
 from contextvars import ContextVar
@@ -452,4 +452,3 @@ def log_step_functions(func: Callable) -> Callable:
         log_errors=True,
         min_execution_time=0.001
     )(func)
-

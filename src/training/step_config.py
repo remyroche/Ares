@@ -11,10 +11,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 import re
-import logging
-import pandas as pd
-
-
 
 @dataclass
 class StepConfig:
@@ -36,7 +32,6 @@ class StepConfig:
     def full_name(self) -> str:
         """Get full step name."""
         return f"step{self.step_number}_{self.step_name}"
-
 
 # Define all pipeline steps in order
 PIPELINE_STEPS: Dict[str, StepConfig] = {
@@ -318,7 +313,6 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
     ),
 }
 
-
 def get_step_config(step_number: str) -> StepConfig:
     """Get configuration for a specific step.
     
@@ -334,7 +328,6 @@ def get_step_config(step_number: str) -> StepConfig:
     if step_number not in PIPELINE_STEPS:
         raise KeyError(f"Step {step_number} not found in pipeline configuration")
     return PIPELINE_STEPS[step_number]
-
 
 def get_step_number_from_full_name(full_name: str) -> str:
     """Extract step number from full step name.
@@ -366,7 +359,6 @@ ValueError: If full name format is invalid
     else:
         raise ValueError(f"Invalid step name format: {full_name}")
 
-
 def get_all_steps() -> List[StepConfig]:
     """Get all step configurations in order.
     
@@ -375,7 +367,6 @@ def get_all_steps() -> List[StepConfig]:
     """
     return list(PIPELINE_STEPS.values())
 
-
 def get_enabled_steps() -> List[StepConfig]:
     """Get all enabled step configurations.
     
@@ -383,7 +374,6 @@ def get_enabled_steps() -> List[StepConfig]:
         List of enabled StepConfig objects
     """
     return [step for step in PIPELINE_STEPS.values() if step.enabled]
-
 
 def get_step_dependencies(step_number: str) -> List[StepConfig]:
     """Get all dependencies for a specific step.
@@ -395,7 +385,6 @@ def get_step_dependencies(step_number: str) -> List[StepConfig]:
         List of StepConfig objects that this step depends on
     """
 
-
 def get_step_execution_order() -> List[str]:
     """Get the correct execution order for all steps.
     
@@ -405,7 +394,6 @@ def get_step_execution_order() -> List[str]:
     # This is already in the correct order in PIPELINE_STEPS
     return list(PIPELINE_STEPS.keys())
 
-
 def get_step_execution_order_full_names() -> List[str]:
     """Get the correct execution order for all steps with full names.
     
@@ -413,7 +401,6 @@ def get_step_execution_order_full_names() -> List[str]:
         List of full step names in execution order
     """
     return [step.full_name for step in PIPELINE_STEPS.values()]
-
 
 def validate_step_sequence() -> Dict[str, Any]:
     """Validate the step sequence for consistency.

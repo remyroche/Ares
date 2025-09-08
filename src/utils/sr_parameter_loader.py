@@ -10,10 +10,6 @@ from pathlib import Path
 from typing import Dict, Any
 
 from .logger import system_logger
-import numpy as np
-import logging
-import typing
-
 
 class SRParameterLoader:
     """Loads and manages optimized S/R parameters."""
@@ -162,7 +158,6 @@ class SRParameterLoader:
                 "proximity_threshold": params.get("proximity_threshold")
             }
         }
-
 
 def initialize_sr_parameters(config: Dict[str, Any]) -> None:
     """

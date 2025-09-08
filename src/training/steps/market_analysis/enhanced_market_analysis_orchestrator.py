@@ -3,10 +3,12 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
-from src.utils.logger import system_logger
+
 from src.core.decorators import handles_errors, traced, log_execution_time, validates, circuit_breaker, timeout, retry
 from src.core.decorators.logging import audit_log, set_correlation_id
 from src.training.steps.market_analysis.enhanced_pipeline_decorators import comprehensive_pipeline_protection
+from ..standardized_parquet_handler import standardized_parquet_handler
+
 
 """
 Enhanced Market Analysis Orchestrator
@@ -18,7 +20,7 @@ leads to the next with proper validation and protection.
 import asyncio
 import time
 from pathlib import Path
-from src.utils.logger import system_logger
+
 from src.training.steps.market_analysis.enhanced_logging_metrics import EnhancedPipelineLogger
 from src.training.steps.market_analysis.progress_monitor import progress_monitor
 from src.utils.common_operations import get_current_datetime, get_logger, safe_file_exists, validate_data_quality, format_datetime, safe_json_dump
@@ -39,8 +41,6 @@ from .step06_feature_engineering import FeatureEngineeringStep
 from .step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
 from .step08_advanced_feature_selection import AdvancedFeatureSelectionStep
 from .hmm_clustering.step03_enhanced_hmm_regime_discovery import run_enhanced_step
-import json
-import logging
 
 class MarketAnalysisPipelineOrchestrator:
     """
@@ -132,7 +132,7 @@ class MarketAnalysisPipelineOrchestrator:
                 return False
         price_data_path = data_path / required_files[0]
         try:
-            price_data = pd.read_parquet(price_data_path)
+            price_data = standardized_parquet_handler.read_parquet_standardized(price_data_path)
             if price_data.empty:
                 self.logger.error('❌ Price data is empty')
                 return False
@@ -230,9 +230,7 @@ class MarketAnalysisPipelineOrchestrator:
             self.logger.warning(f'⚠️ Could not validate output for {step_name}: {e}')
         return True
 
-    
     @handles_errors(Exception, fallback = False)
-    
     
     async def _execute_hmm_clustering(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute HMM clustering step with comprehensive regime quality metrics."""
@@ -246,7 +244,7 @@ class MarketAnalysisPipelineOrchestrator:
                         from pathlib import Path
                         regime_path = Path(data_dir) / f'regimes_{exchange}_{symbol}_{timeframe}.parquet'
                         if regime_path.exists():
-                            regime_data = pd.read_parquet(regime_path)
+                            regime_data = standardized_parquet_handler.read_parquet_standardized(regime_path)
                             if 'regime' in regime_data.columns:
                                 self.enhanced_logger.log_regime_quality('hmm_clustering', regime_data['regime'])
                                 unique_regimes = regime_data['regime'].unique()
@@ -278,9 +276,7 @@ class MarketAnalysisPipelineOrchestrator:
             self.enhanced_logger.log_issue('hmm_clustering', 'exception', str(e), 'error')
             return False
 
-    
     @handles_errors(Exception, fallback = False)
-    
     
     async def _execute_regime_splitting(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute regime data splitting step."""
@@ -297,9 +293,7 @@ class MarketAnalysisPipelineOrchestrator:
             self.logger.exception(f'❌ Regime data splitting failed with exception: {e}')
             return False
 
-    
     @handles_errors(Exception, fallback = False)
-    
     
     async def _execute_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute labeling step."""
@@ -316,9 +310,7 @@ class MarketAnalysisPipelineOrchestrator:
             self.logger.exception(f'❌ Labeling failed with exception: {e}')
             return False
 
-    
     @handles_errors(Exception, fallback = False)
-    
     
     async def _execute_feature_engineering(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute feature engineering step with comprehensive metrics logging."""
@@ -333,7 +325,7 @@ class MarketAnalysisPipelineOrchestrator:
                         from pathlib import Path
                         features_path = Path(data_dir) / f'features_{exchange}_{symbol}_{timeframe}.parquet'
                         if features_path.exists():
-                            features_data = pd.read_parquet(features_path)
+                            features_data = standardized_parquet_handler.read_parquet_standardized(features_path)
                             self.enhanced_logger.log_feature_quality('feature_engineering', features_data)
                             step6_metrics = {'total_features_created': len(features_data.columns), 'interaction_features': len([col for col in features_data.columns if '_x_' in col or '_*_' in col]), 'selected_features': len(features_data.columns), 'feature_importance_top_10': [], 'lookback_optimization': {'optimized_count': 0, 'optimization_time': 0.0}}
                             self.enhanced_logger.log_step6_metrics('feature_engineering', step6_metrics)
@@ -391,7 +383,7 @@ class MarketAnalysisPipelineOrchestrator:
                 step7_metrics = self._get_fallback_matrix_metrics()
                 self.enhanced_logger.log_step7_metrics('matrix_operations', step7_metrics)
                 return
-            matrix_data = pd.read_parquet(matrix_path)
+            matrix_data = standardized_parquet_handler.read_parquet_standardized(matrix_path)
             self.enhanced_logger.log_feature_quality('matrix_operations', matrix_data)
             numeric_cols = matrix_data.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0:
@@ -404,9 +396,7 @@ class MarketAnalysisPipelineOrchestrator:
         except Exception as metrics_error:
             self.logger.warning(f'⚠️ Could not log matrix operations metrics: {metrics_error}')
 
-    
     @handles_errors(Exception, fallback = False)
-    
     
     async def _execute_matrix_operations(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute matrix operations step with comprehensive metrics logging."""
@@ -426,9 +416,7 @@ class MarketAnalysisPipelineOrchestrator:
             self.enhanced_logger.log_issue('matrix_operations', 'exception', str(e), 'error')
             return False
 
-    
     @handles_errors(Exception, fallback = False)
-    
     
     async def _execute_feature_selection(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute feature selection step."""

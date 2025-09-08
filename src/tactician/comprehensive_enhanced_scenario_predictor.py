@@ -11,7 +11,6 @@ except ImportError:
     talib = None
 if TYPE_CHECKING:
     from datetime import datetime
-import os
 
 logger = logging.getLogger(__name__)
 

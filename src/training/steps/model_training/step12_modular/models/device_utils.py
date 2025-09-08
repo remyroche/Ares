@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step 12 Modular: Device Utilities
 
@@ -6,8 +7,6 @@ This module provides device detection and management utilities.
 
 import queue
 import threading
-import logging
-from typing import Optional
 
 try:
     import torch

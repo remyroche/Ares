@@ -1,4 +1,5 @@
 import numpy as np
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Validator for Step 12: Final Parameters Optimization."""
 
@@ -21,11 +22,6 @@ from .config import CONFIG
 from .utils.common_operations import safe_json_load
 
 import asyncio
-import json
-import logging
-import time
-
-
 
 class Step12FinalParametersOptimizationValidator(BaseValidator):
     """Validator for Step 12: Final Parameters Optimization."""
@@ -392,7 +388,6 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             )
             return False
 
-
 async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
@@ -417,7 +412,6 @@ async def run_validator(
         "duration": 0,  # Could be enhanced to track actual duration
         "timestamp": asyncio.get_event_loop().time(),
     }
-
 
 if __name__ == "__main__":
 

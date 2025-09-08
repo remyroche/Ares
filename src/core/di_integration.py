@@ -13,8 +13,6 @@ from .core.service_registry import ServiceRegistry
 from src.interfaces.base_interfaces import IAnalyst, IEventBus, IStrategist, ISupervisor, ITactician
 from .training.di_training_manager import DITrainingManager
 from .utils.logger import system_logger
-import logging
-import time
 
 class DIIntegration:
     """

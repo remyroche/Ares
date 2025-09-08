@@ -1,5 +1,6 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 7: Enhanced Matrix Operations - Simplified Version.
 from src.utils.logger import system_logger
@@ -9,7 +10,7 @@ reduced complexity through modular design. All functionality is preserved
 but organized into separate, focused modules.
 """
 import os
-import time
+
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
@@ -34,8 +35,6 @@ from .utils.performance_monitor import PerformanceMonitor
 from .utils.matrix_operations import MatrixOperations
 from .utils.quality_metrics import QualityMetricsCalculator
 from .utils.feature_filtering import FeatureFiltering
-import collections
-import json
 
 # Optional dependencies with fallback handling
 REQUIRED_MODULES = [
@@ -105,7 +104,6 @@ else:
     log_step_metrics = enhanced_mlflow.log_step_metrics
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
-
 
 class Step7EnhancedMatrixOperations:
     """Step 7: Enhanced Matrix Operations - Simplified with modular design."""
@@ -237,8 +235,8 @@ class Step7EnhancedMatrixOperations:
             raise ValueError(f'Features validation file not found: {features_val_path}')
         
         self.logger.info(f'📊 Loading engineered features from: {features_train_path}')
-        df_train = pd.read_parquet(features_train_path)
-        df_val = pd.read_parquet(features_val_path)
+        df_train = standardized_parquet_handler.read_parquet_standardized(features_train_path)
+        df_val = standardized_parquet_handler.read_parquet_standardized(features_val_path)
         
         # Optimize data types
         for d in (df_train, df_val):
@@ -293,7 +291,7 @@ class Step7EnhancedMatrixOperations:
             for tf in ['1m', '5m', '15m', '30m', '1h']:
                 tf_path = f'data/training/{exchange}_{symbol}_{tf}_features_train.parquet'
                 if os.path.exists(tf_path):
-                    tf_data = pd.read_parquet(tf_path)
+                    tf_data = standardized_parquet_handler.read_parquet_standardized(tf_path)
                     timeframe_data[tf] = tf_data
             
             if timeframe_data:
@@ -318,7 +316,7 @@ class Step7EnhancedMatrixOperations:
         
         if hmm_path:
             self.logger.info(f'🎭 Loading HMM regimes from: {hmm_path}')
-            hmm_data = pd.read_parquet(hmm_path)
+            hmm_data = standardized_parquet_handler.read_parquet_standardized(hmm_path)
             if 'composite_cluster_id' in hmm_data.columns:
                 return hmm_data['composite_cluster_id']
             elif 'hmm_regime' in hmm_data.columns:
@@ -364,7 +362,7 @@ class Step7EnhancedMatrixOperations:
         # Split back to train/val based on original sizes
         features_train_path = f'data/training/{exchange}_{symbol}_{timeframe}_features_train.parquet'
         if os.path.exists(features_train_path):
-            df_train_original = pd.read_parquet(features_train_path)
+            df_train_original = standardized_parquet_handler.read_parquet_standardized(features_train_path)
             train_size = len(df_train_original)
         else:
             train_size = len(df_filtered) // 2  # Fallback to 50/50 split
@@ -375,8 +373,8 @@ class Step7EnhancedMatrixOperations:
         filtered_train_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_filtered_train.parquet"
         filtered_val_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_filtered_val.parquet"
         
-        df_filtered_train.to_parquet(filtered_train_path)
-        df_filtered_val.to_parquet(filtered_val_path)
+        standardized_parquet_handler.write_parquet_standardized(df_filtered_train, filtered_train_path)
+        standardized_parquet_handler.write_parquet_standardized(df_filtered_val, filtered_val_path)
         
         self.logger.info(f"💾 Saved filtered features to {filtered_train_path} and {filtered_val_path}")
 
@@ -677,7 +675,6 @@ class Step7EnhancedMatrixOperations:
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 7 artifacts and reports: {e}')
 
-
 async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: str = None, 
                   force_rerun: bool = False, **kwargs: Any) -> bool:
     """
@@ -696,7 +693,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: 
     """
     try:
         if data_dir is None:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
         
         from .config.training import get_training_config
         config = get_training_config()
@@ -722,6 +719,5 @@ async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: 
     except Exception as e:
         system_logger.error(f'❌ Step 7 failed: {str(e)}')
         return False
-
 
 __all__ = ['Step7EnhancedMatrixOperations', 'run_step']

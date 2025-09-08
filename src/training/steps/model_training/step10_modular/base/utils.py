@@ -1,17 +1,16 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Base Utilities.
 
 This module contains common utility functions used throughout the
 unified regime intelligence system.
 """
 
-import os
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild('Step10Utils')
-
 
 def ensure_directory(path: str) -> str:
     """Ensure directory exists, create if necessary.
@@ -31,7 +30,6 @@ def ensure_directory(path: str) -> str:
     except Exception as e:
         logger.error(f"❌ Failed to create directory {path}: {e}")
         raise
-
 
 def safe_json_dump(data: Any, file_path: str, indent: int = 2) -> bool:
     """Safely dump data to JSON file with error handling.
@@ -56,7 +54,6 @@ def safe_json_dump(data: Any, file_path: str, indent: int = 2) -> bool:
     except Exception as e:
         logger.error(f"❌ Failed to save JSON to {file_path}: {e}")
         return False
-
 
 def standardize_price_action_probabilities(probabilities: Dict[str, float]) -> Dict[str, float]:
     """Standardize price action probabilities to ensure they sum to 1.
@@ -95,7 +92,6 @@ def standardize_price_action_probabilities(probabilities: Dict[str, float]) -> D
     except Exception as e:
         logger.error(f"❌ Failed to standardize probabilities: {e}")
         return {"neutral": 1.0}
-
 
 def validate_data_quality(data: Dict[str, Any]) -> Dict[str, Any]:
     """Validate data quality for Step 10 processing.
@@ -147,5 +143,3 @@ def validate_data_quality(data: Dict[str, Any]) -> Dict[str, Any]:
         results["is_valid"] = False
 
     return results
-
-

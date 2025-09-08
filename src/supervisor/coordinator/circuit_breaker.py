@@ -9,7 +9,6 @@ in external services and preventing cascading failures.
 import time
 from typing import Any, Callable
 from ...utils.logger import system_logger
-import logging
 
 class CircuitBreaker:
     """Circuit breaker pattern for external services."""

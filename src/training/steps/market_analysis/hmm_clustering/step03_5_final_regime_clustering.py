@@ -1518,7 +1518,10 @@ class FinalRegimeClusteringStep:
         try:
             financial_logger = get_financial_metrics_logger()
             
-            # Log clustering quality metrics
+            # Note: Data quality and performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
+            
+            # Log clustering quality metrics (financial relevance)
             clustering_summary = reports.get('clustering_summary', {})
             if clustering_summary:
                 financial_logger.log_financial_metric(
@@ -1527,7 +1530,7 @@ class FinalRegimeClusteringStep:
                     timeframe=timeframe,
                     metric_name="final_clustering_silhouette_score",
                     metric_value=clustering_summary.get('silhouette_score', 0.0),
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step03_5_Final_Regime_Clustering"
                 )
                 
@@ -1537,7 +1540,7 @@ class FinalRegimeClusteringStep:
                     timeframe=timeframe,
                     metric_name="final_clustering_n_clusters",
                     metric_value=float(clustering_summary.get('n_clusters', 0)),
-                    metric_type="technical",
+                    metric_type="trading",
                     step_name="Step03_5_Final_Regime_Clustering"
                 )
             
@@ -1630,7 +1633,7 @@ class FinalRegimeClusteringStep:
                         timeframe=timeframe,
                         metric_name=f"final_regime_{regime_id}_trend_strength",
                         metric_value=regime_metric.get('trend_strength', 0.0),
-                        metric_type="technical",
+                        metric_type="trading",
                         step_name="Step03_5_Final_Regime_Clustering",
                         regime_id=str(regime_id)
                     )
@@ -1646,16 +1649,8 @@ class FinalRegimeClusteringStep:
                         regime_id=str(regime_id)
                     )
                     
-                    financial_logger.log_financial_metric(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        metric_name=f"final_regime_{regime_id}_sample_count",
-                        metric_value=float(regime_metric.get('sample_count', 0)),
-                        metric_type="regime",
-                        step_name="Step03_5_Final_Regime_Clustering",
-                        regime_id=str(regime_id)
-                    )
+                    # Note: Sample counts are logged in regular system logs
+                    # Financial metrics logger focuses only on financial/trading metrics
                     
                     # Log regime market condition
                     market_condition = regime_metric.get('market_condition', 'unknown')
@@ -1714,28 +1709,8 @@ class FinalRegimeClusteringStep:
                                 additional_data={param_name: str(param_value)}
                             )
             
-            # Log performance metrics
-            performance_metrics = reports.get('performance_metrics', {})
-            if performance_metrics:
-                financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="final_execution_time",
-                    metric_value=performance_metrics.get('execution_time_seconds', 0.0),
-                    metric_type="performance",
-                    step_name="Step03_5_Final_Regime_Clustering"
-                )
-                
-                financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="final_memory_usage",
-                    metric_value=performance_metrics.get('memory_usage_mb', 0.0),
-                    metric_type="performance",
-                    step_name="Step03_5_Final_Regime_Clustering"
-                )
+            # Note: Performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             # Log comprehensive trading performance
             if clustering_summary and regime_summary:

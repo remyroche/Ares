@@ -1,4 +1,3 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Financial metrics logging for Step02.5_5.
 Independent logging module that can be used without the reporting system.
@@ -7,21 +6,48 @@ Enhanced with per-HMM regime logging and fail-fast validation.
 """
 
 import pandas as pd
-
+import logging
 from typing import Dict, Any, Optional, List
+
+# Core imports
+from src.utils.logger import system_logger
+
+# Required utility modules
+from src.utils.common_operations import (
+    safe_json_load, safe_json_dump, safe_read_parquet, 
+    ensure_directory, create_fallback_logger
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, validate_positive, 
+    validate_range, MathValidationError
+)
+from src.utils.parquet_utils import ParquetUtils
+
+# Core decorators and errors
+from src.core.decorators import handles_errors, error_boundary, converts_errors
+from src.core.errors import (
+    AppError, ValidationError, DataIntegrityError, 
+    NotFoundError, BusinessRuleError
+)
+
+# Financial logging imports
 from src.utils.financial_metrics_logger import (
     get_financial_metrics_logger, 
     financial_metrics_context,
     get_smart_financial_metrics_logger,
     log_financial_metric_with_regime_awareness
 )
-from src.utils.logger import system_logger
 
-# Import enhanced functionality if available
+# Optional imports
+try:
+    from ..standardized_parquet_handler import standardized_parquet_handler
+    STANDARDIZED_PARQUET_AVAILABLE = True
+except ImportError:
+    standardized_parquet_handler = None
+    STANDARDIZED_PARQUET_AVAILABLE = False
+
 try:
     from src.utils.enhanced_financial_metrics_logger import (
-import logging
-
         get_enhanced_financial_metrics_logger,
         validate_and_log_regime_data
     )

@@ -1,4 +1,3 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 2.5: S/R Detection Optimization with Comprehensive Reporting and Function Call Monitoring."""
 import asyncio
 import sys
@@ -12,14 +11,53 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
-from typing import Optional, Tuple, List, Dict, Any
-
-# Import step07's feature selection functionality
-
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
+import joblib
+import traceback
+import logging
+import random
+
+# Core imports
+from src.training.base_step import BaseStep
+from src.utils.logger import system_logger
+
+# Required utility modules
+from src.utils.common_operations import (
+    safe_json_load, safe_json_dump, safe_read_parquet, 
+    ensure_directory, create_fallback_logger, create_fallback_decorator
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.parquet_utils import ParquetUtils
+
+# Core decorators and errors
+from src.core.decorators import handles_errors, error_boundary, converts_errors
+from src.core.errors import (
+    AppError, ValidationError, DataIntegrityError, 
+    NotFoundError, BusinessRuleError
+)
+
+# Pipeline standards and utilities
+from src.utils.pipeline_standards import PipelineStandards
+from src.utils.step02_5_utilities import (
+    global_monitor, function_tracker, logging_patterns
+)
+from src.utils.comprehensive_function_logger import (
+    log_step_functions, log_important_calls, log_all_calls, 
+    log_internal_call, log_step_progress, log_data_operation
+)
+from src.training.reports import save_training_report
+from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
+
+# Optional imports with error handling
 try:
-    from src.utils.m1_gpu_utils import m1_batch_process  # Streaming batch processing with MPS gating
+    from src.utils.m1_gpu_utils import m1_batch_process
     M1_BATCH_AVAILABLE = True
 except ImportError as e:
     M1_BATCH_AVAILABLE = False
@@ -28,32 +66,12 @@ except Exception as e:
     M1_BATCH_AVAILABLE = False
     logger.error(f"Unexpected error loading M1 GPU utils: {e}")
 
-import joblib
-
-import traceback
-
-from src.training.base_step import BaseStep
-from src.utils.logger import system_logger
-# Import the correct PipelineStandards to avoid conflicts
-from src.utils.pipeline_standards import PipelineStandards
-from src.utils.step02_5_utilities import (
-    global_monitor,
-    function_tracker,
-    logging_patterns
-)
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-from src.training.reports import save_training_report
-from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
-from src.utils.math_validation import (
-import logging
-import random
-
-    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
-    validate_positive, validate_range, MathValidationError
-)
-from src.utils.lookahead_bias_detector import (
-    get_global_detector, validate_no_future_data, LookaheadBiasError
-)
+try:
+    from ..standardized_parquet_handler import standardized_parquet_handler
+    STANDARDIZED_PARQUET_AVAILABLE = True
+except ImportError:
+    standardized_parquet_handler = None
+    STANDARDIZED_PARQUET_AVAILABLE = False
 
 # Import optional modules with error handling
 try:
@@ -111,7 +129,7 @@ except ImportError:
 
 logger = system_logger.getChild('Step2_5SROptimization')
 
-# Error classification system
+# Error classification system using core error classes
 class ErrorSeverity:
     CRITICAL = "CRITICAL"  # System cannot continue
     HIGH = "HIGH"         # Major functionality affected
@@ -126,25 +144,26 @@ class ErrorCategory:
     SYSTEM_RESOURCE = "SYSTEM_RESOURCE"
     EXTERNAL_DEPENDENCY = "EXTERNAL_DEPENDENCY"
 
+@handles_errors(default_return=(ErrorSeverity.MEDIUM, ErrorCategory.SYSTEM_RESOURCE))
 def classify_error(error: Exception, context: str = "") -> tuple[ErrorSeverity, ErrorCategory]:
-    """Classify errors for appropriate handling."""
+    """Classify errors for appropriate handling using core error classes."""
     error_type = type(error).__name__
     error_msg = str(error).lower()
     
-    # Critical errors
+    # Critical errors - map to core error classes
     if isinstance(error, (MemoryError, SystemError)):
         return ErrorSeverity.CRITICAL, ErrorCategory.SYSTEM_RESOURCE
-    if "all.*values.*invalid" in error_msg or "data.*corrupted" in error_msg:
+    if isinstance(error, DataIntegrityError) or "all.*values.*invalid" in error_msg or "data.*corrupted" in error_msg:
         return ErrorSeverity.CRITICAL, ErrorCategory.DATA_QUALITY
     
-    # High severity errors
-    if isinstance(error, (ValueError, KeyError)) and "data" in context.lower():
+    # High severity errors - map to core error classes
+    if isinstance(error, (ValidationError, DataIntegrityError)) and "data" in context.lower():
         return ErrorSeverity.HIGH, ErrorCategory.DATA_QUALITY
-    if "ml" in context.lower() or "model" in context.lower():
+    if isinstance(error, BusinessRuleError) or ("ml" in context.lower() or "model" in context.lower()):
         return ErrorSeverity.HIGH, ErrorCategory.ML_TRAINING
     
     # Medium severity errors
-    if isinstance(error, ImportError):
+    if isinstance(error, (ImportError, NotFoundError)):
         return ErrorSeverity.MEDIUM, ErrorCategory.EXTERNAL_DEPENDENCY
     if "sr" in context.lower() or "detection" in context.lower():
         return ErrorSeverity.MEDIUM, ErrorCategory.SR_DETECTION
@@ -152,8 +171,9 @@ def classify_error(error: Exception, context: str = "") -> tuple[ErrorSeverity, 
     # Default to medium severity
     return ErrorSeverity.MEDIUM, ErrorCategory.SYSTEM_RESOURCE
 
+@handles_errors(default_return=False)
 def handle_error_with_recovery(error: Exception, context: str, max_retries: int = 3) -> bool:
-    """Handle errors with appropriate recovery strategies."""
+    """Handle errors with appropriate recovery strategies using core error handling."""
     severity, category = classify_error(error, context)
     
     logger.error(f"🚨 {severity} ERROR in {category}: {error}")
@@ -171,9 +191,10 @@ def handle_error_with_recovery(error: Exception, context: str, max_retries: int 
         logger.warning(f"⚠️ {severity} ERROR - Continuing with degraded functionality")
         return True
 
+@handles_errors(default_return={'drift_detected': False, 'drift_score': 0.0, 'drift_details': {}, 'recommendations': []})
 def detect_data_drift(current_data: pd.DataFrame, reference_data: pd.DataFrame = None, 
                      drift_threshold: float = 0.1) -> Dict[str, Any]:
-    """Detect data drift between current and reference datasets."""
+    """Detect data drift between current and reference datasets using math validation utilities."""
     drift_results = {
         'drift_detected': False,
         'drift_score': 0.0,
@@ -184,20 +205,20 @@ def detect_data_drift(current_data: pd.DataFrame, reference_data: pd.DataFrame =
     try:
         # If no reference data, use statistical baselines
         if reference_data is None:
-            # Use statistical baselines for common financial metrics
+            # Use statistical baselines for common financial metrics with safe math operations
             baseline_stats = {
                 'close_mean': current_data['close'].mean(),
-                'close_std': current_data['close'].std(),
+                'close_std': safe_sqrt(current_data['close'].var(), default=0.0),
                 'volume_mean': current_data['volume'].mean(),
-                'volume_std': current_data['volume'].std()
+                'volume_std': safe_sqrt(current_data['volume'].var(), default=0.0)
             }
             
             # Simple drift detection based on statistical properties
             current_stats = {
                 'close_mean': current_data['close'].mean(),
-                'close_std': current_data['close'].std(),
+                'close_std': safe_sqrt(current_data['close'].var(), default=0.0),
                 'volume_mean': current_data['volume'].mean(),
-                'volume_std': current_data['volume'].std()
+                'volume_std': safe_sqrt(current_data['volume'].var(), default=0.0)
             }
             
             # Calculate drift score (simplified)

@@ -78,52 +78,136 @@ from src.utils.lookahead_bias_detector import (
             self.logger.error(f'Failed to generate comprehensive results: {e}')
             return Step08Results(success=False, errors=[str(e)])
 
+    @timed_operation("artifact_saving")
     async def _save_artifacts_and_reports(self, results: Step08Results) -> None:
-        """Save all artifacts and reports."""
+        """Save all artifacts and reports with extensive utility integration."""
         try:
-            self.logger.info('💾 Saving artifacts and reports...')
+            self.logger.info('💾 Saving artifacts and reports with utility integration...')
             
-            # Save regime data
-            if results.regime_data is not None:
-                regime_file = os.path.join(self.artifacts_dir, 'regime_data.parquet')
-                results.standardized_parquet_handler.write_parquet_standardized(regime_data, regime_file)
-                results.artifacts_generated.append(regime_file)
+            # Memory checkpoint for artifact saving
+            with self.memory_optimizer.memory_checkpoint("artifact_saving_start"):
+                
+                # Save regime data using parquet utilities
+                if results.regime_data is not None:
+                    regime_file = os.path.join(self.artifacts_dir, 'regime_data.parquet')
+                    
+                    # Use parquet utilities for safe saving
+                    if self.parquet_serializer.save(results.regime_data, regime_file, compression='snappy'):
+                        results.artifacts_generated.append(regime_file)
+                        self.logger.info(f"✅ Regime data saved to {regime_file}")
+                    else:
+                        self.logger.error(f"Failed to save regime data to {regime_file}")
+                
+                # Save selected features using JSON serializer
+                if results.selected_features:
+                    features_file = os.path.join(self.artifacts_dir, 'selected_features.json')
+                    
+                    # Use JSON serializer for safe saving
+                    if self.json_serializer.save(results.selected_features, features_file, indent=2):
+                        results.artifacts_generated.append(features_file)
+                        self.logger.info(f"✅ Selected features saved to {features_file}")
+                    else:
+                        self.logger.error(f"Failed to save selected features to {features_file}")
             
-            # Save selected features
-            if results.selected_features:
-                features_file = os.path.join(self.artifacts_dir, 'selected_features.json')
-                safe_json_dump(results.selected_features, features_file)
-                results.artifacts_generated.append(features_file)
-            
-            # Save financial metrics
-            if results.financial_metrics:
-                financial_file = os.path.join(self.metrics_dir, 'financial_metrics.json')
-                safe_json_dump(results.financial_metrics.__dict__, financial_file)
-                results.artifacts_generated.append(financial_file)
-            
-            # Save risk metrics
-            if results.risk_metrics:
-                risk_file = os.path.join(self.metrics_dir, 'risk_metrics.json')
-                safe_json_dump(results.risk_metrics.__dict__, risk_file)
-                results.artifacts_generated.append(risk_file)
-            
-            # Save regime balance metrics
-            if results.regime_balance:
-                balance_file = os.path.join(self.metrics_dir, 'regime_balance.json')
-                safe_json_dump(results.regime_balance.__dict__, balance_file)
-                results.artifacts_generated.append(balance_file)
-            
-            # Save feature validation
-            if results.feature_validation:
-                validation_file = os.path.join(self.metrics_dir, 'feature_validation.json')
-                safe_json_dump(results.feature_validation.__dict__, validation_file)
-                results.artifacts_generated.append(validation_file)
-            
-            # Save execution metadata
-            if results.execution_metadata:
-                metadata_file = os.path.join(self.reports_dir, 'execution_metadata.json')
-                safe_json_dump(results.execution_metadata, metadata_file)
-                results.artifacts_generated.append(metadata_file)
+                # Save financial metrics using JSON serializer
+                if results.financial_metrics:
+                    financial_file = os.path.join(self.metrics_dir, 'financial_metrics.json')
+                    
+                    # Convert metrics to serializable format
+                    financial_data = {
+                        'returns': results.financial_metrics.returns,
+                        'volatility': results.financial_metrics.volatility,
+                        'sharpe_ratio': results.financial_metrics.sharpe_ratio,
+                        'max_drawdown': results.financial_metrics.max_drawdown,
+                        'var_95': results.financial_metrics.var_95,
+                        'kelly_criterion': results.financial_metrics.kelly_criterion,
+                        'monte_carlo': getattr(results.financial_metrics, 'monte_carlo', {})
+                    }
+                    
+                    if self.json_serializer.save(financial_data, financial_file, indent=2):
+                        results.artifacts_generated.append(financial_file)
+                        self.logger.info(f"✅ Financial metrics saved to {financial_file}")
+                
+                # Save risk metrics using JSON serializer
+                if results.risk_metrics:
+                    risk_file = os.path.join(self.metrics_dir, 'risk_metrics.json')
+                    
+                    risk_data = {
+                        'overall_risk_score': results.risk_metrics.overall_risk_score,
+                        'portfolio_var': results.risk_metrics.portfolio_var,
+                        'model_risk': results.risk_metrics.model_risk,
+                        'regime_risk': results.risk_metrics.regime_risk,
+                        'overfitting_risk': results.risk_metrics.overfitting_risk
+                    }
+                    
+                    if self.json_serializer.save(risk_data, risk_file, indent=2):
+                        results.artifacts_generated.append(risk_file)
+                        self.logger.info(f"✅ Risk metrics saved to {risk_file}")
+                
+                # Save regime balance metrics using JSON serializer
+                if results.regime_balance:
+                    balance_file = os.path.join(self.metrics_dir, 'regime_balance.json')
+                    
+                    balance_data = {
+                        'balance_score': results.regime_balance.balance_score,
+                        'imbalance_severity': results.regime_balance.imbalance_severity,
+                        'rebalancing_applied': results.regime_balance.rebalancing_applied,
+                        'regime_distribution': getattr(results.regime_balance, 'regime_distribution', {})
+                    }
+                    
+                    if self.json_serializer.save(balance_data, balance_file, indent=2):
+                        results.artifacts_generated.append(balance_file)
+                        self.logger.info(f"✅ Regime balance saved to {balance_file}")
+                
+                # Save feature validation using JSON serializer
+                if results.feature_validation:
+                    validation_file = os.path.join(self.metrics_dir, 'feature_validation.json')
+                    
+                    validation_data = {
+                        'validation_passed': results.feature_validation.validation_passed,
+                        'selection_bias_score': results.feature_validation.selection_bias_score,
+                        'temporal_stability': results.feature_validation.temporal_stability,
+                        'regime_consistency': results.feature_validation.regime_consistency,
+                        'correlation_stability': results.feature_validation.correlation_stability
+                    }
+                    
+                    if self.json_serializer.save(validation_data, validation_file, indent=2):
+                        results.artifacts_generated.append(validation_file)
+                        self.logger.info(f"✅ Feature validation saved to {validation_file}")
+                
+                # Save execution metadata using JSON serializer
+                if results.execution_metadata:
+                    metadata_file = os.path.join(self.reports_dir, 'execution_metadata.json')
+                    
+                    if self.json_serializer.save(results.execution_metadata, metadata_file, indent=2):
+                        results.artifacts_generated.append(metadata_file)
+                        self.logger.info(f"✅ Execution metadata saved to {metadata_file}")
+                
+                # Save utility health status
+                utility_health_file = os.path.join(self.reports_dir, 'utility_health_status.json')
+                if self.json_serializer.save(self.utility_health, utility_health_file, indent=2):
+                    results.artifacts_generated.append(utility_health_file)
+                    self.logger.info(f"✅ Utility health status saved to {utility_health_file}")
+                
+                # Save data quality reports
+                if hasattr(self, 'data_quality_monitor'):
+                    quality_file = os.path.join(self.reports_dir, 'data_quality_reports.json')
+                    quality_data = {
+                        'validation_reports': [report.__dict__ for report in self.data_quality_monitor.get('validation_reports', [])],
+                        'cleaning_reports': self.data_quality_monitor.get('cleaning_reports', []),
+                        'transformation_reports': self.data_quality_monitor.get('transformation_reports', [])
+                    }
+                    
+                    if self.json_serializer.save(quality_data, quality_file, indent=2):
+                        results.artifacts_generated.append(quality_file)
+                        self.logger.info(f"✅ Data quality reports saved to {quality_file}")
+                
+                # Save performance metrics
+                if hasattr(self, 'performance_tracker'):
+                    performance_file = os.path.join(self.reports_dir, 'performance_metrics.json')
+                    if self.json_serializer.save(self.performance_tracker, performance_file, indent=2):
+                        results.artifacts_generated.append(performance_file)
+                        self.logger.info(f"✅ Performance metrics saved to {performance_file}")
             
             # Generate comprehensive report
             comprehensive_report = self._generate_comprehensive_report(results)

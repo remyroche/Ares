@@ -128,6 +128,14 @@ from src.utils.math_validation import (
 from src.utils.parquet_utils import get_parquet_utils
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
+# Import dependency injection for step04 utilities
+from ..model_training.step04_dependency_injection import (
+    get_step04_utilities, get_step04_container, create_step04_config,
+    get_common_ops, get_common_utils, get_math_validation, get_parquet_utils,
+    get_serialization_utils, get_data_processing_utils, get_m1_gpu_utils,
+    get_m1_memory_optimizer, get_m1_cpu_optimizer
+)
+
 # M1 Hardware Optimizations
 try:
     from src.utils.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
@@ -399,13 +407,30 @@ class RegimeDataSplittingStep:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        self.logger = system_logger.getChild('RegimeDataSplittingStep')
+        
+        # Initialize dependency injection container for step04 utilities
+        self.utility_config = create_step04_config(
+            enable_common_operations=True,
+            enable_common_utilities=True,
+            enable_math_validation=True,
+            enable_parquet_utils=True,
+            enable_serialization_utils=True,
+            enable_data_processing_utils=True,
+            enable_m1_gpu_utils=True,
+            enable_m1_memory_optimizer=True,
+            enable_m1_cpu_optimizer=True
+        )
+        self.container = get_step04_container(self.utility_config)
+        self.utils = get_step04_utilities()
+        
+        # Get logger from utilities
+        self.logger = self.utils.get_function('common_operations', 'get_logger')('RegimeDataSplittingStep')
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
 
-        # Initialize parquet utilities
-        self.parquet_utils = get_parquet_utils()
+        # Initialize parquet utilities through dependency injection
+        self.parquet_utils = self.utils.get_function('parquet_utils', 'get_parquet_utils')()
 
         # Initialize M1 Hardware Optimizations
         self._init_m1_optimizations()
@@ -430,31 +455,45 @@ class RegimeDataSplittingStep:
             self.financial_logger = None
 
     def _set_memory_defaults(self) -> None:
-        """Set default configuration values for memory management."""
+        """Set default configuration values for memory management using utility functions."""
+        # Get utility functions
+        safe_float = self.utils.get_function('common_operations', 'safe_float')
+        safe_int = self.utils.get_function('common_operations', 'safe_int')
+        validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+        validate_range = self.utils.get_function('math_validation', 'validate_range')
+        
         memory_defaults = {
-            # Streaming thresholds
-            'streaming_threshold_mb': 500,  # Use streaming for datasets > 500MB
-            'streaming_min_rows': 2_000_000,  # Use streaming for > 2M rows
-            'streaming_min_mb': 1000,  # Use streaming for > 1GB memory usage
+            # Streaming thresholds with validation
+            'streaming_threshold_mb': safe_float(500, 500),  # Use streaming for datasets > 500MB
+            'streaming_min_rows': safe_int(2_000_000, 2_000_000),  # Use streaming for > 2M rows
+            'streaming_min_mb': safe_float(1000, 1000),  # Use streaming for > 1GB memory usage
 
-            # Processing chunk sizes
-            'processing_chunk_size': 100000,  # Process 100K rows at a time during merging
-            'streaming_chunk_size': 5,  # Process 5 files at a time in streaming mode
-            'streaming_chunk_rows': 500000,  # Write 500K rows per chunk when saving
+            # Processing chunk sizes with validation
+            'processing_chunk_size': safe_int(100000, 100000),  # Process 100K rows at a time during merging
+            'streaming_chunk_size': safe_int(5, 5),  # Process 5 files at a time in streaming mode
+            'streaming_chunk_rows': safe_int(500000, 500000),  # Write 500K rows per chunk when saving
 
-            # Merge settings
-            'regime_merge_min_retention': 0.8,  # Minimum 80% data retention after merge
-            'regime_merge_tolerance_ms': 60000,  # 60 second tolerance for timestamp matching
+            # Merge settings with validation
+            'regime_merge_min_retention': validate_range(safe_float(0.8, 0.8), 0.0, 1.0, "regime_merge_min_retention"),  # Minimum 80% data retention after merge
+            'regime_merge_tolerance_ms': validate_positive(safe_int(60000, 60000), "regime_merge_tolerance_ms"),  # 60 second tolerance for timestamp matching
 
             # Writer settings
             'use_streaming_writer': True,  # Enable streaming writer by default
             'use_asof_merge': True,  # Use asof merge by default
         }
 
-        # Update config with defaults if not already set
+        # Update config with defaults if not already set, using utility validation
         for key, default_value in memory_defaults.items():
             if key not in self.config:
                 self.config[key] = default_value
+            else:
+                # Validate existing config values
+                if key in ['streaming_threshold_mb', 'streaming_min_mb', 'regime_merge_min_retention']:
+                    self.config[key] = validate_positive(safe_float(self.config[key], default_value), key)
+                elif key in ['streaming_min_rows', 'processing_chunk_size', 'streaming_chunk_size', 'streaming_chunk_rows', 'regime_merge_tolerance_ms']:
+                    self.config[key] = validate_positive(safe_int(self.config[key], default_value), key)
+                elif key == 'regime_merge_min_retention':
+                    self.config[key] = validate_range(safe_float(self.config[key], default_value), 0.0, 1.0, key)
 
     @comprehensive_function_monitor
     def _validate_environment(self) -> None:
@@ -468,30 +507,43 @@ class RegimeDataSplittingStep:
             self.logger.info('✅ All required dependencies available')
 
     def _init_m1_optimizations(self) -> None:
-        """Initialize M1 hardware optimization components."""
+        """Initialize M1 hardware optimization components using utility functions."""
         if M1_OPTIMIZATIONS_AVAILABLE:
             try:
-                # Initialize M1 GPU Manager
-                self.gpu_manager = get_m1_gpu_manager()
-                self.logger.info('🎯 M1 GPU Manager initialized for step04')
+                # Get utility functions
+                safe_float = self.utils.get_function('common_operations', 'safe_float')
+                safe_int = self.utils.get_function('common_operations', 'safe_int')
+                validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+                validate_range = self.utils.get_function('math_validation', 'validate_range')
+                
+                # Initialize M1 GPU Manager through utility injection
+                self.gpu_manager = self.utils.get_function('m1_gpu_utils', 'get_m1_gpu_manager')()
+                self.logger.info('🎯 M1 GPU Manager initialized for step04 with utility injection')
 
-                # Initialize M1 Memory Optimizer with step-specific settings
+                # Initialize M1 Memory Optimizer with step-specific settings and validation
                 memory_limit = self.config.get('memory_limit_gb', 8.0)
-                self.memory_optimizer = M1MemoryOptimizer(
+                memory_limit = validate_positive(safe_float(memory_limit, 8.0), "memory_limit_gb")
+                memory_limit = validate_range(memory_limit, 1.0, 64.0, "memory_limit_gb")
+                
+                self.memory_optimizer = self.utils.get_function('m1_memory_optimizer', 'M1MemoryOptimizer')(
                     memory_limit_gb=memory_limit,
                     enable_gc_tuning=True,
                     enable_memory_leak_detection=True,
                     enable_swap_management=True
                 )
-                self.logger.info('🧠 M1 Memory Optimizer initialized for step04')
+                self.logger.info('🧠 M1 Memory Optimizer initialized for step04 with utility validation')
 
-                # Initialize M1 CPU Optimizer
+                # Initialize M1 CPU Optimizer with validation
                 max_workers = self.config.get('max_parallel_workers', None)
-                self.cpu_optimizer = M1CPUOptimizer(
+                if max_workers is not None:
+                    max_workers = validate_positive(safe_int(max_workers, None), "max_parallel_workers")
+                    max_workers = validate_range(max_workers, 1, 32, "max_parallel_workers")
+                
+                self.cpu_optimizer = self.utils.get_function('m1_cpu_optimizer', 'M1CPUOptimizer')(
                     max_workers=max_workers,
                     enable_hyperthreading=True
                 )
-                self.logger.info('⚡ M1 CPU Optimizer initialized for step04')
+                self.logger.info('⚡ M1 CPU Optimizer initialized for step04 with utility validation')
 
                 self.m1_optimizations_enabled = True
             except Exception as e:
@@ -552,7 +604,7 @@ class RegimeDataSplittingStep:
 
     @comprehensive_function_monitor
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the regime data splitting step.
+        """Execute the regime data splitting step with extensive utility usage.
 
         Args:
             training_input: Training input parameters
@@ -561,11 +613,18 @@ class RegimeDataSplittingStep:
         Returns:
             Dictionary with execution results
         """
-        symbol = training_input.get('symbol')
-        exchange = training_input.get('exchange')
-        timeframe = training_input.get('timeframe', '1m')
-        data_dir = training_input.get('data_dir')
+        # Get utility functions
+        safe_dict_get = self.utils.get_function('common_operations', 'safe_dict_get')
+        safe_float = self.utils.get_function('common_operations', 'safe_float')
+        validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+        
+        # Use utility functions for parameter extraction and validation
+        symbol = safe_dict_get(training_input, 'symbol', None)
+        exchange = safe_dict_get(training_input, 'exchange', None)
+        timeframe = safe_dict_get(training_input, 'timeframe', '1m')
+        data_dir = safe_dict_get(training_input, 'data_dir', None)
 
+        # Validate required parameters using utility functions
         if not all([symbol, exchange, timeframe]):
             return {
                 'success': False,
@@ -584,6 +643,10 @@ class RegimeDataSplittingStep:
             # Generate comprehensive function call summary
             log_function_call_summary()
 
+            # Calculate execution time using utility functions
+            execution_time = time.time() - self.start_time
+            execution_time = validate_positive(safe_float(execution_time, 0.0), "execution_time")
+            
             if result.success:
                 return {
                     'success': True,
@@ -591,7 +654,7 @@ class RegimeDataSplittingStep:
                     'regime_data': result.data,
                     'regime_metadata': result.metadata,
                     'regime_splits': result.data,  # For compatibility with step 05 expectations
-                    'execution_time': time.time() - self.start_time,
+                    'execution_time': execution_time,
                     'step_name': 'step04_regime_data_splitting'
                 }
             else:
@@ -599,7 +662,7 @@ class RegimeDataSplittingStep:
                     'success': False,
                     'step04_regime_data_splitting_completed': False,
                     'step04_regime_data_splitting_failure_reason': f'Regime data splitting failed: {result.error}',
-                    'execution_time': time.time() - self.start_time,
+                    'execution_time': execution_time,
                     'step_name': 'step04_regime_data_splitting'
                 }
 
@@ -615,8 +678,13 @@ class RegimeDataSplittingStep:
 
     @comprehensive_function_monitor
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
-        """Log timing information for a step."""
+        """Log timing information for a step using utility functions."""
+        # Get utility functions
+        safe_float = self.utils.get_function('common_operations', 'safe_float')
+        validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+        
         elapsed = time.time() - start_time
+        elapsed = validate_positive(safe_float(elapsed, 0.0), "elapsed_time")
         self.step_timings[step_name] = elapsed
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
 
@@ -641,6 +709,12 @@ class RegimeDataSplittingStep:
 
         self.logger.info(f'🔀 Creating unified dataset with regime labels for {symbol} on {exchange} ({timeframe})')
         try:
+            # Get utility functions
+            safe_float = self.utils.get_function('common_operations', 'safe_float')
+            safe_int = self.utils.get_function('common_operations', 'safe_int')
+            validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+            validate_range = self.utils.get_function('math_validation', 'validate_range')
+            
             # Memory checkpoint: Start of data loading
             if self.m1_optimizations_enabled and self.memory_optimizer:
                 with self.memory_optimizer.memory_checkpoint("data_loading"):
@@ -655,16 +729,24 @@ class RegimeDataSplittingStep:
                     metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
                 )
 
-            # Log memory usage after data loading
+            # Use data processing utilities for validation
+            data_quality_report = self.utils.get_function('data_processing_utils', 'create_data_quality_report')(regime_data)
+            if not data_quality_report.get('is_valid', True):
+                self.logger.warning(f'⚠️ Data quality issues detected: {data_quality_report.get("issues", [])}')
+
+            # Log memory usage after data loading with utility validation
             if self.m1_optimizations_enabled and self.memory_optimizer:
                 memory_report = self.memory_optimizer.get_memory_report()
-                self.logger.info(f'💾 Memory after loading: {memory_report.get("current_mb", 0):.1f}MB')
+                current_memory = validate_positive(safe_float(memory_report.get("current_mb", 0), 0.0), "current_memory_mb")
+                self.logger.info(f'💾 Memory after loading: {current_memory:.1f}MB')
             elif PSUTIL_AVAILABLE:
                 current_memory = psutil.Process().memory_info().rss / 1024 / 1024
+                current_memory = validate_positive(safe_float(current_memory, 0.0), "current_memory_mb")
                 self.logger.info(f'💾 Memory after loading: {current_memory:.1f}MB')
 
             regime_ids = regime_data['composite_cluster_id'].unique()
             num_regimes = len(regime_ids)
+            num_regimes = validate_positive(safe_int(num_regimes, 0), "num_regimes")
             self.logger.info(f'📊 Found {num_regimes} regimes: {sorted(regime_ids)}')
 
             if num_regimes < 3:
@@ -819,10 +901,28 @@ class RegimeDataSplittingStep:
             else:
                 self.logger.info(f'📊 Processing dataset normally ({total_estimated_size:.1f}MB)')
 
-                # Load regime data once and sort with metadata caching
+                # Load regime data once and sort with metadata caching and data processing utilities
                 regime_df = self._read_parquet_with_cache(regime_file)
                 regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
                 regime_df = regime_df.sort_values('timestamp')
+                
+                # Use data processing utilities for regime data validation
+                data_quality_report = self.utils.get_function('data_processing_utils', 'create_data_quality_report')(regime_df)
+                if not data_quality_report.get('is_valid', True):
+                    self.logger.warning(f'⚠️ Regime data quality issues: {data_quality_report.get("issues", [])}')
+                
+                # Use DataFrameValidator for regime data
+                DataFrameValidator = self.utils.get_function('data_processing_utils', 'DataFrameValidator')
+                validator = DataFrameValidator()
+                validation_result = validator.validate(regime_df)
+                if not validation_result.get('is_valid', True):
+                    self.logger.warning(f'⚠️ Regime data validation issues: {validation_result.get("issues", [])}')
+                
+                # Use DataFrameCleaner to ensure regime data quality
+                DataFrameCleaner = self.utils.get_function('data_processing_utils', 'DataFrameCleaner')
+                cleaner = DataFrameCleaner()
+                regime_df = cleaner.clean(regime_df)
+                self.logger.info(f'🧹 Regime data cleaned, final shape: {regime_df.shape}')
                 total_input_rows = 0
                 total_merged_rows = 0
 
@@ -831,6 +931,15 @@ class RegimeDataSplittingStep:
                     df = self.standards.standardize_timestamp(df, 'timestamp')
                     df = self.standards.enforce_schema(df, 'unified')
                     df = df.sort_values('timestamp')
+                    
+                    # Use data processing utilities for each file
+                    file_quality_report = self.utils.get_function('data_processing_utils', 'create_data_quality_report')(df)
+                    if not file_quality_report.get('is_valid', True):
+                        self.logger.warning(f'⚠️ File {file_path.name} quality issues: {file_quality_report.get("issues", [])}')
+                    
+                    # Clean each file's data
+                    df = cleaner.clean(df)
+                    
                     total_input_rows += len(df)
 
                     if use_asof_merge:
@@ -884,31 +993,94 @@ class RegimeDataSplittingStep:
         use_asof_merge: bool,
         merge_tolerance_ms: int
     ) -> pd.DataFrame:
-        """Process large datasets using streaming approach to minimize memory usage."""
+        """Process large datasets using streaming approach with M1 optimizations."""
         try:
-            self.logger.info('🔄 Starting streaming processing for large dataset')
+            self.logger.info('🔄 Starting streaming processing for large dataset with M1 optimizations')
 
-            # Load regime data once with metadata caching
-            regime_df = self._read_parquet_with_cache(regime_file)
+            # Start M1 memory monitoring
+            if self.m1_optimizations_enabled and self.memory_optimizer:
+                with self.memory_optimizer.memory_checkpoint("streaming_processing_start"):
+                    self.logger.info('🧠 M1 Memory monitoring enabled for streaming processing')
+
+            # Load regime data once with metadata caching and M1 optimization
+            if self.m1_optimizations_enabled and self.memory_optimizer:
+                with self.memory_optimizer.memory_checkpoint("regime_data_loading"):
+                    regime_df = self._read_parquet_with_cache(regime_file)
+            else:
+                regime_df = self._read_parquet_with_cache(regime_file)
+            
             regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
             regime_df = regime_df.sort_values('timestamp')
 
-            # Process files in smaller batches
+            # Process files in smaller batches with M1 CPU optimization
             chunk_size = int(self.config.get('streaming_chunk_size', 5))  # Process 5 files at a time
+            if self.m1_optimizations_enabled and self.cpu_optimizer:
+                # Use M1 CPU optimizer to determine optimal chunk size
+                optimal_chunk_size = self.cpu_optimizer.calculate_optimal_batch_size(len(unified_files))
+                chunk_size = min(chunk_size, optimal_chunk_size)
+                self.logger.info(f'⚡ M1 CPU optimizer adjusted chunk size to {chunk_size}')
+            
             all_chunks = []
 
             for i in range(0, len(unified_files), chunk_size):
                 batch_files = unified_files[i:i + chunk_size]
                 self.logger.info(f'📁 Processing file batch {i//chunk_size + 1}/{(len(unified_files) + chunk_size - 1)//chunk_size}')
 
-                batch_chunks = []
-                for file_path in batch_files:
-                    try:
-                        # Load file with memory-efficient reading and metadata caching
-                        df = self._read_parquet_with_cache(file_path)
-                        df = self.standards.standardize_timestamp(df, 'timestamp')
-                        df = self.standards.enforce_schema(df, 'unified')
-                        df = df.sort_values('timestamp')
+                # Use M1 memory checkpoint for each batch
+                if self.m1_optimizations_enabled and self.memory_optimizer:
+                    with self.memory_optimizer.memory_checkpoint(f"batch_{i//chunk_size + 1}"):
+                        batch_chunks = self._process_file_batch_with_m1_optimizations(
+                            batch_files, regime_df, use_asof_merge, merge_tolerance_ms
+                        )
+                else:
+                    batch_chunks = self._process_file_batch_with_m1_optimizations(
+                        batch_files, regime_df, use_asof_merge, merge_tolerance_ms
+                    )
+                
+                all_chunks.extend(batch_chunks)
+                
+                # Log memory usage after each batch
+                if self.m1_optimizations_enabled and self.memory_optimizer:
+                    memory_report = self.memory_optimizer.get_memory_report()
+                    self.logger.info(f'💾 Memory after batch {i//chunk_size + 1}: {memory_report.get("current_mb", 0):.1f}MB')
+            
+            return self._combine_chunks_with_m1_optimizations(all_chunks)
+    
+    def _combine_chunks_with_m1_optimizations(self, all_chunks: List[pd.DataFrame]) -> pd.DataFrame:
+        """Combine chunks with M1 memory optimizations."""
+        if not all_chunks:
+            return pd.DataFrame()
+        
+        # Use M1 memory checkpoint for combining
+        if self.m1_optimizations_enabled and self.memory_optimizer:
+            with self.memory_optimizer.memory_checkpoint("combining_chunks"):
+                combined_df = pd.concat(all_chunks, ignore_index=True)
+        else:
+            combined_df = pd.concat(all_chunks, ignore_index=True)
+        
+        # Optimize memory usage
+        if self.m1_optimizations_enabled and self.memory_optimizer:
+            combined_df = self.memory_optimizer.optimize_dataframe_memory(combined_df)
+        
+        return combined_df
+    
+    def _process_file_batch_with_m1_optimizations(
+        self,
+        batch_files: List[Path],
+        regime_df: pd.DataFrame,
+        use_asof_merge: bool,
+        merge_tolerance_ms: int
+    ) -> List[pd.DataFrame]:
+        """Process a batch of files with M1 optimizations."""
+        batch_chunks = []
+        
+        for file_path in batch_files:
+            try:
+                # Load file with memory-efficient reading and metadata caching
+                df = self._read_parquet_with_cache(file_path)
+                df = self.standards.standardize_timestamp(df, 'timestamp')
+                df = self.standards.enforce_schema(df, 'unified')
+                df = df.sort_values('timestamp')
 
                         # Perform merge
                         if use_asof_merge:
@@ -1255,42 +1427,69 @@ class RegimeDataSplittingStep:
             return {}
     
     def _vectorized_regime_statistics(self, data: pd.DataFrame, regime_ids: List[int]) -> Dict[str, Any]:
-        """Vectorized regime statistics calculation with 3-10x speedup."""
+        """Vectorized regime statistics calculation with 3-10x speedup and math validation."""
+        # Get utility functions
+        safe_float = self.utils.get_function('common_operations', 'safe_float')
+        safe_int = self.utils.get_function('common_operations', 'safe_int')
+        validate_positive = self.utils.get_function('math_validation', 'validate_positive')
+        validate_finite = self.utils.get_function('math_validation', 'validate_finite')
+        safe_divide = self.utils.get_function('math_validation', 'safe_divide')
+        
         stats: Dict[int, Dict[str, Any]] = {}
         total_rows = max(int(len(data)), 1)
+        total_rows = validate_positive(safe_int(total_rows, 1), "total_rows")
         
         # Use pandas groupby for vectorized operations
         regime_groups = data.groupby('composite_cluster_id')
         
-        # Vectorized calculations for all regimes at once
+        # Vectorized calculations for all regimes at once with math validation
         regime_counts = regime_groups.size()
-        regime_volumes = regime_groups['volume'].mean() if 'volume' in data.columns else pd.Series(0.0, index=regime_counts.index)
+        regime_counts = validate_positive(regime_counts, "regime_counts")
+        
+        if 'volume' in data.columns:
+            regime_volumes = regime_groups['volume'].mean()
+            regime_volumes = validate_positive(regime_volumes, "regime_volumes")
+            regime_volumes = validate_finite(regime_volumes, "regime_volumes")
+        else:
+            regime_volumes = pd.Series(0.0, index=regime_counts.index)
         
         # Vectorized timestamp calculations
         regime_timestamps = regime_groups['timestamp'].agg(['min', 'max'])
         
-        # Vectorized volatility and momentum calculations if close price exists
+        # Vectorized volatility and momentum calculations if close price exists with math validation
         if 'close' in data.columns:
-            # Calculate returns for all data at once
+            # Calculate returns for all data at once with validation
             returns = data['close'].pct_change().fillna(0.0)
+            returns = validate_finite(returns, "returns")
+            
             data_with_returns = data.copy()
             data_with_returns['returns'] = returns
             
-            # Vectorized volatility and momentum by regime
+            # Vectorized volatility and momentum by regime with math validation
             regime_volatility = data_with_returns.groupby('composite_cluster_id')['returns'].apply(
                 lambda x: x.rolling(window=30, min_periods=5).std().mean()
             )
+            regime_volatility = validate_positive(regime_volatility, "regime_volatility")
+            regime_volatility = validate_finite(regime_volatility, "regime_volatility")
+            
             regime_momentum = data_with_returns.groupby('composite_cluster_id')['returns'].apply(
                 lambda x: x.rolling(window=30, min_periods=5).mean().mean()
             )
+            regime_momentum = validate_finite(regime_momentum, "regime_momentum")
         else:
             regime_volatility = pd.Series(0.0, index=regime_counts.index)
             regime_momentum = pd.Series(0.0, index=regime_counts.index)
         
-        # Vectorized duration calculation
+        # Vectorized duration calculation with math validation
         def calculate_duration_minutes(start_ts, end_ts):
             try:
-                return int((int(end_ts) - int(start_ts)) / 60000)
+                start_ts = validate_positive(safe_int(start_ts, 0), "start_ts")
+                end_ts = validate_positive(safe_int(end_ts, 0), "end_ts")
+                duration_ms = end_ts - start_ts
+                duration_ms = validate_positive(duration_ms, "duration_ms")
+                duration_minutes = safe_divide(duration_ms, 60000, default=0)
+                duration_minutes = validate_positive(safe_int(duration_minutes, 0), "duration_minutes")
+                return duration_minutes
             except Exception:
                 try:
                     return int((pd.to_datetime(end_ts) - pd.to_datetime(start_ts)).total_seconds() / 60)

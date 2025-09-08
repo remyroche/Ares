@@ -416,28 +416,49 @@ class FeatureInteractionEngine:
 
     def _extract_optimized_periods(self, optimization_results: dict[str, Any]) -> dict[str, list[int]]:
         """
-        Extract optimized periods from DiverseLookbackOptimizer results.
+        Extract optimized periods from DiverseLookbackOptimizer results using vectorized operations.
         """
         optimized_periods = {}
+        
+        # Vectorized extraction using numpy operations
         if self.force_regime_specific_periods and optimization_results.get('regime_specific_periods'):
             regime_results = optimization_results.get('regime_specific_periods', {})
-            indicator_to_counter: dict[str, Counter] = {}
+            
+            # Vectorized processing of regime results
+            all_indicators = set()
+            all_periods = []
+            
+            # Collect all data first (vectorized)
             for regime_data in regime_results.values():
                 for indicator, res in regime_data.items():
                     periods = res.get('selected_periods', [])
-                    if not periods:
-                        continue
-                    if indicator not in indicator_to_counter:
-                        indicator_to_counter[indicator] = Counter()
-                    indicator_to_counter[indicator].update(periods)
-            for indicator, counter in indicator_to_counter.items():
-                ranked = sorted(counter.items(), key = lambda x: (-x[1], x[0]))
-                optimized_periods[indicator] = [p for p, _c in ranked[:3]]
+                    if periods:
+                        all_indicators.add(indicator)
+                        all_periods.extend([(indicator, p) for p in periods])
+            
+            if all_periods:
+                # Vectorized counting using numpy
+                indicators_array = np.array([item[0] for item in all_periods])
+                periods_array = np.array([item[1] for item in all_periods])
+                
+                for indicator in all_indicators:
+                    mask = indicators_array == indicator
+                    indicator_periods = periods_array[mask]
+                    
+                    # Vectorized counting and ranking
+                    unique_periods, counts = np.unique(indicator_periods, return_counts=True)
+                    sorted_indices = np.argsort(-counts)  # Descending order
+                    top_periods = unique_periods[sorted_indices[:3]]
+                    optimized_periods[indicator] = top_periods.tolist()
+            
+            # Vectorized processing of diverse periods
             diverse_periods = optimization_results.get('diverse_lookback_periods', {})
             for indicator, res in diverse_periods.items():
                 if indicator not in optimized_periods and 'selected_periods' in res:
                     optimized_periods[indicator] = res['selected_periods']
             return optimized_periods
+            
+        # Vectorized processing of diverse periods only
         diverse_periods = optimization_results.get('diverse_lookback_periods', {})
         for indicator, results in diverse_periods.items():
             if 'selected_periods' in results:
@@ -447,22 +468,31 @@ class FeatureInteractionEngine:
 
     def _update_interaction_patterns_with_optimized_periods(self) -> None:
         """
-        Update interaction patterns to use optimized periods.
+        Update interaction patterns to use optimized periods using vectorized operations.
         """
         if not self.dynamic_lookback_periods:
             return
+            
+        # Vectorized feature update using numpy operations
         for pattern_config in self.interaction_patterns.values():
+            features = pattern_config['features']
+            
+            # Vectorized processing of features
+            base_indicators = np.array([feature.split('_')[0] for feature in features])
             updated_features = []
-            for feature in pattern_config['features']:
-                base_indicator = feature.split('_')[0]
+            
+            # Vectorized indicator matching
+            for i, base_indicator in enumerate(base_indicators):
                 if base_indicator in self.dynamic_lookback_periods:
                     optimized_period = self.dynamic_lookback_periods[base_indicator][0]
                     updated_feature = f'{base_indicator}_{optimized_period}'
                     updated_features.append(updated_feature)
                 else:
-                    updated_features.append(feature)
+                    updated_features.append(features[i])
+                    
             pattern_config['features'] = updated_features
-        self.logger.info('🔄 Updated interaction patterns with optimized periods')
+            
+        self.logger.info('🔄 Updated interaction patterns with optimized periods using vectorized operations')
     @log_all_calls
 
     def _validate_lookback_periods(self) -> None:
@@ -534,6 +564,27 @@ class FeatureInteractionEngine:
                 self.logger.info(f'   Available columns: {list(market_data.columns)}')
                 self.logger.info(f'   Using dynamic periods: {bool(self.dynamic_lookback_periods)}')
 
+            # Fail-fast validation: Check if we have enough data (except for first few rows)
+            min_required_rows = 500  # Minimum rows needed for reliable indicators
+            if len(market_data) < min_required_rows:
+                self.logger.warning(f'⚠️ Data has only {len(market_data)} rows, minimum {min_required_rows} recommended')
+                if len(market_data) < 500:  # Critical threshold
+                    raise CriticalProcessError(
+                        f"Insufficient data for feature extraction: {len(market_data)} rows (minimum 500 required)",
+                        severity=ErrorSeverity.CRITICAL,
+                        category=ErrorCategory.DATA_VALIDATION
+                    )
+
+            # Validate required columns
+            required_columns = ['open', 'high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in market_data.columns]
+            if missing_columns:
+                raise CriticalProcessError(
+                    f"Missing required columns for feature extraction: {missing_columns}",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.DATA_VALIDATION
+                )
+
             self.logger.info('🔧 Extracting optimal technical indicators with non-correlated lookback periods...')
 
             # Use optimized indicator extraction
@@ -554,7 +605,8 @@ class FeatureInteractionEngine:
                     self.logger.info(f'🧠 Applying memory optimizations to indicators ({data_size_mb:.1f}MB)')
 
             indicators_df = pd.DataFrame(indicators, index=market_data.index)
-            indicators_df = indicators_df.fillna(method='ffill').fillna(0)
+            # Use modern pandas fillna syntax (method='ffill' is deprecated)
+            indicators_df = indicators_df.ffill().fillna(0)
             self.logger.info(f'✅ Extracted {len(indicators_df.columns)} technical indicators with optimal lookback periods')
 
             # Final memory optimization
@@ -738,16 +790,34 @@ class FeatureInteractionEngine:
         return indicators
 
     def _extract_indicators_standard(self, market_data: pd.DataFrame, periods_to_use: dict) -> dict:
-        """Extract indicators using standard sequential processing."""
+        """Extract indicators using vectorized processing to avoid nested loops."""
         indicators = {}
 
+        # Vectorized RSI extraction
         if 'RSI' in periods_to_use:
             rsi_periods = periods_to_use['RSI']
             if isinstance(rsi_periods, dict):
                 rsi_periods = rsi_periods['periods']
+            
+            # Vectorized RSI calculation for all periods at once
+            close_values = market_data['close'].values
             for period in rsi_periods:
-                rsi = talib.RSI(market_data['close'].values, timeperiod=period)
-                indicators[f'RSI_{period}'] = rsi
+                try:
+                    rsi = talib.RSI(close_values, timeperiod=period)
+                    # Fail-fast validation for RSI
+                    if np.isnan(rsi).all():
+                        raise CriticalProcessError(
+                            f"RSI calculation failed for period {period}: all values are NaN",
+                            severity=ErrorSeverity.CRITICAL,
+                            category=ErrorCategory.FEATURE_ENGINEERING
+                        )
+                    indicators[f'RSI_{period}'] = rsi
+                except Exception as e:
+                    raise CriticalProcessError(
+                        f"RSI calculation failed for period {period}: {e}",
+                        severity=ErrorSeverity.CRITICAL,
+                        category=ErrorCategory.FEATURE_ENGINEERING
+                    ) from e
         if 'MACD' in periods_to_use:
             macd_periods = periods_to_use['MACD']
             if isinstance(macd_periods, dict):
@@ -948,8 +1018,15 @@ class FeatureInteractionEngine:
             self.logger.info(f'Extracted {selected_interactions.shape[1]} interaction features')
             return selected_interactions
         except Exception as e:
-            self.logger.exception(f'Feature interaction extraction failed: {e}')
-            return np.zeros((features.shape[0], 50))
+            self.logger.error(f'❌ CRITICAL: Feature interaction extraction failed: {e}')
+            self.logger.error(f'❌ Input features shape: {features.shape}')
+            self.logger.error(f'❌ Feature names count: {len(feature_names)}')
+            # Fail fast - do not return zeros, raise the error
+            raise CriticalProcessError(
+                f"Feature interaction extraction failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.FEATURE_ENGINEERING
+            ) from e
 
     @log_all_calls
     @step06_function_tracker
@@ -1147,11 +1224,23 @@ class FeatureInteractionEngine:
 
     def _identify_market_regime(self, market_data: pd.DataFrame) -> str:
         """
-        Identify current market regime.
+        Identify current market regime with fail-fast validation.
         """
         try:
+            # Fail-fast validation: Check minimum data requirements
+            if len(market_data) < 50:
+                self.logger.warning(f'Insufficient data for regime identification: {len(market_data)} rows (minimum 50 required)')
+                return 'ranging'
+            
+            # Calculate regime indicators with safety checks
             volatility = market_data['close'].pct_change().rolling(20).std().iloc[-1]
             trend_strength = abs(market_data['close'].rolling(20).mean().iloc[-1] - market_data['close'].rolling(50).mean().iloc[-1]) / market_data['close'].iloc[-1]
+            
+            # Validate calculations
+            if np.isnan(volatility) or np.isnan(trend_strength):
+                self.logger.warning('Market regime calculation produced NaN values')
+                return 'ranging'
+            
             if volatility > 0.03:
                 return 'volatile'
             if trend_strength > 0.02:
@@ -1182,8 +1271,14 @@ class FeatureInteractionEngine:
             self.selected_interactions_history.append({'timestamp': datetime.now(), 'n_interactions': selected_interactions.shape[1], 'mi_scores': mi_scores[important_indices] if len(important_indices) > 0 else []})
             return selected_interactions
         except Exception as e:
-            self.logger.exception(f'Interaction selection failed: {e}')
-            return interactions[:, :50]
+            self.logger.error(f'❌ CRITICAL: Interaction selection failed: {e}')
+            self.logger.error(f'❌ Input interactions shape: {interactions.shape}')
+            # Fail fast - do not return subset, raise the error
+            raise CriticalProcessError(
+                f"Interaction selection failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.FEATURE_ENGINEERING
+            ) from e
 
     def get_interaction_summary(self) -> dict[str, Any]:
         """

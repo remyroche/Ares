@@ -17,7 +17,7 @@ async def test_step02_5_reporting():
     try:
         # Import step02_5 components
         from src.training.steps.data_collection.data_preparation.step02_5_sr_optimization import SROptimizationStep
-        from src.training.steps.data_collection.data_preparation.step02_5_enhanced_reporting import Step02_5EnhancedReporter
+        from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
         from src.training.reports import save_training_report
 
         print("✅ Imports successful")
@@ -59,37 +59,21 @@ async def test_step02_5_reporting():
 
         # Test enhanced reporter
         print("🧪 Testing enhanced reporter...")
-        enhanced_reporter = Step02_5EnhancedReporter(
+        enhanced_reporter = Step02_5FinancialLogger(
             symbol='ETHUSDT',
             exchange='binance',
             timeframe='30m'
         )
 
-        # Generate comprehensive report
-        comprehensive_report = enhanced_reporter.generate_comprehensive_report(
+        # Log financial metrics
+        enhanced_reporter.log_step_execution(
             sr_levels=mock_sr_levels,
             ml_results=mock_ml_results,
             execution_data=mock_execution_data,
             data=None  # No data for this test
         )
 
-        print("✅ Comprehensive report generated")
-
-        # Save comprehensive report
-        saved_reports = enhanced_reporter.save_comprehensive_report(
-            report_data=comprehensive_report,
-            include_visualizations=False  # Skip visualizations for this test
-        )
-
-        print(f"✅ Enhanced reports saved: {list(saved_reports.keys())}")
-
-        # Check if files were actually created
-        for report_type, file_path in saved_reports.items():
-            if file_path and os.path.exists(file_path):
-                print(f"✅ {report_type} file exists: {file_path}")
-            else:
-                print(f"❌ {report_type} file missing: {file_path}")
-                return False
+        print("✅ Financial metrics logged successfully")
 
         return True
 

@@ -38,7 +38,7 @@ from src.utils.step02_5_utilities import (
 )
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.reports import save_training_report
-from src.training.steps.data_collection.data_preparation.step02_5_enhanced_reporting import Step02_5EnhancedReporter
+from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
 import logging
 
 # Import optional modules with error handling
@@ -696,7 +696,7 @@ class SROptimizationStep(BaseStep):
 
                 self.logger.info(f'📊 Report parameters - Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}')
 
-                enhanced_reporter = Step02_5EnhancedReporter(
+                financial_logger = Step02_5FinancialLogger(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe
@@ -728,26 +728,15 @@ class SROptimizationStep(BaseStep):
                 self.logger.info(f'📊 ML results available: {bool(ml_results)}')
                 self.logger.info(f'📊 Features data shape: {features_data.shape if features_data is not None else "None"}')
 
-                comprehensive_report = enhanced_reporter.generate_comprehensive_report(
+                # Log financial metrics using the new financial logger
+                financial_logger.log_step_execution(
                     sr_levels=sr_levels,
                     ml_results=ml_results,
                     execution_data=execution_data,
                     data=features_data
                 )
 
-                self.logger.info('✅ Comprehensive report generated successfully')
-
-                # Save all report formats with detailed metrics
-                saved_reports = enhanced_reporter.save_comprehensive_report(
-                    report_data=comprehensive_report,
-                    include_visualizations=True
-                )
-
-                # Log saved files
-                for report_type, file_path in saved_reports.items():
-                    self.logger.info(f'💾 {report_type.replace("_", " ").title()} saved: {file_path}')
-
-                self.logger.info('✅ Comprehensive enhanced reporting completed with visualizations and detailed metrics')
+                self.logger.info('✅ Financial metrics logged successfully')
 
             except Exception as report_error:
                 self.logger.warning(f'⚠️ Failed to generate enhanced report: {report_error}')
@@ -828,7 +817,7 @@ class SROptimizationStep(BaseStep):
                 exchange = training_input.get('exchange', 'UNKNOWN')
                 timeframe = training_input.get('timeframe', '30m')
 
-                enhanced_reporter = Step02_5EnhancedReporter(
+                financial_logger = Step02_5FinancialLogger(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe
@@ -846,23 +835,15 @@ class SROptimizationStep(BaseStep):
                     'processing_timestamp': datetime.now().isoformat()
                 }
 
-                # Generate error recovery report
-                error_report = enhanced_reporter.generate_comprehensive_report(
+                # Log error recovery financial metrics
+                financial_logger.log_step_execution(
                     sr_levels=sr_levels,
                     ml_results=ml_results,
                     execution_data=error_execution_data,
                     data=None  # No data available in error case
                 )
 
-                # Save error recovery reports
-                saved_error_reports = enhanced_reporter.save_comprehensive_report(
-                    report_data=error_report,
-                    include_visualizations=False  # Skip visualizations for error reports
-                )
-
-                # Log saved error files
-                for report_type, file_path in saved_error_reports.items():
-                    self.logger.info(f'💾 Error recovery {report_type.replace("_", " ").title()} saved: {file_path}')
+                self.logger.info('✅ Error recovery financial metrics logged successfully')
 
             except Exception as report_error:
                 self.logger.warning(f'⚠️ Failed to generate error recovery report: {report_error}')

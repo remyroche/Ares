@@ -29,12 +29,8 @@ from src.utils.financial_metrics_logger import get_financial_metrics_logger, fin
 # Enhanced optimization imports
 from src.utils.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
 
-# Import enhanced reporting system
-try:
-    from .step03_enhanced_reporting import Step03EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
-except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
+# Enhanced reporting system removed - using financial metrics logger instead
+ENHANCED_REPORTING_AVAILABLE = False
 from src.utils.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
 from src.utils.vectorized_processing_core import OptimizedPipelineExecutor, PipelineStage, PipelineExecutionMode
@@ -178,16 +174,8 @@ class FinalRegimeClusteringStep:
         self._determine_optimization_strategy()
 
         # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE:
-            try:
-                self.enhanced_reporter = Step03EnhancedReporter()
-                self.logger.info("✅ Enhanced reporting system initialized successfully")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Enhanced reporting system failed to initialize: {e}")
-                self.enhanced_reporter = None
-        else:
-            self.logger.info("ℹ️ Enhanced reporting system not available, using basic reporting")
-            self.enhanced_reporter = None
+        # Enhanced reporting system removed - using financial metrics logger instead
+        self.enhanced_reporter = None
 
         self.logger.info("🎯 Enhanced optimization components initialization completed")
 

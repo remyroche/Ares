@@ -9,7 +9,7 @@ for step02_5_sr_optimization with detailed metrics and visualizations.
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from src.training.steps.data_collection.data_preparation.step02_5_enhanced_reporting import Step02_5EnhancedReporter
+from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
 import logging
 
 # Set up logging
@@ -182,26 +182,21 @@ def main():
         logger.info(f"✅ Execution Time: {execution_data['execution_time']:.2f}s")
         # Initialize enhanced reporter
         logger.info("📝 Initializing enhanced reporter...")
-        reporter = Step02_5EnhancedReporter(
+        reporter = Step02_5FinancialLogger(
             symbol="BTCUSDT",
             exchange="BINANCE",
             timeframe="5m"
         )
 
         # Generate comprehensive report
-        logger.info("🎯 Generating comprehensive report...")
-        comprehensive_report = reporter.generate_comprehensive_report(
+        logger.info("🎯 Logging financial metrics...")
+        reporter.log_step_execution(
             sr_levels=sr_levels,
             ml_results=ml_results,
             execution_data=execution_data,
             data=sample_data
         )
-
-        logger.info("💾 Saving comprehensive reports...")
-        saved_reports = reporter.save_comprehensive_report(
-            report_data=comprehensive_report,
-            include_visualizations=True
-        )
+        logger.info("✅ Financial metrics logged successfully")
 
         # Display results
         logger.info("\n🎉 Enhanced Reporting Demonstration Complete!")

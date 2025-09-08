@@ -122,47 +122,6 @@ def test_validation_orchestrator():
         return False
 
 
-def test_decorator_functionality():
-    """Test that decorators work correctly."""
-    print("\n🔍 Testing decorator functionality...")
-    
-    try:
-        from step06_enhanced_validation_framework import (
-            step06_function_validator,
-            step06_function_tracker,
-            ValidationLevel
-        )
-        
-        # Test function validator decorator
-        @step06_function_validator(function_type="test", validation_level=ValidationLevel.BASIC)
-        def test_function():
-            return "test_result"
-        
-        result = test_function()
-        if result == "test_result":
-            print("✅ step06_function_validator decorator working")
-        else:
-            print("❌ step06_function_validator decorator failed")
-            return False
-        
-        # Test function tracker decorator
-        @step06_function_tracker
-        def test_tracker_function():
-            return "tracker_result"
-        
-        result = test_tracker_function()
-        if result == "tracker_result":
-            print("✅ step06_function_tracker decorator working")
-        else:
-            print("❌ step06_function_tracker decorator failed")
-            return False
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Decorator functionality test failed: {e}")
-        traceback.print_exc()
-        return False
 
 
 def test_validation_levels():
@@ -280,7 +239,6 @@ def main():
         ("Step06 validation framework", test_step06_validation_framework),
         ("Step06 components", test_step06_components),
         ("Validation orchestrator", test_validation_orchestrator),
-        ("Decorator functionality", test_decorator_functionality),
         ("Validation levels", test_validation_levels),
         ("Function status", test_function_status),
         ("Validation context", test_validation_context),

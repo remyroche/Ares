@@ -149,38 +149,3 @@ def validate_data_quality(data: Dict[str, Any]) -> Dict[str, Any]:
     return results
 
 
-def setup_step10_environment(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Setup Step 10 environment and validate dependencies.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Environment setup results
-    """
-    results = {
-        "success": True,
-        "artifacts_dir": None,
-        "logs_dir": None,
-        "errors": []
-    }
-
-    try:
-        # Ensure artifacts directory
-        artifacts_dir = config.get("artifacts_dir", "checkpoints/unified_regime_intelligence")
-        results["artifacts_dir"] = ensure_directory(artifacts_dir)
-
-        # Ensure logs directory
-        logs_dir = config.get("logs_dir", "logs/step10")
-        results["logs_dir"] = ensure_directory(logs_dir)
-
-        logger.info("✅ Step 10 environment setup completed")
-        logger.info(f"   Artifacts: {results['artifacts_dir']}")
-        logger.info(f"   Logs: {results['logs_dir']}")
-
-    except Exception as e:
-        results["success"] = False
-        results["errors"].append(f"Environment setup failed: {str(e)}")
-        logger.error(f"❌ Step 10 environment setup failed: {e}")
-
-    return results

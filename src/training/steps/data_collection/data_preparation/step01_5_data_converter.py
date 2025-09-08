@@ -1082,26 +1082,26 @@ class UnifiedDataConverter:
 
     async def _write_daily_partition(self, daily_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str, target_date: date, base_dir: str) -> bool:
         try:
-            if 'timestamp' in daily_data.columns and (not daily_data.empty):
-                actual_ts = pd.to_datetime(daily_data['timestamp'], unit='ms', utc = True)
-                actual_date = actual_ts.iloc[0].date()
-                partition_year = actual_date.year
-                partition_month = actual_date.month
-                partition_day = actual_date.day
-            else:
-                partition_year = target_date.year
-                partition_month = target_date.month
-                partition_day = target_date.day
+            # Use standardized parquet handler for partitioned data
             daily_data = daily_data.copy()
             daily_data['exchange'] = exchange.upper()
             daily_data['symbol'] = symbol
             daily_data['timeframe'] = timeframe
-            daily_data['year'] = np.int16(partition_year)
-            daily_data['month'] = np.int8(partition_month)
-            daily_data['day'] = np.int8(partition_day)
-            table = pa.Table.from_pandas(daily_data, preserve_index = False)
-            ds.write_dataset(table, base_dir = base_dir, format='parquet', partitioning = ds.partitioning(pa.schema([pa.field('exchange', pa.string()), pa.field('symbol', pa.string()), pa.field('timeframe', pa.string()), pa.field('year', pa.int16()), pa.field('month', pa.int8()), pa.field('day', pa.int8())]), flavor='hive'), existing_data_behavior='overwrite_or_ignore', max_rows_per_file = 1000000, min_rows_per_group = 50000, basename_template='part-{i}.parquet')
-            return True
+            
+            # Use standardized handler to write partitioned data
+            success = standardized_parquet_handler.write_partitioned_parquet(
+                df=daily_data,
+                base_path=base_dir,
+                schema_name='unified',
+                partition_cols=['exchange', 'symbol', 'timeframe', 'year', 'month', 'day']
+            )
+            
+            if success:
+                self.logger.info(f'✅ Successfully wrote daily partition for {target_date} using standardized handler')
+                return True
+            else:
+                self.logger.error(f'❌ Failed to write daily partition for {target_date} using standardized handler')
+                return False
         except Exception as e:
             self.logger.exception(f'❌ Failed to write daily partition for {target_date}: {e}')
             return False
@@ -1156,7 +1156,7 @@ class UnifiedDataConverter:
                 file_path = os.path.join(base_path, partition_rel, 'part-0.parquet')
                 if os.path.exists(file_path):
                     with contextlib.suppress(Exception):
-                        df = standardized_parquet_handler.read_parquet_standardized(file_path)
+                        df = standardized_parquet_handler.read_parquet_standardized(file_path, schema_name='unified')
                         klines_present = all((c in df.columns for c in ['open', 'high', 'low', 'close', 'volume']))
                         aggtrades_present = all((c in df.columns for c in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio']))
                         futures_present = 'funding_rate' in df.columns

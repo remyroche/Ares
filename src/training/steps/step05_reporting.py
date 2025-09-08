@@ -19,6 +19,9 @@ from src.utils.financial_metrics_logger import get_financial_metrics_logger, fin
 from .step05_validation import Step05Validator, ValidationResult, LookaheadBiasResult
 from .step05_financial import Step05FinancialCalculator, TradingPerformance, RiskMetrics
 from .step05_error_handling import Step05ErrorHandler, ErrorSeverity, ErrorCategory
+import logging
+import numpy as np
+import time
 
 logger = system_logger.getChild('Step05Reporting')
 financial_logger = get_financial_metrics_logger()

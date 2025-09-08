@@ -16,6 +16,7 @@ from typing import Any
 from .logger import system_logger
 
 import pandas as pd
+import numpy as np
 
 warnings.filterwarnings("ignore")
 

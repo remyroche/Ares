@@ -13,6 +13,9 @@ from functools import wraps
 from typing import Any, Callable, Dict, List, Optional
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+import collections
+import numpy as np
+import time
 
 class FunctionCallStatus(Enum):
     """Status of function call execution."""

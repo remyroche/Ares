@@ -11,6 +11,8 @@ from enum import Enum
 from typing import Any, Callable
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
+import collections
+import numpy as np
 
 request_cache_var: ContextVar[dict[str, Any] | None] = ContextVar('request_cache', default = None)
 

@@ -39,6 +39,9 @@ from src.training.steps.model_training.step14_financial_logging import Step14Fin
 # Try to import DynamicBarrierCalculator, fallback to mock if not available
 try:
     from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
+import json
+import logging
+
 except ImportError:
     class DynamicBarrierCalculator:
         """Mock DynamicBarrierCalculator for fallback."""

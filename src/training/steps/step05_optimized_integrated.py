@@ -29,6 +29,8 @@ from .step05_memory_manager import Step05MemoryManager, MemoryOptimizationResult
 # Import existing components
 from .step05_error_handling import Step05ErrorHandler, ErrorSeverity, ErrorCategory, step05_async_error_handler
 from .step05_reporting import Step05Reporter
+import json
+import logging
 
 logger = system_logger.getChild('Step05OptimizedIntegrated')
 

@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 import threading
+import collections
 
 class ErrorSeverity(Enum):
     LOW = 'low'

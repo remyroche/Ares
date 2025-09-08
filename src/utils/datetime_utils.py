@@ -4,6 +4,7 @@ DateTime utilities with passthrough functions for common operations.
 
 from datetime import datetime
 from typing import Optional
+import time
 
 def format_datetime(dt: Optional[datetime] = None, format_str: str = "%Y-%m-%d %H:%M:%S") -> str:
     """Format datetime to string."""

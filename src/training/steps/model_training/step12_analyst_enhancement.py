@@ -17,6 +17,7 @@ import warnings
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np_random_pickle
 
 # Enhanced Reporting import
 try:
@@ -215,7 +216,6 @@ def _enable_numpy_rng_unpickle_compat(logger: logging.Logger = None) -> None:
     if _NUMPY_RNG_UNPICKLE_PATCHED:
         return
     try:
-        import numpy as np_random_pickle
         original_ctor = getattr(np_random_pickle, '__bit_generator_ctor', None)
         if original_ctor is None:
             _NUMPY_RNG_UNPICKLE_PATCHED = True

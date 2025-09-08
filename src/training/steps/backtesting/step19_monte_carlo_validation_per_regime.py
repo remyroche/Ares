@@ -17,6 +17,8 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 # Financial Metrics Logging import
 try:
     from src.training.steps.backtesting.step19_financial_logging import Step19FinancialLogger
+import logging
+
     FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False

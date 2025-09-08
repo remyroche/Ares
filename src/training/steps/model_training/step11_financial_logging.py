@@ -20,6 +20,8 @@ from src.utils.logger import system_logger
 # Import enhanced functionality if available
 try:
     from src.utils.enhanced_financial_metrics_logger import (
+import logging
+
         get_enhanced_financial_metrics_logger,
         validate_and_log_regime_data
     )

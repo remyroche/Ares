@@ -1,4 +1,7 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
+
 """
 Step 7: Enhanced Matrix Operations with Advanced Performance Optimizations.
 
@@ -29,7 +32,6 @@ import warnings
 
 # Enhanced dependency management with fallbacks
 try:
-    import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     warnings.warn("NumPy not available - matrix operations will be limited")
@@ -37,7 +39,6 @@ except ImportError:
     np = None
 
 try:
-    import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     warnings.warn("Pandas not available - DataFrame operations will be limited")
@@ -48,6 +49,8 @@ except ImportError:
 try:
     from numba import jit, prange, float64, float32
     import numba as nb
+import collections
+
     NUMBA_AVAILABLE = True
 except ImportError:
     warnings.warn("Numba not available - JIT compilation disabled")

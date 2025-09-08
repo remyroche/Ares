@@ -14,6 +14,8 @@ from typing import Dict
 from typing import Optional
 from datetime import datetime
 import numpy as np
+import logging
+import time
 
 @dataclass
 class BarrierOptimizationResult:

@@ -9,6 +9,7 @@ from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, Validat
 import numpy as np
 import pandas as pd
 import logging
+import time
 
 class CrossStepValidator:
     """Validates data consistency between pipeline steps."""

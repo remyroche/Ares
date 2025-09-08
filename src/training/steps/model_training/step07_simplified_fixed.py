@@ -1,4 +1,7 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
+
 """
 Step07 Enhanced Matrix Operations - Simplified with Fixed Imports
 
@@ -18,11 +21,11 @@ if str(project_root) not in sys.path:
 
 # Required dependencies - no fallbacks
 
-import pandas as pd
 
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
 from src.training.base_step import BaseStep
+import logging
 
 class SimplifiedMatrixOperationsStep(BaseStep):
     """Simplified Step07 with fixed imports and reduced complexity."""

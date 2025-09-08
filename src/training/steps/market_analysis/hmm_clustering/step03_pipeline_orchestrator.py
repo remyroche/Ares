@@ -1,4 +1,7 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
+
 #!/usr/bin/env python3
 """Pipeline Orchestrator for Step03 with DAG-based Execution and Resource-aware Scheduling.
 
@@ -809,8 +812,6 @@ def get_step03_pipeline_orchestrator(config: Dict[str, Any] = None) -> Step03Pip
 
 if __name__ == "__main__":
     # Example usage
-    import pandas as pd
-    import numpy as np
 
     # Create sample data
     np.random.seed(42)

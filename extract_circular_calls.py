@@ -6,6 +6,7 @@ Extract circular calls from the interaction mapping results
 import json
 import sys
 from pathlib import Path
+import numpy as np
 
 def extract_circular_calls_from_main_file():
     """Extract circular calls from the main interaction mapping file"""

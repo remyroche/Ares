@@ -34,6 +34,7 @@ from src.utils.comprehensive_function_logger import (
     log_internal_call, log_step_progress, log_data_operation
 )
 from src.utils.logger import system_logger
+import logging
 
 # Optimized wavelet feature computation functions
 if NUMBA_AVAILABLE:

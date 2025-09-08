@@ -43,6 +43,7 @@ from core.config import get_default_config
 
 # Import standardized base pipeline
 from base_pipeline import BasePipeline
+import logging
 
 
 class ComplexityPipeline(BasePipeline):

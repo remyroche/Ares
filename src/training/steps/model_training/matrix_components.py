@@ -1,4 +1,8 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import logging
+import numpy as np
+import pandas as pd
+
 """
 Matrix operation components for enhanced matrix operations step.
 
@@ -65,8 +69,6 @@ import time
 import os
 from dataclasses import dataclass
 
-import pandas as pd
-import numpy as np
 import torch
 
 from torch.utils.data import DataLoader, TensorDataset
@@ -1116,7 +1118,6 @@ class MatrixOptimizer:
             return numba_rolling_statistics(data, window, stat_type)
         else:
             # Fallback to pandas rolling
-            import pandas as pd
             df = pd.DataFrame(data)
             if stat_type == 0:  # mean
                 return df.rolling(window=window, min_periods=1).mean().values

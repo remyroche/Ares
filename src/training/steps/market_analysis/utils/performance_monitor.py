@@ -1,4 +1,6 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+
 """Performance Monitoring System for Step 7 Enhanced Matrix Operations.
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -13,6 +15,8 @@ from typing import Any, Dict
 # Optional dependencies with fallback handling
 try:
     import psutil
+import logging
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False

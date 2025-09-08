@@ -2,6 +2,7 @@ from typing import Any
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from ..standardized_parquet_handler import standardized_parquet_handler
+import pandas as pd
 
 'Step 3: Enhanced HMM Regime Discovery with All Improvements.\n\nThis module provides the main interface for enhanced HMM regime discovery with:\n1. Bayesian parameter optimization\n2. Enhanced regime discovery features\n3. Economic significance validation\n4. Ensemble clustering (HMM + K-means + DBSCAN)\n5. Enhanced ML transition detection (Random Forest + LGBM)\n6. Full MLflow integration and data persistence\n7. Standardized pipeline integration\n'
 import asyncio
@@ -33,6 +34,8 @@ class HMMClusteringStep:
         self.config = config
         self.logger = system_logger.getChild('HMMClusteringStep')
         from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
+import logging
+
         self.standards = _pipeline_standards
         self.start_time = None
         self.step_timings = {}
@@ -104,7 +107,6 @@ class HMMClusteringStep:
             
             # Load and validate data
             data_file = data_path / f"{exchange}_{symbol}_processed.parquet"
-            import pandas as pd
             data = standardized_parquet_handler.read_parquet_standardized(data_file)
             
             # Validate data quality

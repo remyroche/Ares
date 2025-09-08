@@ -1,5 +1,8 @@
 from ....core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
+import ....utils.enhanced_mlflow_integration
+import pandas as pd
+
 """Decorator System for Step05 Labeling.
 
 This module provides a centralized decorator system with fallback mechanisms
@@ -24,7 +27,7 @@ except ImportError:
 
 # Try to import enhanced MLflow integration
 try:
-    from ....utils.enhanced_mlflow_integration import (
+
         with_enhanced_mlflow_logging as _with_enhanced_mlflow_logging,
         log_step_report as _log_step_report,
         create_detailed_step_report as _create_detailed_step_report,

@@ -29,6 +29,10 @@ try:
     from src.utils.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
+import logging
+import os
+import time
+
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False

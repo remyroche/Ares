@@ -18,6 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils.logger import system_logger, setup_logging
 from src.monitoring.auto_monitoring_launcher import (
+import logging
+import time
+
     launch_auto_monitoring, get_auto_monitoring, stop_auto_monitoring,
     auto_capture_trade_decision, auto_update_performance, auto_update_ensemble
 )

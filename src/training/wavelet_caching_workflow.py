@@ -21,6 +21,8 @@ from src.training.steps.backtesting_with_cached_features import (
 )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
+import json
+import logging
 
 @handles_errors(
     exceptions=(ValueError, RuntimeError, FileNotFoundError),

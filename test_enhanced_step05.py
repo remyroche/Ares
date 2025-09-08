@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Test script for enhanced step05 with M1 optimizations.
 

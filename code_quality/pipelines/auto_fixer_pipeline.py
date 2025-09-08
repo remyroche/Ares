@@ -48,6 +48,8 @@ import subprocess
 # Import plugin fixers (ONLY auto-fixing related)
 from ..plugins.plugin_registry import PluginRegistry
 from ..plugins.plugin_manager import PluginManager
+import logging
+
 from ..plugins.black_fixer import BlackFixer
 from ..plugins.ruff_fixer import RuffFixer
 from ..plugins.autopep8_fixer import Autopep8Fixer

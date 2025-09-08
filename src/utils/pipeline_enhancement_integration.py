@@ -11,6 +11,7 @@ from src.utils.advanced_quality_metrics import advanced_quality_metrics
 from typing import Dict, List, Optional, Union, Any, Tuple
 
 from .logger import system_logger
+import logging
 
 class PipelineEnhancementIntegration:
     """Integration class for all pipeline enhancements."""

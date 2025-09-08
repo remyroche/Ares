@@ -12,6 +12,7 @@ import optuna
 from dataclasses import dataclass
 from src.utils.logger import system_logger
 import numpy as np
+import logging
 
 @dataclass
 class BarrierOptimizationResult:

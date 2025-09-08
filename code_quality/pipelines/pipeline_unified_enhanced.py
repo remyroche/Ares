@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Unified Code Quality Pipeline - Comprehensive Version
 
@@ -144,7 +146,6 @@ except ImportError:
     analyze_fallback_patterns = None
 
 try:
-    import numpy as np
 except ImportError:
     np = None
 

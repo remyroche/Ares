@@ -46,6 +46,8 @@ try:
     from src.utils.vectorized_processing_core import OptimizedPipelineExecutor
     from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations
     from src.utils.enhanced_step_optimizations import IntelligentOptimizationSelector, OptimizationStrategy
+import logging
+
     processing_optimizations_available = True
 except ImportError:
     processing_optimizations_available = False

@@ -12,6 +12,7 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import datetime
 import logging
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
 
 # Enhanced Reporting import
 try:
@@ -43,6 +44,8 @@ try:
     from src.utils.vectorized_processing_core import get_vectorized_processing_core
     from src.utils.optimized_data_manager import get_optimized_data_manager
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
+import json
+
     OPTIMIZATION_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"⚠️ Some optimization utilities not available: {e}")

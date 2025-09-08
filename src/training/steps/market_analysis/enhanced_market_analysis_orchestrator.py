@@ -41,6 +41,8 @@ from .step06_feature_engineering import FeatureEngineeringStep
 from .step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
 from .step08_advanced_feature_selection import AdvancedFeatureSelectionStep
 from .hmm_clustering.step03_enhanced_hmm_regime_discovery import run_enhanced_step
+import json
+import logging
 
 class MarketAnalysisPipelineOrchestrator:
     """

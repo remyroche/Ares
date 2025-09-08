@@ -1,4 +1,5 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
 
 """Step 2: Data Reading - Refactored to use BaseStep with Hardware Optimizations.
 from src.utils.logger import system_logger
@@ -30,6 +31,10 @@ try:
     from src.utils.optimized_data_manager import get_optimized_data_manager
     from src.utils.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
+import logging
+import os
+import time
+
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False

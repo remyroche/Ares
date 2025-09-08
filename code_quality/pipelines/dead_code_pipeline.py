@@ -40,6 +40,7 @@ from core.config import AnalysisConfig
 
 # Import standardized base pipeline
 from pipelines.base_pipeline import BasePipeline
+import logging
 
 
 class InteractionAwareDeadCodeAnalyzer:

@@ -44,6 +44,8 @@ try:
     from src.utils.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
+import time
+
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False

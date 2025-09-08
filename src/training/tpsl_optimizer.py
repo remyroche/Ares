@@ -24,6 +24,7 @@ from sklearn.linear_model import LogisticRegression
 
 from ..database.sqlite_manager import SQLiteManager
 from src.utils.logger import get_logger
+import logging
 
 # Component logger
 logger = get_logger("TpSlOptimizer")

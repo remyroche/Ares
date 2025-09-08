@@ -15,10 +15,13 @@ from contextvars import ContextVar
 import uuid
 
 from src.utils.logger import system_logger
+import numpy as np
 
 # Import global monitor for function call tracking
 try:
     from src.utils.step02_5_utilities import global_monitor
+import logging
+
     GLOBAL_MONITOR_AVAILABLE = True
 except ImportError:
     global_monitor = None

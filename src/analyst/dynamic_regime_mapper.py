@@ -6,6 +6,7 @@ from ...utils.logger import system_logger
 
 import pandas as pd
 from .core.decorators import handles_errors
+import datetime
 
 class DynamicRegimeMapper:
     """

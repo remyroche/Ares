@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
+import pandas as pd
 
 """Validation decorators for data operations."""
 

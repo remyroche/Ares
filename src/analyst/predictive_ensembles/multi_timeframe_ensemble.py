@@ -20,6 +20,7 @@ from .config import CONFIG
 from ...utils.logger import system_logger
 import logging
 from ..utils.warning_symbols import error, failed, warning
+import json
 
 class MultiTimeframeEnsemble:
     """

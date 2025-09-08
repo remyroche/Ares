@@ -36,6 +36,8 @@ from src.utils.warning_symbols import _warn_symbol as _warn_symbol
 from src.utils.warning_symbols import warning as warn_symbol
 
 import numpy as np
+import logging
+import time
 
 # --- Compatibility shim for NumPy RNG unpickling across versions ---
 _NUMPY_RNG_UNPICKLE_PATCHED = False

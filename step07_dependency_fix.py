@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+import warnings
+
 """
 Step07 Dependency Management and Import Fix Script
 
@@ -30,6 +34,9 @@ def check_python_environment():
     # Check for venv
     try:
         import venv
+import logging
+import typing
+
         print("✅ venv module available")
     except ImportError:
         print("❌ venv module not available")
@@ -160,7 +167,6 @@ to resolve the import chain issues identified in the audit.
 """
 
 import sys
-import warnings
 from typing import Optional, Any, Dict
 from pathlib import Path
 
@@ -306,7 +312,6 @@ identified in the audit while maintaining core functionality.
 """
 
 import sys
-import warnings
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -559,8 +564,6 @@ $PIP_CMD install lightgbm>=3.3.0 || echo "⚠️ LightGBM installation failed, c
 
 echo "🧪 Testing installation..."
 python3 -c "
-import numpy as np
-import pandas as pd
 import sklearn
 import scipy
 import psutil

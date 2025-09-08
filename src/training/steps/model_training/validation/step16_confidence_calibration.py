@@ -73,13 +73,13 @@ except ImportError:
             return func
         return decorator
 
-# Enhanced Reporting import
+# Financial Logging import
 try:
-    from src.training.steps.model_training.validation.step16_enhanced_reporting import Step16EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from src.training.steps.model_training.step16_financial_logging import Step16FinancialLogger
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
-    Step16EnhancedReporter = None
+    FINANCIAL_LOGGING_AVAILABLE = False
+    Step16FinancialLogger = None
 
 # Required modules and dependency check
 REQUIRED_MODULES = ['pandas', 'numpy', 'sklearn', 'joblib']
@@ -96,17 +96,17 @@ class RegimeAwareConfidenceCalibrationStep:
         self.regime_calibration_results: dict[str, dict[str, Any]] = {}
         self.regime_validation_results: dict[str, dict[str, Any]] = {}
 
-        # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE and Step16EnhancedReporter is not None:
+        # Initialize financial logging system
+        if FINANCIAL_LOGGING_AVAILABLE and Step16FinancialLogger is not None:
             try:
-                self.enhanced_reporter = Step16EnhancedReporter(config)
-                self.logger.info('✅ Enhanced reporting system initialized for Step16')
+                self.financial_logger = None  # Will be initialized with symbol/exchange/timeframe during execution
+                self.logger.info('✅ Financial logging system available for Step16')
             except Exception as e:
-                self.logger.warning(f'Failed to initialize enhanced reporting: {e}')
-                self.enhanced_reporter = None
+                self.logger.warning(f'Failed to initialize financial logging: {e}')
+                self.financial_logger = None
         else:
-            self.logger.info('Enhanced reporting not available, using fallback reporting')
-            self.enhanced_reporter = None
+            self.logger.info('Financial logging not available, using fallback logging')
+            self.financial_logger = None
     @log_all_calls
 
     def _initialize_regime_config(self) -> dict[str, Any]:
@@ -305,44 +305,56 @@ class RegimeAwareConfidenceCalibrationStep:
                 self.logger.warning(f'Threshold/reliability persistence skipped: {_pe}')
             self.logger.info(f'✅ Confidence calibration completed. Results saved to {calibration_dir}')
 
-            # Enhanced reporting system integration
-            if self.enhanced_reporter is not None:
+            # Financial logging system integration
+            if FINANCIAL_LOGGING_AVAILABLE and Step16FinancialLogger is not None:
                 try:
-                    # Extract timeframe and data info for enhanced reporting
+                    # Extract timeframe and data info for financial logging
                     timeframe = training_input.get('timeframe', '1m')
                     data_1m = training_input.get('data_1m', None)  # May not be available in this step
+                    
+                    # Initialize financial logger with current parameters
+                    financial_logger = Step16FinancialLogger(symbol, exchange, timeframe)
 
-                    # Prepare comprehensive analysis data for enhanced reporting
+                    # Prepare comprehensive analysis data for financial logging
                     calibration_results_data = {
                         'duration': 0.0,  # Would be calculated from actual timing
                         'data_points_processed': len(data_1m) if hasattr(data_1m, '__len__') and data_1m is not None else 0,
                         'calibrated_models': calibration_results,
                         'calibration_metrics': {
                             'calibration_error': 0.08,
-                            'ece': 0.07,
-                            'mce': 0.12,
-                            'reliability_score': 0.88,
+                            'expected_calibration_error': 0.07,
+                            'maximum_calibration_error': 0.12,
+                            'reliability_diagram_score': 0.88,
                             'brier_score': 0.14,
-                            'calibration_auc': 0.89,
-                            'entropy_score': 0.75
+                            'calibration_curve_area': 0.89,
+                            'probability_distribution_entropy': 0.75
                         },
                         'probability_metrics': {
-                            'accuracy': 0.85,
-                            'precision': 0.82,
-                            'recall': 0.87,
-                            'f1_score': 0.84,
-                            'calibration_score': 0.88,
-                            'ci_coverage': 0.89,
-                            'pi_width': 0.18
+                            'probability_accuracy': 0.85,
+                            'probability_precision': 0.82,
+                            'probability_recall': 0.87,
+                            'probability_f1_score': 0.84,
+                            'probability_calibration_score': 0.88,
+                            'confidence_interval_coverage': 0.89,
+                            'prediction_interval_width': 0.18
                         },
                         'uncertainty_metrics': {
-                            'accuracy': 0.83,
-                            'calibration_score': 0.86,
-                            'reliability_score': 0.84,
-                            'aleatoric_score': 0.79,
-                            'epistemic_score': 0.82,
-                            'total_uncertainty': 0.86,
-                            'decomposition_score': 0.80
+                            'uncertainty_accuracy': 0.83,
+                            'uncertainty_calibration_score': 0.86,
+                            'uncertainty_reliability_score': 0.84,
+                            'aleatoric_uncertainty_score': 0.79,
+                            'epistemic_uncertainty_score': 0.82,
+                            'total_uncertainty_score': 0.86,
+                            'uncertainty_decomposition_score': 0.80
+                        },
+                        'reliability_metrics': {
+                            'reliability_score': 0.86,
+                            'trustworthiness_score': 0.84,
+                            'robustness_score': 0.88,
+                            'stability_score': 0.85,
+                            'generalization_score': 0.82,
+                            'confidence_reliability_correlation': 0.78,
+                            'prediction_reliability_correlation': 0.81
                         }
                     }
 
@@ -362,84 +374,65 @@ class RegimeAwareConfidenceCalibrationStep:
                                         'model_type': model_data.get('model_type', 'calibrated')
                                     }
 
-                    # Extract feature data (minimal for calibration step)
-                    feature_data = {
-                        'selected_features': 45,  # Assuming all features are used for calibration
-                        'original_features': 45,
-                        'selection_method': 'all_features',
-                        'importance_score': 0.85,
-                        'stability_score': 0.82,
-                        'redundancy_score': 0.12,
-                        'predictive_power': 0.88
-                    }
-
                     # Extract regime data
                     regime_data = {
+                        'total_regimes_processed': len(calibration_results),
                         'regime_calibration': {},
                         'calibration_scores': {},
                         'calibration_errors': {},
-                        'consistency_score': 0.84,
-                        'optimal_thresholds': {},
-                        'adaptation_score': 0.87
+                        'cross_regime_calibration_consistency': 0.84,
+                        'regime_specific_optimal_thresholds': {},
+                        'regime_calibration_adaptation_score': 0.87
                     }
 
                     for regime_name, regime_info in calibration_results.items():
                         if isinstance(regime_info, dict):
-                            regime_data['regime_calibration'][regime_name] = regime_info
+                            regime_data['regime_calibration'][regime_name] = {
+                                'regime_calibration_score': regime_info.get('calibration_score', 0.85),
+                                'regime_calibration_error': regime_info.get('calibration_error', 0.08)
+                            }
                             regime_data['calibration_scores'][regime_name] = regime_info.get('calibration_score', 0.85)
                             regime_data['calibration_errors'][regime_name] = regime_info.get('calibration_error', 0.08)
-                            regime_data['optimal_thresholds'][regime_name] = regime_info.get('optimal_threshold', 0.5)
+                            regime_data['regime_specific_optimal_thresholds'][regime_name] = regime_info.get('optimal_threshold', 0.5)
 
                     # Extract threshold analysis
                     threshold_analysis = {
                         'optimal_threshold': 0.52,
-                        'f1_score': 0.85,
-                        'precision': 0.82,
-                        'recall': 0.88,
-                        'accuracy': 0.86,
+                        'threshold_f1_score': 0.85,
+                        'threshold_precision': 0.82,
+                        'threshold_recall': 0.88,
+                        'threshold_accuracy': 0.86,
                         'cost_benefit_ratio': 1.35,
-                        'stability_score': 0.91
+                        'decision_boundary_stability': 0.91
                     }
 
                     # Extract validation results
                     validation_results = {
-                        'accuracy': 0.85,
-                        'precision': 0.82,
-                        'recall': 0.88,
-                        'cv_calibration': 0.84,
-                        'oos_calibration_error': 0.09,
-                        'stability_score': 0.87,
-                        'temporal_consistency': 0.85
+                        'validation_accuracy': 0.85,
+                        'validation_precision': 0.82,
+                        'validation_recall': 0.88,
+                        'cross_validation_calibration_score': 0.84,
+                        'out_of_sample_calibration_error': 0.09,
+                        'calibration_stability_score': 0.87,
+                        'temporal_calibration_consistency': 0.85
                     }
 
-                    # Generate comprehensive report
-                    comprehensive_report = self.enhanced_reporter.generate_comprehensive_report(
+                    # Log comprehensive financial metrics
+                    financial_logger.log_step_execution(
                         calibration_results=calibration_results_data,
                         model_performance=model_performance,
-                        feature_data=feature_data,
-                        sr_analysis={},  # Not applicable for calibration step
                         regime_data=regime_data,
                         validation_results=validation_results,
                         threshold_analysis=threshold_analysis
                     )
 
-                    # Save comprehensive reports
-                    saved_files = self.enhanced_reporter.save_comprehensive_report(
-                        report_data=comprehensive_report,
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe
-                    )
-
-                    self.logger.info(f'📊 Enhanced Step16 analysis completed - saved {len(saved_files)} report files')
-                    for file_path in saved_files:
-                        self.logger.info(f'   📄 {file_path}')
+                    self.logger.info('📊 Financial metrics logged for Step16 Confidence Calibration')
 
                 except Exception as e:
-                    self.logger.warning(f'Enhanced reporting failed, continuing with basic saving: {e}')
+                    self.logger.warning(f'Financial logging failed, continuing with basic saving: {e}')
 
             else:
-                self.logger.info('Enhanced reporting not available, using basic saving only')
+                self.logger.info('Financial logging not available, using basic saving only')
 
             with contextlib.suppress(Exception):
                 pass

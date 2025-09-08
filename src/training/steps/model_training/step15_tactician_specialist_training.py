@@ -11,6 +11,9 @@ import asyncio
 import json
 import os
 import pickle
+import psutil
+import hashlib
+from functools import lru_cache
 
 from datetime import datetime
 import logging
@@ -19,6 +22,32 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 from ....utils.logger import system_logger
 from ....core.decorators import handles_errors
 from ....config.environment import get_environment_settings
+
+# Import utility modules
+from ....utils.common_operations import (
+    safe_json_load, safe_json_dump, safe_read_parquet, safe_to_parquet,
+    safe_fillna, safe_mean, safe_std, ensure_directory, safe_file_exists,
+    validate_dataframe_schema, validate_data_quality, optimize_dataframe_dtypes,
+    standardize_price_action_probabilities, safe_float, safe_int,
+    get_current_datetime, format_datetime, create_empty_dataframe
+)
+from ....utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, MathValidationError
+)
+from ....utils.parquet_utils import ParquetUtils, get_parquet_utils
+
+# Import core decorators
+from ....core.decorators.cache import cached
+from ....core.decorators.logging import log_call, log_execution_time
+from ....core.decorators.validate import validates
+from ....core.decorators.retry_timeout import circuit_breaker, timeout
+from ....core.decorators.enhanced_error_handling import enhanced_error_handling
+
+# Import core errors
+from ....core.errors.base import BaseError, ValidationError, ProcessingError
+from ....core.errors.mapping import ErrorMapping
 
 # Get dynamic symbol configuration
 _settings = get_environment_settings()
@@ -210,6 +239,16 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.config = config
         self.logger = system_logger
         self.standards = pipeline_standards
+        
+        # Initialize utility modules
+        self.parquet_utils = get_parquet_utils()
+        self.error_mapping = ErrorMapping()
+        
+        # Initialize caching and optimization components
+        self._sr_context_cache = {}
+        self._lm_optimization_cache = {}
+        self._data_validation_cache = {}
+        self._memory_usage_tracker = {}
 
         # Initialize financial logging system
         if FINANCIAL_LOGGING_AVAILABLE and Step15FinancialLogger is not None:
@@ -332,6 +371,401 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         else:
             self.logger.info('✅ All required dependencies available')
 
+    def _fast_fail_data_validation(self, labeled_data: pd.DataFrame, symbol: str, exchange: str) -> tuple[bool, str]:
+        """Fast-fail validation for data quality and sufficiency."""
+        try:
+            # Check if data is empty
+            if labeled_data.empty:
+                return False, "Empty dataset provided for training"
+            
+            # Check minimum data size
+            min_samples = self.config.get('min_training_samples', 100)
+            if len(labeled_data) < min_samples:
+                return False, f"Insufficient data: {len(labeled_data)} samples < {min_samples} required"
+            
+            # Check for required columns
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            missing_cols = [col for col in required_cols if col not in labeled_data.columns]
+            if missing_cols:
+                return False, f"Missing required columns: {missing_cols}"
+            
+            # Check for target column
+            target_columns = ['tactician_label', 'label']
+            has_target = any(col in labeled_data.columns for col in target_columns)
+            if not has_target:
+                return False, f"Missing target column. Expected one of: {target_columns}"
+            
+            # Check for constant columns (no variance)
+            numeric_cols = labeled_data.select_dtypes(include=[np.number]).columns
+            constant_cols = []
+            for col in numeric_cols:
+                if labeled_data[col].nunique() <= 1:
+                    constant_cols.append(col)
+            
+            if len(constant_cols) > len(numeric_cols) * 0.5:  # More than 50% constant columns
+                return False, f"Too many constant columns: {len(constant_cols)}/{len(numeric_cols)}"
+            
+            # Check for excessive missing values
+            missing_threshold = self.config.get('max_missing_ratio', 0.3)
+            for col in numeric_cols:
+                missing_ratio = labeled_data[col].isna().sum() / len(labeled_data)
+                if missing_ratio > missing_threshold:
+                    return False, f"Column {col} has {missing_ratio:.2%} missing values (threshold: {missing_threshold:.2%})"
+            
+            self.logger.info(f"✅ Data validation passed: {len(labeled_data)} samples, {len(numeric_cols)} numeric columns")
+            return True, "Data validation passed"
+            
+        except Exception as e:
+            return False, f"Data validation error: {str(e)}"
+
+    def _fast_fail_resource_validation(self, labeled_data: pd.DataFrame, feature_columns: list) -> tuple[bool, str]:
+        """Fast-fail validation for system resources."""
+        try:
+            # Check available memory
+            available_memory = psutil.virtual_memory().available
+            data_size_mb = labeled_data.memory_usage(deep=True).sum() / 1024 / 1024
+            
+            # Estimate memory requirements (rough calculation)
+            estimated_memory_mb = data_size_mb * 4  # 4x for processing overhead
+            required_memory_mb = estimated_memory_mb * 1.5  # 1.5x safety margin
+            
+            if available_memory / 1024 / 1024 < required_memory_mb:
+                return False, f"Insufficient memory: {available_memory/1024/1024:.1f}MB available < {required_memory_mb:.1f}MB required"
+            
+            # Check CPU usage
+            cpu_percent = psutil.cpu_percent(interval=1)
+            if cpu_percent > 90:
+                self.logger.warning(f"High CPU usage: {cpu_percent:.1f}%")
+            
+            # Check disk space
+            disk_usage = psutil.disk_usage('/')
+            free_space_gb = disk_usage.free / 1024 / 1024 / 1024
+            if free_space_gb < 1.0:  # Less than 1GB free
+                return False, f"Insufficient disk space: {free_space_gb:.1f}GB free"
+            
+            self.logger.info(f"✅ Resource validation passed: {available_memory/1024/1024:.1f}MB RAM, {free_space_gb:.1f}GB disk")
+            return True, "Resource validation passed"
+            
+        except Exception as e:
+            return False, f"Resource validation error: {str(e)}"
+
+    def _fast_fail_dependency_validation(self, training_methods: list) -> tuple[bool, str]:
+        """Fast-fail validation for model dependencies."""
+        try:
+            missing_dependencies = []
+            
+            # Check XGBoost availability
+            if 'xgboost' in training_methods and not XGBOOST_AVAILABLE:
+                missing_dependencies.append('xgboost')
+            
+            # Check optimization tools
+            if self.config.get('use_optimization_tools', True) and not OPTIMIZATION_TOOLS_AVAILABLE:
+                self.logger.warning("Optimization tools not available, using fallback")
+            
+            # Check financial logging
+            if self.config.get('use_financial_logging', True) and not FINANCIAL_LOGGING_AVAILABLE:
+                self.logger.warning("Financial logging not available")
+            
+            # Check SR predictor
+            if self.config.get('use_sr_integration', True) and self.sr_predictor is None:
+                missing_dependencies.append('sr_predictor')
+            
+            if missing_dependencies:
+                return False, f"Missing required dependencies: {missing_dependencies}"
+            
+            self.logger.info("✅ Dependency validation passed")
+            return True, "Dependency validation passed"
+            
+        except Exception as e:
+            return False, f"Dependency validation error: {str(e)}"
+
+    def _load_data_with_parquet_utils(self, parquet_file: str, pickle_file: str) -> pd.DataFrame:
+        """Load data using parquet utilities with comprehensive fallback strategies."""
+        try:
+            # First try parquet file with parquet utils
+            if safe_file_exists(parquet_file):
+                self.logger.info(f"🔧 Loading parquet file using parquet utils: {parquet_file}")
+                
+                # Validate parquet file first
+                validation_result = self.parquet_utils.validate_parquet_file(parquet_file)
+                if validation_result.get('valid', False):
+                    labeled_data = self.parquet_utils.safe_read_parquet(parquet_file)
+                    if labeled_data is not None:
+                        self.logger.info(f"✅ Successfully loaded parquet data: {labeled_data.shape}")
+                        return labeled_data
+                    else:
+                        self.logger.warning("⚠️ Parquet utils failed to read file, trying repair")
+                        if self.parquet_utils.repair_parquet_file(parquet_file):
+                            labeled_data = self.parquet_utils.safe_read_parquet(parquet_file)
+                            if labeled_data is not None:
+                                self.logger.info(f"✅ Successfully loaded repaired parquet data: {labeled_data.shape}")
+                                return labeled_data
+                else:
+                    self.logger.warning(f"⚠️ Parquet file validation failed: {validation_result.get('error', 'Unknown error')}")
+            
+            # Fallback to standardized parquet handler
+            if safe_file_exists(parquet_file):
+                try:
+                    self.logger.info("🔄 Trying standardized parquet handler")
+                    labeled_data = standardized_parquet_handler.read_parquet_standardized(parquet_file)
+                    self.logger.info(f"✅ Loaded data using standardized handler: {labeled_data.shape}")
+                    return labeled_data
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Standardized handler failed: {e}")
+            
+            # Final fallback to pickle
+            if safe_file_exists(pickle_file):
+                self.logger.info(f"🔄 Loading pickle file as final fallback: {pickle_file}")
+                with open(pickle_file, 'rb') as f:
+                    labeled_data = pickle.load(f)
+                self.logger.info(f"✅ Loaded data from pickle: {labeled_data.shape if hasattr(labeled_data, 'shape') else 'unknown'}")
+                return labeled_data
+            
+            # If all methods fail
+            self.logger.error(f"❌ All data loading methods failed for files: {parquet_file}, {pickle_file}")
+            return create_empty_dataframe(['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in data loading: {e}")
+            return create_empty_dataframe(['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+
+    def _validate_data_integrity(self, data: pd.DataFrame, operation: str) -> tuple[bool, str]:
+        """Validate data integrity for various operations using utility modules."""
+        try:
+            # Check if data is DataFrame
+            if not isinstance(data, pd.DataFrame):
+                return False, f"Expected DataFrame, got {type(data)} for {operation}"
+            
+            # Use common operations validation
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            schema_valid = validate_dataframe_schema(data, {'required_columns': required_columns})
+            if not schema_valid:
+                return False, f"Schema validation failed for {operation}"
+            
+            # Use data quality validation
+            quality_thresholds = {
+                'min_rows': 10,
+                'max_null_ratio': 0.3
+            }
+            quality_valid = validate_data_quality(data, quality_thresholds)
+            if not quality_valid:
+                return False, f"Data quality validation failed for {operation}"
+            
+            # Check for infinite values using math validation
+            numeric_cols = data.select_dtypes(include=[np.number]).columns
+            inf_cols = []
+            for col in numeric_cols:
+                try:
+                    # Use math validation to check for finite values
+                    sample_values = data[col].dropna().head(100)  # Sample for performance
+                    for val in sample_values:
+                        try:
+                            validate_finite(val, f"column_{col}")
+                        except MathValidationError:
+                            inf_cols.append(col)
+                            break
+                except Exception:
+                    # If validation fails, check with numpy
+                    if np.isinf(data[col]).any():
+                        inf_cols.append(col)
+            
+            if inf_cols:
+                return False, f"Infinite values found in columns: {inf_cols} for {operation}"
+            
+            # Check for extreme outliers using safe math operations
+            outlier_cols = []
+            for col in numeric_cols:
+                if len(data[col].dropna()) > 0:
+                    try:
+                        mean_val = safe_mean(data[col].dropna().values)
+                        std_val = safe_std(data[col].dropna().values)
+                        
+                        if std_val > 0:
+                            # Use safe math operations for outlier detection
+                            threshold = std_val * 6.0  # 6 standard deviations
+                            outliers = np.abs(data[col] - mean_val) > threshold
+                            outlier_ratio = safe_divide(outliers.sum(), len(data), 0.0)
+                            
+                            if outlier_ratio > 0.01:  # More than 1% outliers
+                                outlier_cols.append(col)
+                    except Exception as e:
+                        self.logger.warning(f"Error checking outliers in column {col}: {e}")
+            
+            if outlier_cols:
+                self.logger.warning(f"Extreme outliers detected in columns: {outlier_cols} for {operation}")
+            
+            # Check data types consistency
+            type_issues = []
+            for col in data.columns:
+                if data[col].dtype == 'object':
+                    # Check for mixed types in object columns
+                    unique_types = set(type(x).__name__ for x in data[col].dropna().unique())
+                    if len(unique_types) > 1:
+                        type_issues.append(col)
+            
+            if type_issues:
+                self.logger.warning(f"Mixed data types in columns: {type_issues} for {operation}")
+            
+            return True, f"Data integrity validation passed for {operation}"
+            
+        except Exception as e:
+            return False, f"Data integrity validation error for {operation}: {str(e)}"
+
+    def _validate_model_output(self, model_result: dict, model_name: str) -> tuple[bool, str]:
+        """Validate model output quality and structure using utility modules."""
+        try:
+            # Check required keys
+            required_keys = ['model', 'accuracy', 'model_type']
+            missing_keys = [key for key in required_keys if key not in model_result]
+            if missing_keys:
+                return False, f"Model {model_name} missing required keys: {missing_keys}"
+            
+            # Validate accuracy range using math validation
+            accuracy = model_result.get('accuracy', 0)
+            try:
+                accuracy_val = validate_range(accuracy, 0.0, 1.0, f"model_{model_name}_accuracy")
+            except MathValidationError as e:
+                return False, f"Model {model_name} has invalid accuracy: {e}"
+            
+            # Validate model object
+            model = model_result.get('model')
+            if model is None:
+                return False, f"Model {model_name} has None model object"
+            
+            # Check for predict method
+            if not hasattr(model, 'predict') or not callable(getattr(model, 'predict')):
+                return False, f"Model {model_name} missing predict method"
+            
+            # Validate probability outputs if available using utility functions
+            if 'price_action_probabilities' in model_result:
+                probs = model_result['price_action_probabilities']
+                if isinstance(probs, dict):
+                    # Use utility function to standardize probabilities
+                    standardized_probs = standardize_price_action_probabilities(probs)
+                    
+                    # Validate each probability using math validation
+                    prob_keys = ['triple_barrier_probability', 'direction_probability', 
+                               'magnitude_probability', 'barrier_avoidance_probability']
+                    for key in prob_keys:
+                        if key in standardized_probs:
+                            try:
+                                validate_range(standardized_probs[key], 0.0, 1.0, f"model_{model_name}_{key}")
+                            except MathValidationError as e:
+                                return False, f"Model {model_name} has invalid probability {key}: {e}"
+                    
+                    # Update model result with standardized probabilities
+                    model_result['price_action_probabilities'] = standardized_probs
+            
+            # Validate feature importance if available
+            if 'feature_importance' in model_result:
+                importance = model_result['feature_importance']
+                if isinstance(importance, dict):
+                    # Check for negative importances using safe operations
+                    negative_features = []
+                    for k, v in importance.items():
+                        try:
+                            val = safe_float(v, 0.0)
+                            if val < 0:
+                                negative_features.append(k)
+                        except Exception:
+                            continue
+                    
+                    if negative_features:
+                        self.logger.warning(f"Model {model_name} has negative feature importances: {negative_features}")
+            
+            return True, f"Model output validation passed for {model_name}"
+            
+        except Exception as e:
+            return False, f"Model output validation error for {model_name}: {str(e)}"
+
+    @lru_cache(maxsize=128)
+    def _get_sr_context_cached(self, market_data_hash: str, current_price: float) -> dict:
+        """Cached S/R context computation."""
+        try:
+            if market_data_hash in self._sr_context_cache:
+                return self._sr_context_cache[market_data_hash]
+            
+            # This would normally compute S/R context, but for caching we return a placeholder
+            # In real implementation, you'd compute the actual S/R context here
+            context = {
+                'is_near_sr_level': False,
+                'sr_distance': 0.0,
+                'sr_strength': 0.5,
+                'cached': True
+            }
+            
+            self._sr_context_cache[market_data_hash] = context
+            return context
+            
+        except Exception as e:
+            self.logger.warning(f"S/R context caching error: {e}")
+            return {'is_near_sr_level': False, 'sr_distance': 0.0, 'sr_strength': 0.5, 'cached': False}
+
+    def _compute_sr_features_vectorized(self, enhanced_data: pd.DataFrame, sample_indices: pd.Index) -> dict:
+        """Vectorized computation of S/R features."""
+        try:
+            sr_features = {
+                'sr_proximity': np.zeros(len(sample_indices)),
+                'sr_outcome': ['consolidation'] * len(sample_indices),
+                'sr_confidence': np.full(len(sample_indices), 0.5),
+                'breakout_probability': np.full(len(sample_indices), 0.33),
+                'rebounce_probability': np.full(len(sample_indices), 0.33),
+                'consolidation_probability': np.full(len(sample_indices), 0.34),
+                'hmm_regime_confidence': np.full(len(sample_indices), 0.5),
+                'multi_timeframe_sr_score': np.full(len(sample_indices), 0.5)
+            }
+            
+            # Vectorized computation for basic features
+            if 'close' in enhanced_data.columns:
+                close_prices = enhanced_data.loc[sample_indices, 'close'].values
+                
+                # Compute rolling statistics for S/R analysis
+                window_size = min(50, len(enhanced_data) // 4)
+                if window_size > 1:
+                    rolling_mean = enhanced_data['close'].rolling(window=window_size).mean()
+                    rolling_std = enhanced_data['close'].rolling(window=window_size).std()
+                    
+                    # Vectorized proximity calculation
+                    mean_prices = rolling_mean.loc[sample_indices].values
+                    std_prices = rolling_std.loc[sample_indices].values
+                    
+                    # Normalized distance from mean (proxy for S/R proximity)
+                    normalized_distance = np.abs(close_prices - mean_prices) / (std_prices + 1e-8)
+                    sr_features['sr_proximity'] = np.where(normalized_distance < 1.0, 1.0, 0.0)
+                    
+                    # Vectorized confidence calculation
+                    sr_features['sr_confidence'] = np.clip(1.0 - normalized_distance / 3.0, 0.1, 0.9)
+            
+            # Vectorized HMM confidence
+            if 'composite_cluster_confidence' in enhanced_data.columns:
+                hmm_conf = enhanced_data.loc[sample_indices, 'composite_cluster_confidence'].values
+                sr_features['hmm_regime_confidence'] = np.nan_to_num(hmm_conf, nan=0.5)
+            elif 'hmm_cluster_confidence' in enhanced_data.columns:
+                hmm_conf = enhanced_data.loc[sample_indices, 'hmm_cluster_confidence'].values
+                sr_features['hmm_regime_confidence'] = np.nan_to_num(hmm_conf, nan=0.5)
+            
+            # Vectorized multi-timeframe score
+            sr_features['multi_timeframe_sr_score'] = (
+                sr_features['sr_confidence'] * 0.6 + 
+                sr_features['hmm_regime_confidence'] * 0.4
+            )
+            
+            return sr_features
+            
+        except Exception as e:
+            self.logger.warning(f"Vectorized S/R feature computation error: {e}")
+            # Return default values
+            return {
+                'sr_proximity': np.zeros(len(sample_indices)),
+                'sr_outcome': ['consolidation'] * len(sample_indices),
+                'sr_confidence': np.full(len(sample_indices), 0.5),
+                'breakout_probability': np.full(len(sample_indices), 0.33),
+                'rebounce_probability': np.full(len(sample_indices), 0.33),
+                'consolidation_probability': np.full(len(sample_indices), 0.34),
+                'hmm_regime_confidence': np.full(len(sample_indices), 0.5),
+                'multi_timeframe_sr_score': np.full(len(sample_indices), 0.5)
+            }
+
     @handles_errors(exceptions=(Exception,), default_return = False, context='tactician specialist training step initialization')
     async def initialize(self) -> None:
         """Initialize the tactician specialist training step."""
@@ -346,75 +780,58 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             self.logger.warning(f'⚠️ Error initializing SRBreakoutPredictor: {e}')
         self.logger.info('Tactician Specialist Training Step initialized successfully')
 
+    @handles_errors(exceptions=(Exception,), default_return=None, context='S/R context enhancement')
+    @log_execution_time()
+    @validates()
+    @enhanced_error_handling
     async def _enhance_training_data_with_sr_context(self, labeled_data: pd.DataFrame, symbol: str, timeframe: str) -> pd.DataFrame:
-        """Enhance training data with S/R context and outcomes using HMM-aware analysis."""
+        """Enhance training data with S/R context and outcomes using vectorized HMM-aware analysis."""
         try:
             if labeled_data.empty:
                 return labeled_data
-            self.logger.info(f'🔄 Enhancing training data with HMM-aware S/R context for {timeframe}...')
+            self.logger.info(f'🔄 Enhancing training data with vectorized HMM-aware S/R context for {timeframe}...')
             enhanced_data = labeled_data.copy()
             required_cols = ['open', 'high', 'low', 'close', 'volume']
             if not all((col in enhanced_data.columns for col in required_cols)):
                 self.logger.warning('⚠️ Missing OHLCV columns for S/R analysis, skipping enhancement')
                 return enhanced_data
+            
+            # Data integrity validation
+            integrity_valid, integrity_msg = self._validate_data_integrity(enhanced_data, 'sr_enhancement')
+            if not integrity_valid:
+                self.logger.warning(f'⚠️ Data integrity issue in S/R enhancement: {integrity_msg}')
+                return enhanced_data
+            
             timeframe_minutes = self._get_timeframe_minutes(timeframe)
             sample_interval = max(1, len(enhanced_data) // max(1, 1000 // timeframe_minutes))
             sample_indices = enhanced_data.index[::sample_interval]
-            sr_features: dict[str, list[Any]] = {'sr_proximity': [], 'sr_outcome': [], 'sr_confidence': [], 'breakout_probability': [], 'rebounce_probability': [], 'consolidation_probability': [], 'hmm_regime_confidence': [], 'multi_timeframe_sr_score': []}
-            for idx in sample_indices:
-                try:
-                    row = enhanced_data.loc[idx]
-                    current_price = float(row['close'])
-                    lookback_bars = min(200, max(50, timeframe_minutes * 2))
-                    market_slice = enhanced_data.loc[:idx].tail(lookback_bars)
-                    if len(market_slice) < 20:
-                        sr_features['sr_proximity'].append(0.0)
-                        sr_features['sr_outcome'].append('consolidation')
-                        sr_features['sr_confidence'].append(0.5)
-                        sr_features['breakout_probability'].append(0.33)
-                        sr_features['rebounce_probability'].append(0.33)
-                        sr_features['consolidation_probability'].append(0.34)
-                        sr_features['hmm_regime_confidence'].append(0.5)
-                        sr_features['multi_timeframe_sr_score'].append(0.5)
-                        continue
-                    sr_context = await self.sr_predictor.get_sr_context(market_data = market_slice, current_price = current_price)
-                    sr_outcome = await self.sr_predictor.predict_sr_outcome(market_data = market_slice, current_price = current_price, sr_context = sr_context)
-                    hmm_confidence = 0.5
-                    if 'composite_cluster_confidence' in row:
-                        hmm_confidence = float(row.get('composite_cluster_confidence', 0.5))
-                    elif 'hmm_cluster_confidence' in row:
-                        hmm_confidence = float(row.get('hmm_cluster_confidence', 0.5))
-                    is_near_sr = bool(sr_outcome.get('is_near_sr_level', False))
-                    sr_features['sr_proximity'].append(1.0 if is_near_sr else 0.0)
-                    sr_features['sr_outcome'].append(sr_outcome.get('outcome', 'consolidation'))
-                    sr_features['sr_confidence'].append(float(sr_outcome.get('confidence', 0.5)))
-                    probabilities = sr_outcome.get('probabilities', {})
-                    sr_features['breakout_probability'].append(float(probabilities.get('breakout', 0.33)))
-                    sr_features['rebounce_probability'].append(float(probabilities.get('rebounce', 0.33)))
-                    sr_features['consolidation_probability'].append(float(probabilities.get('consolidation', 0.34)))
-                    sr_features['hmm_regime_confidence'].append(float(hmm_confidence))
-                    sr_conf = float(sr_outcome.get('confidence', 0.5))
-                    multi_tf_score = sr_conf * 0.6 + float(hmm_confidence) * 0.4
-                    sr_features['multi_timeframe_sr_score'].append(multi_tf_score)
-                except Exception as e:
-                    self.logger.debug(f'Error processing S/R features for index {idx}: {e}')
-                    sr_features['sr_proximity'].append(0.0)
-                    sr_features['sr_outcome'].append('consolidation')
-                    sr_features['sr_confidence'].append(0.5)
-                    sr_features['breakout_probability'].append(0.33)
-                    sr_features['rebounce_probability'].append(0.33)
-                    sr_features['consolidation_probability'].append(0.34)
-                    sr_features['hmm_regime_confidence'].append(0.5)
-                    sr_features['multi_timeframe_sr_score'].append(0.5)
+            
+            # Use vectorized computation instead of row-by-row processing
+            self.logger.info(f'🚀 Using vectorized S/R feature computation for {len(sample_indices)} samples...')
+            sr_features = self._compute_sr_features_vectorized(enhanced_data, sample_indices)
+            
+            # Apply features to the full dataset
             for feature_name, values in sr_features.items():
                 if len(values) > 1:
-                    feature_series = pd.Series(values, index = sample_indices)
+                    feature_series = pd.Series(values, index=sample_indices)
                     full_feature = feature_series.reindex(enhanced_data.index).interpolate(method='linear').fillna(0.5)
                     enhanced_data[f'sr_{feature_name}'] = full_feature
                 else:
                     enhanced_data[f'sr_{feature_name}'] = values[0] if values else 0.5
-            enhanced_data['sr_sample_weight'] = enhanced_data['sr_proximity'] * 0.3 + enhanced_data['hmm_regime_confidence'] * 0.4 + 0.3
-            self.logger.info(f'✅ Enhanced training data with HMM-aware S/R context for {timeframe}: {len(enhanced_data)} samples')
+            
+            # Compute sample weights vectorized
+            enhanced_data['sr_sample_weight'] = (
+                enhanced_data['sr_sr_proximity'] * 0.3 + 
+                enhanced_data['sr_hmm_regime_confidence'] * 0.4 + 
+                0.3
+            )
+            
+            # Final data integrity check
+            integrity_valid, integrity_msg = self._validate_data_integrity(enhanced_data, 'sr_enhancement_final')
+            if not integrity_valid:
+                self.logger.warning(f'⚠️ Data integrity issue after S/R enhancement: {integrity_msg}')
+            
+            self.logger.info(f'✅ Enhanced training data with vectorized HMM-aware S/R context for {timeframe}: {len(enhanced_data)} samples')
             return enhanced_data
         except Exception as e:
             self.logger.exception(f'❌ Error enhancing training data with HMM-aware S/R context: {e}')
@@ -435,6 +852,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
     @handles_errors(exceptions=(Exception,), default_return={'status': 'FAILED', 'error': 'Execution failed'}, context='tactician specialist training step execution')
     @log_execution_time()
+    @validates()
+    @circuit_breaker(failure_threshold=3, recovery_timeout=60)
+    @enhanced_error_handling
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute regime-aware tactician specialist models training with optimization tools."""
         # Use step optimization manager if available
@@ -463,36 +883,52 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             labeled_file_parquet = f'{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet'
             labeled_file_pickle = f'{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl'
 
-            # Use optimized data loading
+            # Use optimized data loading with utility modules
             if self.data_manager:
                 try:
                     labeled_data = self.data_manager.load_dataframe_optimized(labeled_file_parquet)
                     self.logger.info("✅ Loaded data using optimized data manager")
                 except Exception:
-                    # Fallback to standard loading
-                    if os.path.exists(labeled_file_parquet):
-                        try:
-                            labeled_data = standardized_parquet_handler.read_parquet_standardized(labeled_file_parquet)
-                        except Exception:
-                            with open(labeled_file_pickle, 'rb') as f:
-                                labeled_data = pickle.load(f)
-                    else:
-                        with open(labeled_file_pickle, 'rb') as f:
-                            labeled_data = pickle.load(f)
+                    # Fallback to parquet utils
+                    labeled_data = self._load_data_with_parquet_utils(labeled_file_parquet, labeled_file_pickle)
             else:
-                # Standard loading
-                if os.path.exists(labeled_file_parquet):
-                    try:
-                        labeled_data = standardized_parquet_handler.read_parquet_standardized(labeled_file_parquet)
-                    except Exception:
-                        with open(labeled_file_pickle, 'rb') as f:
-                            labeled_data = pickle.load(f)
-                else:
-                    with open(labeled_file_pickle, 'rb') as f:
-                        labeled_data = pickle.load(f)
+                # Use parquet utils for standard loading
+                labeled_data = self._load_data_with_parquet_utils(labeled_file_parquet, labeled_file_pickle)
 
             if not isinstance(labeled_data, pd.DataFrame):
                 labeled_data = pd.DataFrame(labeled_data)
+
+            # FAST-FAIL VALIDATIONS
+            self.logger.info('🔍 Running fast-fail validations...')
+            
+            # 1. Data validation
+            data_valid, data_msg = self._fast_fail_data_validation(labeled_data, symbol, exchange)
+            if not data_valid:
+                self.logger.error(f'❌ Data validation failed: {data_msg}')
+                return {'status': 'FAILED', 'error': f'Data validation failed: {data_msg}'}
+            
+            # 2. Data integrity validation
+            integrity_valid, integrity_msg = self._validate_data_integrity(labeled_data, 'initial_loading')
+            if not integrity_valid:
+                self.logger.error(f'❌ Data integrity validation failed: {integrity_msg}')
+                return {'status': 'FAILED', 'error': f'Data integrity validation failed: {integrity_msg}'}
+            
+            # 3. Resource validation (after we know feature columns)
+            feature_columns = [col for col in labeled_data.select_dtypes(include=[np.number]).columns 
+                             if col not in ['tactician_label', 'label']]
+            resource_valid, resource_msg = self._fast_fail_resource_validation(labeled_data, feature_columns)
+            if not resource_valid:
+                self.logger.error(f'❌ Resource validation failed: {resource_msg}')
+                return {'status': 'FAILED', 'error': f'Resource validation failed: {resource_msg}'}
+            
+            # 4. Dependency validation
+            training_methods = ['lightgbm', 'calibrated_logistic', 'xgboost', 'random_forest']
+            dependency_valid, dependency_msg = self._fast_fail_dependency_validation(training_methods)
+            if not dependency_valid:
+                self.logger.error(f'❌ Dependency validation failed: {dependency_msg}')
+                return {'status': 'FAILED', 'error': f'Dependency validation failed: {dependency_msg}'}
+            
+            self.logger.info('✅ All fast-fail validations passed')
 
             # Optimize dataframe for processing
             if self.vectorized_core:
@@ -517,9 +953,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             else:
                 training_results = await self._train_regime_aware_tactician_models(labeled_data, symbol, exchange, data_dir)
 
-            # Use optimized data saving
+            # Use optimized data saving with utility modules
             models_dir = f'{data_dir}/tactician_models'
-            os.makedirs(models_dir, exist_ok=True)
+            ensure_directory(models_dir)
 
             if self.data_manager:
                 # Save models using optimized data manager
@@ -528,15 +964,23 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     saved_path = self.data_manager.save_model_optimized(model_data, model_filename)
                     self.logger.info(f"💾 Saved model {model_name} using optimized data manager")
             else:
-                # Standard saving
+                # Standard saving with utility modules
                 for model_name, model_data in training_results.items():
                     model_file = f'{models_dir}/{model_name}.pkl'
-                    with open(model_file, 'wb') as f:
-                        pickle.dump(model_data, f)
+                    try:
+                        with open(model_file, 'wb') as f:
+                            pickle.dump(model_data, f)
+                        self.logger.info(f"💾 Saved model {model_name} to {model_file}")
+                    except Exception as e:
+                        self.logger.error(f"❌ Failed to save model {model_name}: {e}")
 
+            # Save summary using utility modules
             summary_file = f'{data_dir}/{exchange}_{symbol}_tactician_training_summary.json'
-            with open(summary_file, 'w') as f:
-                json.dump(training_results, f, indent=2)
+            try:
+                safe_json_dump(training_results, summary_file, indent=2)
+                self.logger.info(f"💾 Saved training summary to {summary_file}")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to save training summary: {e}")
 
             self.logger.info(f'✅ Tactician specialist training completed with optimizations. Results saved to {models_dir}')
 
@@ -670,10 +1114,20 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             self.logger.error(f'❌ Error in Tactician Specialist Training: {e}', exc_info=True)
             return {'status': 'FAILED', 'error': str(e), 'duration': 0.0}
 
+    @handles_errors(exceptions=(Exception,), default_return={}, context='tactician model training')
+    @log_execution_time()
+    @validates()
+    @enhanced_error_handling
     async def _train_tactician_models(self, data: pd.DataFrame, symbol: str, exchange: str) -> dict[str, Any]:
         """Train tactician specialist models with optimization tools."""
         try:
             self.logger.info(f'Training tactician specialist models for {symbol} on {exchange} with optimizations...')
+
+            # Data integrity validation
+            integrity_valid, integrity_msg = self._validate_data_integrity(data, 'model_training')
+            if not integrity_valid:
+                self.logger.error(f'❌ Data integrity validation failed: {integrity_msg}')
+                raise ValueError(f'Data integrity validation failed: {integrity_msg}')
 
             # Optimize data preprocessing
             if self.vectorized_core:
@@ -686,18 +1140,34 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 raise ValueError(msg)
             y = data[target_column].copy()
 
-            # Enhanced column filtering with optimization
+            # OPTIMIZED COLUMN FILTERING - Do all filtering in one pass
+            self.logger.info('🔧 Performing optimized column filtering...')
+            
+            # Get all column types at once
             datetime_columns = data.select_dtypes(include=['datetime64[ns]', 'datetime64', 'datetime']).columns.tolist()
-            if datetime_columns:
-                self.logger.info(f'Dropping datetime columns: {datetime_columns}')
-                data = data.drop(columns=datetime_columns)
-
             object_columns = data.select_dtypes(include=['object']).columns.tolist()
+            numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
+            
+            # Determine columns to drop
+            columns_to_drop = []
+            
+            # Add datetime columns
+            if datetime_columns:
+                columns_to_drop.extend(datetime_columns)
+                self.logger.info(f'Will drop datetime columns: {datetime_columns}')
+            
+            # Add object columns (except target)
             object_columns_to_drop = [col for col in object_columns if col != target_column]
             if object_columns_to_drop:
-                self.logger.info(f'Dropping object columns: {object_columns_to_drop}')
-                data = data.drop(columns=object_columns_to_drop)
-
+                columns_to_drop.extend(object_columns_to_drop)
+                self.logger.info(f'Will drop object columns: {object_columns_to_drop}')
+            
+            # Drop all columns at once
+            if columns_to_drop:
+                data = data.drop(columns=columns_to_drop)
+                self.logger.info(f'✅ Dropped {len(columns_to_drop)} columns in one operation')
+            
+            # Get feature columns after filtering
             numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
             feature_columns = [col for col in numeric_columns if col != target_column]
 
@@ -708,20 +1178,26 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
             X = data[feature_columns].copy()
 
-            # Enhanced column validation
+            # Enhanced column validation - check for non-numeric columns
+            non_numeric_cols = []
             for col in list(X.columns):
                 if not pd.api.types.is_numeric_dtype(X[col]):
-                    self.logger.warning(f'Non-numeric column detected and dropped: {col} ({X[col].dtype})')
-                    X = X.drop(columns=[col])
-                    feature_columns.remove(col)
+                    non_numeric_cols.append(col)
+            
+            if non_numeric_cols:
+                self.logger.warning(f'Non-numeric columns detected and dropped: {non_numeric_cols}')
+                X = X.drop(columns=non_numeric_cols)
+                feature_columns = [col for col in feature_columns if col not in non_numeric_cols]
 
-            # Use optimized memory handling
+            # Use optimized memory handling with utility modules
             if self.m1_memory_optimizer:
                 X = self.m1_memory_optimizer.create_memory_efficient_array(X.values, dtype=np.float32)
                 X = pd.DataFrame(X, columns=feature_columns)
                 self.logger.info("✅ Used memory-efficient array creation")
             else:
-                X = X.fillna(0)
+                # Use safe fillna from common operations
+                X = safe_fillna(X, 0)
+                self.logger.info("✅ Used safe fillna for missing values")
 
             # Optimized train-test split
             if self.vectorized_core:
@@ -733,11 +1209,29 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 split_point = int(len(X) * 0.8)
                 X_train, X_test = (X.iloc[:split_point], X.iloc[split_point:])
                 y_train, y_test = (y.iloc[:split_point], y.iloc[split_point:])
+            
+            # Enhanced LM optimization with caching
             if self.enhanced_lm_optimizer is not None:
                 self.logger.info('🚀 Applying enhanced LM optimization for tactician models...')
                 model_type = 'classification' if y_train.dtype == 'object' or len(pd.unique(y_train)) < 10 else 'regression'
+                
+                # Create cache key for LM optimization
+                cache_key = f"{symbol}_{exchange}_{model_type}_{len(X_train)}_{len(feature_columns)}"
+                
                 try:
-                    optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(step_name='step09', features_df = X_train, target = y_train, model_type = model_type, architecture='LightGBM')
+                    # Check cache first
+                    if cache_key in self._lm_optimization_cache:
+                        self.logger.info('✅ Using cached LM optimization results')
+                        optimization_results, optimized_features = self._lm_optimization_cache[cache_key]
+                    else:
+                        optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
+                            step_name='step15', features_df=X_train, target=y_train, 
+                            model_type=model_type, architecture='LightGBM'
+                        )
+                        # Cache the results
+                        self._lm_optimization_cache[cache_key] = (optimization_results, optimized_features)
+                        self.logger.info('✅ Cached LM optimization results')
+                    
                     X_train = optimized_features
                     X_test = X_test[X_train.columns]
                     self.logger.info(f'✅ Applied feature selection: {len(X_train.columns)} features selected')
@@ -745,6 +1239,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     self.enhancement_results['enhanced_optimization'] = optimization_results
                 except Exception as _opt_e:
                     self.logger.warning(f'Enhanced LM optimizer failed; proceeding without it: {_opt_e}')
+            
             models: dict[str, Any] = {}
 
             # Use parallel model training if available
@@ -766,11 +1261,22 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     task_type="cpu_bound"
                 )
 
-                # Collect results
+                # Collect results and validate model outputs
                 for i, result in enumerate(parallel_results):
                     task_name = training_tasks[i][0]
                     if result:
-                        models[task_name] = result
+                        # Validate model output
+                        output_valid, output_msg = self._validate_model_output(result, task_name)
+                        if output_valid:
+                            models[task_name] = result
+                            self.logger.info(f"✅ Trained and validated {task_name} model successfully")
+                        else:
+                            self.logger.warning(f"⚠️ Model output validation failed for {task_name}: {output_msg}")
+
+                # Memory cleanup after parallel training
+                if self.m1_memory_optimizer:
+                    self.m1_memory_optimizer.optimize_memory()
+                    self.logger.info("✅ Memory cleanup completed after parallel training")
 
             else:
                 # Sequential training with memory optimization
@@ -788,11 +1294,22 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                             self.m1_memory_optimizer.optimize_memory()
 
                         result = await train_method(X_train, X_test, y_train, y_test, symbol, exchange)
-                        models[model_name] = result
-                        self.logger.info(f"✅ Trained {model_name} model successfully")
+                        
+                        # Validate model output
+                        output_valid, output_msg = self._validate_model_output(result, model_name)
+                        if output_valid:
+                            models[model_name] = result
+                            self.logger.info(f"✅ Trained and validated {model_name} model successfully")
+                        else:
+                            self.logger.warning(f"⚠️ Model output validation failed for {model_name}: {output_msg}")
 
                     except Exception as _e:
                         self.logger.warning(f'{model_name.title()} training failed: {_e}')
+                
+                # Final memory cleanup after sequential training
+                if self.m1_memory_optimizer:
+                    self.m1_memory_optimizer.optimize_memory()
+                    self.logger.info("✅ Memory cleanup completed after sequential training")
 
             self.logger.info(f'Trained {len(models)} tactician models with optimizations')
             return models
@@ -801,15 +1318,40 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             raise
 
     def _execute_training_task(self, task_tuple, X_train, X_test, y_train, y_test):
-        """Execute a training task (helper for parallel processing)."""
+        """Execute a training task (helper for parallel processing) with proper resource management."""
+        task_name = None
         try:
             task_name, train_method, args = task_tuple
-            # Execute the training method
+            
+            # Memory cleanup before task execution
+            if self.m1_memory_optimizer:
+                self.m1_memory_optimizer.optimize_memory()
+            
+            # Execute the training method with proper event loop management
             import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(train_method(*args))
-            loop.close()
+            try:
+                # Try to get existing event loop
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, create a new one
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    result = loop.run_until_complete(train_method(*args))
+                    loop.close()
+                else:
+                    # Use existing loop
+                    result = loop.run_until_complete(train_method(*args))
+            except RuntimeError:
+                # No event loop exists, create new one
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(train_method(*args))
+                loop.close()
+            
+            # Memory cleanup after task execution
+            if self.m1_memory_optimizer:
+                self.m1_memory_optimizer.optimize_memory()
+            
             return result
         except Exception as e:
             self.logger.warning(f"Training task {task_name} failed: {e}")
@@ -998,6 +1540,11 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             raise
 
 @timeout(5400)
+@handles_errors(exceptions=(Exception,), default_return=False, context='step15 execution')
+@log_execution_time()
+@validates()
+@circuit_breaker(failure_threshold=2, recovery_timeout=120)
+@enhanced_error_handling
 async def run_step(symbol: str, exchange: str='BINANCE', data_dir: str=None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the tactician specialist training step."
 

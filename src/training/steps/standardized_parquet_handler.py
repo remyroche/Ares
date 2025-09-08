@@ -79,6 +79,203 @@ class StandardizedParquetHandler:
         
         self.logger.info('✅ StandardizedParquetHandler initialized')
     
+    def add_partition_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add partition columns (year, month, day) to DataFrame based on timestamp.
+        
+        Args:
+            df: DataFrame with timestamp column
+            
+        Returns:
+            DataFrame with added partition columns
+        """
+        if 'timestamp' not in df.columns:
+            self.logger.warning('No timestamp column found, cannot add partition columns')
+            return df
+        
+        df_copy = df.copy()
+        
+        # Convert timestamp to datetime if it's not already
+        if df_copy['timestamp'].dtype == 'int64':
+            # Assume timestamp is in milliseconds
+            df_copy['datetime'] = pd.to_datetime(df_copy['timestamp'], unit='ms')
+        else:
+            df_copy['datetime'] = pd.to_datetime(df_copy['timestamp'])
+        
+        # Add partition columns
+        df_copy['year'] = df_copy['datetime'].dt.year.astype('int16')
+        df_copy['month'] = df_copy['datetime'].dt.month.astype('int8')
+        df_copy['day'] = df_copy['datetime'].dt.day.astype('int8')
+        
+        # Remove temporary datetime column
+        df_copy = df_copy.drop('datetime', axis=1)
+        
+        self.logger.info(f'✅ Added partition columns: year, month, day')
+        return df_copy
+    
+    def write_partitioned_parquet(
+        self, 
+        df: pd.DataFrame, 
+        base_path: str, 
+        schema_name: str = 'unified',
+        partition_cols: List[str] = None,
+        **kwargs
+    ) -> bool:
+        """Write DataFrame as partitioned Parquet dataset.
+        
+        Args:
+            df: DataFrame to write
+            base_path: Base directory path for the dataset
+            schema_name: Schema to enforce
+            partition_cols: Columns to partition by (default: ['year', 'month', 'day'])
+            **kwargs: Additional arguments for write_parquet_standardized
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Add partition columns if not present
+            if partition_cols is None:
+                partition_cols = ['year', 'month', 'day']
+            
+            # Check if partition columns exist, add them if not
+            missing_cols = [col for col in partition_cols if col not in df.columns]
+            if missing_cols:
+                self.logger.info(f'Adding missing partition columns: {missing_cols}')
+                df = self.add_partition_columns(df)
+            
+            # Ensure directory exists
+            Path(base_path).mkdir(parents=True, exist_ok=True)
+            
+            # Use PyArrow for partitioned writing if available
+            try:
+                import pyarrow as pa
+                import pyarrow.parquet as pq
+                import pyarrow.dataset as ds
+                
+                # Convert to PyArrow table
+                table = pa.Table.from_pandas(df)
+                
+                # Create partitioning schema
+                partition_fields = []
+                for col in partition_cols:
+                    if col in df.columns:
+                        if col in ['year', 'month', 'day']:
+                            partition_fields.append(pa.field(col, pa.int16() if col == 'year' else pa.int8()))
+                        else:
+                            partition_fields.append(pa.field(col, pa.string()))
+                
+                if partition_fields:
+                    partition_schema = pa.schema(partition_fields)
+                    partitioning = ds.partitioning(partition_schema, flavor='hive')
+                    
+                    # Write partitioned dataset
+                    ds.write_dataset(
+                        table,
+                        base_path,
+                        format='parquet',
+                        partitioning=partitioning,
+                        basename_template='part-{i}.parquet',
+                        existing_data_behavior='overwrite_or_ignore'
+                    )
+                    
+                    self.logger.info(f'✅ Wrote partitioned dataset to {base_path}')
+                    return True
+                else:
+                    # Fallback to single file
+                    self.logger.warning('No valid partition columns, writing as single file')
+                    return self.write_parquet_standardized(df, base_path, schema_name, **kwargs)
+                    
+            except ImportError:
+                self.logger.warning('PyArrow not available, falling back to single file writing')
+                return self.write_parquet_standardized(df, base_path, schema_name, **kwargs)
+                
+        except Exception as e:
+            self.logger.error(f'❌ Failed to write partitioned parquet: {e}')
+            return False
+    
+    def read_partitioned_parquet(
+        self, 
+        base_path: str, 
+        schema_name: str = 'unified',
+        filters: List[Tuple] = None,
+        columns: List[str] = None,
+        **kwargs
+    ) -> Optional[pd.DataFrame]:
+        """Read partitioned Parquet dataset.
+        
+        Args:
+            base_path: Base directory path of the dataset
+            schema_name: Schema to validate against
+            filters: PyArrow filters for reading specific partitions
+            columns: Specific columns to read
+            **kwargs: Additional arguments
+            
+        Returns:
+            DataFrame or None if failed
+        """
+        try:
+            # Use PyArrow for partitioned reading if available
+            try:
+                import pyarrow.dataset as ds
+                import pyarrow.parquet as pq
+                
+                # Read partitioned dataset
+                dataset = ds.dataset(base_path, format='parquet')
+                
+                # Apply filters if provided
+                if filters:
+                    dataset = dataset.filter(filters)
+                
+                # Convert to pandas
+                df = dataset.to_table(columns=columns).to_pandas()
+                
+                if df.empty:
+                    self.logger.warning(f'No data found in partitioned dataset at {base_path}')
+                    return None
+                
+                # Validate and standardize
+                df = self.standardize_dtypes(df, schema_name)
+                
+                self.logger.info(f'✅ Read partitioned dataset from {base_path}: {len(df)} rows')
+                return df
+                
+            except ImportError:
+                self.logger.warning('PyArrow not available, falling back to single file reading')
+                # Fallback: try to read as single file
+                return self.read_parquet_standardized(base_path, schema_name, **kwargs)
+                
+        except Exception as e:
+            self.logger.error(f'❌ Failed to read partitioned parquet: {e}')
+            return None
+    
+    def get_partitioned_path(
+        self, 
+        path_type: str, 
+        exchange: str, 
+        symbol: str, 
+        timeframe: str = '1m',
+        **kwargs
+    ) -> str:
+        """Get standardized path for partitioned data.
+        
+        Args:
+            path_type: Type of path (unified_partitioned, etc.)
+            exchange: Exchange name
+            symbol: Asset symbol
+            timeframe: Timeframe
+            **kwargs: Additional path parameters
+            
+        Returns:
+            Standardized partitioned path string
+        """
+        if path_type == 'unified_partitioned':
+            # Use the partitioned path structure
+            base_path = self.standards.build_path('unified_data', exchange, symbol, timeframe)
+            return f"{base_path}/partitioned"
+        else:
+            # Fallback to regular path
+            return self.get_standardized_path(path_type, exchange, symbol, timeframe, **kwargs)
+    
     def get_standardized_path(
         self, 
         path_type: str, 

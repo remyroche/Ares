@@ -26,13 +26,16 @@ def get_default_symbol() -> str:
     """Get the default trading symbol from configuration."""
     return _settings.get_default_symbol('ETHUSDT')
 
-# Import enhanced reporting system
+# Enhanced reporting system is no longer used - using financial metrics logger directly
+ENHANCED_REPORTING_AVAILABLE = False
+Step06EnhancedReporter = None
+
+# Import financial metrics logger directly
 try:
-    from src.training.steps.feature_engineering.step06_enhanced_reporting import Step06EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
-    Step06EnhancedReporter = None
+    FINANCIAL_LOGGING_AVAILABLE = False
 
 # Import optimization utilities for enhanced performance
 try:
@@ -100,6 +103,18 @@ class AdvancedFeatureEngineeringStep(BaseStep):
             if self.logger:
                 self.logger.info('Enhanced reporting not available, using fallback reporting')
             self.enhanced_reporter = None
+
+        # Initialize financial metrics logger
+        self.financial_logger = None
+        if FINANCIAL_LOGGING_AVAILABLE:
+            try:
+                self.financial_logger = get_financial_metrics_logger()
+                if self.logger:
+                    self.logger.info('✅ Financial metrics logger initialized for Step06')
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f'⚠️ Failed to initialize financial logger: {e}')
+                self.financial_logger = None
 
         # Initialize wavelet analyzer if enabled
         self.wavelet_analyzer = None
@@ -194,6 +209,14 @@ class AdvancedFeatureEngineeringStep(BaseStep):
         self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]
     ) -> Dict[str, Any]:
         labeled: pd.DataFrame = pipeline_state["labeled_data"]
+
+        # Log step start if financial logger is available
+        symbol = training_input.get("symbol", get_default_symbol())
+        exchange = training_input.get("exchange", "BINANCE")
+        timeframe = training_input.get("timeframe", "1m")
+        
+        if FINANCIAL_LOGGING_AVAILABLE and self.financial_logger is not None:
+            self.financial_logger.log_step_start('step06_advanced_features', symbol, exchange, timeframe)
 
         if self.logger:
             self.logger.info(
@@ -311,6 +334,137 @@ class AdvancedFeatureEngineeringStep(BaseStep):
         else:
             if self.logger:
                 self.logger.info('Enhanced reporting not available, using basic reporting only')
+
+        # Log financial metrics if available
+        if self.financial_logger is not None:
+            try:
+                # Log feature engineering metrics
+                self.financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name='total_features_created',
+                    metric_value=float(train_features.shape[1]),
+                    metric_type='feature',
+                    step_name='step06_advanced_features'
+                )
+                
+                self.financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name='training_samples',
+                    metric_value=float(len(train_features)),
+                    metric_type='performance',
+                    step_name='step06_advanced_features'
+                )
+                
+                self.financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name='validation_samples',
+                    metric_value=float(len(val_features)),
+                    metric_type='performance',
+                    step_name='step06_advanced_features'
+                )
+                
+                # Log feature statistics
+                feature_stats = self._compute_feature_statistics(train_features)
+                self.financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name='feature_missing_values',
+                    metric_value=float(sum(feature_stats.get('missing_values', {}).values())),
+                    metric_type='quality',
+                    step_name='step06_advanced_features'
+                )
+                
+                # Log optimization metrics if available
+                if OPTIMIZATIONS_AVAILABLE:
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='optimization_enabled',
+                        metric_value=1.0,
+                        metric_type='performance',
+                        step_name='step06_advanced_features'
+                    )
+                    
+                    if hasattr(self, 'gpu_manager') and self.gpu_manager is not None:
+                        self.financial_logger.log_financial_metric(
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            metric_name='gpu_acceleration_enabled',
+                            metric_value=1.0,
+                            metric_type='performance',
+                            step_name='step06_advanced_features'
+                        )
+                
+                # Log file paths for generated features
+                train_path = pipeline_state["engineered_feature_paths"]["train"]
+                val_path = pipeline_state["engineered_feature_paths"]["val"]
+                
+                self.financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name='train_features_path',
+                    metric_value=0.0,
+                    metric_type='file_path',
+                    step_name='step06_advanced_features',
+                    additional_data={'file_path': train_path}
+                )
+                
+                self.financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name='val_features_path',
+                    metric_value=0.0,
+                    metric_type='file_path',
+                    step_name='step06_advanced_features',
+                    additional_data={'file_path': val_path}
+                )
+                
+                # Log wavelet features if enabled
+                if self.enable_wavelets:
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='wavelet_features_enabled',
+                        metric_value=1.0,
+                        metric_type='feature',
+                        step_name='step06_advanced_features'
+                    )
+                
+                # Log multi-timeframe features if enabled
+                if self.enable_multi_timeframe:
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='multi_timeframe_features_enabled',
+                        metric_value=1.0,
+                        metric_type='feature',
+                        step_name='step06_advanced_features'
+                    )
+                
+                # Log step end
+                self.financial_logger.log_step_end('step06_advanced_features', symbol, exchange, timeframe, success=True)
+                
+                if self.logger:
+                    self.logger.info('✅ Financial metrics logged successfully for Step06')
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f'⚠️ Failed to log financial metrics: {e}')
+                # Log step end with error
+                if self.financial_logger is not None:
+                    self.financial_logger.log_step_end('step06_advanced_features', symbol, exchange, timeframe, success=False, error_message=str(e))
 
         return pipeline_state
 

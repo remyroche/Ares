@@ -27,28 +27,183 @@ import logging
 import warnings
 import sys
 
-# Required dependencies - no fallbacks
-import numpy as np
-import pandas as pd
-from numba import jit, prange, float64, float32
-import numba as nb
-import psutil
-import torch
-from src.utils.m1_gpu_utils import get_m1_gpu_manager, m1_batch_process
-from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import (
-    log_step_functions, log_important_calls, log_all_calls,
-    log_internal_call, log_step_progress, log_data_operation
-)
-from ...core.decorators import handles_errors
-from src.training.base_step import BaseStep
-from src.training.steps.model_training.matrix_components import (
-    MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer,
-    AsyncMatrixProcessor, AsyncTask
-)
-from src.training.steps.market_analysis.step07_enhanced_reporting import Step07EnhancedReporter
+# Enhanced dependency management with fallbacks
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    warnings.warn("NumPy not available - matrix operations will be limited")
+    NUMPY_AVAILABLE = False
+    np = None
 
-# All dependencies are now required and available
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Pandas not available - DataFrame operations will be limited")
+    PANDAS_AVAILABLE = False
+    pd = None
+
+# Try to import Numba for JIT compilation
+try:
+    from numba import jit, prange, float64, float32
+    import numba as nb
+    NUMBA_AVAILABLE = True
+except ImportError:
+    warnings.warn("Numba not available - JIT compilation disabled")
+    NUMBA_AVAILABLE = False
+    jit = lambda *args, **kwargs: lambda func: func  # No-op decorator
+    prange = range  # Fallback to regular range
+
+# Try to import psutil for memory monitoring
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    warnings.warn("psutil not available - memory monitoring disabled")
+    PSUTIL_AVAILABLE = False
+    # Create a mock psutil class
+    class MockPsutil:
+        class Process:
+            def memory_info(self):
+                class MemoryInfo:
+                    rss = 0
+                return MemoryInfo()
+            def cpu_percent(self):
+                return 0.0
+    psutil = MockPsutil()
+
+# Try to import torch for GPU acceleration
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    warnings.warn("PyTorch not available - GPU acceleration disabled")
+    TORCH_AVAILABLE = False
+    torch = None
+
+# Try to import M1 GPU utilities
+try:
+    from src.utils.m1_gpu_utils import get_m1_gpu_manager, m1_batch_process
+    M1_GPU_UTILS_AVAILABLE = True
+    M1_BATCH_AVAILABLE = True
+except ImportError:
+    warnings.warn("M1 GPU utilities not available - GPU acceleration disabled")
+    M1_GPU_UTILS_AVAILABLE = False
+    M1_BATCH_AVAILABLE = False
+    get_m1_gpu_manager = None
+    m1_batch_process = None
+
+# Safe imports with fallbacks
+try:
+    from src.utils.logger import system_logger
+    SYSTEM_LOGGER_AVAILABLE = True
+except ImportError:
+    warnings.warn("System logger not available - using basic logging")
+    SYSTEM_LOGGER_AVAILABLE = False
+    system_logger = logging.getLogger('step07_fallback')
+    logging.basicConfig(level=logging.INFO)
+
+try:
+    from src.utils.comprehensive_function_logger import (
+        log_step_functions, log_important_calls, log_all_calls,
+        log_internal_call, log_step_progress, log_data_operation
+    )
+    LOGGING_DECORATORS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Logging decorators not available - using no-op decorators")
+    LOGGING_DECORATORS_AVAILABLE = False
+    log_step_functions = lambda func: func
+    log_important_calls = lambda func: func
+    log_all_calls = lambda func: func
+    log_internal_call = lambda func: func
+    log_step_progress = lambda func: func
+    log_data_operation = lambda func: func
+
+try:
+    from ...core.decorators import handles_errors
+    HANDLES_ERRORS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Error handling decorator not available - using no-op decorator")
+    HANDLES_ERRORS_AVAILABLE = False
+    def handles_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+try:
+    from src.training.base_step import BaseStep
+    BASE_STEP_AVAILABLE = True
+except ImportError:
+    warnings.warn("BaseStep not available - using fallback implementation")
+    BASE_STEP_AVAILABLE = False
+    class BaseStep:
+        def __init__(self, config, step_id, step_name):
+            self.config = config
+            self.step_id = step_id
+            self.step_name = step_name
+        async def initialize(self): pass
+        async def execute(self, training_input, pipeline_state): return pipeline_state
+
+try:
+    from src.training.steps.model_training.matrix_components import (
+        MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer,
+        AsyncMatrixProcessor, AsyncTask
+    )
+    MATRIX_COMPONENTS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Matrix components not available - using fallback implementations")
+    MATRIX_COMPONENTS_AVAILABLE = False
+    class MatrixProcessor:
+        def __init__(self, *args, **kwargs): pass
+        async def compute_correlation_matrix(self, data): return data.corr().values if hasattr(data, 'corr') else None
+        async def compute_covariance_matrix(self, data): return data.cov().values if hasattr(data, 'cov') else None
+    class DiverseLookbackIntegrator:
+        def __init__(self, *args, **kwargs): pass
+        async def optimize_lookback_periods(self, *args, **kwargs): return {'optimized_periods': {'short': [5, 10, 20]}}
+    class MatrixOptimizer:
+        def __init__(self, *args, **kwargs): pass
+    class AsyncMatrixProcessor:
+        def __init__(self, *args, **kwargs): pass
+        async def submit_batch(self, tasks): return [task.task_id for task in tasks]
+        async def wait_for_all(self, timeout): return {}
+        async def shutdown(self): pass
+    class AsyncTask:
+        def __init__(self, func, args, kwargs, task_id, priority):
+            self.func = func
+            self.args = args
+            self.kwargs = kwargs
+            self.task_id = task_id
+            self.priority = priority
+
+# Enhanced reporting system is no longer used - using financial metrics logger directly
+ENHANCED_REPORTING_AVAILABLE = False
+class Step07EnhancedReporter:
+        def __init__(self): pass
+        def generate_comprehensive_report(self, *args, **kwargs): return {}
+        def save_comprehensive_report(self, *args, **kwargs): return {}
+
+# Performance optimization flags
+PANDAS_AVAILABLE = PANDAS_AVAILABLE and pd is not None
+NUMPY_AVAILABLE = NUMPY_AVAILABLE and np is not None
+
+# Dependency status logging
+if not NUMPY_AVAILABLE:
+    warnings.warn("NumPy not available - matrix operations will be severely limited")
+if not PANDAS_AVAILABLE:
+    warnings.warn("Pandas not available - DataFrame operations will be severely limited")
+if not NUMBA_AVAILABLE:
+    warnings.warn("Numba not available - JIT compilation disabled, performance will be reduced")
+if not TORCH_AVAILABLE:
+    warnings.warn("PyTorch not available - GPU acceleration disabled")
+if not PSUTIL_AVAILABLE:
+    warnings.warn("psutil not available - memory monitoring disabled")
+
+# Log dependency status
+logger = system_logger.getChild('Step07Dependencies')
+logger.info(f"Dependency status: NumPy={NUMPY_AVAILABLE}, Pandas={PANDAS_AVAILABLE}, Numba={NUMBA_AVAILABLE}, PyTorch={TORCH_AVAILABLE}, psutil={PSUTIL_AVAILABLE}")
+
+
 def check_step07_dependencies() -> Dict[str, bool]:
     """Check Step07 dependency status - all dependencies are required."""
     return {

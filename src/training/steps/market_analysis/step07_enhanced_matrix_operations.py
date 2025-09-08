@@ -94,6 +94,13 @@ try:
 except ImportError as e:
     logger.warning(f"Enhanced step optimizations not available: {e}")
     STEP_OPTIMIZATIONS_AVAILABLE = False
+
+# Import financial metrics logger directly
+try:
+    from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
+    FINANCIAL_LOGGING_AVAILABLE = True
+except ImportError:
+    FINANCIAL_LOGGING_AVAILABLE = False
 project_root = Path(__file__).parent.parent.parent
 import sys
 import collections
@@ -115,12 +122,8 @@ enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integ
 numpy = PipelineStandards.safe_import('numpy', None)
 pandas = PipelineStandards.safe_import('pandas', None)
 
-# Import enhanced reporting system
-try:
-    from .step07_enhanced_reporting import Step07EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
-except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
+# Enhanced reporting system is no longer used - using financial metrics logger directly
+ENHANCED_REPORTING_AVAILABLE = False
 
 # Fallback utilities now imported from src.utils.common_operations
 
@@ -556,6 +559,16 @@ class Step7EnhancedMatrixOperations:
         else:
             self.logger.info('ℹ️ Enhanced reporting system not available, using basic reporting')
             self.enhanced_reporter = None
+
+        # Initialize financial metrics logger
+        self.financial_logger = None
+        if FINANCIAL_LOGGING_AVAILABLE:
+            try:
+                self.financial_logger = get_financial_metrics_logger()
+                self.logger.info('✅ Financial metrics logger initialized for Step07')
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to initialize financial logger: {e}')
+                self.financial_logger = None
 
     @log_all_calls
     def _validate_environment(self) -> None:
@@ -1322,6 +1335,115 @@ class Step7EnhancedMatrixOperations:
 
             except Exception as e:
                 self.logger.warning(f'⚠️ Enhanced reporting failed for Step07, continuing with basic reporting: {e}')
+
+        # Log financial metrics if available
+        if self.financial_logger is not None:
+            try:
+                # Log step start
+                self.financial_logger.log_step_start('step07_enhanced_matrix_operations', symbol, exchange, timeframe)
+                
+                # Log matrix operation metrics
+                matrix_results = pipeline_state.get('step07_enhanced_matrix_operations', {}).get('matrix_results', {})
+                quality_metrics = pipeline_state.get('step07_enhanced_matrix_operations', {}).get('quality_metrics', {})
+                
+                self.financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name='matrix_operations_count',
+                    metric_value=float(len(matrix_results)),
+                    metric_type='performance',
+                    step_name='step07_enhanced_matrix_operations'
+                )
+                
+                self.financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name='data_shape_rows',
+                    metric_value=float(pipeline_state.get('step07_enhanced_matrix_operations', {}).get('data_shape', [0, 0])[0]),
+                    metric_type='performance',
+                    step_name='step07_enhanced_matrix_operations'
+                )
+                
+                self.financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name='data_shape_columns',
+                    metric_value=float(pipeline_state.get('step07_enhanced_matrix_operations', {}).get('data_shape', [0, 0])[1]),
+                    metric_type='performance',
+                    step_name='step07_enhanced_matrix_operations'
+                )
+                
+                # Log quality metrics
+                if quality_metrics:
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='processing_efficiency',
+                        metric_value=float(quality_metrics.get('processing_efficiency', 0.0)),
+                        metric_type='quality',
+                        step_name='step07_enhanced_matrix_operations'
+                    )
+                    
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='memory_usage_mb',
+                        metric_value=float(quality_metrics.get('memory_usage_mb', 0.0)),
+                        metric_type='performance',
+                        step_name='step07_enhanced_matrix_operations'
+                    )
+                
+                # Log optimization metrics
+                if self.m1_optimizations_enabled:
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='m1_optimizations_enabled',
+                        metric_value=1.0,
+                        metric_type='performance',
+                        step_name='step07_enhanced_matrix_operations'
+                    )
+                
+                if self.vectorized_optimizations_enabled:
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name='vectorized_optimizations_enabled',
+                        metric_value=1.0,
+                        metric_type='performance',
+                        step_name='step07_enhanced_matrix_operations'
+                    )
+                
+                # Log file paths for generated outputs
+                output_files = pipeline_state.get('step07_enhanced_matrix_operations', {}).get('output_files', {})
+                for file_type, file_path in output_files.items():
+                    self.financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f'{file_type}_path',
+                        metric_value=0.0,
+                        metric_type='file_path',
+                        step_name='step07_enhanced_matrix_operations',
+                        additional_data={'file_path': file_path}
+                    )
+                
+                # Log step end
+                self.financial_logger.log_step_end('step07_enhanced_matrix_operations', symbol, exchange, timeframe, success=True)
+                
+                self.logger.info('✅ Financial metrics logged successfully for Step07')
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to log financial metrics: {e}')
+                # Log step end with error
+                if self.financial_logger is not None:
+                    self.financial_logger.log_step_end('step07_enhanced_matrix_operations', symbol, exchange, timeframe, success=False, error_message=str(e))
 
         return pipeline_state
 

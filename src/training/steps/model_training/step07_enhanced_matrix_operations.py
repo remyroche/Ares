@@ -176,14 +176,9 @@ except ImportError:
             self.task_id = task_id
             self.priority = priority
 
-# Import enhanced reporting system
-try:
-    from src.training.steps.market_analysis.step07_enhanced_reporting import Step07EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
-except ImportError:
-    warnings.warn("Enhanced reporting not available - using basic reporting")
-    ENHANCED_REPORTING_AVAILABLE = False
-    class Step07EnhancedReporter:
+# Enhanced reporting system is no longer used - using financial metrics logger directly
+ENHANCED_REPORTING_AVAILABLE = False
+class Step07EnhancedReporter:
         def __init__(self): pass
         def generate_comprehensive_report(self, *args, **kwargs): return {}
         def save_comprehensive_report(self, *args, **kwargs): return {}

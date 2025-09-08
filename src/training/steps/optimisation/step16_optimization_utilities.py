@@ -25,17 +25,34 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import cross_val_score
 import logging
 
-logger = logging.getLogger(__name__)
+# Import existing utilities and core modules
+from src.utils.common_operations import (
+    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+    get_current_datetime, format_datetime, safe_sleep, safe_gather,
+    safe_mean, safe_std, safe_float, safe_int, validate_dataframe_schema,
+    validate_data_quality, optimize_dataframe_dtypes, safe_read_parquet,
+    safe_to_parquet, get_logger, setup_basic_logging
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_weighted_average,
+    MathValidationError
+)
+from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+from src.core.decorators import (
+    handles_errors, validates, traced, log_execution_time, cached
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, BusinessRuleError, AppError
+)
 
-class FastFailError(Exception):
+logger = get_logger(__name__)
+
+class FastFailError(AppError):
     """Exception raised when fast-fail conditions are met."""
     pass
 
-class ValidationError(Exception):
-    """Exception raised when validation checks fail."""
-    pass
-
-class ConvergenceError(Exception):
+class ConvergenceError(AppError):
     """Exception raised when convergence fails."""
     pass
 
@@ -79,7 +96,9 @@ class FastFailValidator:
         self.min_samples = config.get('min_samples', 100)
         self.max_missing_ratio = config.get('max_missing_ratio', 0.1)
         self.min_class_balance = config.get('min_class_balance', 0.05)
+        self.logger = get_logger(f"{__name__}.FastFailValidator")
         
+    @handles_errors(fallback=False, context="fast_fail_data_quality_validation")
     def validate_data_quality(self, data: pd.DataFrame, regime_id: Optional[int] = None) -> bool:
         """Fast-fail data quality validation."""
         try:
@@ -90,8 +109,8 @@ class FastFailValidator:
                     f"(minimum required: {self.min_samples})"
                 )
             
-            # Check missing values
-            missing_ratio = data.isnull().sum().sum() / data.size
+            # Check missing values using safe operations
+            missing_ratio = safe_divide(data.isnull().sum().sum(), data.size, default=0.0)
             if missing_ratio > self.max_missing_ratio:
                 raise FastFailError(
                     f"Too many missing values in regime {regime_id}: {missing_ratio:.2%} "
@@ -116,8 +135,8 @@ class FastFailValidator:
                         f"Single class labels in regime {regime_id}: {label_counts.index[0]}"
                     )
                 
-                # Check class balance
-                min_class_ratio = label_counts.min() / label_counts.sum()
+                # Check class balance using safe division
+                min_class_ratio = safe_divide(label_counts.min(), label_counts.sum(), default=0.0)
                 if min_class_ratio < self.min_class_balance:
                     raise FastFailError(
                         f"Severe class imbalance in regime {regime_id}: "
@@ -168,6 +187,7 @@ class ParameterValidator:
     """Enhanced parameter validation utilities."""
     
     @staticmethod
+    @handles_errors(fallback=False, context="parameter_validation")
     def validate_calibration_parameters(params: Dict[str, Any], regime_id: Optional[int] = None) -> bool:
         """Validate calibration parameters with comprehensive checks."""
         try:
@@ -272,10 +292,17 @@ class MemoryOptimizer:
     def __init__(self, memory_limit_gb: float = 8.0):
         self.memory_limit_gb = memory_limit_gb
         self.memory_limit_bytes = memory_limit_gb * 1024**3
+        self.logger = get_logger(f"{__name__}.MemoryOptimizer")
         
+    @handles_errors(fallback=0.0, context="memory_usage_estimation")
     def estimate_memory_usage(self, data: pd.DataFrame) -> float:
         """Estimate memory usage in GB."""
-        return data.memory_usage(deep=True).sum() / 1024**3
+        try:
+            memory_bytes = data.memory_usage(deep=True).sum()
+            return safe_divide(memory_bytes, 1024**3, default=0.0)
+        except Exception as e:
+            self.logger.warning(f"Failed to estimate memory usage: {e}")
+            return 0.0
     
     def optimize_data_loading(self, data: pd.DataFrame, regime_id: Optional[int] = None) -> pd.DataFrame:
         """Optimize data loading and memory usage."""
@@ -300,26 +327,12 @@ class MemoryOptimizer:
             return data
     
     def _optimize_dtypes(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize data types to reduce memory usage."""
-        optimized_data = data.copy()
-        
-        for col in optimized_data.columns:
-            if optimized_data[col].dtype == 'float64':
-                # Try to downcast to float32
-                if optimized_data[col].min() >= np.finfo(np.float32).min and \
-                   optimized_data[col].max() <= np.finfo(np.float32).max:
-                    optimized_data[col] = optimized_data[col].astype(np.float32)
-            
-            elif optimized_data[col].dtype == 'int64':
-                # Try to downcast to smaller int types
-                if optimized_data[col].min() >= np.iinfo(np.int32).min and \
-                   optimized_data[col].max() <= np.iinfo(np.int32).max:
-                    optimized_data[col] = optimized_data[col].astype(np.int32)
-                elif optimized_data[col].min() >= np.iinfo(np.int16).min and \
-                     optimized_data[col].max() <= np.iinfo(np.int16).max:
-                    optimized_data[col] = optimized_data[col].astype(np.int16)
-        
-        return optimized_data
+        """Optimize data types to reduce memory usage using existing utility."""
+        try:
+            return optimize_dataframe_dtypes(data)
+        except Exception as e:
+            self.logger.warning(f"Data type optimization failed: {e}")
+            return data
     
     def _prepare_chunked_processing(self, data: pd.DataFrame, regime_id: Optional[int] = None) -> pd.DataFrame:
         """Prepare data for chunked processing."""
@@ -410,13 +423,13 @@ class EnhancedMatrixOperations:
         return float(ece)
     
     def _calculate_ece_cpu_optimized(self, probabilities: np.ndarray, labels: np.ndarray, n_bins: int) -> float:
-        """CPU-optimized ECE calculation."""
+        """CPU-optimized ECE calculation using safe operations."""
         # Use numpy's digitize for efficient binning
         bins = np.linspace(0, 1, n_bins + 1)
         bin_indices = np.digitize(probabilities, bins) - 1
         bin_indices = np.clip(bin_indices, 0, n_bins - 1)
         
-        # Vectorized calculation
+        # Vectorized calculation with safe operations
         ece = 0.0
         total_samples = len(probabilities)
         
@@ -429,15 +442,16 @@ class EnhancedMatrixOperations:
             bin_labels = labels[bin_mask]
             bin_size = np.sum(bin_mask)
             
-            avg_pred_prob = np.mean(bin_probabilities)
-            avg_accuracy = np.mean(bin_labels)
+            avg_pred_prob = safe_mean(bin_probabilities)
+            avg_accuracy = safe_mean(bin_labels)
             
-            ece += (bin_size / total_samples) * abs(avg_pred_prob - avg_accuracy)
+            bin_weight = safe_divide(bin_size, total_samples, default=0.0)
+            ece += bin_weight * abs(avg_pred_prob - avg_accuracy)
         
         return float(ece)
     
     def _calculate_ece_fallback(self, probabilities: np.ndarray, labels: np.ndarray, n_bins: int) -> float:
-        """Fallback ECE calculation."""
+        """Fallback ECE calculation using safe operations."""
         if len(probabilities) == 0 or len(labels) == 0:
             return 0.0
         
@@ -457,10 +471,11 @@ class EnhancedMatrixOperations:
             bin_labels = labels[bin_mask]
             bin_size = len(bin_probabilities)
             
-            avg_pred_prob = np.mean(bin_probabilities)
-            avg_accuracy = np.mean(bin_labels)
+            avg_pred_prob = safe_mean(bin_probabilities)
+            avg_accuracy = safe_mean(bin_labels)
             
-            ece += (bin_size / total_samples) * abs(avg_pred_prob - avg_accuracy)
+            bin_weight = safe_divide(bin_size, total_samples, default=0.0)
+            ece += bin_weight * abs(avg_pred_prob - avg_accuracy)
         
         return float(ece)
 
@@ -469,6 +484,7 @@ class CalibrationQualityMetrics:
     
     def __init__(self, matrix_ops: Optional[EnhancedMatrixOperations] = None):
         self.matrix_ops = matrix_ops or EnhancedMatrixOperations(use_gpu=False)
+        self.logger = get_logger(f"{__name__}.CalibrationQualityMetrics")
     
     def calculate_comprehensive_metrics(self, probabilities: np.ndarray, labels: np.ndarray) -> CalibrationMetrics:
         """Calculate comprehensive calibration quality metrics."""
@@ -552,13 +568,16 @@ class CalibrationQualityMetrics:
         return max(0.0, 1.0 - ece)
     
     def _calculate_sharpness(self, probabilities: np.ndarray) -> float:
-        """Calculate sharpness (variance of predictions)."""
+        """Calculate sharpness (variance of predictions) using safe operations."""
         if len(probabilities) == 0:
             return 0.0
-        return float(np.var(probabilities))
+        try:
+            return float(safe_std(probabilities) ** 2)
+        except Exception:
+            return 0.0
     
     def _calculate_resolution(self, probabilities: np.ndarray, labels: np.ndarray) -> float:
-        """Calculate resolution (variance of accuracies)."""
+        """Calculate resolution (variance of accuracies) using safe operations."""
         if len(probabilities) == 0 or len(labels) == 0:
             return 0.0
         
@@ -572,29 +591,38 @@ class CalibrationQualityMetrics:
         for bin_idx in range(n_bins):
             bin_mask = bin_indices == bin_idx
             if np.any(bin_mask):
-                bin_accuracy = np.mean(labels[bin_mask])
+                bin_accuracy = safe_mean(labels[bin_mask])
                 accuracies.append(bin_accuracy)
         
-        return float(np.var(accuracies)) if accuracies else 0.0
+        return float(safe_std(accuracies) ** 2) if accuracies else 0.0
     
     def _calculate_aleatoric_uncertainty(self, probabilities: np.ndarray) -> float:
-        """Calculate aleatoric uncertainty (data uncertainty)."""
+        """Calculate aleatoric uncertainty (data uncertainty) using safe operations."""
         if len(probabilities) == 0:
             return 0.0
         
         # Use entropy as proxy for aleatoric uncertainty
         eps = 1e-15
         prob_clipped = np.clip(probabilities, eps, 1 - eps)
-        entropy = -np.mean(prob_clipped * np.log(prob_clipped) + (1 - prob_clipped) * np.log(1 - prob_clipped))
+        
+        # Calculate entropy using safe log operations
+        log_p = np.array([safe_log(p, default=0.0) for p in prob_clipped])
+        log_1_p = np.array([safe_log(1-p, default=0.0) for p in prob_clipped])
+        
+        entropy_terms = prob_clipped * log_p + (1 - prob_clipped) * log_1_p
+        entropy = -safe_mean(entropy_terms)
         return float(entropy)
     
     def _calculate_epistemic_uncertainty(self, probabilities: np.ndarray) -> float:
-        """Calculate epistemic uncertainty (model uncertainty)."""
+        """Calculate epistemic uncertainty (model uncertainty) using safe operations."""
         if len(probabilities) == 0:
             return 0.0
         
         # Use variance as proxy for epistemic uncertainty
-        return float(np.var(probabilities))
+        try:
+            return float(safe_std(probabilities) ** 2)
+        except Exception:
+            return 0.0
     
     def _calculate_calibration_auc(self, probabilities: np.ndarray, labels: np.ndarray) -> float:
         """Calculate calibration AUC."""
@@ -605,11 +633,17 @@ class CalibrationQualityMetrics:
             return 0.0
     
     def _calculate_entropy_score(self, probabilities: np.ndarray) -> float:
-        """Calculate entropy score."""
+        """Calculate entropy score using safe operations."""
         if len(probabilities) == 0:
             return 0.0
         
         eps = 1e-15
         prob_clipped = np.clip(probabilities, eps, 1 - eps)
-        entropy = -np.mean(prob_clipped * np.log(prob_clipped) + (1 - prob_clipped) * np.log(1 - prob_clipped))
+        
+        # Calculate entropy using safe log operations
+        log_p = np.array([safe_log(p, default=0.0) for p in prob_clipped])
+        log_1_p = np.array([safe_log(1-p, default=0.0) for p in prob_clipped])
+        
+        entropy_terms = prob_clipped * log_p + (1 - prob_clipped) * log_1_p
+        entropy = -safe_mean(entropy_terms)
         return float(entropy)

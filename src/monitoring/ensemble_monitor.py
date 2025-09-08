@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from ...utils.logger import system_logger
+from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 """
 Ensemble Monitor for Enhanced ML Monitoring
@@ -11,10 +11,7 @@ with detailed tracking and analysis.
 
 from collections import defaultdict, deque
 
-from .utils.common_operations import (
-    get_current_datetime, format_datetime, ensure_directory,
-)
-from ...utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import datetime
 import logging

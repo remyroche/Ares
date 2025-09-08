@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from ...utils.logger import system_logger
+from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 """
 Enhanced ML Monitoring System
@@ -13,13 +13,10 @@ import json
 from enum import Enum
 from pathlib import Path
 
-from .utils.common_operations import (
-    get_current_datetime, format_datetime, ensure_directory,
-)
-from ...utils.logger import system_logger
+from src.utils.logger import system_logger
 
-from .training.model_interpretability.shap_analyzer import SHAPAnalyzer
-from .training.model_interpretability.lime_analyzer import LIMEAnalyzer
+# SHAP and LIME analyzers will be imported from shap_lime_integration
+# from .shap_lime_integration import SHAPAnalyzer, LIMEAnalyzer
 import numpy as np
 import pandas as pd
 import datetime
@@ -226,6 +223,8 @@ class EnhancedMLMonitor:
     def _initialize_explainability_tools(self):
         """Initialize SHAP and LIME analyzers."""
         try:
+            # Import SHAP and LIME analyzers
+            from .shap_lime_integration import SHAPAnalyzer, LIMEAnalyzer
             
             self.shap_analyzer = SHAPAnalyzer(self.config) if self.enable_shap else None
             self.lime_analyzer = LIMEAnalyzer(self.config) if self.enable_lime else None

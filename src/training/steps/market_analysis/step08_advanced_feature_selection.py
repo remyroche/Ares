@@ -150,6 +150,13 @@ class EnhancedStep08AdvancedFeatureSelection:
             self.logger.warning(f"⚠️ M1 CPU Optimizer initialization failed: {e}")
             self.m1_cpu_optimizer = None
 
+        # Initialize Parquet optimizations
+        try:
+            self._initialize_parquet_optimizations()
+            self.logger.info("✅ Parquet optimizations initialized for Step 8")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Parquet optimizations initialization failed: {e}")
+
         # Initialize Vectorized Processing Core
         try:
             self.pipeline_executor = OptimizedPipelineExecutor(max_concurrent_stages=6)
@@ -229,6 +236,43 @@ class EnhancedStep08AdvancedFeatureSelection:
 
         self.logger.info(f"🎯 Selected optimization strategy for Step 8: {self.optimization_strategy.value}")
         self.logger.info(f"🔧 Enabled optimizations: {decision.enabled_optimizations}")
+
+    def _initialize_parquet_optimizations(self) -> None:
+        """Initialize Parquet optimizations for feature selection data."""
+        try:
+            # Import PyArrow for Parquet optimizations
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            from pyarrow import compute as pc
+            
+            # Parquet metadata cache for feature selection results
+            self.parquet_metadata_cache = {}
+            self.parquet_cache_max_size = self.config.get('parquet_cache_max_size', 50)
+            
+            # Feature selection specific partitioning
+            self.enable_feature_partitioning = self.config.get('enable_feature_partitioning', True)
+            self.feature_partition_columns = self.config.get('feature_partition_columns', ['feature_type', 'selection_phase'])
+            self.feature_partition_threshold = self.config.get('feature_partition_threshold', 500_000)  # 500K features
+            
+            # Columnar optimization for feature matrices
+            self.optimize_feature_storage = self.config.get('optimize_feature_storage', True)
+            self.feature_compression = self.config.get('feature_compression', 'snappy')
+            
+            self.logger.info("📊 Parquet optimizations for feature selection initialized")
+            self.logger.info(f"   🗂️ Feature partitioning enabled: {self.enable_feature_partitioning}")
+            self.logger.info(f"   📋 Feature partition columns: {self.feature_partition_columns}")
+            self.logger.info(f"   💾 Metadata cache size: {self.parquet_cache_max_size}")
+            
+        except ImportError:
+            self.logger.warning("⚠️ PyArrow not available - Parquet optimizations disabled")
+            self.parquet_metadata_cache = {}
+            self.enable_feature_partitioning = False
+            self.optimize_feature_storage = False
+        except Exception as e:
+            self.logger.warning(f"⚠️ Parquet optimization initialization failed: {e}")
+            self.parquet_metadata_cache = {}
+            self.enable_feature_partitioning = False
+            self.optimize_feature_storage = False
 
     def _initialize_legacy_components(self) -> None:
         """Initialize legacy components for backward compatibility."""

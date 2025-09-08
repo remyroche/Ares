@@ -1158,9 +1158,7 @@ class DynamicWeighter:
             },
         }
 
-    # ============================================================================
     # ENHANCED ENSEMBLE WEIGHTING METHODS
-    # ============================================================================
 
     @handles_errors(fallback = None)
     async def update_model_weights_online(

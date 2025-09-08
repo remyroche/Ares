@@ -38,9 +38,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# =============================================================================
 # NUMBA JIT-COMPILED FUNCTIONS
-# =============================================================================
 
 @jit(nopython=True, parallel=True, cache=True)
 def vectorized_rolling_mean(values: np.ndarray, window: int) -> np.ndarray:
@@ -339,9 +337,7 @@ def vectorized_robust_scaling(data: np.ndarray) -> np.ndarray:
 
     return scaled_data
 
-# =============================================================================
 # VECTORIZED FEATURE ENGINEERING FUNCTIONS
-# =============================================================================
 
 class VectorizedFeatureEngineer:
     """Vectorized feature engineering with Numba optimization."""
@@ -490,9 +486,7 @@ class VectorizedFeatureEngineer:
 
         return dist_stats
 
-# =============================================================================
 # PERFORMANCE UTILITIES
-# =============================================================================
 
 class PerformanceProfiler:
     """Performance profiler for vectorized operations."""
@@ -559,9 +553,7 @@ class PerformanceProfiler:
             self.logger.info(f"    Std: {func_stats['std_time']:.4f}s")
             self.logger.info(f"    Calls: {func_stats['call_count']}")
 
-# =============================================================================
 # MAIN INTERFACE
-# =============================================================================
 
 class VectorizedOperationsManager:
     """Main interface for vectorized operations."""
@@ -626,9 +618,7 @@ class VectorizedOperationsManager:
         """Get performance statistics."""
         return self.profiler.get_performance_stats()
 
-# =============================================================================
 # UTILITY FUNCTIONS
-# =============================================================================
 
 def create_vectorized_config(**kwargs) -> Dict[str, Any]:
     """Create configuration for vectorized operations."""

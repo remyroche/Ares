@@ -407,9 +407,7 @@ class PerformanceMonitor:
         """Clear concept drift alerts."""
         self.drift_alerts.clear()
 
-    # ============================================================================
     # REAL-TIME PERFORMANCE TRACKING METHODS
-    # ============================================================================
 
     @handles_errors(
         exceptions=(Exception,),

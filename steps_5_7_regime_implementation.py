@@ -22,10 +22,7 @@ def ensure_directory(path: Path) -> None:
     """Ensure directory exists."""
     path.mkdir(parents=True, exist_ok=True)
 
-
-# ============================================================================
 # STEP 5: Per-Regime Labeling Implementation
-# ============================================================================
 
 class RegimeAwareLabelingStep:
     """Enhanced Step 5 with per-regime labeling."""
@@ -219,10 +216,7 @@ class RegimeAwareLabelingStep:
                 
         return summary
 
-
-# ============================================================================
 # STEP 6: Per-Regime Feature Engineering Implementation
-# ============================================================================
 
 class RegimeAwareFeatureEngineering:
     """Enhanced Step 6 with regime-specific feature engineering."""
@@ -372,10 +366,7 @@ class RegimeAwareFeatureEngineering:
         sma = close.rolling(window).mean()
         return (close - sma) / sma
 
-
-# ============================================================================
 # STEP 7: Per-Regime Matrix Operations Implementation
-# ============================================================================
 
 class RegimeAwareMatrixOperations:
     """Enhanced Step 7 with regime-specific matrix operations."""
@@ -488,10 +479,7 @@ class RegimeAwareMatrixOperations:
 
         return pca_features
 
-
-# ============================================================================
 # Main Integration Function
-# ============================================================================
 
 async def run_regime_aware_pipeline(
     data: pd.DataFrame,
@@ -547,7 +535,6 @@ async def run_regime_aware_pipeline(
         results['error'] = str(e)
         
     return results
-
 
 if __name__ == "__main__":
     # Example usage

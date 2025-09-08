@@ -89,9 +89,7 @@ def safe_read_parquet(path: Union[str, Path]) -> None:
 
 # Removed duplicate ensure_directory function - using the more comprehensive version below
 
-# ============================================================================
 # FALLBACK UTILITIES - Consolidated from multiple duplicate implementations
-# ============================================================================
 
 def create_fallback_logger():
     """Create a fallback logger when the main logging system is unavailable."""
@@ -105,9 +103,7 @@ def create_fallback_decorator():
         return func
     return decorator
 
-# ============================================================================
 # END FALLBACK UTILITIES
-# ============================================================================
 
 def validate_dataframe_schema(df: pd.DataFrame, schema: Any) -> bool:
     """Validate dataframe schema."""

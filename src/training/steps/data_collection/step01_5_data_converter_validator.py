@@ -14,7 +14,6 @@ Features:
 - Health check mechanisms for system and data integrity
 
 Dependencies:
-=============
 Standard Library:
 - asyncio: Asynchronous programming support
 - functools: Function utilities (wraps decorator)
@@ -41,7 +40,6 @@ Local Dependencies:
 - .utils.logger: Logging system
 
 Installation Requirements:
-=========================
 pip install pandas psutil
 
 Optional Dependencies (for enhanced functionality):
@@ -49,7 +47,6 @@ Optional Dependencies (for enhanced functionality):
 - pyarrow: Fast columnar data processing (for parquet files)
 
 Version Requirements:
-====================
 - Python >= 3.8
 - pandas >= 1.3.0
 - psutil >= 5.8.0

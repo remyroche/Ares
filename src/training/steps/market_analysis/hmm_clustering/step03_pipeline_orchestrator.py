@@ -588,9 +588,7 @@ class DAGExecutor:
             'task_errors': {tid: t.error for tid, t in self.tasks.items() if t.error is not None}
         }
 
-# =============================================================================
 # STEP03 SPECIFIC PIPELINE
-# =============================================================================
 
 class Step03PipelineOrchestrator:
     """Pipeline orchestrator specifically for Step03 operations."""
@@ -782,9 +780,7 @@ class Step03PipelineOrchestrator:
             }
         }
 
-# =============================================================================
 # UTILITY FUNCTIONS
-# =============================================================================
 
 def create_step03_pipeline_config(**kwargs) -> Dict[str, Any]:
     """Create configuration for Step03 pipeline."""

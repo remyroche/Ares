@@ -21,10 +21,31 @@ from pathlib import Path
 from datetime import datetime
 import gc
 
+# Import existing utilities and core modules
+from src.utils.common_operations import (
+    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+    get_current_datetime, format_datetime, safe_sleep, safe_gather,
+    safe_mean, safe_std, safe_float, safe_int, validate_dataframe_schema,
+    validate_data_quality, optimize_dataframe_dtypes, safe_read_parquet,
+    safe_to_parquet, get_logger, setup_basic_logging
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_weighted_average,
+    MathValidationError
+)
+from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
+from src.core.decorators import (
+    handles_errors, validates, traced, log_execution_time, cached
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, BusinessRuleError, AppError
+)
+
 from .step16_optimization_utilities import (
     FastFailValidator, ParameterValidator, MemoryOptimizer,
     EnhancedMatrixOperations, CalibrationQualityMetrics,
-    FastFailError, ValidationError, ConvergenceError,
+    FastFailError, ConvergenceError,
     ConvergenceConfig, CalibrationMetrics, OptimizationLevel
 )
 
@@ -34,7 +55,7 @@ from .step16_enhanced_calibration_methods import (
 
 from ..standardized_parquet_handler import standardized_parquet_handler
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class EnhancedStep16ConfidenceCalibration:
     """Enhanced Step 16 Confidence Calibration with comprehensive optimizations."""
@@ -57,6 +78,9 @@ class EnhancedStep16ConfidenceCalibration:
         self.isotonic_regression = EnhancedIsotonicRegression(config)
         self.temperature_scaling = EnhancedTemperatureScaling(config)
         
+        # Initialize parquet utilities
+        self.parquet_utils = get_parquet_utils()
+        
         # Optimization settings
         self.optimization_level = OptimizationLevel(config.get('optimization_level', 'standard'))
         self.enable_parallel_processing = config.get('enable_parallel_processing', True)
@@ -68,6 +92,9 @@ class EnhancedStep16ConfidenceCalibration:
         
         logger.info(f"Enhanced Step 16 Confidence Calibration initialized for {self.symbol}")
     
+    @handles_errors(fallback={'success': False, 'error': 'execution_failed'}, context="enhanced_step16_execution")
+    @traced(span_name="enhanced_step16_confidence_calibration")
+    @log_execution_time("enhanced_step16_execution")
     async def execute(self, symbol: str, exchange: str, timeframe: str, 
                      data_dir: str, **kwargs) -> Dict[str, Any]:
         """Execute enhanced confidence calibration with comprehensive optimizations."""
@@ -190,10 +217,9 @@ class EnhancedStep16ConfidenceCalibration:
                 else:
                     raise FastFailError(f"Specialist data not found: {specialist_path}")
             
-            # Load data
+            # Load data using safe operations
             if specialist_path.suffix == '.json':
-                with open(specialist_path, 'r') as f:
-                    specialist_data = json.load(f)
+                specialist_data = safe_json_load(specialist_path)
             else:
                 # Handle other formats if needed
                 raise FastFailError(f"Unsupported file format: {specialist_path.suffix}")
@@ -627,9 +653,8 @@ class EnhancedStep16ConfidenceCalibration:
                 }
             }
             
-            # Save to file
-            with open(results_file, 'w') as f:
-                json.dump(enhanced_results, f, indent=2, default=str)
+            # Save to file using safe operations
+            safe_json_dump(enhanced_results, results_file, indent=2, default=str)
             
             logger.info(f"✅ Enhanced calibration results saved: {results_file}")
             return True
@@ -639,6 +664,9 @@ class EnhancedStep16ConfidenceCalibration:
             return False
 
 # Enhanced entry points
+@handles_errors(fallback={'success': False, 'error': 'run_enhanced_step16_failed'}, context="run_enhanced_step16")
+@traced(span_name="run_enhanced_step16")
+@log_execution_time("run_enhanced_step16")
 async def run_enhanced_step16(symbol: str, exchange: str, timeframe: str, 
                             data_dir: str = None, **kwargs) -> Dict[str, Any]:
     """Enhanced entry point for Step 16: Confidence Calibration."""
@@ -693,6 +721,9 @@ async def run_enhanced_step16(symbol: str, exchange: str, timeframe: str,
     
     return result
 
+@handles_errors(fallback=False, context="run_step")
+@traced(span_name="run_step")
+@log_execution_time("run_step")
 async def run_step(symbol: str, exchange: str, timeframe: str, 
                   data_dir: str = None, **kwargs) -> bool:
     """Standard entry point for Step 16: Enhanced Confidence Calibration."""

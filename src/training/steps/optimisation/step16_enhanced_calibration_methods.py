@@ -22,14 +22,34 @@ from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.metrics import brier_score_loss, log_loss
 import logging
 
+# Import existing utilities and core modules
+from src.utils.common_operations import (
+    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+    get_current_datetime, format_datetime, safe_sleep, safe_gather,
+    safe_mean, safe_std, safe_float, safe_int, validate_dataframe_schema,
+    validate_data_quality, optimize_dataframe_dtypes, safe_read_parquet,
+    safe_to_parquet, get_logger, setup_basic_logging
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_weighted_average,
+    MathValidationError
+)
+from src.core.decorators import (
+    handles_errors, validates, traced, log_execution_time, cached
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, BusinessRuleError, AppError
+)
+
 from .step16_optimization_utilities import (
     FastFailValidator, ParameterValidator, MemoryOptimizer, 
     EnhancedMatrixOperations, CalibrationQualityMetrics,
-    FastFailError, ValidationError, ConvergenceError,
+    FastFailError, ConvergenceError,
     ConvergenceConfig, CalibrationMetrics
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class EnhancedPlattScaling:
     """Enhanced Platt scaling with convergence optimization and validation."""
@@ -41,7 +61,11 @@ class EnhancedPlattScaling:
         self.memory_optimizer = MemoryOptimizer(config.get('memory_limit_gb', 8.0))
         self.matrix_ops = EnhancedMatrixOperations(config.get('use_gpu', True))
         self.metrics_calculator = CalibrationQualityMetrics(self.matrix_ops)
+        self.logger = get_logger(f"{__name__}.EnhancedPlattScaling")
         
+    @handles_errors(fallback=None, context="enhanced_platt_scaling_calibration")
+    @traced(span_name="enhanced_platt_scaling")
+    @log_execution_time("platt_scaling_calibration")
     def calibrate(self, probabilities: np.ndarray, labels: np.ndarray, 
                   regime_id: Optional[int] = None) -> Dict[str, Any]:
         """Enhanced Platt scaling calibration with comprehensive optimization."""
@@ -194,7 +218,11 @@ class EnhancedIsotonicRegression:
         self.memory_optimizer = MemoryOptimizer(config.get('memory_limit_gb', 8.0))
         self.matrix_ops = EnhancedMatrixOperations(config.get('use_gpu', True))
         self.metrics_calculator = CalibrationQualityMetrics(self.matrix_ops)
+        self.logger = get_logger(f"{__name__}.EnhancedIsotonicRegression")
         
+    @handles_errors(fallback=None, context="enhanced_isotonic_regression_calibration")
+    @traced(span_name="enhanced_isotonic_regression")
+    @log_execution_time("isotonic_regression_calibration")
     def calibrate(self, probabilities: np.ndarray, labels: np.ndarray,
                   regime_id: Optional[int] = None) -> Dict[str, Any]:
         """Enhanced isotonic regression calibration."""
@@ -392,7 +420,11 @@ class EnhancedTemperatureScaling:
         self.memory_optimizer = MemoryOptimizer(config.get('memory_limit_gb', 8.0))
         self.matrix_ops = EnhancedMatrixOperations(config.get('use_gpu', True))
         self.metrics_calculator = CalibrationQualityMetrics(self.matrix_ops)
+        self.logger = get_logger(f"{__name__}.EnhancedTemperatureScaling")
         
+    @handles_errors(fallback=None, context="enhanced_temperature_scaling_calibration")
+    @traced(span_name="enhanced_temperature_scaling")
+    @log_execution_time("temperature_scaling_calibration")
     def calibrate(self, probabilities: np.ndarray, labels: np.ndarray,
                   regime_id: Optional[int] = None) -> Dict[str, Any]:
         """Enhanced temperature scaling calibration."""

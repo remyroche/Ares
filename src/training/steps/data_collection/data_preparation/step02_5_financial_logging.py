@@ -105,8 +105,25 @@ class Step02_5FinancialLogger:
                     step_name="Step02_5_SR_Optimization"
                 )
                 
-                # Note: Training/test sample counts are logged in regular system logs
-                # Financial metrics logger focuses only on financial/trading metrics
+                self.financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="ml_training_samples",
+                    metric_value=float(ml_results.get('training_samples', 0)),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                self.financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="ml_test_samples",
+                    metric_value=float(ml_results.get('test_samples', 0)),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
                 
                 # Log feature importance
                 feature_importance = ml_results.get('feature_importance', {})
@@ -261,8 +278,61 @@ class Step02_5FinancialLogger:
                     step_name="Step02_5_SR_Optimization"
                 )
                 
-                # Note: Cluster sizes, centers, and technical clustering metrics are logged in regular system logs
-                # Financial metrics logger focuses only on financial/trading metrics
+                # Log cluster sizes
+                cluster_sizes = clustering_results.get('cluster_sizes', [])
+                if cluster_sizes:
+                    for i, size in enumerate(cluster_sizes):
+                        self.financial_logger.log_financial_metric(
+                            symbol=self.symbol,
+                            exchange=self.exchange,
+                            timeframe=self.timeframe,
+                            metric_name=f"cluster_{i}_size",
+                            metric_value=float(size),
+                            metric_type="clustering",
+                            step_name="Step02_5_SR_Optimization"
+                        )
+                
+                # Log cluster centers if available
+                cluster_centers = clustering_results.get('cluster_centers', [])
+                if cluster_centers:
+                    for i, center in enumerate(cluster_centers):
+                        if isinstance(center, (list, np.ndarray)):
+                            for j, coord in enumerate(center):
+                                self.financial_logger.log_financial_metric(
+                                    symbol=self.symbol,
+                                    exchange=self.exchange,
+                                    timeframe=self.timeframe,
+                                    metric_name=f"cluster_{i}_center_{j}",
+                                    metric_value=float(coord),
+                                    metric_type="clustering",
+                                    step_name="Step02_5_SR_Optimization"
+                                )
+                
+                # Log explained variance ratio if available
+                explained_variance = clustering_results.get('explained_variance_ratio', 0.0)
+                if explained_variance:
+                    self.financial_logger.log_financial_metric(
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
+                        metric_name="clustering_explained_variance_ratio",
+                        metric_value=explained_variance,
+                        metric_type="quality",
+                        step_name="Step02_5_SR_Optimization"
+                    )
+                
+                # Log feature reduction efficiency if available
+                feature_reduction_efficiency = clustering_results.get('feature_reduction_efficiency', 0.0)
+                if feature_reduction_efficiency:
+                    self.financial_logger.log_financial_metric(
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
+                        metric_name="clustering_feature_reduction_efficiency",
+                        metric_value=feature_reduction_efficiency,
+                        metric_type="quality",
+                        step_name="Step02_5_SR_Optimization"
+                    )
             
             # Log detailed S/R level metrics
             if sr_levels:

@@ -11,8 +11,23 @@ from src.training.steps.model_training.validation.step19_monte_carlo_validation 
 from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
 from .utils.pipeline_standards import pipeline_standards
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors, traced, validates
+from src.core.decorators import handles_errors, traced, validates, log_execution_time, timeout
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
+# Import utility modules
+from src.utils.common_operations import (
+    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+    safe_mean, safe_std, safe_float, safe_int, get_current_datetime,
+    safe_append, safe_extend, safe_dict_get
+)
+from src.utils.math_validation import (
+    safe_divide, validate_finite, validate_positive, validate_range,
+    safe_weighted_average, MathValidationError
+)
+from src.utils.parquet_utils import get_parquet_utils
+from src.core.errors import (
+    AppError, ValidationError, DataIntegrityError, ServiceUnavailableError
+)
 
 # Financial Metrics Logging import
 try:
@@ -148,13 +163,13 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
             self.logger.exception(f'❌ Error in per-regime Monte Carlo validation for regime {regime_id}: {e}')
             return False
 
+    @handles_errors(default_return=None, context="PerRegimeMonteCarloValidationStep._load_validation_data")
     async def _load_validation_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: int) -> Optional[Dict[str, Any]]:
-        """Load validation data for regime."""
+        """Load validation data for regime using utility functions."""
         try:
             validation_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_walk_forward_validation_regime_{regime_id}.json'
-            if validation_path.exists():
-                with open(validation_path, 'r') as f:
-                    return json.load(f)
+            if safe_file_exists(validation_path):
+                return safe_json_load(validation_path)
             return None
         except Exception as e:
             self.logger.error(f'❌ Error loading validation data for regime {regime_id}: {e}')
@@ -268,12 +283,17 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
             }
         }
 
+    @handles_errors(default_return=False, context="PerRegimeMonteCarloValidationStep._save_mc_results")
     async def _save_mc_results(self, mc_results: Dict[str, Any], symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: int) -> bool:
-        """Save Monte Carlo results for regime."""
+        """Save Monte Carlo results for regime using utility functions."""
         try:
             mc_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_monte_carlo_validation_regime_{regime_id}.json'
-            with open(mc_path, 'w') as f:
-                json.dump(mc_results, f, indent = 2, default = str)
+            
+            # Ensure directory exists
+            ensure_directory(mc_path.parent)
+            
+            # Use safe JSON dump
+            safe_json_dump(mc_results, mc_path, indent=2, default=str)
             self.logger.info(f'✅ Saved Monte Carlo results for regime {regime_id}')
             return True
         except Exception as e:
@@ -282,7 +302,9 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
 
 @traced(span_name='run_per_regime_monte_carlo_validation_step')
 @validates()
-@handles_errors(exceptions=(Exception,), fallback = False)
+@handles_errors(exceptions=(Exception,), fallback=False)
+@log_execution_time
+@timeout(3600)  # 1 hour timeout
 async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: Optional[Dict[str, Any]]=None) -> bool:
     """Run the per-regime Monte Carlo validation step."""
     logger.info('🚀 Starting Step 19: Per-Regime Monte Carlo Validation')

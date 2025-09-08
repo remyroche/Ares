@@ -1,7 +1,6 @@
 # src/training/steps/model_training/validation/step19_monte_carlo_validation.py
 
 import asyncio
-
 import os
 import pandas as pd
 from datetime import datetime
@@ -15,8 +14,25 @@ import threading
 from .core.domain import ParquetDatasetManager
 from src.utils.logger import system_logger
 from ...base_step import BaseStep
-from .core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates, handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+
+# Import utility modules
+from src.utils.common_operations import (
+    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+    safe_mean, safe_std, safe_float, safe_int, get_current_datetime,
+    safe_append, safe_extend, safe_dict_get, safe_lower, safe_upper
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, MathValidationError
+)
+from src.utils.parquet_utils import get_parquet_utils, ParquetUtils
+from src.core.errors import (
+    AppError, ValidationError, DataIntegrityError, ServiceUnavailableError,
+    TimeoutError, BusinessRuleError
+)
 
 # Import optimization tools
 from src.utils.vectorized_processing_core import OptimizedPipelineExecutor, PipelineStage
@@ -184,24 +200,34 @@ class OptimizedMonteCarloEngine:
                 annualized_returns = np.power(1 + total_returns, 252 / trading_days, dtype=np.float32) - 1
                 annualized_volatilities = np.std(bootstrap_returns, axis=1, dtype=np.float32) * np.sqrt(252)
 
-                # Optimized Sharpe ratio calculation
+                # Optimized Sharpe ratio calculation using math validation utilities
                 risk_free_rate = 0.02
                 excess_returns = annualized_returns - risk_free_rate
-                sharpe_ratios = np.divide(
-                    excess_returns,
-                    annualized_volatilities,
-                    out=np.zeros_like(annualized_volatilities),
-                    where=annualized_volatilities > 1e-8  # Avoid division by very small numbers
-                )
+                
+                # Use safe division for Sharpe ratios
+                sharpe_ratios = np.zeros_like(annualized_volatilities)
+                for i in range(len(annualized_volatilities)):
+                    sharpe_ratios[i] = safe_divide(
+                        excess_returns[i], 
+                        annualized_volatilities[i], 
+                        default=0.0, 
+                        epsilon=1e-8
+                    )
 
-                # Enhanced maximum drawdown calculation
+                # Enhanced maximum drawdown calculation using safe division
                 peaks = np.maximum.accumulate(cumulative_returns, axis=1)
-                drawdowns = np.divide(
-                    cumulative_returns - peaks,
-                    peaks,
-                    out=np.zeros_like(cumulative_returns),
-                    where=peaks > 1e-8
-                )
+                drawdowns = np.zeros_like(cumulative_returns)
+                
+                # Use safe division for drawdowns
+                for i in range(cumulative_returns.shape[0]):
+                    for j in range(cumulative_returns.shape[1]):
+                        drawdowns[i, j] = safe_divide(
+                            cumulative_returns[i, j] - peaks[i, j],
+                            peaks[i, j],
+                            default=0.0,
+                            epsilon=1e-8
+                        )
+                
                 max_drawdowns = np.min(drawdowns, axis=1)
 
                 # Optimized win rate calculation
@@ -278,6 +304,7 @@ class MonteCarloEngine(OptimizedMonteCarloEngine):
 class Step19MonteCarloValidation(BaseStep):
     """Step 19: Monte Carlo Validation with comprehensive statistical analysis."""
 
+    @handles_errors(default_return=None, context="Step19MonteCarloValidation._validate_environment")
     @log_all_calls
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration with fast-fail checks."""
@@ -294,7 +321,7 @@ class Step19MonteCarloValidation(BaseStep):
         if missing_deps:
             error_msg = f"Critical dependencies missing: {missing_deps}. Cannot proceed with Monte Carlo validation."
             self.logger.error(f"🚨 {error_msg}")
-            raise ImportError(error_msg)
+            raise ServiceUnavailableError(error_msg)
         
         # Validate optimization modules availability
         optimization_available = True
@@ -354,40 +381,40 @@ class Step19MonteCarloValidation(BaseStep):
         }
     
     def _validate_simulation_count(self, training_input: dict[str, Any]) -> int:
-        """Validate and determine simulation count with bounds checking."""
-        n_simulations = training_input.get("monte_carlo_simulations", 1000)
+        """Validate and determine simulation count with bounds checking using utility functions."""
+        n_simulations = safe_dict_get(training_input, "monte_carlo_simulations", 1000)
         
+        # Use safe conversion with validation
+        n_simulations = safe_int(n_simulations, 1000)
+        
+        # Enforce reasonable bounds using math validation
         try:
-            n_simulations = int(n_simulations)
-        except (ValueError, TypeError):
-            self.logger.warning("Invalid simulation count, using default: 1000")
-            return 1000
-        
-        # Enforce reasonable bounds
-        min_simulations = 100
-        max_simulations = 100000
-        
-        if n_simulations < min_simulations:
-            self.logger.warning(f"Simulation count too low ({n_simulations}), using minimum: {min_simulations}")
-            return min_simulations
-        elif n_simulations > max_simulations:
-            self.logger.warning(f"Simulation count too high ({n_simulations}), using maximum: {max_simulations}")
-            return max_simulations
-        
-        return n_simulations
+            n_simulations = validate_range(n_simulations, 100, 100000, "simulation_count")
+            return n_simulations
+        except MathValidationError as e:
+            self.logger.warning(f"Simulation count validation failed: {e}")
+            # Return safe defaults based on the error
+            if n_simulations < 100:
+                self.logger.warning("Simulation count too low, using minimum: 100")
+                return 100
+            elif n_simulations > 100000:
+                self.logger.warning("Simulation count too high, using maximum: 100000")
+                return 100000
+            return 1000  # Default fallback
     
     def _validate_random_seed(self, training_input: dict[str, Any]) -> int:
-        """Validate random seed parameter."""
-        random_seed = training_input.get("random_seed", 42)
+        """Validate random seed parameter using utility functions."""
+        random_seed = safe_dict_get(training_input, "random_seed", 42)
         
+        # Use safe conversion
+        random_seed = safe_int(random_seed, 42)
+        
+        # Validate positive value
         try:
-            random_seed = int(random_seed)
-            if random_seed < 0:
-                self.logger.warning("Negative random seed, using default: 42")
-                return 42
+            random_seed = validate_positive(random_seed, "random_seed")
             return random_seed
-        except (ValueError, TypeError):
-            self.logger.warning("Invalid random seed, using default: 42")
+        except MathValidationError as e:
+            self.logger.warning(f"Random seed validation failed: {e}, using default: 42")
             return 42
     
     def _check_resource_constraints(self, n_simulations: int) -> dict[str, Any]:
@@ -456,6 +483,9 @@ class Step19MonteCarloValidation(BaseStep):
             )
             raise
 
+    @handles_errors(default_return={"status": "FAILED", "error": "Execution failed"}, context="Step19MonteCarloValidation.execute")
+    @log_execution_time
+    @timeout(7200)  # 2 hour timeout
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> dict[str, Any]:
@@ -477,7 +507,7 @@ class Step19MonteCarloValidation(BaseStep):
             if not validation_result["valid"]:
                 error_msg = f"Input validation failed: {validation_result['errors']}"
                 self.logger.error(f"🚨 {error_msg}")
-                return {"status": "FAILED", "error": error_msg, "duration": 0}
+                raise ValidationError(error_msg)
 
             # Extract and validate parameters
             symbol = training_input.get("symbol", "ETHUSDT")
@@ -493,7 +523,7 @@ class Step19MonteCarloValidation(BaseStep):
             if not resource_check["sufficient"]:
                 error_msg = f"Insufficient resources: {resource_check['reason']}"
                 self.logger.error(f"🚨 {error_msg}")
-                return {"status": "FAILED", "error": error_msg, "duration": 0}
+                raise ServiceUnavailableError(error_msg)
 
             # Memory optimization checkpoint
             with self.m1_memory_optimizer.memory_checkpoint("monte_carlo_validation"):
@@ -771,30 +801,24 @@ class Step19MonteCarloValidation(BaseStep):
 
         os.makedirs(data_dir, exist_ok=True)
 
-        # Persist using optimized data manager
-        await self.optimized_data_manager.save_data_async(
-            data=mc_results,
-            file_path=mc_results_file,
-            data_type="model_results",
-            format="json",
-            compression="gzip"
-        )
+        # Persist using common operations utilities
+        try:
+            safe_json_dump(mc_results, mc_results_file, indent=2)
+            self.logger.info(f"✅ Saved Monte Carlo results to: {mc_results_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save Monte Carlo results: {e}")
 
-        await self.optimized_data_manager.save_data_async(
-            data=mc_performance,
-            file_path=mc_performance_file,
-            data_type="performance_metrics",
-            format="json",
-            compression="gzip"
-        )
+        try:
+            safe_json_dump(mc_performance, mc_performance_file, indent=2)
+            self.logger.info(f"✅ Saved Monte Carlo performance to: {mc_performance_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save Monte Carlo performance: {e}")
 
-        await self.optimized_data_manager.save_data_async(
-            data=mc_metadata,
-            file_path=mc_metadata_file,
-            data_type="metadata",
-            format="json",
-            compression="gzip"
-        )
+        try:
+            safe_json_dump(mc_metadata, mc_metadata_file, indent=2)
+            self.logger.info(f"✅ Saved Monte Carlo metadata to: {mc_metadata_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save Monte Carlo metadata: {e}")
 
         # Also save to centralized reporting system
         from src.training.reports import save_training_report
@@ -877,8 +901,11 @@ class Step19MonteCarloValidation(BaseStep):
         return mc_base
 
     async def _load_historical_data_optimized(self, symbol: str, exchange: str, data_dir: str) -> Optional[np.ndarray]:
-        """Load historical data using optimized data manager with comprehensive validation."""
+        """Load historical data using parquet utilities with comprehensive validation."""
         try:
+            # Initialize parquet utilities
+            parquet_utils = get_parquet_utils()
+            
             # Try loading from various optimized data sources
             data_paths = [
                 f"{data_dir}/{exchange}_{symbol}_returns.parquet",
@@ -887,22 +914,31 @@ class Step19MonteCarloValidation(BaseStep):
             ]
 
             for data_path in data_paths:
-                if os.path.exists(data_path):
+                if safe_file_exists(data_path):
                     self.logger.info(f"Attempting to load data from: {data_path}")
                     
                     try:
-                        # Validate file size and accessibility
-                        file_size_mb = os.path.getsize(data_path) / (1024**2)
+                        # Validate parquet file using utility
+                        validation_result = parquet_utils.validate_parquet_file(data_path)
+                        if not validation_result["valid"]:
+                            self.logger.warning(f"Parquet validation failed for {data_path}: {validation_result.get('error', 'Unknown error')}")
+                            continue
+                        
+                        # Check file size
+                        file_size_mb = validation_result["file_size"] / (1024**2)
                         if file_size_mb > 1000:  # Skip files larger than 1GB
                             self.logger.warning(f"File too large ({file_size_mb:.1f}MB), skipping: {data_path}")
                             continue
                         
-                        # Use optimized data manager for loading
-                        df = await self.optimized_data_manager.load_data_async(
+                        # Use parquet utilities for safe loading
+                        df = parquet_utils.safe_read_parquet(
                             file_path=data_path,
-                            data_type="dataframe",
-                            columns=["close"] if "close" in standardized_parquet_handler.read_parquet_standardized(data_path, nrows=1).columns else None
+                            columns=["close"] if "close" in validation_result.get("columns", []) else None
                         )
+                        
+                        if df is None:
+                            self.logger.warning(f"Failed to read parquet file: {data_path}")
+                            continue
 
                         # Comprehensive data validation
                         validation_result = self._validate_historical_data(df, data_path)

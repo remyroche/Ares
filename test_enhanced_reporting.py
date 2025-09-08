@@ -14,7 +14,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-from training.steps.data_collection.data_preparation.step02_5_enhanced_reporting import Step02_5EnhancedReporter
+from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
 from training.reports import save_training_report
 
 def create_comprehensive_test_data():
@@ -181,58 +181,23 @@ def main():
 
         # Initialize enhanced reporter
         print("📝 Initializing Enhanced Reporter...")
-        reporter = Step02_5EnhancedReporter('BTCUSDT', 'binance', '1h')
+        reporter = Step02_5FinancialLogger('BTCUSDT', 'binance', '1h')
         print("✅ Enhanced Reporter Ready")
         print()
 
-        # Generate comprehensive report
-        print("📈 Generating Comprehensive Report...")
+        # Log financial metrics
+        print("📈 Logging Financial Metrics...")
         print("   This may take a moment due to extensive analysis...")
 
-        report = reporter.generate_comprehensive_report(
+        reporter.log_step_execution(
             sr_levels=sr_levels,
             ml_results=ml_results,
             execution_data=execution_data,
             data=test_data
         )
 
-        print("✅ Comprehensive Report Generated Successfully!")
-        print(f"   📊 Main Sections: {len(report)}")
-        print(f"   📋 Available Sections: {', '.join(list(report.keys())[:8])}...")
+        print("✅ Financial Metrics Logged Successfully!")
         print()
-
-        # Analyze report comprehensiveness
-        print("📋 Report Comprehensiveness Analysis:")
-        sections_count = len(report)
-
-        # Count detailed subsections
-        detailed_sections = 0
-        for key, value in report.items():
-            if isinstance(value, dict) and len(value) > 3:
-                detailed_sections += 1
-
-        print(f"   🎯 Main Sections: {sections_count}")
-        print(f"   📈 Detailed Subsections: {detailed_sections}")
-        print()
-
-        # Save reports
-        print("💾 Saving Enhanced Reports...")
-        saved_reports = reporter.save_comprehensive_report(
-            report_data=report,
-            include_visualizations=False  # Skip visualizations for faster testing
-        )
-
-        print("✅ Reports Saved Successfully!")
-        print("   📄 Generated Files:")
-        for report_type, file_path in saved_reports.items():
-            file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-            print(f"   📄 {report_type}: {file_path} ({file_size/1024:.1f} KB)")
-        print()
-
-        # Show report improvement comparison
-        print("📊 Report Enhancement Comparison:")
-        print("   ❌ OLD REPORT: 50 lines, 7 basic sections")
-        print(f"   ✅ NEW REPORT: ~{len(report)*15}+ lines, {sections_count} comprehensive sections")
         print("   📈 IMPROVEMENT: ~300% more content and analysis")
         print()
 

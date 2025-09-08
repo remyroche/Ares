@@ -1,6 +1,7 @@
 # src/config/validation.py
 
 from typing import Any
+import logging
 
 def _require_keys(
     d: dict[str, Any],

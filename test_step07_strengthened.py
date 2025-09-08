@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Test script for strengthened Step07 with dependency management.
 
@@ -47,6 +49,7 @@ def test_step07_dependencies():
     except Exception as e:
         print(f"❌ Error testing dependencies: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

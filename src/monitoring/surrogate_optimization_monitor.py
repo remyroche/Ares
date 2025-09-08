@@ -11,6 +11,7 @@ import pandas as pd
 
 import os
 import time
+import logging
 
 @dataclass
 class OptimizationMetrics:

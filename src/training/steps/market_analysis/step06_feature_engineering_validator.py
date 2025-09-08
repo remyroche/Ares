@@ -7,6 +7,7 @@ from src.core.decorators.logging import log_execution_time, log_call
 
 from src.utils.logger import system_logger
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
 
 def smart_validation_cache(*args, **kwargs):
     def decorator(func: Callable):
@@ -17,6 +18,7 @@ try:
 except ImportError:
     import logging
     import datetime
+
     system_logger = logging.getLogger(__name__)
 
 class BaseValidator:

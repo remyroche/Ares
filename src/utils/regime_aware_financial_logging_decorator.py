@@ -31,6 +31,8 @@ except ImportError:
 # Import the main logger
 try:
     from src.utils.logger import system_logger
+import logging
+
 except ImportError:
     system_logger = None
 

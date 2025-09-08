@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from collections import defaultdict, Counter
 from datetime import datetime
+import numpy as np
+import sys
 
 class RepositoryAnalyzer:
     def __init__(self, root_dir="."):

@@ -1,7 +1,7 @@
-import pandas as pd
 import numpy as np
 from ...utils.logger import system_logger
 from .core.decorators import handles_errors
+import pandas as pd
 
 # src/analyst/multi_timeframe_feature_engineering.py
 
@@ -26,6 +26,7 @@ from typing import Any
 
 from .config import CONFIG
 from ...utils.logger import system_logger
+import time
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent

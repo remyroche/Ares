@@ -10,6 +10,8 @@ from ..standardized_parquet_handler import standardized_parquet_handler
 """Model optimization component for analyst enhancement."""
 from sklearn.metrics import accuracy_score
 from src.utils.logger import system_logger
+import collections
+import logging
 
 class ModelOptimizer:
     """Handles model-specific optimizations for analyst models."""

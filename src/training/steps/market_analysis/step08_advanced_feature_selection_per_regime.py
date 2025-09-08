@@ -16,6 +16,7 @@ import numpy as np
 from ....utils.decorators import traced, validates, handles_errors
 from src.utils.logger import get_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+import logging
 
 logger = get_logger('Step8AdvancedFeatureSelectionPerRegime')
 

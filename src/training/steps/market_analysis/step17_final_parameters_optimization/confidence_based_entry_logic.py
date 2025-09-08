@@ -18,6 +18,7 @@ from src.utils.logger import system_logger
 import numpy as np
 
 from .utils.linear_confidence_scaling import LinearConfidenceScaler
+import logging
 
 @dataclass
 class BarrierPrediction:

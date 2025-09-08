@@ -18,6 +18,8 @@ from src.utils.logger import system_logger
 
 # Ensure these imports are correct relative to the project root
 from src.config import CONFIG
+import logging
+import numpy as np
 
 class RegularizationManager:
     """Manages the L1-L2 regularization configuration for the Ares Trading Bot's'"

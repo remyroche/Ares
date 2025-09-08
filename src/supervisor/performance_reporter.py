@@ -10,6 +10,8 @@ from src.utils.logger import system_logger
 import numpy as np
 
 from src.core.decorators import handles_errors
+import logging
+import time
 
 class AdvancedReportingEngine:
     """Advanced reporting engine with real-time analytics and comprehensive analysis."""

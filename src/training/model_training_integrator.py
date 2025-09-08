@@ -19,6 +19,8 @@ from .utils.data_optimizer import get_data_optimizer
 from src.utils.warning_symbols import error, failed, initialization_error
 import numpy as np
 import pandas as pd
+import logging
+import time
 
 class ModelTrainingIntegrator:
     """Model Training Integrator for enabling full functionality with trained models."""

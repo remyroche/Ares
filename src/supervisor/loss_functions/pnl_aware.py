@@ -7,6 +7,7 @@ that combine standard classification loss with financial components.
 
 from typing import Any
 from tensorflow.keras import backend as K
+import numpy as np
 
 def create_pnl_aware_loss(pnl_multiplier: Any = 0.1, liquidation_penalty: Any = 2.0, reward_boost: Any = 1.5) -> Any:
     """

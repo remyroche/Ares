@@ -46,6 +46,7 @@ def get_default_symbol() -> str:
 from src.core.decorators.logging import log_execution_time, log_call
 from src.core.decorators.cache import cached
 from src.core.decorators.retry_timeout import timeout, circuit_breaker
+import os
 
 # Import optimized components
 try:

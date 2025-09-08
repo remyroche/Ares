@@ -3,6 +3,7 @@ from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.config.environment import get_environment_settings
 from ..standardized_parquet_handler import standardized_parquet_handler
+import pandas as pd
 
 """Step Validators for Optimisation Pipeline.
 
@@ -47,6 +48,10 @@ from src.utils.logger import system_logger
 # Import decorators
 try:
     from src.core.decorators.validate import validates
+import logging
+import os
+import time
+
 except ImportError:
     # Fallback decorator
     def validates(*args, **kwargs):
@@ -55,7 +60,6 @@ except ImportError:
         return decorator
 
 import psutil
-import pandas as pd
 
 from typing import Dict, Any, List, Optional
 

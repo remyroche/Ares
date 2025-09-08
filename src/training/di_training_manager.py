@@ -16,6 +16,8 @@ from .core.injectable_base import InjectableBase
 from .interfaces.base_interfaces import IExchangeClient, IStateManager
 
 from src.utils.warning_symbols import (
+import logging
+
     failed,
     initialization_error,
     invalid,

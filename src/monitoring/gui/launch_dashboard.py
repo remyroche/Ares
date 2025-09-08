@@ -12,6 +12,7 @@ from typing import Dict, Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from .monitoring.gui.enhanced_dashboard import create_enhanced_monitoring_dashboard
 from ...utils.logger import system_logger
+import logging
 
 def check_dependencies() -> bool:
     """Check if required dependencies are available."""

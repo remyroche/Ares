@@ -11,6 +11,7 @@ import sys
 import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+import pandas as pd
 
 
 class ParquetStandardizationValidator:

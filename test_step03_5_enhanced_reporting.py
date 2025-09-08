@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Test script for enhanced step03_5 reporting functionality.
 
@@ -10,8 +13,6 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-import pandas as pd
-import numpy as np
 from datetime import datetime
 
 from training.steps.market_analysis.hmm_clustering.step03_enhanced_reporting import Step03EnhancedReporter

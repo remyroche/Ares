@@ -20,6 +20,9 @@ import numpy as np
 # Financial Metrics Logging import
 try:
     from src.training.steps.optimisation.step17_financial_logging import Step17FinancialLogger
+import logging
+import time
+
     FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False

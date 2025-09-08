@@ -9,6 +9,9 @@ import sys
 from pathlib import Path
 from collections import defaultdict
 from datetime import datetime
+import numpy as np
+import time
+import typing
 
 
 def load_dead_code_data(report_file: Path) -> dict:

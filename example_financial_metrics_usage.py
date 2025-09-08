@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from src.utils.financial_metrics_logger import (
+import logging
+
     get_financial_metrics_logger,
     setup_financial_metrics_logging,
     financial_metrics_context,

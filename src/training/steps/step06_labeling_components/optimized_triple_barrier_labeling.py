@@ -30,6 +30,8 @@ except ImportError as e:
 
     def step06_validation_context(*args, **kwargs) -> None:
         from contextlib import nullcontext
+import time
+
         return nullcontext()
 
     def get_step06_validation_summary() -> Any:
@@ -51,6 +53,7 @@ except ImportError as e:
 from src.core.decorators.logging import log_execution_time, log_call
 import datetime
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_positive, validate_range, MathValidationError
 
 try:
     from src.utils.dataframe_guards import guard_dataframe_nulls, handle_errors, with_tracing_span
@@ -111,11 +114,11 @@ if 'numba' in globals() and numba is not None:
             for j in range(i + 1, end_idx):
                 if high[j] >= profit_barrier:
                     lab = 1
-                    profit_pct = pt_mult
+                    profit_pct = pt_mult - self.transaction_cost  # Net profit after transaction costs
                     break
                 if low[j] <= stop_barrier:
                     lab = -1
-                    profit_pct = -sl_mult
+                    profit_pct = -(sl_mult + self.transaction_cost)  # Net loss including transaction costs
                     break
             labels[i] = lab
             profit_pcts[i] = profit_pct
@@ -131,27 +134,33 @@ class OptimizedTripleBarrierLabeling:
     """
     @log_important_calls
 
-    def __init__(self, profit_take_multiplier: float = 0.002, stop_loss_multiplier: float = 0.001, time_barrier_minutes: int = 30, max_lookahead: int = 100, binary_classification: bool = True) -> None:
+    def __init__(self, profit_take_multiplier: float = 0.004, stop_loss_multiplier: float = 0.003, time_barrier_minutes: int = 30, max_lookahead: int = 100, binary_classification: bool = True, transaction_cost: float = 0.0008) -> None:
         """Initialize the optimized triple barrier labeling."
 
         Args:
-            profit_take_multiplier: Multiplier for profit take barrier (default: 0.2%)
-            stop_loss_multiplier: Multiplier for stop loss barrier (default: 0.1%)
+            profit_take_multiplier: Multiplier for profit take barrier (default: 0.4%)
+            stop_loss_multiplier: Multiplier for stop loss barrier (default: 0.3%)
             time_barrier_minutes: Time barrier in minutes (default: 30)
             max_lookahead: Maximum number of points to look ahead (default: 100)
             binary_classification: If True, only generate buy (1) and sell (-1) labels
             no hold (0) labels. If False, include hold labels (default: True)
+            transaction_cost: Transaction cost as percentage (default: 0.08%)
 
         Note:
             binary_classification = True is now the default to address label imbalance issues.
             This automatically filters out HOLD samples to create a balanced binary classification.
+            Updated with more realistic risk parameters and transaction cost modeling.
         """
         self.profit_take_multiplier = profit_take_multiplier
         self.stop_loss_multiplier = stop_loss_multiplier
         self.time_barrier_minutes = time_barrier_minutes
         self.max_lookahead = max_lookahead
         self.binary_classification = binary_classification
+        self.transaction_cost = transaction_cost
         self.logger = get_logger('OptimizedTripleBarrierLabeling')
+        
+        # Validate financial parameters
+        self._validate_financial_parameters()
         if self.binary_classification:
             self.logger.info('🔖 Triple barrier labeling configured for binary classification (BUY/SELL only)')
             self.logger.info('   → HOLD samples will be automatically filtered out')
@@ -161,18 +170,202 @@ class OptimizedTripleBarrierLabeling:
             self.logger.warning('   → This may lead to label imbalance issues')
             self.logger.warning('   → Consider using binary_classification = True for better results')
 
+    def _validate_financial_parameters(self) -> None:
+        """Validate financial parameters for soundness."""
+        try:
+            # Validate profit take multiplier
+            if self.profit_take_multiplier < 0.001:
+                raise MathValidationError(f"Profit take too small ({self.profit_take_multiplier:.4f} < 0.1%)")
+            if self.profit_take_multiplier > 0.1:
+                raise MathValidationError(f"Profit take too large ({self.profit_take_multiplier:.4f} > 10%)")
+            
+            # Validate stop loss multiplier
+            if self.stop_loss_multiplier < 0.0005:
+                raise MathValidationError(f"Stop loss too small ({self.stop_loss_multiplier:.4f} < 0.05%)")
+            if self.stop_loss_multiplier > 0.05:
+                raise MathValidationError(f"Stop loss too large ({self.stop_loss_multiplier:.4f} > 5%)")
+            
+            # Validate transaction cost
+            if self.transaction_cost < 0:
+                raise MathValidationError(f"Transaction cost cannot be negative ({self.transaction_cost:.4f})")
+            if self.transaction_cost > 0.01:
+                raise MathValidationError(f"Transaction cost too large ({self.transaction_cost:.4f} > 1%)")
+            
+            # Check risk-reward ratio
+            risk_reward_ratio = safe_divide(self.profit_take_multiplier, self.stop_loss_multiplier, default=0.0)
+            if risk_reward_ratio < 1.0:
+                self.logger.warning(f"⚠️ Risk-reward ratio < 1.0 ({risk_reward_ratio:.2f}) - may be unprofitable")
+            
+            # Check if barriers are too close
+            barrier_diff = abs(self.profit_take_multiplier - self.stop_loss_multiplier)
+            if barrier_diff < 0.001:
+                raise MathValidationError(f"Profit take and stop loss too close (diff: {barrier_diff:.4f} < 0.1%)")
+            
+            self.logger.info(f"✅ Financial parameters validated successfully")
+            self.logger.info(f"   Profit take: {self.profit_take_multiplier:.4f} ({self.profit_take_multiplier*100:.2f}%)")
+            self.logger.info(f"   Stop loss: {self.stop_loss_multiplier:.4f} ({self.stop_loss_multiplier*100:.2f}%)")
+            self.logger.info(f"   Transaction cost: {self.transaction_cost:.4f} ({self.transaction_cost*100:.2f}%)")
+            self.logger.info(f"   Risk-reward ratio: {risk_reward_ratio:.2f}")
+            
+        except MathValidationError as e:
+            self.logger.error(f"❌ CRITICAL: Financial parameter validation failed: {e}")
+            raise
+
+    def _validate_market_data_quality(self, data: pd.DataFrame) -> None:
+        """Fast fail validation for market data quality with extensive logging."""
+        self.logger.info("🔍 Starting comprehensive market data quality validation...")
+        
+        try:
+            # Check data shape
+            if len(data) < 2:
+                self.logger.error(f"❌ CRITICAL: Insufficient data rows ({len(data)} < 2)")
+                raise MathValidationError(f"Insufficient data: {len(data)} rows (minimum 2 required)")
+            
+            # Check required columns
+            required_columns = ['open', 'high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                self.logger.error(f"❌ CRITICAL: Missing required columns: {missing_columns}")
+                raise MathValidationError(f"Missing required columns: {missing_columns}")
+            
+            # Price sanity checks
+            self.logger.info("💰 Validating price data...")
+            price_columns = ['open', 'high', 'low', 'close']
+            
+            for col in price_columns:
+                if col in data.columns:
+                    prices = data[col]
+                    
+                    # Check for zero or negative prices
+                    invalid_prices = (prices <= 0).sum()
+                    if invalid_prices > 0:
+                        self.logger.error(f"❌ CRITICAL: {invalid_prices} invalid prices in {col} (≤ 0)")
+                        self.logger.error(f"   Invalid price indices: {data.index[prices <= 0].tolist()}")
+                        self.logger.error(f"   Invalid price values: {prices[prices <= 0].tolist()}")
+                        raise MathValidationError(f"Invalid prices in {col}: {invalid_prices} values ≤ 0")
+                    
+                    # Check for NaN values
+                    nan_count = prices.isna().sum()
+                    if nan_count > 0:
+                        self.logger.error(f"❌ CRITICAL: {nan_count} NaN values in {col}")
+                        self.logger.error(f"   NaN indices: {data.index[prices.isna()].tolist()}")
+                        raise MathValidationError(f"NaN values in {col}: {nan_count} values")
+                    
+                    # Check for infinite values
+                    inf_count = np.isinf(prices).sum()
+                    if inf_count > 0:
+                        self.logger.error(f"❌ CRITICAL: {inf_count} infinite values in {col}")
+                        self.logger.error(f"   Infinite indices: {data.index[np.isinf(prices)].tolist()}")
+                        raise MathValidationError(f"Infinite values in {col}: {inf_count} values")
+            
+            # OHLC consistency checks
+            self.logger.info("📊 Validating OHLC consistency...")
+            ohlc_errors = 0
+            
+            for i, row in data.iterrows():
+                open_price = row['open']
+                high_price = row['high']
+                low_price = row['low']
+                close_price = row['close']
+                
+                # Check high >= max(open, close)
+                if high_price < max(open_price, close_price):
+                    ohlc_errors += 1
+                    if ohlc_errors <= 5:  # Log first 5 errors
+                        self.logger.error(f"❌ OHLC error at {i}: high ({high_price}) < max(open, close) ({max(open_price, close_price)})")
+                
+                # Check low <= min(open, close)
+                if low_price > min(open_price, close_price):
+                    ohlc_errors += 1
+                    if ohlc_errors <= 5:  # Log first 5 errors
+                        self.logger.error(f"❌ OHLC error at {i}: low ({low_price}) > min(open, close) ({min(open_price, close_price)})")
+            
+            if ohlc_errors > 0:
+                self.logger.error(f"❌ CRITICAL: {ohlc_errors} OHLC consistency errors found")
+                raise MathValidationError(f"OHLC consistency errors: {ohlc_errors} violations")
+            
+            # Volatility sanity checks
+            self.logger.info("📈 Validating volatility...")
+            price_changes = data['close'].pct_change().abs()
+            
+            # Check for suspiciously large price movements (>20%)
+            large_moves = (price_changes > 0.2).sum()
+            if large_moves > 0:
+                self.logger.warning(f"⚠️ {large_moves} large price movements detected (>20%)")
+                large_move_indices = data.index[price_changes > 0.2].tolist()
+                large_move_values = price_changes[price_changes > 0.2].tolist()
+                self.logger.warning(f"   Large move indices: {large_move_indices}")
+                self.logger.warning(f"   Large move percentages: {[f'{v*100:.2f}%' for v in large_move_values]}")
+                
+                # If more than 1% of data has large moves, it's suspicious
+                if large_moves / len(data) > 0.01:
+                    self.logger.error(f"❌ CRITICAL: Too many large price movements ({large_moves/len(data)*100:.2f}% of data)")
+                    raise MathValidationError(f"Excessive large price movements: {large_moves/len(data)*100:.2f}% of data")
+            
+            # Check for zero volatility periods
+            zero_vol_periods = (price_changes == 0).sum()
+            if zero_vol_periods > len(data) * 0.1:  # More than 10% zero volatility
+                self.logger.warning(f"⚠️ {zero_vol_periods} zero volatility periods ({zero_vol_periods/len(data)*100:.2f}% of data)")
+            
+            # Timestamp validation
+            if isinstance(data.index, pd.DatetimeIndex):
+                self.logger.info("⏰ Validating timestamp data...")
+                
+                # Check for improper order
+                if not data.index.is_monotonic_increasing:
+                    self.logger.error("❌ CRITICAL: Timestamps are not in ascending order")
+                    non_monotonic_indices = []
+                    for i in range(1, len(data.index)):
+                        if data.index[i] <= data.index[i-1]:
+                            non_monotonic_indices.append(i)
+                    self.logger.error(f"   Non-monotonic indices: {non_monotonic_indices[:10]}...")  # Show first 10
+                    raise MathValidationError("Timestamps not in ascending order")
+                
+                # Check for timestamp gaps > 0.5 seconds
+                time_diffs = data.index.to_series().diff().dt.total_seconds()
+                large_gaps = (time_diffs > 0.5).sum()
+                if large_gaps > 0:
+                    self.logger.warning(f"⚠️ {large_gaps} timestamp gaps > 0.5s detected")
+                    large_gap_indices = data.index[time_diffs > 0.5].tolist()
+                    large_gap_values = time_diffs[time_diffs > 0.5].tolist()
+                    self.logger.warning(f"   Large gap indices: {large_gap_indices[:5]}...")  # Show first 5
+                    self.logger.warning(f"   Large gap values: {[f'{v:.2f}s' for v in large_gap_values[:5]]}...")
+                
+                # Check for timestamp duplicates > 0.1%
+                duplicate_count = data.index.duplicated().sum()
+                duplicate_percentage = duplicate_count / len(data) * 100
+                if duplicate_percentage > 0.1:
+                    self.logger.error(f"❌ CRITICAL: {duplicate_count} duplicate timestamps ({duplicate_percentage:.2f}% > 0.1%)")
+                    duplicate_indices = data.index[data.index.duplicated()].tolist()
+                    self.logger.error(f"   Duplicate timestamps: {duplicate_indices[:10]}...")  # Show first 10
+                    raise MathValidationError(f"Too many duplicate timestamps: {duplicate_percentage:.2f}%")
+                elif duplicate_count > 0:
+                    self.logger.warning(f"⚠️ {duplicate_count} duplicate timestamps ({duplicate_percentage:.2f}%)")
+            
+            self.logger.info("✅ Market data quality validation completed successfully")
+            self.logger.info(f"   Data shape: {data.shape}")
+            self.logger.info(f"   Price range: {data['close'].min():.4f} - {data['close'].max():.4f}")
+            self.logger.info(f"   Average volatility: {price_changes.mean()*100:.4f}%")
+            
+        except MathValidationError as e:
+            self.logger.error(f"❌ CRITICAL: Market data quality validation failed: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ CRITICAL: Unexpected error in market data validation: {e}")
+            raise MathValidationError(f"Unexpected validation error: {e}") from e
+
     @step06_function_validator(function_type='labeling', validation_level = ValidationLevel.COMPREHENSIVE)
     @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='optimized_triple_barrier_labeling.vectorized')
     @log_execution_time
     @validates
     @traced(span_name='TripleBarrier.apply_vectorized')
     def apply_triple_barrier_labeling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply a correct forward-looking Triple Barrier Method with profit tracking."
+        """Apply a correct forward-looking Triple Barrier Method with profit tracking and transaction costs.
 
         Scans forward up to the earlier of the time barrier and max_lookahead
         to find the first barrier hit (profit-take or stop-loss). If neither is
         hit within the window, the label remains 0 (time barrier).
-        Now includes potential_profit_pct to track actual profit/loss percentages.
+        Now includes potential_profit_pct to track actual profit/loss percentages with transaction costs.
         """
         with step06_validation_context('apply_triple_barrier_labeling_vectorized', 'labeling'):
             self.logger.info(f'🏷️ Starting triple barrier labeling with comprehensive validation tracking')
@@ -180,10 +373,15 @@ class OptimizedTripleBarrierLabeling:
             self.logger.info(f'   Available columns: {list(data.columns)}')
             self.logger.info(f'   Profit take multiplier: {self.profit_take_multiplier}')
             self.logger.info(f'   Stop loss multiplier: {self.stop_loss_multiplier}')
+            self.logger.info(f'   Transaction cost: {self.transaction_cost}')
             self.logger.info(f'   Time barrier minutes: {self.time_barrier_minutes}')
             self.logger.info(f'   Max lookahead: {self.max_lookahead}')
             self.logger.info(f'   Binary classification: {self.binary_classification}')
-        self.logger.info(f'Applying triple barrier labeling with profit tracking | cols={list(data.columns)} shape={data.shape}')
+        
+        # Fast fail validation
+        self._validate_market_data_quality(data)
+        
+        self.logger.info(f'Applying triple barrier labeling with profit tracking and transaction costs | cols={list(data.columns)} shape={data.shape}')
         try:
             rename_map: dict[str, str] = {}
             canonical_map = {'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume', 'OPEN': 'open', 'HIGH': 'high', 'LOW': 'low', 'CLOSE': 'close', 'VOLUME': 'volume'}
@@ -260,18 +458,18 @@ class OptimizedTripleBarrierLabeling:
                     continue
                 if profit_hits.size == 0:
                     labels[i] = -1
-                    profit_pcts[i] = -sl_mult
+                    profit_pcts[i] = -(sl_mult + self.transaction_cost)  # Net loss including transaction costs
                     continue
                 if stop_hits.size == 0:
                     labels[i] = 1
-                    profit_pcts[i] = pt_mult
+                    profit_pcts[i] = pt_mult - self.transaction_cost  # Net profit after transaction costs
                     continue
                 if profit_hits[0] <= stop_hits[0]:
                     labels[i] = 1
-                    profit_pcts[i] = pt_mult
+                    profit_pcts[i] = pt_mult - self.transaction_cost  # Net profit after transaction costs
                 else:
                     labels[i] = -1
-                    profit_pcts[i] = -sl_mult
+                    profit_pcts[i] = -(sl_mult + self.transaction_cost)  # Net loss including transaction costs
         labeled_data['label'] = labels
         labeled_data['potential_profit_pct'] = profit_pcts
         original_count = len(labeled_data)

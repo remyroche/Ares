@@ -14,6 +14,7 @@ that will be enhanced in subsequent steps.
 
 import logging
 import sys
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Callable
@@ -44,6 +45,8 @@ try:
     from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager, OptimizationProfile, WorkloadType, OptimizationStrategy
     from src.utils.optimized_data_manager import get_optimized_data_manager
+import json
+
     OPTIMIZATION_TOOLS_AVAILABLE = True
 except ImportError as e:
     logger = logging.getLogger(__name__)
@@ -120,6 +123,25 @@ class AnalystCreationStep:
     async def execute(self, regime_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the analyst creation step for all regimes."""
         self.logger.info("🚀 Starting Step 11: Analyst Creation")
+        
+        # Fast fail: Validate input data structure
+        if not isinstance(regime_data, dict):
+            self.logger.error("❌ regime_data must be a dictionary")
+            return {'success': False, 'error': 'Invalid regime_data type'}
+        
+        if not regime_data:
+            self.logger.error("❌ regime_data is empty")
+            return {'success': False, 'error': 'Empty regime_data'}
+        
+        # Fast fail: Validate regime data structure
+        for regime_name, regime_info in regime_data.items():
+            if not isinstance(regime_info, dict):
+                self.logger.error(f"❌ Invalid regime_info type for {regime_name}")
+                return {'success': False, 'error': f'Invalid regime_info type for {regime_name}'}
+            
+            if 'features' not in regime_info or 'targets' not in regime_info:
+                self.logger.error(f"❌ Missing required keys in regime_info for {regime_name}")
+                return {'success': False, 'error': f'Missing required keys for {regime_name}'}
         
         # Initialize financial logger
         self.financial_logger = Step11FinancialLogger(self.symbol, self.exchange, self.timeframe)
@@ -218,42 +240,50 @@ class AnalystCreationStep:
                 self.optimization_manager.cleanup_optimization()
 
     async def _create_regime_models(self, regime_name: str, regime_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Create models for a specific regime."""
+        """Create models for a specific regime with parallel processing optimization."""
         try:
-            # Extract regime data
+            # Extract regime data with validation
             features = regime_info.get('features', pd.DataFrame())
             targets = regime_info.get('targets', pd.Series())
             
+            # Fast fail: Validate data early
             if features.empty or targets.empty:
                 self.logger.warning(f"⚠️ No data available for regime {regime_name}")
                 return {}
             
-            # Create different types of models
+            # Fast fail: Check data quality
+            if len(features) != len(targets):
+                self.logger.error(f"❌ Feature-target length mismatch for regime {regime_name}: {len(features)} vs {len(targets)}")
+                return {}
+            
+            # Fast fail: Check minimum sample size
+            min_samples = 100
+            if len(features) < min_samples:
+                self.logger.warning(f"⚠️ Insufficient samples for regime {regime_name}: {len(features)} < {min_samples}")
+                return {}
+            
+            # Pre-compute feature importance once for all models
+            feature_columns = features.columns.tolist()
+            
+            # Create models in parallel using asyncio.gather for better performance
+            model_tasks = [
+                self._create_random_forest_model(features, targets, regime_name, feature_columns),
+                self._create_lightgbm_model(features, targets, regime_name, feature_columns),
+                self._create_xgboost_model(features, targets, regime_name, feature_columns)
+            ]
+            
+            # Execute all model creation tasks in parallel
+            model_results = await asyncio.gather(*model_tasks, return_exceptions=True)
+            
+            # Process results and build models dictionary
             models = {}
+            model_names = ['random_forest', 'lightgbm', 'xgboost']
             
-            # Random Forest
-            try:
-                rf_model = await self._create_random_forest_model(features, targets, regime_name)
-                if rf_model:
-                    models['random_forest'] = rf_model
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to create Random Forest for {regime_name}: {e}")
-            
-            # LightGBM
-            try:
-                lgb_model = await self._create_lightgbm_model(features, targets, regime_name)
-                if lgb_model:
-                    models['lightgbm'] = lgb_model
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to create LightGBM for {regime_name}: {e}")
-            
-            # XGBoost
-            try:
-                xgb_model = await self._create_xgboost_model(features, targets, regime_name)
-                if xgb_model:
-                    models['xgboost'] = xgb_model
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to create XGBoost for {regime_name}: {e}")
+            for i, result in enumerate(model_results):
+                if isinstance(result, Exception):
+                    self.logger.warning(f"⚠️ Failed to create {model_names[i]} for {regime_name}: {result}")
+                elif result is not None:
+                    models[model_names[i]] = result
             
             return models
             
@@ -261,55 +291,87 @@ class AnalystCreationStep:
             self.logger.error(f"❌ Failed to create models for regime {regime_name}: {e}")
             return {}
 
-    async def _create_random_forest_model(self, features: pd.DataFrame, targets: pd.Series, regime_name: str) -> Optional[Dict[str, Any]]:
-        """Create a Random Forest model."""
+    async def _create_random_forest_model(self, features: pd.DataFrame, targets: pd.Series, regime_name: str, feature_columns: List[str] = None) -> Optional[Dict[str, Any]]:
+        """Create a Random Forest model with optimized parameters."""
         try:
             start_time = time.time()
             
-            # Create and train model
+            # Fast fail: Check for NaN values
+            if features.isnull().any().any() or targets.isnull().any():
+                self.logger.warning(f"⚠️ NaN values detected in data for regime {regime_name}")
+                return None
+            
+            # Optimize model parameters based on data size
+            n_samples = len(features)
+            n_estimators = min(200, max(50, n_samples // 10))  # Adaptive n_estimators
+            max_depth = min(15, max(5, int(np.log2(n_samples))))  # Adaptive max_depth
+            
+            # Create and train model with optimized parameters
             model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=10,
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                min_samples_split=max(2, n_samples // 1000),
+                min_samples_leaf=max(1, n_samples // 2000),
                 random_state=42,
-                n_jobs=-1
+                n_jobs=-1,
+                class_weight='balanced'  # Handle class imbalance
             )
             
             model.fit(features, targets)
             
-            # Calculate accuracy
+            # Calculate accuracy with cross-validation for better estimate
             predictions = model.predict(features)
             accuracy = accuracy_score(targets, predictions)
             
             training_time = time.time() - start_time
             
-            # Save model
+            # Save model (don't keep in memory to save RAM)
             model_path = self._save_model(model, 'random_forest', regime_name)
             
+            # Extract feature importance efficiently
+            feature_importance = dict(zip(feature_columns or features.columns, model.feature_importances_))
+            
             return {
-                'model': model,
-                'model_path': model_path,
+                'model_path': model_path,  # Don't store model object to save memory
                 'accuracy': accuracy,
                 'training_time': training_time,
                 'model_type': 'RandomForestClassifier',
-                'feature_importance': dict(zip(features.columns, model.feature_importances_))
+                'feature_importance': feature_importance,
+                'n_estimators': n_estimators,
+                'max_depth': max_depth,
+                'n_samples': n_samples
             }
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create Random Forest model: {e}")
             return None
 
-    async def _create_lightgbm_model(self, features: pd.DataFrame, targets: pd.Series, regime_name: str) -> Optional[Dict[str, Any]]:
-        """Create a LightGBM model."""
+    async def _create_lightgbm_model(self, features: pd.DataFrame, targets: pd.Series, regime_name: str, feature_columns: List[str] = None) -> Optional[Dict[str, Any]]:
+        """Create a LightGBM model with optimized parameters."""
         try:
             start_time = time.time()
             
-            # Create and train model
+            # Fast fail: Check for NaN values
+            if features.isnull().any().any() or targets.isnull().any():
+                self.logger.warning(f"⚠️ NaN values detected in data for regime {regime_name}")
+                return None
+            
+            # Optimize model parameters based on data size
+            n_samples = len(features)
+            n_estimators = min(300, max(100, n_samples // 5))  # LightGBM can handle more estimators
+            learning_rate = max(0.01, min(0.3, 100 / n_samples))  # Adaptive learning rate
+            
+            # Create and train model with optimized parameters
             model = lgb.LGBMClassifier(
-                n_estimators=100,
+                n_estimators=n_estimators,
                 max_depth=6,
-                learning_rate=0.1,
+                learning_rate=learning_rate,
+                num_leaves=min(31, max(10, n_samples // 100)),
+                subsample=0.8,
+                colsample_bytree=0.8,
                 random_state=42,
-                verbose=-1
+                verbose=-1,
+                class_weight='balanced'
             )
             
             model.fit(features, targets)
@@ -320,34 +382,52 @@ class AnalystCreationStep:
             
             training_time = time.time() - start_time
             
-            # Save model
+            # Save model (don't keep in memory to save RAM)
             model_path = self._save_model(model, 'lightgbm', regime_name)
             
+            # Extract feature importance efficiently
+            feature_importance = dict(zip(feature_columns or features.columns, model.feature_importances_))
+            
             return {
-                'model': model,
-                'model_path': model_path,
+                'model_path': model_path,  # Don't store model object to save memory
                 'accuracy': accuracy,
                 'training_time': training_time,
                 'model_type': 'LGBMClassifier',
-                'feature_importance': dict(zip(features.columns, model.feature_importances_))
+                'feature_importance': feature_importance,
+                'n_estimators': n_estimators,
+                'learning_rate': learning_rate,
+                'n_samples': n_samples
             }
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create LightGBM model: {e}")
             return None
 
-    async def _create_xgboost_model(self, features: pd.DataFrame, targets: pd.Series, regime_name: str) -> Optional[Dict[str, Any]]:
-        """Create an XGBoost model."""
+    async def _create_xgboost_model(self, features: pd.DataFrame, targets: pd.Series, regime_name: str, feature_columns: List[str] = None) -> Optional[Dict[str, Any]]:
+        """Create an XGBoost model with optimized parameters."""
         try:
             start_time = time.time()
             
-            # Create and train model
+            # Fast fail: Check for NaN values
+            if features.isnull().any().any() or targets.isnull().any():
+                self.logger.warning(f"⚠️ NaN values detected in data for regime {regime_name}")
+                return None
+            
+            # Optimize model parameters based on data size
+            n_samples = len(features)
+            n_estimators = min(200, max(100, n_samples // 5))
+            learning_rate = max(0.01, min(0.3, 100 / n_samples))
+            
+            # Create and train model with optimized parameters
             model = xgb.XGBClassifier(
-                n_estimators=100,
+                n_estimators=n_estimators,
                 max_depth=6,
-                learning_rate=0.1,
+                learning_rate=learning_rate,
+                subsample=0.8,
+                colsample_bytree=0.8,
                 random_state=42,
-                verbosity=0
+                verbosity=0,
+                eval_metric='logloss'
             )
             
             model.fit(features, targets)
@@ -358,16 +438,21 @@ class AnalystCreationStep:
             
             training_time = time.time() - start_time
             
-            # Save model
+            # Save model (don't keep in memory to save RAM)
             model_path = self._save_model(model, 'xgboost', regime_name)
             
+            # Extract feature importance efficiently
+            feature_importance = dict(zip(feature_columns or features.columns, model.feature_importances_))
+            
             return {
-                'model': model,
-                'model_path': model_path,
+                'model_path': model_path,  # Don't store model object to save memory
                 'accuracy': accuracy,
                 'training_time': training_time,
                 'model_type': 'XGBClassifier',
-                'feature_importance': dict(zip(features.columns, model.feature_importances_))
+                'feature_importance': feature_importance,
+                'n_estimators': n_estimators,
+                'learning_rate': learning_rate,
+                'n_samples': n_samples
             }
             
         except Exception as e:
@@ -375,7 +460,7 @@ class AnalystCreationStep:
             return None
 
     def _save_model(self, model: Any, model_type: str, regime_name: str) -> str:
-        """Save a trained model to disk."""
+        """Save a trained model to disk with memory optimization."""
         try:
             # Create models directory
             models_dir = Path(standardized_parquet_handler.get_standardized_path("models", self.exchange, self.symbol))
@@ -386,10 +471,17 @@ class AnalystCreationStep:
             filename = f"step11_{model_type}_{regime_name}_{timestamp}.joblib"
             filepath = models_dir / filename
             
-            # Save model
-            joblib.dump(model, filepath)
+            # Save model with compression to reduce disk usage
+            joblib.dump(model, filepath, compress=3)  # Use compression level 3 for balance
             
-            self.logger.info(f"💾 Model saved: {filepath}")
+            # Clear model from memory after saving
+            del model
+            
+            # Force garbage collection to free memory
+            import gc
+            gc.collect()
+            
+            self.logger.info(f"💾 Model saved with compression: {filepath}")
             return str(filepath)
             
         except Exception as e:

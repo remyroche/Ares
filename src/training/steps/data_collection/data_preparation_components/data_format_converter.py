@@ -1,4 +1,6 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+
 """Data Format Converter Component
 
 Handles conversion between different data formats, particularly focusing on Parquet operations.
@@ -27,6 +29,8 @@ from src.core.decorators import traced, validates
 from src.utils.file_operations import ensure_directory, safe_json_dump, safe_json_load
 
 import logging
+import json
+import time
 
 class DataFormatConverter:
     """Handles conversion between different data formats with focus on Parquet operations.

@@ -1,4 +1,6 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+
 """
 Monitoring utilities for data collection steps.
 
@@ -18,6 +20,8 @@ from enum import Enum
 
 try:
     import psutil
+import collections
+
 except ImportError:
     psutil = None
 

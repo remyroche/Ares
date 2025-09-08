@@ -16,6 +16,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 import pandas as pd
 
 import pandas as pd
+import numpy as np
 
 try:
     from .logger import system_logger

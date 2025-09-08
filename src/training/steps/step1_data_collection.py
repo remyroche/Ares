@@ -36,6 +36,8 @@ from src.utils.lookahead_bias_detector import (
 # Import logging decorators
 try:
     from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls
+import time
+
     LOGGING_DECORATORS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Logging decorators not available: {e}")

@@ -7,6 +7,7 @@ and feature importance results.
 from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
+import logging
 
 # Optional dependencies with fallback handling
 try:

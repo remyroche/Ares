@@ -11,6 +11,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import os
 from src.utils.decorators import handles_errors
+import warnings
+
 from ..enhanced_error_handling import (
 from ..standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
@@ -75,7 +77,6 @@ multi-output prediction for both direction and profit using the triple barrier
 method and profit-based feature engineering, with regime-specific optimization.
 """
 import os
-import warnings
 
 from src.utils.decorators import validates, traced
 
@@ -1510,6 +1511,254 @@ class EnhancedHMMBasedTrainingStep:
             for metric_name, metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
+    async def _validate_input_data(
+        self, 
+        data: pd.DataFrame, 
+        timeframe: str, 
+        regime_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Comprehensive input data validation with fast fail checks.
+        
+        Args:
+            data: Input DataFrame to validate
+            timeframe: Timeframe string to validate
+            regime_key: Optional regime key to validate
+            
+        Returns:
+            Dictionary with validation results
+        """
+        validation_result = {
+            'is_valid': True,
+            'issues': [],
+            'warnings': []
+        }
+        
+        try:
+            # Fast fail: Data type validation
+            if not isinstance(data, pd.DataFrame):
+                validation_result['is_valid'] = False
+                validation_result['issues'].append(f"Data must be pandas DataFrame, got {type(data)}")
+                return validation_result
+            
+            # Fast fail: Empty data check
+            if data is None or data.empty:
+                validation_result['is_valid'] = False
+                validation_result['issues'].append("Data cannot be None or empty")
+                return validation_result
+            
+            # Fast fail: Minimum size check
+            min_samples = self.config.get('min_feature_samples', 100)
+            if len(data) < min_samples:
+                validation_result['is_valid'] = False
+                validation_result['issues'].append(f"Insufficient samples: {len(data)} < {min_samples}")
+                return validation_result
+            
+            # Fast fail: Maximum size check (memory protection)
+            max_samples = self.config.get('max_feature_samples', 1000000)
+            if len(data) > max_samples:
+                validation_result['is_valid'] = False
+                validation_result['issues'].append(f"Data too large: {len(data)} > {max_samples}")
+                return validation_result
+            
+            # Fast fail: Column validation
+            if len(data.columns) == 0:
+                validation_result['is_valid'] = False
+                validation_result['issues'].append("Data has no columns")
+                return validation_result
+            
+            # Fast fail: Timeframe validation
+            valid_timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
+            if timeframe not in valid_timeframes:
+                validation_result['is_valid'] = False
+                validation_result['issues'].append(f"Invalid timeframe: {timeframe}. Must be one of {valid_timeframes}")
+                return validation_result
+            
+            # Fast fail: Regime key validation
+            if regime_key is not None:
+                if not isinstance(regime_key, str) or len(regime_key.strip()) == 0:
+                    validation_result['is_valid'] = False
+                    validation_result['issues'].append(f"Invalid regime_key: {regime_key}")
+                    return validation_result
+            
+            # Data quality checks
+            numeric_cols = data.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) == 0:
+                validation_result['warnings'].append("No numeric columns found in data")
+            
+            # Check for required columns
+            required_columns = ['timestamp'] if 'timestamp' in data.columns else []
+            missing_required = [col for col in required_columns if col not in data.columns]
+            if missing_required:
+                validation_result['warnings'].append(f"Missing recommended columns: {missing_required}")
+            
+            # Temporal integrity checks if timestamp column exists
+            if 'timestamp' in data.columns:
+                temporal_validation = await self._validate_temporal_integrity(data['timestamp'])
+                if not temporal_validation['is_valid']:
+                    validation_result['issues'].extend(temporal_validation['issues'])
+                if temporal_validation['warnings']:
+                    validation_result['warnings'].extend(temporal_validation['warnings'])
+            
+            # Memory usage estimation
+            memory_usage_mb = data.memory_usage(deep=True).sum() / 1024 / 1024
+            max_memory_mb = self.config.get('max_memory_usage_mb', 1000)
+            if memory_usage_mb > max_memory_mb:
+                validation_result['warnings'].append(f"High memory usage: {memory_usage_mb:.1f}MB > {max_memory_mb}MB")
+            
+            self.logger.info(f"✅ Input validation passed: {len(data)} samples, {len(data.columns)} columns, {memory_usage_mb:.1f}MB")
+            
+        except Exception as e:
+            validation_result['is_valid'] = False
+            validation_result['issues'].append(f"Validation error: {e}")
+            self.logger.error(f"❌ Input validation failed: {e}")
+        
+        return validation_result
+
+    async def _validate_temporal_integrity(self, timestamps: pd.Series) -> Dict[str, Any]:
+        """Validate temporal integrity of timestamp data.
+        
+        Args:
+            timestamps: Pandas Series containing timestamp data
+            
+        Returns:
+            Dictionary with temporal validation results
+        """
+        temporal_result = {
+            'is_valid': True,
+            'issues': [],
+            'warnings': []
+        }
+        
+        try:
+            # Convert to datetime if not already
+            if not pd.api.types.is_datetime64_any_dtype(timestamps):
+                try:
+                    timestamps = pd.to_datetime(timestamps)
+                except Exception as e:
+                    temporal_result['is_valid'] = False
+                    temporal_result['issues'].append(f"Invalid timestamp format: {e}")
+                    return temporal_result
+            
+            # Check for timestamp ordering (improper order)
+            is_sorted = timestamps.is_monotonic_increasing
+            if not is_sorted:
+                temporal_result['warnings'].append("Timestamps are not in chronological order")
+            
+            # Check for timestamp gaps over 0.5 seconds
+            if len(timestamps) > 1:
+                time_diffs = timestamps.diff().dropna()
+                max_gap_threshold = pd.Timedelta(seconds=0.5)
+                large_gaps = time_diffs[time_diffs > max_gap_threshold]
+                
+                if len(large_gaps) > 0:
+                    gap_count = len(large_gaps)
+                    max_gap = large_gaps.max()
+                    temporal_result['warnings'].append(
+                        f"Found {gap_count} timestamp gaps > 0.5s (max gap: {max_gap})"
+                    )
+            
+            # Check for timestamp duplicates over 0.1%
+            total_timestamps = len(timestamps)
+            duplicate_threshold = 0.001  # 0.1%
+            max_duplicates = int(total_timestamps * duplicate_threshold)
+            
+            if total_timestamps > 0:
+                duplicate_count = timestamps.duplicated().sum()
+                if duplicate_count > max_duplicates:
+                    duplicate_percentage = (duplicate_count / total_timestamps) * 100
+                    temporal_result['warnings'].append(
+                        f"High duplicate rate: {duplicate_count} duplicates ({duplicate_percentage:.2f}%) > {duplicate_threshold*100:.1f}%"
+                    )
+            
+            # Check for future timestamps (potential data leakage)
+            current_time = pd.Timestamp.now()
+            future_timestamps = timestamps[timestamps > current_time]
+            if len(future_timestamps) > 0:
+                temporal_result['warnings'].append(
+                    f"Found {len(future_timestamps)} future timestamps (potential data leakage)"
+                )
+            
+            # Check for very old timestamps (data quality)
+            min_reasonable_date = pd.Timestamp('2020-01-01')
+            old_timestamps = timestamps[timestamps < min_reasonable_date]
+            if len(old_timestamps) > 0:
+                temporal_result['warnings'].append(
+                    f"Found {len(old_timestamps)} timestamps before 2020 (data quality concern)"
+                )
+            
+            self.logger.info(f"✅ Temporal integrity validation completed: {len(timestamps)} timestamps")
+            
+        except Exception as e:
+            temporal_result['is_valid'] = False
+            temporal_result['issues'].append(f"Temporal validation error: {e}")
+            self.logger.error(f"❌ Temporal integrity validation failed: {e}")
+        
+        return temporal_result
+
+    async def _prepare_historical_market_data(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Prepare market data using only historical information to prevent lookahead bias.
+        
+        Args:
+            data: Input DataFrame with market data
+            
+        Returns:
+            Dictionary with historical market data metrics
+        """
+        try:
+            # Use rolling windows to calculate historical metrics (no future data)
+            market_data = {}
+            
+            # Historical volume calculation (rolling 24h window)
+            if 'volume' in data.columns:
+                # Use rolling mean for historical volume estimation
+                volume_window = min(24, len(data))  # Adaptive window size
+                market_data['volume_24h'] = data['volume'].rolling(
+                    window=volume_window, min_periods=1
+                ).mean() * 24
+            
+            # Historical volatility calculation (rolling window)
+            if 'volatility' in data.columns:
+                vol_window = min(20, len(data))  # 20-period rolling volatility
+                market_data['volatility'] = data['volatility'].rolling(
+                    window=vol_window, min_periods=1
+                ).mean()
+            elif 'close' in data.columns:
+                # Calculate rolling volatility from price data
+                vol_window = min(20, len(data))
+                returns = data['close'].pct_change()
+                market_data['volatility'] = returns.rolling(
+                    window=vol_window, min_periods=1
+                ).std() * np.sqrt(24)  # Annualized
+            
+            # Static configuration values (no lookahead bias)
+            market_data.update({
+                'avg_spread_bps': self.config.get('avg_spread_bps', 2.0),
+                'exchange_fee_bps': self.config.get('exchange_fee_bps', 5.0),
+                'orderbook_depth': self.config.get('orderbook_depth', 100000)
+            })
+            
+            # Historical spread calculation if available
+            if 'bid' in data.columns and 'ask' in data.columns:
+                spread_bps = ((data['ask'] - data['bid']) / data['bid']) * 10000
+                spread_window = min(10, len(data))
+                market_data['avg_spread_bps'] = spread_bps.rolling(
+                    window=spread_window, min_periods=1
+                ).mean()
+            
+            self.logger.info("✅ Historical market data prepared (no lookahead bias)")
+            return market_data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Historical market data preparation failed: {e}")
+            # Fallback to static values
+            return {
+                'volume_24h': 1000000,  # Default volume
+                'volatility': 0.02,     # Default volatility
+                'avg_spread_bps': self.config.get('avg_spread_bps', 2.0),
+                'exchange_fee_bps': self.config.get('exchange_fee_bps', 5.0),
+                'orderbook_depth': self.config.get('orderbook_depth', 100000)
+            }
+
     @handles_errors(
         exceptions=(ValueError, TypeError, MemoryError),
         default_return=None,
@@ -1521,7 +1770,7 @@ class EnhancedHMMBasedTrainingStep:
         timeframe: str,
         regime_key: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Prepare data for enhanced training with multi-output support."
+        """Prepare data for enhanced training with multi-output support and comprehensive input validation.
         
         Args:
             data: Input DataFrame with features and targets
@@ -1531,6 +1780,14 @@ class EnhancedHMMBasedTrainingStep:
         Returns:
             Dictionary containing prepared data for both single and multi-output training
         """
+        # Fast fail: Comprehensive input sanitization
+        validation_result = await self._validate_input_data(data, timeframe, regime_key)
+        if not validation_result['is_valid']:
+            raise ValueError(f"Input validation failed: {validation_result['issues']}")
+        
+        if validation_result['warnings']:
+            self.logger.warning(f"⚠️ Input validation warnings: {validation_result['warnings']}")
+        
         self.logger.info(f"📊 Preparing enhanced training data for {timeframe}")
         if regime_key:
             self.logger.info(f"   - Regime: {regime_key}")
@@ -1600,14 +1857,9 @@ class EnhancedHMMBasedTrainingStep:
         # Enhance with liquidity and market impact features if available
         if self.liquidity_enhancer and hasattr(self, 'config'):
             try:
-                # Prepare market data for liquidity enhancement
-                market_data = {
-                    'volume_24h': data.get('volume', pd.Series(1.0, index=data.index)).sum() * 24,  # Estimate daily volume
-                    'volatility': data.get('volatility', pd.Series(0.02, index=data.index)).mean(),
-                    'avg_spread_bps': self.config.get('avg_spread_bps', 2.0),
-                    'exchange_fee_bps': self.config.get('exchange_fee_bps', 5.0),
-                    'orderbook_depth': self.config.get('orderbook_depth', 100000)
-                }
+                # Prepare market data for liquidity enhancement (NO LOOKAHEAD BIAS)
+                # Use only historical data available at each point in time
+                market_data = await self._prepare_historical_market_data(data)
                 
                 # Enhance training data with liquidity features
                 enhancement_result = self.liquidity_enhancer.enhance_training_with_liquidity(
@@ -1868,12 +2120,30 @@ class EnhancedHMMBasedTrainingStep:
             X = features.values
             y = target.values
             
-            # Time series split
+            # Purged time series split with embargo to prevent data leakage
+            n_samples = len(X)
+            embargo_percentage = self.config.get('embargo_percentage', 0.05)  # 5% default
+            min_embargo_samples = self.config.get('min_embargo_samples', 20)
+            embargo = max(min_embargo_samples, int(embargo_percentage * n_samples))
+            
+            # Use purged cross-validation with embargo
             tscv = TimeSeriesSplit(n_splits=self.validation_config["n_splits"])
             
-            # Cross-validation
+            self.logger.info(f"🔒 Purged CV with embargo: {embargo} samples ({embargo_percentage:.1%} of {n_samples} total)")
+            
+            # Cross-validation with embargo protection
             cv_scores = []
             for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
+                # Apply embargo to prevent data leakage
+                if len(train_idx) > embargo and len(val_idx) > embargo:
+                    # Remove embargo samples from end of training and start of validation
+                    train_idx = train_idx[:-embargo]
+                    val_idx = val_idx[embargo:]
+                
+                if len(train_idx) == 0 or len(val_idx) == 0:
+                    self.logger.warning(f"⚠️ Skipping fold {fold} due to embargo constraints")
+                    continue
+                
                 X_train, X_val = X[train_idx], X[val_idx]
                 y_train, y_val = y[train_idx], y[val_idx]
                 
@@ -2209,49 +2479,66 @@ class EnhancedHMMBasedTrainingStep:
             if non_numeric_cols:
                 validation_results['warnings'].append(f"Non-numeric columns found: {list(non_numeric_cols)}")
             
-            # Check for constant features (zero variance)
-            variances = features_df[numeric_cols].var(axis=0, ddof=0)
+            # Single-pass vectorized analysis for all quality metrics
+            numeric_data = features_df[numeric_cols]
+            
+            # Batch compute all quality metrics in single pass
+            missing_mask = numeric_data.isnull()
+            inf_mask = np.isinf(numeric_data)
+            
+            # Vectorized calculations
+            missing_ratio = missing_mask.sum().sum() / (len(features_df) * len(numeric_cols))
+            inf_count = inf_mask.sum().sum()
+            
+            # Vectorized variance calculation
+            variances = numeric_data.var(axis=0, ddof=0)
             constant_features = variances[variances == 0].index.tolist()
+            
             if constant_features:
                 validation_results['warnings'].append(f"Constant features found: {constant_features}")
             
-            # Check for high correlation features
+            # Check for high correlation features (vectorized)
             correlation_threshold = self.config.get('max_feature_correlation', 0.95)
+            high_corr_pairs = []
+            
             if len(numeric_cols) > 1:
-                corr_matrix = features_df[numeric_cols].corr().abs()
-                high_corr_pairs = []
-                for i in range(len(corr_matrix.columns)):
-                    for j in range(i+1, len(corr_matrix.columns)):
-                        if corr_matrix.iloc[i, j] > correlation_threshold:
-                            high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
+                corr_matrix = numeric_data.corr().abs()
+                
+                # Vectorized upper triangle extraction and filtering
+                upper_triangle_mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+                high_corr_mask = (corr_matrix > correlation_threshold) & upper_triangle_mask
+                
+                # Extract high correlation pairs using vectorized operations
+                high_corr_indices = np.where(high_corr_mask)
+                high_corr_pairs = [(corr_matrix.columns[i], corr_matrix.columns[j]) 
+                                 for i, j in zip(high_corr_indices[0], high_corr_indices[1])]
+                
                 if high_corr_pairs:
                     validation_results['warnings'].append(f"High correlation pairs: {high_corr_pairs[:5]}")  # Show first 5
             
-            # Check for missing values
-            missing_ratio = features_df.isnull().sum().sum() / (len(features_df) * len(features_df.columns))
+            # Add warnings based on vectorized analysis
             max_missing_ratio = self.config.get('max_missing_ratio', 0.1)
             if missing_ratio > max_missing_ratio:
                 validation_results['warnings'].append(f"High missing value ratio: {missing_ratio:.3f} > {max_missing_ratio}")
             
-            # Check for infinite values
-            inf_count = np.isinf(features_df[numeric_cols]).sum().sum()
             if inf_count > 0:
                 validation_results['warnings'].append(f"Infinite values found: {inf_count}")
             
-            # Calculate quality score
-            quality_factors = []
-            quality_factors.append(min(1.0, len(features_df) / min_samples))  # Sample size factor
-            quality_factors.append(len(numeric_cols) / len(features_df.columns))  # Numeric ratio
-            quality_factors.append(1.0 - missing_ratio)  # Completeness factor
-            quality_factors.append(1.0 - len(constant_features) / len(numeric_cols))  # Variance factor
+            # Vectorized quality score calculation
+            quality_factors = np.array([
+                min(1.0, len(features_df) / min_samples),  # Sample size factor
+                len(numeric_cols) / len(features_df.columns),  # Numeric ratio
+                1.0 - missing_ratio,  # Completeness factor
+                1.0 - len(constant_features) / len(numeric_cols)  # Variance factor
+            ])
             
-            validation_results['quality_score'] = np.mean(quality_factors)
+            validation_results['quality_score'] = float(np.mean(quality_factors))
             
             # Overall validation
             if validation_results['quality_score'] < 0.7:
                 validation_results['warnings'].append(f"Low quality score: {validation_results['quality_score']:.3f}")
             
-            self.logger.info(f"🔍 Feature validation completed: {validation_results['feature_count']} features, "
+            self.logger.info(f"🔍 Vectorized feature validation completed: {validation_results['feature_count']} features, "
                            f"quality score: {validation_results['quality_score']:.3f}")
             
         except Exception as e:

@@ -9,6 +9,7 @@ from collections import defaultdict
 from pathlib import Path
 import time
 import typing
+import numpy as np
 
 
 class ImportAnalyzer:

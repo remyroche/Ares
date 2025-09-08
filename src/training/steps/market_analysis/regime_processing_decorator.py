@@ -10,6 +10,8 @@ from src.training.steps.market_analysis.regime_handler import regime_handler
 import pandas as pd
 
 from src.utils.common_operations import get_logger
+import logging
+import numpy as np
 
 logger = get_logger('RegimeProcessingDecorator')
 

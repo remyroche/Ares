@@ -13,6 +13,7 @@ from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, Validat
 import numpy as np
 import logging
 import pandas as pd
+import time
 
 class StatisticalValidator:
     """Validates statistical properties of time series data."""

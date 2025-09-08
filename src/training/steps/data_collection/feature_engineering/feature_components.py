@@ -12,6 +12,7 @@ including technical indicators, interactions, regime-aware features, and S/R fea
 import numpy as np
 
 from typing import Dict, List, Any, Optional, Tuple
+import logging
 
 class TechnicalIndicatorEngine:
     """Engine for creating technical indicators."""

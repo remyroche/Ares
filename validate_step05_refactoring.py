@@ -6,6 +6,7 @@ Validation script for Step05 refactoring - checks file structure and basic synta
 import os
 import sys
 from pathlib import Path
+import numpy as np
 
 def check_file_exists(file_path):
     """Check if a file exists and return its size."""

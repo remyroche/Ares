@@ -40,6 +40,9 @@ except ImportError:
 
 try:
     from scipy.stats import rankdata
+import logging
+import time
+
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False

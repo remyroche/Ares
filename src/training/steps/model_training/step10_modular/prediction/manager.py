@@ -7,6 +7,7 @@ Currently a placeholder that will be fully implemented in Phase 3.
 
 from typing import Dict, Any, Optional
 from src.utils.logger import system_logger
+import logging
 
 logger = system_logger.getChild('Step10PredictionManager')
 

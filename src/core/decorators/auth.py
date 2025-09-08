@@ -8,6 +8,8 @@ from typing import Optional, Any, Callable
 from ..errors.base import AuthenticationError, AuthorizationError
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
+import numpy as np
+
 current_user_var: ContextVar[Optional['User']] = ContextVar('current_user', default = None)
 
 class PermissionType(Enum):

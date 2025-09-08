@@ -29,7 +29,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 from .tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
-import logging
+
 import time
 
 warnings.filterwarnings('ignore')

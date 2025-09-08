@@ -1,7 +1,6 @@
 from typing import Dict
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
-import numpy as np
 
 '\nProgress Monitor for Market Analysis Pipeline\n\nThis module provides real-time progress monitoring with visual indicators\nand detailed status updates for the market analysis pipeline.\n'
 import time

@@ -15,12 +15,10 @@ This module provides enhanced data conversion with:
 - Integration with existing pipeline
 """
 
-
 import asyncio
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -28,14 +26,12 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
-import collections
+
 import datetime
-import logging
+
 import numpy as np
-import time
 
 logger = system_logger.getChild("EnhancedStep01_5DataConverter")
-
 
 class EnhancedUnifiedDataConverter:
     """Enhanced unified data converter with real-time validation."""
@@ -660,7 +656,6 @@ class EnhancedUnifiedDataConverter:
         except Exception as e:
             self.logger.exception(f'❌ Failed to log enhanced step 1.5 artifacts and reports: {e}')
 
-
 # Main execution function
 async def run_enhanced_step01_5_data_converter(
     symbol: str,
@@ -716,7 +711,6 @@ async def run_enhanced_step01_5_data_converter(
     except Exception as e:
         logger.exception(f"❌ Enhanced Step 1.5 failed with exception: {e}")
         return False
-
 
 if __name__ == "__main__":
     # Example usage

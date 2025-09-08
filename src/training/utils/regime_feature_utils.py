@@ -9,7 +9,6 @@ from typing import Dict, Any, Optional
 import numpy as np
 import pandas as pd
 
-
 class RegimeFeatureUtils:
     """Utility class for regime feature calculations."""
     

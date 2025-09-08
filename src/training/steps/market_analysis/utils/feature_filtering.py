@@ -37,16 +37,12 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
     lgb = None
 
-import logging
-import time
-
 try:
     from scipy.stats import rankdata
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False
     rankdata = None
-
 
 class FeatureFiltering:
     """Regime-aware feature filtering with comprehensive selection algorithms."""
@@ -348,7 +344,6 @@ class FeatureFiltering:
         except Exception as e:
             self.logger.error(f"❌ Combined filtering failed: {e}")
             return features_df, {'error': str(e)}
-
 
 __all__ = ['FeatureFiltering']
 

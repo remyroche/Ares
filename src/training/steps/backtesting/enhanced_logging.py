@@ -14,9 +14,6 @@ import psutil
 import threading
 from contextlib import contextmanager
 from src.utils.common_operations import format_datetime, get_current_datetime, safe_file_exists, ensure_directory, safe_json_dump, safe_json_load
-import numpy as np
-import json
-import typing
 
 class BacktestingLogger:
     """Enhanced logger for backtesting pipeline with comprehensive monitoring."""
@@ -379,7 +376,6 @@ def cleanup_global_logger() -> None:
     if _global_logger:
         _global_logger.cleanup()
         _global_logger = None
-
 
 """Enhanced Logging System for Backtesting Pipeline.
 

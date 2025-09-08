@@ -25,16 +25,12 @@ from src.training.steps.market_analysis.step1 import (
     Step1Orchestrator,
 )
 from src.utils.logger import system_logger
-import collections
-import logging
-import time
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("Step1Runner")
-
 
 def main() -> None:
     """Main function to run step01 processes."""
@@ -228,7 +224,6 @@ def main() -> None:
             print("❌ Download completed with errors:")
             for error in download_results["errors"]:
                 print(f"  - {error}")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

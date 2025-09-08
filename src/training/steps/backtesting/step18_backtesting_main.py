@@ -1,4 +1,4 @@
-from src.core.decorators import handles_errors
+
 #!/usr/bin/env python3
 """Enhanced Step 18: Backtesting Pipeline.
 
@@ -33,8 +33,6 @@ from .utils.trading_decorators import (
     timeout, error_boundary, compose, validate_data_quality, 
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
-import json
-import logging
 
 # Financial Metrics Logging import
 try:

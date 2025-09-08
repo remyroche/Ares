@@ -8,7 +8,7 @@ paper trading, and live trading modes.
 """
 
 import asyncio
-import json
+
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
@@ -38,7 +38,6 @@ from .enhanced_ml_monitoring import (
     TradeContext, TradingIndicator, MLModelDecision, 
     EnsembleDecision, TradingMode, ModelType
 )
-
 
 class MockTradingSystem:
     """Mock trading system for demonstration purposes."""
@@ -71,7 +70,6 @@ class MockTradingSystem:
             'execution_time_ms': np.random.uniform(10, 100)
         }
 
-
 class MockMLModel:
     """Mock ML model for demonstration purposes."""
     
@@ -88,7 +86,6 @@ class MockMLModel:
         """Mock probability prediction."""
         return np.array([0.3, 0.7])
 
-
 class MockHMMModel:
     """Mock HMM model for demonstration purposes."""
     
@@ -104,7 +101,6 @@ class MockHMMModel:
         """Mock regime probabilities."""
         probs = np.random.dirichlet([1, 1, 1])
         return probs
-
 
 class MockSignalGenerator:
     """Mock signal generator for demonstration purposes."""
@@ -127,7 +123,6 @@ class MockSignalGenerator:
             'volatility_risk': np.random.uniform(0.0, 0.5),
             'liquidity_risk': np.random.uniform(0.0, 0.2)
         }
-
 
 def create_mock_market_data(symbol: str, days: int = 30) -> pd.DataFrame:
     """Create mock market data for demonstration."""
@@ -172,7 +167,6 @@ def create_mock_market_data(symbol: str, days: int = 30) -> pd.DataFrame:
     df['adx_14'] = np.random.uniform(20, 50, len(df))
     
     return df
-
 
 async def example_enhanced_monitoring_usage():
     """Example of how to use the enhanced monitoring system."""
@@ -541,7 +535,6 @@ async def example_enhanced_monitoring_usage():
     
     return orchestrator, context_capture, explainability_integrator
 
-
 async def example_backtesting_integration():
     """Example of integrating enhanced monitoring with backtesting."""
     
@@ -582,7 +575,6 @@ async def example_backtesting_integration():
     
     print("✅ Backtesting integration example completed")
 
-
 async def example_paper_trading_integration():
     """Example of integrating enhanced monitoring with paper trading."""
     
@@ -593,7 +585,6 @@ async def example_paper_trading_integration():
     
     print("✅ Paper trading integration example completed")
 
-
 async def example_live_trading_integration():
     """Example of integrating enhanced monitoring with live trading."""
     
@@ -603,7 +594,6 @@ async def example_live_trading_integration():
     # ... (implementation would be similar to other examples)
     
     print("✅ Live trading integration example completed")
-
 
 if __name__ == "__main__":
     import yaml

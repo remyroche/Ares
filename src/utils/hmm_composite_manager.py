@@ -14,23 +14,18 @@ Centralized manager for HMM composite cluster files that can be used by:
 This ensures consistent behavior and prevents infinite loops.
 """
 
-
 import contextlib
 import json
 import os
 import time
 from typing import Any
 
-
 from .logger import system_logger
-import numpy as np
-import logging
 
 # Module-level sets to avoid duplicate logs across multiple instances
 # This prevents log spam when different components instantiate the manager separately
 _GLOBAL_LOGGED_LOADS: set[str] = set()
 _GLOBAL_LOGGED_EVENTS: set[str] = set()
-
 
 class HMMCompositeManager:
     """Centralized manager for HMM composite cluster files."""
@@ -657,10 +652,8 @@ class HMMCompositeManager:
             "last_cleanup": self._last_cleanup,
         }
 
-
 # Global instance for easy access
 _hmm_composite_manager: HMMCompositeManager | None = None
-
 
 def get_hmm_composite_manager() -> HMMCompositeManager:
     """Get the global HMM composite manager instance."""

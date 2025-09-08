@@ -11,13 +11,10 @@ import sys as _sys
 import threading
 import time
 from contextlib import contextmanager
-import concurrent.futures
+
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Any
-import numpy as np
-import pandas as pd
-import collections
 
 try:
     from src.utils.pipeline_standards import PipelineStandards
@@ -567,7 +564,6 @@ def get_system_logger_with_comprehensive_integration() -> logging.Logger:
             """Delegate all other attributes to the base logger."""
             return getattr(self.base_logger, name)
     return ComprehensiveIntegratedLogger(system_logger)
-
 
 def ensure_comprehensive_logging_available() -> bool:
     """Ensure comprehensive logging is available for all logging calls."""

@@ -7,7 +7,6 @@ from typing import Union
 import numpy as np
 'Analyst model explainer for SHAP and LIME integration.\n\nThis module provides explainability for Analyst ensemble models, enabling\ntraceability of market analysis decisions back to individual factors.\n'
 from .explainability.base_explainer import BaseExplainer, ExplanationResult
-import logging
 
 try:
     SHAP_AVAILABLE = True

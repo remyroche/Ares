@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional
 from sklearn.ensemble import VotingClassifier, StackingClassifier
 from sklearn.linear_model import LogisticRegression
 from src.utils.logger import system_logger
-import logging
 
 class EnsembleCreator:
     """Handles ensemble creation from enhanced analyst models."""

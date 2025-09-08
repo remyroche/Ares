@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Step 06: Advanced Feature Engineering with Hardware Acceleration (standard path for orchestrator).
 
@@ -17,7 +16,6 @@ from datetime import datetime
 from src.training.base_step import BaseStep
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.config.environment import get_environment_settings
-import logging
 
 # Get dynamic symbol configuration
 _settings = get_environment_settings()
@@ -47,7 +45,6 @@ try:
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False
-
 
 class AdvancedFeatureEngineeringStep(BaseStep):
     """Advanced feature engineering using the standardized BaseStep."""

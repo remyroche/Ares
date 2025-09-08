@@ -6,11 +6,8 @@ Extracted from raw_data_quality_checker.py
 from datetime import datetime, timedelta
 from typing import Any, Optional
 import pandas as pd
-import numpy as np
 
 from src.utils.logger import system_logger
-import logging
-
 
 def determine_timeframe_from_data(data: pd.DataFrame) -> str:
     """Determine the timeframe from the data intervals.
@@ -47,7 +44,6 @@ def determine_timeframe_from_data(data: pd.DataFrame) -> str:
         return '1d'
     else:
         return '1d'
-
 
 def estimate_timeframe_from_data(data: pd.DataFrame) -> str:
     """Estimate the timeframe from data characteristics.
@@ -86,7 +82,6 @@ def estimate_timeframe_from_data(data: pd.DataFrame) -> str:
         logger = system_logger.getChild("DataUtils")
         logger.debug(f'⚠️ Error estimating timeframe: {e}')
         return '1m'
-
 
 def fix_datetime_index(data: pd.DataFrame) -> pd.DataFrame | None:
     """Fix missing datetime index by creating one from available data.
@@ -173,7 +168,6 @@ def fix_datetime_index(data: pd.DataFrame) -> pd.DataFrame | None:
         logger.exception(f'❌ Failed to create datetime index: {e}')
         return None
 
-
 def calculate_interval_statistics(data: pd.DataFrame) -> dict[str, Any]:
     """Calculate statistics about time intervals in the data.
     
@@ -226,7 +220,6 @@ def calculate_interval_statistics(data: pd.DataFrame) -> dict[str, Any]:
         'coefficient_of_variation': cv
     }
 
-
 def detect_data_gaps(data: pd.DataFrame, max_gap_hours: float = 1.0) -> dict[str, Any]:
     """Detect gaps in the data.
     
@@ -275,7 +268,6 @@ def detect_data_gaps(data: pd.DataFrame, max_gap_hours: float = 1.0) -> dict[str
         'gap_positions': gap_positions
     }
 
-
 def calculate_data_span(data: pd.DataFrame) -> dict[str, Any]:
     """Calculate data span information.
     
@@ -317,7 +309,6 @@ def calculate_data_span(data: pd.DataFrame) -> dict[str, Any]:
         'end_time': end_time,
         'is_single_timestamp': False
     }
-
 
 def validate_ohlc_consistency(data: pd.DataFrame) -> dict[str, Any]:
     """Validate OHLC data consistency.
@@ -371,7 +362,6 @@ def validate_ohlc_consistency(data: pd.DataFrame) -> dict[str, Any]:
         'issues': issues
     }
 
-
 def calculate_volume_statistics(data: pd.DataFrame) -> dict[str, Any]:
     """Calculate volume statistics.
     
@@ -414,7 +404,6 @@ def calculate_volume_statistics(data: pd.DataFrame) -> dict[str, Any]:
         'volume_spikes': int(volume_spikes),
         'volume_drops': int(volume_drops)
     }
-
 
 def generate_data_summary(data: pd.DataFrame) -> dict[str, Any]:
     """Generate a comprehensive data summary.

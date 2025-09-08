@@ -1,5 +1,4 @@
 
-
 from logging import error
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
@@ -22,8 +21,6 @@ from src.utils.compat import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, warning
 import numpy as np
-import time
-
 
 class PerformanceMonitor:
     """
@@ -826,9 +823,7 @@ class PerformanceMonitor:
         """Clear retraining triggers."""
         self.retraining_triggers.clear()
 
-
 performance_monitor: PerformanceMonitor | None = None
-
 
 @handles_errors(
     exceptions=(Exception,),

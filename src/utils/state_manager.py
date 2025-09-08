@@ -16,14 +16,11 @@ from pathlib import Path
 from typing import Any
 
 from .logger import system_logger
-import logging
-import time
 
 from src.utils.warning_symbols import (
     error,
     invalid,
 )
-
 
 class StateManager:
     """Enhanced state manager with comprehensive error handling and type safety."""
@@ -239,8 +236,5 @@ class StateManager:
         """Print message to console."""
         print(message)
 
-
 # Global state manager instance
 state_manager: StateManager | None = None
-
-

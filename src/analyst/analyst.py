@@ -1,30 +1,46 @@
 # src/analyst/analyst.py
 
-import logging
-import numpy as np
+
 from datetime import datetime
+import logging
+from typing import Any
+from typing import TYPE_CHECKING
+
+import numpy as np
 import pandas as pd
 
-from typing import (
+from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
+from src.analyst.liquidation_risk_model import LiquidationRiskModel
+from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
+from src.analyst.market_health_analyzer import MarketHealthAnalyzer
+from src.analyst.market_health_analyzer import setup_market_health_analyzer
+from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+from src.core.decorators import handles_errors
+from src.core.error_classes import execution_error
+from src.core.error_classes import initialization_error
+from src.training.dual_model_system import DualModelSystem
+from src.training.dual_model_system import setup_dual_model_system
+from src.utils.compat import handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.lookahead_bias_detector import LookaheadBiasError
+from src.utils.lookahead_bias_detector import get_global_detector
+from src.utils.lookahead_bias_detector import validate_no_future_data
+from src.utils.warning_symbols import failed
+from src.utils.warning_symbols import initialization_error
+
     TYPE_CHECKING,
     Any,
 )
-from src.utils.compat import handle_specific_errors
-from src.core.error_classes import execution_error, initialization_error
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
 
-
-from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 try:
-    from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 except Exception:  # pragma: no cover - optional at runtime
     MLConfidencePredictor = None  # type: ignore
 
 # Import dual model system and other components
-from src.utils.warning_symbols import (
     failed,
     initialization_error,
+)
+    get_global_detector, validate_no_future_data, LookaheadBiasError
 )
 
 # Placeholder implementations for missing decorators and classes
@@ -51,11 +67,6 @@ class UnifiedRegimeClassifierFractal:
         self.exchange = exchange
 
 if TYPE_CHECKING:
-    from src.analyst.liquidation_risk_model import LiquidationRiskModel
-    from src.analyst.market_health_analyzer import MarketHealthAnalyzer
-    from src.training.dual_model_system import DualModelSystem
-import time
-
 
 class Analyst:
     """
@@ -288,7 +299,6 @@ class Analyst:
     async def _initialize_dual_model_system(self) -> None:
         """Initialize Dual Model System."""
         try:
-            from src.training.dual_model_system import setup_dual_model_system
 
             self.dual_model_system = await setup_dual_model_system(self.config)
             if self.dual_model_system:
@@ -309,7 +319,6 @@ class Analyst:
     async def _initialize_market_health_analyzer(self) -> None:
         """Initialize Market Health Analyzer."""
         try:
-            from src.analyst.market_health_analyzer import setup_market_health_analyzer
 
             self.market_health_analyzer = await setup_market_health_analyzer(
                 self.config,
@@ -334,7 +343,6 @@ class Analyst:
     async def _initialize_liquidation_risk_model(self) -> None:
         """Initialize Liquidation Risk Model."""
         try:
-            from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
             
             self.liquidation_risk_model = await setup_liquidation_risk_model(
                 self.config,
@@ -1391,7 +1399,6 @@ class Analyst:
         except Exception:
             self.logger.error("Error storing analysis results: {e}")
 
-
     @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
@@ -1487,4 +1494,3 @@ class Analyst:
             self.logger.info("✅ Analyst stopped successfully")
         except Exception:
             self.logger.error("❌ Error stopping Analyst: {e}")
-

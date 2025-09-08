@@ -47,8 +47,6 @@ from .training.steps.market_analysis import run_market_analysis_pipeline
 from .training.steps.model_training import run_model_training_pipeline
 from .training.steps.optimisation import run_optimisation_pipeline
 from .training.steps.backtesting import run_backtesting_pipeline
-import json
-import logging
 
 class PipelineStatus(Enum):
     """Pipeline execution status."""

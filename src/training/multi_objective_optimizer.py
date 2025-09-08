@@ -1,6 +1,5 @@
 # src/training/multi_objective_optimizer.py
 
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,11 +10,9 @@ from src.utils.logger import system_logger
 import numpy as np
 
 from .training.optimized_backtester import OptimizedBacktester
-import datetime
-import logging
+
 import pandas as pd
 from .core.decorators import handles_errors
-
 
 @dataclass
 class OptimizationMetrics:

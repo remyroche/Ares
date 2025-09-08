@@ -5,7 +5,7 @@ import random
 import re
 import time
 import warnings
-import logging
+
 import glob
 import psutil
 from datetime import datetime
@@ -144,7 +144,6 @@ class ComputationalOptimizationManager:
             self.logger.info('🧹 Computational optimization manager cleaned up')
         except Exception as e:
             self.logger.error(f'❌ Error during cleanup: {e}')
-
 
 async def create_computational_optimization_manager(config: dict, market_data, model_config: dict):
     """Create computational optimization manager."""

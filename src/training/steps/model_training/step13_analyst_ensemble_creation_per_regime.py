@@ -19,8 +19,6 @@ from src.training.steps.model_training.step13_analyst_ensemble_creation import A
 from src.utils.logger import get_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import numpy as np
-import logging
-import typing
 
 # Import optimization utilities
 from src.utils.m1_gpu_utils import get_m1_gpu_manager
@@ -30,9 +28,7 @@ from src.utils.vectorized_processing_core import get_vectorized_processing_core
 from src.utils.optimized_data_manager import get_optimized_data_manager
 from src.utils.enhanced_step_optimizations import get_step_optimization_manager, create_optimization_profile, WorkloadType, OptimizationStrategy
 
-
 logger = get_logger('Step13AnalystEnsembleCreationPerRegime')
-
 
 class PerRegimeAnalystEnsembleCreationStep(Step13AnalystEnsembleCreation):
     """Analyst ensemble creation step that processes each regime separately with full optimization."""
@@ -1238,7 +1234,6 @@ class PerRegimeAnalystEnsembleCreationStep(Step13AnalystEnsembleCreation):
             self.logger.error(f"❌ Error saving analyst ensemble creation results for regime {regime_id}: {e}")
             return False
 
-
 @traced(span_name='run_per_regime_analyst_ensemble_creation_step')
 @validates()
 @handles_errors
@@ -1291,7 +1286,6 @@ async def run_per_regime_step(
         logger.error("❌ Step 13: Per-Regime Analyst Ensemble Creation failed")
         
     return success
-
 
 if __name__ == '__main__':
     async def test():

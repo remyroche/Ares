@@ -2,8 +2,6 @@
 import time
 from typing import Any
 
-import logging
-
 from src.training.steps.data_preparation_components.training_validation_config import (
     VALIDATION_FUNCTIONS,
     can_proceed_to_step,
@@ -12,7 +10,6 @@ from src.training.steps.data_preparation_components.training_validation_config i
 )
 
 # src/training/validator.py
-
 
 class TrainingStepValidator:
     """Validates training steps and prevents progression on significant errors."""

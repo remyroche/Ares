@@ -1,6 +1,5 @@
 # src/transition/state_sequence_builder.py
 
-
 import asyncio
 import os
 from dataclasses import dataclass
@@ -10,17 +9,14 @@ from sklearn.preprocessing import StandardScaler
 
 from .analyst.unified_regime_classifier import UnifiedRegimeClassifier
 from ..utils.logger import system_logger
-import numpy as np
-import pandas as pd
-import logging
 
+import pandas as pd
 
 @dataclass
 class StateBuilderConfig:
     hmm_n_states: int
     use_existing_urc_models: bool
     cache_dir: str | None
-
 
 class StateSequenceBuilder:
     """

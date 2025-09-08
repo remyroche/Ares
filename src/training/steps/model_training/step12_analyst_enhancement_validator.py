@@ -26,10 +26,6 @@ sys.path.insert(0, str(project_root))
 from .config import CONFIG
 
 import asyncio as _asyncio
-import json
-import logging
-
-
 
 class Step6HMMBasedEnhancementValidator(BaseValidator):
     """Validator for Step 6: HMM-Based Enhancement."""
@@ -508,7 +504,6 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         except Exception:
             return artifact
 
-
 async def run_validator(
     training_input: dict[str, Any],
     pipeline_state: dict[str, Any],
@@ -533,7 +528,6 @@ async def run_validator(
         "duration": 0,  # Could be enhanced to track actual duration
         "timestamp": asyncio.get_event_loop().time(),
     }
-
 
 if __name__ == "__main__":
 

@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import numpy as np
+
 import pandas as pd
 
 @dataclass
@@ -29,10 +29,6 @@ class EnhancedMultiTimeframeOptimizer:
 import pandas as pd
 
 from the matrix optimization system instead of fixed periods.
-
-
-
-
 
     """
 

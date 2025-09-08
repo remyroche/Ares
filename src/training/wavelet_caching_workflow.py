@@ -2,7 +2,6 @@
 from src.utils.logger import system_logger
 from .core.decorators import handles_errors
 
-
 """Complete workflow example for wavelet feature caching and backtesting.
 
 Demonstrates the full pipeline from pre-computation to fast backtesting.
@@ -22,9 +21,6 @@ from src.training.steps.backtesting_with_cached_features import (
 )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
-import json
-import logging
-
 
 @handles_errors(
     exceptions=(ValueError, RuntimeError, FileNotFoundError),
@@ -241,7 +237,6 @@ async def step4_cache_management(config: dict) -> bool | None:
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
         from src.training.steps.vectorized_advanced_feature_engineering import (
-
 
             WaveletFeatureCache,
         )

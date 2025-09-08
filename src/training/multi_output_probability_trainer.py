@@ -22,8 +22,6 @@ except ImportError:
     NEURAL_MODEL_CONFIGS = {}
     NeuralNetworkWrapper = None
     create_neural_model = None
-import logging
-import time
 
 try:
     from catboost import CatBoostClassifier

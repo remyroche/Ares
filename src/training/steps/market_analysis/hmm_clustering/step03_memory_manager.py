@@ -12,7 +12,7 @@ import gc
 import psutil
 import logging
 from pathlib import Path
-import tempfile
+
 import pickle
 from contextlib import contextmanager
 import warnings
@@ -20,7 +20,6 @@ import warnings
 warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
-
 
 class MemoryManager:
     """Memory management utility for chunked processing."""
@@ -294,10 +293,8 @@ class MemoryManager:
         """Cleanup on destruction."""
         self.cleanup_temp_files()
 
-
 # Global memory manager instance
 _global_memory_manager = MemoryManager()
-
 
 def get_memory_manager(config: Optional[Dict] = None) -> MemoryManager:
     """Get global memory manager instance."""
@@ -305,14 +302,12 @@ def get_memory_manager(config: Optional[Dict] = None) -> MemoryManager:
         _global_memory_manager.config.update(config)
     return _global_memory_manager
 
-
 @contextmanager
 def memory_aware_processing(operation_name: str = "operation", config: Optional[Dict] = None):
     """Context manager for memory-aware processing."""
     manager = get_memory_manager(config)
     with manager.memory_context(operation_name):
         yield manager
-
 
 def chunked_process(data: Union[pd.DataFrame, np.ndarray], 
                    process_func: Callable,
@@ -322,7 +317,6 @@ def chunked_process(data: Union[pd.DataFrame, np.ndarray],
     """Process data in chunks using global memory manager."""
     manager = get_memory_manager(config)
     return manager.process_in_chunks(data, process_func, chunk_size, **kwargs)
-
 
 def optimize_dataframe_memory(df: pd.DataFrame, config: Optional[Dict] = None) -> pd.DataFrame:
     """Optimize DataFrame memory usage using global memory manager."""

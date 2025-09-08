@@ -4,11 +4,10 @@ import os
 from datetime import datetime
 from typing import Any
 
-
 # Import ML Confidence Predictor
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 import pandas as pd
-import numpy as np
+
 import pickle
 
 from src.utils.logger import system_logger
@@ -30,9 +29,7 @@ from ..utils.confidence import aggregate_directional_confidences
 
 # src/training/dual_model_system.py
 
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
-
 
 class DualModelSystem:
     """Dual Model System for trading decisions."
@@ -1687,10 +1684,8 @@ class DualModelSystem:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-
 # Global dual model system instance
 dual_model_system: DualModelSystem | None = None
-
 
 @handles_errors(
     exceptions=(Exception,),

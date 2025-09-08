@@ -13,10 +13,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Optional, Callable, Dict, List
 
-
 import pandas as pd
-import src.core.domain
-import numpy as np
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -83,7 +80,6 @@ except ImportError:
     class ParquetDatasetManager:
         def __init__(self, *args, **kwargs):
             pass
-
 
 class UnifiedDataLoader:
     """Secure data loader for step1_5 unified data with comprehensive validation."""
@@ -359,7 +355,6 @@ class UnifiedDataLoader:
                 'warnings': [],
                 'stats': {}
             }
-
 
 # Example usage
 if __name__ == "__main__":

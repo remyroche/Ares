@@ -7,11 +7,9 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import numpy as np
-import pandas as pd
+
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -36,7 +34,6 @@ OPTIONAL_MODULES = [
     'src.training.steps.step06_labeling_components.regime_specific_triple_barrier_optimizer',
     'src.training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling',
 ]
-
 
 class DependencyManager:
     """Manages dependencies and provides fallback mechanisms."""
@@ -106,7 +103,6 @@ class DependencyManager:
         """Check if a module is available."""
         return self.dependency_status.get(module_name, False)
 
-
 # Global dependency manager instance
 dependency_manager = DependencyManager()
 
@@ -155,7 +151,6 @@ if pipeline_standards_available:
 else:
     dependency_status = dependency_manager.get_dependency_status()
 
-
 def get_system_logger() -> Any:
     """Get the system logger with fallback."""
     if system_logger_available:
@@ -164,14 +159,12 @@ def get_system_logger() -> Any:
         logging.basicConfig(level = logging.INFO)
         return logging.getLogger("System")
 
-
 def get_pipeline_standards() -> Any:
     """Get pipeline standards with fallback."""
     if pipeline_standards_available:
         return pipeline_standards
     else:
         return None
-
 
 def get_ensure_directory() -> callable:
     """Get ensure_directory function with fallback."""
@@ -180,7 +173,6 @@ def get_ensure_directory() -> callable:
     else:
         return ensure_directory  # Use fallback implementation
 
-
 def get_safe_json_dump() -> callable:
     """Get safe_json_dump function with fallback."""
     if common_operations_available:
@@ -188,14 +180,12 @@ def get_safe_json_dump() -> callable:
     else:
         return safe_json_dump  # Use fallback implementation
 
-
 def get_psutil() -> Optional[Any]:
     """Get psutil module with fallback."""
     if psutil_available:
         return psutil
     else:
         return None
-
 
 # Export key dependencies
 __all__ = [

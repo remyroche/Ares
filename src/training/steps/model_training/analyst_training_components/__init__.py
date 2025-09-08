@@ -21,7 +21,6 @@ from .core.decorators import (
     warning
 )
 
-
 __all__ = [
     "RegimeSpecificTPSLOptimizer",
 ]

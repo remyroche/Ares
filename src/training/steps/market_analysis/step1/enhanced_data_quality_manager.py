@@ -20,8 +20,6 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 import pandas as pd
-import logging
-import typing
 
 logger = system_logger.getChild("EnhancedDataQualityManager")
 

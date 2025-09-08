@@ -3,9 +3,9 @@
 import asyncio
 import json
 import os
-from pathlib import Path
+
 from typing import Any, Dict, List, Optional
-import numpy as np
+
 from datetime import datetime
 
 from src.utils.logger import system_logger
@@ -13,7 +13,6 @@ from src.training.steps.base_validator import BaseValidator
 from src.utils.warning_symbols import success, error, failed
 
 logger = system_logger
-
 
 class Step19MonteCarloValidationValidator(BaseValidator):
     """Validator for Step 19 Monte Carlo Validation outputs."""
@@ -323,13 +322,11 @@ class Step19MonteCarloValidationValidator(BaseValidator):
 
         return result
 
-
 # For backward compatibility
 async def validate_step19_monte_carlo_validation(symbol: str, exchange: str, data_dir: str = "data/training") -> Dict[str, Any]:
     """Validate Step 19 Monte Carlo Validation."""
     validator = Step19MonteCarloValidationValidator()
     return await validator.validate_step(symbol, exchange, data_dir)
-
 
 if __name__ == "__main__":
     # Test the validator

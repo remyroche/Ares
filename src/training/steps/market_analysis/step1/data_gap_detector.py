@@ -12,9 +12,6 @@ Detects missing data gaps in aggtrades, klines, and futures files.
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-import logging
-import time
-import typing
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent

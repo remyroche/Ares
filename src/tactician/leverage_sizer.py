@@ -1,17 +1,25 @@
-from ..core.decorators import handles_errors
 """
+import contextlib
+from datetime import datetime
+import math
+import math
+from typing import Any
+
+from core.decorators import handles_errors
+from utils.linear_confidence_scaling import LinearConfidenceScaler
+from utils.logger import system_logger
+from utils.math_validation import MathValidationError
+from utils.math_validation import safe_divide
+from utils.math_validation import safe_log
+from utils.math_validation import validate_positive
+from utils.math_validation import validate_range
+
 from ..utils.logger import system_logger
 Simplified Leverage Sizer for high leverage trading.
 Uses ML confidence scores, liquidation risk model, and market health analysis.
 """
-import contextlib
-from datetime import datetime
-from typing import Any
-from ..utils.logger import system_logger
-from ..utils.linear_confidence_scaling import LinearConfidenceScaler
-import numpy as np
-import logging
-import time
+    safe_divide, safe_log, validate_positive, validate_range, MathValidationError
+)
 
 # Use the imported handles_errors decorator directly
 
@@ -157,12 +165,21 @@ class LeverageSizer:
                 risk = adversarial_confidences.get(closest_level, 0.3)
                 adverse_risks.append(risk)
             avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
-            confidence_factor = avg_confidence / self.confidence_threshold
+            
+            # Use safe division to prevent division by zero
+            confidence_factor = safe_divide(avg_confidence, self.confidence_threshold, 1.0)
             risk_factor = 1.0 - avg_adverse_risk
+            
+            # Validate risk factor is positive
+            risk_factor = max(0.0, min(1.0, risk_factor))
+            
             base_leverage = self.min_leverage + (self.max_leverage - self.min_leverage) * confidence_factor * risk_factor
             return max(self.min_leverage, min(self.max_leverage, base_leverage))
         except (ValueError, TypeError, KeyError) as e:
             self.logger.exception(f'Error calculating ML leverage: {e}')
+            return self.min_leverage
+        except MathValidationError as e:
+            self.logger.warning(f'Mathematical validation error in ML leverage calculation: {e}')
             return self.min_leverage
 
     def _calculate_liquidation_safe_leverage(self, current_price: float, account_balance: float, market_health_analysis: dict[str, Any] | None) -> float:
@@ -176,25 +193,42 @@ class LeverageSizer:
                     worst_case_move = min(0.2, current_vol * 2)
                 elif current_vol > 0.02:
                     worst_case_move = 0.15
-            safe_leverage = (1.0 - self.liquidation_buffer) / worst_case_move
+            
+            # Use safe division to prevent division by zero
+            safe_leverage = safe_divide(1.0 - self.liquidation_buffer, worst_case_move, self.min_leverage)
             return max(self.min_leverage, min(self.max_leverage, safe_leverage))
         except (ValueError, TypeError) as e:
             self.logger.exception(f'Error calculating liquidation safe leverage: {e}')
+            return self.min_leverage
+        except MathValidationError as e:
+            self.logger.warning(f'Mathematical validation error in liquidation safe leverage: {e}')
             return self.min_leverage
 
     def _calculate_weighted_leverage(self, ml_leverage: float, liquidation_leverage: float) -> float:
         """Calculate weighted leverage using logarithmic computations to prevent multiplicative compounding."""
         try:
-            import math
-            epsilon = 1e-08
-            log_ml = math.log(ml_leverage + epsilon)
-            log_liquidation = math.log(liquidation_leverage + epsilon)
+            
+            # Use safe logarithm to prevent log of zero or negative numbers
+            log_ml = safe_log(ml_leverage, default=0.0)
+            log_liquidation = safe_log(liquidation_leverage, default=0.0)
+            
+            # Use safe division for weight normalization
             total_weight = self.ml_weight + self.liquidation_weight
-            normalized_ml_weight = self.ml_weight / total_weight
-            normalized_liquidation_weight = self.liquidation_weight / total_weight
+            normalized_ml_weight = safe_divide(self.ml_weight, total_weight, 0.5)
+            normalized_liquidation_weight = safe_divide(self.liquidation_weight, total_weight, 0.5)
+            
             weighted_log = normalized_ml_weight * log_ml + normalized_liquidation_weight * log_liquidation
             weighted_leverage = math.exp(weighted_log)
+            
+            # Ensure result is finite
+            if not math.isfinite(weighted_leverage):
+                self.logger.warning(f"Non-finite result in weighted leverage calculation")
+                return self.min_leverage
+            
             return max(self.min_leverage, min(self.max_leverage, weighted_leverage))
+        except MathValidationError as e:
+            self.logger.warning(f'Mathematical validation error in weighted leverage: {e}')
+            return self.min_leverage
         except Exception as e:
             self.logger.exception(f'Error calculating weighted leverage: {e}')
             return self.min_leverage
@@ -202,7 +236,6 @@ class LeverageSizer:
     def _apply_leverage_modifiers(self, base_leverage: float, *, market_health_analysis: dict[str, Any] | None, strategist_risk_parameters: dict[str, Any] | None, analyst_confidence: float, tactician_confidence: float) -> float:
         """Adjust leverage using logarithmic computations to prevent multiplicative compounding."""
         try:
-            import math
 
             epsilon = 1e-08
             log_adjusted = math.log(base_leverage + epsilon)

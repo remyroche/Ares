@@ -9,10 +9,8 @@ from enum import Enum
 from typing import Any
 
 from .logger import system_logger
-import logging
-import pandas as pd
-import time
 
+import pandas as pd
 
 class OutlierSeverity(Enum):
     """Outlier severity levels."""

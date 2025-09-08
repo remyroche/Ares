@@ -10,7 +10,6 @@ from . import get_environment_config, get_system_config_section, get_trading_con
 from .trading import get_position_sizing_config, get_leverage_sizing_config, get_position_closing_config, get_position_division_config, get_position_monitoring_config
 from .training import get_enhanced_training_config
 from .config.config_confidence import get_confidence_config
-import logging
 
 def get_complete_config() -> dict[str, Any]:
     """
@@ -23,7 +22,6 @@ def get_complete_config() -> dict[str, Any]:
     from .core.config_service import get_config_service
     config_service = get_config_service()
     return config_service.get_config()
-
 
 def get_environment_config() -> dict[str, Any]:
     """Get environment configuration."""
@@ -46,7 +44,6 @@ def get_environment_config() -> dict[str, Any]:
             'initial_equity': 1000.0
         }
 
-
 def get_system_config_section() -> dict[str, Any]:
     """Get system configuration section."""
     return {
@@ -56,7 +53,6 @@ def get_system_config_section() -> dict[str, Any]:
         'max_threads': 4,
         'memory_limit_gb': 8
     }
-
 
 def get_trading_config_section() -> dict[str, Any]:
     """Get trading configuration section."""
@@ -71,7 +67,6 @@ def get_trading_config_section() -> dict[str, Any]:
             'max_position_size': 0.1,
             'risk_management_enabled': True
         }
-
 
 def get_training_config_section() -> dict[str, Any]:
     """Get training configuration section."""

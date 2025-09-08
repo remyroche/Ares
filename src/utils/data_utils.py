@@ -5,7 +5,6 @@ Data utilities with passthrough functions for common operations.
 import pandas as pd
 import numpy as np
 from typing import Any, Optional, Union
-import logging
 
 def safe_dataframe_operation(df: pd.DataFrame, operation: str, **kwargs) -> Any:
     """Safely perform dataframe operations."""

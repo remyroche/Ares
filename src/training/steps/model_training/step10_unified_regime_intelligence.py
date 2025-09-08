@@ -32,9 +32,6 @@ Key Features:
 - No TPSL calculations (handled by separate trading execution layer)
 """
 import os
-import collections
-import json
-import typing
 
 import pickle
 import re
@@ -179,7 +176,6 @@ if pandas is None:
     logger.error("❌ Pandas is required but not available")
     raise ImportError("Pandas is required for step10_unified_regime_intelligence")
 
-
 class MultiTimeframeHMMEncoder(nn.Module):
     """Multi-timeframe HMM state encoder using attention mechanisms."""
     @log_important_calls
@@ -305,7 +301,6 @@ class MultiTimeframeHMMEncoder(nn.Module):
             "confidence_logits": confidence_logits,
             "hidden_states": transformed,
         }
-
 
 class UnifiedRegimeIntelligenceStep:
     """Unified Step 9: Regime Intelligence System."""
@@ -1508,7 +1503,6 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.warning(f"⚠️ Error detecting intensity transition: {e}")
             return 0  # no transition as fallback
 
-
     async def _train_model(self, train_data: dict[str, Any]) -> bool:
         """Train the unified regime intelligence model."""
         try:
@@ -2385,7 +2379,6 @@ class UnifiedRegimeIntelligenceStep:
                 "stop_loss_multiplier": 1.25,
                 "risk_level": "MEDIUM",
             }
-
 
 # @deterministic_seed(42)  # decorator not available
 # @idempotent_step(step_key="step5_5_unified_regime_intelligence")  # decorator not available

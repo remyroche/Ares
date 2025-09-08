@@ -11,8 +11,6 @@ from src.core.decorators import handles_errors
 from dataclasses import dataclass
 from scipy.stats import multivariate_normal, norm
 from ..utils.logger import system_logger
-import logging
-import time
 
 @dataclass
 class CopulaModel:

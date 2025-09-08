@@ -7,8 +7,6 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 import functools
 from src.training.steps.market_analysis.regime_handler import regime_handler
 import pandas as pd
-import logging
-import numpy as np
 
 from src.utils.common_operations import get_logger
 

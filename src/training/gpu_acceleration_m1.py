@@ -5,7 +5,6 @@ from .core.decorators import handles_errors
 
 # src/training/gpu_acceleration_m1.py
 
-
 """
 GPU Acceleration for Mac M1 (Apple Silicon) using Metal Performance Shaders.
 Provides optimized matrix operations leveraging Apple's Metal framework.
@@ -19,8 +18,6 @@ import torch
 from src.utils.logger import system_logger
 from src.core.decorators.errors import handles_errors
 import numpy as np
-import logging
-
 
 class GPUAccelerationM1:
     """GPU acceleration for M1 Mac using MPS (Metal Performance Shaders)."""

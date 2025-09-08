@@ -15,8 +15,6 @@ def format_datetime(dt: Any = None) -> str:
 def get_current_datetime() -> Any:
     return datetime.now()
 from .logger import system_logger
-import logging
-import time
 
 def extract_training_metadata(config: dict[str, Any]) -> dict[str, str]:
     """Extract required metadata from enhanced training manager configuration.

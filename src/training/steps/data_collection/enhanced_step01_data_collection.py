@@ -16,7 +16,6 @@ This module provides enhanced data collection with:
 - Integration with existing pipeline
 """
 
-
 import asyncio
 import sys
 from datetime import datetime
@@ -28,14 +27,8 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from .utils.pipeline_standards import pipeline_standards
-import collections
-import json
-import logging
-import time
-import typing
 
 logger = system_logger.getChild("EnhancedStep01DataCollection")
-
 
 class EnhancedDataCollectionStep:
     """Enhanced Step 1: Data Collection with real-time validation."""
@@ -536,7 +529,6 @@ class EnhancedDataCollectionStep:
         except Exception as e:
             self.logger.exception(f'❌ Failed to log enhanced step 1 artifacts and reports: {e}')
 
-
 # Main execution function
 async def run_enhanced_step01_data_collection(
     symbol: str,
@@ -592,7 +584,6 @@ async def run_enhanced_step01_data_collection(
     except Exception as e:
         logger.exception(f"❌ Enhanced Step 1 failed with exception: {e}")
         return False
-
 
 if __name__ == "__main__":
     # Example usage

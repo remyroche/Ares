@@ -5,12 +5,10 @@ This module provides a unified interface for downloading data
 using either the optimized or clean downloader.
 """
 
-
 from typing import Any
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
-
 
 @handles_errors(fallback = False)
 async def download_all_data_with_consolidation(

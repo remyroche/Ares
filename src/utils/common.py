@@ -3,7 +3,6 @@ Common utilities with passthrough functions for common operations.
 """
 
 from typing import Any, Optional, Union, Dict, List
-import json
 
 def safe_get(dictionary: Dict, key: str, default: Any = None) -> Any:
     """Safely get value from dictionary."""

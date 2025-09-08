@@ -17,9 +17,6 @@ from src.training.steps.model_training.step15_tactician_specialist_training impo
 from src.utils.logger import get_logger
 from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-import logging
-import typing
-
 
 logger = get_logger('Step15TacticianSpecialistTrainingPerRegime')
 

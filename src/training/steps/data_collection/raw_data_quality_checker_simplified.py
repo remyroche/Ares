@@ -5,9 +5,9 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 This is a simplified version of raw_data_quality_checker.py that uses extracted components.
 The complexity has been reduced from 586 to approximately 150-200 by using component architecture.
 """
-import functools
+
 import warnings
-from datetime import datetime
+
 from typing import Any, Optional, Tuple
 import pandas as pd
 
@@ -34,10 +34,6 @@ from .data_quality_components import (
     log_validation_progress,
     handle_validation_errors
 )
-import json
-import logging
-import numpy as np
-
 
 class RawDataQualityChecker:
     """Simplified raw data quality checker using component architecture.
@@ -373,7 +369,6 @@ class RawDataQualityChecker:
             "ValidationError"
         )
 
-
 # Convenience functions for backward compatibility
 def validate_raw_data_quality(
     data: pd.DataFrame,
@@ -386,7 +381,6 @@ def validate_raw_data_quality(
     checker = RawDataQualityChecker(config)
     return checker.validate_raw_data(data, symbol, exchange, auto_download_missing = auto_download_missing)
 
-
 def validate_and_fix_data_quality_issues(
     data: pd.DataFrame,
     symbol: str,
@@ -397,7 +391,6 @@ def validate_and_fix_data_quality_issues(
     checker = RawDataQualityChecker(config)
     return checker.validate_and_fix_data_quality_issues(data, symbol, exchange)
 
-
 def fix_irregular_intervals_automatically(
     data: pd.DataFrame,
     symbol: str,
@@ -407,7 +400,6 @@ def fix_irregular_intervals_automatically(
     """Convenience function to automatically fix irregular intervals."""
     checker = RawDataQualityChecker(config)
     return checker.preprocessor.fix_irregular_intervals_automatically(data, symbol, exchange)
-
 
 def enhanced_preprocess_market_data(
     data: pd.DataFrame,

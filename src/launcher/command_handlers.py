@@ -7,12 +7,11 @@ logic from the main AresLauncher class, reducing complexity and improving mainta
 """
 
 import asyncio
-import logging
+
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 
 from src.utils.common_operations import format_datetime, get_current_datetime
-
 
 class BaseCommandHandler(ABC):
     """Base class for all command handlers."""
@@ -25,7 +24,6 @@ class BaseCommandHandler(ABC):
     def execute(self, **kwargs) -> bool:
         """Execute the command with the given parameters."""
         pass
-
 
 class TrainingCommandHandler(BaseCommandHandler):
     """Handles training-related commands (light, blank, full)."""
@@ -41,7 +39,6 @@ class TrainingCommandHandler(BaseCommandHandler):
             with_gui = with_gui,
         )
 
-
 class TradingCommandHandler(BaseCommandHandler):
     """Handles trading-related commands (paper, live, challenger)."""
     
@@ -54,7 +51,6 @@ class TradingCommandHandler(BaseCommandHandler):
             trading_mode = trading_mode,
             with_gui = with_gui,
         )
-
 
 class StepBasedCommandHandler(BaseCommandHandler):
     """Handles step-based training commands."""
@@ -74,7 +70,6 @@ class StepBasedCommandHandler(BaseCommandHandler):
             )
         )
 
-
 class DataLoadingCommandHandler(BaseCommandHandler):
     """Handles data loading commands."""
     
@@ -87,7 +82,6 @@ class DataLoadingCommandHandler(BaseCommandHandler):
             exchange = exchange,
             lookback_days = actual_lookback,
         )
-
 
 class PipelineCommandHandler(BaseCommandHandler):
     """Handles pipeline execution commands."""
@@ -114,7 +108,6 @@ class PipelineCommandHandler(BaseCommandHandler):
             with_gui = with_gui,
         )
 
-
 class RegimeCommandHandler(BaseCommandHandler):
     """Handles regime-related commands."""
     
@@ -129,7 +122,6 @@ class RegimeCommandHandler(BaseCommandHandler):
                 with_gui = with_gui,
             )
         )
-
 
 class UtilityCommandHandler(BaseCommandHandler):
     """Handles utility commands (modes, precompute, resume)."""
@@ -149,7 +141,6 @@ class UtilityCommandHandler(BaseCommandHandler):
         else:
             self.logger.error(f"Unknown utility command: {command}")
             return False
-
 
 class CommandHandlerFactory:
     """Factory for creating command handlers."""

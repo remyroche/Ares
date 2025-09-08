@@ -2,11 +2,10 @@
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 import pandas as pd
-import numpy as np
+
 from src.utils.logger import system_logger
 
 #!/usr/bin/env python3
-
 
 """Comprehensive Gap Filler for Pipeline Integration.
 
@@ -26,14 +25,10 @@ import aiohttp
 import certifi
 
 from src.utils.logger import system_logger
-import logging
-import time
-
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-
 
 class ComprehensiveGapFiller:
     """Comprehensive gap filler that handles all data types."""
@@ -1099,7 +1094,6 @@ class ComprehensiveGapFiller:
             "successful_calls": total_successful_calls,
         }
 
-
 # Function to integrate with pipeline
 async def run_comprehensive_gap_filling_pipeline(
     symbol: str = "ETHUSDT",
@@ -1113,7 +1107,6 @@ async def run_comprehensive_gap_filling_pipeline(
         return await gap_filler.process_all_data_types(symbol = symbol, exchange = exchange)
     finally:
         await gap_filler.close_session()
-
 
 if __name__ == "__main__":
     asyncio.run( run_comprehensive_gap_filling_pipeline())

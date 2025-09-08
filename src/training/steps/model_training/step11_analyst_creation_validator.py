@@ -1,6 +1,5 @@
 # src/training/steps/step11_*.py
 
-
 from pathlib import Path
 from typing import Any
 
@@ -9,11 +8,8 @@ import joblib
 from .core.decorators import validates
 from .utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
-import json
-import logging
 
 logger = system_logger.getChild("Step11AnalystCreationValidator")
-
 
 class Step11AnalystCreationValidator:
     """Validator for Step 11: Analyst Creation."""
@@ -164,7 +160,6 @@ class Step11AnalystCreationValidator:
         except Exception as e:
             self.logger.exception(f"❌ Error validating metadata file {metadata_file}: {e}")
             return False
-
 
 @validates()
 def step11_analyst_creation_validator(

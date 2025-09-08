@@ -6,9 +6,7 @@ from typing import Any, Dict, Tuple
 import yaml
 
 from src.utils.logger import get_logger
-import numpy as np
-import json
-import logging
+
 from src.core.decorators import handles_errors
 try:
     from src.core.decorators import traced
@@ -18,7 +16,6 @@ except ImportError:
         def decorator(func):
             return func
         return decorator
-
 
 class DynamicBarrierCalculator:
     """Dynamic barrier calculator for Tactician based on Analyst triple barrier values.

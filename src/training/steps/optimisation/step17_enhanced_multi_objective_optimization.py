@@ -15,8 +15,6 @@ from optuna.samplers import NSGAIISampler, TPESampler
 from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
 from src.utils.logger import system_logger
 import numpy as np
-import logging
-import time
 
 # Financial Metrics Logging import
 try:

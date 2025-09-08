@@ -19,7 +19,6 @@ import time
 from datetime import datetime
 from typing import Any
 
-
 # Suppress specific warnings only where needed - removed global suppression
 import optuna
 import shap
@@ -39,7 +38,6 @@ from torch.utils.data import DataLoader, TensorDataset
 from src.utils.logger import system_logger
 
 # Import Pydantic configuration
-import logging
 
 try:
     from src.training.enhanced_lm_config import (

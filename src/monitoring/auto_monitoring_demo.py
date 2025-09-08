@@ -22,7 +22,6 @@ from src.monitoring.auto_monitoring_launcher import (
     auto_capture_trade_decision, auto_update_performance, auto_update_ensemble
 )
 
-
 async def demo_auto_monitoring():
     """Demonstrate automatic monitoring activation."""
     print("🚀 Auto Enhanced Monitoring System Demo")
@@ -157,7 +156,6 @@ async def demo_auto_monitoring():
         await stop_auto_monitoring()
         print("✅ Auto Enhanced Monitoring System stopped successfully!")
 
-
 async def main():
     """Main entry point."""
     print("🚀 Starting Auto Enhanced Monitoring System Demo...")
@@ -169,7 +167,6 @@ async def main():
     print("\n🎉 Demo completed! The enhanced monitoring system is now")
     print("automatically integrated with your trading system and will")
     print("activate whenever you launch the Ares pipeline in trading mode.")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

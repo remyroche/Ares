@@ -9,8 +9,6 @@ optimizes the optimization process itself using RF, SHAP, MI, and multi-objectiv
 """
 
 from typing import Any
-import os
-
 
 def get_enhanced_feature_optimization_config() -> dict[str, Any]:
     """
@@ -222,7 +220,6 @@ def get_enhanced_feature_optimization_config() -> dict[str, Any]:
         },
     }
 
-
 def get_meta_optimization_objectives() -> dict[str, Any]:
     """
     Get meta-optimization objective definitions.
@@ -268,7 +265,6 @@ def get_meta_optimization_objectives() -> dict[str, Any]:
             "efficiency_min": 0.5,
         },
     }
-
 
 def get_parameter_importance_weights() -> dict[str, float]:
     """
@@ -320,7 +316,6 @@ def get_parameter_importance_weights() -> dict[str, float]:
         },
     }
 
-
 def get_optimization_strategies() -> dict[str, Any]:
     """
     Get optimization strategies for different scenarios.
@@ -360,7 +355,6 @@ def get_optimization_strategies() -> dict[str, Any]:
             "parameter_focus": ["lookback_period", "signal_period", "k_period"],
         },
     }
-
 
 def get_enhanced_output_schema() -> dict[str, Any]:
     """

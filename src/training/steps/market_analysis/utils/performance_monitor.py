@@ -8,8 +8,6 @@ for all functions and operations.
 import time
 import gc
 from typing import Any, Dict
-import logging
-import numpy as np
 
 # Optional dependencies with fallback handling
 try:
@@ -18,7 +16,6 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
-
 
 class PerformanceMonitor:
     """Performance monitoring and resource usage tracking for all functions."""
@@ -146,6 +143,5 @@ class PerformanceMonitor:
             'current_system_resources': self.get_system_resources(),
             'function_metrics': self.performance_metrics
         }
-
 
 __all__ = ['PerformanceMonitor']

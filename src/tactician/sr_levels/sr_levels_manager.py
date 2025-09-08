@@ -11,8 +11,6 @@ warnings.filterwarnings('ignore')
 from ...utils.logger import system_logger
 from .sr_breakout_predictor_enhanced import SRBreakoutPredictor
 import numpy as np
-import logging
-import time
 
 logger = system_logger.getChild('SRLevelsManager')
 

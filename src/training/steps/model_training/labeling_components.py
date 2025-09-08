@@ -13,7 +13,6 @@ This module contains specialized labeling components including
 triple barrier labeling with regime awareness.
 """
 from src.utils.logger import system_logger
-import logging
 
 class TripleBarrierLabeler:
     """Implements triple barrier labeling method."""

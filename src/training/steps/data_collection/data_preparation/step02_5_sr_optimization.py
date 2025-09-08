@@ -584,12 +584,16 @@ class SROptimizationStep(BaseStep):
                         self.logger.error(f'❌ Could not sample timestamp values: {sample_error}')
                     return fixed_data
         
-        # Remove duplicate timestamps
+        # Remove only exact duplicate rows (identical across all columns). Keep differing rows even if timestamp duplicates.
         if 'timestamp' in fixed_data.columns:
-            duplicate_count = fixed_data['timestamp'].duplicated().sum()
-            if duplicate_count > 0:
-                self.logger.info(f'🗑️ Removing {duplicate_count} duplicate timestamps')
-                fixed_data = fixed_data.drop_duplicates(subset=['timestamp'], keep='last')
+            exact_dupe_mask = fixed_data.duplicated(subset=fixed_data.columns.tolist(), keep='first')
+            exact_dupe_count = int(exact_dupe_mask.sum())
+            if exact_dupe_count > 0:
+                self.logger.info(f'🗑️ Removing {exact_dupe_count} exact duplicate rows (identical across all columns)')
+                fixed_data = fixed_data.loc[~exact_dupe_mask]
+            remaining_ts_dupes = int(fixed_data['timestamp'].duplicated().sum())
+            if remaining_ts_dupes > 0:
+                self.logger.warning(f'⚠️ Found {remaining_ts_dupes} duplicate timestamps with differing values; retaining all to avoid data loss')
         
         # Sort by timestamp if not monotonic
         if 'timestamp' in fixed_data.columns:
@@ -726,7 +730,7 @@ class SROptimizationStep(BaseStep):
                     data_path = self.standards.build_path('unified_partitioned', exchange, symbol, timeframe=timeframe)
                     self.logger.info(f'📖 Constructed data path: {data_path}')
                 
-                # Load data from the data path
+                # Load data from the data path; if missing, auto-trigger re-collection and retry once
                 try:
                     if not PARQUET_UTILS_AVAILABLE:
                         raise ImportError("ParquetUtils not available")
@@ -737,6 +741,21 @@ class SROptimizationStep(BaseStep):
                     elif data_path_obj.is_dir():
                         parquet_files = list(data_path_obj.glob('**/*.parquet'))
                         if not parquet_files:
+                            # Attempt centralized auto re-collection
+                            self.logger.warning(f"⚠️ No parquet files found in directory: {data_path}. Attempting auto re-collection...")
+                            try:
+                                from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+                                _qm = EnhancedDataQualityManager(str(Path(data_path).parents[3])) if len(Path(data_path).parts) > 3 else EnhancedDataQualityManager('data_cache')
+                                symbol_q = training_input.get('symbol', symbol if 'symbol' in locals() else 'ETHUSDT')
+                                exchange_q = training_input.get('exchange', exchange if 'exchange' in locals() else 'BINANCE')
+                                timeframe_q = training_input.get('timeframe', timeframe)
+                                import asyncio as _asyncio
+                                _asyncio.get_event_loop()
+                                _asyncio.run(_qm.get_data_for_step3_step4(symbol_q, exchange_q, timeframe_q))
+                                parquet_files = list(data_path_obj.glob('**/*.parquet'))
+                            except Exception as _qe:
+                                self.logger.warning(f"Auto re-collection failed: {_qe}")
+                        if not parquet_files:
                             raise ValueError(f'No parquet files found in directory: {data_path}')
                         self.logger.info(f'📁 Found {len(parquet_files)} parquet files in directory')
                         dataframes = []
@@ -744,6 +763,11 @@ class SROptimizationStep(BaseStep):
                             self.logger.info(f'📖 Reading file {i + 1}/{len(parquet_files)}: {file_path.name}')
                             df = parquet_utils.safe_read_parquet(str(file_path))
                             if df is not None and (not df.empty):
+                                # Enforce schema immediately to avoid drift
+                                try:
+                                    df = self.standards.enforce_schema(df, 'unified')
+                                except Exception as _se:
+                                    self.logger.warning(f"Schema enforcement failed for {file_path.name}: {_se}")
                                 dataframes.append(df)
                         if not dataframes:
                             raise ValueError(f'Failed to read any data from parquet files in {data_path}')
@@ -760,7 +784,37 @@ class SROptimizationStep(BaseStep):
                         raise ValueError(f'Path does not exist: {data_path}')
                     
                     if data is None or data.empty:
-                        raise ValueError(f'Failed to read data from {data_path}')
+                        # Attempt centralized auto re-collection and one retry
+                        self.logger.warning(f"⚠️ Empty data after read. Attempting auto re-collection and retry...")
+                        try:
+                            from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+                            _qm2 = EnhancedDataQualityManager(str(Path(data_path).parents[3])) if len(Path(data_path).parts) > 3 else EnhancedDataQualityManager('data_cache')
+                            symbol_q2 = training_input.get('symbol', symbol if 'symbol' in locals() else 'ETHUSDT')
+                            exchange_q2 = training_input.get('exchange', exchange if 'exchange' in locals() else 'BINANCE')
+                            timeframe_q2 = training_input.get('timeframe', timeframe)
+                            import asyncio as _asyncio
+                            _asyncio.get_event_loop()
+                            _asyncio.run(_qm2.get_data_for_step3_step4(symbol_q2, exchange_q2, timeframe_q2))
+                            # Retry read quickly
+                            if data_path_obj.is_dir():
+                                parquet_files = list(data_path_obj.glob('**/*.parquet'))
+                                if parquet_files:
+                                    dataframes = []
+                                    for file_path in parquet_files:
+                                        df = parquet_utils.safe_read_parquet(str(file_path))
+                                        if df is not None and (not df.empty):
+                                            try:
+                                                df = self.standards.enforce_schema(df, 'unified')
+                                            except Exception as _se2:
+                                                self.logger.warning(f"Schema enforcement failed for retry {file_path.name}: {_se2}")
+                                            dataframes.append(df)
+                                    if dataframes:
+                                        data = pd.concat(dataframes, ignore_index=False)
+                        except Exception as _qe2:
+                            self.logger.warning(f"Auto re-collection retry failed: {_qe2}")
+                        if data is None or data.empty:
+                            raise ValueError(f'Failed to read data from {data_path}')
+                    
                     self.logger.info(f'✅ Loaded {len(data)} rows with {len(data.columns)} columns from data files')
                     self.logger.info(f'📊 Data sample: {data.head(2).to_dict() if len(data) > 0 else "No data"}')
                 except Exception as e:
@@ -1250,8 +1304,8 @@ class SROptimizationStep(BaseStep):
                 'feature_engineering': {
                     'enable_wavelets': enable_wavelets,
                     'enable_multi_timeframe': True,
-                    'enable_feature_interactions': False,  # Disable feature interactions for step02_5
-                    'enable_regime_features': False,  # Disable regime features for SR optimization
+                    'enable_feature_interactions': True,  # Re-enable interactions
+                    'enable_regime_features': True,  # Re-enable regime features (best-effort)
                     'timeframes': ['30m', '1h', '4h', '1d'],
                     'chunk_size': 500000,
                     'max_features': 500,  # Allow more features
@@ -1271,8 +1325,8 @@ class SROptimizationStep(BaseStep):
             # Use individual advanced feature methods
             self.logger.info('🚀 Executing advanced feature engineering...')
             self.logger.info('📋 Step02_5 Feature Access Policy:')
-            self.logger.info('   INCLUDED: Technical indicators, Microstructure features, Multi-timeframe features')
-            self.logger.info('   EXCLUDED: Feature interactions, Regime-aware features, Wavelet features')
+            self.logger.info('   INCLUDED: Technical indicators, Microstructure features, Multi-timeframe features, Interactions, Regime-aware (best-effort)')
+            self.logger.info('   EXCLUDED: Wavelet features')
             all_advanced_features = {}
 
             # 1. Technical indicators (from step06)
@@ -1310,20 +1364,30 @@ class SROptimizationStep(BaseStep):
                 except Exception as e:
                     self.logger.warning(f'Wavelet features failed: {e}')
 
-            # 5. Feature interactions - DISABLED for step02_5
-            self.logger.info('🔗 Feature interactions: DISABLED for step02_5 (excluded from SR optimization)')
-
-            # 6. Regime-aware features - DISABLED for step02_5
-            if not advanced_fe.enable_regime_features:
-                self.logger.info('🎭 Regime-aware features: DISABLED for step02_5 (excluded from SR optimization)')
-            elif advanced_fe.enable_regime_features and advanced_fe.regime_engine is not None:
-                self.logger.info('🎭 Creating regime-aware features...')
+            # 5. Feature interactions - ENABLED (best-effort)
+            if advanced_fe.enable_feature_interactions:
+                self.logger.info('🔗 Creating feature interactions...')
                 try:
-                    regime_features = advanced_fe._create_regime_aware_features(data, {})
-                    all_advanced_features['regime'] = regime_features
-                    self.logger.info(f'✅ Regime features: {len(regime_features.columns)} features')
+                    interactions = advanced_fe._create_feature_interactions(data)
+                    if interactions is not None and hasattr(interactions, 'columns') and len(interactions.columns) > 0:
+                        all_advanced_features['interactions'] = interactions
+                        self.logger.info(f'✅ Interactions features: {len(interactions.columns)} features')
                 except Exception as e:
-                    self.logger.warning(f'Regime features failed: {e}')
+                    self.logger.warning(f'Feature interactions failed: {e}')
+
+            # 6. Regime-aware features - ENABLED (best-effort)
+            if advanced_fe.enable_regime_features:
+                if getattr(advanced_fe, 'regime_engine', None) is not None:
+                    self.logger.info('🎭 Creating regime-aware features...')
+                    try:
+                        regime_features = advanced_fe._create_regime_aware_features(data, {})
+                        if regime_features is not None and hasattr(regime_features, 'columns') and len(regime_features.columns) > 0:
+                            all_advanced_features['regime'] = regime_features
+                            self.logger.info(f'✅ Regime features: {len(regime_features.columns)} features')
+                    except Exception as e:
+                        self.logger.warning(f'Regime features failed: {e}')
+                else:
+                    self.logger.info('🎭 Regime engine not available; skipping regime-aware features')
 
             # Count total features
             total_advanced_count = sum(len(df.columns) for df in all_advanced_features.values() if df is not None and hasattr(df, 'columns'))
@@ -1377,7 +1441,9 @@ class SROptimizationStep(BaseStep):
         self.logger.info(f'✅ Filtered features: {len(final_columns)} columns ({len(numeric_columns)} numeric + {len([col for col in essential_cols if col in features_data.columns])} essential)')
         self.logger.info(f'🗑️ Removed {len(features_data.columns) - len(final_columns)} non-numeric columns')
 
-        return features_data_filtered
+        # Ensure only numeric columns proceed downstream
+        numeric_cols_final = features_data_filtered.select_dtypes(include=[np.number]).columns
+        return features_data_filtered[numeric_cols_final].copy()
     
     def _engineer_features_enhanced_basic(self, data: pd.DataFrame) -> pd.DataFrame:
         """Enhanced basic feature engineering with market microstructure features."""
@@ -2656,7 +2722,10 @@ class SROptimizationStep(BaseStep):
                     'colsample_bytree': 0.8,
                     'random_state': 42,
                     'n_jobs': -1,
-                    'base_score': 0.5  # Default base score for binary classification
+                    'eval_metric': 'logloss',
+                    # Ensure base_score is valid in (0,1) and not overridden to 0 accidentally
+                    'base_score': 0.5,
+                    'use_label_encoder': False
                 }
 
                 if use_gpu:
@@ -2963,9 +3032,11 @@ class SROptimizationStep(BaseStep):
                             'n_estimators': stats.randint(100, 300),
                             'subsample': stats.uniform(0.6, 0.4),
                             'colsample_bytree': stats.uniform(0.6, 0.4),
-                            'min_child_weight': stats.randint(1, 10)
+                            'min_child_weight': stats.randint(1, 10),
+                            # Keep base_score strictly within (0,1)
+                            'base_score': stats.uniform(0.05, 0.9)
                         }
-                        base_model = xgb.XGBClassifier(random_state=42, n_jobs=-1)
+                        base_model = xgb.XGBClassifier(random_state=42, n_jobs=-1, objective='binary:logistic', eval_metric='logloss', use_label_encoder=False)
                     except ImportError:
                         continue
 

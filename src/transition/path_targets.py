@@ -6,6 +6,7 @@ from pandas import pd
 from numpy import np
 
 from ..utils.logger import system_logger
+import logging
 
 if TYPE_CHECKING:
     # TODO: Add proper implementation

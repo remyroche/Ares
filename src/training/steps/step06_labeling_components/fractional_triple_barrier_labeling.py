@@ -15,6 +15,7 @@ from typing import Any
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 import numpy as np
 import pandas as pd
+import logging
 
 class FractionalTripleBarrierLabeling:
     """Enhanced triple barrier labeling with fractional (continuous) labels.

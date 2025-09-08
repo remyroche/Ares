@@ -10,6 +10,8 @@ from src.utils.logger import system_logger
 import numpy as np
 
 import pandas as pd
+import logging
+import typing
 
 class AnomalyDetector:
     """Detects anomalies in market data using multiple detection methods.

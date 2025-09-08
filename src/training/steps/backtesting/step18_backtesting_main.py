@@ -1,3 +1,4 @@
+import numpy as np
 
 #!/usr/bin/env python3
 """Enhanced Step 18: Backtesting Pipeline.
@@ -37,6 +38,9 @@ from .utils.trading_decorators import (
 # Financial Metrics Logging import
 try:
     from src.training.steps.backtesting.step18_financial_logging import Step18FinancialLogger
+import json
+import logging
+
     FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False

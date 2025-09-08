@@ -7,6 +7,7 @@ from typing import Tuple, Optional, List, Dict, Any
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
 
 """Profit-Based Feature Engineering System.
 
@@ -24,6 +25,8 @@ from src.utils.logger import system_logger
 
 try:
     from numba import jit
+import logging
+
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
@@ -738,4 +741,3 @@ if __name__ == "__main__":
     benchmark_results = benchmark_profit_feature_engineering(data)
     print(f"Performance benchmark: {benchmark_results}")
 #!/usr/bin/env python3
-import numpy as np

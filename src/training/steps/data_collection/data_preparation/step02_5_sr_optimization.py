@@ -45,6 +45,9 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 from src.training.reports import save_training_report
 from src.training.steps.data_collection.data_preparation.step02_5_financial_logging import Step02_5FinancialLogger
 from src.utils.math_validation import (
+import logging
+import random
+
     safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
     validate_positive, validate_range, MathValidationError
 )

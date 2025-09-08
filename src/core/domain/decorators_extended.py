@@ -15,6 +15,7 @@ import pandas as pd
 import numpy as np
 from ..decorators import cached, compose, handles_errors, traced, validates
 from ..errors import ValidationError
+import time
 
 F = TypeVar('F', bound = Callable[..., Any])
 

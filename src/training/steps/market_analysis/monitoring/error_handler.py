@@ -15,6 +15,8 @@ from src.utils.comprehensive_function_logger import (
 )
 
 import asyncio
+import numpy as np
+import time
 
 class EnhancedErrorHandler:
     """Enhanced error handling system with detailed function-level error reporting."""

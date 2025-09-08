@@ -1,4 +1,5 @@
 from typing import Dict, List, Any, Optional
+import numpy as np
 
 """
 AST Analysis Analyzer - Integrates Astroid, Rope, and Jedi for advanced AST-based code analysis.

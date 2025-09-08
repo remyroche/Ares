@@ -17,6 +17,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from src.training.steps.market_analysis.step04_enhanced_reporting import Step04EnhancedReporter
+import collections
+import time
 
 def generate_sample_regime_data() -> pd.DataFrame:
     """Generate sample regime-labeled market data for demonstration."""

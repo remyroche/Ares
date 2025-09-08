@@ -34,6 +34,7 @@ def validate_implementation():
     # Check syntax compilation
     print("\n🐍 Syntax Validation:")
     import subprocess
+import pandas as pd
 
     syntax_ok = True
     files_to_check = [

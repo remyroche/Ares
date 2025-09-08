@@ -9,6 +9,7 @@ from ..utils.logger import system_logger
 import numpy as np
 
 import pandas as pd
+import logging
 
 FEATURE_POOL_COLUMNS, [
     "log_returns",

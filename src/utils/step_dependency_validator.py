@@ -1,6 +1,7 @@
 """Step dependency validation utilities."""
 
 from .logger import system_logger
+import logging
 
 def validate_step_dependencies(*args, **kwargs) -> bool:
     """Validate step dependencies."""

@@ -16,6 +16,8 @@ else:
 
 try:
     import pytorch_lightning as pl
+import logging
+
 except Exception:
     pl = None
 with contextlib.suppress(Exception):

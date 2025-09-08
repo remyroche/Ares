@@ -1,4 +1,10 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import collections
+import json
+import numpy as np
+import pandas as pd
+import warnings
+
 """Enhanced Validator for Step 1.5: Data Converter with Comprehensive Function Call Monitoring.
 from src.utils.logger import system_logger
 
@@ -70,8 +76,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable, Union
 import psutil
 
-import pandas as pd
-import warnings
 
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:

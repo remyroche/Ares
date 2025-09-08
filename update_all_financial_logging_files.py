@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import numpy as np
+import pandas as pd
+
 """
 Script to update all financial logging files with enhanced regime logging.
 
@@ -12,6 +15,9 @@ from pathlib import Path
 from typing import List, Dict, Any
 import shutil
 from datetime import datetime
+import logging
+import pandas as pd
+import time
 
 # Define the financial logging files to update
 FINANCIAL_LOGGING_FILES = [
@@ -51,8 +57,6 @@ Independent logging module that can be used without the reporting system.
 Enhanced with per-HMM regime logging and fail-fast validation.
 """
 
-import pandas as pd
-import numpy as np
 from typing import Dict, Any, Optional, List
 from src.utils.financial_metrics_logger import (
     get_financial_metrics_logger, 

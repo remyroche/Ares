@@ -10,6 +10,8 @@ import pandas as pd
 from typing import Any
 import numpy as np
 from typing import Optional
+import logging
+import time
 
 class DataIntegrityChecker:
     """Checks data integrity including relationships, constraints, and consistency."""

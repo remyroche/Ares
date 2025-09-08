@@ -14,6 +14,9 @@ from typing import Any, Optional
 import pandas as pd
 
 from src.utils.logger import system_logger
+import json
+import logging
+import numpy as np
 
 class DataDownloader:
     """Handles all data downloading operations for market data.

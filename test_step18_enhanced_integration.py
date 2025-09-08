@@ -31,6 +31,7 @@ from training.steps.backtesting.step18_walk_forward_validation_per_regime import
     PerRegimeWalkForwardValidationStep
 )
 from src.training.steps.backtesting.step18_backtesting_main import main
+import time
 
 
 class TestStep18EnhancedIntegration(unittest.TestCase):

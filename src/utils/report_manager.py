@@ -24,6 +24,9 @@ from .utils.common import (
     safe_json_dump, safe_json_load, safe_file_exists
 )
 from .logger import system_logger
+import logging
+import time
+import typing
 
 class ReportManager:
     """Centralized manager for all report generation and organization."""

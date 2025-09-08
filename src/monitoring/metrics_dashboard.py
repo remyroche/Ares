@@ -16,6 +16,8 @@ from ..utils.logger import system_logger
 
 if TYPE_CHECKING:
     from datetime import datetime
+import logging
+import time
 
 class MetricType(Enum):
     """Metric types for categorization."""

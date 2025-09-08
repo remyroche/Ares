@@ -8,6 +8,7 @@ profit-based feature engineering.
 """
 
 from typing import Any
+import pandas as pd
 
 def get_multi_output_config() -> dict[str, Any]:
     """Get configuration for multi-output prediction features.

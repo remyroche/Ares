@@ -15,9 +15,13 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Any
+import numpy as np
+import pandas as pd
 
 try:
     from src.utils.pipeline_standards import PipelineStandards
+import collections
+
 except ImportError:
     PipelineStandards = None
 REQUIRED_MODULES = ['src.utils.structured_logging', 'src.utils.warning_symbols']

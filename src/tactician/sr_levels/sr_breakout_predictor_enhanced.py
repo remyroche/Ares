@@ -12,6 +12,7 @@ import time
 import psutil
 from dataclasses import dataclass
 from typing import Optional
+import logging
 
 # Simple error classes for SR operations
 class SROptimizationError(Exception):

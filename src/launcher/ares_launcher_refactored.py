@@ -40,6 +40,7 @@ from src.launcher.validation_utilities import ValidationFactory
 from src.launcher.step_orchestrator_wrapper import StepOrchestratorWrapper
 from src.launcher.gui_manager import GUIManagerFactory
 from src.launcher.configuration_manager import ConfigurationManager
+import time
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent

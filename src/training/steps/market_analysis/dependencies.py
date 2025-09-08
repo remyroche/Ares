@@ -1,4 +1,6 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+
 """Dependency Management for Step05 Labeling.
 
 This module provides centralized dependency management and validation

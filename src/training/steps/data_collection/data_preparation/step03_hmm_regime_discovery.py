@@ -36,6 +36,7 @@ sys.path.insert(0, str(project_root))
 from src.training.base_step import BaseStep
 from src.utils.graceful_module_handler import graceful_handler
 from src.utils.pipeline_standards import PipelineStandards
+import logging
 
 class Step03HMMRegimeDiscovery(BaseStep):
     """Step 3: HMM Regime Discovery for market regime identification with vectorized processing."""

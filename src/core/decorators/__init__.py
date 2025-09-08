@@ -1,4 +1,6 @@
 from . import errors
+import .cache
+import pandas as pd
 
 # handles_errors is imported from .errors below
 
@@ -38,7 +40,7 @@ from .auth import (
 )
 
 # Caching decorators
-from .cache import (
+
     CachePolicy,
     cache_invalidate,
     cache_stats,

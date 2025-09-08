@@ -14,6 +14,7 @@ from ..base.imports import (
 from ..base.utils import error, failed, timeout, warning
 from ..config.step12_config import Step12Config, DEFAULT_CONFIG
 from .device_utils import safe_get_device
+import logging
 
 class RegimeAwareAnalystEnhancementModel:
     """Core model for regime-aware analyst enhancement."""

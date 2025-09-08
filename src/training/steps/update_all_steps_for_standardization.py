@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import pandas as pd
+
 """
 Update All Steps for Parquet Standardization
 
@@ -10,6 +12,8 @@ import os
 import re
 from pathlib import Path
 from typing import List, Dict, Any
+import collections
+import sys
 
 
 class StepUpdater:

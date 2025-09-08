@@ -10,6 +10,7 @@ from typing import Any
 
 from ..utils.logger import system_logger
 from src.core.decorators import handles_errors
+import logging
 
 class ModelType(Enum):
     XGBOOST = "xgboost"

@@ -47,6 +47,8 @@ class EnhancedDataQualityManager:
 
         try:
             from .comprehensive_gap_filler import ComprehensiveGapFiller
+import logging
+
             self.gap_filler = ComprehensiveGapFiller(str(self.data_cache_path))
         except ImportError as e:
             logger.warning(f"⚠️ Could not import ComprehensiveGapFiller: {e}")

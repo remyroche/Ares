@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Test script for Step 16 optimization integrations.
 
@@ -47,6 +49,7 @@ async def test_step16_optimizations():
     # Test M1 CPU Optimizer
     try:
         from src.utils.m1_cpu_optimizer import M1CPUOptimizer
+
         cpu_optimizer = M1CPUOptimizer()
         print("✅ M1 CPU Optimizer: Available")
         m1_cpu_available = True

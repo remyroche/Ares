@@ -8,6 +8,7 @@ from typing import Callable, List, Optional, TypeVar, Any
 from .core.errors import BusinessRuleError, DataIntegrityError, ValidationError
 import numpy as np
 import pandas as pd
+import time
 
 F = TypeVar('F', bound = Callable[..., Any])
 

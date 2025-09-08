@@ -24,6 +24,7 @@ from pathlib import Path
 
 # Import our corrected triple barrier method
 from step04_lookahead_bias_fix import CorrectedTripleBarrierMethod
+import time
 
 class TripleBarrierOptunaOptimizer:
     """

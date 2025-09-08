@@ -1,4 +1,6 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+
 """
 Financial metrics logging for Step09 HMM-Based Training Per Regime.
 Independent logging module that can be used without the reporting system.
@@ -20,6 +22,8 @@ from src.utils.logger import system_logger
 # Import enhanced functionality if available
 try:
     from src.utils.enhanced_financial_metrics_logger import (
+import logging
+
         get_enhanced_financial_metrics_logger,
         validate_and_log_regime_data
     )

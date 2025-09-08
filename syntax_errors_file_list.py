@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import numpy as np
+
 """
 Complete list of files with syntax errors in the Ares codebase.
 This file provides a comprehensive, actionable list for systematic fixes.

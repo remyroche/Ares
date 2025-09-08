@@ -16,6 +16,7 @@ from .config.step12_config import Step12Config, DEFAULT_CONFIG
 from .models.enhancement_model import RegimeAwareAnalystEnhancementModel
 from .hpo.optimizer import HyperparameterOptimizer
 from .feature_selection.selector import FeatureSelector
+import logging
 
 class RegimeAwareAnalystEnhancementOrchestrator:
     """Main orchestrator for Step 12 Analyst Enhancement."""

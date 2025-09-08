@@ -30,6 +30,7 @@ from src.training.steps.market_analysis.enhanced_logging_metrics import enhanced
 from src.training.steps.market_analysis.progress_monitor import progress_monitor
 
 from src.training.reports import save_training_report
+import logging
 
 def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -> dict:
     """Analyze HMM clustering results and return comprehensive summary."""

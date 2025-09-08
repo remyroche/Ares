@@ -4,6 +4,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
+import pandas as pd
 
 """Model Training Package for Trading Pipeline.
 

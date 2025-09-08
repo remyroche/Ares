@@ -5,6 +5,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
 from ..standardized_parquet_handler import standardized_parquet_handler
+import pandas as pd
 
 # src/training/steps/multi_timeframe_hmm_ensemble.py
 
@@ -40,6 +41,7 @@ from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
     from sklearn.preprocessing import LabelEncoder, StandardScaler
+import logging
 
 # Enhanced logging setup
 logger = system_logger.getChild("MultiTimeframeHMMEnsemble")
@@ -816,4 +818,3 @@ class MultiTimeframeHMMEnsemble:
             },
         }
 
-import pandas as pd

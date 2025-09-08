@@ -6,8 +6,6 @@ for Step05 labeling operations, including transaction costs, risk metrics, and
 performance analysis.
 """
 
-import pandas as pd
-import numpy as np
 import time
 import psutil
 from datetime import datetime, timedelta
@@ -18,6 +16,8 @@ import logging
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, validates
+import numpy as np
+import pandas as pd
 
 logger = system_logger.getChild('Step05OptimizedFinancial')
 

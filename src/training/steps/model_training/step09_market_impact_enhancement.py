@@ -1,4 +1,7 @@
 from ..standardized_parquet_handler import standardized_parquet_handler
+import numpy as np
+import pandas as pd
+
 """
 Market Impact and Liquidity Enhancement for Step09
 
@@ -7,8 +10,6 @@ for the HMM-based training system, including order book analysis, slippage model
 and market microstructure effects.
 """
 
-import numpy as np
-import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import logging

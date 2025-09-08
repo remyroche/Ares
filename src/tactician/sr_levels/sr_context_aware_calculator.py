@@ -183,7 +183,7 @@ class ContextAwareSRCalculator:
     def _load_base_parameters(self) -> Dict[str, Any]:
         """Load base S/R parameters."""
         try:
-            from .utils.sr_parameter_loader import SRParameterLoader
+            from src.utils.parameter_loader import SRParameterLoader
 
             return SRParameterLoader.load_optimized_parameters(self.config)
         except Exception as e:

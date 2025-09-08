@@ -42,7 +42,7 @@ from src.core.errors import (
 
 # Pipeline standards and utilities
 from src.utils.pipeline_standards import PipelineStandards
-from src.utils.step02_5_utilities import (
+from src.utils.monitoring_utils import (
     global_monitor, function_tracker, logging_patterns
 )
 from src.utils.comprehensive_function_logger import (
@@ -255,7 +255,7 @@ def detect_data_drift(current_data: pd.DataFrame, reference_data: pd.DataFrame =
 
 def generate_function_report(ml_results: Dict[str, Any] = None) -> Dict[str, Any]:
     """Generate comprehensive function call report with detailed ML model metrics."""
-    from src.utils.step02_5_utilities import global_tracker
+    from src.utils.monitoring_utils import global_tracker
 
     # Get base performance summary
     base_report = global_tracker.get_performance_summary()

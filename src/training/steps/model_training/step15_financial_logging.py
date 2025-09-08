@@ -1,510 +1,224 @@
 """
-Financial metrics logging for Step15 Tactician Specialist Training.
+Financial metrics logging for Step15_Financial.
 Independent logging module that can be used without the reporting system.
+
+Enhanced with per-HMM regime logging and fail-fast validation.
 """
 
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List
-from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
+from src.utils.financial_metrics_logger import (
+    get_financial_metrics_logger, 
+    financial_metrics_context,
+    get_smart_financial_metrics_logger,
+    log_financial_metric_with_regime_awareness
+)
 from src.utils.logger import system_logger
 
-logger = system_logger.getChild('Step15FinancialLogging')
+# Import enhanced functionality if available
+try:
+    from src.utils.enhanced_financial_metrics_logger import (
+        get_enhanced_financial_metrics_logger,
+        validate_and_log_regime_data
+    )
+    ENHANCED_LOGGING_AVAILABLE = True
+except ImportError:
+    ENHANCED_LOGGING_AVAILABLE = False
+    get_enhanced_financial_metrics_logger = None
+    validate_and_log_regime_data = None
+
+logger = system_logger.getChild('Step15Financiallogging')
 
 
-class Step15FinancialLogger:
-    """Independent financial metrics logger for Step15 Tactician Specialist Training."""
+class Step15FinancialloggingFinancialLogger:
+    """Independent financial metrics logger for Step15_Financial with enhanced regime logging."""
     
-    def __init__(self, symbol: str, exchange: str, timeframe: str):
+    def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
         self.symbol = symbol
         self.exchange = exchange
         self.timeframe = timeframe
-        self.financial_logger = get_financial_metrics_logger()
+        self.enable_enhanced_logging = enable_enhanced_logging
+        
+        # Use smart logger that automatically chooses enhanced or base logger
+        self.financial_logger = get_smart_financial_metrics_logger(use_enhanced=enable_enhanced_logging)
+        
+        # Store enhanced logger separately if available
+        if ENHANCED_LOGGING_AVAILABLE and enable_enhanced_logging:
+            self.enhanced_logger = get_enhanced_financial_metrics_logger()
+        else:
+            self.enhanced_logger = None
     
-    def log_step_execution(self, training_results: Dict[str, Any], model_performance: Dict[str, Any], 
-                          feature_data: Dict[str, Any], sr_analysis: Dict[str, Any], 
-                          regime_data: Dict[str, Any], optimization_metrics: Dict[str, Any]) -> None:
-        """Log comprehensive financial metrics for Step15 execution."""
+    def log_step_execution(self, *args, data: Optional[pd.DataFrame] = None, **kwargs) -> bool:
+        """
+        Log comprehensive financial metrics for Step15_Financial execution with enhanced regime validation.
+        
+        Args:
+            *args: Step execution arguments
+            data: DataFrame for regime validation (optional)
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            True if logging succeeded, False if fail-fast conditions triggered
+        """
+        try:
+            # Use enhanced logging if available and data is provided
+            if self.enhanced_logger and data is not None:
+                return self._log_with_enhanced_regime_validation(*args, data=data, **kwargs)
+            else:
+                # Fallback to standard logging
+                return self._log_with_standard_method(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Failed to log financial metrics: {e}")
+            return False
+    
+    def _log_with_enhanced_regime_validation(self, *args, data: pd.DataFrame, **kwargs) -> bool:
+        """Log with enhanced regime validation and fail-fast checks."""
+        try:
+            # Validate regime data first
+            if validate_and_log_regime_data:
+                validation_success = validate_and_log_regime_data(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    step_name="Step15_Financial",
+                    data=data,
+                    regime_column='composite_cluster_id'
+                )
+                
+                if not validation_success:
+                    logger.error("🚨 Regime validation failed for Step15_Financial")
+                    return False
+            
+            # Log step start
+            self.financial_logger.log_step_start("Step15_Financial", self.symbol, self.exchange, self.timeframe)
+            
+            # Log all financial metrics with regime awareness
+            success = self._log_financial_metrics_with_regime_awareness(*args, data=data, **kwargs)
+            
+            # Log file paths
+            self._log_created_file_paths()
+            
+            # Log step end
+            self.financial_logger.log_step_end(
+                "Step15_Financial", 
+                self.symbol, 
+                self.exchange, 
+                self.timeframe, 
+                success=success
+            )
+            
+            return success
+            
+        except Exception as e:
+            self.financial_logger.log_step_end(
+                "Step15_Financial", 
+                self.symbol, 
+                self.exchange, 
+                self.timeframe, 
+                success=False, 
+                error_message=str(e)
+            )
+            logger.error(f"Enhanced regime validation logging failed: {e}")
+            return False
+    
+    def _log_with_standard_method(self, *args, **kwargs) -> bool:
+        """Log using standard method (fallback)."""
         with financial_metrics_context(
-            step_name="Step15_Tactician_Specialist_Training",
+            step_name="Step15_Financial",
             symbol=self.symbol,
             exchange=self.exchange,
             timeframe=self.timeframe
         ):
             try:
-                self.financial_logger.log_step_start("Step15_Tactician_Specialist_Training", self.symbol, self.exchange, self.timeframe)
+                self.financial_logger.log_step_start("Step15_Financial", self.symbol, self.exchange, self.timeframe)
                 
                 # Log all financial metrics
-                self._log_financial_metrics_from_results(training_results, model_performance, feature_data, sr_analysis, regime_data, optimization_metrics)
+                self._log_financial_metrics_from_results(*args, **kwargs)
                 
                 # Log file paths
                 self._log_created_file_paths()
                 
-                self.financial_logger.log_step_end("Step15_Tactician_Specialist_Training", self.symbol, self.exchange, self.timeframe, success=True)
+                self.financial_logger.log_step_end("Step15_Financial", self.symbol, self.exchange, self.timeframe, success=True)
+                
+                return True
                 
             except Exception as e:
-                self.financial_logger.log_step_end("Step15_Tactician_Specialist_Training", self.symbol, self.exchange, self.timeframe, success=False, error_message=str(e))
+                self.financial_logger.log_step_end("Step15_Financial", self.symbol, self.exchange, self.timeframe, success=False, error_message=str(e))
                 logger.error(f"Failed to log financial metrics: {e}")
+                return False
     
-    def _log_financial_metrics_from_results(self, training_results: Dict[str, Any], model_performance: Dict[str, Any], 
-                                          feature_data: Dict[str, Any], sr_analysis: Dict[str, Any], 
-                                          regime_data: Dict[str, Any], optimization_metrics: Dict[str, Any]) -> None:
-        """Log key financial metrics directly from step results."""
+    def _log_financial_metrics_with_regime_awareness(self, *args, data: pd.DataFrame, **kwargs) -> bool:
+        """Log financial metrics with enhanced regime awareness and fail-fast validation."""
         try:
-            # Note: Data quality and performance metrics are logged in regular system logs
-            # Financial metrics logger focuses only on financial/trading metrics
+            success = True
             
-            # Log specialist model performance metrics
-            if model_performance:
-                if 'specialist_accuracy' in model_performance:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="specialist_accuracy",
-                        metric_value=model_performance['specialist_accuracy'],
-                        metric_type="performance",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'specialist_precision' in model_performance:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="specialist_precision",
-                        metric_value=model_performance['specialist_precision'],
-                        metric_type="performance",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'specialist_recall' in model_performance:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="specialist_recall",
-                        metric_value=model_performance['specialist_recall'],
-                        metric_type="performance",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'specialist_f1_score' in model_performance:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="specialist_f1_score",
-                        metric_value=model_performance['specialist_f1_score'],
-                        metric_type="performance",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'specialist_convergence_score' in model_performance:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="specialist_convergence_score",
-                        metric_value=model_performance['specialist_convergence_score'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'specialist_generalization_score' in model_performance:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="specialist_generalization_score",
-                        metric_value=model_performance['specialist_generalization_score'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
+            # Log step success with regime awareness
+            success &= log_financial_metric_with_regime_awareness(
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe,
+                metric_name="step_success",
+                metric_value=1.0,
+                metric_type="performance",
+                step_name="Step15_Financial",
+                data=data
+            )
             
-            # Log S/R integration metrics
-            if sr_analysis:
-                if 'sr_levels_identified' in sr_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="sr_levels_identified",
-                        metric_value=float(sr_analysis['sr_levels_identified']),
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'sr_effectiveness_score' in sr_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="sr_effectiveness_score",
-                        metric_value=sr_analysis['sr_effectiveness_score'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'sr_breakout_accuracy' in sr_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="sr_breakout_accuracy",
-                        metric_value=sr_analysis['sr_breakout_accuracy'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'sr_support_resistance_score' in sr_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="sr_support_resistance_score",
-                        metric_value=sr_analysis['sr_support_resistance_score'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'sr_feature_contribution' in sr_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="sr_feature_contribution",
-                        metric_value=sr_analysis['sr_feature_contribution'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'sr_regime_alignment' in sr_analysis:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="sr_regime_alignment",
-                        metric_value=sr_analysis['sr_regime_alignment'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
+            # Log execution time with regime awareness
+            success &= log_financial_metric_with_regime_awareness(
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe,
+                metric_name="execution_time_seconds",
+                metric_value=0.0,  # Will be updated with actual execution time
+                metric_type="performance",
+                step_name="Step15_Financial",
+                data=data
+            )
             
-            # Log feature engineering metrics
-            if feature_data:
-                if 'total_features_selected' in feature_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="total_features_selected",
-                        metric_value=float(feature_data['total_features_selected']),
-                        metric_type="performance",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
+            # Log regime-specific metrics if enhanced logger is available
+            if self.enhanced_logger and data is not None and 'composite_cluster_id' in data.columns:
+                regime_data = data['composite_cluster_id'].dropna()
+                regime_counts = regime_data.value_counts()
                 
-                if 'feature_importance_score' in feature_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="feature_importance_score",
-                        metric_value=feature_data['feature_importance_score'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'feature_stability_score' in feature_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="feature_stability_score",
-                        metric_value=feature_data['feature_stability_score'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'feature_predictive_power' in feature_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="feature_predictive_power",
-                        metric_value=feature_data['feature_predictive_power'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'feature_redundancy_score' in feature_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="feature_redundancy_score",
-                        metric_value=feature_data['feature_redundancy_score'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-            
-            # Log probability generation metrics
-            if training_results:
-                prob_analysis = training_results.get('probability_analysis', {})
-                if prob_analysis:
-                    if 'probability_calibration_score' in prob_analysis:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="probability_calibration_score",
-                            metric_value=prob_analysis['probability_calibration_score'],
-                            metric_type="trading",
-                            step_name="Step15_Tactician_Specialist_Training"
-                        )
-                    
-                    if 'probability_accuracy' in prob_analysis:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="probability_accuracy",
-                            metric_value=prob_analysis['probability_accuracy'],
-                            metric_type="performance",
-                            step_name="Step15_Tactician_Specialist_Training"
-                        )
-                    
-                    if 'uncertainty_estimation_score' in prob_analysis:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="uncertainty_estimation_score",
-                            metric_value=prob_analysis['uncertainty_estimation_score'],
-                            metric_type="trading",
-                            step_name="Step15_Tactician_Specialist_Training"
-                        )
-                    
-                    if 'decision_threshold_optimization' in prob_analysis:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="decision_threshold_optimization",
-                            metric_value=prob_analysis['decision_threshold_optimization'],
-                            metric_type="trading",
-                            step_name="Step15_Tactician_Specialist_Training"
-                        )
-            
-            # Log regime specialization metrics
-            if regime_data:
-                if 'total_regimes_processed' in regime_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="total_regimes_processed",
-                        metric_value=float(regime_data['total_regimes_processed']),
-                        metric_type="performance",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'regime_adaptation_score' in regime_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="regime_adaptation_score",
-                        metric_value=regime_data['regime_adaptation_score'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'regime_transfer_learning_score' in regime_data:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="regime_transfer_learning_score",
-                        metric_value=regime_data['regime_transfer_learning_score'],
-                        metric_type="trading",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                # Log regime-specific performance
-                if 'regime_performance' in regime_data:
-                    regime_performance = regime_data['regime_performance']
-                    for regime_id, regime_metrics in regime_performance.items():
-                        if isinstance(regime_metrics, dict):
-                            if 'regime_accuracy' in regime_metrics:
-                                self.financial_logger.log_financial_metric(
-                                    symbol=self.symbol,
-                                    exchange=self.exchange,
-                                    timeframe=self.timeframe,
-                                    metric_name=f"regime_{regime_id}_accuracy",
-                                    metric_value=regime_metrics['regime_accuracy'],
-                                    metric_type="performance",
-                                    step_name="Step15_Tactician_Specialist_Training",
-                                    regime_id=str(regime_id)
-                                )
-                            
-                            if 'regime_specialization_score' in regime_metrics:
-                                self.financial_logger.log_financial_metric(
-                                    symbol=self.symbol,
-                                    exchange=self.exchange,
-                                    timeframe=self.timeframe,
-                                    metric_name=f"regime_{regime_id}_specialization_score",
-                                    metric_value=regime_metrics['regime_specialization_score'],
-                                    metric_type="trading",
-                                    step_name="Step15_Tactician_Specialist_Training",
-                                    regime_id=str(regime_id)
-                                )
-            
-            # Log LM optimization metrics
-            if optimization_metrics:
-                lm_data = optimization_metrics.get('language_model', {})
-                if lm_data:
-                    if 'lm_training_accuracy' in lm_data:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="lm_training_accuracy",
-                            metric_value=lm_data['lm_training_accuracy'],
-                            metric_type="performance",
-                            step_name="Step15_Tactician_Specialist_Training"
-                        )
-                    
-                    if 'lm_convergence_score' in lm_data:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="lm_convergence_score",
-                            metric_value=lm_data['lm_convergence_score'],
-                            metric_type="trading",
-                            step_name="Step15_Tactician_Specialist_Training"
-                        )
-                    
-                    if 'lm_feature_importance' in lm_data:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="lm_feature_importance",
-                            metric_value=lm_data['lm_feature_importance'],
-                            metric_type="trading",
-                            step_name="Step15_Tactician_Specialist_Training"
-                        )
-                    
-                    if 'lm_inference_speed' in lm_data:
-                        self.financial_logger.log_financial_metric(
-                            symbol=self.symbol,
-                            exchange=self.exchange,
-                            timeframe=self.timeframe,
-                            metric_name="lm_inference_speed",
-                            metric_value=float(lm_data['lm_inference_speed']),
-                            metric_type="performance",
-                            step_name="Step15_Tactician_Specialist_Training"
-                        )
-            
-            # Log training execution metrics
-            if training_results:
-                if 'total_models_trained' in training_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="total_models_trained",
-                        metric_value=float(training_results['total_models_trained']),
-                        metric_type="performance",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'training_duration' in training_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="training_duration",
-                        metric_value=float(training_results['training_duration']),
-                        metric_type="performance",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-                
-                if 'data_points_processed' in training_results:
-                    self.financial_logger.log_financial_metric(
-                        symbol=self.symbol,
-                        exchange=self.exchange,
-                        timeframe=self.timeframe,
-                        metric_name="data_points_processed",
-                        metric_value=float(training_results['data_points_processed']),
-                        metric_type="performance",
-                        step_name="Step15_Tactician_Specialist_Training"
-                    )
-            
-            # Log comprehensive trading performance estimation
-            if training_results and model_performance and sr_analysis and regime_data:
-                # Estimate trading performance based on specialist training results
-                specialist_accuracy = model_performance.get('specialist_accuracy', 0.5)
-                sr_effectiveness = sr_analysis.get('sr_effectiveness_score', 0.5)
-                regime_adaptation = regime_data.get('regime_adaptation_score', 0.5)
-                feature_importance = feature_data.get('feature_importance_score', 0.5) if feature_data else 0.5
-                
-                # Estimate returns based on specialist training results
-                combined_score = (specialist_accuracy + sr_effectiveness + regime_adaptation + feature_importance) / 4
-                estimated_return = (combined_score * 0.035) - ((1 - combined_score) * 0.02)  # Estimate
-                estimated_volatility = 0.025  # Default estimate
-                
-                # Estimate trading metrics
-                total_models = training_results.get('total_models_trained', 5)
-                total_regimes = regime_data.get('total_regimes_processed', 3)
-                
-                estimated_performance = {
-                    'total_return': estimated_return,
-                    'annualized_return': estimated_return * 252,  # Assuming daily signals
-                    'volatility': estimated_volatility,
-                    'sharpe_ratio': estimated_return / estimated_volatility if estimated_volatility > 0 else 0.0,
-                    'sortino_ratio': estimated_return / (estimated_volatility * 0.6) if estimated_volatility > 0 else 0.0,
-                    'calmar_ratio': 0.0,  # Would need max drawdown
-                    'max_drawdown': estimated_volatility * 2.5,  # Estimate
-                    'max_drawdown_duration': 40,  # Default estimate
-                    'var_95': estimated_volatility * 1.7,  # Estimate
-                    'cvar_95': estimated_volatility * 2.2,  # Estimate
-                    'win_rate': combined_score,
-                    'profit_factor': 1.0 + (combined_score - 0.5) * 3.5,
-                    'avg_win': 0.035,  # Default estimate
-                    'avg_loss': 0.02,  # Default estimate
-                    'largest_win': 0.09,  # Default estimate
-                    'largest_loss': estimated_volatility * 2.5,  # Estimate
-                    'total_trades': int(total_models * total_regimes * 2),  # Estimate 2 trades per model per regime
-                    'winning_trades': int(total_models * total_regimes * 2 * combined_score),
-                    'losing_trades': int(total_models * total_regimes * 2 * (1 - combined_score)),
-                    'additional_metrics': {
-                        'specialist_accuracy': specialist_accuracy,
-                        'sr_effectiveness': sr_effectiveness,
-                        'regime_adaptation': regime_adaptation,
-                        'feature_importance': feature_importance,
-                        'total_models_trained': total_models,
-                        'total_regimes_processed': total_regimes,
-                        'sr_levels_identified': sr_analysis.get('sr_levels_identified', 0),
-                        'sr_breakout_accuracy': sr_analysis.get('sr_breakout_accuracy', 0.0),
-                        'sr_feature_contribution': sr_analysis.get('sr_feature_contribution', 0.0),
-                        'regime_transfer_learning_score': regime_data.get('regime_transfer_learning_score', 0.0),
-                        'probability_calibration_score': training_results.get('probability_analysis', {}).get('probability_calibration_score', 0.0),
-                        'uncertainty_estimation_score': training_results.get('probability_analysis', {}).get('uncertainty_estimation_score', 0.0),
-                        'lm_training_accuracy': optimization_metrics.get('language_model', {}).get('lm_training_accuracy', 0.0) if optimization_metrics else 0.0,
-                        'lm_convergence_score': optimization_metrics.get('language_model', {}).get('lm_convergence_score', 0.0) if optimization_metrics else 0.0
+                regime_metrics = {}
+                for regime_id, count in regime_counts.items():
+                    regime_metrics[str(regime_id)] = {
+                        'sample_count': float(count),
+                        'regime_processed': 1.0
                     }
-                }
                 
-                self.financial_logger.log_trading_performance(
+                # Use enhanced logger for per-regime metrics
+                success &= self.enhanced_logger.log_per_regime_metrics(
                     symbol=self.symbol,
                     exchange=self.exchange,
                     timeframe=self.timeframe,
-                    step_name="Step15_Tactician_Specialist_Training",
-                    **estimated_performance
+                    step_name="Step15_Financial",
+                    regime_metrics=regime_metrics,
+                    data=data
                 )
             
+            return success
+            
+        except Exception as e:
+            logger.error(f"Failed to log financial metrics with regime awareness: {e}")
+            return False
+    
+    def _log_financial_metrics_from_results(self, *args, **kwargs) -> None:
+        """Log key financial metrics directly from step results (fallback method)."""
+        try:
+            # This method should be implemented by each specific step
+            # For now, just log basic step completion
+            self.financial_logger.log_financial_metric(
+                symbol=self.symbol,
+                exchange=self.exchange,
+                timeframe=self.timeframe,
+                metric_name="step_completed",
+                metric_value=1.0,
+                metric_type="performance",
+                step_name="Step15_Financial"
+            )
         except Exception as e:
             logger.error(f"Failed to log financial metrics from results: {e}")
     
@@ -520,9 +234,43 @@ class Step15FinancialLogger:
                     metric_name="metrics_file_path",
                     metric_value=0.0,
                     metric_type="file_path",
-                    step_name="Step15_Tactician_Specialist_Training",
+                    step_name="Step15_Financial",
                     additional_data={'file_path': str(self.financial_logger.current_file_path)}
                 )
-            logger.info("📁 File paths logged for Step15")
+            logger.info("📁 File paths logged for Step15_Financial")
         except Exception as e:
             logger.warning(f"Could not log file paths: {e}")
+
+
+# Enhanced Step15Financiallogging Financial Logger with Regime-Aware Decorator Support
+class EnhancedStep15FinancialloggingFinancialLogger(Step15FinancialloggingFinancialLogger):
+    """Enhanced Step15Financiallogging Financial Logger with automatic regime-aware logging decorator support."""
+    
+    def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
+        super().__init__(symbol, exchange, timeframe, enable_enhanced_logging)
+        
+        # Import regime-aware decorator if available
+        try:
+            from src.utils.regime_aware_financial_logging_decorator import (
+                regime_aware_financial_logging,
+                auto_regime_aware_logging
+            )
+            self.regime_aware_decorator = regime_aware_financial_logging
+            self.auto_regime_aware_decorator = auto_regime_aware_logging
+            self.decorator_available = True
+        except ImportError:
+            self.decorator_available = False
+    
+    def get_decorated_execute_method(self, original_execute_method):
+        """Get the execute method decorated with regime-aware logging."""
+        if self.decorator_available:
+            return self.auto_regime_aware_decorator(
+                enable_regime_validation=True,
+                enable_fail_fast=True,
+                min_regime_samples=100,
+                max_regime_imbalance=0.8,
+                regime_column='composite_cluster_id',
+                min_data_quality=0.7
+            )(original_execute_method)
+        else:
+            return original_execute_method

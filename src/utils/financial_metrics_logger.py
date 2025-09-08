@@ -1127,6 +1127,145 @@ def log_drawdown_metric(symbol: str, exchange: str, timeframe: str, step_name: s
     )
 
 
+# Import enhanced functionality if available
+try:
+    from src.utils.enhanced_financial_metrics_logger import (
+        get_enhanced_financial_metrics_logger,
+        EnhancedFinancialMetricsLogger,
+        RegimeValidationResult,
+        FailFastValidationResult
+    )
+    ENHANCED_LOGGING_AVAILABLE = True
+except ImportError:
+    ENHANCED_LOGGING_AVAILABLE = False
+    get_enhanced_financial_metrics_logger = None
+    EnhancedFinancialMetricsLogger = None
+    RegimeValidationResult = None
+    FailFastValidationResult = None
+
+# Import regime-aware decorator if available
+try:
+    from src.utils.regime_aware_financial_logging_decorator import (
+        regime_aware_financial_logging,
+        auto_regime_aware_logging,
+        is_post_hmm_step
+    )
+    REGIME_AWARE_DECORATOR_AVAILABLE = True
+except ImportError:
+    REGIME_AWARE_DECORATOR_AVAILABLE = False
+    regime_aware_financial_logging = None
+    auto_regime_aware_logging = None
+    is_post_hmm_step = None
+
+
+def get_smart_financial_metrics_logger(use_enhanced: bool = True) -> Union[FinancialMetricsLogger, EnhancedFinancialMetricsLogger]:
+    """
+    Get the appropriate financial metrics logger based on availability and preference.
+    
+    Args:
+        use_enhanced: Whether to prefer enhanced logger if available
+        
+    Returns:
+        FinancialMetricsLogger or EnhancedFinancialMetricsLogger
+    """
+    if use_enhanced and ENHANCED_LOGGING_AVAILABLE:
+        return get_enhanced_financial_metrics_logger()
+    else:
+        return get_financial_metrics_logger()
+
+
+def log_financial_metric_with_regime_awareness(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    metric_name: str,
+    metric_value: float,
+    metric_type: str,
+    step_name: str,
+    regime_id: Optional[str] = None,
+    additional_data: Optional[Dict[str, Any]] = None,
+    data: Optional[pd.DataFrame] = None,
+    use_enhanced: bool = True
+) -> bool:
+    """
+    Log financial metric with regime awareness and fail-fast validation.
+    
+    This function automatically uses the enhanced logger if available and the step
+    comes after HMM-based data splitting.
+    
+    Args:
+        symbol: Trading symbol
+        exchange: Exchange name
+        timeframe: Timeframe
+        metric_name: Name of the metric
+        metric_value: Value of the metric
+        metric_type: Type of metric
+        step_name: Training step name
+        regime_id: Market regime identifier
+        additional_data: Additional context data
+        data: DataFrame for validation (optional)
+        use_enhanced: Whether to use enhanced logger if available
+        
+    Returns:
+        True if logging succeeded, False if fail-fast conditions triggered
+    """
+    try:
+        # Check if this is a post-HMM step and enhanced logging is available
+        if (use_enhanced and 
+            ENHANCED_LOGGING_AVAILABLE and 
+            is_post_hmm_step(step_name)):
+            
+            enhanced_logger = get_enhanced_financial_metrics_logger()
+            return enhanced_logger.log_financial_metric_with_regime_validation(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                metric_name=metric_name,
+                metric_value=metric_value,
+                metric_type=metric_type,
+                step_name=step_name,
+                regime_id=regime_id,
+                additional_data=additional_data,
+                data=data
+            )
+        else:
+            # Use base logger
+            base_logger = get_financial_metrics_logger()
+            base_logger.log_financial_metric(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                metric_name=metric_name,
+                metric_value=metric_value,
+                metric_type=metric_type,
+                step_name=step_name,
+                regime_id=regime_id,
+                additional_data=additional_data
+            )
+            return True
+            
+    except Exception as e:
+        # Fallback to base logger
+        try:
+            base_logger = get_financial_metrics_logger()
+            base_logger.log_financial_metric(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                metric_name=metric_name,
+                metric_value=metric_value,
+                metric_type=metric_type,
+                step_name=step_name,
+                regime_id=regime_id,
+                additional_data=additional_data
+            )
+            return True
+        except Exception as fallback_error:
+            if system_logger:
+                system_logger.error(f"Failed to log financial metric: {e}, fallback also failed: {fallback_error}")
+            return False
+
+
 # Export main classes and functions
 __all__ = [
     'FinancialMetricsLogger',
@@ -1138,5 +1277,23 @@ __all__ = [
     'log_return_metric',
     'log_risk_metric',
     'log_sharpe_ratio',
-    'log_drawdown_metric'
+    'log_drawdown_metric',
+    'get_smart_financial_metrics_logger',
+    'log_financial_metric_with_regime_awareness'
 ]
+
+# Add enhanced exports if available
+if ENHANCED_LOGGING_AVAILABLE:
+    __all__.extend([
+        'get_enhanced_financial_metrics_logger',
+        'EnhancedFinancialMetricsLogger',
+        'RegimeValidationResult',
+        'FailFastValidationResult'
+    ])
+
+if REGIME_AWARE_DECORATOR_AVAILABLE:
+    __all__.extend([
+        'regime_aware_financial_logging',
+        'auto_regime_aware_logging',
+        'is_post_hmm_step'
+    ])

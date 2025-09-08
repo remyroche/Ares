@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Standalone Enhanced Data Collection Pipeline
 
@@ -164,7 +165,7 @@ class StandaloneDataCollectionPipeline:
         data_path = Path(self.data_dir)
         data_path.mkdir(parents = True, exist_ok = True)
         output_file = data_path / f'formatted_{self.exchange}_{self.symbol}_klines.parquet'
-        formatted_data.to_parquet(output_file, index=False)
+        standardized_parquet_handler.write_parquet_standardized(formatted_data, output_file, index=False)
         self.logger.info(f'Data formatted and stored successfully: {output_file}')
         return formatted_data
 

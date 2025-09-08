@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
 from src.training.steps.model_training.step04_common_types import (
+from ..standardized_parquet_handler import standardized_parquet_handler
     StepResult, RegimeDataResult, StepResultStatus, standardize_result
 )
 from src.utils.logger import system_logger
@@ -991,7 +992,7 @@ class RegimeDataSplittingStep:
                 'engine': 'auto'
             }
 
-            data.to_parquet(unified_file, **parquet_options)
+            standardized_parquet_handler.write_parquet_standardized(data, unified_file, **parquet_options)
             file_size_mb = unified_file.stat().st_size / (1024 * 1024)
             self.logger.info(f'✅ Saved unified regime dataset: {len(data):,} rows -> {file_size_mb:.1f}MB file')
             return True
@@ -1155,10 +1156,10 @@ class RegimeDataSplittingStep:
                     table = pq.read_table(file_path, **kwargs)
                     df = table.to_pandas()
                 else:
-                    df = pd.read_parquet(file_path, **kwargs)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
             else:
                 # Standard read and cache metadata
-                df = pd.read_parquet(file_path, **kwargs)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
                 self._cache_parquet_metadata(file_path, df.shape)
             
             return df
@@ -1166,7 +1167,7 @@ class RegimeDataSplittingStep:
         except Exception as e:
             self.logger.warning(f"⚠️ Cached read failed for {file_path}: {e}")
             # Fallback to standard read
-            return pd.read_parquet(file_path, **kwargs)
+            return standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
 
     @comprehensive_function_monitor
     async def _create_unified_regime_dataset(self, data: pd.DataFrame, regime_ids: List[int], data_dir: str, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any] | None:
@@ -1372,7 +1373,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = N
     """
     logger.info('🚀 Starting Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring')
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     
     step_start = time.time()
     try:

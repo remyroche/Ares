@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Comprehensive Pipeline Monitoring System

@@ -5,6 +5,7 @@ import torch
 from ....utils.logger import get_system_logger_with_comprehensive_integration
 from ....core.decorators import handles_errors, log_execution_time, cached, CachePolicy, log_call, circuit_breaker, validates
 from ..enhanced_error_handling import (
+from ..standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
     critical_async_process,
     CriticalProcessError,
@@ -1044,8 +1045,8 @@ class Step7EnhancedMatrixOperations:
             raise ValueError(f'Features validation file not found: {features_val_path}')
         
         self.logger.info(f'📊 Loading engineered features from: {features_train_path}')
-        df_train = pd.read_parquet(features_train_path)
-        df_val = pd.read_parquet(features_val_path)
+        df_train = standardized_parquet_handler.read_parquet_standardized(features_train_path)
+        df_val = standardized_parquet_handler.read_parquet_standardized(features_val_path)
         
         # Optimize memory usage by converting float64 to float32
         for d in (df_train, df_val):
@@ -1067,7 +1068,7 @@ class Step7EnhancedMatrixOperations:
         
         if hmm_path:
             self.logger.info(f'🎭 Loading HMM regimes from: {hmm_path}')
-            hmm_data = pd.read_parquet(hmm_path)
+            hmm_data = standardized_parquet_handler.read_parquet_standardized(hmm_path)
             if 'composite_cluster_id' in hmm_data.columns:
                 return hmm_data['composite_cluster_id']
             elif 'hmm_regime' in hmm_data.columns:
@@ -1131,7 +1132,7 @@ class Step7EnhancedMatrixOperations:
         for tf in ['1m', '5m', '15m', '30m', '1h']:
             tf_path = os.path.join(self.standards.build_path('training', exchange, symbol), f'{exchange}_{symbol}_{tf}_features_train.parquet')
             if os.path.exists(tf_path):
-                tf_data = pd.read_parquet(tf_path)
+                tf_data = standardized_parquet_handler.read_parquet_standardized(tf_path)
                 timeframe_data[tf] = tf_data
         
         if timeframe_data and timeframe_analyzer is not None:
@@ -1180,8 +1181,8 @@ class Step7EnhancedMatrixOperations:
         train_size = len(df_train)
         df_filtered_train = df_filtered.iloc[:train_size]
         df_filtered_val = df_filtered.iloc[train_size:]
-        df_filtered_train.to_parquet(filtered_train_path)
-        df_filtered_val.to_parquet(filtered_val_path)
+        standardized_parquet_handler.write_parquet_standardized(df_filtered_train, filtered_train_path)
+        standardized_parquet_handler.write_parquet_standardized(df_filtered_val, filtered_val_path)
         self.logger.info(f'💾 Saved filtered features to {filtered_train_path} and {filtered_val_path}')
         
         return df_filtered, filtering_metadata
@@ -2337,7 +2338,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         
         if not data_dir:
             from src.utils.pipeline_standards import pipeline_standards
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
         
         # Validate data directory exists
         data_path = Path(data_dir)
@@ -2472,7 +2473,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
 async def _execute_step07_with_optimizations(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Execute step07 with enhanced optimizations."""
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
 
     from src.config.training import get_training_config
     config = get_training_config()
@@ -2494,7 +2495,7 @@ async def _execute_step07_standard(symbol: str, exchange: str, timeframe: str='1
 
     try:
         if data_dir is None:
-            data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
 
         from src.config.training import get_training_config
         config = get_training_config()

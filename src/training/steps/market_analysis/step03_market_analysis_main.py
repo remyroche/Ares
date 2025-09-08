@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Step 3: Market Analysis Pipeline.
 
@@ -45,14 +46,14 @@ def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -
         # Load HMM block states
         block_states_file = Path("data/training") / f"BINANCE_{symbol}_hmm_block_states_{timeframe}.parquet"
         if block_states_file.exists():
-            block_states_df = pd.read_parquet(block_states_file)
+            block_states_df = standardized_parquet_handler.read_parquet_standardized(block_states_file)
         else:
             block_states_df = None
 
         # Load HMM composite clusters
         clusters_file = Path("data/training") / f"BINANCE_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
         if clusters_file.exists():
-            clusters_df = pd.read_parquet(clusters_file)
+            clusters_df = standardized_parquet_handler.read_parquet_standardized(clusters_file)
         else:
             clusters_df = None
 
@@ -124,7 +125,7 @@ def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: s
 
         for file_path in labeled_files:
             try:
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 if 'regime' in df.columns:
                     regime_counts = df['regime'].value_counts().to_dict()
                     regime_percentages = (df['regime'].value_counts(normalize=True) * 100).to_dict()

@@ -698,6 +698,7 @@ from src.utils.common_operations import safe_read_parquet
 from pathlib import Path as _Path
 import json as _json
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from ..standardized_parquet_handler import standardized_parquet_handler
 REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.centralized_decorators', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
@@ -829,11 +830,8 @@ class DataReadingStep:
         step_start = time.time()
         self.logger.info(f'📖 Reading unified data for {symbol} on {exchange} ({timeframe})')
         try:
-            unified_data_path = Path(self.standards.build_path('unified_data', exchange, symbol)) / timeframe
-            if not unified_data_path.exists():
-                self.logger.error(f'❌ Unified data path does not exist: {unified_data_path}')
-                return None
-            parquet_files = list(unified_data_path.glob('**/*.parquet'))
+            unified_data_path = standardized_parquet_handler.get_standardized_path('unified_data', exchange, symbol, timeframe)
+            parquet_files = standardized_parquet_handler.list_parquet_files(unified_data_path)
             if not parquet_files:
                 self.logger.error(f'❌ No parquet files found in {unified_data_path}')
                 return None
@@ -841,10 +839,9 @@ class DataReadingStep:
             dataframes = []
             for file_path in sorted(parquet_files):
                 self.logger.info(f'📖 Reading {file_path.name}')
-                df = safe_read_parquet(file_path)
-                df = self.standards.standardize_timestamp(df, 'timestamp')
-                df = self.standards.enforce_schema(df, 'unified')
-                dataframes.append(df)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path, 'unified')
+                if df is not None:
+                    dataframes.append(df)
             if dataframes:
                 unified_data = pd.concat(dataframes, ignore_index = True)
                 unified_data = unified_data.sort_values('timestamp').reset_index(drop = True)
@@ -1078,12 +1075,10 @@ class DataReadingStep:
                 self.logger.error('❌ Data quality validation failed')
                 self.logger.error(f"   Issues: {validation_results['issues']}")
                 return {'success': False, 'error': 'Data quality validation failed', 'validation_results': validation_results}
-            processed_dir = self.standards.build_path('processed_data', exchange, symbol)
-            Path(processed_dir).mkdir(parents = True, exist_ok = True)
-            output_file = f'{exchange}_{symbol}_{timeframe}_validated_data.parquet'
+            processed_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
+            output_file = standardized_parquet_handler.get_standardized_filename('validated_data', exchange, symbol, timeframe)
             output_path = Path(processed_dir) / output_file
-            unified_data = self.standards.standardize_timestamp(unified_data, 'timestamp')
-            unified_data.to_parquet(output_path, index=False)
+            standardized_parquet_handler.write_parquet_standardized(unified_data, output_path, 'unified')
             self.logger.info(f'✅ Step 2 completed successfully')
             self.logger.info(f'   - Validated data saved to: {output_path}')
             self.logger.info(f'   - Total execution time: {time.time() - self.start_time:.2f} seconds')
@@ -1260,7 +1255,7 @@ class DataReadingStep:
 async def run_step_enhanced(symbol: str, exchange: str, timeframe: str, data_dir: str = None, **kwargs) -> Dict[str, Any]:
     """Enhanced entry point for Step 2: Data Reading and Validation."""
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('raw_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('raw_data', exchange, symbol)
     logger.info('🚀 Starting Step 2: Data Reading and Validation (Enhanced)')
     config = {'SYMBOL': symbol, 'EXCHANGE': exchange, 'TIMEFRAME': timeframe, 'DATA_DIR': data_dir, **kwargs}
     step = DataReadingStep(config)

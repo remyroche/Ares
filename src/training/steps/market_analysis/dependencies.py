@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Dependency Management for Step05 Labeling.
 
 This module provides centralized dependency management and validation

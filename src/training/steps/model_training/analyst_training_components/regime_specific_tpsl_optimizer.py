@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # TPSL OPTIMIZER - TEMPORARILY DISABLED
 # This file is temporarily disabled as TPSL parameters are commented out in config.yaml

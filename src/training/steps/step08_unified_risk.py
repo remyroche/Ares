@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Unified Step08 Risk Assessment and Validation Methods - Part 4
 """

@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.\n\nThis step trains a multi-timeframe HMM cluster ensemble system that combines\npredictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)\nto improve regime forecasting accuracy and reduce MAPE, with regime-specific optimization.\n\nThe ensemble predicts REGIME TRANSITIONS only, not price direction.\nPrice direction predictions are made in other components.\n'
 import os
@@ -78,7 +79,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
             if not os.path.exists(unified_data_path):
                 self.logger.error(f'❌ Unified data not found: {unified_data_path}')
                 return pd.DataFrame()
-            unified_data = pd.read_parquet(unified_data_path)
+            unified_data = standardized_parquet_handler.read_parquet_standardized(unified_data_path)
             if 'composite_cluster_id' not in unified_data.columns:
                 self.logger.error("❌ Regime column 'composite_cluster_id' not found")
                 return pd.DataFrame()
@@ -99,7 +100,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
             if not os.path.exists(tf_data_path):
                 self.logger.warning(f'⚠️ Timeframe data not found: {tf_data_path}')
                 return pd.DataFrame()
-            tf_data = pd.read_parquet(tf_data_path)
+            tf_data = standardized_parquet_handler.read_parquet_standardized(tf_data_path)
             if 'composite_cluster_id' in tf_data.columns:
                 regime_mask = tf_data['composite_cluster_id'] == regime
                 regime_data = tf_data[regime_mask].copy()

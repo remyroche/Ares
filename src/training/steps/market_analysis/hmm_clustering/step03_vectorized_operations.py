@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Vectorized Operations and Numba JIT Optimizations for Step03.
 

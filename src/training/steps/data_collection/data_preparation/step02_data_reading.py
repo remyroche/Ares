@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 2: Data Reading - Refactored to use BaseStep with Hardware Optimizations.
 from src.utils.logger import system_logger

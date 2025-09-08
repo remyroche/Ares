@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 TPSL Predictor.
 
 This module handles TPSL prediction for the unified regime intelligence system.

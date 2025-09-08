@@ -6,6 +6,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.config.environment import get_environment_settings
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Step 3: HMM Regime Discovery with Standardized Data Quality Management.\n\nThis module performs Hidden Markov Model (HMM) regime discovery with standardized\ndata quality checks and automatic data preparation using step01/step1_5 components.\n'
 import asyncio
@@ -352,14 +353,14 @@ class HMMRegimeDiscoveryStep:
             # Load data from standard location
             data_path = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_aggtrades.parquet"
             if data_path.exists():
-                data = pd.read_parquet(data_path)
+                data = standardized_parquet_handler.read_parquet_standardized(data_path)
                 self.logger.info(f'✅ Loaded data: {len(data)} records from {data_path}')
                 return data
 
             # Try alternative data loading
             alt_path = Path("data/training") / f"{exchange}_{symbol}_aggtrades_{timeframe}.parquet"
             if alt_path.exists():
-                data = pd.read_parquet(alt_path)
+                data = standardized_parquet_handler.read_parquet_standardized(alt_path)
                 self.logger.info(f'✅ Loaded data: {len(data)} records from {alt_path}')
                 return data
 
@@ -843,7 +844,7 @@ class HMMRegimeDiscoveryStep:
                 self.logger.error(f'❌ Klines file not found: {klines_path}')
                 return {'success': False, 'error': f'Klines file not found: {klines_path}'}
             self.logger.info('📥 Loading klines data from parquet file...')
-            df = pd.read_parquet(klines_path)
+            df = standardized_parquet_handler.read_parquet_standardized(klines_path)
             df = self.standards.standardize_timestamp(df, 'timestamp')
             df = self.standards.enforce_schema(df, 'klines')
             validation_result = self.standards.validate_data_quality(df, 'klines')
@@ -919,7 +920,7 @@ class HMMRegimeDiscoveryStep:
                 self.logger.error(f'❌ Klines file not found: {klines_path}')
                 return {'success': False, 'error': f'Klines file not found: {klines_path}'}
 
-            df = pd.read_parquet(klines_path)
+            df = standardized_parquet_handler.read_parquet_standardized(klines_path)
             df = self.standards.standardize_timestamp(df, 'timestamp')
             df = self.standards.enforce_schema(df, 'klines')
 
@@ -2389,7 +2390,7 @@ class HMMRegimeDiscoveryStep:
                 save_df = composite_df.copy()
                 if isinstance(features, pd.DataFrame) and 'timestamp' in features.columns and ('timestamp' not in save_df.columns):
                     save_df['timestamp'] = features['timestamp'].values
-                save_df.to_parquet(out_path, compression='snappy', index = False)
+                standardized_parquet_handler.write_parquet_standardized(save_df, out_path, compression='snappy', index = False)
                 self.logger.info(f'💾 Saved composite clusters to: {out_path}')
             except Exception as e:
                 self.logger.warning(f'⚠️ Failed to save composite clusters parquet: {e}')
@@ -3546,7 +3547,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             feature_file = Path(data_dir) / f'{exchange}_{symbol}_{timeframe}_features.parquet'
             if feature_file.exists():
                 self.logger.info(f'📂 Loading feature data from: {feature_file}')
-                return pd.read_parquet(feature_file)
+                return standardized_parquet_handler.read_parquet_standardized(feature_file)
             self.logger.info('📂 Feature file not found, creating basic features from raw data')
             raw_data = await self._load_data(symbol, exchange, timeframe, data_dir)
             if raw_data is not None and (not raw_data.empty):

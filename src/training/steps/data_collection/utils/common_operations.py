@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Common utility functions for data collection operations.
 
 This module provides shared utility functions used across data collection steps,
@@ -220,7 +221,7 @@ def validate_parquet_file(file_path: str) -> Dict[str, Any]:
         result['file_size_mb'] = get_file_size_mb(file_path) or 0
 
         # Try to read the parquet file
-        df = pd.read_parquet(file_path)
+        df = standardized_parquet_handler.read_parquet_standardized(file_path)
 
         result['readable'] = True
         result['row_count'] = len(df)

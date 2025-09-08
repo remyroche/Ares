@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Enhanced Validator for Step 2: Data Reading with Comprehensive Function Monitoring.
 
 This module validates the data reading step outputs with comprehensive quality checks
@@ -82,7 +83,7 @@ async def _validate_data_files(data_files: list, exchange: str, symbol: str, tim
     """Validate data files and load the latest one."""
     try:
         latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
-        data = pd.read_parquet(latest_file)
+        data = standardized_parquet_handler.read_parquet_standardized(latest_file)
         
         if len(data) == 0:
             error_msg = 'No data rows found'

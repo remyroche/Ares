@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Comprehensive Validation Framework for Step 7 Enhanced Matrix Operations.
 
 This module provides validation capabilities for input data, matrix operations,

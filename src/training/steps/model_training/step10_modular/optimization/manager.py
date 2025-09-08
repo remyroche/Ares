@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Optimization Manager.
 
 This module handles optimization tasks for the unified regime intelligence system.

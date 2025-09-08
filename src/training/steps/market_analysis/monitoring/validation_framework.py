@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Comprehensive Validation Framework.
 
 This module provides comprehensive validation for all function operations.

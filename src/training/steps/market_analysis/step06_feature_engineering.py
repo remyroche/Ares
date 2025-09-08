@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from pathlib import Path
 from contextlib import nullcontext
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Step6: Feature Interaction Engineering with Hardware Acceleration
@@ -216,7 +217,7 @@ class FeatureInteractionEngine:
             session = optimization_context.get('data_manager_session')
             if not session:
                 # Fallback to standard loading
-                return pd.read_parquet(file_path)
+                return standardized_parquet_handler.read_parquet_standardized(file_path)
 
             # Use optimized data manager for loading
             data_id = f"{file_path.stem}_data"
@@ -234,7 +235,7 @@ class FeatureInteractionEngine:
 
         except Exception as e:
             self.logger.warning(f"Optimized data loading failed, falling back to standard loading: {e}")
-            return pd.read_parquet(file_path)
+            return standardized_parquet_handler.read_parquet_standardized(file_path)
 
     async def _save_data_optimized(
         self,
@@ -248,7 +249,7 @@ class FeatureInteractionEngine:
             session = optimization_context.get('data_manager_session')
             if not session:
                 # Fallback to standard saving
-                data.to_parquet(output_path)
+                standardized_parquet_handler.write_parquet_standardized(data, output_path)
                 return True
 
             # Use optimized data manager for saving
@@ -260,7 +261,7 @@ class FeatureInteractionEngine:
         except Exception as e:
             self.logger.warning(f"Optimized data saving failed, falling back to standard saving: {e}")
             try:
-                data.to_parquet(output_path)
+                standardized_parquet_handler.write_parquet_standardized(data, output_path)
                 return True
             except Exception as fallback_error:
                 self.logger.error(f"Standard saving also failed: {fallback_error}")

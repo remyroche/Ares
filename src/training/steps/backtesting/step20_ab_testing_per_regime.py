@@ -38,13 +38,13 @@ from src.training.steps.market_analysis.regime_continuity_decorator import per_r
 from src.utils.logger import get_logger
 from src.utils.decorators import traced, validates
 
-# Enhanced Reporting import
+# Financial Metrics Logging import
 try:
-    from src.training.steps.backtesting.step20_enhanced_reporting import Step20EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from src.training.steps.backtesting.step20_financial_logging import Step20FinancialLogger
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
-    Step20EnhancedReporter = None
+    FINANCIAL_LOGGING_AVAILABLE = False
+    Step20FinancialLogger = None
 
 logger = get_logger('Step20ABTestingPerRegime')
 
@@ -81,17 +81,18 @@ class PerRegimeABTestingStep(ABTestingStep):
 
         self.logger.info("🔧 Per-Regime AB Testing Step initialized with M1 optimizations")
 
-        # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE and Step20EnhancedReporter is not None:
+        # Initialize financial metrics logging system
+        if FINANCIAL_LOGGING_AVAILABLE and Step20FinancialLogger is not None:
             try:
-                self.enhanced_reporter = Step20EnhancedReporter(config)
-                self.logger.info('✅ Enhanced reporting system initialized for Step20')
+                # Will be initialized with symbol, exchange, timeframe when needed
+                self.financial_logger = None
+                self.logger.info('✅ Financial metrics logging system available for Step20')
             except Exception as e:
-                self.logger.warning(f'Failed to initialize enhanced reporting: {e}')
-                self.enhanced_reporter = None
+                self.logger.warning(f'Failed to initialize financial logging: {e}')
+                self.financial_logger = None
         else:
-            self.logger.info('Enhanced reporting not available, using fallback reporting')
-            self.enhanced_reporter = None
+            self.logger.info('Financial logging not available, using fallback reporting')
+            self.financial_logger = None
 
     def _create_optimization_profile(self, data_size_mb: float, workload_type: WorkloadType = WorkloadType.MIXED) -> OptimizationProfile:
         """Create optimization profile for AB testing workload."""
@@ -160,11 +161,14 @@ class PerRegimeABTestingStep(ABTestingStep):
                 return False
             success = await self._execute_ab_testing_workflow(context, mc_data)
 
-            # Enhanced reporting system integration
-            if self.enhanced_reporter is not None and success:
+            # Financial metrics logging system integration
+            if FINANCIAL_LOGGING_AVAILABLE and Step20FinancialLogger is not None and success:
                 try:
-                    # Prepare comprehensive analysis data for enhanced reporting
-                    ab_testing_results_data = {
+                    # Initialize financial logger
+                    self.financial_logger = Step20FinancialLogger(symbol, exchange, timeframe)
+
+                    # Prepare comprehensive analysis data for financial logging
+                    final_backtest_results = {
                         'total_duration': context.get('execution_time', 0.0),
                         'total_tests': context.get('total_tests', 0),
                         'parallel_efficiency': context.get('parallel_efficiency', 0.87),
@@ -174,37 +178,31 @@ class PerRegimeABTestingStep(ABTestingStep):
                         'optimization_gain': context.get('optimization_gain', 0.78)
                     }
 
-                    # Prepare statistical analysis data
-                    statistical_analysis_data = {
+                    # Prepare performance metrics data
+                    performance_metrics = {
                         'confidence_level': context.get('confidence_level', 0.95),
                         'p_value_threshold': context.get('p_value_threshold', 0.05),
                         'statistical_power': context.get('statistical_power', 0.82),
                         'effect_size': context.get('effect_size', 0.34),
                         'sample_size_adequacy': context.get('sample_size_adequacy', 0.89),
-                        'statistical_rigor': context.get('statistical_rigor', 0.87)
-                    }
-
-                    # Prepare variant comparison data
-                    variant_comparison_data = {
-                        'variants_tested': context.get('variants_tested', 2),
-                        'winner_determined': context.get('winner_determined', True),
-                        'winner_variant': context.get('winner_variant', 'B'),
-                        'performance_differences': context.get('performance_differences', {'A': 0.51, 'B': 0.55}),
-                        'variant_stability': context.get('variant_stability', {'A': 0.85, 'B': 0.88})
-                    }
-
-                    # Prepare effect analysis data
-                    effect_analysis_data = {
+                        'statistical_rigor': context.get('statistical_rigor', 0.87),
                         'cohen_d': context.get('cohen_d', 0.34),
                         'hedges_g': context.get('hedges_g', 0.33),
                         'glass_delta': context.get('glass_delta', 0.35),
                         'effect_magnitude': context.get('effect_magnitude', 'small'),
                         'practical_significance': context.get('practical_significance', 0.72),
-                        'effect_stability': context.get('effect_stability', 0.88)
+                        'effect_stability': context.get('effect_stability', 0.88),
+                        'design_quality': context.get('design_quality', 0.88),
+                        'randomization_quality': context.get('randomization_quality', 0.92),
+                        'sample_balance': context.get('sample_balance', 0.89),
+                        'statistical_validity': context.get('statistical_validity', 0.87),
+                        'methodological_rigor': context.get('methodological_rigor', 0.91),
+                        'reproducibility': context.get('reproducibility', 0.94),
+                        'ethical_compliance': context.get('ethical_compliance', 0.96)
                     }
 
-                    # Prepare regime results data
-                    regime_results_data = {
+                    # Prepare execution data
+                    execution_data = {
                         'regimes': {
                             str(regime_id): {
                                 'performance': context.get('regime_performance', 0.82),
@@ -215,44 +213,33 @@ class PerRegimeABTestingStep(ABTestingStep):
                             }
                         },
                         'correlations': context.get('regime_correlations', {}),
-                        'transition_impacts': context.get('transition_impacts', {})
+                        'transition_impacts': context.get('transition_impacts', {}),
+                        'variants_tested': context.get('variants_tested', 2),
+                        'winner_determined': context.get('winner_determined', True),
+                        'winner_variant': context.get('winner_variant', 'B'),
+                        'performance_differences': context.get('performance_differences', {'A': 0.51, 'B': 0.55}),
+                        'variant_stability': context.get('variant_stability', {'A': 0.85, 'B': 0.88})
                     }
 
-                    # Prepare quality assessment data
-                    quality_assessment_data = {
-                        'design_quality': context.get('design_quality', 0.88),
-                        'randomization_quality': context.get('randomization_quality', 0.92),
-                        'sample_balance': context.get('sample_balance', 0.89),
-                        'statistical_validity': context.get('statistical_validity', 0.87),
-                        'methodological_rigor': context.get('methodological_rigor', 0.91),
-                        'reproducibility': context.get('reproducibility', 0.94),
-                        'ethical_compliance': context.get('ethical_compliance', 0.96)
+                    # Prepare final analysis data
+                    final_analysis = {
+                        'confidence_intervals': context.get('confidence_intervals', {}),
+                        'p_values': context.get('p_values', {}),
+                        'hypothesis_tests': context.get('hypothesis_tests', {})
                     }
 
-                    # Generate comprehensive report
-                    comprehensive_report = self.enhanced_reporter.generate_comprehensive_report(
-                        ab_testing_results=ab_testing_results_data,
-                        statistical_analysis=statistical_analysis_data,
-                        variant_comparison=variant_comparison_data,
-                        effect_analysis=effect_analysis_data,
-                        regime_results=regime_results_data,
-                        quality_assessment=quality_assessment_data
+                    # Log comprehensive financial metrics
+                    self.financial_logger.log_step_execution(
+                        final_backtest_results=final_backtest_results,
+                        performance_metrics=performance_metrics,
+                        execution_data=execution_data,
+                        final_analysis=final_analysis
                     )
 
-                    # Save comprehensive reports
-                    saved_files = self.enhanced_reporter.save_comprehensive_report(
-                        report_data=comprehensive_report,
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe
-                    )
-
-                    self.logger.info(f'📊 Enhanced Step20 analysis completed - saved {len(saved_files)} report files')
-                    for file_path in saved_files:
-                        self.logger.info(f'   📄 {file_path}')
+                    self.logger.info(f'💰 Financial metrics logged for Step20 A/B testing')
 
                 except Exception as e:
-                    self.logger.warning(f'Enhanced reporting failed, continuing with basic saving: {e}')
+                    self.logger.warning(f'Financial logging failed, continuing with basic saving: {e}')
 
             return success
         except Exception as e:

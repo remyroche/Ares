@@ -1028,7 +1028,7 @@ class SROptimizationStep(BaseStep):
             # Return success with all results
             print("✅ STEP02_5: Execution completed successfully, about to return results")
             self.logger.info('✅ Step 2.5 SR optimization completed successfully')
-            success_result = {'success': True, 'step02_5_sr_optimization_completed': True, 'sr_levels': sr_levels, 'sr_optimization_results': optimization_results, 'features_data': features_data, 'ml_results': ml_results, 'execution_time': execution_time, 'execution_report': execution_report, 'internal_call_tracker': internal_call_tracker, 'unified_performance_summary': performance_summary, 'step_name': 'step02_5_sr_optimization'}
+            success_result = {'success': True, 'step02_5_sr_optimization_completed': True, 'sr_levels': sr_levels, 'sr_optimization_results': optimization_results, 'features_data': features_data, 'ml_results': ml_results, 'execution_time': execution_time, 'execution_report': execution_report, 'internal_call_tracker': internal_call_tracker, 'unified_performance_summary': performance_summary, 'step_name': 'step02_5_sr_optimization', 'pipeline_state_update': {'sr_levels': sr_levels}}
 
         except Exception as e:
             self.logger.error(f'❌ SR optimization failed: {e}')
@@ -2403,175 +2403,11 @@ class SROptimizationStep(BaseStep):
             # Fallback to simple price range
             return (data['high'] - data['low']).rolling(window=period).mean()
 
-    def _create_enhanced_sr_features(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> pd.DataFrame:
-        """Create enhanced ML-optimized features from SR levels using fixed-size encoding."""
-        try:
-            # Extract SR level data
-            support_levels = sr_levels.get('support_levels', [])
-            resistance_levels = sr_levels.get('resistance_levels', [])
-            
-            # Calculate ATR for normalization
-            atr = self._calculate_atr(features_data)
-            current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
-            
-            # Initialize enhanced features DataFrame
-            enhanced_features = pd.DataFrame(index=features_data.index)
-            current_prices = features_data['close'].values
-            
-            # 1. Distance features: distance to nearest support/resistance (normalized by ATR)
-            nearest_support_distances = []
-            nearest_resistance_distances = []
-            
-            for price in current_prices:
-                # Find nearest support
-                support_distances = [abs(price - level.get('price', level)) for level in support_levels 
-                                   if isinstance(level.get('price', level), (int, float))]
-                nearest_support_dist = min(support_distances) if support_distances else float('inf')
-                nearest_support_distances.append(nearest_support_dist / current_atr if current_atr > 0 else 0)
-                
-                # Find nearest resistance
-                resistance_distances = [abs(price - level.get('price', level)) for level in resistance_levels 
-                                      if isinstance(level.get('price', level), (int, float))]
-                nearest_resistance_dist = min(resistance_distances) if resistance_distances else float('inf')
-                nearest_resistance_distances.append(nearest_resistance_dist / current_atr if current_atr > 0 else 0)
-            
-            enhanced_features['dist_to_nearest_support_atr'] = nearest_support_distances
-            enhanced_features['dist_to_nearest_resistance_atr'] = nearest_resistance_distances
-            
-            # 2. Strength features: strength of nearest support/resistance
-            nearest_support_strengths = []
-            nearest_resistance_strengths = []
-            
-            for i, price in enumerate(current_prices):
-                # Find nearest support strength
-                support_strengths = []
-                for level in support_levels:
-                    if isinstance(level.get('price', level), (int, float)):
-                        dist = abs(price - level.get('price', level))
-                        if dist == nearest_support_distances[i] * current_atr:
-                            support_strengths.append(level.get('strength', 0.5))
-                nearest_support_strengths.append(max(support_strengths) if support_strengths else 0)
-                
-                # Find nearest resistance strength
-                resistance_strengths = []
-                for level in resistance_levels:
-                    if isinstance(level.get('price', level), (int, float)):
-                        dist = abs(price - level.get('price', level))
-                        if dist == nearest_resistance_distances[i] * current_atr:
-                            resistance_strengths.append(level.get('strength', 0.5))
-                nearest_resistance_strengths.append(max(resistance_strengths) if resistance_strengths else 0)
-            
-            enhanced_features['strength_of_nearest_support'] = nearest_support_strengths
-            enhanced_features['strength_of_nearest_resistance'] = nearest_resistance_strengths
-            
-            # 3. Multiplicity features: count of levels within 1×ATR, 2×ATR, 5×ATR
-            for atr_multiplier in [1, 2, 5]:
-                support_counts = []
-                resistance_counts = []
-                
-                for price in current_prices:
-                    threshold = current_atr * atr_multiplier
-                    
-                    # Count support levels within threshold
-                    support_count = sum(1 for level in support_levels 
-                                      if isinstance(level.get('price', level), (int, float)) and 
-                                      abs(price - level.get('price', level)) <= threshold)
-                    support_counts.append(support_count)
-                    
-                    # Count resistance levels within threshold
-                    resistance_count = sum(1 for level in resistance_levels 
-                                         if isinstance(level.get('price', level), (int, float)) and 
-                                         abs(price - level.get('price', level)) <= threshold)
-                    resistance_counts.append(resistance_count)
-                
-                enhanced_features[f'support_levels_within_{atr_multiplier}atr'] = support_counts
-                enhanced_features[f'resistance_levels_within_{atr_multiplier}atr'] = resistance_counts
-            
-            # 4. Top-k levels: distances and strengths for top-3 nearest levels
-            for k in range(1, 4):  # Top 3 levels
-                top_support_distances = []
-                top_support_strengths = []
-                top_resistance_distances = []
-                top_resistance_strengths = []
-                
-                for price in current_prices:
-                    # Get top-k support levels
-                    support_data = [(abs(price - level.get('price', level)), level.get('strength', 0.5)) 
-                                  for level in support_levels 
-                                  if isinstance(level.get('price', level), (int, float))]
-                    support_data.sort(key=lambda x: x[0])
-                    
-                    if len(support_data) >= k:
-                        dist, strength = support_data[k-1]
-                        top_support_distances.append(dist / current_atr if current_atr > 0 else 0)
-                        top_support_strengths.append(strength)
-                    else:
-                        top_support_distances.append(float('inf'))
-                        top_support_strengths.append(0)
-                    
-                    # Get top-k resistance levels
-                    resistance_data = [(abs(price - level.get('price', level)), level.get('strength', 0.5)) 
-                                     for level in resistance_levels 
-                                     if isinstance(level.get('price', level), (int, float))]
-                    resistance_data.sort(key=lambda x: x[0])
-                    
-                    if len(resistance_data) >= k:
-                        dist, strength = resistance_data[k-1]
-                        top_resistance_distances.append(dist / current_atr if current_atr > 0 else 0)
-                        top_resistance_strengths.append(strength)
-                    else:
-                        top_resistance_distances.append(float('inf'))
-                        top_resistance_strengths.append(0)
-                
-                enhanced_features[f'top_{k}_support_dist_atr'] = top_support_distances
-                enhanced_features[f'top_{k}_support_strength'] = top_support_strengths
-                enhanced_features[f'top_{k}_resistance_dist_atr'] = top_resistance_distances
-                enhanced_features[f'top_{k}_resistance_strength'] = top_resistance_strengths
-            
-            # 5. Binary flags: within tolerance, recent break
-            tolerance = current_atr * 0.5  # 0.5 ATR tolerance
-            within_tolerance = []
-            recent_break = []
-            
-            for i, price in enumerate(current_prices):
-                # Check if within tolerance of any level
-                within_support = any(abs(price - level.get('price', level)) <= tolerance 
-                                   for level in support_levels 
-                                   if isinstance(level.get('price', level), (int, float)))
-                within_resistance = any(abs(price - level.get('price', level)) <= tolerance 
-                                     for level in resistance_levels 
-                                     if isinstance(level.get('price', level), (int, float)))
-                within_tolerance.append(1 if (within_support or within_resistance) else 0)
-                
-                # Recent break (simplified - would need historical data for proper implementation)
-                recent_break.append(0)  # Placeholder
-            
-            enhanced_features['within_tolerance'] = within_tolerance
-            enhanced_features['recent_break'] = recent_break
-            
-            # 6. Time-since-touch: scalar for nearest level (simplified)
-            time_since_touch = []
-            for i in range(len(current_prices)):
-                # Simplified: use index position as proxy for time
-                time_since_touch.append(i % 100)  # Placeholder
-            
-            enhanced_features['time_since_last_touch'] = time_since_touch
-            
-            self.logger.info(f'✅ Enhanced SR features created: {len(enhanced_features.columns)} features')
-            return enhanced_features
-            
-        except Exception as e:
-            self.logger.error(f'❌ Failed to create enhanced SR features: {e}')
-            # Return empty DataFrame as fallback
-            return pd.DataFrame(index=features_data.index)
 
     def _prepare_sr_targets(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> pd.DataFrame:
         """Prepare target variables from SR levels for ML training with enhanced features."""
         try:
-            # Create enhanced SR features
-            enhanced_sr_features = self._create_enhanced_sr_features(features_data, sr_levels)
-            
-            # Extract SR level prices
+            # Extract SR level prices for target creation
             support_prices = [level.get('price', level) for level in sr_levels.get('support_levels', [])]
             resistance_prices = [level.get('price', level) for level in sr_levels.get('resistance_levels', [])]
 
@@ -2614,10 +2450,6 @@ class SROptimizationStep(BaseStep):
                 nearest_sr_distances.append(nearest_distance)
 
             target_data['volatility_target'] = np.array(nearest_sr_distances)
-
-            # Add enhanced SR features to target data
-            for col in enhanced_sr_features.columns:
-                target_data[col] = enhanced_sr_features[col]
 
             # Filter out neutral cases for cleaner training
             valid_mask = target_data['direction_target'] != 0.5

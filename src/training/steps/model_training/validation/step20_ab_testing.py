@@ -12,26 +12,73 @@ from typing import Any
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.common_operations import ensure_directory, safe_json_dump
-from src.utils.logger import get_logger
-import logging
+# Core imports
+from src.core.decorators import (
+    handles_errors,
+    validates,
+    log_execution_time,
+    monitor_function_calls
+)
+from src.core.errors import (
+    ValidationError,
+    DataIntegrityError,
+    AppError
+)
+from src.utils.common_operations import (
+    ensure_directory, 
+    safe_json_dump,
+    safe_json_load,
+    get_logger,
+    safe_float,
+    safe_int
+)
 
 # src/training/steps/step20_ab_testing.py
 
 class ABTestingStep:
     """Step 20: Extended A/B Testing."""
     @log_important_calls
-
+    @handles_errors(default_return=None, context="ABTestingStep.__init__")
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = get_logger('ABTestingStep')
         self.start_time = None
 
+    @handles_errors(default_return=None, context="ABTestingStep.initialize")
+    @log_execution_time
     async def initialize(self) -> None:
         self.start_time = time.time()
         self.logger.info("🚀 Initializing A/B Testing Step...")
         self.logger.info("✅ A/B Testing Step initialized successfully")
 
+    @validates()
+    def _validate_input_parameters(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> None:
+        """Fast fail validation for input parameters using core error types."""
+        if not symbol or not isinstance(symbol, str):
+            raise ValidationError(f"Invalid symbol: {symbol}. Must be a non-empty string.")
+        
+        if not exchange or not isinstance(exchange, str):
+            raise ValidationError(f"Invalid exchange: {exchange}. Must be a non-empty string.")
+        
+        if not timeframe or not isinstance(timeframe, str):
+            raise ValidationError(f"Invalid timeframe: {timeframe}. Must be a non-empty string.")
+        
+        if not data_dir or not isinstance(data_dir, str):
+            raise ValidationError(f"Invalid data_dir: {data_dir}. Must be a non-empty string.")
+        
+        # Additional validation for common issues
+        if len(symbol) < 3:
+            raise ValidationError(f"Symbol too short: {symbol}. Must be at least 3 characters.")
+        
+        if exchange.upper() not in ['BINANCE', 'COINBASE', 'KRAKEN', 'BITFINEX']:
+            self.logger.warning(f"Unusual exchange: {exchange}. Proceeding with caution.")
+        
+        if timeframe not in ['1m', '5m', '15m', '30m', '1h', '4h', '1d']:
+            self.logger.warning(f"Unusual timeframe: {timeframe}. Proceeding with caution.")
+
+    @handles_errors(default_return={"success": False, "status": "ERROR"}, context="ABTestingStep.execute")
+    @log_execution_time
+    @monitor_function_calls
     async def execute(
         self,
         symbol: str,
@@ -41,6 +88,9 @@ class ABTestingStep:
         **kwargs
     ) -> dict[str, Any]:
         """Execute extended A/B testing and persist expected artifacts."""
+        # Fast fail validation
+        self._validate_input_parameters(symbol, exchange, timeframe, data_dir)
+        
         self.logger.info(f'🚀 Starting Step 20: A/B Testing for {symbol} on {exchange}')
 
         ensure_directory(data_dir)
@@ -74,6 +124,8 @@ class ABTestingStep:
         self.logger.info(f'✅ Step 20: A/B Testing completed successfully in {execution_time:.2f} seconds')
         return {"success": True, "status": "SUCCESS", "results_file": results_path}
 
+@handles_errors(default_return=False, context="run_step")
+@log_execution_time
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

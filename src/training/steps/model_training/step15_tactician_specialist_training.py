@@ -23,6 +23,32 @@ from ....utils.logger import system_logger
 from ....core.decorators import handles_errors
 from ....config.environment import get_environment_settings
 
+# Import utility modules
+from ....utils.common_operations import (
+    safe_json_load, safe_json_dump, safe_read_parquet, safe_to_parquet,
+    safe_fillna, safe_mean, safe_std, ensure_directory, safe_file_exists,
+    validate_dataframe_schema, validate_data_quality, optimize_dataframe_dtypes,
+    standardize_price_action_probabilities, safe_float, safe_int,
+    get_current_datetime, format_datetime, create_empty_dataframe
+)
+from ....utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    validate_positive, validate_range, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change, MathValidationError
+)
+from ....utils.parquet_utils import ParquetUtils, get_parquet_utils
+
+# Import core decorators
+from ....core.decorators.cache import cached
+from ....core.decorators.logging import log_call, log_execution_time
+from ....core.decorators.validate import validates
+from ....core.decorators.retry_timeout import circuit_breaker, timeout
+from ....core.decorators.enhanced_error_handling import enhanced_error_handling
+
+# Import core errors
+from ....core.errors.base import BaseError, ValidationError, ProcessingError
+from ....core.errors.mapping import ErrorMapping
+
 # Get dynamic symbol configuration
 _settings = get_environment_settings()
 
@@ -213,6 +239,10 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.config = config
         self.logger = system_logger
         self.standards = pipeline_standards
+        
+        # Initialize utility modules
+        self.parquet_utils = get_parquet_utils()
+        self.error_mapping = ErrorMapping()
         
         # Initialize caching and optimization components
         self._sr_context_cache = {}
@@ -449,33 +479,117 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         except Exception as e:
             return False, f"Dependency validation error: {str(e)}"
 
+    def _load_data_with_parquet_utils(self, parquet_file: str, pickle_file: str) -> pd.DataFrame:
+        """Load data using parquet utilities with comprehensive fallback strategies."""
+        try:
+            # First try parquet file with parquet utils
+            if safe_file_exists(parquet_file):
+                self.logger.info(f"🔧 Loading parquet file using parquet utils: {parquet_file}")
+                
+                # Validate parquet file first
+                validation_result = self.parquet_utils.validate_parquet_file(parquet_file)
+                if validation_result.get('valid', False):
+                    labeled_data = self.parquet_utils.safe_read_parquet(parquet_file)
+                    if labeled_data is not None:
+                        self.logger.info(f"✅ Successfully loaded parquet data: {labeled_data.shape}")
+                        return labeled_data
+                    else:
+                        self.logger.warning("⚠️ Parquet utils failed to read file, trying repair")
+                        if self.parquet_utils.repair_parquet_file(parquet_file):
+                            labeled_data = self.parquet_utils.safe_read_parquet(parquet_file)
+                            if labeled_data is not None:
+                                self.logger.info(f"✅ Successfully loaded repaired parquet data: {labeled_data.shape}")
+                                return labeled_data
+                else:
+                    self.logger.warning(f"⚠️ Parquet file validation failed: {validation_result.get('error', 'Unknown error')}")
+            
+            # Fallback to standardized parquet handler
+            if safe_file_exists(parquet_file):
+                try:
+                    self.logger.info("🔄 Trying standardized parquet handler")
+                    labeled_data = standardized_parquet_handler.read_parquet_standardized(parquet_file)
+                    self.logger.info(f"✅ Loaded data using standardized handler: {labeled_data.shape}")
+                    return labeled_data
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Standardized handler failed: {e}")
+            
+            # Final fallback to pickle
+            if safe_file_exists(pickle_file):
+                self.logger.info(f"🔄 Loading pickle file as final fallback: {pickle_file}")
+                with open(pickle_file, 'rb') as f:
+                    labeled_data = pickle.load(f)
+                self.logger.info(f"✅ Loaded data from pickle: {labeled_data.shape if hasattr(labeled_data, 'shape') else 'unknown'}")
+                return labeled_data
+            
+            # If all methods fail
+            self.logger.error(f"❌ All data loading methods failed for files: {parquet_file}, {pickle_file}")
+            return create_empty_dataframe(['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in data loading: {e}")
+            return create_empty_dataframe(['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+
     def _validate_data_integrity(self, data: pd.DataFrame, operation: str) -> tuple[bool, str]:
-        """Validate data integrity for various operations."""
+        """Validate data integrity for various operations using utility modules."""
         try:
             # Check if data is DataFrame
             if not isinstance(data, pd.DataFrame):
                 return False, f"Expected DataFrame, got {type(data)} for {operation}"
             
-            # Check for infinite values
+            # Use common operations validation
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            schema_valid = validate_dataframe_schema(data, {'required_columns': required_columns})
+            if not schema_valid:
+                return False, f"Schema validation failed for {operation}"
+            
+            # Use data quality validation
+            quality_thresholds = {
+                'min_rows': 10,
+                'max_null_ratio': 0.3
+            }
+            quality_valid = validate_data_quality(data, quality_thresholds)
+            if not quality_valid:
+                return False, f"Data quality validation failed for {operation}"
+            
+            # Check for infinite values using math validation
             numeric_cols = data.select_dtypes(include=[np.number]).columns
             inf_cols = []
             for col in numeric_cols:
-                if np.isinf(data[col]).any():
-                    inf_cols.append(col)
+                try:
+                    # Use math validation to check for finite values
+                    sample_values = data[col].dropna().head(100)  # Sample for performance
+                    for val in sample_values:
+                        try:
+                            validate_finite(val, f"column_{col}")
+                        except MathValidationError:
+                            inf_cols.append(col)
+                            break
+                except Exception:
+                    # If validation fails, check with numpy
+                    if np.isinf(data[col]).any():
+                        inf_cols.append(col)
             
             if inf_cols:
                 return False, f"Infinite values found in columns: {inf_cols} for {operation}"
             
-            # Check for extreme outliers (beyond 6 standard deviations)
+            # Check for extreme outliers using safe math operations
             outlier_cols = []
             for col in numeric_cols:
                 if len(data[col].dropna()) > 0:
-                    mean_val = data[col].mean()
-                    std_val = data[col].std()
-                    if std_val > 0:
-                        outliers = np.abs(data[col] - mean_val) > 6 * std_val
-                        if outliers.sum() > len(data) * 0.01:  # More than 1% outliers
-                            outlier_cols.append(col)
+                    try:
+                        mean_val = safe_mean(data[col].dropna().values)
+                        std_val = safe_std(data[col].dropna().values)
+                        
+                        if std_val > 0:
+                            # Use safe math operations for outlier detection
+                            threshold = std_val * 6.0  # 6 standard deviations
+                            outliers = np.abs(data[col] - mean_val) > threshold
+                            outlier_ratio = safe_divide(outliers.sum(), len(data), 0.0)
+                            
+                            if outlier_ratio > 0.01:  # More than 1% outliers
+                                outlier_cols.append(col)
+                    except Exception as e:
+                        self.logger.warning(f"Error checking outliers in column {col}: {e}")
             
             if outlier_cols:
                 self.logger.warning(f"Extreme outliers detected in columns: {outlier_cols} for {operation}")
@@ -498,7 +612,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             return False, f"Data integrity validation error for {operation}: {str(e)}"
 
     def _validate_model_output(self, model_result: dict, model_name: str) -> tuple[bool, str]:
-        """Validate model output quality and structure."""
+        """Validate model output quality and structure using utility modules."""
         try:
             # Check required keys
             required_keys = ['model', 'accuracy', 'model_type']
@@ -506,10 +620,12 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             if missing_keys:
                 return False, f"Model {model_name} missing required keys: {missing_keys}"
             
-            # Validate accuracy range
+            # Validate accuracy range using math validation
             accuracy = model_result.get('accuracy', 0)
-            if not (0 <= accuracy <= 1):
-                return False, f"Model {model_name} has invalid accuracy: {accuracy}"
+            try:
+                accuracy_val = validate_range(accuracy, 0.0, 1.0, f"model_{model_name}_accuracy")
+            except MathValidationError as e:
+                return False, f"Model {model_name} has invalid accuracy: {e}"
             
             # Validate model object
             model = model_result.get('model')
@@ -520,24 +636,40 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             if not hasattr(model, 'predict') or not callable(getattr(model, 'predict')):
                 return False, f"Model {model_name} missing predict method"
             
-            # Validate probability outputs if available
+            # Validate probability outputs if available using utility functions
             if 'price_action_probabilities' in model_result:
                 probs = model_result['price_action_probabilities']
                 if isinstance(probs, dict):
+                    # Use utility function to standardize probabilities
+                    standardized_probs = standardize_price_action_probabilities(probs)
+                    
+                    # Validate each probability using math validation
                     prob_keys = ['triple_barrier_probability', 'direction_probability', 
                                'magnitude_probability', 'barrier_avoidance_probability']
                     for key in prob_keys:
-                        if key in probs:
-                            prob_val = probs[key]
-                            if not (0 <= prob_val <= 1):
-                                return False, f"Model {model_name} has invalid probability {key}: {prob_val}"
+                        if key in standardized_probs:
+                            try:
+                                validate_range(standardized_probs[key], 0.0, 1.0, f"model_{model_name}_{key}")
+                            except MathValidationError as e:
+                                return False, f"Model {model_name} has invalid probability {key}: {e}"
+                    
+                    # Update model result with standardized probabilities
+                    model_result['price_action_probabilities'] = standardized_probs
             
             # Validate feature importance if available
             if 'feature_importance' in model_result:
                 importance = model_result['feature_importance']
                 if isinstance(importance, dict):
-                    # Check for negative importances
-                    negative_features = [k for k, v in importance.items() if v < 0]
+                    # Check for negative importances using safe operations
+                    negative_features = []
+                    for k, v in importance.items():
+                        try:
+                            val = safe_float(v, 0.0)
+                            if val < 0:
+                                negative_features.append(k)
+                        except Exception:
+                            continue
+                    
                     if negative_features:
                         self.logger.warning(f"Model {model_name} has negative feature importances: {negative_features}")
             
@@ -648,6 +780,10 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             self.logger.warning(f'⚠️ Error initializing SRBreakoutPredictor: {e}')
         self.logger.info('Tactician Specialist Training Step initialized successfully')
 
+    @handles_errors(exceptions=(Exception,), default_return=None, context='S/R context enhancement')
+    @log_execution_time()
+    @validates()
+    @enhanced_error_handling
     async def _enhance_training_data_with_sr_context(self, labeled_data: pd.DataFrame, symbol: str, timeframe: str) -> pd.DataFrame:
         """Enhance training data with S/R context and outcomes using vectorized HMM-aware analysis."""
         try:
@@ -716,6 +852,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
 
     @handles_errors(exceptions=(Exception,), default_return={'status': 'FAILED', 'error': 'Execution failed'}, context='tactician specialist training step execution')
     @log_execution_time()
+    @validates()
+    @circuit_breaker(failure_threshold=3, recovery_timeout=60)
+    @enhanced_error_handling
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute regime-aware tactician specialist models training with optimization tools."""
         # Use step optimization manager if available
@@ -744,33 +883,17 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             labeled_file_parquet = f'{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet'
             labeled_file_pickle = f'{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl'
 
-            # Use optimized data loading
+            # Use optimized data loading with utility modules
             if self.data_manager:
                 try:
                     labeled_data = self.data_manager.load_dataframe_optimized(labeled_file_parquet)
                     self.logger.info("✅ Loaded data using optimized data manager")
                 except Exception:
-                    # Fallback to standard loading
-                    if os.path.exists(labeled_file_parquet):
-                        try:
-                            labeled_data = standardized_parquet_handler.read_parquet_standardized(labeled_file_parquet)
-                        except Exception:
-                            with open(labeled_file_pickle, 'rb') as f:
-                                labeled_data = pickle.load(f)
-                    else:
-                        with open(labeled_file_pickle, 'rb') as f:
-                            labeled_data = pickle.load(f)
+                    # Fallback to parquet utils
+                    labeled_data = self._load_data_with_parquet_utils(labeled_file_parquet, labeled_file_pickle)
             else:
-                # Standard loading
-                if os.path.exists(labeled_file_parquet):
-                    try:
-                        labeled_data = standardized_parquet_handler.read_parquet_standardized(labeled_file_parquet)
-                    except Exception:
-                        with open(labeled_file_pickle, 'rb') as f:
-                            labeled_data = pickle.load(f)
-                else:
-                    with open(labeled_file_pickle, 'rb') as f:
-                        labeled_data = pickle.load(f)
+                # Use parquet utils for standard loading
+                labeled_data = self._load_data_with_parquet_utils(labeled_file_parquet, labeled_file_pickle)
 
             if not isinstance(labeled_data, pd.DataFrame):
                 labeled_data = pd.DataFrame(labeled_data)
@@ -830,9 +953,9 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             else:
                 training_results = await self._train_regime_aware_tactician_models(labeled_data, symbol, exchange, data_dir)
 
-            # Use optimized data saving
+            # Use optimized data saving with utility modules
             models_dir = f'{data_dir}/tactician_models'
-            os.makedirs(models_dir, exist_ok=True)
+            ensure_directory(models_dir)
 
             if self.data_manager:
                 # Save models using optimized data manager
@@ -841,15 +964,23 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                     saved_path = self.data_manager.save_model_optimized(model_data, model_filename)
                     self.logger.info(f"💾 Saved model {model_name} using optimized data manager")
             else:
-                # Standard saving
+                # Standard saving with utility modules
                 for model_name, model_data in training_results.items():
                     model_file = f'{models_dir}/{model_name}.pkl'
-                    with open(model_file, 'wb') as f:
-                        pickle.dump(model_data, f)
+                    try:
+                        with open(model_file, 'wb') as f:
+                            pickle.dump(model_data, f)
+                        self.logger.info(f"💾 Saved model {model_name} to {model_file}")
+                    except Exception as e:
+                        self.logger.error(f"❌ Failed to save model {model_name}: {e}")
 
+            # Save summary using utility modules
             summary_file = f'{data_dir}/{exchange}_{symbol}_tactician_training_summary.json'
-            with open(summary_file, 'w') as f:
-                json.dump(training_results, f, indent=2)
+            try:
+                safe_json_dump(training_results, summary_file, indent=2)
+                self.logger.info(f"💾 Saved training summary to {summary_file}")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to save training summary: {e}")
 
             self.logger.info(f'✅ Tactician specialist training completed with optimizations. Results saved to {models_dir}')
 
@@ -983,6 +1114,10 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             self.logger.error(f'❌ Error in Tactician Specialist Training: {e}', exc_info=True)
             return {'status': 'FAILED', 'error': str(e), 'duration': 0.0}
 
+    @handles_errors(exceptions=(Exception,), default_return={}, context='tactician model training')
+    @log_execution_time()
+    @validates()
+    @enhanced_error_handling
     async def _train_tactician_models(self, data: pd.DataFrame, symbol: str, exchange: str) -> dict[str, Any]:
         """Train tactician specialist models with optimization tools."""
         try:
@@ -1054,13 +1189,15 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 X = X.drop(columns=non_numeric_cols)
                 feature_columns = [col for col in feature_columns if col not in non_numeric_cols]
 
-            # Use optimized memory handling
+            # Use optimized memory handling with utility modules
             if self.m1_memory_optimizer:
                 X = self.m1_memory_optimizer.create_memory_efficient_array(X.values, dtype=np.float32)
                 X = pd.DataFrame(X, columns=feature_columns)
                 self.logger.info("✅ Used memory-efficient array creation")
             else:
-                X = X.fillna(0)
+                # Use safe fillna from common operations
+                X = safe_fillna(X, 0)
+                self.logger.info("✅ Used safe fillna for missing values")
 
             # Optimized train-test split
             if self.vectorized_core:
@@ -1403,6 +1540,11 @@ class RegimeAwareTacticianSpecialistTrainingStep:
             raise
 
 @timeout(5400)
+@handles_errors(exceptions=(Exception,), default_return=False, context='step15 execution')
+@log_execution_time()
+@validates()
+@circuit_breaker(failure_threshold=2, recovery_timeout=120)
+@enhanced_error_handling
 async def run_step(symbol: str, exchange: str='BINANCE', data_dir: str=None, force_rerun: bool = False, **kwargs: Any) -> bool:
     """Run the tactician specialist training step."
 

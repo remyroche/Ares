@@ -96,6 +96,15 @@ from src.training.steps.step06_labeling_components.profit_based_feature_engineer
 )
 from src.tactician.sr_levels.sr_breakout_predictor_enhanced import SRBreakoutPredictor
 # from src.utils.performance_optimization import PerformanceOptimizer
+
+# Import market impact enhancement
+try:
+    from .step09_market_impact_enhancement import LiquidityAwareTraining, integrate_market_impact_enhancement
+    MARKET_IMPACT_AVAILABLE = True
+except ImportError as e:
+    MARKET_IMPACT_AVAILABLE = False
+    import logging
+    logging.warning(f"Market impact enhancement not available: {e}")
 import json
 import logging
 import time
@@ -128,8 +137,18 @@ class EnhancedHMMBasedTrainingStep:
     @log_important_calls
     """
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger
+        # Integrate market impact enhancement
+        if MARKET_IMPACT_AVAILABLE:
+            self.config = integrate_market_impact_enhancement(config)
+            self.liquidity_enhancer = LiquidityAwareTraining(self.config)
+            self.logger = system_logger
+            self.logger.info("✅ Market impact and liquidity enhancement enabled")
+        else:
+            self.config = config
+            self.liquidity_enhancer = None
+            self.logger = system_logger
+            self.logger.warning("⚠️ Market impact enhancement not available")
+        
         self.models = {}
         self.scalers = {}
         self.label_encoders = {}
@@ -1521,9 +1540,14 @@ class EnhancedHMMBasedTrainingStep:
                 
                 self.logger.info("🔧 Using enhanced feature selection with autoencoder features...")
                 
-                # Create enhanced matrix operations manager
-                # feature_selector = EnhancedMatrixOperations(self.config)
-                feature_selector = None  # Placeholder
+                # Create enhanced matrix operations manager with proper validation
+                try:
+                    from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations
+                    feature_selector = EnhancedMatrixOperations(self.config)
+                    self.logger.info("✅ Enhanced feature selector initialized")
+                except ImportError:
+                    self.logger.warning("⚠️ EnhancedMatrixOperations not available, using fallback validation")
+                    feature_selector = None
                 
                 # Create dummy target for feature selection
                 dummy_target = pd.Series(0, index=data.index)
@@ -1564,6 +1588,33 @@ class EnhancedHMMBasedTrainingStep:
         ]
         feature_columns = [col for col in data.columns if col not in exclude_columns]
         features = safe_copy(data[feature_columns])
+        
+        # Enhance with liquidity and market impact features if available
+        if self.liquidity_enhancer and hasattr(self, 'config'):
+            try:
+                # Prepare market data for liquidity enhancement
+                market_data = {
+                    'volume_24h': data.get('volume', pd.Series(1.0, index=data.index)).sum() * 24,  # Estimate daily volume
+                    'volatility': data.get('volatility', pd.Series(0.02, index=data.index)).mean(),
+                    'avg_spread_bps': self.config.get('avg_spread_bps', 2.0),
+                    'exchange_fee_bps': self.config.get('exchange_fee_bps', 5.0),
+                    'orderbook_depth': self.config.get('orderbook_depth', 100000)
+                }
+                
+                # Enhance training data with liquidity features
+                enhancement_result = self.liquidity_enhancer.enhance_training_with_liquidity(
+                    features, market_data
+                )
+                
+                if 'enhanced_data' in enhancement_result:
+                    features = enhancement_result['enhanced_data']
+                    self.logger.info(f"✅ Enhanced features with liquidity considerations: "
+                                   f"{enhancement_result.get('liquidity_features_added', 0)} new features")
+                else:
+                    self.logger.warning("⚠️ Liquidity enhancement failed, using original features")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Liquidity enhancement error: {e}, using original features")
         
         # Handle missing values
         features = features.fillna(0)
@@ -1654,9 +1705,15 @@ class EnhancedHMMBasedTrainingStep:
             
             # Purged time split with embargo to prevent leakage
             n_samples = len(X)
-            embargo = max(5, int(0.01 * n_samples))  # 1% or minimum 5 samples
+            # Increased embargo to prevent data leakage - minimum 5% or 20 samples
+            embargo_percentage = self.config.get('embargo_percentage', 0.05)  # 5% default
+            min_embargo_samples = self.config.get('min_embargo_samples', 20)
+            embargo = max(min_embargo_samples, int(embargo_percentage * n_samples))
+            
             split_idx = int(0.8 * n_samples)
             train_end = max(0, split_idx - embargo)
+            
+            self.logger.info(f"🔒 Data leakage protection: {embargo} samples embargo ({embargo_percentage:.1%} of {n_samples} total)")
 
             X_train, X_test = X[:train_end], X[split_idx:]
             y_train_multi = {k: v[:train_end] for k, v in y_multi.items()}
@@ -2114,25 +2171,131 @@ class EnhancedHMMBasedTrainingStep:
         except Exception as e:
             self.logger.error(f"❌ Failed to load enhanced models: {e}")
 
+    def _validate_features(self, features_df: pd.DataFrame) -> Dict[str, Any]:
+        """Comprehensive feature validation with detailed reporting."""
+        validation_results = {
+            'is_valid': True,
+            'issues': [],
+            'warnings': [],
+            'feature_count': len(features_df.columns),
+            'sample_count': len(features_df),
+            'quality_score': 0.0
+        }
+        
+        try:
+            # Check for empty DataFrame
+            if features_df.empty:
+                validation_results['is_valid'] = False
+                validation_results['issues'].append("Empty feature DataFrame")
+                return validation_results
+            
+            # Check minimum sample size
+            min_samples = self.config.get('min_feature_samples', 100)
+            if len(features_df) < min_samples:
+                validation_results['is_valid'] = False
+                validation_results['issues'].append(f"Insufficient samples: {len(features_df)} < {min_samples}")
+            
+            # Check for numeric columns only
+            numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+            non_numeric_cols = set(features_df.columns) - set(numeric_cols)
+            if non_numeric_cols:
+                validation_results['warnings'].append(f"Non-numeric columns found: {list(non_numeric_cols)}")
+            
+            # Check for constant features (zero variance)
+            variances = features_df[numeric_cols].var(axis=0, ddof=0)
+            constant_features = variances[variances == 0].index.tolist()
+            if constant_features:
+                validation_results['warnings'].append(f"Constant features found: {constant_features}")
+            
+            # Check for high correlation features
+            correlation_threshold = self.config.get('max_feature_correlation', 0.95)
+            if len(numeric_cols) > 1:
+                corr_matrix = features_df[numeric_cols].corr().abs()
+                high_corr_pairs = []
+                for i in range(len(corr_matrix.columns)):
+                    for j in range(i+1, len(corr_matrix.columns)):
+                        if corr_matrix.iloc[i, j] > correlation_threshold:
+                            high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
+                if high_corr_pairs:
+                    validation_results['warnings'].append(f"High correlation pairs: {high_corr_pairs[:5]}")  # Show first 5
+            
+            # Check for missing values
+            missing_ratio = features_df.isnull().sum().sum() / (len(features_df) * len(features_df.columns))
+            max_missing_ratio = self.config.get('max_missing_ratio', 0.1)
+            if missing_ratio > max_missing_ratio:
+                validation_results['warnings'].append(f"High missing value ratio: {missing_ratio:.3f} > {max_missing_ratio}")
+            
+            # Check for infinite values
+            inf_count = np.isinf(features_df[numeric_cols]).sum().sum()
+            if inf_count > 0:
+                validation_results['warnings'].append(f"Infinite values found: {inf_count}")
+            
+            # Calculate quality score
+            quality_factors = []
+            quality_factors.append(min(1.0, len(features_df) / min_samples))  # Sample size factor
+            quality_factors.append(len(numeric_cols) / len(features_df.columns))  # Numeric ratio
+            quality_factors.append(1.0 - missing_ratio)  # Completeness factor
+            quality_factors.append(1.0 - len(constant_features) / len(numeric_cols))  # Variance factor
+            
+            validation_results['quality_score'] = np.mean(quality_factors)
+            
+            # Overall validation
+            if validation_results['quality_score'] < 0.7:
+                validation_results['warnings'].append(f"Low quality score: {validation_results['quality_score']:.3f}")
+            
+            self.logger.info(f"🔍 Feature validation completed: {validation_results['feature_count']} features, "
+                           f"quality score: {validation_results['quality_score']:.3f}")
+            
+        except Exception as e:
+            validation_results['is_valid'] = False
+            validation_results['issues'].append(f"Validation error: {e}")
+            self.logger.error(f"❌ Feature validation failed: {e}")
+        
+        return validation_results
+
     async def _apply_regime_specific_feature_selection(
         self, features_df: pd.DataFrame, regime: str
     ) -> pd.DataFrame:
-        """Apply simple regime-aware feature selection placeholder."
-
-        Drops all-zero columns and ensures numeric dtype; keeps columns with variance.
-        """
+        """Apply regime-aware feature selection with comprehensive validation."""
         try:
+            # First validate features
+            validation_results = self._validate_features(features_df)
+            
+            if not validation_results['is_valid']:
+                self.logger.error(f"❌ Feature validation failed for regime {regime}: {validation_results['issues']}")
+                return pd.DataFrame()
+            
+            if validation_results['warnings']:
+                self.logger.warning(f"⚠️ Feature validation warnings for regime {regime}: {validation_results['warnings']}")
+            
             df = features_df.copy()
+            
             # Keep numeric columns only
             df = df.select_dtypes(include=[np.number])
-            # Drop columns with zero variance
+            
+            # Drop constant features
             variances = df.var(axis=0, ddof=0)
             keep_cols = [c for c, v in variances.items() if np.isfinite(v) and v > 0]
-            if keep_cols:
-                df = df[keep_cols]
+            
+            if not keep_cols:
+                self.logger.error(f"❌ No valid features after variance filtering for regime {regime}")
+                return pd.DataFrame()
+            
+            df = df[keep_cols]
+            
+            # Handle missing values
+            df = df.fillna(df.median())
+            
+            # Handle infinite values
+            df = df.replace([np.inf, -np.inf], np.nan).fillna(df.median())
+            
+            self.logger.info(f"✅ Feature selection completed for regime {regime}: "
+                           f"{len(keep_cols)} features selected from {len(features_df.columns)} original")
+            
             return df
+            
         except Exception as e:
-            self.logger.warning(f"⚠️ Feature selection fallback for regime {regime}: {e}")
+            self.logger.error(f"❌ Feature selection failed for regime {regime}: {e}")
             return features_df
 
 

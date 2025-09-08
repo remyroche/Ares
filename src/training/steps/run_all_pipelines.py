@@ -28,6 +28,14 @@ from enum import Enum
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from .core.domain import handle_errors, memory_efficient, validate_data_quality, monitor_pipeline_step
+from .enhanced_error_handling import (
+    EnhancedErrorHandler, 
+    CriticalProcessError, 
+    ErrorSeverity, 
+    ErrorCategory,
+    enhanced_async_error_handler,
+    critical_async_process
+)
 from src.utils.common_operations import format_datetime, get_current_datetime, ensure_directory, safe_json_dump, safe_json_load, safe_file_exists
 from .utils.validator_orchestrator import ValidatorOrchestrator
 from .utils.data_quality_framework import DataQualityFramework
@@ -86,6 +94,7 @@ class EnhancedPipelineOrchestrator:
         self.validator_orchestrator = ValidatorOrchestrator()
         self.data_quality_framework = DataQualityFramework()
         self.data_formatting_framework = DataFormattingFramework()
+        self.error_handler = EnhancedErrorHandler()
         self.pipeline_results: List[PipelineResult] = []
         self.pipeline_state: Dict[str, Any] = {}
         self.checkpoint_file = Path(config.data_dir) / f'pipeline_checkpoint_{config.symbol}_{config.timeframe}.json'
@@ -225,7 +234,12 @@ class EnhancedPipelineOrchestrator:
             return False
 
     @memory_efficient
-    @handle_errors(fallback = False)
+    @enhanced_async_error_handler(
+        error_severity=ErrorSeverity.HIGH,
+        error_category=ErrorCategory.BUSINESS_LOGIC,
+        should_fail_fast=True,
+        step_name='pipeline_execution'
+    )
     @monitor_pipeline_step('execute_pipeline')
     async def execute_pipeline(self, pipeline_name: str, pipeline_func: Any, pipeline_config: Dict[str, Any]) -> PipelineResult:
         """Execute a single pipeline with comprehensive error handling and validation."""
@@ -261,6 +275,15 @@ class EnhancedPipelineOrchestrator:
             result.error = f'Pipeline timeout after {self.config.timeout_seconds}s'
             result.rollback_required = True
             self.logger.error(f'⏰ {pipeline_name} timed out after {execution_time:.2f}s')
+        except CriticalProcessError as e:
+            execution_time = time.time() - start_time
+            result.execution_time = execution_time
+            result.status = PipelineStatus.FAILED
+            result.error = str(e)
+            result.rollback_required = True
+            self.logger.critical(f'🚨 {pipeline_name} failed with critical process error: {e}')
+            # Re-raise to trigger fail-fast behavior
+            raise
         except Exception as e:
             execution_time = time.time() - start_time
             result.execution_time = execution_time
@@ -288,22 +311,43 @@ class EnhancedPipelineOrchestrator:
         total_start_time = time.time()
         pipeline_configs = {'data_collection': {'force_rerun': self.config.force_rerun, 'quality_checks': True, 'validate_data': True, 'convert_format': True, 'validation_level': self.config.validation_level}, 'market_analysis': {'force_rerun': self.config.force_rerun, 'hmm_clustering': True, 'regime_splitting': True, 'feature_engineering': True, 'matrix_operations': True, 'feature_selection': True, 'validation_level': self.config.validation_level}, 'model_training': {'force_rerun': self.config.force_rerun, 'hmm_training': True, 'regime_intelligence': True, 'analyst_creation': True, 'analyst_enhancement': True, 'ensemble_creation': True, 'tactician_training': True, 'validation_level': self.config.validation_level}, 'optimisation': {'force_rerun': self.config.force_rerun, 'confidence_calibration': True, 'parameter_optimization': True, 'validation_level': self.config.validation_level}, 'backtesting': {'force_rerun': self.config.force_rerun, 'walk_forward_validation': True, 'monte_carlo_validation': True, 'ab_testing': True, 'model_saving': True, 'validation_level': self.config.validation_level}}
         pipelines = [('Data Collection', run_data_collection_pipeline, pipeline_configs['data_collection'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange = self.config.exchange, asset = self.config.symbol)}"]), ('Market Analysis', run_market_analysis_pipeline, pipeline_configs['market_analysis'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange = self.config.exchange, asset = self.config.symbol)}", PipelineStandards.build_path('processed_data', self.config.exchange, self.config.symbol) + f'/volume_{self.config.exchange}_{self.config.symbol}_consolidated.parquet']), ('Model Training', run_model_training_pipeline, pipeline_configs['model_training'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange = self.config.exchange, asset = self.config.symbol)}", f'models/{self.config.symbol}_{self.config.exchange}_hmm_model.pkl']), ('Optimization', run_optimisation_pipeline, pipeline_configs['optimisation'], [f'models/{self.config.symbol}_{self.config.exchange}_analyst_ensemble.pkl', f'models/{self.config.symbol}_{self.config.exchange}_tactician_model.pkl']), ('Backtesting', run_backtesting_pipeline, pipeline_configs['backtesting'], [PipelineStandards.build_path('raw_data', self.config.exchange, self.config.symbol) + f"/{PipelineStandards.FILE_NAMING['aggtrades'].format(exchange = self.config.exchange, asset = self.config.symbol)}", f'models/{self.config.symbol}_{self.config.exchange}_final_models.pkl'])]
+        # Define critical pipelines that must succeed
+        critical_pipelines = {'Data Collection', 'Market Analysis', 'Model Training'}
+        
         for pipeline_name, pipeline_func, pipeline_config, data_dependencies in pipelines:
             self.logger.info(f'\n🔄 Starting {pipeline_name} Pipeline...')
             self.logger.info('-' * 80)
+            
+            # Check if this is a critical pipeline
+            is_critical = pipeline_name in critical_pipelines
+            
             if self.config.enable_validation:
                 data_valid, validation_results = await self.validate_pipeline_data(pipeline_name, data_dependencies)
                 if not data_valid:
                     self.logger.error(f'❌ Data validation failed for {pipeline_name}')
-                    if self.config.validation_level == 'CRITICAL':
+                    if self.config.validation_level == 'CRITICAL' or is_critical:
+                        self.logger.critical(f'🚨 FAIL-FAST: Critical pipeline {pipeline_name} failed validation')
                         return False
-            result = await self.execute_pipeline(pipeline_name, pipeline_func, pipeline_config)
-            self.pipeline_results.append(result)
+            
+            try:
+                result = await self.execute_pipeline(pipeline_name, pipeline_func, pipeline_config)
+                self.pipeline_results.append(result)
+                
+                # Check for critical failures
+                if result.status == PipelineStatus.FAILED and is_critical:
+                    self.logger.critical(f'🚨 FAIL-FAST: Critical pipeline {pipeline_name} failed')
+                    return False
+            except CriticalProcessError as e:
+                self.logger.critical(f'🚨 FAIL-FAST: Critical process error in {pipeline_name}: {e}')
+                return False
+            
             if result.rollback_required and self.config.enable_rollback:
                 rollback_success = await self.rollback_pipeline(pipeline_name)
                 if not rollback_success:
                     self.logger.error(f'❌ Rollback failed for {pipeline_name}')
-                    return False
+                    if is_critical:
+                        self.logger.critical(f'🚨 FAIL-FAST: Critical pipeline {pipeline_name} rollback failed')
+                        return False
                 result.status = PipelineStatus.ROLLED_BACK
         total_time = time.time() - total_start_time
         self.logger.info('\n' + '=' * 100)

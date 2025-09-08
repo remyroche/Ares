@@ -70,6 +70,17 @@ try:
 except ImportError as e:
     logger.warning(f'Step06 validation framework not available: {e}')
     VALIDATION_AVAILABLE = False
+
+# Import enhanced error handling
+from ..enhanced_error_handling import (
+    enhanced_async_error_handler,
+    critical_async_process,
+    CriticalProcessError,
+    ErrorSeverity,
+    ErrorCategory
+)
+from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel as EnhancedValidationLevel
+from ..enhanced_monitoring_system import monitor_critical_process
     
     def step06_function_validator(*args, **kwargs) -> None:
         def decorator(func: Callable) -> None:

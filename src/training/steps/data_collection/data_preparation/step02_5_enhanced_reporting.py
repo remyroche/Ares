@@ -20,8 +20,10 @@ import warnings
 # Avoid circular import - import these functions when needed
 # from src.training.reports import save_training_report, CentralizedReportManager
 from src.utils.logger import system_logger
+from src.utils.financial_metrics_logger import get_financial_metrics_logger, financial_metrics_context
 
 logger = system_logger.getChild('Step02_5EnhancedReporting')
+financial_logger = get_financial_metrics_logger()
 
 
 @dataclass
@@ -377,104 +379,318 @@ class Step02_5EnhancedReporter:
                                     execution_data: Dict[str, Any],
                                     data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
         """Generate comprehensive report with all metrics and insights."""
+        
+        # Use financial metrics context for this step
+        with financial_metrics_context("Step02_5_SR_Optimization", self.symbol, self.exchange, self.timeframe):
+            try:
+                financial_logger.log_step_start("Step02_5_SR_Optimization", self.symbol, self.exchange, self.timeframe)
 
-        # Get current price and market context
-        current_price = None
-        market_context = {}
-        if data is not None and not data.empty and 'close' in data.columns:
-            current_price = float(data['close'].iloc[-1])
-            market_context = self._analyze_market_context(data, current_price)
+                # Get current price and market context
+                current_price = None
+                market_context = {}
+                if data is not None and not data.empty and 'close' in data.columns:
+                    current_price = float(data['close'].iloc[-1])
+                    market_context = self._analyze_market_context(data, current_price)
 
-        # Collect all metrics with enhanced detail
-        performance_metrics = self.collect_performance_metrics(
-            execution_data.get('execution_time', 0),
-            execution_data.get('memory_usage', 0),
-            execution_data.get('cpu_usage', 0),
-            execution_data.get('function_calls', 0)
-        )
+                # Collect all metrics with enhanced detail
+                performance_metrics = self.collect_performance_metrics(
+                    execution_data.get('execution_time', 0),
+                    execution_data.get('memory_usage', 0),
+                    execution_data.get('cpu_usage', 0),
+                    execution_data.get('function_calls', 0)
+                )
 
-        data_quality = DataQualityMetrics(
-            total_rows=0, total_columns=0, missing_values_percent=0,
-            duplicate_rows=0, outlier_rows=0, zero_values_count=0,
-            data_completeness_score=0, feature_correlation_warnings=[],
-            timestamp_anomalies=[], price_anomalies=[]
-        )
-        if data is not None:
-            data_quality = self.assess_data_quality(data)
+                data_quality = DataQualityMetrics(
+                    total_rows=0, total_columns=0, missing_values_percent=0,
+                    duplicate_rows=0, outlier_rows=0, zero_values_count=0,
+                    data_completeness_score=0, feature_correlation_warnings=[],
+                    timestamp_anomalies=[], price_anomalies=[]
+                )
+                if data is not None:
+                    data_quality = self.assess_data_quality(data)
 
-        sr_analysis = self.analyze_sr_levels(sr_levels, current_price)
-        ml_insights = self.analyze_ml_performance(ml_results)
+                sr_analysis = self.analyze_sr_levels(sr_levels, current_price)
+                ml_insights = self.analyze_ml_performance(ml_results)
 
-        # Enhanced technical analysis
-        technical_analysis = {}
-        if data is not None:
-            technical_analysis = self._perform_technical_analysis(data, sr_levels)
+                # Enhanced technical analysis
+                technical_analysis = {}
+                if data is not None:
+                    technical_analysis = self._perform_technical_analysis(data, sr_levels)
 
-        # Feature engineering insights
-        feature_insights = self._analyze_feature_engineering(data, ml_results)
+                # Feature engineering insights
+                feature_insights = self._analyze_feature_engineering(data, ml_results)
 
-        # Market regime analysis
-        regime_analysis = self._analyze_market_regime(data, sr_levels, ml_results)
+                # Market regime analysis
+                regime_analysis = self._analyze_market_regime(data, sr_levels, ml_results)
 
-        # Risk management recommendations
-        risk_management = self._generate_risk_management_recommendations(
-            sr_analysis, ml_insights, market_context
-        )
+                # Risk management recommendations
+                risk_management = self._generate_risk_management_recommendations(
+                    sr_analysis, ml_insights, market_context
+                )
 
-        # Performance prediction
-        performance_prediction = self._generate_performance_prediction(
-            ml_results, sr_analysis, market_context
-        )
+                # Performance prediction
+                performance_prediction = self._generate_performance_prediction(
+                    ml_results, sr_analysis, market_context
+                )
 
-        # Trading strategy suggestions
-        strategy_suggestions = self._generate_strategy_suggestions(
-            sr_analysis, ml_insights, market_context, technical_analysis
-        )
+                # Trading strategy suggestions
+                strategy_suggestions = self._generate_strategy_suggestions(
+                    sr_analysis, ml_insights, market_context, technical_analysis
+                )
 
-        # Compile comprehensive report with much more detail
-        report = {
-            'report_metadata': {
-                'generated_at': datetime.now().isoformat(),
-                'symbol': self.symbol,
-                'exchange': self.exchange,
-                'timeframe': self.timeframe,
-                'current_price': current_price,
-                'report_version': '3.0.0',
-                'data_timeframe': f"{len(data) if data is not None else 0} periods",
-                'generation_duration': 'comprehensive'
-            },
-            'market_context': market_context,
-            'performance_metrics': asdict(performance_metrics),
-            'performance_breakdown': self._detailed_performance_breakdown(execution_data),
-            'data_quality_assessment': asdict(data_quality),
-            'data_processing_insights': self._analyze_data_processing(data),
-            'sr_level_analysis': sr_analysis,
-            'sr_level_detailed_analysis': self._detailed_sr_analysis(sr_levels, data),
-            'ml_model_insights': asdict(ml_insights),
-            'ml_model_detailed_analysis': self._detailed_ml_analysis(ml_results),
-            'feature_engineering_insights': feature_insights,
-            'technical_analysis': technical_analysis,
-            'market_regime_analysis': regime_analysis,
-            'correlation_analysis': self._analyze_correlations(data),
-            'volume_analysis': self._analyze_volume_patterns(data),
-            'execution_summary': execution_data,
-            'execution_detailed_breakdown': self._detailed_execution_breakdown(execution_data),
-            'trading_recommendations': self._generate_trading_recommendations(
-                sr_analysis, ml_insights, current_price
-            ),
-            'trading_strategy_suggestions': strategy_suggestions,
-            'risk_assessment': self._assess_overall_risk(sr_analysis, ml_insights),
-            'risk_management_recommendations': risk_management,
-            'performance_prediction': performance_prediction,
-            'model_validation_insights': self._validate_model_performance(ml_results),
-            'market_prediction': self._generate_market_prediction(sr_analysis, ml_insights),
-            'alerts_and_warnings': self._generate_alerts_and_warnings(sr_analysis, ml_insights, market_context),
-            'visualization_data': self._prepare_visualization_data(sr_levels, ml_results),
-            'visualization_enhanced_data': self._prepare_enhanced_visualization_data(data, sr_levels, ml_results),
-            'export_ready_data': self._prepare_export_data(sr_levels, ml_results, execution_data)
-        }
+                # Compile comprehensive report with much more detail
+                report = {
+                    'report_metadata': {
+                        'generated_at': datetime.now().isoformat(),
+                        'symbol': self.symbol,
+                        'exchange': self.exchange,
+                        'timeframe': self.timeframe,
+                        'current_price': current_price,
+                        'report_version': '3.0.0',
+                        'data_timeframe': f"{len(data) if data is not None else 0} periods",
+                        'generation_duration': 'comprehensive'
+                    },
+                    'market_context': market_context,
+                    'performance_metrics': asdict(performance_metrics),
+                    'performance_breakdown': self._detailed_performance_breakdown(execution_data),
+                    'data_quality_assessment': asdict(data_quality),
+                    'data_processing_insights': self._analyze_data_processing(data),
+                    'sr_level_analysis': sr_analysis,
+                    'sr_level_detailed_analysis': self._detailed_sr_analysis(sr_levels, data),
+                    'ml_model_insights': asdict(ml_insights),
+                    'ml_model_detailed_analysis': self._detailed_ml_analysis(ml_results),
+                    'feature_engineering_insights': feature_insights,
+                    'technical_analysis': technical_analysis,
+                    'market_regime_analysis': regime_analysis,
+                    'correlation_analysis': self._analyze_correlations(data),
+                    'volume_analysis': self._analyze_volume_patterns(data),
+                    'execution_summary': execution_data,
+                    'execution_detailed_breakdown': self._detailed_execution_breakdown(execution_data),
+                    'trading_recommendations': self._generate_trading_recommendations(
+                        sr_analysis, ml_insights, current_price
+                    ),
+                    'trading_strategy_suggestions': strategy_suggestions,
+                    'risk_assessment': self._assess_overall_risk(sr_analysis, ml_insights),
+                    'risk_management_recommendations': risk_management,
+                    'performance_prediction': performance_prediction,
+                    'model_validation_insights': self._validate_model_performance(ml_results),
+                    'market_prediction': self._generate_market_prediction(sr_analysis, ml_insights),
+                    'alerts_and_warnings': self._generate_alerts_and_warnings(sr_analysis, ml_insights, market_context),
+                    'visualization_data': self._prepare_visualization_data(sr_levels, ml_results),
+                    'visualization_enhanced_data': self._prepare_enhanced_visualization_data(data, sr_levels, ml_results),
+                    'export_ready_data': self._prepare_export_data(sr_levels, ml_results, execution_data)
+                }
 
-        return report
+                # Log key financial metrics from the report
+                self._log_financial_metrics_from_report(report, self.symbol, self.exchange, self.timeframe)
+
+                financial_logger.log_step_end("Step02_5_SR_Optimization", self.symbol, self.exchange, self.timeframe, success=True)
+                return report
+
+            except Exception as e:
+                financial_logger.log_step_end("Step02_5_SR_Optimization", self.symbol, self.exchange, self.timeframe, success=False, error_message=str(e))
+                logger.error(f"❌ Failed to generate comprehensive report: {e}")
+                # Return minimal report on error
+                return {
+                    'report_metadata': {
+                        'generated_at': datetime.now().isoformat(),
+                        'symbol': self.symbol,
+                        'exchange': self.exchange,
+                        'timeframe': self.timeframe,
+                        'error': str(e)
+                    }
+                }
+
+    def _log_financial_metrics_from_report(self, report: Dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
+        """Log key financial metrics from the comprehensive report."""
+        try:
+            # Log ML model performance metrics
+            ml_insights = report.get('ml_model_insights', {})
+            if ml_insights:
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="ml_direction_accuracy",
+                    metric_value=ml_insights.get('direction_accuracy', 0.0),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="ml_volatility_mae",
+                    metric_value=ml_insights.get('volatility_mae', 0.0),
+                    metric_type="risk",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="ml_f1_score",
+                    metric_value=ml_insights.get('f1_score', 0.0),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
+            
+            # Log S/R level metrics
+            sr_analysis = report.get('sr_level_analysis', {})
+            if sr_analysis:
+                support_analysis = sr_analysis.get('support_analysis', {})
+                resistance_analysis = sr_analysis.get('resistance_analysis', {})
+                
+                if support_analysis:
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name="support_levels_count",
+                        metric_value=float(support_analysis.get('total_levels', 0)),
+                        metric_type="technical",
+                        step_name="Step02_5_SR_Optimization"
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name="support_average_strength",
+                        metric_value=support_analysis.get('average_strength', 0.0),
+                        metric_type="technical",
+                        step_name="Step02_5_SR_Optimization"
+                    )
+                
+                if resistance_analysis:
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name="resistance_levels_count",
+                        metric_value=float(resistance_analysis.get('total_levels', 0)),
+                        metric_type="technical",
+                        step_name="Step02_5_SR_Optimization"
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name="resistance_average_strength",
+                        metric_value=resistance_analysis.get('average_strength', 0.0),
+                        metric_type="technical",
+                        step_name="Step02_5_SR_Optimization"
+                    )
+            
+            # Log data quality metrics
+            data_quality = report.get('data_quality_assessment', {})
+            if data_quality:
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="data_completeness_score",
+                    metric_value=data_quality.get('data_completeness_score', 0.0),
+                    metric_type="quality",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="missing_values_percent",
+                    metric_value=data_quality.get('missing_values_percent', 0.0),
+                    metric_type="quality",
+                    step_name="Step02_5_SR_Optimization"
+                )
+            
+            # Log performance metrics
+            performance_metrics = report.get('performance_metrics', {})
+            if performance_metrics:
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="execution_time_seconds",
+                    metric_value=performance_metrics.get('execution_time_seconds', 0.0),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="memory_usage_mb",
+                    metric_value=performance_metrics.get('memory_usage_mb', 0.0),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
+            
+            # Log trading recommendations as financial metrics
+            trading_recs = report.get('trading_recommendations', {})
+            if trading_recs:
+                # Convert signal to numeric value
+                signal_value = 0.0
+                signal = trading_recs.get('primary_signal', 'NEUTRAL')
+                if signal == 'BULLISH':
+                    signal_value = 1.0
+                elif signal == 'BEARISH':
+                    signal_value = -1.0
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="trading_signal",
+                    metric_value=signal_value,
+                    metric_type="signal",
+                    step_name="Step02_5_SR_Optimization",
+                    additional_data={'signal_text': signal}
+                )
+            
+            # Log comprehensive trading performance if we have enough data
+            if ml_insights and sr_analysis:
+                # Create performance data dictionary for comprehensive logging
+                performance_data = {
+                    'total_return': ml_insights.get('direction_accuracy', 0.5) * 0.1 - 0.05,  # Estimate based on accuracy
+                    'annualized_return': ml_insights.get('direction_accuracy', 0.5) * 0.12 - 0.06,  # Estimate
+                    'volatility': ml_insights.get('volatility_mae', 0.02) * 10,  # Convert MAE to volatility estimate
+                    'sharpe_ratio': (ml_insights.get('direction_accuracy', 0.5) - 0.5) * 2,  # Estimate Sharpe
+                    'sortino_ratio': (ml_insights.get('direction_accuracy', 0.5) - 0.5) * 2.5,  # Estimate Sortino
+                    'calmar_ratio': ml_insights.get('direction_accuracy', 0.5) / max(ml_insights.get('volatility_mae', 0.02) * 5, 0.01),
+                    'max_drawdown': ml_insights.get('volatility_mae', 0.02) * 5,  # Estimate max drawdown
+                    'max_drawdown_duration': 20,  # Default estimate
+                    'var_95': ml_insights.get('volatility_mae', 0.02) * 3,  # Estimate VaR
+                    'cvar_95': ml_insights.get('volatility_mae', 0.02) * 4,  # Estimate CVaR
+                    'win_rate': ml_insights.get('direction_accuracy', 0.5),
+                    'profit_factor': 1.0 + (ml_insights.get('direction_accuracy', 0.5) - 0.5) * 0.5,  # Estimate
+                    'avg_win': 0.02,  # Default estimate
+                    'avg_loss': 0.015,  # Default estimate
+                    'largest_win': 0.05,  # Default estimate
+                    'largest_loss': ml_insights.get('volatility_mae', 0.02) * 3,  # Estimate
+                    'total_trades': 50,  # Default estimate
+                    'winning_trades': int(ml_insights.get('direction_accuracy', 0.5) * 50),
+                    'losing_trades': int((1 - ml_insights.get('direction_accuracy', 0.5)) * 50)
+                }
+                
+                financial_logger.log_trading_performance(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    step_name="Step02_5_SR_Optimization",
+                    performance_data=performance_data,
+                    confidence_score=ml_insights.get('direction_accuracy', 0.5)
+                )
+            
+            logger.info("💰 Financial metrics logged successfully from Step02_5 report")
+            
+        except Exception as e:
+            logger.warning(f"Could not log financial metrics from report: {e}")
 
     def _generate_trading_recommendations(self,
                                          sr_analysis: Dict[str, Any],

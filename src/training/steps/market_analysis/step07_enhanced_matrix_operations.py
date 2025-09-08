@@ -1493,54 +1493,186 @@ class Step7EnhancedMatrixOperations:
 
     @comprehensive_function_tracker(system_logger)
     async def _execute_matrix_operations(self, df: pd.DataFrame, config: dict[str, Any]) -> dict[str, Any]:
-        """Execute matrix operations on the data."""
+        """Execute matrix operations on the data with fail-fast validation."""
         results = {}
+        
+        # Fail-fast validation: Check data requirements
+        if len(df) < 10:  # Minimum rows for matrix operations
+            raise CriticalProcessError(
+                f"Insufficient data for matrix operations: {len(df)} rows (minimum 10 required)",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.DATA_VALIDATION
+            )
+        
         numeric_df = df.select_dtypes(include=[np.number])
         if len(numeric_df.columns) == 0:
-            self.logger.warning('⚠️ No numeric columns found for matrix operations')
-            return {'error': 'No numeric columns available'}
+            raise CriticalProcessError(
+                "No numeric columns found for matrix operations",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.DATA_VALIDATION
+            )
+        
+        # Fail-fast validation: Check for sufficient numeric data
+        if numeric_df.isnull().all().any():
+            null_columns = numeric_df.columns[numeric_df.isnull().all()].tolist()
+            raise CriticalProcessError(
+                f"Columns with all null values found: {null_columns}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.DATA_VALIDATION
+            )
+        
         self.logger.info(f'🔢 Performing matrix operations on {len(numeric_df.columns)} numeric columns')
-        results.update(await self._execute_standard_matrix_operations(numeric_df, config))
+        
+        try:
+            results.update(await self._execute_standard_matrix_operations(numeric_df, config))
+        except Exception as e:
+            raise CriticalProcessError(
+                f"Standard matrix operations failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         if config.get('enable_sr_analysis', False) and config.get('sr_features'):
             self.logger.info('🎯 Performing SR-specific matrix operations...')
-            results['sr_analysis'] = await self._execute_sr_matrix_operations(df, config)
-            results['sr_enhanced_analysis'] = await self._execute_enhanced_sr_analysis(df, config)
-            results['sr_optimization_analysis'] = await self._execute_sr_optimization_analysis(df, config)
+            try:
+                results['sr_analysis'] = await self._execute_sr_matrix_operations(df, config)
+                results['sr_enhanced_analysis'] = await self._execute_enhanced_sr_analysis(df, config)
+                results['sr_optimization_analysis'] = await self._execute_sr_optimization_analysis(df, config)
+            except Exception as e:
+                raise CriticalProcessError(
+                    f"SR-specific matrix operations failed: {e}",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                ) from e
+        
         return results
 
     @comprehensive_function_tracker(system_logger)
     async def _execute_standard_matrix_operations(self, numeric_df: pd.DataFrame, config: dict[str, Any]) -> dict[str, Any]:
-        """Execute standard matrix operations."""
+        """Execute standard matrix operations with fail-fast validation."""
         results = {}
+        
+        # Fail-fast validation: Check matrix dimensions
+        if numeric_df.shape[0] < numeric_df.shape[1]:
+            raise CriticalProcessError(
+                f"Matrix is underdetermined: {numeric_df.shape[0]} rows < {numeric_df.shape[1]} columns",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            )
+        
         self.logger.info('📊 Performing correlation analysis...')
-        # Optimize correlation matrix computation for large datasets
-        if len(numeric_df.columns) > 100:
-            self.logger.info(f'📊 Large feature set ({len(numeric_df.columns)} features), using optimized correlation computation')
-            correlation_matrix = self._compute_correlation_matrix_optimized(numeric_df)
-        else:
-            correlation_matrix = numeric_df.corr()
-
-        results['correlation_analysis'] = {'correlation_matrix': correlation_matrix.to_dict(), 'high_correlations': self._find_high_correlations(correlation_matrix, config['correlation_threshold'])}
+        try:
+            # Optimize correlation matrix computation for large datasets
+            if len(numeric_df.columns) > 100:
+                self.logger.info(f'📊 Large feature set ({len(numeric_df.columns)} features), using optimized correlation computation')
+                correlation_matrix = self._compute_correlation_matrix_optimized(numeric_df)
+            else:
+                correlation_matrix = numeric_df.corr()
+            
+            # Fail-fast validation: Check correlation matrix
+            if correlation_matrix.isnull().all().all():
+                raise CriticalProcessError(
+                    "Correlation matrix computation failed: all values are NaN",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            
+            results['correlation_analysis'] = {
+                'correlation_matrix': correlation_matrix.to_dict(), 
+                'high_correlations': self._find_high_correlations(correlation_matrix, config['correlation_threshold'])
+            }
+        except Exception as e:
+            raise CriticalProcessError(
+                f"Correlation analysis failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         self.logger.info('🔍 Checking condition number...')
-        condition_number = np.linalg.cond(numeric_df.values)
-        results['condition_number_check'] = {'condition_number': float(condition_number), 'is_well_conditioned': condition_number < config['condition_number_threshold']}
+        try:
+            condition_number = np.linalg.cond(numeric_df.values)
+            if np.isinf(condition_number) or np.isnan(condition_number):
+                raise CriticalProcessError(
+                    f"Matrix is singular or ill-conditioned: condition number = {condition_number}",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            results['condition_number_check'] = {
+                'condition_number': float(condition_number), 
+                'is_well_conditioned': condition_number < config['condition_number_threshold']
+            }
+        except Exception as e:
+            raise CriticalProcessError(
+                f"Condition number calculation failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         self.logger.info('📈 Performing eigenvalue analysis...')
-        eigenvalues = np.linalg.eigvals(numeric_df.values)
-        results['eigenvalue_analysis'] = {'eigenvalues': eigenvalues.tolist(), 'min_eigenvalue': float(np.min(eigenvalues)), 'max_eigenvalue': float(np.max(eigenvalues)), 'eigenvalue_ratio': float(np.max(eigenvalues) / np.min(eigenvalues)), 'small_eigenvalues': int(np.sum(np.abs(eigenvalues) < config['min_eigenvalue_threshold']))}
+        try:
+            eigenvalues = np.linalg.eigvals(numeric_df.values)
+            if np.any(np.isnan(eigenvalues)) or np.any(np.isinf(eigenvalues)):
+                raise CriticalProcessError(
+                    "Eigenvalue calculation failed: NaN or infinite values found",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            results['eigenvalue_analysis'] = {
+                'eigenvalues': eigenvalues.tolist(), 
+                'min_eigenvalue': float(np.min(eigenvalues)), 
+                'max_eigenvalue': float(np.max(eigenvalues)), 
+                'eigenvalue_ratio': float(np.max(eigenvalues) / np.min(eigenvalues)), 
+                'small_eigenvalues': int(np.sum(np.abs(eigenvalues) < config['min_eigenvalue_threshold']))
+            }
+        except Exception as e:
+            raise CriticalProcessError(
+                f"Eigenvalue analysis failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         self.logger.info('🔧 Performing SVD analysis...')
         try:
-            U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices = False)
-            results['singular_value_decomposition'] = {'singular_values': s.tolist(), 'rank': int(np.sum(s > config['min_eigenvalue_threshold'])), 'condition_number_svd': float(s[0] / s[-1]) if len(s) > 1 else float('inf')}
+            U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices=False)
+            if np.any(np.isnan(s)) or np.any(np.isinf(s)):
+                raise CriticalProcessError(
+                    "SVD calculation failed: NaN or infinite singular values found",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            results['singular_value_decomposition'] = {
+                'singular_values': s.tolist(), 
+                'rank': int(np.sum(s > config['min_eigenvalue_threshold'])), 
+                'condition_number_svd': float(s[0] / s[-1]) if len(s) > 1 else float('inf')
+            }
         except Exception as e:
-            self.logger.warning(f'⚠️ SVD failed: {str(e)}')
-            results['singular_value_decomposition'] = {'error': str(e)}
+            raise CriticalProcessError(
+                f"SVD analysis failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         self.logger.info('📊 Analyzing matrix rank...')
         try:
             rank = np.linalg.matrix_rank(numeric_df.values)
-            results['matrix_rank_analysis'] = {'rank': int(rank), 'full_rank': rank == min(numeric_df.shape), 'rank_deficiency': min(numeric_df.shape) - rank}
+            if rank == 0:
+                raise CriticalProcessError(
+                    "Matrix has zero rank - all rows are linearly dependent",
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.MATRIX_OPERATIONS
+                )
+            results['matrix_rank_analysis'] = {
+                'rank': int(rank), 
+                'full_rank': rank == min(numeric_df.shape), 
+                'rank_deficiency': min(numeric_df.shape) - rank
+            }
         except Exception as e:
-            self.logger.warning(f'⚠️ Rank analysis failed: {str(e)}')
-            results['matrix_rank_analysis'] = {'error': str(e)}
+            raise CriticalProcessError(
+                f"Matrix rank analysis failed: {e}",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.MATRIX_OPERATIONS
+            ) from e
+        
         return results
 
     async def _execute_sr_matrix_operations(self, df: pd.DataFrame, config: dict[str, Any]) -> dict[str, Any]:

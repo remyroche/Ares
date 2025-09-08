@@ -7,6 +7,7 @@ This module provides the main interface for market analysis with:
 2. Regime data splitting and labeling
 3. Feature engineering and selection
 4. Advanced matrix operations
+5. Comprehensive utility integration with dependency injection
 """
 
 import asyncio
@@ -22,6 +23,17 @@ from datetime import datetime
 project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import utility modules with dependency injection
+from src.utils.common_operations import CommonOperations
+from src.utils.common_utilities import CommonUtilities
+from src.utils.math_validation import MathValidation
+from src.utils.parquet_utils import ParquetUtils
+from src.utils.serialization_utils import SerializationUtils
+from src.utils.data_processing_utils import DataProcessingUtils
+from src.utils.m1_gpu_utils import M1GPUManager
+from src.utils.m1_memory_optimizer import M1MemoryOptimizer
+from src.utils.m1_cpu_optimizer import M1CPUOptimizer
+
 from src.training.steps.market_analysis.enhanced_market_analysis_orchestrator import (
     run_enhanced_market_analysis_pipeline,
     MarketAnalysisPipelineOrchestrator,
@@ -33,8 +45,16 @@ from src.training.reports import save_training_report
 import logging
 
 async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -> dict:
-    """Analyze HMM clustering results and return comprehensive summary with optimizations."""
+    """Analyze HMM clustering results and return comprehensive summary with utility integration."""
     try:
+        # Initialize utility modules
+        common_ops = CommonOperations()
+        parquet_utils = ParquetUtils()
+        serialization_utils = SerializationUtils()
+        data_processing_utils = DataProcessingUtils()
+        m1_memory_optimizer = M1MemoryOptimizer()
+        m1_cpu_optimizer = M1CPUOptimizer()
+        
         # Import optimization components
         from src.training.steps.market_analysis.hmm_clustering.step03_fast_fail_validation import get_fast_fail_validator
         from src.training.steps.market_analysis.hmm_clustering.step03_parallel_io_operations import get_parallel_io_operations
@@ -52,34 +72,55 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
             enhanced_logger.logger.info("📦 Using cached HMM clustering analysis results")
             return cached_result
         
+        # Use common operations for file path handling
+        meta_file = common_ops.join_paths("data/training", f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json")
+        
         # Fast fail validation for file existence
-        meta_file = Path("data/training") / f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json"
         file_validation = await validator.validate_data_file(meta_file)
         if not file_validation.passed:
             raise FileNotFoundError(f"HMM metadata file validation failed: {file_validation.message}")
 
-        # Load HMM composite metadata with async I/O
+        # Load HMM composite metadata with async I/O and utility integration
         meta_data = await io_ops.load_file_async(meta_file, 'json')
+        
+        # Use serialization utils for additional validation
+        if not serialization_utils.validate_json_structure(meta_data):
+            raise ValueError("Invalid JSON structure in HMM metadata")
 
-        # Load HMM block states and clusters in parallel
-        block_states_file = Path("data/training") / f"BINANCE_{symbol}_hmm_block_states_{timeframe}.parquet"
-        clusters_file = Path("data/training") / f"BINANCE_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
+        # Use common operations for file path handling
+        block_states_file = common_ops.join_paths("data/training", f"BINANCE_{symbol}_hmm_block_states_{timeframe}.parquet")
+        clusters_file = common_ops.join_paths("data/training", f"BINANCE_{symbol}_hmm_composite_clusters_{timeframe}.parquet")
         
-        # Prepare files for parallel loading
-        files_to_load = []
-        if block_states_file.exists():
-            files_to_load.append(block_states_file)
-        if clusters_file.exists():
-            files_to_load.append(clusters_file)
-        
-        # Load files in parallel
-        if files_to_load:
-            loaded_dataframes = await io_ops.load_files_parallel(files_to_load)
-            block_states_df = loaded_dataframes[0] if block_states_file.exists() else None
-            clusters_df = loaded_dataframes[1] if clusters_file.exists() and len(loaded_dataframes) > 1 else loaded_dataframes[0] if clusters_file.exists() else None
-        else:
-            block_states_df = None
-            clusters_df = None
+        # Use M1 memory optimizer for memory-efficient parallel loading
+        with m1_memory_optimizer.memory_checkpoint('hmm_data_loading'):
+            # Prepare files for parallel loading
+            files_to_load = []
+            if common_ops.file_exists(block_states_file):
+                files_to_load.append(block_states_file)
+            if common_ops.file_exists(clusters_file):
+                files_to_load.append(clusters_file)
+            
+            # Load files in parallel with utility integration
+            if files_to_load:
+                loaded_dataframes = await io_ops.load_files_parallel(files_to_load)
+                block_states_df = loaded_dataframes[0] if common_ops.file_exists(block_states_file) else None
+                clusters_df = loaded_dataframes[1] if common_ops.file_exists(clusters_file) and len(loaded_dataframes) > 1 else loaded_dataframes[0] if common_ops.file_exists(clusters_file) else None
+                
+                # Use data processing utils for DataFrame validation
+                if block_states_df is not None:
+                    validator = data_processing_utils.DataFrameValidator()
+                    validation_result = validator.validate_structure(block_states_df)
+                    if not validation_result.is_valid:
+                        enhanced_logger.logger.warning(f"Block states validation issues: {validation_result.issues}")
+                
+                if clusters_df is not None:
+                    validator = data_processing_utils.DataFrameValidator()
+                    validation_result = validator.validate_structure(clusters_df)
+                    if not validation_result.is_valid:
+                        enhanced_logger.logger.warning(f"Clusters validation issues: {validation_result.issues}")
+            else:
+                block_states_df = None
+                clusters_df = None
         # Fast-fail validation: Check if required files exist before processing
         base_path = Path("data/training")
         required_files = [
@@ -112,26 +153,38 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
             block_states_df = block_states_future.result()
             clusters_df = clusters_future.result()
 
-        # Analyze HMM blocks
+        # Analyze HMM blocks with utility integration
         blocks_analysis = {}
         for block in meta_data.get("blocks", []):
             block_name = block["name"]
             n_states = block["n_states"]
+            
+            # Use math validation for state counts
+            if not MathValidation().validate_positive(n_states):
+                enhanced_logger.logger.warning(f"Invalid state count for block {block_name}: {n_states}")
+                continue
+            
             blocks_analysis[block_name] = {
                 "n_states": n_states,
                 "state_medians": meta_data.get("state_feature_medians", {}).get(block_name, {}),
                 "state_names": meta_data.get("state_names", {}).get(block_name, {})
             }
 
-        # Analyze cluster centroids
+        # Analyze cluster centroids with utility integration
         centroids = meta_data.get("cluster_centroids", {})
+        
+        # Use math validation for cluster analysis
+        math_validation = MathValidation()
         cluster_analysis = {
             "n_clusters": len(centroids),
             "cluster_sizes": {f"cluster_{i}": len(centroids.get(str(i), [])) for i in range(len(centroids))},
             "centroids_summary": {
                 f"cluster_{i}": {
                     "size": len(centroids.get(str(i), [])),
-                    "mean_value": np.mean(centroids.get(str(i), [0])) if centroids.get(str(i)) else 0
+                    "mean_value": math_validation.safe_weighted_average(
+                        centroids.get(str(i), [0]), 
+                        [1] * len(centroids.get(str(i), [0]))
+                    ) if centroids.get(str(i)) else 0
                 } for i in range(len(centroids))
             }
         }
@@ -160,8 +213,11 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
             }
         }
         
-        # Cache the result
+        # Use serialization utils for result caching
         cache.set(cache_key, result, ttl_seconds=3600, tags=['hmm_analysis'])
+        
+        # Use M1 memory optimizer for memory cleanup
+        m1_memory_optimizer.optimize_memory()
         
         return result
 
@@ -169,25 +225,31 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
         raise RuntimeError(f"Failed to analyze HMM clustering results: {str(e)}") from e
 
 def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: str) -> dict:
-    """Analyze regime discovery statistics."""
+    """Analyze regime discovery statistics with utility integration."""
     try:
-        # Fast-fail validation: Check data availability early
-        base_path = Path("data/training")
-        meta_file = base_path / f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json"
+        # Initialize utility modules
+        common_ops = CommonOperations()
+        parquet_utils = ParquetUtils()
+        serialization_utils = SerializationUtils()
+        data_processing_utils = DataProcessingUtils()
+        m1_memory_optimizer = M1MemoryOptimizer()
         
-        if not meta_file.exists():
+        # Use common operations for file path handling
+        base_path = "data/training"
+        meta_file = common_ops.join_paths(base_path, f"BINANCE_{symbol}_hmm_composite_meta_{timeframe}.json")
+        
+        if not common_ops.file_exists(meta_file):
             raise FileNotFoundError(f"HMM metadata file not found: {meta_file}")
 
-        # Load HMM metadata
-        with open(meta_file, 'r') as f:
-            meta_data = json.load(f)
+        # Load HMM metadata with utility integration
+        meta_data = serialization_utils.load_json(meta_file)
 
-        # Fast-fail validation: Check for labeled data files
-        labeled_files = list(base_path.glob(f"BINANCE_{symbol}_labeled_{timeframe}_*.parquet"))
+        # Use common operations for file discovery
+        labeled_files = common_ops.glob_files(common_ops.join_paths(base_path, f"BINANCE_{symbol}_labeled_{timeframe}_*.parquet"))
         if not labeled_files:
             raise FileNotFoundError(f"No labeled data files found for {symbol}_{timeframe}")
         
-        # Fast-fail validation: Check metadata structure
+        # Fast-fail validation: Check metadata structure with utility integration
         required_metadata_keys = ["combination_counts", "state_names"]
         missing_keys = [key for key in required_metadata_keys if key not in meta_data]
         if missing_keys:
@@ -195,58 +257,74 @@ def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: s
         
         regime_stats = {}
 
-        for file_path in labeled_files:
-            try:
-                df = standardized_parquet_handler.read_parquet_standardized(file_path)
-                
-                # Validity checks: Data integrity validation
-                if df.empty:
-                    raise ValueError(f"Empty dataset in {file_path}")
-                
-                if 'regime' not in df.columns:
-                    raise ValueError(f"Missing 'regime' column in {file_path}")
-                
-                # Validity checks: Regime data quality
-                regime_values = df['regime'].dropna()
-                if len(regime_values) == 0:
-                    raise ValueError(f"No valid regime data in {file_path}")
-                
-                # Check for reasonable regime distribution
-                unique_regimes = regime_values.nunique()
-                if unique_regimes < 2:
-                    raise ValueError(f"Insufficient regime diversity in {file_path}: {unique_regimes} regimes")
-                
-                if unique_regimes > 20:
-                    raise ValueError(f"Excessive regime diversity in {file_path}: {unique_regimes} regimes")
-                
-                regime_counts = regime_values.value_counts().to_dict()
-                regime_percentages = (regime_values.value_counts(normalize=True) * 100).to_dict()
+        # Use M1 memory optimizer for memory-efficient processing
+        with m1_memory_optimizer.memory_checkpoint('regime_analysis'):
+            for file_path in labeled_files:
+                try:
+                    # Use parquet utils for safe data loading
+                    df = parquet_utils.safe_read_parquet(file_path)
+                    
+                    # Use data processing utils for validation
+                    validator = data_processing_utils.DataFrameValidator()
+                    validation_result = validator.validate_structure(df)
+                    
+                    if not validation_result.is_valid:
+                        enhanced_logger.logger.warning(f"DataFrame validation issues in {file_path}: {validation_result.issues}")
+                        # Use data processing utils for cleaning
+                        cleaner = data_processing_utils.DataFrameCleaner()
+                        df = cleaner.clean_dataframe(df)
+                    
+                    # Validity checks: Data integrity validation
+                    if df.empty:
+                        raise ValueError(f"Empty dataset in {file_path}")
+                    
+                    if 'regime' not in df.columns:
+                        raise ValueError(f"Missing 'regime' column in {file_path}")
+                    
+                    # Validity checks: Regime data quality
+                    regime_values = df['regime'].dropna()
+                    if len(regime_values) == 0:
+                        raise ValueError(f"No valid regime data in {file_path}")
+                    
+                    # Check for reasonable regime distribution
+                    unique_regimes = regime_values.nunique()
+                    if unique_regimes < 2:
+                        raise ValueError(f"Insufficient regime diversity in {file_path}: {unique_regimes} regimes")
+                    
+                    if unique_regimes > 20:
+                        raise ValueError(f"Excessive regime diversity in {file_path}: {unique_regimes} regimes")
+                    
+                    regime_counts = regime_values.value_counts().to_dict()
+                    regime_percentages = (regime_values.value_counts(normalize=True) * 100).to_dict()
 
-                # Calculate regime persistence with validation
-                regime_changes = (df['regime'] != df['regime'].shift(1)).sum()
-                total_periods = len(df)
-                
-                # Validity check: Reasonable persistence rate
-                persistence_rate = (total_periods - regime_changes) / total_periods * 100
-                if persistence_rate < 10 or persistence_rate > 99:
-                    raise ValueError(f"Unrealistic persistence rate in {file_path}: {persistence_rate:.2f}%")
+                    # Calculate regime persistence with validation
+                    regime_changes = (df['regime'] != df['regime'].shift(1)).sum()
+                    total_periods = len(df)
+                    
+                    # Validity check: Reasonable persistence rate
+                    persistence_rate = (total_periods - regime_changes) / total_periods * 100
+                    if persistence_rate < 10 or persistence_rate > 99:
+                        raise ValueError(f"Unrealistic persistence rate in {file_path}: {persistence_rate:.2f}%")
 
-                regime_stats[str(file_path.stem)] = {
-                    "total_samples": len(df),
-                    "unique_regimes": unique_regimes,
-                    "regime_distribution": regime_counts,
-                    "regime_percentages": regime_percentages,
-                    "persistence_rate": persistence_rate,
-                    "avg_regime_duration": total_periods / regime_changes if regime_changes > 0 else total_periods,
-                    "data_quality_score": min(100, (unique_regimes / 5) * 100)  # Quality metric
-                }
-            except Exception as e:
-                raise RuntimeError(f"Failed to process labeled data file {file_path}: {str(e)}") from e
+                    regime_stats[str(file_path.stem)] = {
+                        "total_samples": len(df),
+                        "unique_regimes": unique_regimes,
+                        "regime_distribution": regime_counts,
+                        "regime_percentages": regime_percentages,
+                        "persistence_rate": persistence_rate,
+                        "avg_regime_duration": total_periods / regime_changes if regime_changes > 0 else total_periods,
+                        "data_quality_score": min(100, (unique_regimes / 5) * 100)  # Quality metric
+                    }
+                except Exception as e:
+                    raise RuntimeError(f"Failed to process labeled data file {file_path}: {str(e)}") from e
 
         # Analyze regime transitions
         combinations = meta_data.get("combination_counts", {})
         total_combinations = sum(combinations.values())
 
+        # Use M1 memory optimizer for memory cleanup
+        m1_memory_optimizer.optimize_memory()
+        
         return {
             "regime_statistics": regime_stats,
             "regime_transition_analysis": {
@@ -266,16 +344,21 @@ def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: s
         raise RuntimeError(f"Failed to analyze regime discovery statistics: {str(e)}") from e
 
 def analyze_feature_engineering_metrics(symbol: str, exchange: str, timeframe: str) -> dict:
-    """Analyze feature engineering metrics."""
+    """Analyze feature engineering metrics with utility integration."""
     try:
-        # Fast-fail validation: Check file existence early
-        vectorized_file = Path("data/training") / f"BINANCE_{symbol}_{timeframe}_vectorized_feature_pre_optimization.json"
-        if not vectorized_file.exists():
+        # Initialize utility modules
+        common_ops = CommonOperations()
+        serialization_utils = SerializationUtils()
+        data_processing_utils = DataProcessingUtils()
+        m1_memory_optimizer = M1MemoryOptimizer()
+        
+        # Use common operations for file path handling
+        vectorized_file = common_ops.join_paths("data/training", f"BINANCE_{symbol}_{timeframe}_vectorized_feature_pre_optimization.json")
+        if not common_ops.file_exists(vectorized_file):
             raise FileNotFoundError(f"Vectorized features file not found: {vectorized_file}")
 
-        # Memory optimization: Load only required data
-        with open(vectorized_file, 'r') as f:
-            features_data = json.load(f)
+        # Use serialization utils for safe data loading
+        features_data = serialization_utils.load_json(vectorized_file)
         
         # Validity check: Ensure features data structure is valid
         if not isinstance(features_data, dict):
@@ -336,22 +419,25 @@ def analyze_feature_engineering_metrics(symbol: str, exchange: str, timeframe: s
             "coverage_score": len(features) / 100.0  # Normalize to 0-1 scale
         }
 
-        # Memory optimization: Efficient precomputed features metadata loading
-        precomputed_dir = Path("data/precomputed_features")
+        # Use M1 memory optimizer for memory-efficient precomputed features loading
+        precomputed_dir = "data/precomputed_features"
         precomputed_stats = {}
-        if precomputed_dir.exists():
-            # Memory optimization: Use generator instead of list for large directories
-            json_files = list(precomputed_dir.glob("*.json"))
+        if common_ops.directory_exists(precomputed_dir):
+            # Use common operations for file discovery
+            json_files = common_ops.glob_files(common_ops.join_paths(precomputed_dir, "*.json"))
             precomputed_stats = {
                 "total_precomputed_files": len(json_files),
                 "feature_computation_status": "available" if json_files else "not_available",
                 "memory_efficient_loading": True
             }
             
-            # Memory optimization: Add file size information for memory planning
-            total_size = sum(f.stat().st_size for f in json_files if f.is_file())
+            # Use common operations for file size calculation
+            total_size = sum(common_ops.get_file_size(f) for f in json_files if common_ops.file_exists(f))
             precomputed_stats["total_size_mb"] = total_size / (1024 * 1024)
 
+        # Use M1 memory optimizer for memory cleanup
+        m1_memory_optimizer.optimize_memory()
+        
         return {
             "feature_statistics": feature_stats,
             "precomputed_features": precomputed_stats,
@@ -366,68 +452,79 @@ def analyze_feature_engineering_metrics(symbol: str, exchange: str, timeframe: s
         raise RuntimeError(f"Failed to analyze feature engineering metrics: {str(e)}") from e
 
 def analyze_matrix_operations_performance(symbol: str, exchange: str, timeframe: str) -> dict:
-    """Analyze matrix operations performance."""
+    """Analyze matrix operations performance with utility integration."""
     try:
-        # Memory optimization: Use generators for large directory scans
-        base_path = Path("data/training")
+        # Initialize utility modules
+        common_ops = CommonOperations()
+        m1_memory_optimizer = M1MemoryOptimizer()
+        m1_gpu_manager = M1GPUManager()
+        
+        # Use common operations for directory handling
+        base_path = "data/training"
         
         # Fast-fail validation: Check if training directory exists
-        if not base_path.exists():
+        if not common_ops.directory_exists(base_path):
             raise FileNotFoundError(f"Training directory not found: {base_path}")
         
-        # Memory optimization: Efficient artifact discovery
-        matrix_patterns = ["**/*matrix*.json", "**/*matrix*.parquet"]
-        matrix_artifacts = []
-        for pattern in matrix_patterns:
-            matrix_artifacts.extend(base_path.glob(pattern))
+        # Use M1 memory optimizer for memory-efficient artifact discovery
+        with m1_memory_optimizer.memory_checkpoint('matrix_analysis'):
+            # Use common operations for efficient artifact discovery
+            matrix_patterns = ["**/*matrix*.json", "**/*matrix*.parquet"]
+            matrix_artifacts = []
+            for pattern in matrix_patterns:
+                matrix_artifacts.extend(common_ops.glob_files(common_ops.join_paths(base_path, pattern)))
 
-        # Memory optimization: Efficient wavelet cache analysis
-        wavelet_dir = Path("data/wavelet_cache")
-        wavelet_stats = {}
-        if wavelet_dir.exists():
-            # Memory optimization: Count files without loading them
-            cache_files = sum(1 for _ in wavelet_dir.rglob("*.json"))
-            feature_files = sum(1 for _ in wavelet_dir.glob("features/**/*.json"))
-            metadata_files = sum(1 for _ in wavelet_dir.glob("metadata/**/*.json"))
+            # Use common operations for efficient wavelet cache analysis
+            wavelet_dir = "data/wavelet_cache"
+            wavelet_stats = {}
+            if common_ops.directory_exists(wavelet_dir):
+                # Use common operations for file counting
+                cache_files = len(common_ops.glob_files(common_ops.join_paths(wavelet_dir, "**/*.json")))
+                feature_files = len(common_ops.glob_files(common_ops.join_paths(wavelet_dir, "features/**/*.json")))
+                metadata_files = len(common_ops.glob_files(common_ops.join_paths(wavelet_dir, "metadata/**/*.json")))
+                
+                wavelet_stats = {
+                    "wavelet_cache_available": True,
+                    "cache_files": cache_files,
+                    "feature_files": feature_files,
+                    "metadata_files": metadata_files,
+                    "total_files": cache_files + feature_files + metadata_files
+                }
+                
+                # Use common operations for total cache size calculation
+                all_files = common_ops.glob_files(common_ops.join_paths(wavelet_dir, "**/*"))
+                total_size = sum(common_ops.get_file_size(f) for f in all_files if common_ops.file_exists(f))
+                wavelet_stats["total_size_mb"] = total_size / (1024 * 1024)
+
+            # Use common operations for efficient optimized features discovery
+            optimized_patterns = ["**/*optimized*.json", "**/*optimized*.parquet"]
+            optimized_features = []
+            for pattern in optimized_patterns:
+                optimized_features.extend(common_ops.glob_files(common_ops.join_paths(base_path, pattern)))
+
+            # Use common operations for total memory usage calculation
+            total_memory_mb = 0
+            for artifact in matrix_artifacts + optimized_features:
+                if common_ops.file_exists(artifact):
+                    total_memory_mb += common_ops.get_file_size(artifact) / (1024 * 1024)
             
-            wavelet_stats = {
-                "wavelet_cache_available": True,
-                "cache_files": cache_files,
-                "feature_files": feature_files,
-                "metadata_files": metadata_files,
-                "total_files": cache_files + feature_files + metadata_files
-            }
-            
-            # Memory optimization: Calculate total cache size
-            total_size = sum(f.stat().st_size for f in wavelet_dir.rglob("*") if f.is_file())
-            wavelet_stats["total_size_mb"] = total_size / (1024 * 1024)
-
-        # Memory optimization: Efficient optimized features discovery
-        optimized_patterns = ["**/*optimized*.json", "**/*optimized*.parquet"]
-        optimized_features = []
-        for pattern in optimized_patterns:
-            optimized_features.extend(base_path.glob(pattern))
-
-        # Memory optimization: Calculate total memory usage
-        total_memory_mb = 0
-        for artifact in matrix_artifacts + optimized_features:
-            if artifact.is_file():
-                total_memory_mb += artifact.stat().st_size / (1024 * 1024)
+            total_memory_mb += wavelet_stats.get("total_size_mb", 0)
         
-        total_memory_mb += wavelet_stats.get("total_size_mb", 0)
+        # Use M1 memory optimizer for memory cleanup
+        m1_memory_optimizer.optimize_memory()
         
         return {
             "matrix_operations_artifacts": {
                 "total_artifacts": len(matrix_artifacts),
-                "artifact_types": list(set(str(f.suffix) for f in matrix_artifacts)),  # Remove duplicates
+                "artifact_types": list(set(common_ops.get_file_extension(f) for f in matrix_artifacts)),  # Remove duplicates
                 "available": len(matrix_artifacts) > 0,
-                "total_size_mb": sum(f.stat().st_size for f in matrix_artifacts if f.is_file()) / (1024 * 1024)
+                "total_size_mb": sum(common_ops.get_file_size(f) for f in matrix_artifacts if common_ops.file_exists(f)) / (1024 * 1024)
             },
             "wavelet_transformations": wavelet_stats,
             "optimized_features": {
                 "total_optimized_files": len(optimized_features),
                 "optimization_available": len(optimized_features) > 0,
-                "total_size_mb": sum(f.stat().st_size for f in optimized_features if f.is_file()) / (1024 * 1024)
+                "total_size_mb": sum(common_ops.get_file_size(f) for f in optimized_features if common_ops.file_exists(f)) / (1024 * 1024)
             },
             "performance_summary": {
                 "matrix_operations_completed": len(matrix_artifacts) > 0,
@@ -442,30 +539,38 @@ def analyze_matrix_operations_performance(symbol: str, exchange: str, timeframe:
         raise RuntimeError(f"Failed to analyze matrix operations performance: {str(e)}") from e
 
 def generate_comprehensive_report(symbol: str, exchange: str, timeframe: str, execution_time: float, correlation_id: str) -> dict:
-    """Generate comprehensive market analysis report."""
+    """Generate comprehensive market analysis report with utility integration."""
     try:
-        # Performance optimization: Parallel execution of analysis functions
-        import concurrent.futures
+        # Initialize utility modules
+        common_ops = CommonOperations()
+        m1_cpu_optimizer = M1CPUOptimizer()
+        m1_memory_optimizer = M1MemoryOptimizer()
+        serialization_utils = SerializationUtils()
+        
+        # Use M1 CPU optimizer for parallel execution of analysis functions
         import time as time_module
         
         start_time = time_module.time()
         
-        # Execute analysis functions in parallel for better performance
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            # Submit all analysis tasks
-            hmm_future = executor.submit(analyze_hmm_clustering_results, symbol, exchange, timeframe)
-            regime_future = executor.submit(analyze_regime_discovery_statistics, symbol, exchange, timeframe)
-            feature_future = executor.submit(analyze_feature_engineering_metrics, symbol, exchange, timeframe)
-            matrix_future = executor.submit(analyze_matrix_operations_performance, symbol, exchange, timeframe)
-            
-            # Collect results
-            hmm_results = hmm_future.result()
-            regime_results = regime_future.result()
-            feature_results = feature_future.result()
-            matrix_results = matrix_future.result()
+        # Use M1 CPU optimizer for optimal parallel execution
+        with m1_cpu_optimizer.parallel_context('comprehensive_report_generation'):
+            # Execute analysis functions in parallel for better performance
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=m1_cpu_optimizer.get_optimal_workers()) as executor:
+                # Submit all analysis tasks
+                hmm_future = executor.submit(analyze_hmm_clustering_results, symbol, exchange, timeframe)
+                regime_future = executor.submit(analyze_regime_discovery_statistics, symbol, exchange, timeframe)
+                feature_future = executor.submit(analyze_feature_engineering_metrics, symbol, exchange, timeframe)
+                matrix_future = executor.submit(analyze_matrix_operations_performance, symbol, exchange, timeframe)
+                
+                # Collect results
+                hmm_results = hmm_future.result()
+                regime_results = regime_future.result()
+                feature_results = feature_future.result()
+                matrix_results = matrix_future.result()
         
         analysis_time = time_module.time() - start_time
-        logging.info(f"Analysis functions completed in {analysis_time:.2f}s (parallel execution)")
+        logging.info(f"Analysis functions completed in {analysis_time:.2f}s (parallel execution with utility optimization)")
 
         # Generate summary statistics
         summary = {
@@ -491,6 +596,9 @@ def generate_comprehensive_report(symbol: str, exchange: str, timeframe: str, ex
             }
         }
 
+        # Use M1 memory optimizer for memory cleanup
+        m1_memory_optimizer.optimize_memory()
+        
         return {
             "summary": summary,
             "hmm_clustering_analysis": hmm_results,

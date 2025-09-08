@@ -79,6 +79,13 @@ try:
 except ImportError:
     ENHANCED_REPORTING_AVAILABLE = False
 
+# Import financial metrics logger
+try:
+    from .step05_financial_logging import Step05FinancialLogger
+    FINANCIAL_LOGGING_AVAILABLE = True
+except ImportError:
+    FINANCIAL_LOGGING_AVAILABLE = False
+
 def ensure_directory(path: Path | str) -> Path:
     p = Path(path)
     p.mkdir(parents = True, exist_ok = True)
@@ -122,6 +129,9 @@ class LabelingStep:
         else:
             self.logger.info('ℹ️ Enhanced reporting system not available, using basic reporting')
             self.enhanced_reporter = None
+
+        # Initialize financial metrics logger
+        self.financial_logger = None
 
     def _init_optimization_components(self) -> None:
         """Initialize M1 optimization components."""
@@ -705,6 +715,15 @@ class LabelingStep:
             data_dir = training_input.get('data_dir', 'data')
             force_rerun = training_input.get('force_rerun', False)
 
+            # Initialize financial logger if available
+            if FINANCIAL_LOGGING_AVAILABLE and self.financial_logger is None:
+                try:
+                    self.financial_logger = Step05FinancialLogger(symbol, exchange, timeframe)
+                    self.logger.info('✅ Financial metrics logger initialized')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Failed to initialize financial logger: {e}')
+                    self.financial_logger = None
+
             # Get data from pipeline state
             data = pipeline_state.get('dataframe') or pipeline_state.get('validated_data')
 
@@ -746,6 +765,40 @@ class LabelingStep:
 
                 result['optimization_metrics'] = optimization_metrics
                 result['optimizations_used'] = True
+
+            # Log financial metrics if available
+            if self.financial_logger is not None and success:
+                try:
+                    # Get labeled data from pipeline state
+                    labeled_data = pipeline_state.get('labeled_data')
+                    if labeled_data is not None:
+                        # Calculate label statistics
+                        label_stats = self._calculate_label_statistics(labeled_data)
+                        
+                        # Prepare execution data
+                        execution_data = {
+                            'execution_time': execution_time,
+                            'optimization_metrics': result.get('optimization_metrics', {}),
+                            'optimizations_used': result.get('optimizations_used', False)
+                        }
+                        
+                        # Prepare labeling results
+                        labeling_results = {
+                            'label_stats': label_stats,
+                            'success': success,
+                            'step_name': 'step05_labeling'
+                        }
+                        
+                        # Log financial metrics
+                        self.financial_logger.log_step_execution(
+                            labeled_data=labeled_data,
+                            label_stats=label_stats,
+                            execution_data=execution_data,
+                            labeling_results=labeling_results
+                        )
+                        self.logger.info('✅ Financial metrics logged successfully')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Failed to log financial metrics: {e}')
 
             self.logger.info(f"🏷️ Enhanced labeling step completed in {execution_time:.2f}s")
             return result

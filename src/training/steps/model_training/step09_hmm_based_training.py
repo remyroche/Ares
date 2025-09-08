@@ -11,6 +11,15 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import os
 from src.utils.decorators import handles_errors
+from ..enhanced_error_handling import (
+    enhanced_async_error_handler,
+    critical_async_process,
+    CriticalProcessError,
+    ErrorSeverity,
+    ErrorCategory
+)
+from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
+from ..enhanced_monitoring_system import monitor_critical_process
 
 # Enhanced optimization imports for full M1 hardware acceleration
 from pathlib import Path
@@ -2299,6 +2308,14 @@ class EnhancedHMMBasedTrainingStep:
             return features_df
 
 
+@critical_async_process('ml_model_training')
+@monitor_critical_process('ml_model_training')
+@enhanced_async_error_handler(
+    error_severity=ErrorSeverity.CRITICAL,
+    error_category=ErrorCategory.BUSINESS_LOGIC,
+    should_fail_fast=True,
+    step_name='ml_model_training'
+)
 async def run_enhanced_step(
     symbol: str = "ETHUSDT",
     data_dir: str = "data/training",
@@ -2317,6 +2334,18 @@ async def run_enhanced_step(
         True if successful, False otherwise
     """
     try:
+        # Validate inputs
+        if not symbol:
+            raise ValueError("Symbol is required")
+        
+        if not data_dir:
+            raise ValueError("Data directory is required")
+        
+        # Validate data directory exists
+        data_path = Path(data_dir)
+        if not data_path.exists():
+            raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+        
         logger = system_logger.getChild("EnhancedHMMTraining")
         logger.info(f"🚀 Starting Enhanced HMM-Based Training for {symbol}")
         
@@ -2333,11 +2362,23 @@ async def run_enhanced_step(
         # Load labeled data
         labeled_path = f"{data_dir}/{symbol}_labeled_train.parquet"
         if not os.path.exists(labeled_path):
-            logger.error(f"❌ Labeled data not found: {labeled_path}")
-            return False
+            raise FileNotFoundError(f"Labeled data not found: {labeled_path}")
         
         data = safe_read_parquet(labeled_path)
-        logger.info(f"✅ Loaded labeled data: {data.shape}")
+        
+        if data is None or data.empty:
+            raise ValueError("Loaded labeled data is empty")
+        
+        # Validate data quality
+        validator = EnhancedValidator()
+        validation_result = await validator.validate_data_quality(
+            data, ValidationLevel.CRITICAL, "ml_model_training"
+        )
+        
+        if not validation_result.passed:
+            raise ValueError(f"Labeled data quality validation failed: {validation_result.message}")
+        
+        logger.info(f"✅ Loaded and validated labeled data: {data.shape}")
         
         # Prepare enhanced data
         prepared_data = await enhanced_trainer.prepare_enhanced_data(data, "1m")
@@ -2372,31 +2413,81 @@ async def run_enhanced_step(
             prepared_data, f"enhanced_{symbol}_1m"
         )
         
-        if results:
-            # Save models
-            save_path = f"{data_dir}/enhanced_models/{symbol}"
-            enhanced_trainer.save_enhanced_models(results, save_path)
-            # Save per-regime models if available
-            if per_regime_results:
-                per_regime_dir = os.path.join(save_path, "per_regime")
-                ensure_directory(per_regime_dir)
-                for regime_key, regime_result in per_regime_results.items():
-                    regime_dir = os.path.join(per_regime_dir, f"regime_{regime_key}")
-                    ensure_directory(regime_dir)
-                    try:
-                        enhanced_trainer.save_enhanced_models(regime_result, regime_dir)
-                    except Exception:
-                        pass
+        if not results:
+            raise RuntimeError("Enhanced HMM-based training failed - no results produced")
+        
+        # Save models
+        save_path = f"{data_dir}/enhanced_models/{symbol}"
+        enhanced_trainer.save_enhanced_models(results, save_path)
+        
+        # Save per-regime models if available
+        if per_regime_results:
+            per_regime_dir = os.path.join(save_path, "per_regime")
+            ensure_directory(per_regime_dir)
+            for regime_key, regime_result in per_regime_results.items():
+                regime_dir = os.path.join(per_regime_dir, f"regime_{regime_key}")
+                ensure_directory(regime_dir)
+                try:
+                    enhanced_trainer.save_enhanced_models(regime_result, regime_dir)
+                except Exception as e:
+                    logger.warning(f"Failed to save regime {regime_key} models: {e}")
+        
+        # Validate expected outputs were created
+        expected_outputs = [
+            f'{symbol}_enhanced_model.pkl',
+            f'{symbol}_enhanced_metrics.json',
+            f'{symbol}_enhanced_feature_importance.json'
+        ]
+        
+        validation_result = await validator.validate_process_completion(
+            'ml_model_training', expected_outputs, save_path, ValidationLevel.CRITICAL
+        )
+        
+        if not validation_result.passed:
+            raise CriticalProcessError(
+                f"ML model training completed but validation failed: {validation_result.message}",
+                ErrorRecord(
+                    error_id=f"ml_model_training_validation_failure_{int(time.time())}",
+                    error_type="ValidationError",
+                    error_message=validation_result.message,
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.VALIDATION,
+                    context=ErrorContext(
+                        function_name="run_enhanced_step",
+                        step_name="ml_model_training"
+                    ),
+                    stack_trace="",
+                    should_fail_fast=True
+                )
+            )
+        
+        logger.info("✅ Enhanced HMM-based training completed successfully")
+        return True
             
-            logger.info("✅ Enhanced HMM-based training completed successfully")
-            return True
-        else:
-            logger.error("❌ Enhanced HMM-based training failed")
-            return False
-            
+    except CriticalProcessError as e:
+        logger.critical(f'🚨 CRITICAL PROCESS ERROR in ML Model Training: {e}')
+        # Re-raise to trigger fail-fast behavior
+        raise
     except Exception as e:
-        logger.exception(f"❌ Enhanced HMM-based training failed: {e}")
-        return False
+        logger.critical(f'🚨 CRITICAL ERROR in ML Model Training: {e}')
+        
+        # Convert to CriticalProcessError for fail-fast behavior
+        raise CriticalProcessError(
+            f"ML model training failed with critical error: {e}",
+            ErrorRecord(
+                error_id=f"ml_model_training_critical_error_{int(time.time())}",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.BUSINESS_LOGIC,
+                context=ErrorContext(
+                    function_name="run_enhanced_step",
+                    step_name="ml_model_training"
+                ),
+                stack_trace="",
+                should_fail_fast=True
+            )
+        )
 
 # Alias for backward compatibility
 HMMBasedTrainingStep = EnhancedHMMBasedTrainingStep

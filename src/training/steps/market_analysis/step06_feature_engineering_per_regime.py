@@ -2,6 +2,15 @@ from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import numpy as np
 import pandas as pd
 from src.core.decorators import traced, validates, handles_errors
+from ..enhanced_error_handling import (
+    enhanced_async_error_handler,
+    critical_async_process,
+    CriticalProcessError,
+    ErrorSeverity,
+    ErrorCategory
+)
+from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
+from ..enhanced_monitoring_system import monitor_critical_process
 
 """Enhanced Step 6: Per-Regime Feature Engineering.
 
@@ -79,8 +88,17 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         config['step06_feature_engineering'] = step6_config
         self.config = config
         self.force_regime_specific_periods = True
+        self.validator = EnhancedValidator()
         self.logger.info('🎯 Per-regime feature engineering initialized with regime-specific optimization enabled')
 
+    @critical_async_process('feature_generation')
+    @monitor_critical_process('feature_generation')
+    @enhanced_async_error_handler(
+        error_severity=ErrorSeverity.CRITICAL,
+        error_category=ErrorCategory.BUSINESS_LOGIC,
+        should_fail_fast=True,
+        step_name='feature_generation'
+    )
     @traced(span_name='execute_per_regime_feature_engineering')
     async def execute_per_regime_feature_engineering(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool = False) -> bool:
         """Execute feature engineering on a per-regime basis.
@@ -99,11 +117,33 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             Success status
         """
         try:
+            # Validate inputs
+            if not symbol or not exchange or not timeframe:
+                raise ValueError("Missing required parameters: symbol, exchange, timeframe")
+            
+            if not data_dir:
+                raise ValueError("Data directory is required")
+            
+            # Validate data directory exists
+            data_path = Path(data_dir)
+            if not data_path.exists():
+                raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+            
             self.logger.info('🚀 Starting per-regime feature engineering process')
             labeled_data = await self._load_labeled_data(symbol, exchange, timeframe, data_dir)
+            
             if labeled_data is None:
-                self.logger.error('❌ Failed to load labeled data')
-                return False
+                raise ValueError("Failed to load labeled data")
+            
+            # Validate labeled data quality
+            validation_result = await self.validator.validate_data_quality(
+                labeled_data, ValidationLevel.CRITICAL, "feature_generation"
+            )
+            
+            if not validation_result.passed:
+                raise ValueError(f"Labeled data quality validation failed: {validation_result.message}")
+            
+            self.logger.info(f'✅ Labeled data validation passed: {len(labeled_data)} rows, {len(labeled_data.columns)} columns')
             async with RegimeProcessingContext(symbol, exchange, timeframe, data_dir) as ctx:
                 if ctx.regime_data is None:
                     self.logger.error('❌ Failed to load regime data')
@@ -122,17 +162,75 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
                     else:
                         self.logger.error(f'❌ Failed to engineer features for regime {regime_id}')
                 success = await regime_handler.save_regime_results(results = regime_results, step_name='step06_feature_engineering', symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, result_type='feature_engineered_data')
-                if success:
-                    await self._save_regime_feature_metadata(regime_feature_info, symbol, exchange, timeframe, data_dir)
-                    aggregated = self._aggregate_regime_features(regime_results)
-                    output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_features_per_regime.parquet'
-                    aggregated.to_parquet(output_path, index=False)
-                    self.logger.info(f'✅ Saved aggregated feature data: {output_path}')
-                    self._log_feature_statistics(aggregated, regime_feature_info)
-                return success
+                
+                if not success:
+                    raise RuntimeError("Failed to save regime results")
+                
+                await self._save_regime_feature_metadata(regime_feature_info, symbol, exchange, timeframe, data_dir)
+                aggregated = self._aggregate_regime_features(regime_results)
+                
+                if aggregated is None or aggregated.empty:
+                    raise ValueError("Feature aggregation produced no results")
+                
+                output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_features_per_regime.parquet'
+                aggregated.to_parquet(output_path, index=False)
+                self.logger.info(f'✅ Saved aggregated feature data: {output_path}')
+                
+                # Validate expected outputs were created
+                expected_outputs = [
+                    f'{exchange}_{symbol}_{timeframe}_features_per_regime.parquet',
+                    f'{exchange}_{symbol}_{timeframe}_feature_metadata.json'
+                ]
+                
+                validation_result = await self.validator.validate_process_completion(
+                    'feature_generation', expected_outputs, str(Path(data_dir) / 'training'), ValidationLevel.CRITICAL
+                )
+                
+                if not validation_result.passed:
+                    raise CriticalProcessError(
+                        f"Feature generation completed but validation failed: {validation_result.message}",
+                        ErrorRecord(
+                            error_id=f"feature_generation_validation_failure_{int(time.time())}",
+                            error_type="ValidationError",
+                            error_message=validation_result.message,
+                            severity=ErrorSeverity.CRITICAL,
+                            category=ErrorCategory.VALIDATION,
+                            context=ErrorContext(
+                                function_name="execute_per_regime_feature_engineering",
+                                step_name="feature_generation"
+                            ),
+                            stack_trace="",
+                            should_fail_fast=True
+                        )
+                    )
+                
+                self._log_feature_statistics(aggregated, regime_feature_info)
+                self.logger.info('✅ Feature generation completed successfully')
+                return True
+        except CriticalProcessError as e:
+            self.logger.critical(f'🚨 CRITICAL PROCESS ERROR in Feature Generation: {e}')
+            # Re-raise to trigger fail-fast behavior
+            raise
         except Exception as e:
-            self.logger.exception(f'❌ Error in per-regime feature engineering: {e}')
-            return False
+            self.logger.critical(f'🚨 CRITICAL ERROR in Feature Generation: {e}')
+            
+            # Convert to CriticalProcessError for fail-fast behavior
+            raise CriticalProcessError(
+                f"Feature generation failed with critical error: {e}",
+                ErrorRecord(
+                    error_id=f"feature_generation_critical_error_{int(time.time())}",
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.BUSINESS_LOGIC,
+                    context=ErrorContext(
+                        function_name="execute_per_regime_feature_engineering",
+                        step_name="feature_generation"
+                    ),
+                    stack_trace="",
+                    should_fail_fast=True
+                )
+            )
 
     async def _engineer_features_single_regime(self, ctx: RegimeProcessingContext, regime_id: int, labeled_data: pd.DataFrame, regime_config: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
         """Engineer features for a single regime.

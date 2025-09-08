@@ -3,6 +3,15 @@ import pandas as pd
 import numpy as np
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
+from ..enhanced_error_handling import (
+    enhanced_async_error_handler,
+    critical_async_process,
+    CriticalProcessError,
+    ErrorSeverity,
+    ErrorCategory
+)
+from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
+from ..enhanced_monitoring_system import monitor_critical_process
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 'S/R Outcome Model Trainer."\n\nTrains ML models to predict S/R outcomes (breakout/rebounce/consolidation)\nusing LightGBM + XGBoost ensemble with comprehensive feature engineering and time-series validation.\n'
@@ -57,6 +66,7 @@ class SROutcomeModelTrainer:
         self.models = {}
         self.ensemble_model = None
         self.feature_names = []
+        self.validator = EnhancedValidator()
 
     @handles_errors(exceptions=(Exception,), default_return = False, context='S/R outcome model initialization')
     async def initialize(self) -> bool:
@@ -73,19 +83,46 @@ class SROutcomeModelTrainer:
             self.logger.exception(f'Failed to initialize S/R Outcome Model Trainer: {e}')
             return False
 
-    @handles_errors(exceptions=(Exception,), default_return = False, context='S/R outcome model training')
+    @critical_async_process('sr_detection')
+    @monitor_critical_process('sr_detection')
+    @enhanced_async_error_handler(
+        error_severity=ErrorSeverity.CRITICAL,
+        error_category=ErrorCategory.BUSINESS_LOGIC,
+        should_fail_fast=True,
+        step_name='sr_detection'
+    )
     async def train_model(self, training_data: dict[str, pd.DataFrame]) -> bool:
         """Train the S/R outcome prediction model ensemble."""
         try:
+            # Validate inputs
+            if not training_data:
+                raise ValueError("Training data is required")
+            
+            # Validate training data quality
+            for key, data in training_data.items():
+                if data is None or data.empty:
+                    raise ValueError(f"Training data for {key} is empty")
+                
+                validation_result = await self.validator.validate_data_quality(
+                    data, ValidationLevel.CRITICAL, "sr_detection"
+                )
+                
+                if not validation_result.passed:
+                    raise ValueError(f"Training data quality validation failed for {key}: {validation_result.message}")
+            
             self.logger.info('🔄 Starting S/R outcome model training...')
             prepared_data = await self._prepare_training_data(training_data)
+            
             if prepared_data is None:
-                self.logger.error('Failed to prepare training data')
-                return False
+                raise ValueError("Failed to prepare training data")
+            
             X, y = await self._engineer_features(prepared_data)
+            
             if X is None or y is None:
-                self.logger.error('Failed to engineer features')
-                return False
+                raise ValueError("Failed to engineer features")
+            
+            if X.empty or len(y) == 0:
+                raise ValueError("Engineered features are empty")
             if self.use_ensemble:
                 training_result = await self._train_ensemble_models(X, y)
             elif self.model_type == 'lightgbm':
@@ -95,12 +132,67 @@ class SROutcomeModelTrainer:
             elif self.model_type == 'logistic':
                 training_result = await self._train_logistic_model(X, y)
             else:
-                self.logger.error(f'Unknown model_type: {self.model_type}')
-                return False
-            return bool(training_result)
+                raise ValueError(f'Unknown model_type: {self.model_type}')
+            
+            if not training_result:
+                raise RuntimeError("Model training failed - no results produced")
+            
+            # Validate expected outputs were created
+            expected_outputs = [
+                'sr_outcome_model.pkl',
+                'sr_outcome_metrics.json',
+                'sr_outcome_feature_importance.json'
+            ]
+            
+            validation_result = await self.validator.validate_process_completion(
+                'sr_detection', expected_outputs, self.artifacts_dir, ValidationLevel.CRITICAL
+            )
+            
+            if not validation_result.passed:
+                raise CriticalProcessError(
+                    f"SR detection model training completed but validation failed: {validation_result.message}",
+                    ErrorRecord(
+                        error_id=f"sr_detection_validation_failure_{int(time.time())}",
+                        error_type="ValidationError",
+                        error_message=validation_result.message,
+                        severity=ErrorSeverity.CRITICAL,
+                        category=ErrorCategory.VALIDATION,
+                        context=ErrorContext(
+                            function_name="train_model",
+                            step_name="sr_detection"
+                        ),
+                        stack_trace="",
+                        should_fail_fast=True
+                    )
+                )
+            
+            self.logger.info("✅ SR detection model training completed successfully")
+            return True
+            
+        except CriticalProcessError as e:
+            self.logger.critical(f'🚨 CRITICAL PROCESS ERROR in SR Detection: {e}')
+            # Re-raise to trigger fail-fast behavior
+            raise
         except Exception as e:
-            self.logger.exception(f'Error during model training: {e}')
-            return False
+            self.logger.critical(f'🚨 CRITICAL ERROR in SR Detection: {e}')
+            
+            # Convert to CriticalProcessError for fail-fast behavior
+            raise CriticalProcessError(
+                f"SR detection model training failed with critical error: {e}",
+                ErrorRecord(
+                    error_id=f"sr_detection_critical_error_{int(time.time())}",
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.BUSINESS_LOGIC,
+                    context=ErrorContext(
+                        function_name="train_model",
+                        step_name="sr_detection"
+                    ),
+                    stack_trace="",
+                    should_fail_fast=True
+                )
+            )
 
     async def _prepare_training_data(self, training_data: dict[str, pd.DataFrame]) -> pd.DataFrame | None:
         """Prepare training data with S/R context and outcome labeling."""

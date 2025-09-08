@@ -14,6 +14,15 @@ sys.path.insert(0, str(project_root))
 from src.training.steps.market_analysis.hmm_clustering import run_enhanced_step
 from src.training.steps.market_analysis.hmm_clustering.step03_hmm_regime_discovery_validator import run_validator
 from src.core.decorators import monitor_step03_functions, handle_step03_errors, validates, traced
+from ..enhanced_error_handling import (
+    enhanced_async_error_handler,
+    critical_async_process,
+    CriticalProcessError,
+    ErrorSeverity,
+    ErrorCategory
+)
+from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
+from ..enhanced_monitoring_system import monitor_critical_process
 
 class HMMClusteringStep:
     """Step 3: Enhanced HMM Regime Discovery with full pipeline integration."""
@@ -21,11 +30,12 @@ class HMMClusteringStep:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        self.logger = logger
+        self.logger = system_logger.getChild('HMMClusteringStep')
         from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
         self.standards = _pipeline_standards
         self.start_time = None
         self.step_timings = {}
+        self.validator = EnhancedValidator()
 
     @monitor_step03_functions
     @handle_step03_errors
@@ -42,8 +52,15 @@ class HMMClusteringStep:
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N/A')}")
         self.logger.info('✅ Enhanced HMM Clustering Step initialized successfully')
 
+    @critical_async_process('hmm_clustering')
+    @monitor_critical_process('hmm_clustering')
+    @enhanced_async_error_handler(
+        error_severity=ErrorSeverity.CRITICAL,
+        error_category=ErrorCategory.BUSINESS_LOGIC,
+        should_fail_fast=True,
+        step_name='hmm_clustering'
+    )
     @monitor_step03_functions
-    @handle_step03_errors
     @validates()
     @traced(span_name='execute_hmm_clustering_step')
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
@@ -51,42 +68,180 @@ class HMMClusteringStep:
         step_start = time.time()
         self.logger.info('🎯 Starting Enhanced HMM Clustering execution...')
         try:
+            # Validate inputs
             symbol = training_input.get('symbol', 'ETHUSDT')
             exchange = training_input.get('exchange', 'BINANCE')
             timeframe = training_input.get('timeframe', '1m')
             data_dir = training_input.get('data_dir')
             force_rerun = training_input.get('force_rerun', False)
+            
+            if not symbol or not exchange or not timeframe:
+                raise ValueError("Missing required parameters: symbol, exchange, timeframe")
+            
             if data_dir is None:
                 data_dir = self.standards.build_path('processed_data', exchange, symbol)
+            
+            # Validate data directory exists
+            data_path = Path(data_dir)
+            if not data_path.exists():
+                raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+            
+            # Check for required data files
+            required_files = [
+                f"{exchange}_{symbol}_processed.parquet",
+                f"{exchange}_{symbol}_volume_consolidated.parquet"
+            ]
+            
+            missing_files = []
+            for file_name in required_files:
+                file_path = data_path / file_name
+                if not file_path.exists():
+                    missing_files.append(file_name)
+            
+            if missing_files:
+                raise FileNotFoundError(f"Missing required data files: {missing_files}")
+            
+            # Load and validate data
+            data_file = data_path / f"{exchange}_{symbol}_processed.parquet"
+            import pandas as pd
+            data = pd.read_parquet(data_file)
+            
+            # Validate data quality
+            validation_result = await self.validator.validate_data_quality(
+                data, ValidationLevel.CRITICAL, "hmm_clustering"
+            )
+            
+            if not validation_result.passed:
+                raise ValueError(f"Data quality validation failed: {validation_result.message}")
+            
+            self.logger.info(f'✅ Data validation passed: {len(data)} rows, {len(data.columns)} columns')
             enhanced_config = {'n_trials': 50, 'timeout_minutes': 15, 'cv_folds': 3, 'random_state': 42, 'ensemble_weights': {'hmm': 0.4, 'kmeans': 0.3, 'dbscan': 0.3}, 'initial_features': 20, 'feature_increment': 10, 'max_features': 100, 'min_improvement': 0.001, 'patience': 3}
             self.logger.info('=' * 60)
             self.logger.info('STEP 1: Enhanced HMM Regime Discovery')
             self.logger.info('=' * 60)
             success = await run_enhanced_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun, **enhanced_config)
-            if success:
-                self.logger.info('✅ Enhanced HMM regime discovery completed successfully')
-                pipeline_state['hmm_clustering_completed'] = True
-                pipeline_state['enhanced_features_used'] = True
-                pipeline_state['bayesian_optimization_used'] = True
-                pipeline_state['ensemble_clustering_used'] = True
-                pipeline_state['ml_transition_detection_used'] = True
-                config_file = Path(data_dir) / f'enhanced_step3_config_{symbol}_{timeframe}.json'
-                with open(config_file, 'w') as f:
-                    json.dump({'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'config': enhanced_config, 'execution_time': time.time() - step_start, 'success': True, 'timestamp': datetime.now().isoformat()}, f, indent = 2)
-                self.logger.info(f'💾 Configuration saved to: {config_file}')
-                await self._log_step3_artifacts_to_mlflow(training_input, pipeline_state)
-            else:
-                self.logger.error('❌ Enhanced HMM regime discovery failed')
+            
+            if not success:
+                error_msg = 'Enhanced HMM regime discovery failed'
+                self.logger.critical(f'🚨 CRITICAL FAILURE: {error_msg}')
                 pipeline_state['hmm_clustering_completed'] = False
-                pipeline_state['hmm_clustering_error'] = 'Enhanced HMM regime discovery failed'
+                pipeline_state['hmm_clustering_error'] = error_msg
+                
+                # Validate that expected outputs were created
+                expected_outputs = [
+                    f'{symbol}_{exchange}_hmm_model.pkl',
+                    f'{symbol}_{exchange}_regime_data.parquet',
+                    f'{symbol}_{exchange}_hmm_metrics.json'
+                ]
+                
+                validation_result = await self.validator.validate_process_completion(
+                    'hmm_clustering', expected_outputs, data_dir, ValidationLevel.CRITICAL
+                )
+                
+                if not validation_result.passed:
+                    raise CriticalProcessError(
+                        f"HMM clustering failed and validation failed: {validation_result.message}",
+                        ErrorRecord(
+                            error_id=f"hmm_clustering_failure_{int(time.time())}",
+                            error_type="CriticalProcessError",
+                            error_message=validation_result.message,
+                            severity=ErrorSeverity.CRITICAL,
+                            category=ErrorCategory.BUSINESS_LOGIC,
+                            context=ErrorContext(
+                                function_name="execute_hmm_clustering",
+                                step_name="hmm_clustering"
+                            ),
+                            stack_trace="",
+                            should_fail_fast=True
+                        )
+                    )
+                
+                # If we get here, the process failed but validation passed (shouldn't happen)
+                raise RuntimeError(f"HMM clustering failed: {error_msg}")
+            
+            # Success case
+            self.logger.info('✅ Enhanced HMM regime discovery completed successfully')
+            pipeline_state['hmm_clustering_completed'] = True
+            pipeline_state['enhanced_features_used'] = True
+            pipeline_state['bayesian_optimization_used'] = True
+            pipeline_state['ensemble_clustering_used'] = True
+            pipeline_state['ml_transition_detection_used'] = True
+            
+            # Validate expected outputs were created
+            expected_outputs = [
+                f'{symbol}_{exchange}_hmm_model.pkl',
+                f'{symbol}_{exchange}_regime_data.parquet',
+                f'{symbol}_{exchange}_hmm_metrics.json'
+            ]
+            
+            validation_result = await self.validator.validate_process_completion(
+                'hmm_clustering', expected_outputs, data_dir, ValidationLevel.CRITICAL
+            )
+            
+            if not validation_result.passed:
+                raise CriticalProcessError(
+                    f"HMM clustering completed but validation failed: {validation_result.message}",
+                    ErrorRecord(
+                        error_id=f"hmm_clustering_validation_failure_{int(time.time())}",
+                        error_type="ValidationError",
+                        error_message=validation_result.message,
+                        severity=ErrorSeverity.CRITICAL,
+                        category=ErrorCategory.VALIDATION,
+                        context=ErrorContext(
+                            function_name="execute_hmm_clustering",
+                            step_name="hmm_clustering"
+                        ),
+                        stack_trace="",
+                        should_fail_fast=True
+                    )
+                )
+            
+            # Save configuration
+            config_file = Path(data_dir) / f'enhanced_step3_config_{symbol}_{timeframe}.json'
+            with open(config_file, 'w') as f:
+                json.dump({
+                    'symbol': symbol, 
+                    'exchange': exchange, 
+                    'timeframe': timeframe, 
+                    'config': enhanced_config, 
+                    'execution_time': time.time() - step_start, 
+                    'success': True, 
+                    'timestamp': datetime.now().isoformat()
+                }, f, indent=2)
+            self.logger.info(f'💾 Configuration saved to: {config_file}')
+            
+            await self._log_step3_artifacts_to_mlflow(training_input, pipeline_state)
             total_elapsed = time.time() - step_start
             self.logger.info(f'⏱️ Enhanced HMM Clustering completed in {total_elapsed:.2f} seconds')
             return pipeline_state
-        except Exception as e:
-            self.logger.exception(f'❌ Unexpected error during Enhanced HMM Clustering: {e}')
+        except CriticalProcessError as e:
+            self.logger.critical(f'🚨 CRITICAL PROCESS ERROR in HMM Clustering: {e}')
             pipeline_state['hmm_clustering_completed'] = False
             pipeline_state['hmm_clustering_error'] = str(e)
-            return pipeline_state
+            # Re-raise to trigger fail-fast behavior
+            raise
+        except Exception as e:
+            self.logger.critical(f'🚨 CRITICAL ERROR in HMM Clustering: {e}')
+            pipeline_state['hmm_clustering_completed'] = False
+            pipeline_state['hmm_clustering_error'] = str(e)
+            
+            # Convert to CriticalProcessError for fail-fast behavior
+            raise CriticalProcessError(
+                f"HMM clustering failed with critical error: {e}",
+                ErrorRecord(
+                    error_id=f"hmm_clustering_critical_error_{int(time.time())}",
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.BUSINESS_LOGIC,
+                    context=ErrorContext(
+                        function_name="execute_hmm_clustering",
+                        step_name="hmm_clustering"
+                    ),
+                    stack_trace="",
+                    should_fail_fast=True
+                )
+            )
 
     @monitor_step03_functions
     @handle_step03_errors
@@ -104,8 +259,15 @@ class HMMClusteringStep:
         except Exception as e:
             self.logger.error(f'❌ Failed to log step 3 artifacts to MLflow: {e}')
 
+@critical_async_process('hmm_clustering')
+@monitor_critical_process('hmm_clustering')
+@enhanced_async_error_handler(
+    error_severity=ErrorSeverity.CRITICAL,
+    error_category=ErrorCategory.BUSINESS_LOGIC,
+    should_fail_fast=True,
+    step_name='hmm_clustering'
+)
 @monitor_step03_functions
-@handle_step03_errors
 @validates()
 @traced(span_name='run_step03_hmm_clustering')
 async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: str = None, force_rerun: bool = False, **kwargs: Any) -> bool:
@@ -151,7 +313,23 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             if validation_result.get('validation_passed', False):
                 logger.info('✅ Validation passed')
             else:
-                logger.warning('⚠️ Validation failed, but step completed')
+                logger.critical('🚨 CRITICAL: Validation failed for completed step')
+                raise CriticalProcessError(
+                    f"HMM clustering validation failed: {validation_result.get('error', 'Unknown validation error')}",
+                    ErrorRecord(
+                        error_id=f"hmm_clustering_validation_failure_{int(time.time())}",
+                        error_type="ValidationError",
+                        error_message=validation_result.get('error', 'Unknown validation error'),
+                        severity=ErrorSeverity.CRITICAL,
+                        category=ErrorCategory.VALIDATION,
+                        context=ErrorContext(
+                            function_name="run_step03_hmm_clustering",
+                            step_name="hmm_clustering"
+                        ),
+                        stack_trace="",
+                        should_fail_fast=True
+                    )
+                )
             total_elapsed = time.time() - start_time
             logger.info('=' * 80)
             logger.info('🎉 STEP 3 EXECUTION SUMMARY')
@@ -162,9 +340,9 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             logger.info('=' * 80)
             return True
         else:
-            logger.error('❌ Step 3: Enhanced HMM Clustering failed')
             error = result.get('hmm_clustering_error', 'Unknown error')
-            logger.error(f'   Error: {error}')
+            logger.critical(f'🚨 CRITICAL FAILURE: Step 3: Enhanced HMM Clustering failed')
+            logger.critical(f'   Error: {error}')
             total_elapsed = time.time() - start_time
             logger.info('=' * 80)
             logger.info('💥 STEP 3 EXECUTION SUMMARY')
@@ -174,9 +352,39 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             logger.info('❌ FAILED')
             logger.info(f'   Error: {error}')
             logger.info('=' * 80)
-            return False
+            
+            # Raise CriticalProcessError for fail-fast behavior
+            raise CriticalProcessError(
+                f"HMM clustering step failed: {error}",
+                ErrorRecord(
+                    error_id=f"hmm_clustering_step_failure_{int(time.time())}",
+                    error_type="StepFailureError",
+                    error_message=error,
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.BUSINESS_LOGIC,
+                    context=ErrorContext(
+                        function_name="run_step03_hmm_clustering",
+                        step_name="hmm_clustering"
+                    ),
+                    stack_trace="",
+                    should_fail_fast=True
+                )
+            )
+    except CriticalProcessError as e:
+        logger.critical(f'🚨 CRITICAL PROCESS ERROR: Step 3: Enhanced HMM Clustering failed: {e}')
+        total_elapsed = time.time() - start_time
+        logger.info('=' * 80)
+        logger.info('💥 STEP 3 EXECUTION SUMMARY')
+        logger.info('=' * 80)
+        logger.info(f'⏱️ Total execution time: {total_elapsed:.2f} seconds')
+        logger.info(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info('❌ FAILED')
+        logger.info(f'   Critical Error: {e}')
+        logger.info('=' * 80)
+        # Re-raise to trigger fail-fast behavior
+        raise
     except Exception as e:
-        logger.exception(f'❌ Step 3: Enhanced HMM Clustering failed with exception: {e}')
+        logger.critical(f'🚨 CRITICAL ERROR: Step 3: Enhanced HMM Clustering failed with exception: {e}')
         total_elapsed = time.time() - start_time
         logger.info('=' * 80)
         logger.info('💥 STEP 3 EXECUTION SUMMARY')
@@ -186,7 +394,24 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         logger.info('❌ FAILED')
         logger.info(f'   Exception: {e}')
         logger.info('=' * 80)
-        return False
+        
+        # Convert to CriticalProcessError for fail-fast behavior
+        raise CriticalProcessError(
+            f"HMM clustering step failed with critical exception: {e}",
+            ErrorRecord(
+                error_id=f"hmm_clustering_critical_exception_{int(time.time())}",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.BUSINESS_LOGIC,
+                context=ErrorContext(
+                    function_name="run_step03_hmm_clustering",
+                    step_name="hmm_clustering"
+                ),
+                stack_trace="",
+                should_fail_fast=True
+            )
+        )
 
 async def main() -> None:
     """Main function to run enhanced step 3."""

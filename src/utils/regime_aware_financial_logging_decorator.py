@@ -31,7 +31,7 @@ except ImportError:
 # Import the main logger
 try:
     from src.utils.logger import system_logger
-import logging
+    import logging
 
 except ImportError:
     system_logger = None
@@ -224,6 +224,7 @@ async def _log_regime_metrics_from_result(
     """Log regime-specific metrics from step result."""
     try:
         # Log regime distribution metrics
+        regime_column = 'composite_cluster_id'  # Default regime column name
         if log_regime_distribution and data is not None and regime_column in data.columns:
             regime_data = data[regime_column].dropna()
             regime_counts = regime_data.value_counts()

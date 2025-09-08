@@ -2,9 +2,9 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
 from src.training.steps.model_training.step04_common_types import (
-from ..standardized_parquet_handler import standardized_parquet_handler
     StepResult, RegimeDataResult, StepResultStatus, standardize_result
 )
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 from src.utils.logger import system_logger
 # Core decorators imports
 from src.core.decorators import (
@@ -50,6 +50,7 @@ import time
 import functools
 import traceback
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -402,12 +403,239 @@ def log_comprehensive_error_report(error: Exception, context: Dict[str, Any]=Non
 
 # MemoryMonitor class replaced with M1MemoryOptimizer integration
 
+class AsyncFileProcessor:
+    """Async file processor with concurrency control and memory management."""
+
+    def __init__(self, config: Dict[str, Any], max_concurrent: int = 3):
+        self.config = config
+        self.max_concurrent = max_concurrent
+        self.semaphore = asyncio.Semaphore(max_concurrent)
+        self.executor = ThreadPoolExecutor(max_workers=max_concurrent * 2)
+        self.memory_limit_gb = config.get('max_memory_gb', 8.0)
+        self.chunk_size = config.get('chunk_size', 100_000)
+        self.processing_stats = {
+            'files_processed': 0,
+            'total_rows': 0,
+            'memory_peaks': [],
+            'processing_times': []
+        }
+
+    async def process_files_concurrent(
+        self,
+        file_paths: List[Path],
+        processing_func: Callable,
+        *args,
+        **kwargs
+    ) -> List[Any]:
+        """Process multiple files concurrently with controlled concurrency."""
+        async def process_single_file(file_path: Path) -> Any:
+            async with self.semaphore:
+                start_time = time.time()
+                try:
+                    # Check memory before processing
+                    if PSUTIL_AVAILABLE:
+                        memory_before = psutil.Process().memory_info().rss / 1024 / 1024 / 1024
+                        if memory_before > self.memory_limit_gb * 0.8:
+                            await self._force_gc_and_wait()
+
+                    # Process file in thread pool
+                    loop = asyncio.get_event_loop()
+                    result = await loop.run_in_executor(
+                        self.executor,
+                        processing_func,
+                        file_path,
+                        *args,
+                        **kwargs
+                    )
+
+                    # Record stats
+                    processing_time = time.time() - start_time
+                    self.processing_stats['files_processed'] += 1
+                    self.processing_stats['processing_times'].append(processing_time)
+
+                    if PSUTIL_AVAILABLE:
+                        memory_after = psutil.Process().memory_info().rss / 1024 / 1024 / 1024
+                        self.processing_stats['memory_peaks'].append(memory_after)
+
+                    return result
+
+                except Exception as e:
+                    system_logger.error(f"Error processing file {file_path}: {e}")
+                    raise
+
+        # Create tasks for all files
+        tasks = [process_single_file(path) for path in file_paths]
+
+        # Process in chunks to avoid overwhelming the system
+        results = []
+        batch_size = min(len(tasks), self.max_concurrent * 2)
+
+        for i in range(0, len(tasks), batch_size):
+            batch_tasks = tasks[i:i + batch_size]
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+
+            # Handle exceptions and collect results
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    system_logger.error(f"File processing failed: {result}")
+                    # Could implement retry logic here
+                else:
+                    results.append(result)
+
+        return results
+
+    async def _force_gc_and_wait(self) -> None:
+        """Force garbage collection and wait briefly."""
+        import gc
+        gc.collect()
+        await asyncio.sleep(0.1)  # Brief pause for memory cleanup
+
+    def get_processing_stats(self) -> Dict[str, Any]:
+        """Get processing statistics."""
+        if not self.processing_stats['processing_times']:
+            return self.processing_stats
+
+        times = self.processing_stats['processing_times']
+        return {
+            **self.processing_stats,
+            'avg_processing_time': sum(times) / len(times),
+            'total_processing_time': sum(times),
+            'max_processing_time': max(times),
+            'min_processing_time': min(times),
+            'files_per_second': len(times) / sum(times) if times else 0,
+            'peak_memory_gb': max(self.processing_stats['memory_peaks']) if self.processing_stats['memory_peaks'] else 0
+        }
+
+
+class MemoryPoolManager:
+    """Memory pool manager for efficient memory usage during data processing."""
+
+    def __init__(self, max_memory_gb: float = 8.0, chunk_size_mb: float = 100.0):
+        self.max_memory_bytes = max_memory_gb * 1024**3
+        self.chunk_size_bytes = chunk_size_mb * 1024**2
+        self.current_usage = 0
+        self.lock = asyncio.Lock()
+        self.memory_chunks: List[bytes] = []
+        self.gc_threshold = max_memory_gb * 0.8 * 1024**3  # 80% threshold
+
+    async def allocate_chunk(self, estimated_size_bytes: int) -> bool:
+        """Allocate memory for a data chunk."""
+        async with self.lock:
+            if self.current_usage + estimated_size_bytes > self.max_memory_bytes:
+                await self._cleanup_memory()
+                if self.current_usage + estimated_size_bytes > self.max_memory_bytes:
+                    return False
+
+            self.current_usage += estimated_size_bytes
+            return True
+
+    async def release_chunk(self, size_bytes: int) -> None:
+        """Release memory from a data chunk."""
+        async with self.lock:
+            self.current_usage = max(0, self.current_usage - size_bytes)
+
+    async def _cleanup_memory(self) -> None:
+        """Aggressively clean up memory."""
+        import gc
+        gc.collect()
+
+        # Force cleanup of large objects
+        if hasattr(gc, 'set_threshold'):
+            gc.set_threshold(700, 10, 10)  # More aggressive GC
+
+        # Clear any cached data
+        self.memory_chunks.clear()
+
+        # Update current usage estimate
+        if PSUTIL_AVAILABLE:
+            actual_usage = psutil.Process().memory_info().rss
+            self.current_usage = min(self.current_usage, actual_usage)
+
+    def should_use_streaming(self, data_size_bytes: int) -> bool:
+        """Determine if streaming processing should be used."""
+        return data_size_bytes > self.chunk_size_bytes or self.current_usage > self.gc_threshold
+
+
+class DataTypeOptimizer:
+    """Data type optimizer for memory-efficient DataFrame processing."""
+
+    # Optimal data types for different data ranges
+    TYPE_MAPPINGS = {
+        'int8': (-128, 127),
+        'int16': (-32_768, 32_767),
+        'int32': (-2_147_483_648, 2_147_483_647),
+        'int64': (-9_223_372_036_854_775_808, 9_223_372_036_854_775_807),
+        'uint8': (0, 255),
+        'uint16': (0, 65_535),
+        'uint32': (0, 4_294_967_295),
+        'float32': (-3.4e38, 3.4e38),
+        'float64': (-1.7e308, 1.7e308)
+    }
+
+    @staticmethod
+    def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame data types for memory efficiency."""
+        df_optimized = df.copy()
+
+        for col in df_optimized.columns:
+            if df_optimized[col].dtype == 'object':
+                # Try to convert object columns to categorical if appropriate
+                if df_optimized[col].nunique() / len(df_optimized) < 0.5:  # Less than 50% unique
+                    df_optimized[col] = df_optimized[col].astype('category')
+                continue
+
+            if df_optimized[col].dtype.kind in ['i', 'u', 'f']:  # Integer, unsigned, float
+                df_optimized[col] = DataTypeOptimizer._optimize_numeric_column(df_optimized[col])
+
+        return df_optimized
+
+    @staticmethod
+    def _optimize_numeric_column(series: pd.Series) -> pd.Series:
+        """Optimize a numeric column's data type."""
+        if series.dtype.kind == 'f':  # Float
+            # Check if float32 is sufficient
+            if series.min() >= -3.4e38 and series.max() <= 3.4e38:
+                return series.astype('float32')
+            return series.astype('float64')
+
+        elif series.dtype.kind in ['i', 'u']:  # Integer
+            min_val, max_val = series.min(), series.max()
+
+            # Find the smallest suitable integer type
+            for dtype, (dtype_min, dtype_max) in DataTypeOptimizer.TYPE_MAPPINGS.items():
+                if dtype.startswith(('int', 'uint')) and dtype_min <= min_val <= max_val <= dtype_max:
+                    return series.astype(dtype)
+
+            return series.astype('int64')  # Fallback
+
+        return series
+
+    @staticmethod
+    def estimate_memory_usage(df: pd.DataFrame) -> float:
+        """Estimate DataFrame memory usage in MB."""
+        return df.memory_usage(deep=True).sum() / 1024 / 1024
+
+    @staticmethod
+    def get_dtype_info(df: pd.DataFrame) -> Dict[str, Any]:
+        """Get detailed dtype information for optimization analysis."""
+        info = {}
+        for col in df.columns:
+            series = df[col]
+            info[col] = {
+                'dtype': str(series.dtype),
+                'memory_mb': series.memory_usage(deep=True) / 1024 / 1024,
+                'unique_ratio': series.nunique() / len(series) if len(series) > 0 else 0,
+                'null_ratio': series.isnull().sum() / len(series) if len(series) > 0 else 0
+            }
+        return info
+
+
 class RegimeDataSplittingStep:
     """Step 4: Regime Data Splitting with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        
+
         # Initialize dependency injection container for step04 utilities
         self.utility_config = create_step04_config(
             enable_common_operations=True,
@@ -422,15 +650,25 @@ class RegimeDataSplittingStep:
         )
         self.container = get_step04_container(self.utility_config)
         self.utils = get_step04_utilities()
-        
+
         # Get logger from utilities
-        self.logger = self.utils.get_function('common_operations', 'get_logger')('RegimeDataSplittingStep')
+        try:
+            self.logger = self.utils.get_function('common_operations', 'get_logger')('RegimeDataSplittingStep')
+        except Exception:
+            self.logger = system_logger.getChild('RegimeDataSplittingStep')
+
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
 
         # Initialize parquet utilities through dependency injection
-        self.parquet_utils = self.utils.get_function('parquet_utils', 'get_parquet_utils')()
+        try:
+            self.parquet_utils = self.utils.get_function('parquet_utils', 'get_parquet_utils')()
+        except Exception:
+            self.parquet_utils = None
+
+        # Initialize optimization components
+        self._init_performance_optimizers()
 
         # Initialize M1 Hardware Optimizations
         self._init_m1_optimizations()
@@ -454,28 +692,81 @@ class RegimeDataSplittingStep:
             self.logger.info('ℹ️ Financial metrics logging system not available, using basic reporting')
             self.financial_logger = None
 
+    def _init_performance_optimizers(self) -> None:
+        """Initialize performance optimization components."""
+        max_concurrent = self.config.get('max_concurrent_batches', 3)
+        max_memory_gb = self.config.get('max_memory_gb', 8.0)
+
+        # Initialize async file processor
+        self.async_processor = AsyncFileProcessor(self.config, max_concurrent)
+
+        # Initialize memory pool manager
+        self.memory_pool = MemoryPoolManager(max_memory_gb)
+
+        # Initialize data type optimizer
+        self.dtype_optimizer = DataTypeOptimizer()
+
+        self.logger.info(f'🚀 Performance optimizers initialized:')
+        self.logger.info(f'   - Max concurrent batches: {max_concurrent}')
+        self.logger.info(f'   - Memory limit: {max_memory_gb}GB')
+        self.logger.info(f'   - Data type optimization: Enabled')
+
     def _set_memory_defaults(self) -> None:
         """Set default configuration values for memory management using utility functions."""
-        # Get utility functions
-        safe_float = self.utils.get_function('common_operations', 'safe_float')
-        safe_int = self.utils.get_function('common_operations', 'safe_int')
-        validate_positive = self.utils.get_function('math_validation', 'validate_positive')
-        validate_range = self.utils.get_function('math_validation', 'validate_range')
+        # Get utility functions with fallback to direct imports
+        try:
+            safe_float_func = self.utils.get_function('common_operations', 'safe_float')
+            if safe_float_func is None:
+                raise AttributeError("safe_float not available from utils")
+        except (AttributeError, KeyError):
+            # Fallback to direct import
+            from src.utils.common_operations import safe_float as safe_float_func
+
+        try:
+            safe_int_func = self.utils.get_function('common_operations', 'safe_int')
+            if safe_int_func is None:
+                raise AttributeError("safe_int not available from utils")
+        except (AttributeError, KeyError):
+            # Fallback to direct import
+            from src.utils.common_operations import safe_int as safe_int_func
+
+        try:
+            validate_positive_func = self.utils.get_function('math_validation', 'validate_positive')
+            if validate_positive_func is None:
+                raise AttributeError("validate_positive not available from utils")
+        except (AttributeError, KeyError):
+            # Fallback to direct import
+            from src.utils.math_validation import validate_positive as validate_positive_func
+
+        try:
+            validate_range_func = self.utils.get_function('math_validation', 'validate_range')
+            if validate_range_func is None:
+                raise AttributeError("validate_range not available from utils")
+        except (AttributeError, KeyError):
+            # Fallback to direct import
+            from src.utils.math_validation import validate_range as validate_range_func
         
         memory_defaults = {
             # Streaming thresholds with validation
-            'streaming_threshold_mb': safe_float(500, 500),  # Use streaming for datasets > 500MB
-            'streaming_min_rows': safe_int(2_000_000, 2_000_000),  # Use streaming for > 2M rows
-            'streaming_min_mb': safe_float(1000, 1000),  # Use streaming for > 1GB memory usage
+            'streaming_threshold_mb': safe_float_func(500, 500),  # Use streaming for datasets > 500MB
+            'streaming_min_rows': safe_int_func(2_000_000, 2_000_000),  # Use streaming for > 2M rows
+            'streaming_min_mb': safe_float_func(1000, 1000),  # Use streaming for > 1GB memory usage
 
             # Processing chunk sizes with validation
-            'processing_chunk_size': safe_int(100000, 100000),  # Process 100K rows at a time during merging
-            'streaming_chunk_size': safe_int(5, 5),  # Process 5 files at a time in streaming mode
-            'streaming_chunk_rows': safe_int(500000, 500000),  # Write 500K rows per chunk when saving
+            'processing_chunk_size': safe_int_func(100000, 100000),  # Process 100K rows at a time during merging
+            'streaming_chunk_size': safe_int_func(5, 5),  # Process 5 files at a time in streaming mode
+            'streaming_chunk_rows': safe_int_func(500000, 500000),  # Write 500K rows per chunk when saving
+
+            # Performance optimization settings
+            'max_concurrent_batches': safe_int_func(3, 3),  # Maximum concurrent file processing batches
+            'max_memory_gb': safe_float_func(8.0, 8.0),  # Maximum memory usage limit
+            'memory_check_interval': safe_int_func(30, 30),  # Memory check interval in seconds
+            'enable_async_processing': True,  # Enable async file processing
+            'enable_dtype_optimization': True,  # Enable automatic data type optimization
 
             # Merge settings with validation
-            'regime_merge_min_retention': validate_range(safe_float(0.8, 0.8), 0.0, 1.0, "regime_merge_min_retention"),  # Minimum 80% data retention after merge
-            'regime_merge_tolerance_ms': validate_positive(safe_int(60000, 60000), "regime_merge_tolerance_ms"),  # 60 second tolerance for timestamp matching
+            'regime_merge_min_retention': validate_range_func(safe_float_func(0.8, 0.8), 0.0, 1.0, "regime_merge_min_retention"),  # Minimum 80% data retention after merge
+            'regime_merge_tolerance_ms': validate_positive_func(safe_int_func(60000, 60000), "regime_merge_tolerance_ms"),  # 60 second tolerance for timestamp matching
 
             # Writer settings
             'use_streaming_writer': True,  # Enable streaming writer by default
@@ -488,9 +779,9 @@ class RegimeDataSplittingStep:
                 self.config[key] = default_value
             else:
                 # Validate existing config values
-                if key in ['streaming_threshold_mb', 'streaming_min_mb', 'regime_merge_min_retention']:
+                if key in ['streaming_threshold_mb', 'streaming_min_mb', 'regime_merge_min_retention', 'max_memory_gb']:
                     self.config[key] = validate_positive(safe_float(self.config[key], default_value), key)
-                elif key in ['streaming_min_rows', 'processing_chunk_size', 'streaming_chunk_size', 'streaming_chunk_rows', 'regime_merge_tolerance_ms']:
+                elif key in ['streaming_min_rows', 'processing_chunk_size', 'streaming_chunk_size', 'streaming_chunk_rows', 'regime_merge_tolerance_ms', 'max_concurrent_batches', 'memory_check_interval']:
                     self.config[key] = validate_positive(safe_int(self.config[key], default_value), key)
                 elif key == 'regime_merge_min_retention':
                     self.config[key] = validate_range(safe_float(self.config[key], default_value), 0.0, 1.0, key)
@@ -663,8 +954,9 @@ class RegimeDataSplittingStep:
                     'step04_regime_data_splitting_completed': False,
                     'step04_regime_data_splitting_failure_reason': f'Regime data splitting failed: {result.error}',
                     'execution_time': execution_time,
-                    'step_name': 'step04_regime_data_splitting'
-                }
+                'step_name': 'step04_regime_data_splitting',
+                'performance_stats': self.async_processor.get_processing_stats() if hasattr(self, 'async_processor') else {}
+            }
 
         except Exception as e:
             self.logger.exception(f'❌ Error in step04_regime_data_splitting execute: {e}')
@@ -673,7 +965,8 @@ class RegimeDataSplittingStep:
                 'step04_regime_data_splitting_completed': False,
                 'step04_regime_data_splitting_failure_reason': f'Exception: {str(e)}',
                 'execution_time': time.time() - self.start_time,
-                'step_name': 'step04_regime_data_splitting'
+                'step_name': 'step04_regime_data_splitting',
+                'performance_stats': self.async_processor.get_processing_stats() if hasattr(self, 'async_processor') else {}
             }
 
     @comprehensive_function_monitor
@@ -709,18 +1002,37 @@ class RegimeDataSplittingStep:
 
         self.logger.info(f'🔀 Creating unified dataset with regime labels for {symbol} on {exchange} ({timeframe})')
         try:
-            # Get utility functions
-            safe_float = self.utils.get_function('common_operations', 'safe_float')
-            safe_int = self.utils.get_function('common_operations', 'safe_int')
-            validate_positive = self.utils.get_function('math_validation', 'validate_positive')
-            validate_range = self.utils.get_function('math_validation', 'validate_range')
-            
-            # Memory checkpoint: Start of data loading
-            if self.m1_optimizations_enabled and self.memory_optimizer:
-                with self.memory_optimizer.memory_checkpoint("data_loading"):
-                    regime_data = await self._load_regime_data(symbol, exchange, timeframe, data_dir)
-            else:
-                regime_data = await self._load_regime_data(symbol, exchange, timeframe, data_dir)
+            # Get utility functions with fallback
+            try:
+                safe_float_func = self.utils.get_function('common_operations', 'safe_float')
+                if safe_float_func is None:
+                    raise AttributeError("safe_float not available from utils")
+            except (AttributeError, KeyError):
+                from src.utils.common_operations import safe_float as safe_float_func
+
+            try:
+                safe_int_func = self.utils.get_function('common_operations', 'safe_int')
+                if safe_int_func is None:
+                    raise AttributeError("safe_int not available from utils")
+            except (AttributeError, KeyError):
+                from src.utils.common_operations import safe_int as safe_int_func
+
+            try:
+                validate_positive_func = self.utils.get_function('math_validation', 'validate_positive')
+                if validate_positive_func is None:
+                    raise AttributeError("validate_positive not available from utils")
+            except (AttributeError, KeyError):
+                from src.utils.math_validation import validate_positive as validate_positive_func
+
+            try:
+                validate_range_func = self.utils.get_function('math_validation', 'validate_range')
+                if validate_range_func is None:
+                    raise AttributeError("validate_range not available from utils")
+            except (AttributeError, KeyError):
+                from src.utils.math_validation import validate_range as validate_range_func
+
+            # Use optimized data loading with async processing and memory management
+            regime_data = await self._load_regime_data_optimized(symbol, exchange, timeframe, data_dir)
 
             if regime_data is None:
                 return RegimeDataResult.failure_result(
@@ -729,24 +1041,33 @@ class RegimeDataSplittingStep:
                     metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
                 )
 
-            # Use data processing utilities for validation
-            data_quality_report = self.utils.get_function('data_processing_utils', 'create_data_quality_report')(regime_data)
+            # Use data processing utilities for validation with fallback
+            try:
+                create_data_quality_report_func = self.utils.get_function('data_processing_utils', 'create_data_quality_report')
+                if create_data_quality_report_func is None:
+                    raise AttributeError("create_data_quality_report not available from utils")
+                data_quality_report = create_data_quality_report_func(regime_data)
+            except (AttributeError, KeyError):
+                # Fallback to direct import from common_utilities
+                from src.utils.common_utilities import create_data_quality_report
+                data_quality_report = create_data_quality_report(regime_data)
+
             if not data_quality_report.get('is_valid', True):
                 self.logger.warning(f'⚠️ Data quality issues detected: {data_quality_report.get("issues", [])}')
 
             # Log memory usage after data loading with utility validation
             if self.m1_optimizations_enabled and self.memory_optimizer:
                 memory_report = self.memory_optimizer.get_memory_report()
-                current_memory = validate_positive(safe_float(memory_report.get("current_mb", 0), 0.0), "current_memory_mb")
+                current_memory = validate_positive_func(safe_float_func(memory_report.get("current_mb", 0), 0.0), "current_memory_mb")
                 self.logger.info(f'💾 Memory after loading: {current_memory:.1f}MB')
             elif PSUTIL_AVAILABLE:
                 current_memory = psutil.Process().memory_info().rss / 1024 / 1024
-                current_memory = validate_positive(safe_float(current_memory, 0.0), "current_memory_mb")
+                current_memory = validate_positive_func(safe_float_func(current_memory, 0.0), "current_memory_mb")
                 self.logger.info(f'💾 Memory after loading: {current_memory:.1f}MB')
 
             regime_ids = regime_data['composite_cluster_id'].unique()
             num_regimes = len(regime_ids)
-            num_regimes = validate_positive(safe_int(num_regimes, 0), "num_regimes")
+            num_regimes = validate_positive_func(safe_int_func(num_regimes, 0), "num_regimes")
             self.logger.info(f'📊 Found {num_regimes} regimes: {sorted(regime_ids)}')
 
             if num_regimes < 3:
@@ -862,6 +1183,169 @@ class RegimeDataSplittingStep:
                 metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe},
                 execution_time = time.time() - step_start
             )
+
+    @comprehensive_function_monitor
+    async def _load_regime_data_optimized(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
+        """Optimized regime data loading with async processing and memory management."""
+        try:
+            unified_data_path = Path(self.standards.build_path('unified_data', exchange, symbol)) / timeframe
+            if not unified_data_path.exists():
+                self.logger.error(f'❌ Unified data path not found: {unified_data_path}')
+                return None
+
+            regime_file = Path(data_dir) / 'hmm_regimes' / f'{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet'
+            if not regime_file.exists():
+                self.logger.error(f'❌ Regime file not found: {regime_file}')
+                return None
+
+            unified_files = list(unified_data_path.glob('**/*.parquet'))
+            if not unified_files:
+                self.logger.error(f'❌ No unified data files found in {unified_data_path}')
+                return None
+
+            # Estimate dataset size for optimization decisions
+            total_estimated_size = self._estimate_dataset_size(unified_files)
+            use_streaming = self.memory_pool.should_use_streaming(total_estimated_size * 1024 * 1024)
+
+            if use_streaming:
+                self.logger.info(f'🧠 Large dataset detected ({total_estimated_size:.1f}MB), using streaming processing')
+                return await self._process_large_dataset_streaming_optimized(unified_files, regime_file)
+            else:
+                self.logger.info(f'📊 Processing dataset normally ({total_estimated_size:.1f}MB)')
+                return await self._process_normal_dataset_optimized(unified_files, regime_file)
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error in optimized regime data loading: {e}')
+            return None
+
+    async def _process_normal_dataset_optimized(self, unified_files: List[Path], regime_file: Path) -> pd.DataFrame:
+        """Process normal-sized datasets with optimized async loading."""
+        # Load and optimize regime data
+        regime_df = self._read_parquet_with_cache(regime_file)
+        regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
+        regime_df = regime_df.sort_values('timestamp')
+        regime_df = self.dtype_optimizer.optimize_dataframe_dtypes(regime_df)
+
+        # Process market data files concurrently
+        async def process_market_file(file_path: Path) -> pd.DataFrame:
+            df = self._read_parquet_with_cache(file_path)
+            df = self.standards.standardize_timestamp(df, 'timestamp')
+            df = self.standards.enforce_schema(df, 'unified')
+            df = df.sort_values('timestamp')
+            df = self.dtype_optimizer.optimize_dataframe_dtypes(df)
+            return df
+
+        # Process files concurrently
+        market_data_frames = await self.async_processor.process_files_concurrent(
+            unified_files,
+            lambda fp: asyncio.run(process_market_file(fp))
+        )
+
+        # Filter out any exceptions and combine data
+        valid_frames = [df for df in market_data_frames if isinstance(df, pd.DataFrame)]
+        if not valid_frames:
+            return pd.DataFrame()
+
+        # Memory-efficient concatenation
+        combined_df = pd.concat(valid_frames, ignore_index=True)
+        combined_df = self.dtype_optimizer.optimize_dataframe_dtypes(combined_df)
+
+        # Merge with regime data using optimized approach
+        merged_df = await self._merge_dataframes_optimized(combined_df, regime_df)
+
+        return merged_df
+
+    async def _process_large_dataset_streaming_optimized(self, unified_files: List[Path], regime_file: Path) -> pd.DataFrame:
+        """Process large datasets with streaming and memory optimization."""
+        # Load and optimize regime data
+        regime_df = self._read_parquet_with_cache(regime_file)
+        regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
+        regime_df = regime_df.sort_values('timestamp')
+        regime_df = self.dtype_optimizer.optimize_dataframe_dtypes(regime_df)
+
+        # Process in smaller chunks to manage memory
+        chunk_size = min(len(unified_files), self.config.get('streaming_chunk_size', 5))
+        all_chunks = []
+
+        for i in range(0, len(unified_files), chunk_size):
+            chunk_files = unified_files[i:i + chunk_size]
+
+            # Process chunk concurrently
+            async def process_chunk_file(file_path: Path) -> pd.DataFrame:
+                df = self._read_parquet_with_cache(file_path)
+                df = self.standards.standardize_timestamp(df, 'timestamp')
+                df = self.standards.enforce_schema(df, 'unified')
+                df = df.sort_values('timestamp')
+                df = self.dtype_optimizer.optimize_dataframe_dtypes(df)
+                return df
+
+            chunk_frames = await self.async_processor.process_files_concurrent(
+                chunk_files,
+                lambda fp: asyncio.run(process_chunk_file(fp))
+            )
+
+            # Filter valid frames and merge with regime data
+            valid_frames = [df for df in chunk_frames if isinstance(df, pd.DataFrame)]
+            if valid_frames:
+                chunk_combined = pd.concat(valid_frames, ignore_index=True)
+                chunk_combined = self.dtype_optimizer.optimize_dataframe_dtypes(chunk_combined)
+                chunk_merged = await self._merge_dataframes_optimized(chunk_combined, regime_df)
+                all_chunks.append(chunk_merged)
+
+            # Force garbage collection between chunks
+            import gc
+            gc.collect()
+
+        if not all_chunks:
+            return pd.DataFrame()
+
+        # Final combination with memory optimization
+        final_df = pd.concat(all_chunks, ignore_index=True)
+        final_df = self.dtype_optimizer.optimize_dataframe_dtypes(final_df)
+
+        return final_df
+
+    async def _merge_dataframes_optimized(self, market_df: pd.DataFrame, regime_df: pd.DataFrame) -> pd.DataFrame:
+        """Optimized dataframe merging with memory management."""
+        use_asof_merge = bool(self.config.get('use_asof_merge', True))
+        merge_tolerance_ms = int(self.config.get('regime_merge_tolerance_ms', 60000))
+
+        # Estimate memory requirements
+        market_memory = self.dtype_optimizer.estimate_memory_usage(market_df)
+        regime_memory = self.dtype_optimizer.estimate_memory_usage(regime_df)
+        estimated_merge_memory = (market_memory + regime_memory) * 1.5  # 50% overhead
+
+        # Check if we can allocate memory for merge
+        can_allocate = await self.memory_pool.allocate_chunk(int(estimated_merge_memory * 1024 * 1024))
+        if not can_allocate:
+            self.logger.warning(f'⚠️ Memory allocation failed for merge ({estimated_merge_memory:.1f}MB), using fallback')
+
+        try:
+            if use_asof_merge:
+                merged_df = pd.merge_asof(
+                    market_df,
+                    regime_df[['timestamp', 'composite_cluster_id']],
+                    on='timestamp',
+                    direction='nearest',
+                    tolerance=pd.Timedelta(milliseconds=merge_tolerance_ms)
+                )
+                merged_df = merged_df.dropna(subset=['composite_cluster_id'])
+            else:
+                merged_df = pd.merge(
+                    market_df,
+                    regime_df[['timestamp', 'composite_cluster_id']],
+                    on='timestamp',
+                    how='inner'
+                )
+
+            # Optimize result data types
+            merged_df = self.dtype_optimizer.optimize_dataframe_dtypes(merged_df)
+
+            return merged_df
+
+        finally:
+            # Release memory
+            await self.memory_pool.release_chunk(int(estimated_merge_memory * 1024 * 1024))
 
     @comprehensive_function_monitor
     async def _load_regime_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
@@ -1045,6 +1529,9 @@ class RegimeDataSplittingStep:
                     self.logger.info(f'💾 Memory after batch {i//chunk_size + 1}: {memory_report.get("current_mb", 0):.1f}MB')
             
             return self._combine_chunks_with_m1_optimizations(all_chunks)
+        except Exception as e:
+            self.logger.exception(f'❌ Error in streaming processing: {e}')
+            return pd.DataFrame()
     
     def _combine_chunks_with_m1_optimizations(self, all_chunks: List[pd.DataFrame]) -> pd.DataFrame:
         """Combine chunks with M1 memory optimizations."""
@@ -1073,7 +1560,7 @@ class RegimeDataSplittingStep:
     ) -> List[pd.DataFrame]:
         """Process a batch of files with M1 optimizations."""
         batch_chunks = []
-        
+
         for file_path in batch_files:
             try:
                 # Load file with memory-efficient reading and metadata caching
@@ -1082,60 +1569,41 @@ class RegimeDataSplittingStep:
                 df = self.standards.enforce_schema(df, 'unified')
                 df = df.sort_values('timestamp')
 
-                        # Perform merge
-                        if use_asof_merge:
-                            try:
-                                merged_chunk = pd.merge_asof(
-                                    df,
-                                    regime_df[['timestamp', 'composite_cluster_id']],
-                                    on='timestamp',
-                                    direction='nearest',
-                                    tolerance=pd.Timedelta(milliseconds=merge_tolerance_ms)
-                                )
-                                merged_chunk = merged_chunk.dropna(subset=['composite_cluster_id'])
-                            except Exception as e:
-                                self.logger.warning(f'⚠️ merge_asof failed for {file_path.name}: {e}; falling back to inner merge')
-                                merged_chunk = pd.merge(df, regime_df[['timestamp', 'composite_cluster_id']], on='timestamp', how='inner')
-                        else:
-                            merged_chunk = pd.merge(df, regime_df[['timestamp', 'composite_cluster_id']], on='timestamp', how='inner')
-
-                        if len(merged_chunk) > 0:
-                            batch_chunks.append(merged_chunk)
-
-                        # Force garbage collection after each file
-                        del df
-                        if PSUTIL_AVAILABLE:
-                            import gc
-                            gc.collect()
-
+                # Perform merge
+                if use_asof_merge:
+                    try:
+                        merged_chunk = pd.merge_asof(
+                            df,
+                            regime_df[['timestamp', 'composite_cluster_id']],
+                            on='timestamp',
+                            direction='nearest',
+                            tolerance=pd.Timedelta(milliseconds=merge_tolerance_ms)
+                        )
+                        merged_chunk = merged_chunk.dropna(subset=['composite_cluster_id'])
                     except Exception as e:
-                        self.logger.error(f'❌ Error processing {file_path.name}: {e}')
-                        continue
+                        self.logger.warning(f'⚠️ merge_asof failed for {file_path.name}: {e}; falling back to inner merge')
+                        merged_chunk = pd.merge(df, regime_df[['timestamp', 'composite_cluster_id']], on='timestamp', how='inner')
+                else:
+                    merged_chunk = pd.merge(df, regime_df[['timestamp', 'composite_cluster_id']], on='timestamp', how='inner')
 
-                # Concatenate batch results
-                if batch_chunks:
-                    batch_result = pd.concat(batch_chunks, ignore_index=True)
-                    all_chunks.append(batch_result)
-                    self.logger.info(f'✅ Processed batch with {len(batch_result)} rows')
+                if len(merged_chunk) > 0:
+                    batch_chunks.append(merged_chunk)
 
-                    # Free memory
-                    del batch_chunks
-                    if PSUTIL_AVAILABLE:
-                        import gc
-                        gc.collect()
+                # Force garbage collection after each file
+                del df
+                if PSUTIL_AVAILABLE:
+                    import gc
+                    gc.collect()
+                # Ensure merged_chunk is valid
+                if 'merged_chunk' not in locals():
+                    continue
 
-            # Final concatenation
-            if all_chunks:
-                final_df = pd.concat(all_chunks, ignore_index=True)
-                self.logger.info(f'🎉 Streaming processing completed: {len(final_df)} total rows')
-                return final_df
-            else:
-                self.logger.warning('⚠️ No data processed in streaming mode')
-                return pd.DataFrame()
+            except Exception as e:
+                self.logger.error(f'❌ Error processing {file_path.name}: {e}')
+                continue
 
-        except Exception as e:
-            self.logger.exception(f'❌ Error in streaming processing: {e}')
-            return pd.DataFrame()
+        # Return batch chunks
+        return batch_chunks
 
     @comprehensive_function_monitor
     def _save_unified_dataset(self, data: pd.DataFrame, training_dir: Path, exchange: str, symbol: str, timeframe: str) -> bool:

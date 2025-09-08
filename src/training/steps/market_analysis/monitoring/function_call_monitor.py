@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Function Call Monitoring System.
 
 This module provides comprehensive function call monitoring and validation.

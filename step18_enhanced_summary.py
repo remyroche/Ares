@@ -33,7 +33,8 @@ def validate_implementation():
 
     # Check syntax compilation
     print("\n🐍 Syntax Validation:")
-    import subprocess
+
+import subprocess
 import pandas as pd
 
     syntax_ok = True

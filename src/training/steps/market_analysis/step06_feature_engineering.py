@@ -2,7 +2,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from pathlib import Path
 from contextlib import nullcontext
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 """
 Step6: Feature Interaction Engineering with Hardware Acceleration

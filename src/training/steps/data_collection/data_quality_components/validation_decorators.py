@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Validation Decorators Component
 from src.utils.logger import system_logger
 Simplified decorators for data validation.

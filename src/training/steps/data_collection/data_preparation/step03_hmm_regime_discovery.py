@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Step 3: HMM Regime Discovery with Comprehensive M1 Optimizations."""
 import asyncio
 import sys

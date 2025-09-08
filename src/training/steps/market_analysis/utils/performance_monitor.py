@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 
 """Performance Monitoring System for Step 7 Enhanced Matrix Operations.

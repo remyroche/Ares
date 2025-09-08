@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Pipeline Orchestrator with Fail-Fast Behavior
 
@@ -19,10 +19,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from src.utils.logger import system_logger
-from .enhanced_error_handling import (
 import logging
 import sys
 
+from .enhanced_error_handling import (
     EnhancedErrorHandler, 
     CriticalProcessError, 
     ErrorSeverity, 

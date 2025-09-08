@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Validator for Step 7: Enhanced Matrix Operations."""
 import json
 from pathlib import Path

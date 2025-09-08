@@ -1,5 +1,5 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Step 3.5: Final Regime Clustering with Advanced Reporting."
 
 This module performs final regime clustering using optimized parameters from step03,
@@ -53,7 +53,7 @@ from src.utils.financial_metrics_logger import get_financial_metrics_logger, fin
 # Comprehensive utility imports with dependency injection
 from src.utils.common_operations import (
     # Core operations
-    safe_mean, safe_std, safe_divide, safe_fillna, safe_rolling,
+    safe_mean, safe_std, safe_fillna, safe_rolling,
     safe_copy, safe_deepcopy, safe_resample, align_dataframes,
     
     # File operations
@@ -152,13 +152,8 @@ from src.utils.m1_cpu_optimizer import (
     optimized_monte_carlo_worker
 )
 
-# Enhanced optimization imports
-from src.utils.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
-
 # Enhanced reporting system removed - using financial metrics logger instead
 ENHANCED_REPORTING_AVAILABLE = False
-from src.utils.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
 from src.utils.vectorized_processing_core import OptimizedPipelineExecutor, PipelineStage, PipelineExecutionMode
 from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations, ErrorHandler
 from src.utils.enhanced_step_optimizations import IntelligentOptimizationSelector, OptimizationStrategy, WorkloadType, OptimizationProfile
@@ -212,7 +207,7 @@ class UtilityDependencyInjector:
             # Core operations
             self._injected_utilities['safe_mean'] = safe_mean
             self._injected_utilities['safe_std'] = safe_std
-            self._injected_utilities['safe_divide'] = safe_divide
+            self._injected_utilities['safe_divide'] = math_safe_divide
             self._injected_utilities['safe_fillna'] = safe_fillna
             self._injected_utilities['safe_rolling'] = safe_rolling
             
@@ -304,7 +299,8 @@ class UtilityDependencyInjector:
             self._injected_utilities['validate_correlation_matrix'] = validate_correlation_matrix
             self._injected_utilities['safe_matrix_inverse'] = safe_matrix_inverse
             self._injected_utilities['math_safe'] = math_safe
-            
+            self._injected_utilities['MathValidationError'] = MathValidationError
+
             self._initialization_status['math_validation'] = True
             self.logger.info("✅ Math validation utilities injected successfully")
             
@@ -444,7 +440,7 @@ class UtilityDependencyInjector:
         # Test key utilities
         test_utilities = [
             ('safe_mean', lambda: safe_mean([1, 2, 3, 4, 5])),
-            ('safe_divide', lambda: safe_divide(10, 2)),
+            ('math_safe_divide', lambda: math_safe_divide(10, 2)),
             ('validate_finite', lambda: validate_finite(42.0)),
             ('get_current_datetime', lambda: get_current_datetime()),
             ('ensure_directory', lambda: ensure_directory('/tmp/test_dir'))
@@ -1175,8 +1171,8 @@ class FinalRegimeClusteringStep:
         context="FinalRegimeClusteringStep.execute",
         default_return=False
     )
-    @log_execution_time
-    @traced
+    @log_execution_time()
+    @traced()
     @monitor_function_calls
     async def execute(self) -> bool:
         """Execute the final regime clustering step with comprehensive utility integration."""
@@ -1396,7 +1392,7 @@ class FinalRegimeClusteringStep:
 
     @retry(max_attempts=3, delay=1.0, backoff=2.0)
     @timeout(seconds=30)
-    @fallback(default_return=None)
+    @fallback(fallback_value=None)
     async def _load_data_with_optimization(self, data_id: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load data using optimized data manager."""
         try:
@@ -1684,7 +1680,7 @@ class FinalRegimeClusteringStep:
         self.logger.info(f"✅ Features prepared with vectorized operations: {len(features.columns)} features")
         return features
     
-    @cached
+    @cached()
     @memoize
     def _calculate_features_vectorized(self, df: pd.DataFrame, params: dict) -> pd.DataFrame:
         """Vectorized feature calculation for 3-5x performance improvement."""
@@ -2930,60 +2926,11 @@ class FinalRegimeClusteringStep:
                         symbol=symbol,
                         exchange=exchange,
                         timeframe=timeframe,
-                        metric_name=f"final_regime_{regime_id}_persistence",
-                        metric_value=regime_metric.get('persistence_score', 0.0),
-                        metric_type="regime",
-                        step_name="Step03_5_Final_Regime_Clustering",
-                        regime_id=str(regime_id)
-                    )
-                    
-                    financial_logger.log_financial_metric(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        metric_name=f"final_regime_{regime_id}_volatility",
-                        metric_value=regime_metric.get('volatility_characteristic', 0.0),
-                        metric_type="risk",
-                        step_name="Step03_5_Final_Regime_Clustering",
-                        regime_id=str(regime_id)
-                    )
-                    
-                    financial_logger.log_financial_metric(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        metric_name=f"final_regime_{regime_id}_trend_strength",
-                        metric_value=regime_metric.get('trend_strength', 0.0),
-                        metric_type="trading",
-                        step_name="Step03_5_Final_Regime_Clustering",
-                        regime_id=str(regime_id)
-                    )
-                    
-                    financial_logger.log_financial_metric(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        metric_name=f"final_regime_{regime_id}_confidence",
-                        metric_value=regime_metric.get('confidence_score', 0.0),
-                        metric_type="regime",
-                        step_name="Step03_5_Final_Regime_Clustering",
-                        regime_id=str(regime_id)
-                    )
-                    
-                    # Note: Sample counts are logged in regular system logs
-                    # Financial metrics logger focuses only on financial/trading metrics
-                    
-                    # Log regime market condition
-                    market_condition = regime_metric.get('market_condition', 'unknown')
-                    financial_logger.log_financial_metric(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        metric_name="final_clustering_param_info",
-                        metric_value=0.0,
+                        metric_name=f"final_clustering_param_{param_name}",
+                        metric_value=param_float,
                         metric_type="clustering",
                         step_name="Step03_5_Final_Regime_Clustering",
-                        additional_data={param_name: str(param_value)}
+                        additional_data={'parameter_name': param_name, 'parameter_value': str(param_value)}
                     )
                 except Exception as e:
                     self.logger.warning(f"Failed to log parameter {param_name}: {e}")
@@ -3496,7 +3443,7 @@ class FinalRegimeClusteringStep:
                 features_df['lower_shadow'] = features_df[['open', 'close']].min(axis=1) - features_df['low']
                 
                 # Safe division for ratios
-                safe_divide_func = self.utilities.get('safe_divide', safe_divide)
+                safe_divide_func = self.utilities.get('safe_divide', math_safe_divide)
                 features_df['body_to_range'] = features_df['body_size'] / (features_df['high'] - features_df['low'])
             
             # Fill any remaining NaN values

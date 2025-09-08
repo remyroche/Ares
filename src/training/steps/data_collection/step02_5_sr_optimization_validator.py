@@ -23,7 +23,7 @@ from src.core.errors import (
 
 # Optional imports
 try:
-    from ..standardized_parquet_handler import standardized_parquet_handler
+    from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
     STANDARDIZED_PARQUET_AVAILABLE = True
 except ImportError:
     standardized_parquet_handler = None

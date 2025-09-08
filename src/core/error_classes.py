@@ -7,9 +7,10 @@ from typing import Any, Dict, Optional, Callable
 import logging
 
 # Import existing error infrastructure
+import datetime
+
 try:
     from .errors.base import AppError as BaseAppError, ErrorCode
-import datetime
 
     # Use existing AppError as base
     AppError = BaseAppError

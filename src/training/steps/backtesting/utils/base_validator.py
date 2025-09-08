@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Base validator class for backtesting pipeline."""
 
 from typing import Dict, Any, Optional

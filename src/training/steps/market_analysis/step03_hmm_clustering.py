@@ -1,7 +1,7 @@
 from typing import Any
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import pandas as pd
 
 'Step 3: Enhanced HMM Regime Discovery with All Improvements.\n\nThis module provides the main interface for enhanced HMM regime discovery with:\n1. Bayesian parameter optimization\n2. Enhanced regime discovery features\n3. Economic significance validation\n4. Ensemble clustering (HMM + K-means + DBSCAN)\n5. Enhanced ML transition detection (Random Forest + LGBM)\n6. Full MLflow integration and data persistence\n7. Standardized pipeline integration\n'

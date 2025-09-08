@@ -924,7 +924,7 @@ class OptimizedDataReadingStep:
             self.logger.info(f'✅ Enhanced data quality validation completed')
             self.logger.info(f"   - Rows: {validation_results['data_info']['rows']}")
             self.logger.info(f"   - Memory usage: {validation_results['data_info']['memory_usage']:.2f} MB")
-            self.logger.info(f'   - Quality score: {validation_results['quality_score']:.2f}')
+            self.logger.info(f"   - Quality score: {validation_results['quality_score']:.2f}")
             self.logger.info(f"   - Issues: {len(validation_results['issues'])}")
             self.logger.info(f"   - Warnings: {len(validation_results['warnings'])}")
             self.logger.info(f"   - Comprehensive validation: {'✅' if comprehensive_validation.is_valid else '❌'}")

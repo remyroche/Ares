@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Training validation configuration and rules.
 
 Defines error thresholds, validation criteria, and step progression rules.

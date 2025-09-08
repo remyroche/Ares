@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Enhanced Validator for Step 2: Data Reading with Comprehensive Function Monitoring.
 
 This module validates the data reading step outputs with comprehensive quality checks

@@ -20,7 +20,7 @@ except ImportError:
     OPTUNA_AVAILABLE = False
 try:
     from .steps.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer, create_regime_specific_triple_barrier_optimizer
-import time
+    import time
 
     REGIME_OPTIMIZER_AVAILABLE = True
 except ImportError:

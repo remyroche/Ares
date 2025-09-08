@@ -5,7 +5,7 @@ import pandas as pd
 
 import pandas as pd
 import pandas as pd
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 
 try:

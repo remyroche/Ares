@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 from src.core.decorators import handles_errors, traced, validates
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 """Step 15: Tactician Specialist Training - Per-Regime Implementation.
 

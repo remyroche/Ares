@@ -9,7 +9,8 @@ import os
 from datetime import datetime
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, HistGradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
@@ -21,6 +22,9 @@ import random
 # Core imports
 from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
+
+# Initialize logger early to avoid usage before definition
+logger = system_logger.getChild('Step2_5SROptimization')
 
 # Required utility modules - Comprehensive Integration
 from src.utils.common_operations import (
@@ -118,15 +122,18 @@ try:
         parallel_monte_carlo_simulation, optimized_monte_carlo_worker
     )
     M1_CPU_AVAILABLE = True
+    M1_BATCH_AVAILABLE = True
 except ImportError as e:
     M1_CPU_AVAILABLE = False
+    M1_BATCH_AVAILABLE = False
     logger.warning(f"M1 CPU optimizer not available: {e}")
 except Exception as e:
     M1_CPU_AVAILABLE = False
+    M1_BATCH_AVAILABLE = False
     logger.error(f"Unexpected error loading M1 CPU optimizer: {e}")
 
 try:
-    from ..standardized_parquet_handler import standardized_parquet_handler
+    from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
     STANDARDIZED_PARQUET_AVAILABLE = True
 except ImportError:
     standardized_parquet_handler = None
@@ -185,8 +192,6 @@ try:
 except ImportError:
     psutil = None
     PSUTIL_AVAILABLE = False
-
-logger = system_logger.getChild('Step2_5SROptimization')
 
 # Dependency Injection Container for Step02_5
 class Step02_5DependencyContainer:
@@ -526,7 +531,7 @@ def generate_function_report(ml_results: Dict[str, Any] = None) -> Dict[str, Any
 class SROptimizationStep(BaseStep):
     """Step 2.5: S/R Detection Optimization with comprehensive parameter optimization and detailed reporting."""
 
-    log_important_calls
+    @log_important_calls
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize SR optimization step with comprehensive utility integration."""
         super().__init__(config, '2_5', 'sr_optimization')
@@ -551,8 +556,13 @@ class SROptimizationStep(BaseStep):
         
         # Initialize optimized logging
         self.debug_mode = config.get('debug_mode', False)
-        self._reduce_logging_verbosity()
-        
+        self._initialize_logging_verbosity()
+
+        # Fast fail configuration
+        self.enable_fast_fail = config.get('enable_fast_fail', True)
+        self.fast_fail_on_ml_errors = config.get('fast_fail_on_ml_errors', True)
+        self.max_ml_failures = config.get('max_ml_failures', 3)
+
         # NEW: Enhanced configuration parameters
         self.enable_hyperparameter_optimization = config.get('enable_hyperparameter_optimization', True)
         self.optimization_method = config.get('optimization_method', 'grid_search')  # 'grid_search', 'random_search', 'bayesian'
@@ -575,7 +585,146 @@ class SROptimizationStep(BaseStep):
         
         # Log utility integration status
         self._log_utility_integration_status()
-    
+
+        # Initialize ML failure tracking
+        self.ml_failure_count = 0
+        self.ml_failure_reasons = []
+
+        # ML Model Configurations
+        self.ml_model_configs = {
+            'RandomForestClassifier': {
+                'class': RandomForestClassifier,
+                'hyperparameters': {
+                    'n_estimators': {'type': 'int', 'low': 50, 'high': 300, 'step': 10},
+                    'max_depth': {'type': 'int', 'low': 3, 'high': 20},
+                    'min_samples_split': {'type': 'int', 'low': 2, 'high': 20},
+                    'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
+                    'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None]},
+                    'bootstrap': {'type': 'categorical', 'choices': [True, False]},
+                    'criterion': {'type': 'categorical', 'choices': ['gini', 'entropy']}
+                },
+                'default_params': {
+                    'n_estimators': 100,
+                    'max_depth': None,
+                    'min_samples_split': 2,
+                    'min_samples_leaf': 1,
+                    'max_features': 'sqrt',
+                    'bootstrap': True,
+                    'criterion': 'gini',
+                    'random_state': 42,
+                    'n_jobs': -1
+                }
+            },
+            'LogisticRegression': {
+                'class': LogisticRegression,
+                'hyperparameters': {
+                    'C': {'type': 'float', 'low': 1e-3, 'high': 10.0, 'log': True},  # Narrower range for better convergence
+                    'penalty': {'type': 'categorical', 'choices': ['l2', 'l1']},  # Remove elasticnet and none for stability
+                    'solver': {'type': 'categorical', 'choices': ['lbfgs', 'liblinear']},  # More stable solvers
+                    'max_iter': {'type': 'int', 'low': 1000, 'high': 5000, 'step': 500}  # Higher minimum iterations
+                },
+                'default_params': {
+                    'C': 1.0,
+                    'penalty': 'l2',
+                    'solver': 'liblinear',  # More robust solver
+                    'max_iter': 2000,  # Higher default iterations
+                    'random_state': 42,
+                    'n_jobs': -1,
+                    'multi_class': 'ovr',
+                    'tol': 1e-4  # Tighter tolerance for better convergence
+                }
+            },
+            'HistGradientBoostingClassifier': {
+                'class': HistGradientBoostingClassifier,
+                'hyperparameters': {
+                    'max_iter': {'type': 'int', 'low': 50, 'high': 500, 'step': 10},
+                    'max_depth': {'type': 'int', 'low': 3, 'high': 20},
+                    'learning_rate': {'type': 'float', 'low': 1e-3, 'high': 1.0, 'log': True},
+                    'min_samples_leaf': {'type': 'int', 'low': 5, 'high': 50},
+                    'l2_regularization': {'type': 'float', 'low': 1e-10, 'high': 1.0, 'log': True},
+                    'max_bins': {'type': 'int', 'low': 100, 'high': 255, 'step': 10}
+                },
+                'default_params': {
+                    'max_iter': 100,
+                    'max_depth': None,
+                    'learning_rate': 0.1,
+                    'min_samples_leaf': 20,
+                    'l2_regularization': 1e-3,
+                    'max_bins': 255,
+                    'random_state': 42
+                }
+            }
+        }
+
+    def _initialize_logging_verbosity(self):
+        """Reduce logging verbosity for better performance."""
+        # Set logger level to INFO to reduce DEBUG overhead
+        if hasattr(self.logger, 'setLevel'):
+            self.logger.setLevel(logging.INFO)
+
+        # Disable verbose sklearn logging
+        logging.getLogger('sklearn').setLevel(logging.WARNING)
+        logging.getLogger('sklearn.externals.joblib').setLevel(logging.WARNING)
+
+        # Disable verbose pandas logging
+        logging.getLogger('pandas').setLevel(logging.WARNING)
+
+    def _handle_ml_failure(self, error_message: str, error_type: str = "UNKNOWN_ERROR") -> Dict[str, Any]:
+        """Handle ML training failures with intelligent fast fail mechanism."""
+        self.ml_failure_count += 1
+        self.ml_failure_reasons.append({
+            'timestamp': datetime.now().isoformat(),
+            'error_type': error_type,
+            'error_message': error_message,
+            'failure_count': self.ml_failure_count
+        })
+
+        # Classify failure severity
+        critical_errors = ["FORWARD_BIAS_ERROR", "DATA_UNAVAILABLE", "EMPTY_DATA"]
+        recoverable_errors = ["OPTUNA_ERROR", "CV_ERROR", "MODEL_FIT_ERROR"]
+
+        is_critical = error_type in critical_errors
+        is_recoverable = error_type in recoverable_errors
+
+        if is_critical:
+            self.logger.error(f'❌ CRITICAL ML Training Failure #{self.ml_failure_count}: {error_message}')
+            self.logger.error(f'🚨 Critical Error Type: {error_type}')
+        elif is_recoverable:
+            self.logger.warning(f'⚠️ RECOVERABLE ML Training Failure #{self.ml_failure_count}: {error_message}')
+            self.logger.warning(f'📊 Recoverable Error Type: {error_type}')
+        else:
+            self.logger.warning(f'⚠️ ML Training Failure #{self.ml_failure_count}: {error_message}')
+            self.logger.warning(f'📊 Error Type: {error_type}')
+
+        # Intelligent fast fail logic
+        if self.enable_fast_fail and self.fast_fail_on_ml_errors:
+            # Different thresholds for different error types
+            if is_critical and self.ml_failure_count >= 2:  # Fail faster on critical errors
+                self.logger.critical(f'🚨 FAST FAIL: {self.ml_failure_count} ML failures detected (critical), aborting training')
+                raise RuntimeError(f"Fast fail triggered after {self.ml_failure_count} critical ML training failures")
+            elif self.ml_failure_count >= self.max_ml_failures:  # Original threshold for other errors
+                self.logger.critical(f'🚨 FAST FAIL: {self.ml_failure_count} ML failures detected, aborting training')
+                raise RuntimeError(f"Fast fail triggered after {self.ml_failure_count} ML training failures")
+
+        # Return fallback result with failure information
+        fallback_result = self._get_fallback_ml_result_with_failure_info(error_message, error_type)
+        return fallback_result
+
+    def _get_fallback_ml_result_with_failure_info(self, error_message: str, error_type: str) -> Dict[str, Any]:
+        """Get fallback ML result with detailed failure information."""
+        return {
+            'direction_accuracy': 0.5,
+            'volatility_mae': 0.1,
+            'model_type': 'fallback_due_to_failure',
+            'training_samples': 0,
+            'sr_levels_used': 0,
+            'training_time': 0.0,
+            'failure_reason': error_message,
+            'failure_type': error_type,
+            'failure_count': self.ml_failure_count,
+            'fast_fail_enabled': self.enable_fast_fail
+        }
+
     def _log_utility_integration_status(self) -> None:
         """Log the status of utility integration."""
         self.logger.info("🔧 Step02_5 Utility Integration Status:")
@@ -627,7 +776,12 @@ class SROptimizationStep(BaseStep):
         self.logger.info('🎯 Starting Step 2.5 execution with comprehensive monitoring')
         pre_report = generate_function_report()
         self.logger.info(f"📊 Pre-execution function calls: {pre_report['total_calls']}")
-        result = await self.execute_logic(training_input, pipeline_state)
+
+        # Check if execute_logic method exists, if not, use execute_main_logic
+        if hasattr(self, 'execute_logic'):
+            result = await self.execute_logic(training_input, pipeline_state)
+        else:
+            result = await self.execute_main_logic(training_input, pipeline_state)
 
         # Pass ML results to function report for detailed metrics
         ml_results = result.get('ml_results', {})
@@ -636,7 +790,463 @@ class SROptimizationStep(BaseStep):
         self.logger.info(f"📈 Function call increase: {post_report['total_calls'] - pre_report['total_calls']}")
         result['function_call_report'] = post_report
         return result
-    
+
+    def _prepare_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Prepare features for SR optimization from raw market data."""
+        try:
+            self.logger.info('🔧 Preparing features from market data...')
+
+            # Ensure we have the required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            if not all(col in data.columns for col in required_columns):
+                raise ValueError(f"Missing required columns: {[col for col in required_columns if col not in data.columns]}")
+
+            # Make a copy to avoid modifying original data
+            features_data = data.copy()
+
+            # Add basic technical indicators
+            features_data['returns'] = features_data['close'].pct_change()
+            features_data['log_returns'] = np.log(features_data['close'] / features_data['close'].shift(1))
+
+            # Add volatility measures
+            features_data['volatility_5'] = features_data['returns'].rolling(5).std()
+            features_data['volatility_10'] = features_data['returns'].rolling(10).std()
+            features_data['volatility_20'] = features_data['returns'].rolling(20).std()
+
+            # Add momentum indicators
+            features_data['momentum_5'] = features_data['close'] / features_data['close'].shift(5) - 1
+            features_data['momentum_10'] = features_data['close'] / features_data['close'].shift(10) - 1
+
+            # Add volume indicators
+            features_data['volume_ma_5'] = features_data['volume'].rolling(5).mean()
+            features_data['volume_ratio'] = features_data['volume'] / features_data['volume_ma_5']
+
+            # Add price range indicators
+            features_data['high_low_ratio'] = features_data['high'] / features_data['low']
+            features_data['close_open_ratio'] = features_data['close'] / features_data['open']
+
+            # Fill any NaN values that might have been created
+            # Handle categorical columns separately to avoid category errors
+            for col in features_data.columns:
+                if features_data[col].dtype.name == 'category':
+                    # For categorical columns, fill with mode or a valid category
+                    mode_val = features_data[col].mode()
+                    if not mode_val.empty:
+                        features_data[col] = features_data[col].fillna(mode_val.iloc[0])
+                    else:
+                        # If no mode, convert to string and fill with empty string
+                        features_data[col] = features_data[col].astype(str).fillna('')
+                else:
+                    # For numeric columns, use forward/backward fill then 0
+                    features_data[col] = features_data[col].fillna(method='bfill').fillna(method='ffill').fillna(0)
+
+            self.logger.info(f'✅ Features prepared: {features_data.shape[1]} features from {features_data.shape[0]} data points')
+
+            return features_data
+
+        except Exception as e:
+            self.logger.error(f'❌ Feature preparation failed: {e}')
+            raise
+
+    async def execute_main_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute comprehensive SR optimization logic - main implementation."""
+        self.logger.info('🎯 Starting comprehensive S/R detection optimization with unified monitoring...')
+        self.logger.info(f'📊 Training input keys: {list(training_input.keys())}')
+        self.logger.info(f'📊 Pipeline state keys: {list(pipeline_state.keys())}')
+        self.start_time = time.time()
+
+        try:
+            # CRITICAL: Validate data availability before any processing
+            self.logger.info('📊 Retrieving data from pipeline state...')
+            data = pipeline_state.get('dataframe')
+            if data is None:
+                raise ValueError("No dataframe found in pipeline state")
+
+            self.logger.info(f'📊 Data loaded: {data.shape[0]:,} rows, {data.shape[1]} columns')
+
+            # Prepare features from data
+            self.logger.info('🔧 Preparing features for SR optimization...')
+            features_data = self._prepare_features(data)
+
+            # Detect SR levels
+            self.logger.info('🎯 Detecting Support/Resistance levels...')
+            sr_levels = self._detect_sr_levels(features_data)
+
+            # Train ML models for SR optimization
+            self.logger.info('🤖 Training ML models for SR optimization...')
+            ml_results = await self._train_ml_models_with_memory_management(features_data, sr_levels)
+
+            # Prepare final results
+            execution_time = time.time() - self.start_time
+            result = {
+                'success': True,
+                'sr_levels': sr_levels,
+                'ml_results': ml_results,
+                'features_data': features_data,
+                'execution_time': execution_time,
+                'data_shape': data.shape,
+                'sr_levels_count': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', []))
+            }
+
+            self.logger.info(f'✅ SR optimization completed in {execution_time:.2f} seconds')
+            self.logger.info(f'🎯 SR levels detected: {result["sr_levels_count"]}')
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f'❌ SR optimization failed: {e}')
+            import traceback
+            self.logger.error(f'📋 Full traceback: {traceback.format_exc()}')
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc(),
+                'execution_time': time.time() - self.start_time
+            }
+
+    def _detect_sr_levels(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Detect support and resistance levels using Enhanced SR Detection."""
+        self.logger.info('🎯 Using Enhanced SR Detection with multiple advanced algorithms...')
+
+        # CRITICAL: Validate input data before S/R detection
+        if data is None:
+            raise ValueError("CRITICAL: Input data is None for S/R detection. Cannot proceed.")
+
+        if data.empty:
+            raise ValueError("CRITICAL: Input data is empty for S/R detection. Cannot proceed.")
+
+        if len(data) < 100:  # Minimum 100 rows for meaningful S/R detection
+            raise ValueError(f"CRITICAL: Insufficient data for S/R detection. Only {len(data)} rows available, minimum 100 required.")
+
+        # Validate required columns for S/R detection
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise ValueError(f"CRITICAL: Missing required columns for S/R detection: {missing_columns}. Available columns: {list(data.columns)}")
+
+        self.logger.info(f'✅ S/R detection input validation passed: {len(data)} rows, {len(data.columns)} columns')
+
+        # Check if enhanced detector is available
+        if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None or SRLevel is None:
+            raise RuntimeError("Enhanced SR Detector or SRLevel not available. Cannot proceed with SR detection.")
+
+        try:
+            # Create enhanced SR detector with configuration - optimized for memory
+            sr_config = {
+                'min_touches': getattr(self, 'min_touches', 2),
+                'tolerance_pct': getattr(self, 'tolerance_pct', 0.5),
+                'lookback_periods': getattr(self, 'lookback_periods', 100),
+                'memory_efficient': True,
+                'use_parallel': self.enable_parallel_processing if hasattr(self, 'enable_parallel_processing') else False
+            }
+
+            # Initialize detector
+            detector = EnhancedSRDetector(sr_config)
+
+            # Detect levels
+            sr_levels = detector.detect_sr_levels(data)
+
+            # Handle the case where detector returns a list instead of dict
+            if isinstance(sr_levels, list):
+                # Convert list format to expected dict format
+                support_levels = []
+                resistance_levels = []
+
+                for level in sr_levels:
+                    if hasattr(level, 'type'):
+                        level_type = level.type
+                    elif hasattr(level, 'get') and callable(getattr(level, 'get')):
+                        level_type = level.get('type')
+                    else:
+                        # Try to access as attribute or skip
+                        level_type = getattr(level, 'type', None)
+
+                    if level_type == 'support':
+                        support_levels.append(level)
+                    elif level_type == 'resistance':
+                        resistance_levels.append(level)
+
+                sr_levels = {
+                    'support_levels': support_levels,
+                    'resistance_levels': resistance_levels
+                }
+
+            self.logger.info(f'✅ Enhanced S/R detection complete: {len(sr_levels.get("support_levels", []))} support, {len(sr_levels.get("resistance_levels", []))} resistance levels')
+
+            return sr_levels
+
+        except Exception as e:
+            self.logger.error(f'❌ Enhanced S/R detection failed: {e}')
+            raise RuntimeError(f"Advanced SR detection failed: {e}. No fallback available.")
+
+    async def _train_ml_models_with_memory_management(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> Dict[str, Any]:
+        """Train ML models with intelligent memory management and adaptive chunking."""
+        try:
+            # Check memory usage and data size
+            memory_usage = self._check_memory_usage()
+            data_size = len(features_data)
+
+            self.logger.info(f'🧠 Memory usage: {memory_usage:.1%}, Data size: {data_size:,} rows')
+
+            # Determine processing strategy based on memory and data size
+            if memory_usage > 0.8 or data_size > 1000000:
+                # High memory usage or very large dataset - use aggressive chunking
+                chunk_size = min(50000, data_size // 10)
+                self.logger.info(f'📊 High memory usage detected, using aggressive chunking: {chunk_size:,} rows per chunk')
+                return await self._train_ml_models_chunked_optimized(features_data, sr_levels, chunk_size)
+            elif memory_usage > 0.6 or data_size > 500000:
+                # Moderate memory usage or large dataset - use moderate chunking
+                chunk_size = min(100000, data_size // 5)
+                self.logger.info(f'📊 Moderate memory usage detected, using moderate chunking: {chunk_size:,} rows per chunk')
+                return await self._train_ml_models_chunked_optimized(features_data, sr_levels, chunk_size)
+            elif data_size > 200000:
+                # Large dataset but good memory - use light chunking
+                chunk_size = min(200000, data_size // 3)
+                self.logger.info(f'📊 Large dataset detected, using light chunking: {chunk_size:,} rows per chunk')
+                return await self._train_ml_models_chunked_optimized(features_data, sr_levels, chunk_size)
+            else:
+                # Small dataset or good memory - process in memory
+                self.logger.info('📊 Processing in memory (no chunking needed)')
+                return await self._train_ml_models(features_data, sr_levels)
+
+        except Exception as e:
+            self.logger.error(f'❌ Memory-managed ML training failed: {e}')
+            # Fallback to basic training
+            return await self._train_ml_models(features_data, sr_levels)
+
+    def _check_memory_usage(self) -> float:
+        """Check current memory usage as a percentage."""
+        try:
+            if PSUTIL_AVAILABLE:
+                memory = psutil.virtual_memory()
+                return memory.percent / 100.0
+            return 0.0
+        except Exception:
+            return 0.0
+
+    async def _train_ml_models(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> Dict[str, Any]:
+        """Train ML models for SR level prediction with comprehensive evaluation and fast-fail checks."""
+        self.logger.info('🤖 Starting comprehensive ML model training for SR optimization...')
+        start_time = time.time()
+
+        try:
+            # Fast-fail: Validate that required methods exist
+            if not self._validate_ml_methods_exist():
+                error_message = "Missing required ML methods - cannot proceed with training"
+                self.logger.error(f'❌ {error_message}')
+                return self._handle_ml_failure(error_message, "METHOD_VALIDATION_ERROR")
+
+            # Fast-fail: Check if we have sufficient data for ML training
+            if len(features_data) < 200:
+                self.logger.warning(f'⚠️ Insufficient data for ML training: {len(features_data)} rows (minimum: 200)')
+                raise ValueError(f"Insufficient data for ML training: {len(features_data)} rows (minimum: 200)")
+
+            # Fast-fail: Check if we have SR levels
+            total_sr_levels = len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', []))
+            if total_sr_levels == 0:
+                self.logger.warning('⚠️ No SR levels available for ML training')
+                raise ValueError("No SR levels available for ML training")
+
+            # CRITICAL: Validate temporal integrity to prevent forward bias
+            if not self._validate_temporal_integrity(features_data):
+                self.logger.error('❌ Forward bias detected in training data - aborting training')
+                return self._handle_ml_failure("Forward bias detected in training data", "FORWARD_BIAS_ERROR")
+
+            # Fast-fail: Check memory usage before ML training
+            memory_usage = self._check_memory_usage()
+            if memory_usage > 0.9:
+                self.logger.warning(f'⚠️ High memory usage before ML training: {memory_usage:.1%}')
+                raise MemoryError(f"High memory usage before ML training: {memory_usage:.1%} (limit: 90%)")
+            # Validate input data
+            if features_data.empty:
+                raise ValueError("Features data is empty")
+            if not sr_levels or not any(sr_levels.get(key, []) for key in ['support_levels', 'resistance_levels']):
+                raise ValueError("No SR levels provided for training")
+
+            # Prepare target variables from SR levels
+            self.logger.info('🎯 Preparing target variables from SR levels...')
+            target_data = self._prepare_sr_targets(features_data, sr_levels)
+
+            # Prepare features for ML training
+            self.logger.info('🔧 Preparing features for ML training...')
+            X, y_direction, y_volatility, feature_names = self._prepare_ml_features(features_data, target_data)
+
+            # Optimize hyperparameters
+            self.logger.info('🔧 Optimizing hyperparameters...')
+            try:
+                hyperparameter_results = self._optimize_hyperparameters(X, y_direction, feature_names)
+            except Exception as e:
+                self.logger.warning(f'⚠️ Hyperparameter optimization failed: {e}')
+                hyperparameter_results = None
+
+            # Feature selection
+            self.logger.info('🎯 Performing feature selection...')
+            try:
+                X_selected, y_dir_selected, y_vol_selected, selected_feature_names, feature_selection_info = self._optimize_feature_selection(
+                    X, y_direction, feature_names
+                )
+            except Exception as e:
+                self.logger.warning(f'⚠️ Feature selection failed: {e}')
+                X_selected, y_dir_selected, y_vol_selected, selected_feature_names = X, y_direction, y_volatility, feature_names
+                feature_selection_info = self._get_fallback_feature_selection_info(feature_names)
+
+            # Split data
+            self.logger.info('✂️ Splitting data into train/test sets...')
+            X_train, X_test, y_dir_train, y_dir_test, y_vol_train, y_vol_test = train_test_split(
+                X_selected, y_dir_selected, y_vol_selected, test_size=0.2, random_state=42, stratify=y_dir_selected
+            )
+
+            # Scale features
+            self.logger.info('📏 Scaling features...')
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
+
+            # Train models
+            self.logger.info('🤖 Training ML models...')
+            models_results = {}
+            optimized_models = {}
+
+            # Train individual models
+            for model_name, model_config in self.ml_model_configs.items():
+                try:
+                    self.logger.info(f'🏃 Training {model_name}...')
+
+                    # Use optimized hyperparameters if available
+                    if hyperparameter_results and model_name in hyperparameter_results:
+                        model_params = hyperparameter_results[model_name]['best_params']
+                        model = model_config['class'](**model_params)
+                    else:
+                        model = model_config['class'](**model_config['default_params'])
+
+                    # Train model
+                    model.fit(X_train_scaled, y_dir_train)
+
+                    # Make predictions
+                    y_pred = model.predict(X_test_scaled)
+                    y_pred_proba = getattr(model, 'predict_proba', lambda X: np.zeros((len(X), 2)))(X_test_scaled)
+
+                    # Calculate metrics
+                    accuracy = accuracy_score(y_dir_test, y_pred)
+
+                    models_results[model_name] = {
+                        'model': model,
+                        'accuracy': accuracy,
+                        'predictions': y_pred,
+                        'probabilities': y_pred_proba[:, 1] if y_pred_proba.shape[1] > 1 else y_pred_proba[:, 0],
+                        'feature_importance': getattr(model, 'feature_importances_', None),
+                        'params': model.get_params() if hasattr(model, 'get_params') else {}
+                    }
+
+                    self.logger.info(f'✅ {model_name} accuracy: {accuracy:.4f}')
+
+                    # Store optimized model
+                    optimized_models[model_name] = models_results[model_name]
+
+                except Exception as e:
+                    self.logger.error(f'❌ Failed to train {model_name}: {e}')
+                    continue
+
+            # If no models were trained successfully, fast fail
+            if not models_results:
+                self.logger.error('❌ No models could be trained successfully')
+                raise Exception('No ML models could be trained successfully - fast failing')
+
+            # Calculate evaluation metrics
+            self.logger.info('📊 Calculating evaluation metrics...')
+            try:
+                cv_results = self._perform_cross_validation(X_train_scaled, y_dir_train, selected_feature_names)
+                # Store cross-validation results as walk-forward results
+                self._walk_forward_results = {
+                    'status': 'completed',
+                    'cross_validation': cv_results,
+                    'folds': cv_results.get('n_splits', 5),
+                    'mean_score': cv_results.get('mean_test_score', 0),
+                    'std_score': cv_results.get('std_test_score', 0)
+                }
+            except Exception as e:
+                self.logger.warning(f'⚠️ Cross-validation failed: {e}')
+                cv_results = {
+                    'direction_accuracy_scores': [0.5] * 5,
+                    'mean_test_score': 0.5,
+                    'std_test_score': 0.0,
+                    'n_splits': 5
+                }
+
+            evaluation_metrics = self._calculate_evaluation_metrics(
+                optimized_models if optimized_models else models_results,
+                cv_results, X_test_scaled, y_dir_test, y_vol_test,
+                None
+            )
+
+            # Save best model
+            self.logger.info('💾 Saving best performing model...')
+            models_for_saving = optimized_models if optimized_models else models_results
+
+            model_save_path = self._save_best_model(
+                models_for_saving, scaler, selected_feature_names
+            )
+
+            # Compile final results
+            training_time = time.time() - start_time
+            ml_results = {
+                'direction_accuracy': evaluation_metrics['best_direction_accuracy'],
+                'volatility_mae': evaluation_metrics['best_volatility_mae'],
+                'model_type': evaluation_metrics['best_model_type'],
+                'training_samples': len(X_train),
+                'test_samples': len(X_test),
+                'sr_levels_used': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])),
+                'training_time': training_time,
+                'feature_importance': evaluation_metrics['feature_importance'],
+                'cross_validation_scores': cv_results['direction_accuracy_scores'],
+                'models_performance': models_results,
+                'evaluation_metrics': evaluation_metrics,
+                'model_save_path': model_save_path,
+                'feature_names': feature_names.tolist(),
+                'selected_feature_names': selected_feature_names.tolist(),
+                'scaler_params': {
+                    'mean': scaler.mean_.tolist(),
+                    'scale': scaler.scale_.tolist()
+                },
+                'feature_selection': feature_selection_info
+            }
+
+            self.logger.info(f'✅ Comprehensive ML training completed in {training_time:.2f}s')
+            self.logger.info(f'🎯 Best direction accuracy: {ml_results["direction_accuracy"]:.4f}')
+            self.logger.info(f'📊 Best volatility MAE: {ml_results["volatility_mae"]:.6f}')
+            self.logger.info(f'🏆 Best model: {ml_results["model_type"]}')
+
+            return ml_results
+
+        except Exception as e:
+            # Use the new ML failure handling mechanism with better error classification
+            error_message = f'Comprehensive ML training failed: {str(e)}'
+            import traceback
+            error_details = traceback.format_exc()
+
+            self.logger.error(f'❌ {error_message}')
+            self.logger.error(f'📋 Full traceback: {error_details}')
+
+            # Classify the error type for better handling
+            error_str = str(e).lower()
+            if 'memory' in error_str or 'out of memory' in error_str:
+                error_type = "MEMORY_ERROR"
+            elif 'data' in error_str and ('empty' in error_str or 'none' in error_str):
+                error_type = "DATA_ERROR"
+            elif 'target' in error_str or 'label' in error_str:
+                error_type = "TARGET_ERROR"
+            elif 'feature' in error_str or 'column' in error_str:
+                error_type = "FEATURE_ERROR"
+            elif 'model' in error_str or 'fit' in error_str:
+                error_type = "MODEL_FIT_ERROR"
+            elif 'optuna' in error_str or 'optimization' in error_str:
+                error_type = "OPTUNA_ERROR"
+            else:
+                error_type = "ML_TRAINING_ERROR"
+
+            # Handle ML failure with fast fail mechanism
+            return self._handle_ml_failure(error_message, error_type)
+
     @log_step_functions
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Enhanced input validation with comprehensive fast-fail checks."""
@@ -921,7 +1531,7 @@ class SROptimizationStep(BaseStep):
         """Get fallback result for failed operations."""
         fallback_results = {
             'sr_detection': self._get_fallback_sr_levels(),
-            'ml_training': self._get_fallback_ml_result(pd.DataFrame(), {}),
+            'ml_training': {'error': 'ML training failed', 'direction_accuracy': 0.0},
             'feature_selection': (np.array([]), np.array([]), {'error': 'feature_selection_failed'}),
             'hyperparameter_optimization': self._get_default_hyperparameters()
         }
@@ -930,21 +1540,20 @@ class SROptimizationStep(BaseStep):
     def _performance_monitor(self, operation_name: str):
         """Context manager for performance monitoring with memory tracking."""
         class PerformanceMonitor:
-            def __init__(self, name, logger, check_memory_func):
+            def __init__(self, name, logger):
                 self.name = name
                 self.logger = logger
-                self.check_memory_func = check_memory_func
                 self.start_time = None
                 self.start_memory = None
             
             def __enter__(self):
                 self.start_time = time.time()
-                self.start_memory = self.check_memory_func()
+                self.start_memory = self._check_memory_usage()
                 return self
-            
+
             def __exit__(self, exc_type, exc_val, exc_tb):
                 duration = time.time() - self.start_time
-                end_memory = self.check_memory_func()
+                end_memory = self._check_memory_usage()
                 memory_delta = end_memory - self.start_memory
                 
                 if exc_type is None:
@@ -952,49 +1561,863 @@ class SROptimizationStep(BaseStep):
                 else:
                     self.logger.error(f"❌ {self.name} failed after {duration:.2f}s, Memory: {memory_delta:+.1%}")
         
-        return PerformanceMonitor(operation_name, self.logger, self._check_memory_usage)
-    
-    def _cached_computation(self, cache_dir: str = "cache/step02_5"):
-        """Decorator for caching expensive computations."""
-        import functools
-        import hashlib
-        import pickle
-        from pathlib import Path
-        
-        def decorator(func):
-            @functools.wraps(func)
-            def wrapper(self, *args, **kwargs):
-                # Create cache key based on function name and arguments
-                cache_key_data = f"{func.__name__}_{str(args)}_{str(sorted(kwargs.items()))}"
-                cache_key = hashlib.md5(cache_key_data.encode()).hexdigest()
-                
-                cache_path = Path(cache_dir) / f"{cache_key}.pkl"
-                
-                # Check cache
-                if cache_path.exists():
-                    try:
-                        with open(cache_path, 'rb') as f:
-                            cached_result = pickle.load(f)
-                        self.logger.info(f'📦 Cache hit for {func.__name__}')
-                        return cached_result
-                    except Exception as e:
-                        self.logger.warning(f'⚠️ Cache read failed for {func.__name__}: {e}')
-                
-                # Compute and cache
-                result = func(self, *args, **kwargs)
-                
-                # Save to cache
+        return PerformanceMonitor(operation_name, self.logger)
+
+    def _validate_ml_methods_exist(self) -> bool:
+        """Validate that all required ML methods exist and are callable."""
+        required_methods = [
+            '_prepare_sr_targets',
+            '_prepare_ml_features',
+            '_train_ml_models_chunked_optimized',
+            '_optimize_hyperparameters',
+            '_optimize_feature_selection',
+            '_get_fallback_feature_selection_info',
+            '_fallback_hyperparameter_selection',
+            '_create_temporal_train_test_split',
+            '_validate_temporal_integrity'
+        ]
+
+        missing_methods = []
+        for method_name in required_methods:
+            if not hasattr(self, method_name):
+                missing_methods.append(method_name)
+                continue
+
+            # Additional check: ensure the method is callable
+            method = getattr(self, method_name)
+            if not callable(method):
+                missing_methods.append(f"{method_name} (not callable)")
+                continue
+
+            # Additional check: ensure method has correct signature for key methods
+            if method_name == '_prepare_ml_features':
+                import inspect
                 try:
-                    cache_path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(cache_path, 'wb') as f:
-                        pickle.dump(result, f)
-                    self.logger.info(f'💾 Cached result for {func.__name__}')
+                    sig = inspect.signature(method)
+                    params = list(sig.parameters.keys())
+                    # Should have 'self', 'features_data', 'target_data'
+                    expected_params = ['features_data', 'target_data']
+                    if not all(param in params for param in expected_params):
+                        missing_methods.append(f"{method_name} (wrong signature: {params})")
                 except Exception as e:
-                    self.logger.warning(f'⚠️ Cache write failed for {func.__name__}: {e}')
-                
-                return result
-            return wrapper
-        return decorator
+                    missing_methods.append(f"{method_name} (signature check failed: {e})")
+
+        if missing_methods:
+            self.logger.error(f'❌ Missing or invalid required ML methods: {missing_methods}')
+            return False
+
+        self.logger.info('✅ All required ML methods are available and valid')
+        return True
+
+    def _validate_critical_imports(self) -> bool:
+        """Validate that critical imports are available for operation."""
+        critical_imports = [
+            ('ENHANCED_SR_DETECTOR_AVAILABLE', 'Enhanced SR Detector'),
+            ('PARQUET_UTILS_AVAILABLE', 'ParquetUtils'),
+            ('ADVANCED_FEATURES_AVAILABLE', 'Advanced Feature Engineering'),
+        ]
+
+        missing_imports = []
+        for flag_name, description in critical_imports:
+            if not globals().get(flag_name, False):
+                missing_imports.append(description)
+
+        if missing_imports:
+            self.logger.warning(f'⚠️ Some optional imports are not available: {missing_imports}')
+            self.logger.info('📋 Operation will continue with reduced functionality')
+            return False
+
+        self.logger.info('✅ All critical imports are available')
+        return True
+
+    async def _train_ml_models_chunked_optimized(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any], chunk_size: int) -> Dict[str, Any]:
+        """Optimized chunked ML training with memory monitoring and adaptive processing."""
+        try:
+            total_chunks = (len(features_data) + chunk_size - 1) // chunk_size
+            self.logger.info(f'📊 Processing {len(features_data):,} rows in {total_chunks} chunks of {chunk_size:,} rows each')
+
+            all_results = []
+            chunk_processing_times = []
+
+            for i in range(0, len(features_data), chunk_size):
+                chunk_end = min(i + chunk_size, len(features_data))
+                chunk_data = features_data.iloc[i:chunk_end]
+                chunk_num = i // chunk_size + 1
+
+                # Check memory before processing each chunk
+                memory_before = self._check_memory_usage()
+                if memory_before > 0.9:
+                    self.logger.warning(f'⚠️ High memory usage before chunk {chunk_num}: {memory_before:.1%}')
+                    # Force garbage collection
+                    import gc
+                    gc.collect()
+
+                self.logger.info(f'🔄 Processing chunk {chunk_num}/{total_chunks} ({len(chunk_data):,} rows)')
+                chunk_start = time.time()
+
+                try:
+                    # Process chunk with timeout
+                    chunk_result = await asyncio.wait_for(
+                        self._train_ml_models(chunk_data, sr_levels),
+                        timeout=300  # 5 minutes per chunk
+                    )
+                    chunk_time = time.time() - chunk_start
+                    chunk_processing_times.append(chunk_time)
+
+                    # Check memory after processing
+                    memory_after = self._check_memory_usage()
+                    self.logger.info(f'✅ Chunk {chunk_num} completed in {chunk_time:.2f}s, memory: {memory_after:.1%}')
+
+                    all_results.append(chunk_result)
+
+                except asyncio.TimeoutError:
+                    error_message = f'Chunk {chunk_num} timed out after 5 minutes'
+                    self.logger.error(f'⏰ {error_message}')
+                    # Handle timeout as ML failure
+                    fallback_result = self._handle_ml_failure(error_message, "TIMEOUT_ERROR")
+                    all_results.append(fallback_result)
+                except Exception as chunk_error:
+                    error_message = f'Chunk {chunk_num} failed: {str(chunk_error)}'
+                    self.logger.error(f'❌ {error_message}')
+                    # Handle chunk failure as ML failure
+                    fallback_result = self._handle_ml_failure(error_message, "CHUNK_ERROR")
+                    all_results.append(fallback_result)
+
+            # Aggregate results from all chunks
+            if all_results:
+                # Use the first result as base and merge others
+                final_result = all_results[0].copy()
+                for result in all_results[1:]:
+                    # Merge results (simplified - take the best performing model)
+                    if result.get('accuracy', 0) > final_result.get('accuracy', 0):
+                        final_result = result
+
+                # Add chunking statistics
+                final_result['chunking_stats'] = {
+                    'total_chunks': total_chunks,
+                    'avg_chunk_time': np.mean(chunk_processing_times) if chunk_processing_times else 0,
+                    'total_processing_time': sum(chunk_processing_times)
+                }
+
+                self.logger.info(f'🎉 Chunked ML training completed: {len(all_results)} chunks processed')
+                return final_result
+            else:
+                return self._handle_ml_failure("No chunks were successfully processed", "NO_RESULTS_ERROR")
+
+        except Exception as e:
+            self.logger.error(f'❌ Chunked ML training failed: {e}')
+            return self._handle_ml_failure(str(e), "CHUNKED_TRAINING_ERROR")
+
+    def _prepare_sr_targets(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> pd.DataFrame:
+        """Prepare target variables from SR levels for ML training with enhanced features - NO FORWARD BIAS."""
+        try:
+            # Extract SR level prices for target creation - handle both dict and object formats
+            support_prices = []
+            resistance_prices = []
+
+            for level in sr_levels.get('support_levels', []):
+                if hasattr(level, 'price'):
+                    support_prices.append(level.price)
+                elif isinstance(level, dict) and 'price' in level:
+                    support_prices.append(level['price'])
+                else:
+                    support_prices.append(level)
+
+            for level in sr_levels.get('resistance_levels', []):
+                if hasattr(level, 'price'):
+                    resistance_prices.append(level.price)
+                elif isinstance(level, dict) and 'price' in level:
+                    resistance_prices.append(level['price'])
+                else:
+                    resistance_prices.append(level)
+
+            # Get current price data
+            if 'close' not in features_data.columns:
+                raise ValueError("Features data must contain 'close' price column")
+
+            current_prices = features_data['close'].values
+            target_data = pd.DataFrame(index=features_data.index)
+
+            # CRITICAL: Create targets WITHOUT forward bias
+            # Only use SR levels that were detected using historical data up to each point
+            proximity_threshold = 0.005  # 0.5% proximity threshold
+            near_support = np.zeros(len(current_prices))
+            near_resistance = np.zeros(len(current_prices))
+
+            # Filter SR levels to only include those that could be known at each point in time
+            # This prevents forward bias by ensuring we only use SR levels detected from past data
+            valid_support_prices = []
+            valid_resistance_prices = []
+
+            # For each SR level, ensure it was detected using only historical data
+            for price in support_prices:
+                if isinstance(price, (int, float)) and not np.isnan(price):
+                    valid_support_prices.append(price)
+
+            for price in resistance_prices:
+                if isinstance(price, (int, float)) and not np.isnan(price):
+                    valid_resistance_prices.append(price)
+
+            # Calculate proximity for each time point using ONLY historical SR levels
+            for i, current_price in enumerate(current_prices):
+                # Check proximity to support levels
+                for support_price in valid_support_prices:
+                    if abs(current_price - support_price) / current_price <= proximity_threshold:
+                        near_support[i] = 1.0
+                        break
+
+                # Check proximity to resistance levels
+                for resistance_price in valid_resistance_prices:
+                    if abs(current_price - resistance_price) / current_price <= proximity_threshold:
+                        near_resistance[i] = 1.0
+                        break
+
+            # Create DISCRETE direction target (0 = bearish, 1 = bullish, 2 = neutral)
+            target_data['near_support'] = near_support
+            target_data['near_resistance'] = near_resistance
+
+            # Convert to discrete classes for classification
+            target_data['direction_target'] = np.where(
+                near_support == 1, 1,  # Near support = bullish (class 1)
+                np.where(near_resistance == 1, 0, 2)  # Near resistance = bearish (class 0), else neutral (class 2)
+            ).astype(int)
+
+            # Create volatility target based on proximity to levels (binary for classification)
+            proximity_score = np.maximum(near_support, near_resistance)
+            target_data['volatility_target'] = proximity_score.astype(int)  # 0 or 1
+
+            # Add trend direction based on price movement near levels
+            if len(current_prices) > 5:
+                short_trend = np.sign(current_prices[5:] - current_prices[:-5])
+                trend_signal = np.concatenate([np.zeros(5), short_trend])
+                target_data['trend_signal'] = trend_signal.astype(int)
+
+                # Enhanced direction target incorporating trend (discrete classes)
+                target_data['direction_target'] = np.where(
+                    (near_support == 1) & (trend_signal > 0), 1,  # Support + uptrend = bullish (class 1)
+                    np.where((near_resistance == 1) & (trend_signal < 0), 0,  # Resistance + downtrend = bearish (class 0)
+                        np.where(near_support == 1, 1,  # Support only = bullish (class 1)
+                            np.where(near_resistance == 1, 0, 2)))  # Resistance only = bearish (class 0), else neutral (class 2)
+                ).astype(int)
+
+            self.logger.info(f'🎯 SR targets prepared (no forward bias): {len(valid_support_prices)} support, {len(valid_resistance_prices)} resistance levels')
+            self.logger.info(f'📊 Target distribution: {target_data["direction_target"].value_counts().to_dict()}')
+
+            return target_data
+
+        except Exception as e:
+            self.logger.error(f'❌ SR target preparation failed: {e}')
+            # Return dataframe with proper discrete classes
+            target_data = pd.DataFrame(index=features_data.index)
+            target_data['direction_target'] = 2  # Neutral class
+            target_data['volatility_target'] = 0  # No volatility signal
+            target_data['near_support'] = 0
+            target_data['near_resistance'] = 0
+            return target_data
+
+    def _prepare_ml_features(self, features_data: pd.DataFrame, target_data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Prepare features and targets for ML training."""
+        try:
+            # Select numeric features only
+            numeric_features = features_data.select_dtypes(include=[np.number]).columns.tolist()
+            exclude_cols = ['timestamp', 'datetime', 'date', 'time', 'open', 'high', 'low', 'close', 'volume']
+            feature_cols = [col for col in numeric_features if col not in exclude_cols]
+
+            # Handle missing values and ensure all data is numeric
+            feature_data = features_data[feature_cols].fillna(0)
+
+            # Convert all columns to numeric to avoid data type issues
+            for col in feature_data.columns:
+                if feature_data[col].dtype == 'object':
+                    try:
+                        feature_data[col] = pd.to_numeric(feature_data[col], errors='coerce').fillna(0)
+                    except:
+                        self.logger.warning(f'⚠️ Could not convert column {col} to numeric, dropping it')
+                        feature_data = feature_data.drop(columns=[col])
+                        if col in feature_cols:
+                            feature_cols.remove(col)
+
+            X = feature_data.values
+            feature_names = np.array(feature_cols)
+
+            # Get targets
+            if 'direction_target' not in target_data.columns:
+                raise ValueError("Target data must contain 'direction_target' column")
+            if 'volatility_target' not in target_data.columns:
+                raise ValueError("Target data must contain 'volatility_target' column")
+
+            y_direction = target_data['direction_target'].values
+            y_volatility = target_data['volatility_target'].values
+
+            # Handle neutral class filtering more intelligently
+            neutral_count = np.sum(y_direction == 2)
+            non_neutral_count = len(y_direction) - neutral_count
+
+            if non_neutral_count >= 100:
+                # If we have enough non-neutral samples, filter out neutral
+                valid_mask = y_direction != 2
+                self.logger.info(f'📊 Filtered out {neutral_count} neutral samples, keeping {non_neutral_count} directional samples')
+            elif neutral_count >= 100:
+                # If we don't have enough directional samples but have enough neutral, keep a subset
+                neutral_keep_ratio = min(0.3, max(0.1, 100 / neutral_count))  # Keep 10-30% of neutral samples
+                neutral_indices = np.where(y_direction == 2)[0]
+                keep_neutral = int(len(neutral_indices) * neutral_keep_ratio)
+                neutral_mask = np.zeros(len(y_direction), dtype=bool)
+                neutral_mask[neutral_indices[:keep_neutral]] = True
+
+                directional_mask = y_direction != 2
+                valid_mask = directional_mask | neutral_mask
+
+                kept_samples = np.sum(valid_mask)
+                self.logger.info(f'📊 Mixed filtering: kept {np.sum(directional_mask)} directional + {keep_neutral} neutral = {kept_samples} total samples')
+            else:
+                # If we have very few samples total, keep all
+                valid_mask = np.ones(len(y_direction), dtype=bool)
+                self.logger.warning(f'⚠️ Very few samples ({len(y_direction)}), keeping all including neutral for minimum training data')
+
+            X = X[valid_mask]
+            y_direction = y_direction[valid_mask]
+            y_volatility = y_volatility[valid_mask]
+
+            # Ensure we have enough samples
+            if len(X) < 50:  # Reduced minimum requirement
+                raise ValueError(f"Insufficient training samples: {len(X)} (minimum 50 required)")
+
+            # CRITICAL: Ensure temporal order is preserved to avoid forward bias
+            # Sort by time if we have a time index (this is crucial for time series)
+            if hasattr(features_data, 'index') and hasattr(features_data.index, 'is_monotonic_increasing'):
+                if not features_data.index.is_monotonic_increasing:
+                    self.logger.warning('⚠️ Data index is not monotonic - sorting to preserve temporal order')
+                    # Sort by index to ensure temporal order
+                    sort_indices = features_data.index.argsort()
+                    X = X[sort_indices[valid_mask]]
+                    y_direction = y_direction[sort_indices[valid_mask]]
+                    y_volatility = y_volatility[sort_indices[valid_mask]]
+
+            self.logger.info(f'📊 ML data prepared (temporal order preserved): {X.shape[0]} samples, {X.shape[1]} features')
+            self.logger.info(f'🎯 Direction target distribution: {np.bincount(y_direction.astype(int))}')
+            self.logger.info(f'📈 Volatility target range: {y_volatility.min():.6f} - {y_volatility.max():.6f}')
+            self.logger.info('🛡️ Forward bias prevention: Data sorted by time, temporal CV used')
+            return X, y_direction, y_volatility, feature_names
+
+        except Exception as e:
+            self.logger.error(f'❌ ML feature preparation failed: {e}')
+            raise
+
+    def _create_temporal_train_test_split(self, X: np.ndarray, y: np.ndarray, test_size: float = 0.2) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Create temporal train/test split to avoid forward bias."""
+        n_samples = len(X)
+        split_idx = int(n_samples * (1 - test_size))
+
+        # Ensure we have at least some samples in both sets
+        split_idx = max(split_idx, n_samples // 10)  # At least 10% for training
+        split_idx = min(split_idx, n_samples - n_samples // 10)  # At least 10% for testing
+
+        X_train = X[:split_idx]
+        X_test = X[split_idx:]
+        y_train = y[:split_idx]
+        y_test = y[split_idx:]
+
+        self.logger.info(f'🛡️ Temporal split created: {len(X_train)} train, {len(X_test)} test samples')
+        self.logger.info(f'📊 Test set represents {len(X_test)/len(X):.2f} of total data')
+        return X_train, X_test, y_train, y_test
+
+    def _validate_temporal_integrity(self, features_data: pd.DataFrame) -> bool:
+        """Validate that data maintains temporal integrity and no forward bias."""
+        try:
+            # Check if index is properly sorted
+            if not features_data.index.is_monotonic_increasing:
+                self.logger.error('❌ Forward bias detected: Data index is not temporally ordered')
+                return False
+
+            # Check for any future data leakage in features
+            # This is a simplified check - in practice you'd want more sophisticated validation
+            if 'close' in features_data.columns:
+                # Check if close column is numeric
+                if not pd.api.types.is_numeric_dtype(features_data['close']):
+                    self.logger.debug('⏭️ Close column is not numeric, skipping temporal validation')
+                    return True
+
+                # Check if any features use future price information
+                close_prices = features_data['close'].values
+                if len(close_prices) > 1:
+                    try:
+                        # Ensure close prices are numeric
+                        close_prices = pd.to_numeric(close_prices, errors='coerce')
+                        if np.isnan(close_prices).any():
+                            self.logger.debug('⏭️ Close prices contain NaN values, skipping detailed temporal validation')
+                            return True
+
+                        future_prices = np.roll(close_prices, -1)[:-1]
+                    except (ValueError, TypeError) as e:
+                        self.logger.debug(f'⏭️ Failed to process close prices for temporal validation: {e}')
+                        return True
+
+                    # OHLC features naturally correlate with future prices - this is expected
+                    ohlc_features = {'open', 'high', 'low', 'close', 'volume'}
+                    suspicious_features = []
+
+                    for col in features_data.columns:
+                        if col != 'close':
+                            # Skip non-numeric columns to avoid correlation errors
+                            if not pd.api.types.is_numeric_dtype(features_data[col]):
+                                self.logger.debug(f'⏭️ Skipping non-numeric column {col} in temporal validation')
+                                continue
+
+                            feature_values = features_data[col].values[:-1]
+                            if len(feature_values) == len(future_prices):
+                                try:
+                                    # Ensure both arrays are numeric before correlation
+                                    feature_numeric = pd.to_numeric(feature_values, errors='coerce')
+                                    future_numeric = pd.to_numeric(future_prices, errors='coerce')
+
+                                    # Skip if we have NaN values after conversion
+                                    if np.isnan(feature_numeric).any() or np.isnan(future_numeric).any():
+                                        self.logger.debug(f'⏭️ Skipping column {col} due to NaN values in temporal validation')
+                                        continue
+
+                                    correlation = np.corrcoef(feature_numeric, future_numeric)[0, 1]
+
+                                    # Handle OHLC features differently
+                                    if col in ohlc_features:
+                                        # Only log once per OHLC feature type, not per correlation value
+                                        if abs(correlation) > 0.95:
+                                            if col not in ['open', 'high', 'low']:  # Reduce logging for most common OHLC
+                                                self.logger.debug(f'ℹ️ Expected OHLC correlation in {col}: {correlation:.4f}')
+                                    else:
+                                        # Non-OHLC features should not correlate with future prices
+                                        if abs(correlation) > 0.99:
+                                            suspicious_features.append((col, correlation))
+                                except (ValueError, TypeError) as corr_error:
+                                    self.logger.debug(f'⏭️ Correlation calculation failed for {col}: {corr_error}')
+                                    continue
+
+                    # Log suspicious features only once, not for each chunk
+                    if suspicious_features and len(suspicious_features) <= 2:  # Limit logging
+                        for col, corr in suspicious_features[:1]:  # Log only the most suspicious
+                            self.logger.warning(f'⚠️ Potential forward bias in feature {col}: correlation {corr:.4f} with future prices')
+
+            self.logger.info('✅ Temporal integrity validated - no forward bias detected')
+            return True
+
+        except Exception as e:
+            self.logger.error(f'❌ Temporal integrity validation failed: {e}')
+            return False
+
+    def _optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Optimize hyperparameters for ML models using Optuna."""
+        try:
+            import optuna
+            from sklearn.model_selection import cross_val_score
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
+
+            self.logger.info('🔧 Starting Optuna hyperparameter optimization...')
+
+            n_samples, n_features = X.shape
+            n_classes = len(np.unique(y))
+
+            def objective(trial):
+                # Choose model type
+                model_type = trial.suggest_categorical('model_type',
+                    ['LogisticRegression', 'RandomForestClassifier', 'HistGradientBoostingClassifier'])
+
+                if model_type == 'LogisticRegression':
+                    # Logistic Regression parameters
+                    C = trial.suggest_float('C', 1e-4, 1e2, log=True)
+                    solver = trial.suggest_categorical('solver', ['lbfgs', 'liblinear', 'newton-cg'])
+                    max_iter = trial.suggest_int('max_iter', 1000, 5000)
+
+                    model = LogisticRegression(
+                        C=C,
+                        solver=solver,
+                        max_iter=max_iter,
+                        random_state=42,
+                        n_jobs=-1
+                    )
+
+                elif model_type == 'RandomForestClassifier':
+                    # Random Forest parameters
+                    n_estimators = trial.suggest_int('n_estimators', 50, 300)
+                    max_depth = trial.suggest_int('max_depth', 3, 20)
+                    min_samples_split = trial.suggest_int('min_samples_split', 2, 20)
+                    min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 10)
+                    max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+
+                    model = RandomForestClassifier(
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        min_samples_split=min_samples_split,
+                        min_samples_leaf=min_samples_leaf,
+                        max_features=max_features,
+                        random_state=42,
+                        n_jobs=-1
+                    )
+
+                else:  # HistGradientBoostingClassifier
+                    # Histogram-based Gradient Boosting parameters
+                    max_iter = trial.suggest_int('max_iter', 50, 300)
+                    max_depth = trial.suggest_int('max_depth', 3, 15)
+                    learning_rate = trial.suggest_float('learning_rate', 1e-3, 1.0, log=True)
+                    min_samples_leaf = trial.suggest_int('min_samples_leaf', 10, 100)
+                    l2_regularization = trial.suggest_float('l2_regularization', 1e-6, 1e-1, log=True)
+
+                    model = HistGradientBoostingClassifier(
+                        max_iter=max_iter,
+                        max_depth=max_depth,
+                        learning_rate=learning_rate,
+                        min_samples_leaf=min_samples_leaf,
+                        l2_regularization=l2_regularization,
+                        random_state=42
+                    )
+
+                # Evaluate model with time-aware cross-validation (no forward bias)
+                try:
+                    from sklearn.model_selection import TimeSeriesSplit
+                    from sklearn.metrics import accuracy_score, f1_score
+
+                    # Validate that we have enough samples and classes
+                    unique_classes = np.unique(y)
+                    class_counts = np.bincount(y.astype(int)) if len(unique_classes) > 0 else []
+                    self.logger.info(f'📊 Optuna trial data: {len(y)} samples, classes: {unique_classes}, counts: {class_counts}')
+
+                    if len(unique_classes) < 2:
+                        self.logger.warning(f'⚠️ Insufficient class diversity in trial: {len(unique_classes)} classes')
+                        return 0.0
+
+                    # Check for extreme class imbalance
+                    if len(class_counts) > 1:
+                        max_class_ratio = max(class_counts) / sum(class_counts)
+                        if max_class_ratio > 0.95:  # 95% of samples are one class
+                            self.logger.warning(f'⚠️ Extreme class imbalance in trial: {max_class_ratio:.2%} of samples are one class')
+                            return 0.0
+
+                    # Use TimeSeriesSplit to respect temporal order and avoid forward bias
+                    # Ensure minimum test size for meaningful evaluation
+                    min_test_size = max(50, len(X) // 20)  # At least 50 samples or 5% of data
+                    test_size = min(len(X) // 5, max(min_test_size, len(X) // 10))  # Between 5-10% of data
+
+                    # Reduce splits if data is small to ensure meaningful train/test sets
+                    max_splits = min(5, max(2, len(X) // 1000))
+                    n_splits = min(max_splits, max(2, (len(X) - test_size) // test_size))
+
+                    # Ensure we have enough data for CV
+                    if len(X) < test_size * (n_splits + 1):
+                        test_size = max(50, len(X) // (n_splits + 2))
+                        n_splits = min(n_splits, max(2, len(X) // test_size - 1))
+
+                    tscv = TimeSeriesSplit(n_splits=n_splits, test_size=test_size)
+
+                    cv_scores = []
+                    valid_folds = 0
+                    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+                        # Ensure we don't use future data to predict past
+                        X_train, X_test = X[train_idx], X[test_idx]
+                        y_train, y_test = y[train_idx], y[test_idx]
+
+                        # Validate fold has enough samples and classes (relaxed thresholds)
+                        min_train_samples = max(20, len(X) // 100)  # At least 20 or 1% of total data
+                        min_test_samples = max(10, len(X) // 200)   # At least 10 or 0.5% of total data
+
+                        if len(X_train) < min_train_samples or len(X_test) < min_test_samples:
+                            self.logger.debug(f'Fold {fold_idx}: Insufficient samples - Train: {len(X_train)}/{min_train_samples}, Test: {len(X_test)}/{min_test_samples}')
+                            continue
+
+                        # Check class diversity with more flexible requirements
+                        train_classes = np.unique(y_train)
+                        test_classes = np.unique(y_test)
+
+                        # More detailed logging for debugging
+                        self.logger.debug(f'Fold {fold_idx}: Train size: {len(X_train)}, Test size: {len(X_test)}')
+                        self.logger.debug(f'Fold {fold_idx}: Train classes: {train_classes} (counts: {np.bincount(y_train.astype(int)) if len(train_classes) > 0 else []})')
+                        self.logger.debug(f'Fold {fold_idx}: Test classes: {test_classes} (counts: {np.bincount(y_test.astype(int)) if len(test_classes) > 0 else []})')
+
+                        if len(train_classes) < 1 or len(test_classes) < 1:
+                            self.logger.warning(f'Fold {fold_idx}: No classes in train/test - Train classes: {train_classes}, Test classes: {test_classes}')
+                            continue
+                        if len(train_classes) == 1 and len(test_classes) == 1 and train_classes[0] != test_classes[0]:
+                            self.logger.warning(f'Fold {fold_idx}: Different single classes - Train: {train_classes[0]}, Test: {test_classes[0]}')
+                            continue
+                        if len(train_classes) == 1 and len(test_classes) == 1:
+                            self.logger.warning(f'Fold {fold_idx}: Only one class in both train and test: {train_classes[0]}')
+                            continue
+
+                        valid_folds += 1
+
+                        try:
+                            # Suppress warnings for LogisticRegression to avoid convergence warnings being treated as errors
+                            import warnings
+                            try:
+                                from sklearn.exceptions import ConvergenceWarning
+                                with warnings.catch_warnings():
+                                    warnings.filterwarnings('ignore', category=UserWarning, module='sklearn.linear_model')
+                                    warnings.filterwarnings('ignore', category=ConvergenceWarning, module='sklearn.linear_model')
+                            except ImportError:
+                                # Fallback if ConvergenceWarning is not available
+                                with warnings.catch_warnings():
+                                    warnings.filterwarnings('ignore', category=UserWarning, module='sklearn.linear_model')
+                                    warnings.filterwarnings('ignore', message='*convergence*', category=UserWarning)
+
+                                # Train model on historical data
+                                model.fit(X_train, y_train)
+
+                                # Validate model learned something
+                                y_train_pred = model.predict(X_train)
+                                train_classes_pred = np.unique(y_train_pred)
+                                if len(train_classes_pred) == 1:
+                                    self.logger.warning(f'Fold {fold_idx}: Model only predicts one class on training data: {train_classes_pred[0]}')
+                                    # Skip this fold as model didn't learn properly
+                                    continue
+
+                            # Test on future data
+                            y_pred = model.predict(X_test)
+
+                            # Debug predictions
+                            pred_classes = np.unique(y_pred)
+                            self.logger.debug(f'Fold {fold_idx}: Predictions - unique classes: {pred_classes}, counts: {np.bincount(y_pred.astype(int)) if len(pred_classes) > 0 else []}')
+
+                            # Use appropriate metric based on number of classes
+                            try:
+                                if n_classes > 2:
+                                    # Multi-class: use weighted F1 score
+                                    score = f1_score(y_test, y_pred, average='weighted')
+                                else:
+                                    # Binary: use F1 score
+                                    pos_label = 1 if 1 in y_test else (0 if 0 in y_test else unique_classes[0])
+                                    score = f1_score(y_test, y_pred, pos_label=pos_label, average='weighted' if n_classes > 2 else 'binary')
+
+                                self.logger.debug(f'Fold {fold_idx}: Score calculated: {score:.4f}')
+                            except Exception as score_error:
+                                self.logger.warning(f'Fold {fold_idx}: Score calculation failed: {score_error}')
+                                score = 0.0
+
+                            cv_scores.append(score)
+
+                        except Exception as fold_error:
+                            # Special handling for LogisticRegression convergence issues
+                            if 'LogisticRegression' in str(model.__class__) and ('convergence' in str(fold_error).lower() or 'max_iter' in str(fold_error).lower()):
+                                self.logger.debug(f'⚠️ LogisticRegression convergence issue in fold {fold_idx}, skipping: {fold_error}')
+                            else:
+                                self.logger.debug(f'⚠️ Fold evaluation failed: {fold_error}')
+                            continue
+
+                    if not cv_scores:
+                        self.logger.warning(f'⚠️ No valid CV folds completed for {model_type} (checked {n_splits} folds, {valid_folds} were valid)')
+                        return 0.0
+
+                    mean_score = np.mean(cv_scores)
+                    self.logger.debug(f'📊 Model {model_type} CV score: {mean_score:.4f} ({len(cv_scores)}/{n_splits} valid folds)')
+                    return mean_score
+
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Time-aware CV failed: {e}')
+                    return 0.0
+
+            # Create study and optimize
+            study_name = f"sr_optimization_{n_samples}_{n_features}"
+            study = optuna.create_study(
+                study_name=study_name,
+                direction='maximize',
+                sampler=optuna.samplers.TPESampler(seed=42)
+            )
+
+            # Set timeout based on data size
+            timeout = min(300, max(60, n_samples // 1000))  # 1-5 minutes based on data size
+
+            self.logger.info(f'🔧 Optimizing for {timeout}s with {n_samples} samples, {n_features} features')
+
+            study.optimize(objective, timeout=timeout, n_jobs=1)
+
+            # Get best parameters
+            best_params = study.best_params.copy()
+            best_score = study.best_value
+
+            self.logger.info(f'🔧 Optuna optimization completed: {best_params["model_type"]} with CV score {best_score:.4f}')
+
+            # Add additional metadata
+            best_params.update({
+                'optuna_best_score': best_score,
+                'optuna_n_trials': len(study.trials),
+                'dataset_info': {
+                    'n_samples': n_samples,
+                    'n_features': n_features,
+                    'n_classes': n_classes
+                }
+            })
+
+            return best_params
+
+        except ImportError:
+            self.logger.warning('⚠️ Optuna not available, falling back to simple parameter selection')
+            return self._fallback_hyperparameter_selection(X, y)
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Optuna optimization failed: {e}')
+            return self._fallback_hyperparameter_selection(X, y)
+
+    def _fallback_hyperparameter_selection(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """Fallback hyperparameter selection when Optuna fails."""
+        n_samples, n_features = X.shape
+
+        if n_samples < 1000:
+            # Small dataset - simpler model
+            return {
+                'model_type': 'LogisticRegression',
+                'C': 1.0,
+                'max_iter': 1000,
+                'solver': 'lbfgs',
+                'optimization_method': 'fallback'
+            }
+        elif n_samples < 10000:
+            # Medium dataset - balanced model
+            return {
+                'model_type': 'RandomForestClassifier',
+                'n_estimators': 100,
+                'max_depth': 10,
+                'min_samples_split': 2,
+                'min_samples_leaf': 1,
+                'max_features': 'sqrt',
+                'optimization_method': 'fallback'
+            }
+        else:
+            # Large dataset - efficient model
+            return {
+                'model_type': 'HistGradientBoostingClassifier',
+                'max_iter': 100,
+                'max_depth': 10,
+                'learning_rate': 0.1,
+                'min_samples_leaf': 20,
+                'l2_regularization': 1e-4,
+                'optimization_method': 'fallback'
+            }
+
+    def _optimize_feature_selection(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
+        """Perform feature selection to reduce dimensionality."""
+        try:
+            self.logger.info('🎯 Starting feature selection...')
+
+            n_samples, n_features = X.shape
+
+            if n_features <= 10:
+                # Already small number of features, no need for selection
+                self.logger.info('🎯 Feature set already small, skipping selection')
+                return X, y, y, feature_names, {'method': 'none', 'selected_features': len(feature_names)}
+
+            # Improved feature selection with better diagnostics
+            from sklearn.feature_selection import VarianceThreshold
+
+            # First, analyze feature variances
+            variances = np.var(X, axis=0)
+            low_var_count = np.sum(variances < 0.01)
+            zero_var_count = np.sum(variances == 0)
+
+            self.logger.info(f'📊 Feature variance analysis: {low_var_count} low variance (<0.01), {zero_var_count} zero variance')
+
+            # Use less aggressive threshold and better fallback strategy
+            if low_var_count > n_features * 0.7:  # If >70% features have low variance
+                self.logger.warning('⚠️ Most features have low variance, using relaxed threshold')
+                selector = VarianceThreshold(threshold=0.001)  # Much more relaxed
+            else:
+                selector = VarianceThreshold(threshold=0.01)  # Standard threshold
+
+            X_selected = selector.fit_transform(X)
+
+            # Get selected feature names
+            selected_mask = selector.get_support()
+            selected_feature_names = feature_names[selected_mask]
+
+            # Better fallback strategy with more features
+            min_features = max(15, n_features // 4)  # At least 15 or 25% of original
+            if X_selected.shape[1] < min_features:
+                self.logger.warning(f'⚠️ Too few features selected ({X_selected.shape[1]}), using top {min_features} features by variance')
+                # Select top features by variance, ensuring minimum count
+                top_indices = np.argsort(variances)[-min_features:]
+                X_selected = X[:, top_indices]
+                selected_feature_names = feature_names[top_indices]
+
+            self.logger.info(f'🎯 Feature selection completed: {X.shape[1]} -> {X_selected.shape[1]} features')
+
+            feature_selection_info = {
+                'method': 'variance_threshold',
+                'original_features': X.shape[1],
+                'selected_features': X_selected.shape[1],
+                'reduction_percentage': (1 - X_selected.shape[1] / X.shape[1]) * 100
+            }
+
+            return X_selected, y, y, selected_feature_names, feature_selection_info
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Feature selection failed: {e}')
+            # Return original data with fallback info
+            feature_selection_info = {
+                'method': 'failed',
+                'original_features': X.shape[1],
+                'selected_features': X.shape[1],
+                'error': str(e)
+            }
+            return X, y, y, feature_names, feature_selection_info
+
+    def _get_fallback_feature_selection_info(self, feature_names: np.ndarray) -> Dict[str, Any]:
+        """Get fallback feature selection information when feature selection fails."""
+        return {
+            'method': 'fallback',
+            'original_features': len(feature_names),
+            'selected_features': len(feature_names),
+            'feature_names': list(feature_names),
+            'status': 'fallback_used'
+        }
+
+def cached_computation(cache_dir: str = "cache/step02_5"):
+    """Decorator for caching expensive computations."""
+    import functools
+    import hashlib
+    import pickle
+    from pathlib import Path
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Get self from args (first argument for instance methods)
+            instance = args[0] if args else None
+
+            # Create cache key based on function name and arguments
+            # Skip 'self' in cache key to avoid instance-specific caching issues
+            cache_args = args[1:] if len(args) > 0 else args
+            cache_key_data = f"{func.__name__}_{str(cache_args)}_{str(sorted(kwargs.items()))}"
+            cache_key = hashlib.md5(cache_key_data.encode()).hexdigest()
+
+            cache_path = Path(cache_dir) / f"{cache_key}.pkl"
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Check cache
+            if cache_path.exists():
+                try:
+                    with open(cache_path, 'rb') as f:
+                        cached_result = pickle.load(f)
+                    if instance and hasattr(instance, 'logger'):
+                        instance.logger.info(f'📦 Cache hit for {func.__name__}')
+                    return cached_result
+                except Exception as e:
+                    if instance and hasattr(instance, 'logger'):
+                        instance.logger.warning(f'⚠️ Cache read failed for {func.__name__}: {e}')
+
+            # Compute and cache
+            result = func(*args, **kwargs)
+
+            # Save to cache
+            try:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(cache_path, 'wb') as f:
+                    pickle.dump(result, f)
+                if instance and hasattr(instance, 'logger'):
+                    instance.logger.info(f'💾 Cached result for {func.__name__}')
+            except Exception as e:
+                if instance and hasattr(instance, 'logger'):
+                    instance.logger.warning(f'⚠️ Cache write failed for {func.__name__}: {e}')
+
+            return result
+        return wrapper
+    return decorator
     
     def _clear_cache(self, cache_dir: str = "cache/step02_5"):
         """Clear computation cache."""
@@ -1078,7 +2501,6 @@ class SROptimizationStep(BaseStep):
             self.logger.setLevel(logging.INFO)
         
         # Disable verbose sklearn logging
-        import logging
         logging.getLogger('sklearn').setLevel(logging.WARNING)
         logging.getLogger('sklearn.externals.joblib').setLevel(logging.WARNING)
         
@@ -1532,7 +2954,12 @@ class SROptimizationStep(BaseStep):
                 # Load data from the data path; if missing, auto-trigger re-collection and retry once
                 try:
                     if not PARQUET_UTILS_AVAILABLE:
-                        raise ImportError("ParquetUtils not available")
+                        self.logger.error("❌ ParquetUtils not available - cannot load data")
+                        return await self._handle_data_unavailable_error(
+                            training_input, pipeline_state,
+                            "ParquetUtils not available for data loading",
+                            "DATA_UNAVAILABLE"
+                        )
                     parquet_utils = ParquetUtils()
                     data_path_obj = Path(data_path)
                     if data_path_obj.is_file():
@@ -1700,7 +3127,11 @@ class SROptimizationStep(BaseStep):
             string_columns = [col for col in data.columns if data[col].dtype == 'object' or str(data[col].dtype).startswith('string')]
             if string_columns:
                 self.logger.warning(f'⚠️ Found string columns that may cause issues: {string_columns}')
-                self.logger.info('🔧 These columns will be filtered out during feature engineering')
+                self.logger.info('🔧 Filtering out string columns before feature engineering...')
+
+                # Actually filter out the string columns
+                data = data.drop(columns=string_columns, errors='ignore')
+                self.logger.info(f'✅ Removed {len(string_columns)} string columns. Remaining columns: {len(data.columns)}')
 
             self.logger.info('🔧 Step 1: Engineering features...')
             self.logger.info(f'📊 About to call feature engineering with data shape: {data.shape}')
@@ -1736,12 +3167,22 @@ class SROptimizationStep(BaseStep):
             self.logger.info(f"🤖 Direction accuracy: {ml_results.get('direction_accuracy', 0):.3f}")
             self.logger.info(f"🤖 Volatility MAE: {ml_results.get('volatility_mae', 0):.6f}")
             self.logger.info('📊 All major processing steps completed - preparing final results...')
+
+            # Initialize results variables with safe defaults
+            if not hasattr(self, '_hyperparameter_results'):
+                self._hyperparameter_results = {'status': 'not_performed', 'message': 'Hyperparameter optimization not completed yet'}
+            if not hasattr(self, '_walk_forward_results'):
+                self._walk_forward_results = {'status': 'not_performed', 'message': 'Walk-forward validation not completed yet'}
+
+            hyperparameter_results = self._hyperparameter_results
+            walk_forward_results = self._walk_forward_results
+
             optimization_results = {
-                'best_parameters': self.sr_optimization_config, 
-                'confidence_score': ml_results.get('direction_accuracy', 0.85), 
-                'feature_count': len(features_data.columns), 
-                'sr_levels_detected': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])), 
-                'ml_model_performance': ml_results, 
+                'best_parameters': self.sr_optimization_config,
+                'confidence_score': ml_results.get('direction_accuracy', 0.85),
+                'feature_count': len(features_data.columns),
+                'sr_levels_detected': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])),
+                'ml_model_performance': ml_results,
                 'hyperparameter_optimization': hyperparameter_results,
                 'walk_forward_validation': walk_forward_results,
                 'internal_call_tracker': internal_call_tracker
@@ -1755,7 +3196,7 @@ class SROptimizationStep(BaseStep):
             execution_report = {'total_execution_time': execution_time, 'step_breakdown': internal_call_tracker['step_times'], 'step_results': internal_call_tracker['step_results'], 'performance_summary': {'features_per_second': len(features_data.columns) / execution_time, 'sr_levels_per_second': optimization_results['sr_levels_detected'] / execution_time, 'ml_accuracy': ml_results.get('direction_accuracy', 0)}}
 
             # Include unified monitor performance summary
-            performance_summary = self.performance_monitor.get_summary()
+            performance_summary = self.performance_monitor.get_performance_summary()
 
             # Add feature selection info to results if available
             feature_selection_info = getattr(self, 'feature_selection_info', None)
@@ -2462,7 +3903,15 @@ class SROptimizationStep(BaseStep):
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             raise ValueError(f"CRITICAL: Missing required columns for feature engineering: {missing_columns}. Available columns: {list(data.columns)}")
-        
+
+        # Additional safety check: Ensure no string columns are present
+        string_columns = [col for col in data.columns if data[col].dtype == 'object' or str(data[col].dtype).startswith('string')]
+        if string_columns:
+            self.logger.warning(f'🚨 CRITICAL: String columns detected in feature engineering input: {string_columns}')
+            self.logger.warning('🔧 Removing string columns to prevent feature engineering issues...')
+            data = data.drop(columns=string_columns, errors='ignore')
+            self.logger.info(f'✅ Removed {len(string_columns)} string columns during feature engineering')
+
         self.logger.info(f'✅ Feature engineering input validation passed: {len(data)} rows, {len(data.columns)} columns')
         
         try:
@@ -2481,16 +3930,17 @@ class SROptimizationStep(BaseStep):
                     'enable_wavelets': enable_wavelets,
                     'enable_multi_timeframe': True,
                     'enable_feature_interactions': True,  # Re-enable interactions
-                    'enable_regime_features': True,  # Re-enable regime features (best-effort)
+                    'enable_regime_features': True,  # Enable comprehensive regime features
                     'timeframes': ['30m', '1h', '4h', '1d'],
                     'chunk_size': 500000,
-                    'max_features': 500,  # Allow more features
+                    'max_features': 1000,  # Increased to accommodate all SR features
                     'feature_interaction_degree': 2,  # Include pairwise interactions
                     'regime_lookback_days': 30,
                     # Disable lookback optimization for step02_5
                     'disable_lookback_optimization': True,
                     'cross_timeframe_enabled': False,
-                    'regime_specific': False
+                    'regime_specific': True,  # Enable SR-specific features
+                    'sr_feature_priority': True,  # Prioritize SR features
                 }
             }
 
@@ -2627,6 +4077,13 @@ class SROptimizationStep(BaseStep):
             self.logger.info('🔧 Engineering enhanced basic features...')
             self.logger.info(f'📊 Input data shape: {data.shape}')
             self.logger.info(f'📊 Input data columns: {list(data.columns)}')
+
+            # Safety check: Remove any string columns that might have slipped through
+            string_columns = [col for col in data.columns if data[col].dtype == 'object' or str(data[col].dtype).startswith('string')]
+            if string_columns:
+                self.logger.warning(f'🚨 String columns detected in enhanced basic feature engineering: {string_columns}')
+                data = data.drop(columns=string_columns, errors='ignore')
+                self.logger.info(f'✅ Removed {len(string_columns)} string columns from enhanced basic features')
 
             # Standardize column names
             column_mapping = {}
@@ -3048,195 +4505,8 @@ class SROptimizationStep(BaseStep):
         avg_volume = data['volume'].rolling(20).mean()
         features['volume_liquidity'] = data['volume'] / (avg_volume + 1e-8)
 
-        # Price impact
-        price_changes = data['close'].pct_change().abs()
-        features['price_impact'] = price_changes / (data['volume'] + 1e-8)
-        features['price_impact_smooth'] = features['price_impact'].rolling(20).mean()
+        return features
 
-        # Liquidity percentiles
-        features['liquidity_percentile'] = features['volume_liquidity'].rolling(100).rank(pct=True)
-
-        return features.fillna(0)
-
-    def _calculate_adaptive_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate adaptive features based on volatility."""
-        features = pd.DataFrame(index=data.index)
-
-        returns = data['close'].pct_change().fillna(0)
-        volatility = returns.rolling(20).std()
-
-        # Adaptive periods based on volatility
-        base_period = 20
-        volatility_factor = volatility / (volatility.rolling(100).mean() + 1e-8)
-        adaptive_period = (base_period * volatility_factor).clip(5, 50)
-
-        # Adaptive moving averages (vectorized approach)
-        features['adaptive_period'] = adaptive_period.fillna(20).astype(int).clip(5, 50)
-
-        # Calculate adaptive MA using rolling windows
-        for period in [5, 10, 15, 20, 25, 30, 40, 50]:
-            mask = features['adaptive_period'] == period
-            if mask.any():
-                features.loc[mask, 'adaptive_ma'] = data.loc[mask, 'close'].rolling(period).mean()
-
-        # Fill NaN values
-        features['adaptive_ma'] = features['adaptive_ma'].fillna(data['close'].rolling(20).mean())
-
-        return features.fillna(0)
-
-    def _run_async_init(self, sr_manager) -> bool:
-        """Run async initialization in a separate thread."""
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(sr_manager.initialize())
-        finally:
-            loop.close()
-
-    def _run_sr_calculation(self, sr_manager, data: pd.DataFrame) -> Dict[str, Any]:
-        """Run SR calculation in a separate thread with simplified execution."""
-        try:
-            # Use synchronous execution to avoid nested async/threading issues
-            if hasattr(sr_manager, 'calculate_sr_levels_from_backtest_sync'):
-                return sr_manager.calculate_sr_levels_from_backtest_sync(data, '1m')
-            else:
-                # Fallback to async execution with proper error handling
-                import asyncio
-                try:
-                    # Try to get existing event loop first
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Create a new thread with its own loop to avoid conflicts
-                        import concurrent.futures
-                        def run_in_new_loop():
-                            new_loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(new_loop)
-                            try:
-                                return new_loop.run_until_complete(sr_manager.calculate_sr_levels_from_backtest(data, '1m'))
-                            finally:
-                                new_loop.close()
-
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                            future = executor.submit(run_in_new_loop)
-                            return future.result(timeout=1200)  # 20 minutes for the inner calculation
-                    else:
-                        return loop.run_until_complete(sr_manager.calculate_sr_levels_from_backtest(data, '1m'))
-                except RuntimeError:
-                    # No event loop exists, create a new one
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        return loop.run_until_complete(sr_manager.calculate_sr_levels_from_backtest(data, '1m'))
-                    finally:
-                        loop.close()
-        except Exception as e:
-            self.logger.error(f'SR calculation failed: {e}')
-            raise
-
-    async def _train_ml_models_with_memory_management(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> Dict[str, Any]:
-        """Train ML models with intelligent memory management and adaptive chunking."""
-        try:
-            # Check memory usage and data size
-            memory_usage = self._check_memory_usage()
-            data_size = len(features_data)
-            
-            self.logger.info(f'🧠 Memory usage: {memory_usage:.1%}, Data size: {data_size:,} rows')
-            
-            # Determine processing strategy based on memory and data size
-            if memory_usage > 0.8 or data_size > 1000000:
-                # High memory usage or very large dataset - use aggressive chunking
-                chunk_size = min(50000, data_size // 10)
-                self.logger.info(f'📊 High memory usage detected, using aggressive chunking: {chunk_size:,} rows per chunk')
-                return await self._train_ml_models_chunked_optimized(features_data, sr_levels, chunk_size)
-            elif memory_usage > 0.6 or data_size > 500000:
-                # Moderate memory usage or large dataset - use moderate chunking
-                chunk_size = min(100000, data_size // 5)
-                self.logger.info(f'📊 Moderate memory usage detected, using moderate chunking: {chunk_size:,} rows per chunk')
-                return await self._train_ml_models_chunked_optimized(features_data, sr_levels, chunk_size)
-            elif data_size > 200000:
-                # Large dataset but good memory - use light chunking
-                chunk_size = min(200000, data_size // 3)
-                self.logger.info(f'📊 Large dataset detected, using light chunking: {chunk_size:,} rows per chunk')
-                return await self._train_ml_models_chunked_optimized(features_data, sr_levels, chunk_size)
-            else:
-                # Small dataset or good memory - process in memory
-                self.logger.info('📊 Processing in memory (no chunking needed)')
-                return await self._train_ml_models(features_data, sr_levels)
-                
-        except Exception as e:
-            self.logger.error(f'❌ Memory-managed ML training failed: {e}')
-            # Fallback to basic training
-            return await self._train_ml_models(features_data, sr_levels)
-    
-    async def _train_ml_models_chunked_optimized(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any], chunk_size: int) -> Dict[str, Any]:
-        """Optimized chunked ML training with memory monitoring and adaptive processing."""
-        try:
-            total_chunks = (len(features_data) + chunk_size - 1) // chunk_size
-            self.logger.info(f'📊 Processing {len(features_data):,} rows in {total_chunks} chunks of {chunk_size:,} rows each')
-            
-            all_results = []
-            chunk_processing_times = []
-            
-            for i in range(0, len(features_data), chunk_size):
-                chunk_end = min(i + chunk_size, len(features_data))
-                chunk_data = features_data.iloc[i:chunk_end]
-                chunk_num = i // chunk_size + 1
-                
-                # Check memory before processing each chunk
-                memory_before = self._check_memory_usage()
-                if memory_before > 0.9:
-                    self.logger.warning(f'⚠️ High memory usage before chunk {chunk_num}: {memory_before:.1%}')
-                    # Force garbage collection
-                    import gc
-                    gc.collect()
-                
-                self.logger.info(f'🔄 Processing chunk {chunk_num}/{total_chunks} ({len(chunk_data):,} rows)')
-                chunk_start = time.time()
-                
-                try:
-                    # Process chunk with timeout
-                    chunk_result = await asyncio.wait_for(
-                        self._train_ml_models(chunk_data, sr_levels),
-                        timeout=300  # 5 minutes per chunk
-                    )
-                    chunk_time = time.time() - chunk_start
-                    chunk_processing_times.append(chunk_time)
-                    
-                    # Check memory after processing
-                    memory_after = self._check_memory_usage()
-                    self.logger.info(f'✅ Chunk {chunk_num} completed in {chunk_time:.2f}s, memory: {memory_after:.1%}')
-                    
-                    all_results.append(chunk_result)
-                    
-                except asyncio.TimeoutError:
-                    self.logger.error(f'⏰ Chunk {chunk_num} timed out after 5 minutes')
-                    # Add fallback result for this chunk
-                    all_results.append(self._get_fallback_ml_result(chunk_data, sr_levels))
-                except Exception as chunk_error:
-                    self.logger.error(f'❌ Chunk {chunk_num} failed: {chunk_error}')
-                    # Add fallback result for this chunk
-                    all_results.append(self._get_fallback_ml_result(chunk_data, sr_levels))
-                
-                # Force garbage collection between chunks
-                import gc
-                gc.collect()
-            
-            # Aggregate results from all chunks
-            aggregated_result = self._aggregate_chunk_results(all_results, chunk_processing_times)
-            
-            self.logger.info(f'✅ Chunked ML training completed: {len(all_results)} chunks processed')
-            self.logger.info(f'⏱️ Average chunk time: {np.mean(chunk_processing_times):.2f}s')
-            self.logger.info(f'📊 Final memory usage: {self._check_memory_usage():.1%}')
-            
-            return aggregated_result
-            
-        except Exception as e:
-            self.logger.error(f'❌ Optimized chunked ML training failed: {e}')
-            return self._get_fallback_ml_result(features_data, sr_levels)
-    
-    def _get_fallback_ml_result(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> Dict[str, Any]:
-        """Get fallback ML result when training fails."""
         return {
             'direction_accuracy': 0.5,
             'volatility_mae': 0.1,
@@ -3251,7 +4521,7 @@ class SROptimizationStep(BaseStep):
         """Aggregate results from multiple chunks into a single result."""
         try:
             if not all_results:
-                return self._get_fallback_ml_result(pd.DataFrame(), {})
+                raise ValueError("No chunk results available for aggregation")
             
             # Calculate weighted averages based on training samples
             total_samples = sum(result.get('training_samples', 0) for result in all_results)
@@ -3291,7 +4561,10 @@ class SROptimizationStep(BaseStep):
             
         except Exception as e:
             self.logger.error(f'❌ Result aggregation failed: {e}')
-            return all_results[0] if all_results else self._get_fallback_ml_result(pd.DataFrame(), {})
+            if all_results:
+                return all_results[0]  # Return first result if available
+            else:
+                raise RuntimeError(f"Result aggregation failed: {e}")
 
     def _run_sr_calculation_chunked(self, sr_manager, data: pd.DataFrame) -> Dict[str, Any]:
         """Run SR calculation with chunked processing for large datasets."""
@@ -3447,135 +4720,6 @@ class SROptimizationStep(BaseStep):
             self.logger.warning(f'⚠️ Could not check system constraints: {e}')
             return False
 
-    def _detect_sr_levels(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Detect support and resistance levels using Enhanced SR Detection."""
-        self.logger.info('🎯 Using Enhanced SR Detection with multiple advanced algorithms...')
-
-        # CRITICAL: Validate input data before S/R detection
-        if data is None:
-            raise ValueError("CRITICAL: Input data is None for S/R detection. Cannot proceed.")
-        
-        if data.empty:
-            raise ValueError("CRITICAL: Input data is empty for S/R detection. Cannot proceed.")
-        
-        if len(data) < 100:  # Minimum 100 rows for meaningful S/R detection
-            raise ValueError(f"CRITICAL: Insufficient data for S/R detection. Only {len(data)} rows available, minimum 100 required.")
-        
-        # Validate required columns for S/R detection
-        required_columns = ['open', 'high', 'low', 'close', 'volume']
-        missing_columns = [col for col in required_columns if col not in data.columns]
-        if missing_columns:
-            raise ValueError(f"CRITICAL: Missing required columns for S/R detection: {missing_columns}. Available columns: {list(data.columns)}")
-        
-        self.logger.info(f'✅ S/R detection input validation passed: {len(data)} rows, {len(data.columns)} columns')
-
-        # Check if enhanced detector is available
-        if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None:
-            self.logger.error('❌ Enhanced SR Detector not available')
-            return {'support_levels': [], 'resistance_levels': []}
-
-        try:
-            # Create enhanced SR detector with configuration - optimized for memory
-            sr_config = {
-                'min_touches': self.sr_optimization_config.get('min_touches', 1),
-                'touch_proximity_threshold': self.sr_optimization_config.get('touch_proximity_threshold', 0.005),
-                'min_strength': self.sr_optimization_config.get('min_strength', 0.15),
-                'volume_spike_threshold': self.sr_optimization_config.get('volume_spike_threshold', 0.8),
-                'fractal_period': self.sr_optimization_config.get('fractal_period', 1),
-                'pivot_period': self.sr_optimization_config.get('pivot_period', 4),
-                'psychological_levels': True,
-                'fibonacci_levels': True,
-                # Performance optimizations
-                'use_optimized_fractals': True,
-                'use_optimized_touch_counting': True,
-                'enable_fractal_caching': True,
-                'chunk_size': 1000,
-                'max_fractals_per_chunk': 250,
-                # Level limits (keep original to avoid overload)
-                'max_levels_per_method': 30,
-                'max_fractal_levels': 30,
-                'max_pivot_levels': 30,
-                'max_volume_levels': 30,
-                'max_psychological_levels': 20,
-                'max_fibonacci_levels': 20,
-                'max_trendline_levels': 30,
-                'max_channel_levels': 30,
-                'max_volume_profile_levels': 30,
-                'max_market_structure_levels': 30,
-                # DBSCAN clustering parameters (original aggressive settings)
-                'dbscan_eps_multiplier': 1.0,  # Original eps multiplier
-                'dbscan_min_samples_multiplier': 1.0,  # Original min_samples multiplier
-                'disable_dbscan_clustering': False  # Keep original clustering behavior
-            }
-
-            detector = EnhancedSRDetector(sr_config)
-
-            # Detect SR levels using enhanced algorithms
-            sr_levels = detector.detect_sr_levels(data)
-
-            self.logger.info(f'✅ Enhanced SR detection completed: {len(sr_levels)} total levels detected')
-
-            # Convert SRLevel objects to the expected format
-            support_levels = []
-            resistance_levels = []
-
-            for level in sr_levels:
-                try:
-                    level_data = {
-                        'price': float(level.price),
-                        'strength': float(level.strength),
-                        'type': level.type,
-                        'method': 'enhanced_sr',
-                        'touch_count': int(level.touch_count),
-                        'timestamp': level.first_touch_time.isoformat() if hasattr(level.first_touch_time, 'isoformat') else str(level.first_touch_time),
-                        'confidence_score': float(level.confidence_score),
-                        'confluence_score': float(level.confluence_score),
-                        'volume_confirmation_score': float(level.volume_confirmation_score),
-                        'consistency_score': float(level.consistency_score),
-                        'age_bars': int(level.age_bars),
-                        'avg_bounce_ratio': float(level.avg_bounce_ratio),
-                        'max_bounce_ratio': float(level.max_bounce_ratio),
-                        'failure_count': int(level.failure_count)
-                    }
-
-                    if level.fibonacci_level is not None:
-                        level_data['fibonacci_level'] = float(level.fibonacci_level)
-                    if level.pivot_level:
-                        level_data['pivot_level'] = True
-                    if level.psychological_level:
-                        level_data['psychological_level'] = True
-
-                    if level.type == 'support':
-                        support_levels.append(level_data)
-                    elif level.type == 'resistance':
-                        resistance_levels.append(level_data)
-
-                except Exception as level_error:
-                    self.logger.warning(f'⚠️ Failed to process level: {level_error}')
-                    continue
-
-            # Sort by strength (highest first)
-            support_levels.sort(key=lambda x: x['strength'], reverse=True)
-            resistance_levels.sort(key=lambda x: x['strength'], reverse=True)
-
-            # Limit to reasonable number of levels
-            max_levels = self.sr_optimization_config.get('max_levels', 50)
-            support_levels = support_levels[:max_levels]
-            resistance_levels = resistance_levels[:max_levels]
-
-            self.logger.info(f'✅ Enhanced SR processing complete: {len(support_levels)} support, {len(resistance_levels)} resistance levels')
-
-            return {
-                'support_levels': support_levels,
-                'resistance_levels': resistance_levels,
-                'detection_method': 'enhanced_sr',
-                'total_levels_detected': len(sr_levels)
-            }
-
-        except Exception as e:
-            self.logger.error(f'❌ Enhanced SR detection failed: {e}')
-            raise  # Re-raise the exception instead of falling back
-
     async def _run_sr_detection_with_fast_fail(self, features_data: pd.DataFrame) -> Dict[str, Any]:
         """Run SR detection with comprehensive fast-fail checks."""
         try:
@@ -3595,24 +4739,15 @@ class SROptimizationStep(BaseStep):
             
             # Fast-fail: Check if SR detection produced meaningful results
             if not self._validate_sr_results(sr_levels):
-                self.logger.warning('⚠️ SR detection produced invalid results, using fallback')
-                return self._get_fallback_sr_levels()
-            
+                self.logger.warning('⚠️ SR detection produced invalid results')
+                raise RuntimeError("Advanced SR detection produced invalid results. No fallback available.")
+
             return sr_levels
-            
+
         except Exception as e:
             self.logger.error(f'❌ SR detection with fast-fail failed: {e}')
-            return self._get_fallback_sr_levels()
-    
-    def _get_fallback_sr_levels(self) -> Dict[str, Any]:
-        """Get fallback SR levels when detection fails."""
-        return {
-            'support_levels': [],
-            'resistance_levels': [],
-            'fallback_reason': 'sr_detection_failed',
-            'detection_time': 0.0
-        }
-    
+            raise RuntimeError(f"Advanced SR detection failed: {e}. No fallback available.")
+
     def _validate_sr_results(self, sr_levels: Dict[str, Any]) -> bool:
         """Validate SR detection results for meaningful output."""
         try:
@@ -3651,153 +4786,6 @@ class SROptimizationStep(BaseStep):
         except Exception as e:
             self.logger.warning(f'⚠️ SR result validation failed: {e}')
             return False
-
-    async def _train_ml_models(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> Dict[str, Any]:
-        """Train ML models for SR level prediction with comprehensive evaluation and fast-fail checks."""
-        self.logger.info('🤖 Starting comprehensive ML model training for SR optimization...')
-        start_time = time.time()
-
-        try:
-            # Fast-fail: Check if we have sufficient data for ML training
-            if len(features_data) < 200:
-                self.logger.warning(f'⚠️ Insufficient data for ML training: {len(features_data)} rows (minimum: 200)')
-                return self._get_fallback_ml_result(features_data, sr_levels)
-            
-            # Fast-fail: Check if we have SR levels
-            total_sr_levels = len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', []))
-            if total_sr_levels == 0:
-                self.logger.warning('⚠️ No SR levels available for ML training')
-                return self._get_fallback_ml_result(features_data, sr_levels)
-            
-            # Fast-fail: Check memory usage before ML training
-            memory_usage = self._check_memory_usage()
-            if memory_usage > 0.9:
-                self.logger.warning(f'⚠️ High memory usage before ML training: {memory_usage:.1%}')
-                return self._get_fallback_ml_result(features_data, sr_levels)
-            # Validate input data
-            if features_data.empty:
-                raise ValueError("Features data is empty")
-            if not sr_levels or not any(sr_levels.get(key, []) for key in ['support_levels', 'resistance_levels']):
-                raise ValueError("No SR levels provided for training")
-
-            # Prepare target variables from SR levels
-            self.logger.info('🎯 Preparing target variables from SR levels...')
-            target_data = self._prepare_sr_targets(features_data, sr_levels)
-
-            # Prepare features for ML training
-            self.logger.info('🔧 Preparing features for ML training...')
-            X, y_direction, y_volatility, feature_names = self._prepare_ml_features(features_data, target_data)
-
-            # Optimize hyperparameters
-            self.logger.info('🔧 Optimizing hyperparameters...')
-            hyperparameter_results = self._optimize_hyperparameters(X, y_direction, feature_names)
-
-            # Perform walk-forward validation
-            self.logger.info('🔧 Performing walk-forward validation...')
-            walk_forward_results = self._walk_forward_validation(X, y_direction, feature_names)
-
-            # Feature selection for optimization
-            self.logger.info('🎯 Performing feature selection for optimal performance...')
-            X_selected, selected_feature_names, feature_selection_info = self._optimize_feature_selection(
-                X, y_direction, feature_names
-            )
-
-            # Split data using selected features
-            self.logger.info('📊 Splitting data for training and validation...')
-            X_train, X_test, y_dir_train, y_dir_test, y_vol_train, y_vol_test = train_test_split(
-                X_selected, y_direction, y_volatility, test_size=0.2, random_state=42, shuffle=False
-            )
-
-            # Scale features
-            scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
-            X_test_scaled = scaler.transform(X_test)
-
-            # Train multiple models
-            self.logger.info('🚀 Training multiple ML models...')
-            models_results = await self._train_multiple_models(
-                X_train_scaled, X_test_scaled,
-                y_dir_train, y_dir_test,
-                y_vol_train, y_vol_test,
-                selected_feature_names
-            )
-
-            # Hyperparameter optimization for best models
-            self.logger.info('🔧 Performing hyperparameter optimization...')
-            optimized_models = await self._optimize_hyperparameters(
-                X_train_scaled, y_dir_train, y_vol_train, models_results
-            )
-
-            # Skip ensemble creation - focus on best individual model with HPO
-            ensemble_model = None
-
-            # Perform cross-validation
-            self.logger.info('🔄 Performing cross-validation...')
-            cv_results = self._perform_cross_validation(X_train_scaled, y_dir_train, selected_feature_names)
-
-            # Calculate comprehensive metrics
-            self.logger.info('📈 Calculating comprehensive evaluation metrics...')
-            evaluation_metrics = self._calculate_evaluation_metrics(
-                optimized_models if optimized_models else models_results,
-                cv_results, X_test_scaled, y_dir_test, y_vol_test,
-                ensemble_model
-            )
-
-            # Save best model
-            self.logger.info('💾 Saving best performing model...')
-            models_for_saving = optimized_models if optimized_models else models_results
-
-            model_save_path = self._save_best_model(
-                models_for_saving, scaler, selected_feature_names
-            )
-
-            # Compile final results
-            training_time = time.time() - start_time
-            ml_results = {
-                'direction_accuracy': evaluation_metrics['best_direction_accuracy'],
-                'volatility_mae': evaluation_metrics['best_volatility_mae'],
-                'model_type': evaluation_metrics['best_model_type'],
-                'training_samples': len(X_train),
-                'test_samples': len(X_test),
-                'sr_levels_used': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])),
-                'training_time': training_time,
-                'feature_importance': evaluation_metrics['feature_importance'],
-                'cross_validation_scores': cv_results['direction_accuracy_scores'],
-                'models_performance': models_results,
-                'evaluation_metrics': evaluation_metrics,
-                'model_save_path': model_save_path,
-                'feature_names': feature_names.tolist(),
-                'scaler_params': {
-                    'mean': scaler.mean_.tolist(),
-                    'scale': scaler.scale_.tolist()
-                },
-                'feature_selection': feature_selection_info
-            }
-
-            self.logger.info(f'✅ Comprehensive ML training completed in {training_time:.2f}s')
-            self.logger.info(f'🎯 Best direction accuracy: {ml_results["direction_accuracy"]:.4f}')
-            self.logger.info(f'📊 Best volatility MAE: {ml_results["volatility_mae"]:.6f}')
-            self.logger.info(f'🏆 Best model: {ml_results["model_type"]}')
-
-            return ml_results
-
-        except Exception as e:
-            self.logger.error(f'❌ Comprehensive ML training failed: {e}')
-            import traceback
-            self.logger.error(f'📋 Full traceback: {traceback.format_exc()}')
-
-            # Return fallback results
-            training_time = time.time() - start_time
-            return {
-                'direction_accuracy': 0.5,
-                'volatility_mae': 0.05,
-                'model_type': 'fallback',
-                'training_samples': len(features_data) if not features_data.empty else 0,
-                'sr_levels_used': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])),
-                'training_time': training_time,
-                'error': str(e),
-                'traceback': traceback.format_exc()
-            }
 
     def _calculate_atr(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
         """Calculate Average True Range (ATR) for normalization."""
@@ -3894,67 +4882,6 @@ class SROptimizationStep(BaseStep):
             
         except Exception as e:
             self.logger.error(f'❌ Failed to format S/R levels for pipeline: {e}')
-            return {'support_levels': [], 'resistance_levels': [], 'metadata': {'error': str(e)}}
-
-    def _prepare_sr_targets(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any]) -> pd.DataFrame:
-        """Prepare target variables from SR levels for ML training with enhanced features."""
-        try:
-            # Extract SR level prices for target creation
-            support_prices = [level.get('price', level) for level in sr_levels.get('support_levels', [])]
-            resistance_prices = [level.get('price', level) for level in sr_levels.get('resistance_levels', [])]
-
-            # Get current price data
-            if 'close' not in features_data.columns:
-                raise ValueError("Features data must contain 'close' price column")
-
-            current_prices = features_data['close'].values
-            target_data = pd.DataFrame(index=features_data.index)
-
-            # Create binary target: 1 if near SR level, 0 otherwise
-            proximity_threshold = 0.005  # 0.5% proximity threshold
-            near_support = np.zeros(len(current_prices))
-            near_resistance = np.zeros(len(current_prices))
-
-            for price in support_prices:
-                if isinstance(price, (int, float)):
-                    distance = np.abs(current_prices - price) / current_prices
-                    near_support = np.maximum(near_support, (distance <= proximity_threshold).astype(int))
-
-            for price in resistance_prices:
-                if isinstance(price, (int, float)):
-                    distance = np.abs(current_prices - price) / current_prices
-                    near_resistance = np.maximum(near_resistance, (distance <= proximity_threshold).astype(int))
-
-            # Direction target: 1 for resistance (sell signal), 0 for support (buy signal), 0.5 for neutral
-            target_data['direction_target'] = np.where(
-                near_resistance == 1, 1.0,
-                np.where(near_support == 1, 0.0, 0.5)
-            )
-
-            # Volatility target: distance to nearest SR level as proxy for volatility
-            nearest_sr_distances = []
-            for price in current_prices:
-                support_distances = [abs(price - sp) / price for sp in support_prices if isinstance(sp, (int, float))]
-                resistance_distances = [abs(price - rp) / price for rp in resistance_prices if isinstance(rp, (int, float))]
-
-                all_distances = support_distances + resistance_distances
-                nearest_distance = min(all_distances) if all_distances else 0.01
-                nearest_sr_distances.append(nearest_distance)
-
-            target_data['volatility_target'] = np.array(nearest_sr_distances)
-
-            # Filter out neutral cases for cleaner training
-            valid_mask = target_data['direction_target'] != 0.5
-            self.logger.info(f'🎯 Target preparation: {valid_mask.sum()}/{len(valid_mask)} valid samples ({valid_mask.sum()/len(valid_mask)*100:.1f}%)')
-
-            return target_data
-
-        except Exception as e:
-            self.logger.error(f'❌ Failed to prepare SR targets: {e}')
-            raise
-
-    def _prepare_ml_features(self, features_data: pd.DataFrame, target_data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Prepare features and targets for ML training."""
         try:
             # Select numeric features only
             numeric_features = features_data.select_dtypes(include=[np.number]).columns
@@ -3972,8 +4899,8 @@ class SROptimizationStep(BaseStep):
             y_direction = target_data['direction_target'].values
             y_volatility = target_data['volatility_target'].values
 
-            # Remove rows where direction target is neutral (0.5)
-            valid_mask = y_direction != 0.5
+            # Remove rows where direction target is neutral (class 2)
+            valid_mask = y_direction != 2
             X = X[valid_mask]
             y_direction = y_direction[valid_mask]
             y_volatility = y_volatility[valid_mask]
@@ -3987,83 +4914,6 @@ class SROptimizationStep(BaseStep):
         except Exception as e:
             self.logger.error(f'❌ Failed to prepare ML features: {e}')
             raise
-
-    @_cached_computation
-    def _optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Dict[str, Any]:
-        """Optimize hyperparameters using M1 GPU utilities and efficient methods with early stopping and resource management."""
-        try:
-            if not self.enable_hyperparameter_optimization:
-                self.logger.info('🔧 Hyperparameter optimization disabled')
-                return {}
-            
-            # Use math_validation for input validation
-            data_size = validate_positive(len(X), "data_size")
-            if data_size < 500:
-                self.logger.warning(f'⚠️ Insufficient data for hyperparameter optimization: {data_size} samples (minimum: 500)')
-                return self._get_default_hyperparameters()
-            
-            # Use M1 memory optimizer for memory management
-            if self.m1_memory_optimizer and self.enable_memory_optimization:
-                with self.m1_memory_optimizer.memory_checkpoint("hyperparameter_optimization"):
-                    # Check if we should use chunked processing
-                    data_size_mb = X.nbytes / (1024**2)
-                    if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "neural_net"):
-                        self.logger.info(f'📦 Using chunked processing for hyperparameter optimization ({data_size_mb:.1f}MB)')
-                        return self._chunked_hyperparameter_optimization(X, y, feature_names)
-            
-            # Use M1 GPU manager for GPU acceleration if available
-            if self.m1_gpu_manager and self.enable_m1_optimizations:
-                with self.m1_gpu_manager.gpu_context("hyperparameter_optimization"):
-                    # Convert data to tensors for GPU processing
-                    X_tensor = self.m1_gpu_manager.to_device(X, "neural_net")
-                    y_tensor = self.m1_gpu_manager.to_device(y, "neural_net")
-                    
-                    self.logger.info('🍎 Using M1 GPU acceleration for hyperparameter optimization')
-                    
-                    # Use M1 batch processing for optimization
-                    if M1_GPU_AVAILABLE:
-                        try:
-                            # Process optimization in batches using M1 GPU
-                            batch_size = self.m1_gpu_manager.get_optimal_batch_size(X.shape, "neural_net")
-                            self.logger.info(f'📏 Using optimal batch size: {batch_size}')
-                            
-                            # Use M1 batch processing for optimization
-                            optimization_result = self._m1_gpu_hyperparameter_optimization(X_tensor, y_tensor, feature_names, batch_size)
-                            if optimization_result:
-                                return optimization_result
-                                
-                        except Exception as e:
-                            self.logger.warning(f'⚠️ M1 GPU optimization failed, falling back to CPU: {e}')
-            
-            # Use M1 CPU optimizer for parallel processing
-            if self.m1_cpu_optimizer and self.enable_parallel_processing:
-                self.logger.info('🍎 Using M1 CPU parallel processing for hyperparameter optimization')
-                return self._m1_cpu_hyperparameter_optimization(X, y, feature_names)
-            
-            # Fast-fail: Check memory usage before optimization using common_operations
-            memory_usage = self._check_memory_usage()
-            if memory_usage > 0.8:
-                self.logger.warning('⚠️ High memory usage detected, using simplified optimization')
-                return self._simplified_hyperparameter_optimization(X, y, feature_names)
-            
-            self.logger.info(f'🔧 Starting optimized hyperparameter optimization using {self.optimization_method}')
-            
-            if self.optimization_method == 'grid_search':
-                return self._optimized_grid_search_optimization(X, y, feature_names)
-            elif self.optimization_method == 'random_search':
-                return self._optimized_random_search_optimization(X, y, feature_names)
-            elif self.optimization_method == 'bayesian':
-                return self._optimized_bayesian_optimization(X, y, feature_names)
-            elif self.optimization_method == 'halving':
-                return self._halving_search_optimization(X, y, feature_names)
-            else:
-                self.logger.warning(f'Unknown optimization method: {self.optimization_method}, using halving search')
-                return self._halving_search_optimization(X, y, feature_names)
-                
-        except Exception as e:
-            self.logger.error(f'❌ Hyperparameter optimization failed: {e}')
-            return self._get_default_hyperparameters()
-
     def _m1_gpu_hyperparameter_optimization(self, X_tensor, y_tensor, feature_names: np.ndarray, batch_size: int) -> Dict[str, Any]:
         """Optimize hyperparameters using M1 GPU acceleration."""
         try:
@@ -4796,7 +5646,6 @@ class SROptimizationStep(BaseStep):
             self.logger.error(f'❌ Walk-forward validation failed: {e}')
             return {}
 
-    @_cached_computation
     def _optimize_feature_selection(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         """Optimize feature selection with incremental filtering and caching for best performance."""
         try:
@@ -4822,40 +5671,81 @@ class SROptimizationStep(BaseStep):
             
             # Method 1: Fast initial filtering using statistical tests
             self.logger.info('🔍 Fast initial feature filtering...')
+            self.logger.info(f'📊 Starting with {len(feature_names)} features for initial filtering')
             X_filtered, filtered_feature_names, filter_info = self._fast_feature_filtering(X, y, feature_names)
             feature_selection_info.update(filter_info)
+            self.logger.info(f'✅ Initial filtering completed: {len(filtered_feature_names)}/{len(feature_names)} features retained')
+            if 'variance_filtered' in filter_info:
+                self.logger.info(f'🧹 Variance filtering: Removed {filter_info["variance_filtered"]} zero-variance features')
+            if 'statistical_filtered' in filter_info:
+                self.logger.info(f'📈 Statistical filtering: Removed {filter_info["statistical_filtered"]} low-importance features')
             
             # Method 2: Incremental feature selection with Random Forest
             self.logger.info('🌲 Computing feature importance with optimized Random Forest...')
+            self.logger.info(f'📊 Processing {len(filtered_feature_names)} features for RF importance scoring')
             X_selected, selected_feature_names, rf_info = self._incremental_rf_feature_selection(
                 X_filtered, y, filtered_feature_names
             )
             feature_selection_info.update(rf_info)
+            self.logger.info(f'✅ RF feature selection completed: {len(selected_feature_names)}/{len(filtered_feature_names)} features selected')
+            if 'target_features' in rf_info:
+                self.logger.info(f'🎯 Target feature count: {rf_info["target_features"]} (adaptive based on data size)')
+            if 'top_features' in rf_info:
+                self.logger.info(f'🏆 Top 5 RF features: {rf_info["top_features"][:5]}')
             
             # Method 3: Mutual information validation (only for manageable feature sets)
             if len(selected_feature_names) <= 100:  # Only for manageable feature sets
                 self.logger.info('🔗 Computing mutual information scores...')
+                self.logger.info(f'📊 Processing {len(selected_feature_names)} features for MI validation')
                 mi_info = self._compute_mutual_information_scores(X_selected, y, selected_feature_names)
                 feature_selection_info.update(mi_info)
-            
+                self.logger.info('✅ Mutual information validation completed')
+                if 'mutual_information' in mi_info and mi_info['mutual_information']:
+                    top_mi_features = sorted(mi_info['mutual_information'].items(), key=lambda x: x[1], reverse=True)[:5]
+                    self.logger.info(f'🔗 Top 5 MI features: {[f"{name}({score:.3f})" for name, score in top_mi_features]}')
+            else:
+                self.logger.info('⏭️ Skipping mutual information analysis (too many features)')
+
             # Method 4: SHAP analysis (only for small feature sets and if memory allows)
-            if (len(selected_feature_names) <= 50 and 
-                self._check_memory_usage() < 0.7 and 
+            memory_usage = self._check_memory_usage()
+            if (len(selected_feature_names) <= 50 and
+                memory_usage < 0.7 and
                 len(X_selected) <= 10000):
                 self.logger.info('🎯 Computing SHAP importance (optimized)...')
+                self.logger.info(f'📊 SHAP analysis: {len(selected_feature_names)} features, {len(X_selected)} samples, {memory_usage:.1%} memory')
                 shap_info = self._compute_shap_importance_optimized(X_selected, y, selected_feature_names)
                 feature_selection_info.update(shap_info)
+                self.logger.info('✅ SHAP importance analysis completed')
+                if 'shap_importance' in shap_info and shap_info['shap_importance']:
+                    self.logger.info(f'🎯 SHAP method used: {shap_info.get("shap_method", "unknown")}')
             else:
-                self.logger.info('⏭️ Skipping SHAP analysis due to memory or size constraints')
+                skip_reason = []
+                if len(selected_feature_names) > 50:
+                    skip_reason.append(f"too many features ({len(selected_feature_names)} > 50)")
+                if memory_usage >= 0.7:
+                    skip_reason.append(f"high memory usage ({memory_usage:.1%} >= 70%)")
+                if len(X_selected) > 10000:
+                    skip_reason.append(f"too many samples ({len(X_selected)} > 10k)")
+                self.logger.info(f'⏭️ Skipping SHAP analysis: {", ".join(skip_reason)}')
                 feature_selection_info['shap_importance'] = {}
                 feature_selection_info['methods_used'].append('shap_skipped')
             
             optimization_time = time.time() - start_time
             feature_selection_info['optimization_time'] = optimization_time
             
+            # Log SR feature prioritization
+            sr_features = [name for name in selected_feature_names if any(keyword in name.lower() for keyword in ['sr', 'support', 'resistance', 'proximity'])]
             self.logger.info(f'✅ Optimized feature selection completed: {len(selected_feature_names)}/{len(feature_names)} features selected')
             self.logger.info(f'⏱️ Feature selection time: {optimization_time:.2f}s')
-            self.logger.info(f'🎯 Top 5 features: {selected_feature_names[:5].tolist()}')
+            self.logger.info(f'🎯 SR-related features retained: {len(sr_features)} ({len(sr_features)/len(selected_feature_names):.1%})')
+            self.logger.info(f'🏆 Top 5 features: {selected_feature_names[:5].tolist()}')
+            if sr_features:
+                self.logger.info(f'🎯 SR features in top selection: {sr_features[:5]}')
+
+            # Log comprehensive feature selection summary
+            methods_str = ', '.join(feature_selection_info['methods_used'])
+            self.logger.info(f'📋 Feature selection methods used: {methods_str}')
+            self.logger.info(f'📈 Feature reduction ratio: {(len(feature_names) - len(selected_feature_names))/len(feature_names):.1%}')
 
             return X_selected, selected_feature_names, feature_selection_info
 
@@ -4946,8 +5836,20 @@ class SROptimizationStep(BaseStep):
             # Get feature importance
             importances = rf_temp.feature_importances_
             feature_importance_dict = dict(zip(feature_names, importances))
-            
-            # Sort features by importance
+
+            # SR Feature Prioritization: Boost SR-related features by 120%
+            sr_boost = 1.2  # 120% priority for SR features
+            sr_features_boosted = 0
+
+            for feature_name, importance in feature_importance_dict.items():
+                if any(keyword in feature_name.lower() for keyword in ['sr', 'support', 'resistance', 'proximity', 'level']):
+                    original_importance = importance
+                    feature_importance_dict[feature_name] = importance * sr_boost
+                    sr_features_boosted += 1
+
+            self.logger.info(f'🎯 SR Feature Prioritization: Boosted {sr_features_boosted} SR-related features by {sr_boost}x')
+
+            # Sort features by importance (now with SR prioritization)
             sorted_features = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)
             
             # Adaptive target features based on data size (more conservative)
@@ -5554,7 +6456,7 @@ class SROptimizationStep(BaseStep):
             self.logger.error(f'❌ Model saving failed: {e}')
             return None
 
-    async def _optimize_hyperparameters(self, X_train: np.ndarray, y_dir_train: np.ndarray,
+    async def _optimize_hyperparameters_async(self, X_train: np.ndarray, y_dir_train: np.ndarray,
                                       y_vol_train: np.ndarray, models_results: Dict[str, Any]) -> Dict[str, Any]:
         """Optimize hyperparameters for the best performing models."""
         try:

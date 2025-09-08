@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Common utility functions for data collection operations.
 
 This module provides shared utility functions used across data collection steps,

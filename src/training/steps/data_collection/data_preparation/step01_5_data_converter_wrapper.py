@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """BaseStep wrapper for Step 01_5 Data Converter.
 
 This adapter wraps the existing unified data converter implementation so it fits

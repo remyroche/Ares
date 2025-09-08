@@ -11,7 +11,7 @@ from src.utils.logger import system_logger
 from typing import Dict, List, Optional, Union, Any, Tuple
 
 from ...core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import logging
 import numpy as np
 import time

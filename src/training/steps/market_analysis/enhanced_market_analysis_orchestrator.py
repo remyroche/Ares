@@ -7,7 +7,7 @@ import pandas as pd
 from src.core.decorators import handles_errors, traced, log_execution_time, validates, circuit_breaker, timeout, retry
 from src.core.decorators.logging import audit_log, set_correlation_id
 from src.training.steps.market_analysis.enhanced_pipeline_decorators import comprehensive_pipeline_protection
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 
 """

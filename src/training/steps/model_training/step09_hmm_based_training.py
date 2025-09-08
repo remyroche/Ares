@@ -10,17 +10,18 @@ import lightgbm as lgb
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import os
-from src.utils.decorators import handles_errors
+from src.core.decorators import handles_errors
 import warnings
 
 from ..enhanced_error_handling import (
-from ..standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
     critical_async_process,
     CriticalProcessError,
     ErrorSeverity,
     ErrorCategory
 )
+from src.utils.enhanced_error_handler import ErrorRecord, ErrorContext
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
 from ..enhanced_monitoring_system import monitor_critical_process
 
@@ -78,7 +79,7 @@ method and profit-based feature engineering, with regime-specific optimization.
 """
 import os
 
-from src.utils.decorators import validates, traced
+from src.core.decorators import validates, traced
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.utils.common_operations import (
@@ -811,7 +812,7 @@ class EnhancedHMMBasedTrainingStep:
     @handles_errors(exceptions=(Exception,), default_return=False)
     @validates(strict=True)
     # @log_call
-    @traced
+    @traced()
     async def initialize(self) -> bool:
         """Initialize the enhanced HMM-based training step with comprehensive validation."""
         self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
@@ -844,7 +845,7 @@ class EnhancedHMMBasedTrainingStep:
     
     @handles_errors(exceptions=(Exception,), default_return=False)
     # @log_call
-    @traced
+    @traced()
     async def _validate_configuration(self) -> bool:
         """Validate the training configuration."""
         self.logger.info("🔍 Validating HMM training configuration...")
@@ -885,7 +886,7 @@ class EnhancedHMMBasedTrainingStep:
     
     @handles_errors(exceptions=(Exception,), default_return=False)
     # @log_call
-    @traced
+    @traced()
     async def _initialize_validation_components(self) -> bool:
         """Initialize validation components."""
         self.logger.info("🔍 Initializing validation components...")
@@ -912,7 +913,7 @@ class EnhancedHMMBasedTrainingStep:
 
     @handles_errors(exceptions=(Exception,), default_return=False)
     # @log_call
-    @traced
+    @traced()
     async def _initialize_regime_components(self) -> bool:
         """Initialize regime-specific components with validation."""
         self.logger.info("🔄 Initializing regime-specific components...")
@@ -958,7 +959,7 @@ class EnhancedHMMBasedTrainingStep:
     @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), )
     @validates(strict=True)
     # @log_call
-    @traced
+    @traced()
     async def _load_regime_specific_data(
         self, symbol: str, data_dir: str, regime: str
     ) -> pd.DataFrame:
@@ -1024,7 +1025,7 @@ class EnhancedHMMBasedTrainingStep:
     @handles_errors(exceptions=(Exception,), default_return={"success": False, "error": "Training failed"}, )
     @validates(strict=True)
     # @log_call
-    @traced
+    @traced()
     async def _train_regime_specific_model(
         self, regime_data: pd.DataFrame, regime: str, config: dict
     ) -> Dict[str, Any]:
@@ -1106,7 +1107,7 @@ class EnhancedHMMBasedTrainingStep:
     
     @handles_errors(exceptions=(Exception,), default_return={"is_valid": False, "issues": ["Validation failed"]}, )
     # @log_call
-    @traced
+    @traced()
     async def _validate_feature_quality(self, features: pd.DataFrame, regime: str) -> Dict[str, Any]:
         """Validate feature quality for regime-specific training."""
         self.logger.info(f"🔍 Validating feature quality for regime: {regime}")
@@ -1153,7 +1154,7 @@ class EnhancedHMMBasedTrainingStep:
     
     @handles_errors(exceptions=(Exception,), default_return={"is_valid": False, "issues": ["Model validation failed"]}, )
     # @log_call
-    @traced
+    @traced()
     async def _validate_regime_model(self, model: Any, features: pd.DataFrame, regime: str) -> Dict[str, Any]:
         """Validate trained regime-specific model."""
         self.logger.info(f"🔍 Validating model for regime: {regime}")
@@ -1189,7 +1190,7 @@ class EnhancedHMMBasedTrainingStep:
     @handles_errors(exceptions=(Exception,), default_return=pd.DataFrame(), )
     @validates(strict=True)
     # @log_call
-    @traced
+    @traced()
     async def _engineer_regime_features(
         self, regime_data: pd.DataFrame, regime: str
     ) -> pd.DataFrame:

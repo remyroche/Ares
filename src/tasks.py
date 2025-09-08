@@ -6,7 +6,24 @@ from .ares_pipeline import AresPipeline
 from .database.sqlite_manager import SQLiteManager
 from .training.training_manager import TrainingManager
 from .config.environment import get_environment_settings
+
 app = Celery('ares_tasks', broker='redis://localhost:6379/0')
+
+async def run_training():
+    """Run the training pipeline."""
+    try:
+        env_settings = get_environment_settings()
+        training_manager = TrainingManager(env_settings)
+        training_input = {
+            'symbol': env_settings.trade_symbol,
+            'exchange': env_settings.exchange_name,
+            'training_type': 'monthly'
+        }
+        success = await training_manager.execute_training(training_input)
+        return success
+    except Exception as e:
+        print(f'Training execution failed: {e}')
+        return False
 
 @app.task
 def run_trading_bot_instance(symbol: str, exchange: str) -> None:
@@ -40,7 +57,7 @@ def run_monthly_training_pipeline() -> None:
             else:
                 print(f'Monthly training pipeline failed for {symbol}')
             await db_manager.close()
-        asyncio.run(run_training())
+        await run_training()
     except Exception as e:
         print(f'An unexpected error occurred while running the training pipeline task: {e}')
 app.conf.beat_schedule = {'run-monthly-training': {'task': 'src.tasks.run_monthly_training_pipeline', 'schedule': crontab(day_of_month='1', hour = 0, minute = 0)}}

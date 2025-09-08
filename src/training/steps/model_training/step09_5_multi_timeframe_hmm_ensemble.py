@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 'Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.\n\nThis step trains a multi-timeframe HMM cluster ensemble system that combines\npredictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)\nto improve regime forecasting accuracy and reduce MAPE, with regime-specific optimization.\n\nThe ensemble predicts REGIME TRANSITIONS only, not price direction.\nPrice direction predictions are made in other components.\n'
 import os

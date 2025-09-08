@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 from src.core.errors.base import ValidationError
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import pandas as pd
 
 """
@@ -34,10 +34,10 @@ from .decorators.data_operation_decorators import (
     DataOperationType,
     SecurityLevel
 )
-from .utils.data_operations_utils import (
 import time
 import typing
 
+from .utils.data_operations_utils import (
     DataFormatter,
     DataAnalyzer,
     DataAccessManager,

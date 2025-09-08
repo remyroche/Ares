@@ -15,9 +15,9 @@ from datetime import datetime, timedelta
 # Add the src directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from src.utils.financial_metrics_logger import (
 import logging
 
+from src.utils.financial_metrics_logger import (
     get_financial_metrics_logger,
     setup_financial_metrics_logging,
     financial_metrics_context,

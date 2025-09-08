@@ -5,9 +5,9 @@
 
 from typing import Literal, TypedDict
 
-from .base_types import (
 import logging
 
+from .base_types import (
     OrderId,
     PositionId,
     Price,

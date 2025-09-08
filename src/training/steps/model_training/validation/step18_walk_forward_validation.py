@@ -13,7 +13,7 @@ from src.utils.warning_symbols import error as validation_error
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
 import time
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 from functools import lru_cache
 import hashlib
 

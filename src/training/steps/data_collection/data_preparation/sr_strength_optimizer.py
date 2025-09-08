@@ -12,7 +12,7 @@ import os
 import warnings
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 warnings.filterwarnings('ignore')
 

@@ -33,7 +33,7 @@ class FeatureSelectionComparator:
                                n_informative: int = 20, noise_level: float = 0.1) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
         """Generate synthetic dataset with known informative features."""
         from sklearn.datasets import make_classification, make_regression
-import logging
+        import logging
 
         # Generate classification target (SR detection)
         X_clf, y_clf = make_classification(

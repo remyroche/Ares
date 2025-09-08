@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 """Efficiency Optimizer for Hyperparameter Optimization.
 

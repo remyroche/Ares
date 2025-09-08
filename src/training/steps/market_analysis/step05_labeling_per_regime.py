@@ -2,7 +2,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 import pandas as pd
 from ...core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import pandas as pd
 
 'Enhanced Step 5: Per-Regime Labeling.\n\nThis module provides per-HMM regime labeling functionality, ensuring that\nlabeling is performed on a per-regime basis for better regime-specific modeling.\n'

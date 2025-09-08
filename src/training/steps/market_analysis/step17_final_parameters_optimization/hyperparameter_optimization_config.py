@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 # src/training/steps/step17_final_parameters_optimization/
 # hyperparameter_optimization_config.py
 

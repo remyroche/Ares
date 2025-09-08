@@ -2,8 +2,8 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_important_calls, log_all_calls, log_step_functions, log_step_progress, log_data_operation
-from src.training.steps.model_training.step11_financial_logging import Step11FinancialLogger
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.model_training.step11_financial_logging import Step11FinancialloggingFinancialLogger
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 """Step 11: Analyst Creation - Creates base analyst models for each regime.
 
@@ -45,7 +45,7 @@ try:
     from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager, OptimizationProfile, WorkloadType, OptimizationStrategy
     from src.utils.optimized_data_manager import get_optimized_data_manager
-import json
+    import json
 
     OPTIMIZATION_TOOLS_AVAILABLE = True
 except ImportError as e:
@@ -144,7 +144,7 @@ class AnalystCreationStep:
                 return {'success': False, 'error': f'Missing required keys for {regime_name}'}
         
         # Initialize financial logger
-        self.financial_logger = Step11FinancialLogger(self.symbol, self.exchange, self.timeframe)
+        self.financial_logger = Step11FinancialloggingFinancialLogger(self.symbol, self.exchange, self.timeframe)
         
         start_time = time.time()
         

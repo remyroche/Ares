@@ -34,7 +34,7 @@ except ImportError:
     import logging
     system_logger = logging.getLogger('system')
 try:
-    from src.utils.warning_symbols import connection_error, error, failed, invalid, missing
+    from src.utils.warning_symbols import error_symbol as connection_error, error, failed, invalid, missing
 except ImportError:
 
     def connection_error(msg: Any) -> None:

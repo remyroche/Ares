@@ -832,9 +832,29 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage by downcasting types."""
     for col in df.columns:
         col_type = df[col].dtype
-        if col_type != 'object':
-            c_min = df[col].min()
-            c_max = df[col].max()
+
+        # Skip object/string columns entirely
+        if col_type == 'object':
+            continue
+
+        # Only process numeric columns
+        try:
+            # Check if column contains only numeric values (no strings)
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                continue
+
+            # Safe min/max calculation with error handling
+            try:
+                c_min = df[col].min()
+                c_max = df[col].max()
+            except (TypeError, ValueError) as e:
+                # If min/max fails (mixed types), skip this column
+                continue
+
+            # Skip if min/max are not finite numbers
+            if not (np.isfinite(c_min) and np.isfinite(c_max)):
+                continue
+
             if str(col_type)[:3] == 'int':
                 if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
                     df[col] = df[col].astype(np.int8)
@@ -842,8 +862,15 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
                     df[col] = df[col].astype(np.int16)
                 elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
                     df[col] = df[col].astype(np.int32)
-            elif c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max or (c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max):
-                df[col] = df[col].astype(np.float32)
+            elif str(col_type)[:5] == 'float':
+                # More conservative float downcasting to avoid precision loss
+                if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df[col] = df[col].astype(np.float32)
+
+        except Exception as e:
+            # If any other error occurs, skip this column and continue
+            continue
+
     return df
 
 def safe_read_parquet(file_path: str | Path, columns: list[str] | None=None) -> None:

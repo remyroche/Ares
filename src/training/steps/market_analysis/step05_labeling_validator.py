@@ -3,7 +3,7 @@ from typing import Dict
 import pandas as pd
 from typing import Any
 from src.utils.logger import system_logger
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Validator for Step 5: Labeling.
 

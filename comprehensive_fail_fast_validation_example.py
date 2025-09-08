@@ -25,9 +25,9 @@ import asyncio
 from datetime import datetime
 
 # Import the enhanced fail-fast validation system
-from src.utils.enhanced_financial_metrics_logger import (
 import logging
 
+from src.utils.enhanced_financial_metrics_logger import (
     EnhancedFinancialMetricsLogger,
     FailFastValidationResult,
     RegimeValidationResult

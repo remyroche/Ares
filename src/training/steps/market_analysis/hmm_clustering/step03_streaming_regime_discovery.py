@@ -4,7 +4,7 @@ from typing import Dict
 import pandas as pd
 from typing import Any
 import numpy as np
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 'Streaming Regime Discovery with Memory Optimization.\n\nThis module implements chunked processing and memory-efficient regime discovery\nto handle large datasets without loading everything into memory.\n'
 import gc

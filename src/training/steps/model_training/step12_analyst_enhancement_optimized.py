@@ -40,7 +40,7 @@ from src.utils.comprehensive_function_logger import (
     log_internal_call, log_step_progress, log_data_operation
 )
 from src.core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 # Import optimization libraries
 try:

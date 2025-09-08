@@ -6,7 +6,7 @@ from typing import Tuple
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import numpy as np
 from src.core.decorators import handles_errors
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 'Step 6: Feature Engineering - Refactored to use BaseStep.\n\nThis module implements comprehensive feature engineering including technical indicators,\ninteraction terms, and regime-aware features.\n'
 from pathlib import Path

@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 
 'Ensemble Clustering Methods for HMM Regime Discovery - Vectorized Implementation.\n\nThis module implements computationally efficient ensemble clustering using vectorized\noperations for HMM + K-means + DBSCAN combination.\n'

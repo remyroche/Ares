@@ -1,7 +1,123 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 Unified Step08 Class Implementation - Part 2
 """
+
+# Import required classes and functions
+try:
+    from src.utils.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+    from src.utils.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+    from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+    from src.utils.vectorized_processing_core import OptimizedPipelineExecutor, PipelineStage, PipelineExecutionMode
+    from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations, ErrorHandler
+    from src.utils.enhanced_step_optimizations import IntelligentOptimizationSelector, OptimizationStrategy, WorkloadType, OptimizationProfile
+    from src.utils.optimized_data_manager import OptimizedDataManager, DataMetadata
+    ENHANCED_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    ENHANCED_OPTIMIZATIONS_AVAILABLE = False
+
+# Import data classes
+try:
+    from .step08_unified_complete import (
+        FinancialMetrics, RiskMetrics, RegimeBalanceMetrics,
+        FeatureSelectionValidation, Step08Results
+    )
+except ImportError:
+    # Fallback definitions
+    from typing import Dict, List, Any
+    from dataclasses import dataclass, field
+
+    @dataclass
+    class FinancialMetrics:
+        returns: Dict[str, float] = field(default_factory=dict)
+        volatility: Dict[str, float] = field(default_factory=dict)
+        sharpe_ratio: Dict[str, float] = field(default_factory=dict)
+        var_95: Dict[str, float] = field(default_factory=dict)
+        var_99: Dict[str, float] = field(default_factory=dict)
+        max_drawdown: Dict[str, float] = field(default_factory=dict)
+        calmar_ratio: Dict[str, float] = field(default_factory=dict)
+        sortino_ratio: Dict[str, float] = field(default_factory=dict)
+        information_ratio: Dict[str, float] = field(default_factory=dict)
+        beta: Dict[str, float] = field(default_factory=dict)
+        alpha: Dict[str, float] = field(default_factory=dict)
+
+    @dataclass
+    class RiskMetrics:
+        portfolio_var: float = 0.0
+        portfolio_es: float = 0.0
+        concentration_risk: float = 0.0
+        liquidity_risk: float = 0.0
+        model_risk: float = 0.0
+        regime_risk: float = 0.0
+        feature_stability_risk: float = 0.0
+        overfitting_risk: float = 0.0
+        data_quality_risk: float = 0.0
+        operational_risk: float = 0.0
+        overall_risk_score: float = 0.0
+
+    @dataclass
+    class RegimeBalanceMetrics:
+        regime_counts: Dict[str, int] = field(default_factory=dict)
+        regime_percentages: Dict[str, float] = field(default_factory=dict)
+        balance_score: float = 0.0
+        imbalance_severity: str = "none"
+        rebalancing_applied: bool = False
+        rebalancing_method: str = ""
+        min_samples_per_regime: int = 100
+        target_balance_ratio: float = 0.8
+
+    @dataclass
+    class FeatureSelectionValidation:
+        selection_bias_score: float = 0.0
+        temporal_stability: float = 0.0
+        regime_consistency: float = 0.0
+        correlation_stability: float = 0.0
+        importance_stability: float = 0.0
+        overfitting_indicators: Dict[str, float] = field(default_factory=dict)
+        validation_passed: bool = False
+        warnings: List[str] = field(default_factory=list)
+
+    @dataclass
+    class Step08Results:
+        regime_data: Any = None
+        selected_features: Dict[str, List[str]] = field(default_factory=dict)
+        financial_metrics: FinancialMetrics = field(default_factory=FinancialMetrics)
+        risk_metrics: RiskMetrics = field(default_factory=RiskMetrics)
+        regime_balance: RegimeBalanceMetrics = field(default_factory=RegimeBalanceMetrics)
+        feature_validation: FeatureSelectionValidation = field(default_factory=FeatureSelectionValidation)
+        execution_metadata: Dict[str, Any] = field(default_factory=dict)
+        artifacts_generated: List[str] = field(default_factory=list)
+        success: bool = False
+        errors: List[str] = field(default_factory=list)
+        warnings: List[str] = field(default_factory=list)
+
+# Import decorators and utilities
+try:
+    from src.utils.common_operations import get_common_operations_health_status
+except ImportError:
+    def get_common_operations_health_status():
+        return {'status': 'fallback'}
+
+try:
+    from src.core.decorators import with_tracing_span, handle_errors
+except ImportError:
+    def with_tracing_span(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+    def handle_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+# Import unified data loader
+try:
+    from src.training.steps.data_collection.unified_data_loader import UnifiedDataLoader
+    UNIFIED_DATA_LOADER_AVAILABLE = True
+except ImportError:
+    UNIFIED_DATA_LOADER_AVAILABLE = False
+    UnifiedDataLoader = None
 
 # Comprehensive utility imports for extensive integration
 from src.utils.math_validation import (
@@ -281,12 +397,24 @@ class UnifiedStep08:
             # Step 6: Feature selection validation
             self.logger.info('✅ Step 6: Feature selection validation...')
             feature_validation = await self._validate_feature_selection(balanced_data, selected_features)
-            
+
+            # Step 6.5: Model interpretability analysis (SHAP/LIME integration)
+            self.logger.info('🧠 Step 6.5: Model interpretability analysis...')
+            interpretability_results = await self._perform_interpretability_analysis(
+                balanced_data, selected_features
+            )
+
+            # Step 6.6: Walk-forward validation (step18 integration)
+            self.logger.info('🔄 Step 6.6: Walk-forward validation...')
+            validation_results = await self._perform_walk_forward_validation(
+                balanced_data, selected_features
+            )
+
             # Step 7: Generate comprehensive results
             self.logger.info('📋 Step 7: Generating comprehensive results...')
             results = await self._generate_comprehensive_results(
-                balanced_data, selected_features, financial_metrics, 
-                risk_metrics, feature_validation, start_time
+                balanced_data, selected_features, financial_metrics,
+                risk_metrics, feature_validation, interpretability_results, validation_results, start_time
             )
             
             # Step 8: Save artifacts and reports
@@ -638,33 +766,34 @@ class UnifiedStep08:
                 self.logger.info(f"   Mean max drawdown: {processed_results['mean_max_drawdown']:.4f}")
                 
                 return processed_results
-                
+
         except Exception as e:
             self.logger.error(f"Failed to run parallel Monte Carlo simulation: {e}")
             return {'error': str(e), 'n_simulations': 0}
         finally:
             # Memory cleanup after Monte Carlo simulation
             self.memory_optimizer.optimize_memory()
-            
-            # Validate required columns
-            required_columns = ['timestamp', 'composite_cluster_id']
-            missing_columns = [col for col in required_columns if col not in unified_data.columns]
-            if missing_columns:
-                self.logger.error(f'Missing required columns: {missing_columns}')
-                return None
-            
-            # Validate regime data
-            regime_data = unified_data['composite_cluster_id'].dropna()
-            if regime_data.empty:
-                self.logger.error('No valid regime data found')
-                return None
-            
-            # Data quality validation
+
+        # Validate required columns
+        required_columns = ['timestamp', 'composite_cluster_id']
+        missing_columns = [col for col in required_columns if col not in unified_data.columns]
+        if missing_columns:
+            self.logger.error(f'Missing required columns: {missing_columns}')
+            return None
+
+        # Validate regime data
+        regime_data = unified_data['composite_cluster_id'].dropna()
+        if regime_data.empty:
+            self.logger.error('No valid regime data found')
+            return None
+
+        # Data quality validation
+        try:
             unified_data = self._validate_and_fix_data_quality(unified_data)
-            
+
             self.logger.info(f'✅ Loaded and validated data: {len(unified_data)} rows, {len(unified_data.columns)} columns')
             return unified_data
-            
+
         except Exception as e:
             self.logger.error(f'Failed to load and validate data: {e}')
             return None

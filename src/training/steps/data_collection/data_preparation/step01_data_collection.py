@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Step 1: Data Collection - Refactored to use BaseStep.
 
 This module handles the data collection step of the training pipeline.
@@ -200,3 +200,88 @@ class DataCollectionStep(BaseStep):
     def get_dependencies(self) -> list:
         """Get list of step dependencies."""
         return []
+
+
+@handles_errors(fallback=False)
+async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: str = None, force_rerun: bool = False) -> bool:
+    """Run the data collection step.
+
+    Args:
+        symbol: Trading symbol (e.g., "ETHUSDT")
+        exchange: Exchange name (e.g., "BINANCE")
+        timeframe: Timeframe (e.g., "1m")
+        data_dir: Data directory (will use standardized path if None)
+        force_rerun: Force re-run even if results exist
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    import time
+    from datetime import datetime
+
+    print('\n' + '=' * 80)
+    print('🚀 STEP 1: DATA COLLECTION - STARTING EXECUTION')
+    print('=' * 80)
+    print(f'🎯 Symbol: {symbol}')
+    print(f'🏢 Exchange: {exchange}')
+    print(f'📊 Timeframe: {timeframe}')
+    if data_dir is None:
+        data_dir = 'data_cache'
+    print(f'📁 Data directory: {data_dir}')
+    print(f'🔄 Force rerun: {force_rerun}')
+    print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print('=' * 80)
+
+    start_time = time.time()
+
+    try:
+        # Create step configuration
+        config = {
+            'SYMBOL': symbol,
+            'EXCHANGE': exchange,
+            'TIMEFRAME': timeframe,
+            'DATA_DIR': data_dir,
+            'lookback_years': 2,  # Default value
+            'data_sources': ['binance'],  # Default value
+            'intervals': [timeframe]  # Use provided timeframe
+        }
+
+        # Initialize and run the step
+        step = DataCollectionStep(config)
+        await step.initialize()
+
+        training_input = {
+            'symbol': symbol,
+            'exchange': exchange,
+            'timeframe': timeframe,
+            'data_dir': data_dir,
+            'force_rerun': force_rerun
+        }
+
+        pipeline_state = {}
+        result = await step.execute(training_input, pipeline_state)
+
+        elapsed_time = time.time() - start_time
+
+        if result.get('data_collection_completed', False):
+            print('✅ Step 1: Data Collection completed successfully')
+            print(f'⏱️ Total execution time: {elapsed_time:.2f} seconds')
+            print(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print('=' * 80)
+            return True
+        else:
+            print('❌ Step 1: Data Collection failed')
+            error = result.get('data_collection_error', 'Unknown error')
+            print(f'   Error: {error}')
+            print(f'⏱️ Total execution time: {elapsed_time:.2f} seconds')
+            print('=' * 80)
+            return False
+
+    except Exception as e:
+        elapsed_time = time.time() - start_time
+        print('💥 STEP 1 EXECUTION ERROR')
+        print('=' * 80)
+        print(f'❌ Error: {str(e)}')
+        print(f'⏱️ Total execution time: {elapsed_time:.2f} seconds')
+        print('=' * 80)
+        return False

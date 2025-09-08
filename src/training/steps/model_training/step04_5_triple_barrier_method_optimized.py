@@ -23,15 +23,7 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-# Enhanced utility imports with dependency injection
-from .step04_dependency_injection import (
-    get_step04_utilities, get_step04_container, create_step04_config,
-    get_common_ops, get_common_utils, get_math_validation, get_parquet_utils,
-    get_serialization_utils, get_data_processing_utils, get_m1_gpu_utils,
-    get_m1_memory_optimizer, get_m1_cpu_optimizer
-)
-
-# Standardized imports from utils (fallback)
+# Enhanced utility imports
 from src.utils.common_operations import (
     ensure_directory,
     safe_read_parquet,
@@ -59,6 +51,12 @@ from src.utils.math_validation import (
     MathValidationError
 )
 from src.utils.parquet_utils import get_parquet_utils
+from src.utils.data_processing_utils import (
+    create_data_quality_report,
+    DataFrameValidator,
+    DataFrameCleaner
+)
+
 # Core decorators imports
 from src.core.decorators import (
     handles_errors,
@@ -78,9 +76,9 @@ from src.core.errors import (
     NotFoundError,
     TimeoutError
 )
-from src.utils.enhanced_memory_management import (
 import logging
 
+from src.utils.enhanced_memory_management import (
     MemoryMonitor,
     MemoryConfig,
     optimize_dataframe_dtypes,
@@ -118,6 +116,82 @@ try:
     FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False
+
+# Simple utility container fallback
+class SimpleUtilsContainer:
+    """Simple utility container to replace missing dependency injection."""
+
+    def __init__(self):
+        self._functions = {}
+
+    def get_function(self, module: str, function_name: str):
+        """Get a function by module and name."""
+        key = f"{module}.{function_name}"
+        if key not in self._functions:
+            # Try to import and cache the function
+            try:
+                if module == 'common_operations':
+                    if function_name == 'get_logger':
+                        self._functions[key] = get_logger
+                    elif function_name == 'safe_float':
+                        self._functions[key] = safe_float
+                    elif function_name == 'safe_int':
+                        self._functions[key] = safe_int
+                    elif function_name == 'safe_divide':
+                        from src.utils.math_validation import safe_divide
+                        self._functions[key] = safe_divide
+                    elif function_name == 'validate_positive':
+                        from src.utils.math_validation import validate_positive
+                        self._functions[key] = validate_positive
+                    elif function_name == 'validate_range':
+                        from src.utils.math_validation import validate_range
+                        self._functions[key] = validate_range
+                    elif function_name == 'safe_kelly_calculation':
+                        from src.utils.math_validation import safe_kelly_calculation
+                        self._functions[key] = safe_kelly_calculation
+                    else:
+                        raise AttributeError(f"Unknown function: {function_name}")
+                elif module == 'data_processing_utils':
+                    if function_name == 'create_data_quality_report':
+                        from src.utils.data_processing_utils import create_data_quality_report
+                        self._functions[key] = create_data_quality_report
+                    elif function_name == 'DataFrameValidator':
+                        from src.utils.data_processing_utils import DataFrameValidator
+                        self._functions[key] = DataFrameValidator
+                    elif function_name == 'DataFrameCleaner':
+                        from src.utils.data_processing_utils import DataFrameCleaner
+                        self._functions[key] = DataFrameCleaner
+                    else:
+                        raise AttributeError(f"Unknown function: {function_name}")
+                elif module == 'm1_gpu_utils':
+                    if function_name == 'get_m1_gpu_manager':
+                        # Fallback implementation
+                        self._functions[key] = lambda: None
+                    else:
+                        raise AttributeError(f"Unknown function: {function_name}")
+                elif module == 'm1_memory_optimizer':
+                    if function_name == 'M1MemoryOptimizer':
+                        # Fallback implementation
+                        self._functions[key] = lambda **kwargs: None
+                    else:
+                        raise AttributeError(f"Unknown function: {function_name}")
+                elif module == 'm1_cpu_optimizer':
+                    if function_name == 'M1CPUOptimizer':
+                        # Fallback implementation
+                        self._functions[key] = lambda **kwargs: None
+                    else:
+                        raise AttributeError(f"Unknown function: {function_name}")
+                else:
+                    raise AttributeError(f"Unknown module: {module}")
+            except ImportError as e:
+                logger.warning(f"Failed to import {key}: {e}")
+                self._functions[key] = lambda *args, **kwargs: None
+
+        return self._functions[key]
+
+def get_step04_utilities():
+    """Get a simple utilities container."""
+    return SimpleUtilsContainer()
 
 # Initialize logger using common utilities
 logger = get_logger('Step4TripleBarrierMethodOptimized')
@@ -258,6 +332,13 @@ class VolatilityBasedParameterCalculator:
             self.logger.warning(f'⚠️ Failed to calculate volatility-based parameters: {e}')
             return self._get_default_parameters()
     
+    def validate_finite(self, value, name: str):
+        """Validate that a value is finite (not NaN or infinite)."""
+        if not np.isfinite(value):
+            self.logger.warning(f'⚠️ {name} is not finite: {value}, using default')
+            return 0.0
+        return value
+
     def _get_default_parameters(self) -> Dict[str, float]:
         """Get default parameters when volatility calculation fails."""
         return {
@@ -1091,12 +1172,12 @@ class OptimizedTripleBarrierMethodStep:
 @cached()
 @log_execution_time()
 async def run_step_optimized(
-    symbol: str, 
-    exchange: str, 
-    timeframe: str, 
-    data_dir: str = None, 
-    force_rerun: bool = False, 
-    config: dict[str, Any] = None
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    data_dir: str = None,
+    force_rerun: bool = False,
+    config: Dict[str, Any] = None
 ) -> StepResult:
     """Run Optimized Step 4: Triple Barrier Method with comprehensive improvements.
     

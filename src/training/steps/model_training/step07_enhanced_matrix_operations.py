@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 import pandas as pd
 
@@ -65,7 +65,7 @@ except ImportError:
 try:
     from numba import jit, prange, float64, float32
     import numba as nb
-import collections
+    import collections
 
     NUMBA_AVAILABLE = True
 except ImportError:
@@ -100,6 +100,9 @@ except ImportError:
     warnings.warn("PyTorch not available - GPU acceleration disabled")
     TORCH_AVAILABLE = False
     torch = None
+
+# Optimization availability flag
+OPTIMIZATIONS_AVAILABLE = TORCH_AVAILABLE or NUMBA_AVAILABLE
 
 # Try to import M1 GPU utilities
 try:
@@ -1649,16 +1652,11 @@ class EnhancedMatrixOperationsStep(BaseStep):
             
             matrix_computations = self.matrix_config.get('matrix_computations', {})
             
-            # Compute correlation matrix with math validation
+            # Compute correlation matrix with optimized operations
             if matrix_computations.get('correlation_matrix', True):
                 try:
-                    if self.matrix_processor:
-                        correlation_matrix = await self.matrix_processor.compute_correlation_matrix(feature_data)
-                    elif hasattr(feature_data, 'corr'):
-                        correlation_matrix = feature_data.corr().values
-                    else:
-                        correlation_matrix = self._compute_correlation_fallback(feature_data)
-                    
+                    correlation_matrix = self._compute_correlation_matrix_optimized(feature_data)
+
                     # Validate correlation matrix using math validation utility
                     if MATH_VALIDATION_AVAILABLE and correlation_matrix is not None:
                         validate_correlation = self.get_utility('correlation_validation')
@@ -1674,21 +1672,22 @@ class EnhancedMatrixOperationsStep(BaseStep):
                             matrices['correlation_matrix'] = correlation_matrix
                     else:
                         matrices['correlation_matrix'] = correlation_matrix
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to compute correlation matrix: {e}")
-            
-            # Compute covariance matrix
+
+            # Compute covariance matrix with optimized operations
             if matrix_computations.get('covariance_matrix', True):
                 try:
-                    if self.matrix_processor:
-                        matrices['covariance_matrix'] = await self.matrix_processor.compute_covariance_matrix(feature_data)
-                    elif hasattr(feature_data, 'cov'):
+                    covariance_matrix = self._compute_covariance_matrix_optimized(feature_data)
+                    matrices['covariance_matrix'] = covariance_matrix
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to compute covariance matrix: {e}")
+                    # Fallback to pandas computation
+                    if hasattr(feature_data, 'cov'):
                         matrices['covariance_matrix'] = feature_data.cov().values
                     else:
                         matrices['covariance_matrix'] = self._compute_covariance_fallback(feature_data)
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to compute covariance matrix: {e}")
             
             # Compute feature interaction matrix
             if matrix_computations.get('feature_interaction_matrix', True):
@@ -1811,14 +1810,100 @@ class EnhancedMatrixOperationsStep(BaseStep):
     
     @log_all_calls
     def _compute_interaction_matrix(self, feature_data: Any) -> Any:
-        """Compute feature interaction matrix.
-        
+        """Compute feature interaction matrix with optimized vectorized operations.
+
         Args:
             feature_data: Feature data
-            
+
         Returns:
             Interaction matrix
         """
+        try:
+            # Use GPU acceleration if available for large datasets
+            if OPTIMIZATIONS_AVAILABLE and self.gpu_manager is not None and len(feature_data) > 10000:
+                return self._compute_interaction_matrix_gpu(feature_data)
+            elif OPTIMIZATIONS_AVAILABLE and self.vectorized_core is not None:
+                return self._compute_interaction_matrix_vectorized(feature_data)
+            else:
+                return self._compute_interaction_matrix_optimized(feature_data)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Optimized interaction matrix failed: {e}")
+            return self._compute_interaction_matrix_fallback(feature_data)
+
+    def _compute_interaction_matrix_gpu(self, feature_data: Any) -> Any:
+        """Compute feature interaction matrix using GPU acceleration."""
+        n_features = len(feature_data.columns)
+
+        # Standardize data for GPU processing
+        standardized = ((feature_data - feature_data.mean()) / (feature_data.std() + 1e-08)).values.astype(np.float32)
+
+        # Use GPU for matrix multiplication
+        interaction_matrix = np.zeros((n_features, n_features), dtype=np.float32)
+
+        # Process in batches to avoid memory issues
+        batch_size = min(100, n_features)
+        for i in range(0, n_features, batch_size):
+            i_end = min(i + batch_size, n_features)
+            batch_data = standardized[:, i:i_end]
+
+            # GPU-accelerated matrix operations
+            batch_result = self.gpu_manager.optimize_matrix_operations(
+                batch_data.T @ batch_data / len(feature_data),
+                operation='interaction_matrix'
+            )
+
+            interaction_matrix[i:i_end, :] = batch_result
+
+        # Make matrix symmetric
+        interaction_matrix = (interaction_matrix + interaction_matrix.T) / 2
+        return interaction_matrix
+
+    def _compute_interaction_matrix_vectorized(self, feature_data: Any) -> Any:
+        """Compute feature interaction matrix using vectorized operations."""
+        n_features = len(feature_data.columns)
+
+        # Standardize data
+        standardized = ((feature_data - feature_data.mean()) / (feature_data.std() + 1e-08)).values
+
+        # Vectorized interaction computation using outer products
+        # This avoids nested loops by computing all interactions simultaneously
+        interaction_matrix = np.zeros((n_features, n_features))
+
+        # Compute all pairwise interactions in a vectorized manner
+        for i in range(n_features):
+            # Compute interactions between feature i and all other features
+            interactions = standardized[:, i:i+1] * standardized
+            interaction_matrix[i, :] = np.mean(interactions, axis=0)
+
+        # Make matrix symmetric
+        interaction_matrix = (interaction_matrix + interaction_matrix.T) / 2
+        return interaction_matrix
+
+    def _compute_interaction_matrix_optimized(self, feature_data: Any) -> Any:
+        """Compute feature interaction matrix with optimized pandas operations."""
+        n_features = len(feature_data.columns)
+        interaction_matrix = np.zeros((n_features, n_features))
+
+        # Standardize data
+        standardized = (feature_data - feature_data.mean()) / (feature_data.std() + 1e-08)
+
+        # Use pandas corr for better performance on smaller datasets
+        correlation_matrix = standardized.corr().values
+
+        # Interaction matrix is related to correlation but different calculation
+        # Use vectorized operations instead of nested loops
+        for i in range(n_features):
+            # Vectorized computation for row i
+            feature_i = standardized.iloc[:, i].values
+            interactions = feature_i.reshape(-1, 1) * standardized.values
+            interaction_matrix[i, :] = np.mean(interactions, axis=0)
+
+        # Make matrix symmetric
+        interaction_matrix = (interaction_matrix + interaction_matrix.T) / 2
+        return interaction_matrix
+
+    def _compute_interaction_matrix_fallback(self, feature_data: Any) -> Any:
+        """Fallback method for interaction matrix computation."""
         n_features = len(feature_data.columns)
         interaction_matrix = np.zeros((n_features, n_features))
         standardized = (feature_data - feature_data.mean()) / (feature_data.std() + 1e-08)
@@ -1828,16 +1913,200 @@ class EnhancedMatrixOperationsStep(BaseStep):
                 interaction_matrix[i, j] = interaction
                 interaction_matrix[j, i] = interaction
         return interaction_matrix
+
+    def _compute_correlation_matrix_optimized(self, data: Any) -> np.ndarray:
+        """Compute correlation matrix with optimized operations."""
+        try:
+            if OPTIMIZATIONS_AVAILABLE and self.gpu_manager is not None and len(data) > 5000:
+                return self._compute_correlation_matrix_gpu(data)
+            elif OPTIMIZATIONS_AVAILABLE and self.matrix_ops is not None:
+                return self._compute_correlation_matrix_vectorized(data)
+            else:
+                # Use pandas corr for better performance on smaller datasets
+                if hasattr(data, 'corr'):
+                    return data.corr().values
+                else:
+                    return self._compute_correlation_fallback(data)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Optimized correlation matrix failed: {e}")
+            return self._compute_correlation_fallback(data)
+
+    def _compute_correlation_matrix_gpu(self, data: Any) -> np.ndarray:
+        """Compute correlation matrix using GPU acceleration."""
+        # Convert to numpy array for GPU processing
+        if hasattr(data, 'values'):
+            data_array = data.values.astype(np.float32)
+        else:
+            data_array = np.array(data, dtype=np.float32)
+
+        # Standardize data
+        data_mean = np.mean(data_array, axis=0, keepdims=True)
+        data_std = np.std(data_array, axis=0, keepdims=True) + 1e-8
+        standardized = (data_array - data_mean) / data_std
+
+        # Use GPU for correlation computation
+        correlation_matrix = self.gpu_manager.optimize_matrix_operations(
+            standardized.T @ standardized / len(data_array),
+            operation='correlation_matrix'
+        )
+
+        return correlation_matrix
+
+    def _compute_correlation_matrix_vectorized(self, data: Any) -> np.ndarray:
+        """Compute correlation matrix using vectorized operations."""
+        # Convert to numpy array
+        if hasattr(data, 'values'):
+            data_array = data.values
+        else:
+            data_array = np.array(data)
+
+        # Vectorized correlation computation
+        # This avoids pandas overhead for large matrices
+        n_samples, n_features = data_array.shape
+
+        # Standardize data
+        data_mean = np.mean(data_array, axis=0, keepdims=True)
+        data_std = np.std(data_array, axis=0, keepdims=True) + 1e-8
+        standardized = (data_array - data_mean) / data_std
+
+        # Compute correlation matrix using matrix operations
+        correlation_matrix = (standardized.T @ standardized) / n_samples
+
+        return correlation_matrix
+
+    def _compute_covariance_matrix_optimized(self, data: Any) -> np.ndarray:
+        """Compute covariance matrix with optimized operations."""
+        try:
+            if OPTIMIZATIONS_AVAILABLE and self.gpu_manager is not None and len(data) > 5000:
+                return self._compute_covariance_matrix_gpu(data)
+            elif OPTIMIZATIONS_AVAILABLE and self.matrix_ops is not None:
+                return self._compute_covariance_matrix_vectorized(data)
+            else:
+                # Use pandas cov for better performance on smaller datasets
+                if hasattr(data, 'cov'):
+                    return data.cov().values
+                else:
+                    return self._compute_covariance_fallback(data)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Optimized covariance matrix failed: {e}")
+            return self._compute_covariance_fallback(data)
+
+    def _compute_covariance_matrix_gpu(self, data: Any) -> np.ndarray:
+        """Compute covariance matrix using GPU acceleration."""
+        # Convert to numpy array for GPU processing
+        if hasattr(data, 'values'):
+            data_array = data.values.astype(np.float32)
+        else:
+            data_array = np.array(data, dtype=np.float32)
+
+        # Center the data (subtract mean)
+        data_mean = np.mean(data_array, axis=0, keepdims=True)
+        centered_data = data_array - data_mean
+
+        # Use GPU for covariance computation
+        covariance_matrix = self.gpu_manager.optimize_matrix_operations(
+            centered_data.T @ centered_data / (len(data_array) - 1),
+            operation='covariance_matrix'
+        )
+
+        return covariance_matrix
+
+    def _compute_covariance_matrix_vectorized(self, data: Any) -> np.ndarray:
+        """Compute covariance matrix using vectorized operations."""
+        # Convert to numpy array
+        if hasattr(data, 'values'):
+            data_array = data.values
+        else:
+            data_array = np.array(data)
+
+        # Vectorized covariance computation
+        n_samples, n_features = data_array.shape
+
+        # Center the data
+        data_mean = np.mean(data_array, axis=0, keepdims=True)
+        centered_data = data_array - data_mean
+
+        # Compute covariance matrix using matrix operations
+        covariance_matrix = (centered_data.T @ centered_data) / (n_samples - 1)
+
+        return covariance_matrix
+
     @log_all_calls
     def _compute_regime_transition_matrix(self, regime_labels: pd.Series) -> np.ndarray:
-        """Compute regime transition matrix.
-        
+        """Compute regime transition matrix with optimized vectorized operations.
+
         Args:
             regime_labels: Series of regime labels
-            
+
         Returns:
             Transition matrix
         """
+        try:
+            # Use optimized computation if available
+            if OPTIMIZATIONS_AVAILABLE and self.vectorized_core is not None:
+                return self._compute_regime_transition_matrix_vectorized(regime_labels)
+            else:
+                return self._compute_regime_transition_matrix_optimized(regime_labels)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Optimized transition matrix failed: {e}")
+            return self._compute_regime_transition_matrix_fallback(regime_labels)
+
+    def _compute_regime_transition_matrix_vectorized(self, regime_labels: pd.Series) -> np.ndarray:
+        """Compute regime transition matrix using fully vectorized operations."""
+        unique_regimes = sorted(regime_labels.unique())
+        n_regimes = len(unique_regimes)
+        regime_to_idx = {regime: idx for idx, regime in enumerate(unique_regimes)}
+
+        # Vectorized regime index mapping
+        regime_indices = regime_labels.map(regime_to_idx).values
+
+        # Create transition pairs using vectorized operations
+        from_indices = regime_indices[:-1]  # All elements except last
+        to_indices = regime_indices[1:]    # All elements except first
+
+        # Use numpy's bincount for efficient counting
+        # Create a 2D histogram of transitions
+        transition_counts = np.zeros((n_regimes, n_regimes))
+
+        # Vectorized counting using advanced indexing
+        np.add.at(transition_counts, (from_indices, to_indices), 1)
+
+        # Vectorized normalization
+        row_sums = transition_counts.sum(axis=1, keepdims=True)
+        transition_matrix = np.divide(transition_counts, row_sums, where=row_sums != 0)
+
+        return transition_matrix
+
+    def _compute_regime_transition_matrix_optimized(self, regime_labels: pd.Series) -> np.ndarray:
+        """Compute regime transition matrix with optimized pandas operations."""
+        unique_regimes = sorted(regime_labels.unique())
+        n_regimes = len(unique_regimes)
+
+        # Use pandas value_counts and crosstab for better performance
+        regime_to_idx = {regime: idx for idx, regime in enumerate(unique_regimes)}
+
+        # Create shifted series for transitions
+        from_regimes = regime_labels.shift(1).dropna()
+        to_regimes = regime_labels.loc[from_regimes.index]
+
+        # Use pandas crosstab for efficient counting
+        transition_counts = pd.crosstab(from_regimes, to_regimes, dropna=False)
+
+        # Ensure all regimes are represented
+        transition_matrix = np.zeros((n_regimes, n_regimes))
+        for i, from_regime in enumerate(unique_regimes):
+            for j, to_regime in enumerate(unique_regimes):
+                if from_regime in transition_counts.index and to_regime in transition_counts.columns:
+                    transition_matrix[i, j] = transition_counts.loc[from_regime, to_regime]
+
+        # Vectorized normalization
+        row_sums = transition_matrix.sum(axis=1, keepdims=True)
+        transition_matrix = np.divide(transition_matrix, row_sums, where=row_sums != 0)
+
+        return transition_matrix
+
+    def _compute_regime_transition_matrix_fallback(self, regime_labels: pd.Series) -> np.ndarray:
+        """Fallback method for regime transition matrix computation."""
         unique_regimes = sorted(regime_labels.unique())
         n_regimes = len(unique_regimes)
         transition_matrix = np.zeros((n_regimes, n_regimes))
@@ -1846,8 +2115,8 @@ class EnhancedMatrixOperationsStep(BaseStep):
             from_regime = regime_to_idx[regime_labels.iloc[i]]
             to_regime = regime_to_idx[regime_labels.iloc[i + 1]]
             transition_matrix[from_regime, to_regime] += 1
-        row_sums = transition_matrix.sum(axis = 1, keepdims = True)
-        transition_matrix = np.divide(transition_matrix, row_sums, where = row_sums != 0)
+        row_sums = transition_matrix.sum(axis=1, keepdims=True)
+        transition_matrix = np.divide(transition_matrix, row_sums, where=row_sums != 0)
         return transition_matrix
 
     @comprehensive_function_tracker(None)

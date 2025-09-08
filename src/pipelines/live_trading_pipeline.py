@@ -10,9 +10,9 @@ from .core.decorators import (
     traced,
     validates,
 )
-from .core.enums import (
 import logging
 
+from .core.enums import (
     PerformanceLevel,
     performance_monitor,
 )

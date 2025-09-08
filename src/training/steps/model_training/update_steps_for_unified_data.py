@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 # src/training/steps/update_steps_for_unified_data.py
 
 """Utility script to update all training steps to use the unified data loader."

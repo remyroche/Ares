@@ -1,61 +1,61 @@
-from src.core.decorators import handles_errors
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-from ..standardized_parquet_handler import standardized_parquet_handler
+# Standard library imports
+import asyncio
+import datetime
+import json
+import random
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-# Import enhanced components
-from src.utils.common_operations import (
+# Third-party imports
+import numpy as np
+import pandas as pd
+
+# Local imports
+from ....core.decorators import (
+    handles_errors, validates, traced, log_execution_time,
+    timeout, error_boundary, compose, validate_data_quality,
+    monitor_step_execution, ensure_data_integrity, validate_pipeline_step
+)
+from ....core.errors import (
+    ValidationError, DataIntegrityError, FileOperationError,
+    MathValidationError, TimeoutError
+)
+from ....utils.common_operations import (
     format_datetime, get_current_datetime, safe_file_exists,
     ensure_directory, safe_json_dump, safe_json_load,
     validate_file_path, get_file_size, check_disk_space,
     create_directory_if_not_exists, get_timestamp
 )
-from src.utils.math_validation import (
+from ....utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ....utils.decorators import traced, validates
+from ....utils.logger import get_logger
+from ....utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power,
     validate_numeric_range, is_finite_number
 )
-from src.utils.parquet_utils import ParquetUtils
-from src.core.decorators import (
-    handles_errors, validates, traced, log_execution_time, 
-    timeout, error_boundary, compose, validate_data_quality, 
-    monitor_step_execution, ensure_data_integrity, validate_pipeline_step
-)
-from src.core.errors import (
-    ValidationError, DataIntegrityError, FileOperationError,
-    MathValidationError, TimeoutError
-)
+from ....utils.parquet_utils import ParquetUtils
+from ..market_analysis.regime_continuity_decorator import per_regime_step
+from ..model_training.validation.step18_walk_forward_validation import Step18WalkForwardValidation
+from ..per_regime_integrator import per_regime_processing, aggregate_regime_results, RegimeProcessingContext
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from .utils.pipeline_standards import pipeline_standards
 
 """Step 18: Walk Forward Validation - Per-Regime Implementation.
 
 This module provides per-HMM regime walk forward validation functionality, ensuring that
 walk forward validation is performed specifically for each regime's characteristics and market behavior.
 """
-import asyncio
-from pathlib import Path
-import json
-from src.training.steps.model_training.validation.step18_walk_forward_validation import Step18WalkForwardValidation
-from src.training.steps.per_regime_integrator import per_regime_processing, aggregate_regime_results, RegimeProcessingContext
-from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
-from .utils.pipeline_standards import pipeline_standards
-from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
-import datetime
-import random
-import time
-
-import pandas as pd
-
-from src.utils.logger import get_logger
-from src.utils.decorators import traced, validates
 
 # Import optimization utilities for enhanced performance
 try:
-    from src.utils.vectorized_processing_core import get_vectorized_processing_core
-    from src.utils.m1_gpu_utils import get_m1_gpu_manager
-    from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.enhanced_step_optimizations import get_step_optimization_manager
-import logging
-import os
-import time
+    from ....utils.vectorized_processing_core import get_vectorized_processing_core
+    from ....utils.m1_gpu_utils import get_m1_gpu_manager
+    from ....utils.m1_memory_optimizer import get_m1_memory_optimizer
+    from ....utils.enhanced_step_optimizations import get_step_optimization_manager
+    import logging
+    import os
+    import time
 
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
@@ -990,7 +990,7 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
             self.logger.error(f'❌ Error calculating real performance metrics for regime {regime_id}: {e}')
             return self._get_fallback_metrics()
 
-    @handles_errors(default_return=self._get_fallback_metrics(), context="calculate_vectorized_metrics")
+    @handles_errors(default_return={'accuracy': 0.5, 'precision': 0.5, 'recall': 0.5, 'f1_score': 0.5, 'sharpe_ratio': 0.0, 'sortino_ratio': 0.0, 'calmar_ratio': 0.0}, context="calculate_vectorized_metrics")
     async def _calculate_vectorized_metrics(self, test_returns: np.ndarray, regime_id: int) -> Dict[str, Any]:
         """Calculate performance metrics using vectorized operations with math validation."""
         try:

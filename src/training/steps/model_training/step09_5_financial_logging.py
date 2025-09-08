@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 Financial metrics logging for Step09.5_5.
 Independent logging module that can be used without the reporting system.

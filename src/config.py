@@ -19,14 +19,14 @@ def get_complete_config() -> dict[str, Any]:
         dict: Complete configuration dictionary
     """
     # Import here to avoid circular imports
-    from .core.config_service import get_config_service
-    config_service = get_config_service()
-    return config_service.get_config()
+    from .config.config_manager import get_config_manager
+    config_manager = get_config_manager()
+    return config_manager.get_complete_config()
 
 def get_environment_config() -> dict[str, Any]:
     """Get environment configuration."""
     from . import get_environment_settings
-import logging
+    import logging
 
     try:
         env_settings = get_environment_settings()
@@ -405,4 +405,7 @@ class ConfigurationManager:
 
     def get_complete_config(self) -> dict[str, Any]:
         """Get complete configuration."""
-        return get_complete_config()
+        # Use the config manager directly to avoid circular dependency
+        from .config.config_manager import get_config_manager
+        config_manager = get_config_manager()
+        return config_manager.get_complete_config()

@@ -9,8 +9,21 @@ import sys
 import tempfile
 from pathlib import Path
 
-from core.config import AnalysisConfig, CodeQualityConfig
+# from core.config import AnalysisConfig, CodeQualityConfig
 
+from dataclasses import dataclass
+from typing import List
+
+@dataclass
+class CodeQualityConfig:
+    """Simple configuration class for the analyzer."""
+    analysis_timeout: int = 300
+    max_line_length: int = 120
+    ignore_patterns: List[str] = None
+
+    def __post_init__(self):
+        if self.ignore_patterns is None:
+            self.ignore_patterns = ["__pycache__", "*.pyc", ".git", "node_modules"]
 
 class StaticAnalysisAnalyzer:
     """

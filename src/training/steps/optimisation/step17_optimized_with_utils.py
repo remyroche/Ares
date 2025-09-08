@@ -70,7 +70,7 @@ from src.utils.comprehensive_function_logger import (
     log_internal_call, log_step_progress, log_data_operation
 )
 from src.utils.logger import system_logger
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 # Custom Exceptions extending core errors
 class Step17ValidationError(ValidationError):

@@ -5,7 +5,7 @@ from typing import Any
 import pandas as pd
 from typing import Tuple
 import numpy as np
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 # TPSL OPTIMIZATION - TEMPORARILY DISABLED
 # This file contains TPSL optimization functionality that is temporarily disabled

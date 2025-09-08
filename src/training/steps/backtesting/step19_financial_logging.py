@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 Financial metrics logging for Step19_Financial.
 Independent logging module that can be used without the reporting system.
@@ -19,8 +19,8 @@ from src.utils.logger import system_logger
 
 # Import enhanced functionality if available
 try:
+    import logging
     from src.utils.enhanced_financial_metrics_logger import (
-import logging
 
         get_enhanced_financial_metrics_logger,
         validate_and_log_regime_data

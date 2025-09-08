@@ -3,7 +3,7 @@ from typing import Any
 import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 'Gap Filler Pipeline for Step1.\n\nHandles gap detection and filling for aggtrades data.\n'
 import asyncio

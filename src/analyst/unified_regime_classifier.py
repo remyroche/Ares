@@ -29,8 +29,6 @@ try:
 except ImportError:
     SRBreakoutPredictor = None
 
-import logging
-
 try:
     from src.utils.logger import system_logger
 except ImportError:
@@ -38,11 +36,9 @@ except ImportError:
 
 try:
     from src.utils.warning_symbols import warning
-import json
-import time
-
+    import json
+    import time
 except ImportError:
-
     def warning(msg: Any) -> None:
         print(f'WARNING: {msg}')
 

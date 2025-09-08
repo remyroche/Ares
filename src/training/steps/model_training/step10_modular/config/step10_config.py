@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Configuration Management.
 
 This module provides comprehensive configuration management for the unified

@@ -394,6 +394,59 @@ class M1GPUManager:
         self._selected_dtype_cache[cache_key] = preferred
         return preferred
 
+    def optimize_rolling_calculation(self, tensor_data: torch.Tensor,
+                                   window_size: int = 10,
+                                   operation: str = "regime_classification") -> torch.Tensor:
+        """Optimized rolling calculations using GPU acceleration.
+
+        Args:
+            tensor_data: Input tensor data
+            window_size: Size of the rolling window
+            operation: Type of operation ('regime_classification', 'volatility', etc.)
+
+        Returns:
+            Processed tensor with rolling calculations
+        """
+        with self.gpu_context(f"rolling_calc_{operation}"):
+            # Move tensor to GPU
+            data_gpu = self.to_device(tensor_data, "general")
+
+            if operation == "regime_classification":
+                # For regime classification, compute rolling statistics
+                # Rolling mean for smoothing
+                kernel = torch.ones(window_size, device=self.device) / window_size
+                result = torch.nn.functional.conv1d(
+                    data_gpu.unsqueeze(0).unsqueeze(0),
+                    kernel.unsqueeze(0).unsqueeze(0),
+                    padding=window_size//2
+                ).squeeze()
+
+                # Apply activation-like transformation for classification
+                result = torch.sigmoid(result)
+
+            elif operation == "volatility":
+                # Rolling standard deviation for volatility
+                result = torch.zeros_like(data_gpu)
+
+                for i in range(window_size, len(data_gpu)):
+                    window = data_gpu[i-window_size:i]
+                    result[i] = torch.std(window)
+
+            else:
+                # Generic rolling mean
+                kernel = torch.ones(window_size, device=self.device) / window_size
+                result = torch.nn.functional.conv1d(
+                    data_gpu.unsqueeze(0).unsqueeze(0),
+                    kernel.unsqueeze(0).unsqueeze(0),
+                    padding=window_size//2
+                ).squeeze()
+
+            # Ensure result is on CPU for compatibility
+            if result.device.type != "cpu":
+                result = result.cpu()
+
+            return result
+
     def matrix_multiply_mps(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         """Optimized matrix multiplication for MPS."""
         with self.gpu_context("matrix_multiply"):

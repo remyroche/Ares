@@ -1,4 +1,4 @@
-from ..standardized_parquet_handler import standardized_parquet_handler
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Critical Training Steps with Fail-Fast Behavior
 
@@ -15,11 +15,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from src.utils.logger import system_logger
-from .enhanced_error_handling import (
 import logging
 import numpy as np
 import time
 
+from .enhanced_error_handling import (
     enhanced_error_handler,
     enhanced_async_error_handler,
     critical_process,

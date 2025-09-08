@@ -223,29 +223,46 @@ class SimplifiedTrainingManager:
                     # The actual data files should be stored in the step's data directory
                     if 'dataframe' in outputs:
                         # Try to load from the data directory with proper path structure
-                        data_path = f'data/training/unified/{self.exchange.lower()}/{self.symbol}/1m/exchange={self.exchange}/symbol={self.symbol}/timeframe=1m'
+                        # Use uppercase for exchange in path to match actual directory structure
+                        # ETHUSDT is primary, BTCUSDT is secondary fallback
+                        from src.utils.parquet_utils import ParquetUtils
+                        parquet_utils = ParquetUtils()
+
+                        # Try ETHUSDT first (primary)
+                        primary_path = f'data/training/unified/{self.exchange.upper()}/ETHUSDT/1m/exchange={self.exchange.upper()}/symbol=ETHUSDT/timeframe=1m'
+                        data = None
                         try:
-                            from src.utils.parquet_utils import ParquetUtils
-                            parquet_utils = ParquetUtils()
-                            data = parquet_utils.safe_read_parquet(data_path)
+                            data = parquet_utils.safe_read_parquet(primary_path)
                             if data is not None and not data.empty:
                                 self.pipeline_state['dataframe'] = data
                                 self.pipeline_state['validated_data'] = data
-                                self.logger.info(f'✅ Loaded dataframe from {step_name} ({len(data)} rows)')
+                                self.logger.info(f'✅ Loaded ETHUSDT dataframe from {step_name} ({len(data)} rows)')
                         except Exception as e:
-                            self.logger.warning(f'⚠️ Failed to load dataframe from {step_name}: {e}')
-                            # Try alternative path structure
+                            self.logger.warning(f'⚠️ Failed to load ETHUSDT data from {step_name}: {e}')
+
+                        # Try BTCUSDT as secondary fallback if ETHUSDT failed
+                        if (data is None or data.empty) and self.symbol != 'ETHUSDT':
+                            fallback_path = f'data/training/unified/{self.exchange.upper()}/BTCUSDT/1m/exchange={self.exchange.upper()}/symbol=BTCUSDT/timeframe=1m'
                             try:
-                                from src.utils.parquet_utils import ParquetUtils
-                                parquet_utils = ParquetUtils()
-                                alt_path = f'data/training/unified/{self.exchange.lower()}/{self.symbol}/1m/exchange={self.exchange}'
-                                data = parquet_utils.safe_read_parquet(alt_path)
+                                data = parquet_utils.safe_read_parquet(fallback_path)
                                 if data is not None and not data.empty:
                                     self.pipeline_state['dataframe'] = data
                                     self.pipeline_state['validated_data'] = data
-                                    self.logger.info(f'✅ Loaded dataframe from alternative path ({len(data)} rows)')
-                            except Exception as e2:
-                                self.logger.warning(f'⚠️ Failed to load dataframe from alternative path: {e2}')
+                                    self.logger.info(f'✅ Loaded BTCUSDT dataframe as fallback from {step_name} ({len(data)} rows)')
+                            except Exception as e:
+                                self.logger.warning(f'⚠️ Failed to load BTCUSDT fallback data: {e}')
+
+                        # Try original requested symbol as final fallback if both ETHUSDT and BTCUSDT failed
+                        if (data is None or data.empty) and self.symbol not in ['ETHUSDT', 'BTCUSDT']:
+                            original_path = f'data/training/unified/{self.exchange.upper()}/{self.symbol}/1m/exchange={self.exchange.upper()}/symbol={self.symbol}/timeframe=1m'
+                            try:
+                                data = parquet_utils.safe_read_parquet(original_path)
+                                if data is not None and not data.empty:
+                                    self.pipeline_state['dataframe'] = data
+                                    self.pipeline_state['validated_data'] = data
+                                    self.logger.info(f'✅ Loaded {self.symbol} dataframe from {step_name} ({len(data)} rows)')
+                            except Exception as e:
+                                self.logger.warning(f'⚠️ Failed to load {self.symbol} data: {e}')
                             
             except Exception as e:
                 self.logger.warning(f'⚠️ Failed to load data from {step_name}: {e}')

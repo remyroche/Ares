@@ -60,13 +60,25 @@ class RegimeValidationResult:
 
 @dataclass
 class FailFastValidationResult:
-    """Result of fail-fast validation checks."""
+    """Result of comprehensive fail-fast validation checks."""
     should_fail: bool
     failure_reason: Optional[str]
     warnings: List[str]
     critical_issues: List[str]
     degradation_detected: bool
     empty_running_detected: bool
+    validation_categories: Dict[str, bool] = None  # Category-wise validation results
+    data_quality_score: float = 0.0
+    performance_score: float = 0.0
+    model_quality_score: float = 0.0
+    feature_quality_score: float = 0.0
+    recommendations: List[str] = None
+    
+    def __post_init__(self):
+        if self.validation_categories is None:
+            self.validation_categories = {}
+        if self.recommendations is None:
+            self.recommendations = []
 
 
 class EnhancedFinancialMetricsLogger:
@@ -309,9 +321,10 @@ class EnhancedFinancialMetricsLogger:
                                     expected_regimes: Optional[List[str]] = None,
                                     min_data_quality: float = 0.7,
                                     check_empty_running: bool = True,
-                                    check_degradation: bool = True) -> FailFastValidationResult:
+                                    check_degradation: bool = True,
+                                    additional_context: Optional[Dict[str, Any]] = None) -> FailFastValidationResult:
         """
-        Perform fail-fast validation to prevent empty running or important degradation.
+        Perform comprehensive fail-fast validation covering all important aspects.
         
         Args:
             data: DataFrame to validate
@@ -320,9 +333,10 @@ class EnhancedFinancialMetricsLogger:
             min_data_quality: Minimum required data quality score
             check_empty_running: Whether to check for empty running conditions
             check_degradation: Whether to check for performance degradation
+            additional_context: Additional context for validation (model metrics, performance data, etc.)
             
         Returns:
-            FailFastValidationResult with validation details
+            FailFastValidationResult with comprehensive validation details
         """
         warnings = []
         critical_issues = []
@@ -330,84 +344,100 @@ class EnhancedFinancialMetricsLogger:
         failure_reason = None
         empty_running_detected = False
         degradation_detected = False
+        validation_categories = {}
+        recommendations = []
         
         try:
-            # Check for empty data
-            if data is None or data.empty:
-                should_fail = True
-                failure_reason = "Empty or None data provided"
-                critical_issues.append("Data is empty or None")
-                empty_running_detected = True
+            # 1. DATA QUALITY VALIDATION
+            data_quality_score = self._validate_data_quality_comprehensive(data, warnings, critical_issues)
+            validation_categories['data_quality'] = data_quality_score >= 0.7
             
-            # Check for regime data if this is a post-HMM step
-            if step_name and 'step0' in step_name.lower() and int(step_name.split('step')[1][:2]) > 8:
+            # 2. REGIME VALIDATION (for post-HMM steps)
+            regime_quality_score = 1.0
+            if step_name and self._is_post_hmm_step(step_name):
                 regime_validation = self.validate_regime_data(data, step_name=step_name)
-                
-                if not regime_validation.is_valid:
-                    should_fail = True
-                    failure_reason = f"Regime validation failed: {', '.join(regime_validation.validation_errors)}"
-                    critical_issues.extend(regime_validation.validation_errors)
-                
-                if regime_validation.quality_score < min_data_quality:
-                    should_fail = True
-                    failure_reason = f"Data quality too low: {regime_validation.quality_score:.3f} < {min_data_quality}"
-                    critical_issues.append(f"Data quality score {regime_validation.quality_score:.3f} below threshold {min_data_quality}")
-                    degradation_detected = True
-                
-                # Check for expected regimes
-                if expected_regimes:
-                    missing_regimes = set(expected_regimes) - set(regime_validation.regime_ids)
-                    if missing_regimes:
-                        should_fail = True
-                        failure_reason = f"Missing expected regimes: {list(missing_regimes)}"
-                        critical_issues.append(f"Missing expected regimes: {list(missing_regimes)}")
+                regime_quality_score = self._validate_regime_quality_comprehensive(
+                    regime_validation, expected_regimes, warnings, critical_issues
+                )
+                validation_categories['regime_quality'] = regime_validation.is_valid and regime_quality_score >= 0.5
+            else:
+                validation_categories['regime_quality'] = True  # Not applicable for pre-HMM steps
             
-            # Check for data quality issues
-            if data is not None and not data.empty:
-                # Check for excessive NaN values
-                nan_ratio = data.isnull().sum().sum() / (data.shape[0] * data.shape[1])
-                if nan_ratio > 0.5:
-                    should_fail = True
-                    failure_reason = f"Excessive NaN values: {nan_ratio:.3f}"
-                    critical_issues.append(f"NaN ratio {nan_ratio:.3f} exceeds threshold 0.5")
-                    degradation_detected = True
-                
-                # Check for constant columns
-                constant_columns = []
-                for col in data.columns:
-                    if data[col].nunique() <= 1:
-                        constant_columns.append(col)
-                
-                if len(constant_columns) > len(data.columns) * 0.3:
-                    should_fail = True
-                    failure_reason = f"Too many constant columns: {len(constant_columns)}/{len(data.columns)}"
-                    critical_issues.append(f"Too many constant columns: {len(constant_columns)}/{len(data.columns)}")
-                    degradation_detected = True
-                
-                # Check for empty running conditions
-                if check_empty_running:
-                    # Check if all values are the same
-                    if data.nunique().sum() <= len(data.columns):
-                        should_fail = True
-                        failure_reason = "Empty running detected: insufficient data variation"
-                        critical_issues.append("Empty running: insufficient data variation")
-                        empty_running_detected = True
-                    
-                    # Check for suspiciously small datasets
-                    if len(data) < 10:
-                        should_fail = True
-                        failure_reason = f"Dataset too small: {len(data)} samples"
-                        critical_issues.append(f"Dataset too small: {len(data)} samples")
-                        empty_running_detected = True
+            # 3. PERFORMANCE VALIDATION
+            performance_score = self._validate_performance_comprehensive(
+                additional_context, check_degradation, warnings, critical_issues
+            )
+            validation_categories['performance'] = performance_score >= 0.6
             
-            # Check for degradation patterns
-            if check_degradation and len(self.fail_fast_history) > 0:
-                recent_failures = [h for h in self.fail_fast_history[-5:] if h['should_fail']]
-                if len(recent_failures) >= 3:
-                    should_fail = True
-                    failure_reason = "Performance degradation detected: multiple recent failures"
-                    critical_issues.append("Performance degradation: multiple recent failures")
-                    degradation_detected = True
+            # 4. MODEL QUALITY VALIDATION
+            model_quality_score = self._validate_model_quality_comprehensive(
+                additional_context, warnings, critical_issues
+            )
+            validation_categories['model_quality'] = model_quality_score >= 0.6
+            
+            # 5. FEATURE QUALITY VALIDATION
+            feature_quality_score = self._validate_feature_quality_comprehensive(
+                data, additional_context, warnings, critical_issues
+            )
+            validation_categories['feature_quality'] = feature_quality_score >= 0.6
+            
+            # 6. EXECUTION ENVIRONMENT VALIDATION
+            execution_score = self._validate_execution_environment_comprehensive(
+                additional_context, warnings, critical_issues
+            )
+            validation_categories['execution_environment'] = execution_score >= 0.7
+            
+            # 7. BUSINESS LOGIC VALIDATION
+            business_logic_score = self._validate_business_logic_comprehensive(
+                data, step_name, additional_context, warnings, critical_issues
+            )
+            validation_categories['business_logic'] = business_logic_score >= 0.7
+            
+            # 8. EMPTY RUNNING DETECTION
+            if check_empty_running:
+                empty_running_detected = self._detect_empty_running_comprehensive(
+                    data, warnings, critical_issues
+                )
+            
+            # Calculate overall quality score
+            applicable_scores = [score for score in [
+                data_quality_score, regime_quality_score, performance_score,
+                model_quality_score, feature_quality_score, execution_score, business_logic_score
+            ] if score is not None]
+            
+            overall_score = sum(applicable_scores) / len(applicable_scores) if applicable_scores else 0.0
+            
+            # Determine degradation
+            if overall_score < 0.5:
+                degradation_detected = True
+                critical_issues.append(f"Overall system quality below threshold: {overall_score:.2f}")
+            
+            # Generate recommendations
+            recommendations = self._generate_recommendations_comprehensive(
+                validation_categories, overall_score, warnings, critical_issues
+            )
+            
+            # Determine if we should fail fast
+            should_fail = (
+                empty_running_detected or 
+                (degradation_detected and self.fail_fast_enabled) or
+                len(critical_issues) > 0 or
+                overall_score < 0.4 or
+                sum(validation_categories.values()) < len(validation_categories) * 0.6
+            )
+            
+            # Set failure reason
+            if should_fail:
+                if empty_running_detected:
+                    failure_reason = "Empty running detected - insufficient data"
+                elif degradation_detected:
+                    failure_reason = "Performance degradation detected"
+                elif critical_issues:
+                    failure_reason = f"Critical issues: {', '.join(critical_issues[:2])}"
+                elif overall_score < 0.4:
+                    failure_reason = f"Overall system quality critically low: {overall_score:.2f}"
+                else:
+                    failure_reason = "Multiple validation categories failed"
             
             result = FailFastValidationResult(
                 should_fail=should_fail,
@@ -415,14 +445,22 @@ class EnhancedFinancialMetricsLogger:
                 warnings=warnings,
                 critical_issues=critical_issues,
                 degradation_detected=degradation_detected,
-                empty_running_detected=empty_running_detected
+                empty_running_detected=empty_running_detected,
+                validation_categories=validation_categories,
+                data_quality_score=data_quality_score,
+                performance_score=performance_score,
+                model_quality_score=model_quality_score,
+                feature_quality_score=feature_quality_score,
+                recommendations=recommendations
             )
             
             # Store fail-fast history
             self.fail_fast_history.append({
                 'timestamp': datetime.now().isoformat(),
                 'step_name': step_name,
-                'result': result
+                'result': result,
+                'overall_score': overall_score,
+                'validation_categories': validation_categories
             })
             
             return result
@@ -438,8 +476,371 @@ class EnhancedFinancialMetricsLogger:
                 warnings=[],
                 critical_issues=critical_issues,
                 degradation_detected=True,
-                empty_running_detected=True
+                empty_running_detected=True,
+                validation_categories={},
+                recommendations=[f"Fix validation error: {str(e)}"]
             )
+    
+    def _is_post_hmm_step(self, step_name: str) -> bool:
+        """Check if this is a post-HMM step (step number > 8)."""
+        try:
+            if 'step' in step_name.lower():
+                step_num_str = step_name.lower().split('step')[1]
+                # Extract numeric part
+                step_num = int(''.join(filter(str.isdigit, step_num_str)))
+                return step_num > 8
+        except:
+            pass
+        return False
+    
+    def _validate_data_quality_comprehensive(self, data: pd.DataFrame, warnings: List[str], critical_issues: List[str]) -> float:
+        """Comprehensive data quality validation."""
+        if data is None or data.empty:
+            critical_issues.append("Data is None or empty")
+            return 0.0
+        
+        score = 1.0
+        
+        # Check for excessive NaN values
+        nan_ratio = data.isnull().sum().sum() / (data.shape[0] * data.shape[1])
+        if nan_ratio > 0.5:
+            critical_issues.append(f"Excessive NaN values: {nan_ratio:.3f}")
+            score -= 0.5
+        elif nan_ratio > 0.2:
+            warnings.append(f"High NaN ratio: {nan_ratio:.3f}")
+            score -= 0.2
+        
+        # Check for constant columns
+        constant_columns = []
+        for col in data.columns:
+            if data[col].nunique() <= 1:
+                constant_columns.append(col)
+        
+        if len(constant_columns) > len(data.columns) * 0.3:
+            critical_issues.append(f"Too many constant columns: {len(constant_columns)}/{len(data.columns)}")
+            score -= 0.4
+        elif constant_columns:
+            warnings.append(f"Constant columns detected: {constant_columns}")
+            score -= 0.1
+        
+        # Check for data types
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) < len(data.columns) * 0.5:
+            warnings.append(f"Low ratio of numeric columns: {len(numeric_cols)}/{len(data.columns)}")
+            score -= 0.1
+        
+        # Check for outliers (basic check)
+        if len(numeric_cols) > 0:
+            outlier_ratio = 0
+            for col in numeric_cols:
+                Q1 = data[col].quantile(0.25)
+                Q3 = data[col].quantile(0.75)
+                IQR = Q3 - Q1
+                outliers = ((data[col] < (Q1 - 1.5 * IQR)) | (data[col] > (Q3 + 1.5 * IQR))).sum()
+                outlier_ratio += outliers / len(data)
+            
+            outlier_ratio /= len(numeric_cols)
+            if outlier_ratio > 0.3:
+                warnings.append(f"High outlier ratio: {outlier_ratio:.3f}")
+                score -= 0.1
+        
+        return max(0.0, score)
+    
+    def _validate_regime_quality_comprehensive(self, regime_validation: RegimeValidationResult, 
+                                             expected_regimes: Optional[List[str]], 
+                                             warnings: List[str], critical_issues: List[str]) -> float:
+        """Comprehensive regime quality validation."""
+        score = regime_validation.quality_score
+        
+        if not regime_validation.is_valid:
+            critical_issues.extend(regime_validation.validation_errors)
+            score = 0.0
+        
+        if regime_validation.regime_count < 2:
+            critical_issues.append("Insufficient regime diversity")
+            score = 0.0
+        
+        if expected_regimes:
+            missing_regimes = set(expected_regimes) - set(regime_validation.regime_ids)
+            if missing_regimes:
+                critical_issues.append(f"Missing expected regimes: {list(missing_regimes)}")
+                score -= 0.3
+        
+        if regime_validation.empty_regimes:
+            warnings.append(f"Empty regimes detected: {regime_validation.empty_regimes}")
+            score -= 0.2
+        
+        return max(0.0, score)
+    
+    def _validate_performance_comprehensive(self, additional_context: Optional[Dict[str, Any]], 
+                                          check_degradation: bool, warnings: List[str], critical_issues: List[str]) -> float:
+        """Comprehensive performance validation."""
+        score = 1.0
+        
+        if not additional_context:
+            return score
+        
+        # Check for performance degradation patterns
+        if check_degradation and len(self.fail_fast_history) > 0:
+            recent_failures = [h for h in self.fail_fast_history[-5:] if h.get('result', {}).get('should_fail', False)]
+            if len(recent_failures) >= 3:
+                critical_issues.append("Performance degradation: multiple recent failures")
+                score = 0.0
+            elif len(recent_failures) >= 2:
+                warnings.append("Performance degradation: multiple recent failures")
+                score -= 0.3
+        
+        # Check model performance metrics
+        if 'model_performance' in additional_context:
+            perf = additional_context['model_performance']
+            accuracy = perf.get('accuracy', 0)
+            if accuracy < 0.5:
+                critical_issues.append(f"Model accuracy too low: {accuracy:.3f}")
+                score -= 0.5
+            elif accuracy < 0.7:
+                warnings.append(f"Model accuracy below threshold: {accuracy:.3f}")
+                score -= 0.2
+        
+        # Check execution time
+        if 'execution_time' in additional_context:
+            exec_time = additional_context['execution_time']
+            if exec_time > 3600:  # 1 hour
+                warnings.append(f"Long execution time: {exec_time:.1f}s")
+                score -= 0.1
+        
+        return max(0.0, score)
+    
+    def _validate_model_quality_comprehensive(self, additional_context: Optional[Dict[str, Any]], 
+                                            warnings: List[str], critical_issues: List[str]) -> float:
+        """Comprehensive model quality validation."""
+        score = 1.0
+        
+        if not additional_context:
+            return score
+        
+        # Check model convergence
+        if 'model_convergence' in additional_context:
+            convergence = additional_context['model_convergence']
+            if not convergence:
+                critical_issues.append("Model did not converge")
+                score = 0.0
+        
+        # Check model metrics
+        if 'model_metrics' in additional_context:
+            metrics = additional_context['model_metrics']
+            loss = metrics.get('loss', float('inf'))
+            if loss > 10.0:
+                critical_issues.append(f"Model loss too high: {loss:.3f}")
+                score -= 0.5
+            elif loss > 5.0:
+                warnings.append(f"Model loss high: {loss:.3f}")
+                score -= 0.2
+        
+        # Check for overfitting
+        if 'training_accuracy' in additional_context and 'validation_accuracy' in additional_context:
+            train_acc = additional_context['training_accuracy']
+            val_acc = additional_context['validation_accuracy']
+            if train_acc - val_acc > 0.2:
+                warnings.append(f"Potential overfitting: train_acc={train_acc:.3f}, val_acc={val_acc:.3f}")
+                score -= 0.2
+        
+        return max(0.0, score)
+    
+    def _validate_feature_quality_comprehensive(self, data: pd.DataFrame, additional_context: Optional[Dict[str, Any]], 
+                                              warnings: List[str], critical_issues: List[str]) -> float:
+        """Comprehensive feature quality validation."""
+        score = 1.0
+        
+        if data is None or data.empty:
+            return 0.0
+        
+        # Check feature count
+        if len(data.columns) < 5:
+            warnings.append(f"Low feature count: {len(data.columns)}")
+            score -= 0.2
+        
+        # Check feature correlation
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 1:
+            corr_matrix = data[numeric_cols].corr()
+            high_corr_pairs = []
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i+1, len(corr_matrix.columns)):
+                    if abs(corr_matrix.iloc[i, j]) > 0.95:
+                        high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
+            
+            if len(high_corr_pairs) > len(numeric_cols) * 0.3:
+                warnings.append(f"High feature correlation detected: {len(high_corr_pairs)} pairs")
+                score -= 0.2
+        
+        # Check feature importance if available
+        if additional_context and 'feature_importance' in additional_context:
+            importance = additional_context['feature_importance']
+            if isinstance(importance, dict):
+                # Check if any feature has extremely low importance
+                min_importance = min(importance.values())
+                if min_importance < 0.01:
+                    warnings.append("Some features have very low importance")
+                    score -= 0.1
+        
+        return max(0.0, score)
+    
+    def _validate_execution_environment_comprehensive(self, additional_context: Optional[Dict[str, Any]], 
+                                                    warnings: List[str], critical_issues: List[str]) -> float:
+        """Comprehensive execution environment validation."""
+        score = 1.0
+        
+        if not additional_context:
+            return score
+        
+        # Check memory usage
+        if 'memory_usage_mb' in additional_context:
+            memory = additional_context['memory_usage_mb']
+            if memory > 8000:  # 8GB
+                warnings.append(f"High memory usage: {memory:.1f}MB")
+                score -= 0.2
+        
+        # Check CPU usage
+        if 'cpu_usage_percent' in additional_context:
+            cpu = additional_context['cpu_usage_percent']
+            if cpu > 90:
+                warnings.append(f"High CPU usage: {cpu:.1f}%")
+                score -= 0.1
+        
+        # Check disk space
+        if 'disk_usage_percent' in additional_context:
+            disk = additional_context['disk_usage_percent']
+            if disk > 90:
+                critical_issues.append(f"Low disk space: {disk:.1f}%")
+                score -= 0.5
+        
+        # Check for errors in context
+        if 'errors' in additional_context:
+            errors = additional_context['errors']
+            if len(errors) > 0:
+                critical_issues.append(f"Execution errors detected: {len(errors)}")
+                score -= 0.3
+        
+        return max(0.0, score)
+    
+    def _validate_business_logic_comprehensive(self, data: pd.DataFrame, step_name: str, 
+                                             additional_context: Optional[Dict[str, Any]], 
+                                             warnings: List[str], critical_issues: List[str]) -> float:
+        """Comprehensive business logic validation."""
+        score = 1.0
+        
+        # Check for required columns based on step
+        if data is not None and not data.empty:
+            required_columns = self._get_required_columns_for_step(step_name)
+            missing_columns = set(required_columns) - set(data.columns)
+            if missing_columns:
+                critical_issues.append(f"Missing required columns for {step_name}: {list(missing_columns)}")
+                score -= 0.5
+        
+        # Check for business rule violations
+        if additional_context and 'business_rules' in additional_context:
+            rules = additional_context['business_rules']
+            violations = rules.get('violations', [])
+            if violations:
+                critical_issues.append(f"Business rule violations: {violations}")
+                score -= 0.3
+        
+        # Check for data consistency
+        if data is not None and not data.empty:
+            # Check for negative prices (if price columns exist)
+            price_columns = [col for col in data.columns if 'price' in col.lower()]
+            for col in price_columns:
+                if (data[col] < 0).any():
+                    warnings.append(f"Negative prices detected in {col}")
+                    score -= 0.1
+        
+        return max(0.0, score)
+    
+    def _detect_empty_running_comprehensive(self, data: pd.DataFrame, warnings: List[str], critical_issues: List[str]) -> bool:
+        """Comprehensive empty running detection."""
+        if data is None or data.empty:
+            critical_issues.append("Data is None or empty")
+            return True
+        
+        if len(data) < 10:
+            critical_issues.append(f"Dataset too small: {len(data)} samples")
+            return True
+        
+        # Check if all values are the same
+        if data.nunique().sum() <= len(data.columns):
+            critical_issues.append("Empty running: insufficient data variation")
+            return True
+        
+        # Check for suspicious patterns
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 0:
+            # Check if all numeric values are the same
+            for col in numeric_cols:
+                if data[col].nunique() == 1:
+                    warnings.append(f"Column {col} has no variation")
+        
+        return False
+    
+    def _get_required_columns_for_step(self, step_name: str) -> List[str]:
+        """Get required columns for a specific step."""
+        step_requirements = {
+            'step09': ['composite_cluster_id', 'features'],
+            'step10': ['composite_cluster_id', 'features'],
+            'step11': ['composite_cluster_id', 'features'],
+            'step12': ['composite_cluster_id', 'features'],
+            'step13': ['composite_cluster_id', 'features'],
+            'step14': ['composite_cluster_id', 'features'],
+            'step15': ['composite_cluster_id', 'features'],
+            'step16': ['composite_cluster_id', 'features'],
+            'step17': ['composite_cluster_id', 'features'],
+            'step18': ['composite_cluster_id', 'features'],
+            'step19': ['composite_cluster_id', 'features'],
+            'step20': ['composite_cluster_id', 'features'],
+        }
+        
+        for step_key, columns in step_requirements.items():
+            if step_key in step_name.lower():
+                return columns
+        
+        return []
+    
+    def _generate_recommendations_comprehensive(self, validation_categories: Dict[str, bool], 
+                                              overall_score: float, warnings: List[str], 
+                                              critical_issues: List[str]) -> List[str]:
+        """Generate comprehensive recommendations based on validation results."""
+        recommendations = []
+        
+        if overall_score < 0.5:
+            recommendations.append("Overall system quality is low - consider data preprocessing and feature engineering")
+        
+        if not validation_categories.get('data_quality', True):
+            recommendations.append("Improve data quality by handling missing values and outliers")
+        
+        if not validation_categories.get('regime_quality', True):
+            recommendations.append("Check regime data integrity and ensure proper regime labeling")
+        
+        if not validation_categories.get('performance', True):
+            recommendations.append("Investigate performance degradation and optimize model parameters")
+        
+        if not validation_categories.get('model_quality', True):
+            recommendations.append("Review model training process and ensure proper convergence")
+        
+        if not validation_categories.get('feature_quality', True):
+            recommendations.append("Analyze feature importance and consider feature selection")
+        
+        if not validation_categories.get('execution_environment', True):
+            recommendations.append("Monitor system resources and optimize execution environment")
+        
+        if not validation_categories.get('business_logic', True):
+            recommendations.append("Review business rules and data consistency requirements")
+        
+        if len(critical_issues) > 0:
+            recommendations.append("Address critical issues before proceeding with training")
+        
+        if len(warnings) > 0:
+            recommendations.append("Review warnings and consider preventive measures")
+        
+        return recommendations
     
     def log_financial_metric_with_regime_validation(self,
                                                   symbol: str,

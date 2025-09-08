@@ -20,6 +20,13 @@ from src.utils.logger import system_logger
 from src.training.core.decorators import (
     handles_errors, validates, log_call, traced
 )
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -336,6 +343,12 @@ async def create_training_summary(config: Dict[str, Any], execution_time: float,
 async def main():
     """Enhanced main function with comprehensive validation and error handling."""
     logger = system_logger.getChild("ModelTrainingMain")
+    
+    # Initialize lookahead bias detector
+    from datetime import datetime
+    current_time = datetime.now()
+    bias_detector = get_global_detector()
+    bias_detector.set_current_timestamp(current_time)
     
     print("🚀 Enhanced Step 9: Model Training Pipeline")
     print("=" * 80)

@@ -31,6 +31,13 @@ from src.utils.comprehensive_function_logger import (
     log_internal_call, log_step_progress, log_data_operation
 )
 from src.utils.common_operations import create_fallback_logger, create_fallback_decorator
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 # Enhanced optimization imports
 try:

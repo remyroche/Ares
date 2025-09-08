@@ -9,6 +9,13 @@ import warnings
 from typing import Any, Dict, List, Optional, Tuple, Union
 from src.utils.decorators import handles_errors, traced, validates
 from src.utils.logger import system_logger
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 import numpy as np
 import pandas as pd
 
@@ -2440,6 +2447,12 @@ async def run_step(
     - Regime transition prediction
     - Support/Resistance level detection
     - Expert activation logic
+    
+    # Initialize lookahead bias detector
+    from datetime import datetime
+    current_time = datetime.now()
+    bias_detector = get_global_detector()
+    bias_detector.set_current_timestamp(current_time)
 
     Replaces step9_5 and step10 with a single, efficient model.
     """

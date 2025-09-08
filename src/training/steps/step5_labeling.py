@@ -2,6 +2,13 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+    validate_positive, validate_range, MathValidationError
+)
+from src.utils.lookahead_bias_detector import (
+    get_global_detector, validate_no_future_data, LookaheadBiasError
+)
 
 """Step 5: Labeling (Enhanced Implementation with M1 Optimizations).
 
@@ -333,10 +340,21 @@ class LabelingStep:
             volatility = self._calculate_volatility_optimized(close_prices)
             out['confidence'] = np.asarray(volatility)
         else:
-            # Standard calculation
-            volatility = out['close'].pct_change().abs().fillna(0.0) if 'close' in out.columns else 0.0
-            conf = (1.0 - volatility / (volatility.max() + 1e-09)).clip(lower=0.0, upper=1.0)
-            out['confidence'] = np.asarray(conf)
+            # Standard calculation with math validation
+            if 'close' in out.columns:
+                try:
+                    volatility = out['close'].pct_change().abs().fillna(0.0)
+                    max_vol = volatility.max()
+                    if max_vol > 0:
+                        conf = (1.0 - safe_divide(volatility, max_vol + 1e-09, 1.0)).clip(lower=0.0, upper=1.0)
+                    else:
+                        conf = np.ones_like(volatility)
+                    out['confidence'] = np.asarray(conf)
+                except MathValidationError as e:
+                    self.logger.warning(f"Mathematical validation error in volatility calculation: {e}")
+                    out['confidence'] = np.ones(len(out), dtype=float)
+            else:
+                out['confidence'] = np.ones(len(out), dtype=float)
 
         return out
     @log_all_calls
@@ -352,8 +370,13 @@ class LabelingStep:
             flat = int((data['label'] == 0).sum())
         else:
             buy = sell = flat = 0
-        avg_conf = float(data.get('confidence', pd.Series([], dtype = float)).mean()) if 'confidence' in data.columns else 0.0
-        return {'total_samples': total, 'buy_signals': buy, 'sell_signals': sell, 'no_action': flat, 'avg_confidence': avg_conf if not np.isnan(avg_conf) else 0.0, 'label_distribution': dist}
+        try:
+            avg_conf = float(data.get('confidence', pd.Series([], dtype = float)).mean()) if 'confidence' in data.columns else 0.0
+            avg_conf = avg_conf if not np.isnan(avg_conf) else 0.0
+        except MathValidationError as e:
+            self.logger.warning(f"Mathematical validation error in confidence calculation: {e}")
+            avg_conf = 0.0
+        return {'total_samples': total, 'buy_signals': buy, 'sell_signals': sell, 'no_action': flat, 'avg_confidence': avg_conf, 'label_distribution': dist}
 
     async def _save_labeled_data(self, data: pd.DataFrame, data_dir: str, symbol: str, exchange: str, timeframe: str) -> str:
         """Save labeled data with M1 optimizations."""
@@ -706,6 +729,11 @@ class LabelingStep:
         try:
             self.logger.info('🏷️ Starting enhanced labeling step with M1 optimizations...')
 
+            # Initialize lookahead bias detector
+            current_time = datetime.now()
+            bias_detector = get_global_detector()
+            bias_detector.set_current_timestamp(current_time)
+
             # Initialize optimization components if not already done
             if not hasattr(self, 'gpu_manager'):
                 self._init_optimization_components()
@@ -727,6 +755,26 @@ class LabelingStep:
             if data is not None and isinstance(data, pd.DataFrame):
                 # Validate and fix input data with optimizations
                 data = await self._validate_and_fix_input_data_optimized(data)
+                
+                # Validate no lookahead bias in data
+                try:
+                    if hasattr(data, 'index') and len(data) > 0:
+                        data_time = data.index[-1] if hasattr(data.index, '__getitem__') else None
+                        if data_time:
+                            bias_detector.set_current_timestamp(data_time)
+                            data = validate_no_future_data(data, 'timestamp', data_time)
+                            self.logger.info("✅ Lookahead bias validation passed")
+                except LookaheadBiasError as e:
+                    self.logger.error(f"Lookahead bias detected: {e}")
+                    return {
+                        'success': False,
+                        'error': f"Lookahead bias detected: {e}",
+                        'step_name': 'step05_labeling',
+                        'execution_time': time.time() - start_time
+                    }
+                except Exception as e:
+                    self.logger.warning(f"Lookahead bias validation failed: {e}")
+                
                 pipeline_state['dataframe'] = data
 
             # Execute labeling with optimizations

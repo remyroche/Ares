@@ -33,7 +33,6 @@ This module implements advanced S/R detection algorithms with improved accuracy
 and robustness for 1-30m timeframes.
 
 🚀 ADVANCED OPTIMIZATION FEATURES:
-==================================
 
 1. NUMBA JIT COMPILATION:
    - Fractal detection loops optimized with parallel processing
@@ -65,7 +64,6 @@ and robustness for 1-30m timeframes.
    - Batch processing for multiple calculations
 
 ADDITIONAL OPTIMIZATIONS:
-========================
 
 6. SWING POINT SELECTION:
    - Adaptive limiting based on dataset size
@@ -84,7 +82,6 @@ ADDITIONAL OPTIMIZATIONS:
    - Execution time profiling
 
 COMPLEXITY IMPROVEMENT:
-======================
 
 Before: O(n² × c) where n = swing points, c = computation cost
 After:  O(k² × c) where k = filtered candidates (k << n)

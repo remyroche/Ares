@@ -1,9 +1,7 @@
 # Ares Trading Bot - Main Configuration File
 # Updated for New Triple Barrier System and Enhanced Features
 
-# =============================================================================
 # ANALYST CONFIGURATION
-# =============================================================================
 analyst:
   # Triple Barrier System Configuration
   triple_barrier:
@@ -41,9 +39,7 @@ analyst:
   liquidation_buffer: 0.05
   max_leverage: 100.0
 
-# =============================================================================
 # TACTICIAN CONFIGURATION
-# =============================================================================
 tactician:
   # Triple Barrier System Configuration (inherited from Analyst)
   triple_barrier:
@@ -108,9 +104,7 @@ tactician:
     max_dataset_rows: 10000  # Maximum rows to process for SR detection (default: 10000)
     enable_stratified_sampling: true  # Use stratified sampling to maintain historical context
 
-# =============================================================================
 # FEATURE ENGINEERING PARAMETERS
-# =============================================================================
 feature_engineering_parameters:
   # Core Feature Engineering
   enable_advanced_features: true
@@ -218,9 +212,7 @@ feature_engineering_parameters:
     medium_interaction_threshold: 0.5
     weak_interaction_threshold: 0.3
 
-# =============================================================================
 # STEP17 OPTIMIZATION PARAMETERS
-# =============================================================================
 step17_optimization:
   # Fully Migrated Tactician Parameters (Step17 Optimizable)
   fully_migrated_tactician:
@@ -334,9 +326,7 @@ step17_optimization:
     momentum_crowding_window: 20                       # Range: [10, 35] - Window for momentum crowding
     sentiment_smoothing: 5                             # Range: [2, 10] - Smoothing period for sentiment
 
-# =============================================================================
 # A/B TESTING FRAMEWORK CONFIGURATION
-# =============================================================================
 ab_testing:
   # HMM Regime A/B Testing
   hmm_regime_ab_testing:
@@ -380,9 +370,7 @@ ab_testing:
       harmonic_tolerance: 0.07                      # Looser tolerance for aggressive
       sentiment_lookback: 35                        # Longer lookback for aggressive
 
-# =============================================================================
 # ML-OPTIMIZED BARRIERS CONFIGURATION
-# =============================================================================
 ml_optimized_barriers:
   # Multi-Objective Optimization Weights (Step17 Optimizable)
   optimization_weights:
@@ -406,9 +394,7 @@ ml_optimized_barriers:
     max_risk_reward_ratio: 5.0     # Max risk-reward ratio
     min_confidence_threshold: 0.4  # Min confidence threshold
 
-# =============================================================================
 # PERFORMANCE ATTRIBUTION CONFIGURATION
-# =============================================================================
 performance_attribution:
   # Timeframes for Attribution (Step17 Optimizable)
   timeframes: ["1m", "5m", "15m", "30m", "1h"]
@@ -429,9 +415,7 @@ performance_attribution:
     timeframe_weight: 0.3
     barrier_type_weight: 0.3
 
-# =============================================================================
 # MICROSTRUCTURE FEATURES CONFIGURATION (Step06 Optimization)
-# =============================================================================
 microstructure_features:
   # Feature Extraction Parameters (Optimize in Step06, not Step17)
   feature_extraction:
@@ -467,9 +451,7 @@ microstructure_features:
       high_volume_threshold: 1.1
       high_volatility_threshold: 0.0008
 
-# =============================================================================
 # BAYESIAN PROBABILITY UPDATES CONFIGURATION (Separate Optimization)
-# =============================================================================
 bayesian_updates:
   # Update Parameters (Optimize separately, not in Step17)
   update_parameters:
@@ -485,9 +467,7 @@ bayesian_updates:
     regime_transition_threshold: 0.7
     stability_period: 300
 
-# =============================================================================
 # COPULA DEPENDENCY MODELS CONFIGURATION (Separate Optimization)
-# =============================================================================
 copula_models:
   # Dependency Modeling (Optimize separately, not in Step17)
   dependency_modeling:
@@ -503,9 +483,7 @@ copula_models:
     max_correlation: 0.9
     dependency_strength: 0.5
 
-# =============================================================================
 # SYSTEM MONITORING CONFIGURATION
-# =============================================================================
 system_monitoring:
   # Health Check Parameters (Step17 Optimizable)
   health_check_interval: 30
@@ -520,9 +498,7 @@ system_monitoring:
     win_rate_threshold: 0.6
     profit_factor_threshold: 1.5
 
-# =============================================================================
 # TRAINING CONFIGURATION
-# =============================================================================
 training:
   # Training Optimization (Step17 Optimizable)
   training_optimization:
@@ -538,9 +514,7 @@ training:
     stability_period: 300
     confirmation_required: true
 
-# =============================================================================
 # EXCHANGE CONFIGURATION
-# =============================================================================
 exchange:
   # Trading Fee Configuration
   trading_fee: 0.0008  # 0.08% trading fee
@@ -554,9 +528,7 @@ exchange:
       european_afternoon: [12, 18]
       us_evening: [18, 24]
 
-# =============================================================================
 # LOGGING CONFIGURATION
-# =============================================================================
 logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -564,9 +536,7 @@ logging:
   max_size: "10MB"
   backup_count: 5
 
-# =============================================================================
 # DATA CONFIGURATION
-# =============================================================================
 data:
   # Data Directory
   data_dir: "data"
@@ -584,9 +554,7 @@ data:
     max_missing_ratio: 0.1
     outlier_threshold: 3.0
 
-# =============================================================================
 # STEP17 FINAL PARAMETERS OPTIMIZATION
-# =============================================================================
 step17_optimization:
   # Position Sizing (Logarithmic Computations)
   position_sizing:
@@ -676,9 +644,7 @@ step17_optimization:
     alert_threshold: 0.6           # Range: [0.5, 0.7] - Alert threshold
     max_alert_frequency: 10        # Range: [5, 20] - Max alerts per hour
 
-# =============================================================================
 # SECURITY CONFIGURATION
-# =============================================================================
 security:
   # API Security
   api:

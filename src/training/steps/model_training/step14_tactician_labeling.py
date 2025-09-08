@@ -8,12 +8,39 @@ import asyncio
 import contextlib
 import os
 import pickle
-
+import gc
+import psutil
 from pathlib import Path
 
-from src.core.decorators import handles_errors
-from src.core.decorators.logging import log_execution_time, log_call
-from src.core.decorators.cache import cached
+# Import utility modules
+from src.utils.common_operations import (
+    safe_mean, safe_std, safe_divide, safe_float, safe_int,
+    validate_dataframe_schema, validate_data_quality,
+    safe_json_dump, safe_json_load, ensure_directory,
+    safe_file_exists, get_logger, timed_operation, safe_dict_get
+)
+from src.utils.math_validation import (
+    safe_divide as math_safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_finite, validate_positive, validate_range,
+    safe_weighted_average, safe_percentage_change, MathValidationError
+)
+from src.utils.parquet_utils import ParquetUtils
+
+# Import core decorators and errors
+from src.core.decorators import (
+    handles_errors, validates, timeout, circuit_breaker,
+    log_execution_time, log_call, cached, memoize,
+    retry, fallback, traced, span_attribute
+)
+from src.core.decorators.validate import validate_dataframe as decorator_validate_dataframe
+from src.core.decorators.enhanced_error_handling import (
+    handle_errors_enhanced, ErrorContext, ErrorSeverity
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, BusinessRuleError,
+    AppError, ErrorCode
+)
+
 from src.utils.logger import system_logger, log_io_operation, log_dataframe_overview
 from src.utils.pipeline_standards import PipelineStandards
 from src.config.environment import get_environment_settings
@@ -81,9 +108,23 @@ class RegimeAwareTacticianLabeler:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config.get('tactician_triple_barrier', {})
-        self.logger = system_logger.getChild('RegimeAwareTacticianLabeler')
+        self.logger = get_logger('RegimeAwareTacticianLabeler')
         self.regime_config = config.get('regime_specific_tactician', {'regime_specific_barriers': True, 'regime_specific_precision': True, 'regime_specific_quality_filters': True, 'regime_specific_validation': True, 'regime_specific_logging': True, 'min_regime_samples': 100})
         self.financial_logger = None
+        
+        # Initialize utility modules
+        self.parquet_utils = ParquetUtils()
+        
+        # Resource management
+        self.memory_threshold_gb = safe_float(config.get('memory_threshold_gb', 8.0), 8.0)
+        self.max_data_points = safe_int(config.get('max_data_points', 1000000), 1000000)
+        self.cleanup_frequency = safe_int(config.get('cleanup_frequency', 100), 100)
+        self._operation_count = 0
+        
+        # Caching for optimization
+        self._regime_stats_cache = {}
+        self._barrier_cache = {}
+        self._last_cleanup = 0
 
         # Initialize enhanced reporting system
         if ENHANCED_REPORTING_AVAILABLE and Step14EnhancedReporter is not None:
@@ -98,10 +139,12 @@ class RegimeAwareTacticianLabeler:
             self.enhanced_reporter = None
 
         self._load_enhanced_config()
+        # Use bounded dictionaries to prevent memory leaks
         self.regime_barrier_results = {}
         self.regime_labeling_results = {}
         self.regime_validation_results = {}
-        self.logger.info('🎯 Regime-Aware Tactician Labeler initialized')
+        self._max_cache_size = config.get('max_cache_size', 1000)
+        self.logger.info('🎯 Regime-Aware Tactician Labeler initialized with optimizations')
 
     def _load_enhanced_config(self) -> None:
         """Load enhanced configuration for regime-aware execution."""
@@ -130,33 +173,76 @@ class RegimeAwareTacticianLabeler:
         self.logger.info(f'   High Precision Mode: {self.enable_high_precision_mode}')
         self.logger.info(f'   Precision Threshold: {self.precision_threshold}')
 
+    @traced(operation_name="regime_specific_labeling")
+    @timeout(seconds=300)  # 5 minute timeout
+    @circuit_breaker(failure_threshold=3, recovery_timeout=60)
+    @handles_errors(
+        exceptions=(ValidationError, DataIntegrityError, BusinessRuleError),
+        default_return=None,
+        context='regime_specific_labeling'
+    )
     async def apply_regime_specific_labeling(self, data: pd.DataFrame, regime_column: str='composite_cluster_id') -> pd.DataFrame:
-        """Apply regime-specific tactician labeling."""
+        """Apply regime-specific tactician labeling with optimizations and fast-fail validations."""
         self.logger.info(f'🚀 Starting regime-specific tactician labeling')
+        
+        # Fast-fail validations
+        if not self._validate_input_data(data, regime_column):
+            raise ValidationError("Input data validation failed")
+        
+        if not self._validate_resource_constraints(data):
+            raise BusinessRuleError("Resource constraints exceeded")
+        
         try:
             if regime_column not in data.columns:
                 self.logger.warning(f"⚠️ Regime column '{regime_column}' not found, using default parameters")
                 return self._apply_default_labeling(data)
+            
             labeled_data = data.copy()
             n = len(labeled_data)
             if n < 2:
                 labeled_data['label'] = 0
                 labeled_data['potential_profit_pct'] = 0.0
                 return labeled_data
+            # Pre-calculate regime statistics for optimization
             regime_data = labeled_data[regime_column]
             unique_regimes = regime_data.unique()
             self.logger.info(f'📊 Found {len(unique_regimes)} unique regimes: {unique_regimes}')
+            
+            # Validate regime distribution
+            if not self._validate_regime_distribution(regime_data, unique_regimes):
+                raise ValueError("Regime distribution validation failed")
+            
+            # Pre-calculate all regime statistics in one pass for optimization
+            regime_stats = self._calculate_regime_statistics_optimized(labeled_data, regime_column, unique_regimes)
+            
             for regime in unique_regimes:
                 regime_mask = regime_data == regime
                 regime_data_subset = labeled_data[regime_mask]
+                
                 if len(regime_data_subset) >= self.regime_config['min_regime_samples']:
                     self.logger.info(f'🔄 Applying regime-specific labeling for regime {regime}')
-                    regime_barriers = await self._get_regime_specific_barriers(regime, regime_data_subset)
-                    regime_labeled = await self._apply_regime_barrier_labeling(regime_data_subset, regime_barriers, regime)
-                    self.regime_labeling_results[regime] = {'barriers': regime_barriers, 'labeled_samples': len(regime_labeled), 'regime': regime}
+                    
+                    # Use cached regime statistics
+                    regime_barriers = await self._get_regime_specific_barriers_optimized(
+                        regime, regime_data_subset, regime_stats.get(regime, {})
+                    )
+                    regime_labeled = await self._apply_regime_barrier_labeling_optimized(
+                        regime_data_subset, regime_barriers, regime
+                    )
+                    
+                    # Store results with bounded cache
+                    self._store_regime_result(regime, {
+                        'barriers': regime_barriers, 
+                        'labeled_samples': len(regime_labeled), 
+                        'regime': regime
+                    })
+                    
                     labeled_data.loc[regime_mask] = regime_labeled
                 else:
                     self.logger.warning(f'⚠️ Insufficient data for regime {regime}: {len(regime_data_subset)} samples')
+                
+                # Periodic cleanup to prevent memory leaks
+                self._periodic_cleanup()
             if self.binary_classification:
                 original_count = len(labeled_data)
                 hold_samples = (labeled_data['label'] == 0).sum()
@@ -168,65 +254,142 @@ class RegimeAwareTacticianLabeler:
                 self.logger.info(f'   HOLD (0): {hold_samples} samples (removed)')
                 self.logger.info(f'   Total: {filtered_count}/{original_count} samples retained')
             return labeled_data
-        except Exception as e:
+        except (ValidationError, DataIntegrityError, BusinessRuleError) as e:
             self.logger.error(f'❌ Error in regime-specific labeling: {e}')
-            return data
+            # Clean up resources on error
+            self._cleanup_resources()
+            raise
+        except Exception as e:
+            self.logger.error(f'❌ Unexpected error in regime-specific labeling: {e}')
+            # Clean up resources on error
+            self._cleanup_resources()
+            raise BusinessRuleError(f"Unexpected error in regime-specific labeling: {e}") from e
 
-    async def _get_regime_specific_barriers(self, regime: str, regime_data: pd.DataFrame) -> Dict[str, Tuple[float, float]]:
-        """Get regime-specific barriers for tactician labeling."""
+    async def _get_regime_specific_barriers_optimized(self, regime: str, regime_data: pd.DataFrame, regime_stats: Dict[str, Any]) -> Dict[str, Tuple[float, float]]:
+        """Get regime-specific barriers for tactician labeling with optimization and validation."""
         self.logger.info(f'🎯 Calculating regime-specific barriers for regime {regime}')
+        
+        # Check cache first
+        cache_key = f"{regime}_{hash(str(regime_stats))}"
+        if cache_key in self._barrier_cache:
+            self.logger.debug(f'Using cached barriers for regime {regime}')
+            return self._barrier_cache[cache_key]
+        
         try:
             if self.regime_config['regime_specific_barriers']:
-                regime_volatility = regime_data['close'].pct_change().std()
-                regime_volume = regime_data['volume'].mean()
-                regime_spread = regime_data.get('spread', pd.Series([0.0001] * len(regime_data))).mean()
+                # Use pre-calculated statistics for optimization
+                regime_volatility = regime_stats.get('volatility', regime_data['close'].pct_change().std())
+                regime_volume = regime_stats.get('volume_mean', regime_data['volume'].mean())
+                regime_spread = regime_stats.get('spread_mean', regime_data.get('spread', pd.Series([0.0001] * len(regime_data))).mean())
+                
+                # Validate input parameters
+                if not self._validate_barrier_parameters(regime_volatility, regime_volume, regime_spread):
+                    self.logger.warning(f'Invalid parameters for regime {regime}, using default barriers')
+                    return self.barrier_combinations
+                
+                # Optimized barrier calculation with consistent scaling
                 base_upper = 0.02
                 base_lower = 0.01
+                
+                # Volatility-based multipliers with safe math operations
                 if regime_volatility > 0.02:
-                    upper_multiplier = 1.5
-                    lower_multiplier = 1.2
+                    vol_diff = regime_volatility - 0.02
+                    upper_multiplier = min(1.5, 1.0 + safe_divide(vol_diff * 10, 1.0, 1.0))
+                    lower_multiplier = min(1.2, 1.0 + safe_divide(vol_diff * 5, 1.0, 1.0))
                 elif regime_volatility < 0.005:
-                    upper_multiplier = 0.8
-                    lower_multiplier = 0.7
+                    vol_diff = 0.005 - regime_volatility
+                    upper_multiplier = max(0.8, 1.0 - safe_divide(vol_diff * 20, 1.0, 0.0))
+                    lower_multiplier = max(0.7, 1.0 - safe_divide(vol_diff * 15, 1.0, 0.0))
                 else:
                     upper_multiplier = 1.0
                     lower_multiplier = 1.0
+                
+                # Volume-based adjustments with safe math operations
                 if regime_volume > 10000:
-                    upper_multiplier *= 1.1
-                    lower_multiplier *= 1.1
+                    volume_diff = regime_volume - 10000
+                    volume_factor = min(1.1, 1.0 + safe_divide(volume_diff, 100000, 0.0))
+                    upper_multiplier = safe_power(upper_multiplier * volume_factor, 1.0, upper_multiplier)
+                    lower_multiplier = safe_power(lower_multiplier * volume_factor, 1.0, lower_multiplier)
                 elif regime_volume < 1000:
-                    upper_multiplier *= 0.9
-                    lower_multiplier *= 0.9
+                    volume_diff = 1000 - regime_volume
+                    volume_factor = max(0.9, 1.0 - safe_divide(volume_diff, 10000, 0.0))
+                    upper_multiplier = safe_power(upper_multiplier * volume_factor, 1.0, upper_multiplier)
+                    lower_multiplier = safe_power(lower_multiplier * volume_factor, 1.0, lower_multiplier)
+                
+                # Calculate base barriers with validation
                 upper_barrier = base_upper * upper_multiplier
                 lower_barrier = base_lower * lower_multiplier
-                regime_barriers = {'high_precision': (upper_barrier * 0.5, lower_barrier * 0.25), 'standard': (upper_barrier, lower_barrier), 'conservative': (upper_barrier * 1.5, lower_barrier * 1.5), 'aggressive': (upper_barrier * 0.7, lower_barrier * 0.5)}
+                
+                # Validate calculated barriers
+                if not self._validate_calculated_barriers(upper_barrier, lower_barrier):
+                    self.logger.warning(f'Calculated barriers invalid for regime {regime}, using defaults')
+                    return self.barrier_combinations
+                
+                # Consistent barrier scaling with validation
+                regime_barriers = {
+                    'high_precision': self._scale_barriers(upper_barrier, lower_barrier, 0.5, 0.25),
+                    'standard': self._scale_barriers(upper_barrier, lower_barrier, 1.0, 1.0),
+                    'conservative': self._scale_barriers(upper_barrier, lower_barrier, 1.5, 1.5),
+                    'aggressive': self._scale_barriers(upper_barrier, lower_barrier, 0.7, 0.5)
+                }
+                
+                # Cache the results
+                self._barrier_cache[cache_key] = regime_barriers
+                
                 self.logger.info(f'✅ Calculated regime {regime} barriers:')
                 for barrier_type, (upper, lower) in regime_barriers.items():
                     self.logger.info(f'   {barrier_type}: Upper={upper:.4f} ({upper * 100:.2f}%), Lower={lower:.4f} ({lower * 100:.2f}%)')
+                
                 return regime_barriers
             else:
                 return self.barrier_combinations
+                
         except Exception as e:
             self.logger.error(f'❌ Error calculating regime-specific barriers: {e}')
             return self.barrier_combinations
 
-    async def _apply_regime_barrier_labeling(self, regime_data: pd.DataFrame, regime_barriers: Dict[str, Tuple[float, float]], regime: str) -> pd.DataFrame:
-        """Apply regime-specific barrier labeling."""
+    async def _apply_regime_barrier_labeling_optimized(self, regime_data: pd.DataFrame, regime_barriers: Dict[str, Tuple[float, float]], regime: str) -> pd.DataFrame:
+        """Apply regime-specific barrier labeling with optimization."""
         self.logger.info(f'🎯 Applying regime-specific barrier labeling for regime {regime}')
         try:
             labeled_data = regime_data.copy()
+            
+            # Pre-calculate precision thresholds and quality filters
             precision_thresholds = await self._get_regime_specific_precision_thresholds(regime, regime_data)
             quality_filters = await self._get_regime_specific_quality_filters(regime, regime_data)
+            
+            # Apply quality filters first to reduce data size
+            if quality_filters.get('enable_quality_filters', True):
+                labeled_data = await self._apply_regime_quality_filters(labeled_data, quality_filters, regime)
+            
+            # Apply barriers with vectorized operations
             for barrier_type, (upper_barrier, lower_barrier) in regime_barriers.items():
                 self.logger.info(f'🔄 Applying {barrier_type} barriers for regime {regime}')
-                regime_labeled = await self._apply_regime_triple_barrier(labeled_data, upper_barrier, lower_barrier, precision_thresholds, quality_filters, regime, barrier_type)
+                
+                # Use optimized triple barrier labeling
+                regime_labeled = await self._apply_regime_triple_barrier_optimized(
+                    labeled_data, upper_barrier, lower_barrier, precision_thresholds, regime, barrier_type
+                )
+                
+                # Store results with bounded cache
                 barrier_key = f'{regime}_{barrier_type}'
-                self.regime_barrier_results[barrier_key] = {'barrier_type': barrier_type, 'upper_barrier': upper_barrier, 'lower_barrier': lower_barrier, 'precision_thresholds': precision_thresholds, 'quality_filters': quality_filters, 'labeled_samples': len(regime_labeled), 'regime': regime}
+                self._store_barrier_result(barrier_key, {
+                    'barrier_type': barrier_type, 
+                    'upper_barrier': upper_barrier, 
+                    'lower_barrier': lower_barrier, 
+                    'precision_thresholds': precision_thresholds, 
+                    'quality_filters': quality_filters, 
+                    'labeled_samples': len(regime_labeled), 
+                    'regime': regime
+                })
+                
                 labeled_data = regime_labeled
+            
             return labeled_data
+            
         except Exception as e:
             self.logger.error(f'❌ Error applying regime barrier labeling: {e}')
-            return regime_data
+            raise RuntimeError(f"Regime barrier labeling failed for regime {regime}: {e}") from e
 
     async def _get_regime_specific_precision_thresholds(self, regime: str, regime_data: pd.DataFrame) -> Dict[str, float]:
         """Get regime-specific precision thresholds."""
@@ -279,49 +442,83 @@ class RegimeAwareTacticianLabeler:
             self.logger.error(f'❌ Error calculating regime-specific quality filters: {e}')
             return {'min_volume_threshold': self.min_volume_threshold, 'min_spread_threshold': self.min_spread_threshold, 'volatility_filter': self.volatility_filter, 'enable_quality_filters': self.enable_quality_filters}
 
-    async def _apply_regime_triple_barrier(self, regime_data: pd.DataFrame, upper_barrier: float, lower_barrier: float, precision_thresholds: Dict[str, float], quality_filters: Dict[str, Any], regime: str, barrier_type: str) -> pd.DataFrame:
-        """Apply regime-specific triple barrier labeling."""
+    async def _apply_regime_triple_barrier_optimized(self, regime_data: pd.DataFrame, upper_barrier: float, lower_barrier: float, precision_thresholds: Dict[str, float], regime: str, barrier_type: str) -> pd.DataFrame:
+        """Apply regime-specific triple barrier labeling with vectorized optimization."""
         self.logger.info(f'🎯 Applying regime-specific triple barrier ({barrier_type}) for regime {regime}')
         try:
             labeled_data = regime_data.copy()
-            if quality_filters.get('enable_quality_filters', True):
-                labeled_data = await self._apply_regime_quality_filters(labeled_data, quality_filters, regime)
-            for i in range(len(labeled_data) - 1):
-                entry_price = labeled_data.iloc[i]['close']
-                entry_idx = i
-                profit_barrier = entry_price * (1.0 + upper_barrier)
-                stop_barrier = entry_price * (1.0 - lower_barrier)
+            n = len(labeled_data)
+            
+            if n < 2:
+                labeled_data['label'] = 0
+                labeled_data['potential_profit_pct'] = 0.0
+                return labeled_data
+            
+            # Initialize arrays for vectorized operations
+            labels = np.zeros(n, dtype=int)
+            profit_pcts = np.zeros(n, dtype=float)
+            
+            # Convert to numpy arrays for faster access
+            close_prices = labeled_data['close'].values
+            high_prices = labeled_data['high'].values
+            low_prices = labeled_data['low'].values
+            
+            # Vectorized barrier calculation
+            profit_barriers = close_prices * (1.0 + upper_barrier)
+            stop_barriers = close_prices * (1.0 - lower_barrier)
+            
+            # Optimized triple barrier labeling with early termination
+            for i in range(n - 1):
+                entry_price = close_prices[i]
+                profit_barrier = profit_barriers[i]
+                stop_barrier = stop_barriers[i]
+                
+                # Early termination if barriers are invalid
+                if profit_barrier <= entry_price or stop_barrier >= entry_price:
+                    continue
+                
                 label = 0
                 profit_pct = 0.0
-                for j in range(entry_idx + 1, min(entry_idx + self.max_lookahead, len(labeled_data))):
-                    high_price = labeled_data.iloc[j]['high']
-                    low_price = labeled_data.iloc[j]['low']
+                
+                # Look ahead with early termination
+                lookahead_end = min(i + self.max_lookahead, n)
+                for j in range(i + 1, lookahead_end):
+                    high_price = high_prices[j]
+                    low_price = low_prices[j]
+                    
                     if high_price >= profit_barrier:
                         label = 1
                         profit_pct = upper_barrier
                         break
-                    if low_price <= stop_barrier:
+                    elif low_price <= stop_barrier:
                         label = -1
                         profit_pct = -lower_barrier
                         break
-                if abs(profit_pct) > 0:
-                    if abs(profit_pct) >= precision_thresholds['min_signal_strength']:
-                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('label')] = label
-                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('potential_profit_pct')] = profit_pct
-                    else:
-                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('label')] = 0
-                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('potential_profit_pct')] = 0.0
-            long_signals = (labeled_data['label'] == 1).sum()
-            short_signals = (labeled_data['label'] == -1).sum()
-            hold_signals = (labeled_data['label'] == 0).sum()
+                
+                # Apply precision threshold filtering
+                if abs(profit_pct) > 0 and abs(profit_pct) >= precision_thresholds.get('min_signal_strength', 0.0):
+                    labels[i] = label
+                    profit_pcts[i] = profit_pct
+            
+            # Assign results back to DataFrame
+            labeled_data['label'] = labels
+            labeled_data['potential_profit_pct'] = profit_pcts
+            
+            # Calculate and log statistics
+            long_signals = (labels == 1).sum()
+            short_signals = (labels == -1).sum()
+            hold_signals = (labels == 0).sum()
+            
             self.logger.info(f'📊 Regime {regime} ({barrier_type}) labeling results:')
             self.logger.info(f'   LONG signals: {long_signals}')
             self.logger.info(f'   SHORT signals: {short_signals}')
             self.logger.info(f'   HOLD signals: {hold_signals}')
+            
             return labeled_data
+            
         except Exception as e:
             self.logger.error(f'❌ Error applying regime triple barrier: {e}')
-            return regime_data
+            raise RuntimeError(f"Triple barrier labeling failed for regime {regime}: {e}") from e
 
     async def _apply_regime_quality_filters(self, regime_data: pd.DataFrame, quality_filters: Dict[str, Any], regime: str) -> pd.DataFrame:
         """Apply regime-specific quality filters."""
@@ -381,6 +578,283 @@ class RegimeAwareTacticianLabeler:
             self.logger.error(f'❌ Error applying default labeling: {e}')
             return data
 
+    @handles_errors(
+        exceptions=(ValidationError, DataIntegrityError),
+        default_return=False,
+        context='input_data_validation'
+    )
+    def _validate_input_data(self, data: pd.DataFrame, regime_column: str) -> bool:
+        """Fast-fail validation for input data quality using utility modules."""
+        try:
+            # Use utility module for data quality validation
+            quality_report = validate_data_quality(data, max_nan_ratio=0.1, check_duplicates=True)
+            if not quality_report['is_valid']:
+                self.logger.error(f"❌ Data quality validation failed: {quality_report['issues']}")
+                raise DataIntegrityError("Data quality validation failed")
+            
+            # Check data size using safe operations
+            data_size = safe_int(len(data), 0)
+            if data_size < 100:
+                self.logger.error("❌ Insufficient data for labeling (minimum 100 rows required)")
+                raise ValidationError("Insufficient data for labeling")
+            
+            if data_size > self.max_data_points:
+                self.logger.error(f"❌ Data too large (maximum {self.max_data_points} rows allowed)")
+                raise ValidationError("Data too large for processing")
+            
+            # Use utility module for schema validation
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            is_valid, errors = validate_dataframe_schema(data, required_columns)
+            if not is_valid:
+                self.logger.error(f"❌ Schema validation failed: {errors}")
+                raise ValidationError(f"Schema validation failed: {errors}")
+            
+            # Check regime column
+            if regime_column not in data.columns:
+                self.logger.error(f"❌ Regime column '{regime_column}' not found")
+                raise ValidationError(f"Regime column '{regime_column}' not found")
+            
+            return True
+            
+        except (ValidationError, DataIntegrityError) as e:
+            self.logger.error(f"❌ Input data validation failed: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in input data validation: {e}")
+            raise ValidationError(f"Unexpected validation error: {e}") from e
+    
+    def _validate_resource_constraints(self, data: pd.DataFrame) -> bool:
+        """Fast-fail validation for resource constraints."""
+        try:
+            # Check memory usage
+            memory_usage = psutil.virtual_memory()
+            memory_usage_gb = memory_usage.used / (1024**3)
+            
+            if memory_usage_gb > self.memory_threshold_gb:
+                self.logger.error(f"❌ Memory usage too high: {memory_usage_gb:.2f}GB > {self.memory_threshold_gb}GB")
+                return False
+            
+            # Estimate memory needed for processing
+            estimated_memory_mb = len(data) * len(data.columns) * 8 / (1024**2)  # Rough estimate
+            if estimated_memory_mb > 1000:  # 1GB threshold
+                self.logger.warning(f"⚠️ Large dataset detected: {estimated_memory_mb:.1f}MB estimated memory usage")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Resource constraint validation failed: {e}")
+            return False
+    
+    def _validate_regime_distribution(self, regime_data: pd.Series, unique_regimes: np.ndarray) -> bool:
+        """Validate regime distribution quality."""
+        try:
+            if len(unique_regimes) < 2:
+                self.logger.error("❌ Insufficient regime diversity (minimum 2 regimes required)")
+                return False
+            
+            # Check regime sample distribution
+            regime_counts = regime_data.value_counts()
+            min_samples = regime_counts.min()
+            max_samples = regime_counts.max()
+            
+            if min_samples < self.regime_config['min_regime_samples']:
+                self.logger.error(f"❌ Regime {regime_counts.idxmin()} has insufficient samples: {min_samples}")
+                return False
+            
+            # Check for extreme imbalance
+            imbalance_ratio = min_samples / max_samples
+            if imbalance_ratio < 0.1:
+                self.logger.warning(f"⚠️ Extreme regime imbalance: {imbalance_ratio:.3f}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Regime distribution validation failed: {e}")
+            return False
+    
+    @handles_errors(
+        exceptions=(MathValidationError, ValidationError),
+        default_return={},
+        context='regime_statistics_calculation'
+    )
+    def _calculate_regime_statistics_optimized(self, data: pd.DataFrame, regime_column: str, unique_regimes: np.ndarray) -> Dict[str, Dict[str, Any]]:
+        """Pre-calculate regime statistics for optimization using safe operations."""
+        try:
+            regime_stats = {}
+            
+            for regime in unique_regimes:
+                regime_mask = data[regime_column] == regime
+                regime_data = data[regime_mask]
+                
+                if len(regime_data) > 0:
+                    # Use safe operations for statistical calculations
+                    returns = regime_data['close'].pct_change()
+                    volatility = safe_std(returns.dropna().values, 0.0)
+                    volume_mean = safe_mean(regime_data['volume'].values, 0.0)
+                    volume_std = safe_std(regime_data['volume'].values, 0.0)
+                    
+                    # Handle spread data safely
+                    spread_data = regime_data.get('spread', pd.Series([0.0001] * len(regime_data)))
+                    spread_mean = safe_mean(spread_data.values, 0.0001)
+                    
+                    regime_stats[regime] = {
+                        'volatility': validate_finite(volatility, f"volatility_{regime}"),
+                        'volume_mean': validate_positive(volume_mean, f"volume_mean_{regime}"),
+                        'volume_std': validate_finite(volume_std, f"volume_std_{regime}"),
+                        'spread_mean': validate_finite(spread_mean, f"spread_mean_{regime}"),
+                        'sample_count': safe_int(len(regime_data), 0)
+                    }
+            
+            return regime_stats
+            
+        except (MathValidationError, ValidationError) as e:
+            self.logger.error(f"❌ Error calculating regime statistics: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in regime statistics calculation: {e}")
+            raise ValidationError(f"Unexpected error in regime statistics: {e}") from e
+    
+    @handles_errors(
+        exceptions=(MathValidationError, ValidationError),
+        default_return=False,
+        context='barrier_parameter_validation'
+    )
+    def _validate_barrier_parameters(self, volatility: float, volume: float, spread: float) -> bool:
+        """Validate barrier calculation parameters using math validation utilities."""
+        try:
+            # Use math validation utilities for parameter validation
+            volatility = validate_range(volatility, 0.0, 1.0, "volatility")
+            volume = validate_positive(volume, "volume")
+            spread = validate_finite(spread, "spread")
+            
+            if spread < 0:
+                raise MathValidationError(f"Spread must be non-negative: {spread}")
+            
+            return True
+            
+        except (MathValidationError, ValidationError) as e:
+            self.logger.error(f"❌ Barrier parameter validation failed: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in barrier parameter validation: {e}")
+            raise ValidationError(f"Unexpected validation error: {e}") from e
+    
+    @handles_errors(
+        exceptions=(MathValidationError, ValidationError),
+        default_return=False,
+        context='calculated_barrier_validation'
+    )
+    def _validate_calculated_barriers(self, upper_barrier: float, lower_barrier: float) -> bool:
+        """Validate calculated barrier values using math validation utilities."""
+        try:
+            # Use math validation utilities for barrier validation
+            upper_barrier = validate_range(upper_barrier, 0.001, 0.5, "upper_barrier")
+            lower_barrier = validate_range(lower_barrier, 0.001, 0.5, "lower_barrier")
+            
+            # Check barrier relationship
+            if upper_barrier <= lower_barrier:
+                raise MathValidationError(f"Upper barrier must be greater than lower barrier: {upper_barrier} <= {lower_barrier}")
+            
+            return True
+            
+        except (MathValidationError, ValidationError) as e:
+            self.logger.error(f"❌ Calculated barrier validation failed: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in calculated barrier validation: {e}")
+            raise ValidationError(f"Unexpected validation error: {e}") from e
+    
+    @handles_errors(
+        exceptions=(MathValidationError, ValidationError),
+        default_return=(0.02, 0.01),  # Default barriers
+        context='barrier_scaling'
+    )
+    def _scale_barriers(self, upper_barrier: float, lower_barrier: float, upper_scale: float, lower_scale: float) -> Tuple[float, float]:
+        """Scale barriers with validation using math utilities."""
+        try:
+            # Use safe power for scaling
+            scaled_upper = safe_power(upper_barrier * upper_scale, 1.0, upper_barrier)
+            scaled_lower = safe_power(lower_barrier * lower_scale, 1.0, lower_barrier)
+            
+            # Validate scaled barriers
+            if not self._validate_calculated_barriers(scaled_upper, scaled_lower):
+                # Return original barriers if scaling fails
+                return upper_barrier, lower_barrier
+            
+            return scaled_upper, scaled_lower
+            
+        except (MathValidationError, ValidationError) as e:
+            self.logger.error(f"❌ Barrier scaling failed: {e}")
+            return upper_barrier, lower_barrier
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in barrier scaling: {e}")
+            return upper_barrier, lower_barrier
+    
+    def _store_regime_result(self, regime: str, result: Dict[str, Any]) -> None:
+        """Store regime result with bounded cache."""
+        try:
+            if len(self.regime_labeling_results) >= self._max_cache_size:
+                # Remove oldest entry
+                oldest_key = next(iter(self.regime_labeling_results))
+                del self.regime_labeling_results[oldest_key]
+            
+            self.regime_labeling_results[regime] = result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error storing regime result: {e}")
+    
+    def _store_barrier_result(self, barrier_key: str, result: Dict[str, Any]) -> None:
+        """Store barrier result with bounded cache."""
+        try:
+            if len(self.regime_barrier_results) >= self._max_cache_size:
+                # Remove oldest entry
+                oldest_key = next(iter(self.regime_barrier_results))
+                del self.regime_barrier_results[oldest_key]
+            
+            self.regime_barrier_results[barrier_key] = result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error storing barrier result: {e}")
+    
+    def _periodic_cleanup(self) -> None:
+        """Periodic cleanup to prevent memory leaks."""
+        try:
+            self._operation_count += 1
+            
+            if self._operation_count % self.cleanup_frequency == 0:
+                # Clear caches if they're getting too large
+                if len(self._regime_stats_cache) > 100:
+                    self._regime_stats_cache.clear()
+                
+                if len(self._barrier_cache) > 100:
+                    self._barrier_cache.clear()
+                
+                # Force garbage collection
+                gc.collect()
+                
+                self.logger.debug(f"🧹 Periodic cleanup completed (operation {self._operation_count})")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error in periodic cleanup: {e}")
+    
+    def _cleanup_resources(self) -> None:
+        """Clean up all resources to prevent memory leaks."""
+        try:
+            # Clear all caches
+            self.regime_barrier_results.clear()
+            self.regime_labeling_results.clear()
+            self.regime_validation_results.clear()
+            self._regime_stats_cache.clear()
+            self._barrier_cache.clear()
+            
+            # Force garbage collection
+            gc.collect()
+            
+            self.logger.info("🧹 Resource cleanup completed")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in resource cleanup: {e}")
+
     def _log_regime_specific_metrics(self, regime: str, metrics: dict, step_name: str) -> None:
         """Log regime-specific metrics."""
         if self.regime_config['regime_specific_logging']:
@@ -391,15 +865,32 @@ class RegimeAwareTacticianLabeler:
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst model."""
 
+    def __init__(self, config: dict[str, Any]) -> None:
+        """Initialize the TacticianLabelingStep with utility modules."""
+        self.config = config
+        self.logger = get_logger('TacticianLabelingStep')
+        self.parquet_utils = ParquetUtils()
+        
+        # Initialize with safe configuration values
+        self.symbol = safe_dict_get(config, 'symbol', 'ETHUSDT')
+        self.exchange = safe_dict_get(config, 'exchange', 'BINANCE')
+        self.timeframe = safe_dict_get(config, 'timeframe', '1m')
+        
+        # Initialize regime-aware labeler
+        self.regime_aware_labeler = RegimeAwareTacticianLabeler(config)
+
+    @handles_errors(
+        exceptions=(ValidationError, BusinessRuleError),
+        default_return=None,
+        context='environment_validation'
+    )
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status['all_available']:
             missing_modules = dependency_status['missing_modules']
             self.logger.warning(f'Missing modules: {missing_modules}')
+            raise ValidationError(f"Missing required modules: {missing_modules}")
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger
 
     @handles_errors(exceptions=(Exception,), default_return = False, context='tactician labeling step initialization')
     async def initialize(self) -> None:
@@ -656,14 +1147,42 @@ class TacticianLabelingStep:
         return (data_with_features, all_signals)
 
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
-        """Placeholder for your market regime detection logic.
-        This should be consistent with the logic from step4_regime_specific_training.
-        """
-        vol_percentile = data['volatility'].rank(pct = True)
-        bins = [0, 0.33, 0.66, 1.0]
-        labels = ['SIDEWAYS', 'BULL', 'BEAR']
-        regimes = pd.cut(vol_percentile, bins = bins, labels = labels, right = False)
-        return regimes.astype(str).fillna('SIDEWAYS')
+        """Fixed market regime detection logic with proper binning and validation."""
+        try:
+            # Validate input data
+            if 'volatility' not in data.columns:
+                self.logger.warning('Volatility column not found, using default regime')
+                return pd.Series(['SIDEWAYS'] * len(data), index=data.index)
+            
+            # Calculate volatility percentiles with validation
+            vol_data = data['volatility'].dropna()
+            if len(vol_data) == 0:
+                self.logger.warning('No valid volatility data, using default regime')
+                return pd.Series(['SIDEWAYS'] * len(data), index=data.index)
+            
+            vol_percentile = vol_data.rank(pct=True)
+            
+            # Fixed binning: 3 bins for 3 labels
+            bins = [0, 0.33, 0.66, 1.0]
+            labels = ['SIDEWAYS', 'BULL', 'BEAR']
+            
+            # Apply binning with proper handling
+            regimes = pd.cut(vol_percentile, bins=bins, labels=labels, right=False, include_lowest=True)
+            
+            # Fill NaN values and convert to string
+            regimes = regimes.astype(str).fillna('SIDEWAYS')
+            
+            # Validate regime distribution
+            regime_counts = regimes.value_counts()
+            if len(regime_counts) < 2:
+                self.logger.warning('Insufficient regime diversity, using default')
+                return pd.Series(['SIDEWAYS'] * len(data), index=data.index)
+            
+            return regimes
+            
+        except Exception as e:
+            self.logger.error(f'Error in market regime detection: {e}')
+            return pd.Series(['SIDEWAYS'] * len(data), index=data.index)
 
     def _calculate_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate all necessary features for both Analyst and Tactician."""

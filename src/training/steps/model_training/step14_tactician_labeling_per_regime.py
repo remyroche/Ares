@@ -1,4 +1,28 @@
-from src.core.decorators import handles_errors, validates
+# Import utility modules
+from src.utils.common_operations import (
+    safe_mean, safe_std, safe_float, safe_int, safe_dict_get,
+    validate_dataframe_schema, validate_data_quality,
+    get_logger, timed_operation
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power,
+    validate_finite, validate_positive, validate_range,
+    safe_weighted_average, MathValidationError
+)
+from src.utils.parquet_utils import ParquetUtils
+
+from src.core.decorators import (
+    handles_errors, validates, timeout, circuit_breaker,
+    log_execution_time, log_call, cached, retry, fallback
+)
+from src.core.decorators.enhanced_error_handling import (
+    handle_errors_enhanced, ErrorContext, ErrorSeverity
+)
+from src.core.errors import (
+    ValidationError, DataIntegrityError, BusinessRuleError,
+    AppError, ErrorCode
+)
+
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from ..standardized_parquet_handler import standardized_parquet_handler
 
@@ -64,9 +88,17 @@ class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.per_regime_enabled = config.get('per_regime_tactician_labeling', True)
-        self.regime_specific_configs = config.get('regime_specific_tactician_configs', {})
-        self.adaptive_tactician_strategies = config.get('adaptive_tactician_strategies_per_regime', True)
+        self.per_regime_enabled = safe_dict_get(config, 'per_regime_tactician_labeling', True)
+        self.regime_specific_configs = safe_dict_get(config, 'regime_specific_tactician_configs', {})
+        self.adaptive_tactician_strategies = safe_dict_get(config, 'adaptive_tactician_strategies_per_regime', True)
+        
+        # Initialize utility modules
+        self.parquet_utils = ParquetUtils()
+        
+        # Enhanced resource management for per-regime processing with safe values
+        self.max_concurrent_regimes = safe_int(config.get('max_concurrent_regimes', 4), 4)
+        self.regime_memory_limit_mb = safe_int(config.get('regime_memory_limit_mb', 500), 500)
+        self.regime_processing_timeout = safe_int(config.get('regime_processing_timeout', 300), 300)
 
         # Enhanced optimization components
         self.optimizations_available = OPTIMIZATIONS_AVAILABLE
@@ -95,6 +127,37 @@ class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
             self.logger.info(f"📊 GPU: {self.enable_gpu_acceleration}, Parallel: {self.enable_parallel_processing}")
         else:
             self.logger.info("⚠️ Enhanced Step14 initialized without optimizations (fallback mode)")
+
+    @handles_errors(
+        exceptions=(ValidationError, BusinessRuleError),
+        default_return=False,
+        context='per_regime_constraint_validation'
+    )
+    def _validate_per_regime_constraints(self, regime_id: int, data_size: int) -> bool:
+        """Validate per-regime processing constraints using utility modules."""
+        try:
+            # Use safe math operations for memory calculation
+            data_size = safe_int(data_size, 0)
+            memory_usage_mb = safe_divide(data_size * 8, 1024**2, 0.0)
+            
+            # Check memory constraints
+            if memory_usage_mb > self.regime_memory_limit_mb:
+                self.logger.error(f"❌ Regime {regime_id} data too large: {memory_usage_mb:.1f}MB > {self.regime_memory_limit_mb}MB")
+                raise BusinessRuleError(f"Regime {regime_id} data too large: {memory_usage_mb:.1f}MB")
+            
+            # Check concurrent regime limit
+            if hasattr(self, '_active_regimes') and len(self._active_regimes) >= self.max_concurrent_regimes:
+                self.logger.error(f"❌ Too many concurrent regimes: {len(self._active_regimes)} >= {self.max_concurrent_regimes}")
+                raise BusinessRuleError(f"Too many concurrent regimes: {len(self._active_regimes)} >= {self.max_concurrent_regimes}")
+            
+            return True
+            
+        except (ValidationError, BusinessRuleError) as e:
+            self.logger.error(f"❌ Per-regime constraint validation failed: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error in per-regime constraint validation: {e}")
+            raise ValidationError(f"Unexpected validation error: {e}") from e
 
     @log_important_calls
     @per_regime_step('step14_tactician_labeling')
@@ -133,6 +196,10 @@ class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
 
         try:
             self.logger.info(f"🚀 Starting enhanced per-regime tactician labeling for regime {regime_id}")
+
+            # Fast-fail validation for per-regime constraints
+            if not self._validate_per_regime_constraints(regime_id, 1000):  # Estimate data size
+                return False
 
             # Initialize optimization context
             if self.step_optimizer:

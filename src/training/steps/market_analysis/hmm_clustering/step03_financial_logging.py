@@ -48,7 +48,10 @@ class Step03FinancialLogger:
                                           symbol: str, exchange: str, timeframe: str) -> None:
         """Log key financial metrics from the HMM regime discovery results."""
         try:
-            # Log HMM model performance metrics
+            # Note: Data quality and performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
+            
+            # Log HMM model performance metrics (financial relevance)
             if hmm_results:
                 self.financial_logger.log_financial_metric(
                     symbol=symbol,
@@ -90,15 +93,8 @@ class Step03FinancialLogger:
                     step_name="Step03_HMM_Regime_Discovery"
                 )
                 
-                self.financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="hmm_convergence_iterations",
-                    metric_value=float(hmm_results.get('convergence_iterations', 0)),
-                    metric_type="performance",
-                    step_name="Step03_HMM_Regime_Discovery"
-                )
+                # Note: Convergence iterations are logged in regular system logs
+                # Financial metrics logger focuses only on financial/trading metrics
                 
                 # Log regime-specific metrics
                 regime_metrics = hmm_results.get('regime_metrics', [])
@@ -150,18 +146,10 @@ class Step03FinancialLogger:
                             regime_id=str(regime_id)
                         )
                         
-                        self.financial_logger.log_financial_metric(
-                            symbol=symbol,
-                            exchange=exchange,
-                            timeframe=timeframe,
-                            metric_name=f"hmm_regime_{regime_id}_sample_count",
-                            metric_value=float(regime_metric.get('sample_count', 0)),
-                            metric_type="regime",
-                            step_name="Step03_HMM_Regime_Discovery",
-                            regime_id=str(regime_id)
-                        )
+                        # Note: Sample counts are logged in regular system logs
+                        # Financial metrics logger focuses only on financial/trading metrics
             
-            # Log clustering quality metrics
+            # Log clustering quality metrics (financial relevance)
             if clustering_results:
                 self.financial_logger.log_financial_metric(
                     symbol=symbol,
@@ -169,7 +157,7 @@ class Step03FinancialLogger:
                     timeframe=timeframe,
                     metric_name="clustering_silhouette_score",
                     metric_value=clustering_results.get('silhouette_score', 0.0),
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
                 
@@ -179,7 +167,7 @@ class Step03FinancialLogger:
                     timeframe=timeframe,
                     metric_name="clustering_davies_bouldin_index",
                     metric_value=clustering_results.get('davies_bouldin_index', 0.0),
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
                 
@@ -189,7 +177,7 @@ class Step03FinancialLogger:
                     timeframe=timeframe,
                     metric_name="clustering_calinski_harabasz_index",
                     metric_value=clustering_results.get('calinski_harabasz_index', 0.0),
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
                 
@@ -199,47 +187,17 @@ class Step03FinancialLogger:
                     timeframe=timeframe,
                     metric_name="clustering_n_clusters",
                     metric_value=float(clustering_results.get('n_clusters', 0)),
-                    metric_type="technical",
+                    metric_type="trading",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
                 
-                # Log cluster sizes
-                cluster_sizes = clustering_results.get('cluster_sizes', [])
-                if cluster_sizes:
-                    for i, size in enumerate(cluster_sizes):
-                        self.financial_logger.log_financial_metric(
-                            symbol=symbol,
-                            exchange=exchange,
-                            timeframe=timeframe,
-                            metric_name=f"cluster_{i}_size",
-                            metric_value=float(size),
-                            metric_type="clustering",
-                            step_name="Step03_HMM_Regime_Discovery"
-                        )
+                # Note: Cluster sizes are logged in regular system logs
+                # Financial metrics logger focuses only on financial/trading metrics
             
-            # Log execution performance metrics
-            if performance_data:
-                self.financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="execution_time_seconds",
-                    metric_value=performance_data.get('execution_time_seconds', 0.0),
-                    metric_type="performance",
-                    step_name="Step03_HMM_Regime_Discovery"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="memory_usage_mb",
-                    metric_value=performance_data.get('memory_usage_mb', 0.0),
-                    metric_type="performance",
-                    step_name="Step03_HMM_Regime_Discovery"
-                )
+            # Note: Execution performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
-            # Log market context metrics
+            # Log market context metrics (financial relevance)
             if market_data is not None and not market_data.empty:
                 current_price = market_data['close'].iloc[-1] if 'close' in market_data.columns else 0.0
                 price_volatility = market_data['close'].std() if 'close' in market_data.columns else 0.0
@@ -264,15 +222,8 @@ class Step03FinancialLogger:
                     step_name="Step03_HMM_Regime_Discovery"
                 )
                 
-                self.financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="market_data_points",
-                    metric_value=float(len(market_data)),
-                    metric_type="data_quality",
-                    step_name="Step03_HMM_Regime_Discovery"
-                )
+                # Note: Data point counts are logged in regular system logs
+                # Financial metrics logger focuses only on financial/trading metrics
             
             # Log comprehensive trading performance
             if hmm_results and clustering_results:

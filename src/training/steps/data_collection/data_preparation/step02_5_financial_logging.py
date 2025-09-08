@@ -48,7 +48,10 @@ class Step02_5FinancialLogger:
     def _log_financial_metrics_from_results(self, sr_levels: Dict[str, Any], ml_results: Dict[str, Any], execution_data: Dict[str, Any], data: Optional[pd.DataFrame]) -> None:
         """Log key financial metrics directly from step results."""
         try:
-            # Log comprehensive ML model performance metrics
+            # Note: Data quality and performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
+            
+            # Log comprehensive ML model performance metrics (financial relevance)
             if ml_results:
                 # Basic performance metrics
                 self.financial_logger.log_financial_metric(
@@ -231,17 +234,17 @@ class Step02_5FinancialLogger:
                                 additional_data={param_name: str(param_value)}
                             )
             
-            # Log clustering details if available
+            # Log clustering details if available (financial relevance)
             clustering_results = ml_results.get('clustering_results', {})
             if clustering_results:
-                # Log clustering quality metrics
+                # Log clustering quality metrics (financial relevance)
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
                     timeframe=self.timeframe,
                     metric_name="clustering_silhouette_score",
                     metric_value=clustering_results.get('silhouette_score', 0.0),
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step02_5_SR_Optimization"
                 )
                 
@@ -251,7 +254,7 @@ class Step02_5FinancialLogger:
                     timeframe=self.timeframe,
                     metric_name="clustering_davies_bouldin_index",
                     metric_value=clustering_results.get('davies_bouldin_index', 0.0),
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step02_5_SR_Optimization"
                 )
                 
@@ -261,7 +264,7 @@ class Step02_5FinancialLogger:
                     timeframe=self.timeframe,
                     metric_name="clustering_calinski_harabasz_index",
                     metric_value=clustering_results.get('calinski_harabasz_index', 0.0),
-                    metric_type="quality",
+                    metric_type="trading",
                     step_name="Step02_5_SR_Optimization"
                 )
                 
@@ -271,7 +274,7 @@ class Step02_5FinancialLogger:
                     timeframe=self.timeframe,
                     metric_name="clustering_n_clusters",
                     metric_value=float(clustering_results.get('n_clusters', 0)),
-                    metric_type="technical",
+                    metric_type="trading",
                     step_name="Step02_5_SR_Optimization"
                 )
                 
@@ -438,62 +441,8 @@ class Step02_5FinancialLogger:
                             additional_data=level_data
                         )
             
-            # Log data quality metrics
-            if data is not None and not data.empty:
-                total_rows, total_columns = data.shape
-                missing_values = data.isnull().sum().sum()
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_total_rows",
-                    metric_value=float(total_rows),
-                    metric_type="data_quality",
-                    step_name="Step02_5_SR_Optimization"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_total_columns",
-                    metric_value=float(total_columns),
-                    metric_type="data_quality",
-                    step_name="Step02_5_SR_Optimization"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="data_missing_values",
-                    metric_value=float(missing_values),
-                    metric_type="data_quality",
-                    step_name="Step02_5_SR_Optimization"
-                )
-            
-            # Log execution performance metrics
-            if execution_data:
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="execution_time_seconds",
-                    metric_value=execution_data.get('execution_time_seconds', 0.0),
-                    metric_type="performance",
-                    step_name="Step02_5_SR_Optimization"
-                )
-                
-                self.financial_logger.log_financial_metric(
-                    symbol=self.symbol,
-                    exchange=self.exchange,
-                    timeframe=self.timeframe,
-                    metric_name="memory_usage_mb",
-                    metric_value=execution_data.get('memory_usage_mb', 0.0),
-                    metric_type="performance",
-                    step_name="Step02_5_SR_Optimization"
-                )
+            # Note: Data quality and execution performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             # Log comprehensive trading performance
             if sr_levels and ml_results:

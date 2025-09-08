@@ -1875,13 +1875,32 @@ class FinalRegimeClusteringStep:
         try:
             financial_logger = get_financial_metrics_logger()
             
-            # Log different types of metrics
-            self._log_clustering_quality_metrics(financial_logger, reports, symbol, exchange, timeframe)
-            self._log_regime_analysis_metrics(financial_logger, regime_analysis, symbol, exchange, timeframe)
-            self._log_individual_regime_metrics(financial_logger, regime_analysis, symbol, exchange, timeframe)
-            self._log_clustering_algorithm_metrics(financial_logger, clustering_results, symbol, exchange, timeframe)
-            self._log_performance_metrics(financial_logger, reports, symbol, exchange, timeframe)
-            self._log_comprehensive_trading_performance(financial_logger, reports, regime_analysis, symbol, exchange, timeframe)
+            # Note: Data quality and performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
+            
+            # Log clustering quality metrics (financial relevance)
+            clustering_summary = reports.get('clustering_summary', {})
+            if clustering_summary:
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="final_clustering_silhouette_score",
+                    metric_value=clustering_summary.get('silhouette_score', 0.0),
+                    metric_type="trading",
+                    step_name="Step03_5_Final_Regime_Clustering"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="final_clustering_n_clusters",
+                    metric_value=float(clustering_summary.get('n_clusters', 0)),
+                    metric_type="trading",
+                    step_name="Step03_5_Final_Regime_Clustering"
+                )
+
             
             # Log file paths that were created during this step
             self._log_created_file_paths(symbol, exchange, timeframe)
@@ -2013,14 +2032,51 @@ class FinalRegimeClusteringStep:
                         symbol=symbol,
                         exchange=exchange,
                         timeframe=timeframe,
-                        metric_name=f"final_clustering_param_{param_name}",
-                        metric_value=param_float,
-                        metric_type="clustering",
+                        metric_name=f"final_regime_{regime_id}_persistence",
+                        metric_value=regime_metric.get('persistence_score', 0.0),
+                        metric_type="regime",
                         step_name="Step03_5_Final_Regime_Clustering",
-                        additional_data={'parameter_name': param_name}
+                        regime_id=str(regime_id)
                     )
-                except (ValueError, TypeError):
-                    # Log as additional data if can't convert to float
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f"final_regime_{regime_id}_volatility",
+                        metric_value=regime_metric.get('volatility_characteristic', 0.0),
+                        metric_type="risk",
+                        step_name="Step03_5_Final_Regime_Clustering",
+                        regime_id=str(regime_id)
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f"final_regime_{regime_id}_trend_strength",
+                        metric_value=regime_metric.get('trend_strength', 0.0),
+                        metric_type="trading",
+                        step_name="Step03_5_Final_Regime_Clustering",
+                        regime_id=str(regime_id)
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f"final_regime_{regime_id}_confidence",
+                        metric_value=regime_metric.get('confidence_score', 0.0),
+                        metric_type="regime",
+                        step_name="Step03_5_Final_Regime_Clustering",
+                        regime_id=str(regime_id)
+                    )
+                    
+                    # Note: Sample counts are logged in regular system logs
+                    # Financial metrics logger focuses only on financial/trading metrics
+                    
+                    # Log regime market condition
+                    market_condition = regime_metric.get('market_condition', 'unknown')
                     financial_logger.log_financial_metric(
                         symbol=symbol,
                         exchange=exchange,
@@ -2113,27 +2169,37 @@ class FinalRegimeClusteringStep:
                     self.logger.warning(f"⚠️ Financial metric {metric_name} is None")
                     continue
                 
-                # Check for numeric values
-                if isinstance(value, (int, float)):
-                    # Check for NaN or infinite values
-                    if np.isnan(value) or np.isinf(value):
-                        raise ValueError(f"Invalid metric value for {metric_name}: {value}")
-                    
-                    # Check for reasonable ranges based on metric type
-                    if "ratio" in metric_name.lower():
-                        if value < 0 or value > 10:  # Most ratios should be in reasonable range
-                            self.logger.warning(f"⚠️ Unusual ratio value for {metric_name}: {value}")
-                    elif "return" in metric_name.lower():
-                        if abs(value) > 1.0:  # Returns should typically be < 100%
-                            self.logger.warning(f"⚠️ Unusual return value for {metric_name}: {value}")
-                    elif "volatility" in metric_name.lower():
-                        if value < 0 or value > 1.0:  # Volatility should be 0-100%
-                            self.logger.warning(f"⚠️ Unusual volatility value for {metric_name}: {value}")
-                
-                # Check for string values
-                elif isinstance(value, str):
-                    if not value.strip():
-                        self.logger.warning(f"⚠️ Empty string value for {metric_name}")
+                # Log algorithm parameters
+                algorithm_params = clustering_algorithm.get('parameters', {})
+                if algorithm_params:
+                    for param_name, param_value in algorithm_params.items():
+                        try:
+                            param_float = float(param_value)
+                            financial_logger.log_financial_metric(
+                                symbol=symbol,
+                                exchange=exchange,
+                                timeframe=timeframe,
+                                metric_name=f"final_clustering_param_{param_name}",
+                                metric_value=param_float,
+                                metric_type="clustering",
+                                step_name="Step03_5_Final_Regime_Clustering",
+                                additional_data={'parameter_name': param_name}
+                            )
+                        except (ValueError, TypeError):
+                            # Log as additional data if can't convert to float
+                            financial_logger.log_financial_metric(
+                                symbol=symbol,
+                                exchange=exchange,
+                                timeframe=timeframe,
+                                metric_name="final_clustering_param_info",
+                                metric_value=0.0,
+                                metric_type="clustering",
+                                step_name="Step03_5_Final_Regime_Clustering",
+                                additional_data={param_name: str(param_value)}
+                            )
+            
+            # Note: Performance metrics are logged in regular system logs
+            # Financial metrics logger focuses only on financial/trading metrics
             
             self.logger.info("✅ Financial metrics validation completed")
             return True

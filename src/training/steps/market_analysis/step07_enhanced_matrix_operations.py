@@ -1577,9 +1577,17 @@ class Step7EnhancedMatrixOperations:
                     category=ErrorCategory.MATRIX_OPERATIONS
                 )
             
+            # Store correlation matrix efficiently - avoid converting large matrices to dict
+            high_correlations = self._find_high_correlations(correlation_matrix, config['correlation_threshold'])
             results['correlation_analysis'] = {
-                'correlation_matrix': correlation_matrix.to_dict(), 
-                'high_correlations': self._find_high_correlations(correlation_matrix, config['correlation_threshold'])
+                'correlation_matrix_shape': correlation_matrix.shape,
+                'correlation_matrix_dtype': str(correlation_matrix.dtypes.iloc[0]) if len(correlation_matrix.columns) > 0 else 'unknown',
+                'high_correlations': high_correlations,
+                'correlation_summary': {
+                    'mean_correlation': float(correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].mean()),
+                    'max_correlation': float(correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].max()),
+                    'min_correlation': float(correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)].min())
+                }
             }
         except Exception as e:
             raise CriticalProcessError(
@@ -1688,7 +1696,17 @@ class Step7EnhancedMatrixOperations:
             results = {}
             self.logger.info('📊 Performing SR feature correlation analysis...')
             sr_correlation_matrix = sr_df.corr()
-            results['sr_correlation_analysis'] = {'correlation_matrix': sr_correlation_matrix.to_dict(), 'high_correlations': self._find_high_correlations(sr_correlation_matrix, config['sr_correlation_threshold']), 'sr_feature_count': len(sr_df.columns)}
+            # Store SR correlation matrix efficiently
+            sr_high_correlations = self._find_high_correlations(sr_correlation_matrix, config['sr_correlation_threshold'])
+            results['sr_correlation_analysis'] = {
+                'correlation_matrix_shape': sr_correlation_matrix.shape,
+                'high_correlations': sr_high_correlations, 
+                'sr_feature_count': len(sr_df.columns),
+                'correlation_summary': {
+                    'mean_correlation': float(sr_correlation_matrix.values[np.triu_indices_from(sr_correlation_matrix.values, k=1)].mean()),
+                    'max_correlation': float(sr_correlation_matrix.values[np.triu_indices_from(sr_correlation_matrix.values, k=1)].max())
+                }
+            }
             self.logger.info('🔍 Checking SR feature condition number...')
             sr_condition_number = np.linalg.cond(sr_df.values)
             results['sr_condition_number'] = {'condition_number': float(sr_condition_number), 'is_well_conditioned': sr_condition_number < config['sr_condition_number_threshold']}
@@ -1719,7 +1737,17 @@ class Step7EnhancedMatrixOperations:
             results = {}
             self.logger.info('📊 Performing enhanced SR feature correlation analysis...')
             enhanced_correlation_matrix = enhanced_sr_df.corr()
-            results['enhanced_sr_correlation_analysis'] = {'correlation_matrix': enhanced_correlation_matrix.to_dict(), 'high_correlations': self._find_high_correlations(enhanced_correlation_matrix, config['sr_correlation_threshold']), 'enhanced_sr_feature_count': len(enhanced_sr_df.columns)}
+            # Store enhanced SR correlation matrix efficiently
+            enhanced_high_correlations = self._find_high_correlations(enhanced_correlation_matrix, config['sr_correlation_threshold'])
+            results['enhanced_sr_correlation_analysis'] = {
+                'correlation_matrix_shape': enhanced_correlation_matrix.shape,
+                'high_correlations': enhanced_high_correlations, 
+                'enhanced_sr_feature_count': len(enhanced_sr_df.columns),
+                'correlation_summary': {
+                    'mean_correlation': float(enhanced_correlation_matrix.values[np.triu_indices_from(enhanced_correlation_matrix.values, k=1)].mean()),
+                    'max_correlation': float(enhanced_correlation_matrix.values[np.triu_indices_from(enhanced_correlation_matrix.values, k=1)].max())
+                }
+            }
             self.logger.info('🔧 Performing enhanced SR feature clustering analysis...')
             results['enhanced_sr_clustering_analysis'] = self._analyze_enhanced_sr_feature_clusters(enhanced_sr_df)
             self.logger.info('📊 Analyzing enhanced SR feature stability...')
@@ -1744,7 +1772,17 @@ class Step7EnhancedMatrixOperations:
             results = {}
             self.logger.info('📊 Performing SR optimization feature correlation analysis...')
             optimization_correlation_matrix = optimization_df.corr()
-            results['sr_optimization_correlation_analysis'] = {'correlation_matrix': optimization_correlation_matrix.to_dict(), 'high_correlations': self._find_high_correlations(optimization_correlation_matrix, config['sr_correlation_threshold']), 'optimization_feature_count': len(optimization_df.columns)}
+            # Store optimization correlation matrix efficiently
+            optimization_high_correlations = self._find_high_correlations(optimization_correlation_matrix, config['sr_correlation_threshold'])
+            results['sr_optimization_correlation_analysis'] = {
+                'correlation_matrix_shape': optimization_correlation_matrix.shape,
+                'high_correlations': optimization_high_correlations, 
+                'optimization_feature_count': len(optimization_df.columns),
+                'correlation_summary': {
+                    'mean_correlation': float(optimization_correlation_matrix.values[np.triu_indices_from(optimization_correlation_matrix.values, k=1)].mean()),
+                    'max_correlation': float(optimization_correlation_matrix.values[np.triu_indices_from(optimization_correlation_matrix.values, k=1)].max())
+                }
+            }
             self.logger.info('🔧 Analyzing SR optimization parameters...')
             results['sr_optimization_parameter_analysis'] = self._analyze_sr_optimization_parameters(optimization_df)
             return results
@@ -1832,7 +1870,26 @@ class Step7EnhancedMatrixOperations:
                     feature_importance_by_type['momentum'].append((feature, importance))
             for feature_type in feature_importance_by_type:
                 feature_importance_by_type[feature_type].sort(key = lambda x: x[1], reverse = True)
-            return {'variance_importance': variance_importance.to_dict(), 'correlation_importance': correlation_importance.to_dict(), 'combined_importance': combined_importance.to_dict(), 'importance_by_type': feature_importance_by_type, 'top_features': combined_importance.head(10).index.tolist()}
+            # Store importance data efficiently - avoid converting large Series to dict
+            return {
+                'variance_importance_summary': {
+                    'mean': float(variance_importance.mean()),
+                    'std': float(variance_importance.std()),
+                    'top_10': variance_importance.head(10).to_dict()
+                },
+                'correlation_importance_summary': {
+                    'mean': float(correlation_importance.mean()),
+                    'std': float(correlation_importance.std()),
+                    'top_10': correlation_importance.head(10).to_dict()
+                },
+                'combined_importance_summary': {
+                    'mean': float(combined_importance.mean()),
+                    'std': float(combined_importance.std()),
+                    'top_10': combined_importance.head(10).to_dict()
+                },
+                'importance_by_type': feature_importance_by_type, 
+                'top_features': combined_importance.head(10).index.tolist()
+            }
         except Exception as e:
             return {'error': str(e)}
 
@@ -1850,7 +1907,18 @@ class Step7EnhancedMatrixOperations:
                 if len(values) > 0:
                     parameter_stats[col] = {'mean': float(values.mean()), 'std': float(values.std()), 'min': float(values.min()), 'max': float(values.max()), 'median': float(values.median())}
             parameter_groups = {'weights': [col for col in parameter_features if 'weights' in col], 'dbscan': [col for col in parameter_features if 'dbscan' in col], 'advanced': [col for col in parameter_features if any((adv in col for adv in ['fibonacci', 'elliott', 'order_flow']))], 'timeframe': [col for col in parameter_features if 'tf_' in col]}
-            return {'parameter_features': parameter_features, 'parameter_statistics': parameter_stats, 'parameter_groups': parameter_groups, 'parameter_correlations': parameter_data.corr().to_dict()}
+            # Store parameter correlations efficiently
+            param_corr = parameter_data.corr()
+            return {
+                'parameter_features': parameter_features, 
+                'parameter_statistics': parameter_stats, 
+                'parameter_groups': parameter_groups, 
+                'parameter_correlations_summary': {
+                    'shape': param_corr.shape,
+                    'mean_correlation': float(param_corr.values[np.triu_indices_from(param_corr.values, k=1)].mean()),
+                    'max_correlation': float(param_corr.values[np.triu_indices_from(param_corr.values, k=1)].max())
+                }
+            }
         except Exception as e:
             return {'error': str(e)}
 
@@ -1922,7 +1990,25 @@ class Step7EnhancedMatrixOperations:
             correlation_importance = (1.0 / (1.0 + avg_correlations)).sort_values(ascending = False)
             combined_importance = (variance_importance + correlation_importance) / 2
             combined_importance = combined_importance.sort_values(ascending = False)
-            return {'variance_importance': variance_importance.to_dict(), 'correlation_importance': correlation_importance.to_dict(), 'combined_importance': combined_importance.to_dict(), 'top_features': combined_importance.head(10).index.tolist()}
+            # Store importance data efficiently - avoid converting large Series to dict
+            return {
+                'variance_importance_summary': {
+                    'mean': float(variance_importance.mean()),
+                    'std': float(variance_importance.std()),
+                    'top_10': variance_importance.head(10).to_dict()
+                },
+                'correlation_importance_summary': {
+                    'mean': float(correlation_importance.mean()),
+                    'std': float(correlation_importance.std()),
+                    'top_10': correlation_importance.head(10).to_dict()
+                },
+                'combined_importance_summary': {
+                    'mean': float(combined_importance.mean()),
+                    'std': float(combined_importance.std()),
+                    'top_10': combined_importance.head(10).to_dict()
+                },
+                'top_features': combined_importance.head(10).index.tolist()
+            }
         except Exception as e:
             return {'error': str(e)}
 
@@ -1947,7 +2033,16 @@ class Step7EnhancedMatrixOperations:
                 quality_metrics['dimensionality'] = {'matrix_rank': matrix_results['matrix_rank_analysis']['rank'], 'full_rank': matrix_results['matrix_rank_analysis']['full_rank'], 'rank_deficiency': matrix_results['matrix_rank_analysis']['rank_deficiency'], 'effective_dimensions': matrix_results['matrix_rank_analysis']['rank']}
             quality_metrics['distribution'] = {'skewness_mean': float(numeric_df.skew().mean()), 'skewness_std': float(numeric_df.skew().std()), 'kurtosis_mean': float(numeric_df.kurtosis().mean()), 'kurtosis_std': float(numeric_df.kurtosis().std()), 'high_skew_features': int((abs(numeric_df.skew()) > 3).sum()), 'high_kurtosis_features': int((numeric_df.kurtosis() > 10).sum())}
             quality_metrics['outliers'] = self._calculate_outlier_metrics(numeric_df)
-            quality_metrics['memory'] = {'memory_usage_mb': float(numeric_df.memory_usage(deep = True).sum() / 1024 / 1024), 'memory_per_feature_kb': float(numeric_df.memory_usage(deep = True).sum() / len(numeric_df.columns) / 1024), 'data_types': numeric_df.dtypes.value_counts().to_dict()}
+            # Store memory metrics efficiently
+            memory_usage_mb = float(numeric_df.memory_usage(deep=True).sum() / 1024 / 1024)
+            quality_metrics['memory'] = {
+                'memory_usage_mb': memory_usage_mb, 
+                'memory_per_feature_kb': float(memory_usage_mb * 1024 / len(numeric_df.columns)) if len(numeric_df.columns) > 0 else 0, 
+                'data_types_summary': {
+                    'total_columns': len(numeric_df.columns),
+                    'dtype_counts': numeric_df.dtypes.value_counts().to_dict()
+                }
+            }
             quality_metrics['overall_score'] = self._calculate_overall_quality_score(quality_metrics)
             self.logger.info(f"✅ Quality metrics calculated. Overall score: {quality_metrics['overall_score']:.2f}")
             return quality_metrics

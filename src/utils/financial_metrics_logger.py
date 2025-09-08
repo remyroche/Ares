@@ -198,6 +198,167 @@ class FinancialMetricsLogger:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         return self.log_dir / f'financial_metrics_{metric_type}_{timestamp}.json'
     
+    def _log_human_readable_metric(self, metric: FinancialMetric) -> None:
+        """Log metric in human-readable format with context and formatting."""
+        try:
+            # Format metric value based on type
+            formatted_value = self._format_metric_value(metric.metric_value, metric.metric_type, metric.metric_name)
+            
+            # Create contextual message based on metric type
+            if metric.metric_type == "performance":
+                emoji = "📈"
+                context = "Performance"
+            elif metric.metric_type == "risk":
+                emoji = "⚠️"
+                context = "Risk"
+            elif metric.metric_type == "technical":
+                emoji = "🔧"
+                context = "Technical"
+            elif metric.metric_type == "quality":
+                emoji = "🎯"
+                context = "Quality"
+            elif metric.metric_type == "data_quality":
+                emoji = "📊"
+                context = "Data Quality"
+            elif metric.metric_type == "feature":
+                emoji = "🔍"
+                context = "Feature"
+            elif metric.metric_type == "shap":
+                emoji = "🧠"
+                context = "SHAP"
+            elif metric.metric_type == "clustering":
+                emoji = "🎪"
+                context = "Clustering"
+            elif metric.metric_type == "hyperparameter":
+                emoji = "⚙️"
+                context = "Hyperparameter"
+            elif metric.metric_type == "regime":
+                emoji = "🌊"
+                context = "Regime"
+            elif metric.metric_type == "file_path":
+                emoji = "📁"
+                context = "File Path"
+            else:
+                emoji = "💰"
+                context = metric.metric_type.title()
+            
+            # Build human-readable message
+            log_message = f"{emoji} {context} | {metric.symbol} | {metric.step_name}"
+            
+            # Add metric name and value
+            log_message += f" | {metric.metric_name}: {formatted_value}"
+            
+            # Add regime if present
+            if metric.regime_id:
+                log_message += f" | Regime: {metric.regime_id}"
+            
+            # Add additional context for specific metrics
+            if metric.additional_data:
+                context_info = self._extract_context_info(metric.additional_data, metric.metric_name)
+                if context_info:
+                    log_message += f" | {context_info}"
+            
+            self.logger.info(log_message)
+            
+        except Exception as e:
+            # Fallback to simple format if enhanced formatting fails
+            self.logger.info(f"💰 {metric.metric_type.upper()} | {metric.symbol} | {metric.step_name} | {metric.metric_name}: {metric.metric_value:.6f}")
+    
+    def _format_metric_value(self, value: float, metric_type: str, metric_name: str) -> str:
+        """Format metric value for human readability."""
+        try:
+            # Special formatting for specific metrics
+            if "accuracy" in metric_name.lower() or "precision" in metric_name.lower() or "recall" in metric_name.lower():
+                return f"{value:.1%}"
+            elif "score" in metric_name.lower() and 0 <= value <= 1:
+                return f"{value:.3f}"
+            elif "ratio" in metric_name.lower():
+                return f"{value:.3f}"
+            elif "time" in metric_name.lower() or "duration" in metric_name.lower():
+                if value < 1:
+                    return f"{value*1000:.0f}ms"
+                else:
+                    return f"{value:.2f}s"
+            elif "memory" in metric_name.lower() or "size" in metric_name.lower():
+                if value < 1024:
+                    return f"{value:.1f}MB"
+                else:
+                    return f"{value/1024:.1f}GB"
+            elif "count" in metric_name.lower() or "samples" in metric_name.lower():
+                return f"{int(value):,}"
+            elif "percentage" in metric_name.lower() or "percent" in metric_name.lower():
+                return f"{value:.1f}%"
+            elif "price" in metric_name.lower():
+                return f"${value:.4f}"
+            elif "volatility" in metric_name.lower() or "mae" in metric_name.lower():
+                return f"{value:.4f}"
+            else:
+                # Default formatting
+                if abs(value) < 0.001:
+                    return f"{value:.2e}"
+                elif abs(value) < 1:
+                    return f"{value:.6f}"
+                elif abs(value) < 1000:
+                    return f"{value:.3f}"
+                else:
+                    return f"{value:,.0f}"
+        except:
+            return f"{value:.6f}"
+    
+    def _extract_context_info(self, additional_data: Dict[str, Any], metric_name: str) -> str:
+        """Extract relevant context information for human-readable logging."""
+        try:
+            context_parts = []
+            
+            # Extract relevant context based on metric name
+            if "feature_importance" in metric_name:
+                if "feature_name" in additional_data:
+                    context_parts.append(f"Feature: {additional_data['feature_name']}")
+            elif "shap_value" in metric_name:
+                if "feature_name" in additional_data:
+                    context_parts.append(f"Feature: {additional_data['feature_name']}")
+            elif "hyperparameter" in metric_name:
+                if "parameter_name" in additional_data:
+                    context_parts.append(f"Param: {additional_data['parameter_name']}")
+            elif "file_path" in metric_name:
+                if "file_path" in additional_data:
+                    file_path = additional_data['file_path']
+                    # Show just the filename for brevity
+                    filename = file_path.split('/')[-1] if '/' in file_path else file_path
+                    context_parts.append(f"File: {filename}")
+            elif "support_level" in metric_name or "resistance_level" in metric_name:
+                if "level_id" in additional_data:
+                    context_parts.append(f"Level #{additional_data['level_id']}")
+                if "strength" in additional_data:
+                    context_parts.append(f"Strength: {additional_data['strength']:.2f}")
+                if "touches" in additional_data:
+                    context_parts.append(f"Touches: {additional_data['touches']}")
+            elif "cluster" in metric_name:
+                if "cluster_id" in additional_data:
+                    context_parts.append(f"Cluster #{additional_data['cluster_id']}")
+            
+            return " | ".join(context_parts) if context_parts else ""
+        except:
+            return ""
+    
+    def _format_step_name(self, step_name: str) -> str:
+        """Format step name for better human readability."""
+        try:
+            # Convert step names to more readable format
+            step_mapping = {
+                "Step02_5_SR_Optimization": "S/R OPTIMIZATION",
+                "Step03_HMM_Regime_Discovery": "HMM REGIME DISCOVERY", 
+                "Step03_5_Final_Regime_Clustering": "FINAL REGIME CLUSTERING",
+                "Step01_Data_Collection": "DATA COLLECTION",
+                "Step02_Feature_Engineering": "FEATURE ENGINEERING",
+                "Step04_Model_Training": "MODEL TRAINING",
+                "Step05_Backtesting": "BACKTESTING"
+            }
+            
+            return step_mapping.get(step_name, step_name.replace("_", " ").upper())
+        except:
+            return step_name
+    
     def log_financial_metric(self, 
                            symbol: str,
                            exchange: str,
@@ -240,15 +401,8 @@ class FinancialMetricsLogger:
                     additional_data=additional_data
                 )
                 
-                # Log to console/file
-                log_message = (
-                    f"💰 {metric_type.upper()} | {symbol} | {step_name} | "
-                    f"{metric_name}: {metric_value:.6f}"
-                )
-                if regime_id:
-                    log_message += f" | Regime: {regime_id}"
-                
-                self.logger.info(log_message)
+                # Log to console/file with enhanced human-readable format
+                self._log_human_readable_metric(metric)
                 
                 # Log to CSV if enabled
                 if self.enable_csv:
@@ -536,12 +690,23 @@ class FinancialMetricsLogger:
             self.logger.error(f"Failed to write performance metrics to JSON: {e}")
     
     def log_step_start(self, step_name: str, symbol: str, exchange: str, timeframe: str) -> None:
-        """Log the start of a training step."""
+        """Log the start of a training step with enhanced human-readable format."""
         with self._lock:
             try:
-                timestamp = datetime.now().isoformat()
-                message = f"🚀 STEP START | {step_name} | {symbol} | {exchange} | {timeframe} | {timestamp}"
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Create a more readable step name
+                readable_step = self._format_step_name(step_name)
+                
+                # Enhanced human-readable message
+                message = f"🚀 STARTING {readable_step}"
+                message += f" | Symbol: {symbol} | Exchange: {exchange} | Timeframe: {timeframe}"
+                message += f" | Time: {timestamp}"
+                
                 self.logger.info(message)
+                
+                # Add separator for better readability
+                self.logger.info("=" * 80)
                 
                 if self.fallback_logger:
                     self.fallback_logger.info(f"Financial metrics logging started for {step_name}")
@@ -551,23 +716,189 @@ class FinancialMetricsLogger:
     
     def log_step_end(self, step_name: str, symbol: str, exchange: str, timeframe: str, 
                     success: bool = True, error_message: Optional[str] = None) -> None:
-        """Log the end of a training step."""
+        """Log the end of a training step with enhanced human-readable format."""
         with self._lock:
             try:
-                timestamp = datetime.now().isoformat()
-                status = "SUCCESS" if success else "FAILED"
-                message = f"🏁 STEP END | {step_name} | {symbol} | {exchange} | {timeframe} | {status} | {timestamp}"
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Create a more readable step name
+                readable_step = self._format_step_name(step_name)
+                
+                # Enhanced human-readable message
+                if success:
+                    status_emoji = "✅"
+                    status_text = "COMPLETED SUCCESSFULLY"
+                else:
+                    status_emoji = "❌"
+                    status_text = "FAILED"
+                
+                message = f"{status_emoji} {status_text} {readable_step}"
+                message += f" | Symbol: {symbol} | Exchange: {exchange} | Timeframe: {timeframe}"
+                message += f" | Time: {timestamp}"
                 
                 if not success and error_message:
                     message += f" | Error: {error_message}"
                 
+                # Add separator for better readability
+                self.logger.info("=" * 80)
                 self.logger.info(message)
                 
                 if self.fallback_logger:
-                    self.fallback_logger.info(f"Financial metrics logging ended for {step_name}: {status}")
+                    self.fallback_logger.info(f"Financial metrics logging ended for {step_name}: {status_text}")
                     
             except Exception as e:
                 self.logger.error(f"Failed to log step end: {e}")
+    
+    def log_trading_performance(self, 
+                               symbol: str,
+                               exchange: str,
+                               timeframe: str,
+                               step_name: str,
+                               total_return: float,
+                               annualized_return: float,
+                               volatility: float,
+                               sharpe_ratio: float,
+                               sortino_ratio: float,
+                               calmar_ratio: float,
+                               max_drawdown: float,
+                               max_drawdown_duration: int,
+                               var_95: float,
+                               cvar_95: float,
+                               win_rate: float,
+                               profit_factor: float,
+                               avg_win: float,
+                               avg_loss: float,
+                               largest_win: float,
+                               largest_loss: float,
+                               total_trades: int,
+                               winning_trades: int,
+                               losing_trades: int,
+                               regime_id: Optional[str] = None,
+                               model_version: Optional[str] = None,
+                               confidence_score: Optional[float] = None,
+                               additional_metrics: Optional[Dict[str, Any]] = None) -> None:
+        """Log comprehensive trading performance metrics with human-readable format."""
+        with self._lock:
+            try:
+                timestamp = datetime.now().isoformat()
+                
+                # Create performance metrics object
+                performance_metrics = TradingPerformanceMetrics(
+                    timestamp=timestamp,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    step_name=step_name,
+                    total_return=total_return,
+                    annualized_return=annualized_return,
+                    volatility=volatility,
+                    sharpe_ratio=sharpe_ratio,
+                    sortino_ratio=sortino_ratio,
+                    calmar_ratio=calmar_ratio,
+                    max_drawdown=max_drawdown,
+                    max_drawdown_duration=max_drawdown_duration,
+                    var_95=var_95,
+                    cvar_95=cvar_95,
+                    win_rate=win_rate,
+                    profit_factor=profit_factor,
+                    avg_win=avg_win,
+                    avg_loss=avg_loss,
+                    largest_win=largest_win,
+                    largest_loss=largest_loss,
+                    total_trades=total_trades,
+                    winning_trades=winning_trades,
+                    losing_trades=losing_trades,
+                    regime_id=regime_id,
+                    model_version=model_version,
+                    confidence_score=confidence_score,
+                    additional_metrics=additional_metrics
+                )
+                
+                # Log human-readable performance summary
+                self._log_human_readable_performance(performance_metrics)
+                
+                # Log to CSV if enabled
+                if self.enable_csv:
+                    self._log_performance_to_csv(performance_metrics)
+                
+                # Log to JSON if enabled
+                if self.enable_json:
+                    self._log_performance_to_json(performance_metrics)
+                
+            except Exception as e:
+                self.logger.error(f"Failed to log trading performance: {e}")
+    
+    def _log_human_readable_performance(self, metrics: TradingPerformanceMetrics) -> None:
+        """Log trading performance in human-readable format."""
+        try:
+            # Performance summary header
+            self.logger.info("🎯 TRADING PERFORMANCE SUMMARY")
+            self.logger.info("-" * 60)
+            
+            # Basic info
+            readable_step = self._format_step_name(metrics.step_name)
+            self.logger.info(f"📊 Symbol: {metrics.symbol} | Exchange: {metrics.exchange} | Timeframe: {metrics.timeframe}")
+            self.logger.info(f"🔧 Step: {readable_step}")
+            if metrics.regime_id:
+                self.logger.info(f"🌊 Regime: {metrics.regime_id}")
+            if metrics.model_version:
+                self.logger.info(f"⚙️ Model Version: {metrics.model_version}")
+            if metrics.confidence_score:
+                self.logger.info(f"🎯 Confidence: {metrics.confidence_score:.1%}")
+            
+            self.logger.info("-" * 60)
+            
+            # Returns section
+            self.logger.info("📈 RETURNS")
+            self.logger.info(f"   Total Return: {metrics.total_return:.1%}")
+            self.logger.info(f"   Annualized Return: {metrics.annualized_return:.1%}")
+            self.logger.info(f"   Volatility: {metrics.volatility:.1%}")
+            
+            # Risk-adjusted returns
+            self.logger.info("⚖️ RISK-ADJUSTED RETURNS")
+            self.logger.info(f"   Sharpe Ratio: {metrics.sharpe_ratio:.3f}")
+            self.logger.info(f"   Sortino Ratio: {metrics.sortino_ratio:.3f}")
+            self.logger.info(f"   Calmar Ratio: {metrics.calmar_ratio:.3f}")
+            
+            # Risk metrics
+            self.logger.info("⚠️ RISK METRICS")
+            self.logger.info(f"   Max Drawdown: {metrics.max_drawdown:.1%}")
+            self.logger.info(f"   Max DD Duration: {metrics.max_drawdown_duration} days")
+            self.logger.info(f"   VaR (95%): {metrics.var_95:.1%}")
+            self.logger.info(f"   CVaR (95%): {metrics.cvar_95:.1%}")
+            
+            # Trading metrics
+            self.logger.info("🎲 TRADING METRICS")
+            self.logger.info(f"   Win Rate: {metrics.win_rate:.1%}")
+            self.logger.info(f"   Profit Factor: {metrics.profit_factor:.2f}")
+            self.logger.info(f"   Total Trades: {metrics.total_trades:,}")
+            self.logger.info(f"   Winning Trades: {metrics.winning_trades:,}")
+            self.logger.info(f"   Losing Trades: {metrics.losing_trades:,}")
+            
+            # Trade analysis
+            self.logger.info("💰 TRADE ANALYSIS")
+            self.logger.info(f"   Average Win: {metrics.avg_win:.1%}")
+            self.logger.info(f"   Average Loss: {metrics.avg_loss:.1%}")
+            self.logger.info(f"   Largest Win: {metrics.largest_win:.1%}")
+            self.logger.info(f"   Largest Loss: {metrics.largest_loss:.1%}")
+            
+            # Additional metrics if available
+            if metrics.additional_metrics:
+                self.logger.info("📋 ADDITIONAL METRICS")
+                for key, value in metrics.additional_metrics.items():
+                    if isinstance(value, (int, float)):
+                        if 0 <= value <= 1 and "rate" in key.lower() or "score" in key.lower():
+                            self.logger.info(f"   {key.replace('_', ' ').title()}: {value:.1%}")
+                        else:
+                            self.logger.info(f"   {key.replace('_', ' ').title()}: {value}")
+                    else:
+                        self.logger.info(f"   {key.replace('_', ' ').title()}: {value}")
+            
+            self.logger.info("-" * 60)
+            
+        except Exception as e:
+            # Fallback to simple format
+            self.logger.info(f"🎯 Trading Performance | {metrics.symbol} | {metrics.step_name} | Return: {metrics.total_return:.1%} | Sharpe: {metrics.sharpe_ratio:.3f}")
     
     def log_model_performance(self, 
                             symbol: str,

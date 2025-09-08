@@ -1553,7 +1553,7 @@ class FinalRegimeClusteringStep:
                     step_name="Step03_5_Final_Regime_Clustering"
                 )
             
-            # Log regime analysis metrics
+            # Log detailed regime analysis metrics
             regime_summary = regime_analysis.get('regime_summary', {})
             if regime_summary:
                 financial_logger.log_financial_metric(
@@ -1575,6 +1575,156 @@ class FinalRegimeClusteringStep:
                     metric_type="regime",
                     step_name="Step03_5_Final_Regime_Clustering"
                 )
+                
+                # Log additional regime metrics
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="final_regime_volatility",
+                    metric_value=regime_summary.get('average_volatility', 0.0),
+                    metric_type="risk",
+                    step_name="Step03_5_Final_Regime_Clustering"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="final_regime_duration_avg",
+                    metric_value=regime_summary.get('average_duration_days', 0.0),
+                    metric_type="regime",
+                    step_name="Step03_5_Final_Regime_Clustering"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="final_regime_transition_probability",
+                    metric_value=regime_summary.get('average_transition_probability', 0.0),
+                    metric_type="regime",
+                    step_name="Step03_5_Final_Regime_Clustering"
+                )
+            
+            # Log individual regime details
+            regime_metrics = regime_analysis.get('regime_metrics', [])
+            if regime_metrics:
+                for regime_metric in regime_metrics:
+                    regime_id = regime_metric.get('regime_id', 0)
+                    
+                    # Log each regime's characteristics
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f"final_regime_{regime_id}_persistence",
+                        metric_value=regime_metric.get('persistence_score', 0.0),
+                        metric_type="regime",
+                        step_name="Step03_5_Final_Regime_Clustering",
+                        regime_id=str(regime_id)
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f"final_regime_{regime_id}_volatility",
+                        metric_value=regime_metric.get('volatility_characteristic', 0.0),
+                        metric_type="risk",
+                        step_name="Step03_5_Final_Regime_Clustering",
+                        regime_id=str(regime_id)
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f"final_regime_{regime_id}_trend_strength",
+                        metric_value=regime_metric.get('trend_strength', 0.0),
+                        metric_type="technical",
+                        step_name="Step03_5_Final_Regime_Clustering",
+                        regime_id=str(regime_id)
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f"final_regime_{regime_id}_confidence",
+                        metric_value=regime_metric.get('confidence_score', 0.0),
+                        metric_type="regime",
+                        step_name="Step03_5_Final_Regime_Clustering",
+                        regime_id=str(regime_id)
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f"final_regime_{regime_id}_sample_count",
+                        metric_value=float(regime_metric.get('sample_count', 0)),
+                        metric_type="regime",
+                        step_name="Step03_5_Final_Regime_Clustering",
+                        regime_id=str(regime_id)
+                    )
+                    
+                    # Log regime market condition
+                    market_condition = regime_metric.get('market_condition', 'unknown')
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name=f"final_regime_{regime_id}_condition",
+                        metric_value=0.0,  # No numeric value for condition
+                        metric_type="regime",
+                        step_name="Step03_5_Final_Regime_Clustering",
+                        regime_id=str(regime_id),
+                        additional_data={'market_condition': market_condition}
+                    )
+            
+            # Log clustering algorithm details
+            clustering_algorithm = clustering_results.get('algorithm_info', {})
+            if clustering_algorithm:
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="final_clustering_algorithm",
+                    metric_value=0.0,  # No numeric value for algorithm name
+                    metric_type="clustering",
+                    step_name="Step03_5_Final_Regime_Clustering",
+                    additional_data={'algorithm_name': clustering_algorithm.get('name', 'unknown')}
+                )
+                
+                # Log algorithm parameters
+                algorithm_params = clustering_algorithm.get('parameters', {})
+                if algorithm_params:
+                    for param_name, param_value in algorithm_params.items():
+                        try:
+                            param_float = float(param_value)
+                            financial_logger.log_financial_metric(
+                                symbol=symbol,
+                                exchange=exchange,
+                                timeframe=timeframe,
+                                metric_name=f"final_clustering_param_{param_name}",
+                                metric_value=param_float,
+                                metric_type="clustering",
+                                step_name="Step03_5_Final_Regime_Clustering",
+                                additional_data={'parameter_name': param_name}
+                            )
+                        except (ValueError, TypeError):
+                            # Log as additional data if can't convert to float
+                            financial_logger.log_financial_metric(
+                                symbol=symbol,
+                                exchange=exchange,
+                                timeframe=timeframe,
+                                metric_name="final_clustering_param_info",
+                                metric_value=0.0,
+                                metric_type="clustering",
+                                step_name="Step03_5_Final_Regime_Clustering",
+                                additional_data={param_name: str(param_value)}
+                            )
             
             # Log performance metrics
             performance_metrics = reports.get('performance_metrics', {})

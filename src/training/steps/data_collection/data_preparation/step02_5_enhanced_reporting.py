@@ -504,8 +504,9 @@ class Step02_5EnhancedReporter:
     def _log_financial_metrics_from_results(self, sr_levels: Dict[str, Any], ml_results: Dict[str, Any], execution_data: Dict[str, Any], data: Optional[pd.DataFrame]) -> None:
         """Log key financial metrics directly from step results."""
         try:
-            # Log ML model performance metrics
+            # Log comprehensive ML model performance metrics
             if ml_results:
+                # Basic performance metrics
                 financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -535,12 +536,263 @@ class Step02_5EnhancedReporter:
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
+                
+                # Additional ML metrics
+                financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="ml_precision",
+                    metric_value=ml_results.get('precision', 0.0),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="ml_recall",
+                    metric_value=ml_results.get('recall', 0.0),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="ml_training_samples",
+                    metric_value=float(ml_results.get('training_samples', 0)),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="ml_test_samples",
+                    metric_value=float(ml_results.get('test_samples', 0)),
+                    metric_type="performance",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                # Log feature importance
+                feature_importance = ml_results.get('feature_importance', {})
+                if feature_importance:
+                    for feature_name, importance in feature_importance.items():
+                        financial_logger.log_financial_metric(
+                            symbol=self.symbol,
+                            exchange=self.exchange,
+                            timeframe=self.timeframe,
+                            metric_name=f"feature_importance_{feature_name}",
+                            metric_value=importance,
+                            metric_type="feature",
+                            step_name="Step02_5_SR_Optimization",
+                            additional_data={'feature_name': feature_name}
+                        )
+                
+                # Log SHAP values if available
+                shap_values = ml_results.get('shap_values', {})
+                if shap_values:
+                    for feature_name, shap_value in shap_values.items():
+                        financial_logger.log_financial_metric(
+                            symbol=self.symbol,
+                            exchange=self.exchange,
+                            timeframe=self.timeframe,
+                            metric_name=f"shap_value_{feature_name}",
+                            metric_value=shap_value,
+                            metric_type="shap",
+                            step_name="Step02_5_SR_Optimization",
+                            additional_data={'feature_name': feature_name}
+                        )
+                
+                # Log cross-validation scores
+                cv_scores = ml_results.get('cross_validation_scores', [])
+                if cv_scores:
+                    for i, score in enumerate(cv_scores):
+                        financial_logger.log_financial_metric(
+                            symbol=self.symbol,
+                            exchange=self.exchange,
+                            timeframe=self.timeframe,
+                            metric_name=f"cv_score_fold_{i}",
+                            metric_value=score,
+                            metric_type="performance",
+                            step_name="Step02_5_SR_Optimization"
+                        )
+                    
+                    # Log CV statistics
+                    financial_logger.log_financial_metric(
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
+                        metric_name="cv_mean_score",
+                        metric_value=np.mean(cv_scores),
+                        metric_type="performance",
+                        step_name="Step02_5_SR_Optimization"
+                    )
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
+                        metric_name="cv_std_score",
+                        metric_value=np.std(cv_scores),
+                        metric_type="performance",
+                        step_name="Step02_5_SR_Optimization"
+                    )
+                
+                # Log confusion matrix if available
+                confusion_matrix = ml_results.get('confusion_matrix', {})
+                if confusion_matrix:
+                    for key, value in confusion_matrix.items():
+                        financial_logger.log_financial_metric(
+                            symbol=self.symbol,
+                            exchange=self.exchange,
+                            timeframe=self.timeframe,
+                            metric_name=f"confusion_matrix_{key}",
+                            metric_value=float(value),
+                            metric_type="performance",
+                            step_name="Step02_5_SR_Optimization"
+                        )
+                
+                # Log hyperparameters if available
+                hyperparameters = ml_results.get('hyperparameters', {})
+                if hyperparameters:
+                    for param_name, param_value in hyperparameters.items():
+                        # Convert parameter value to float if possible
+                        try:
+                            param_float = float(param_value)
+                            financial_logger.log_financial_metric(
+                                symbol=self.symbol,
+                                exchange=self.exchange,
+                                timeframe=self.timeframe,
+                                metric_name=f"hyperparameter_{param_name}",
+                                metric_value=param_float,
+                                metric_type="hyperparameter",
+                                step_name="Step02_5_SR_Optimization",
+                                additional_data={'parameter_name': param_name, 'parameter_value': str(param_value)}
+                            )
+                        except (ValueError, TypeError):
+                            # Log as additional data if can't convert to float
+                            financial_logger.log_financial_metric(
+                                symbol=self.symbol,
+                                exchange=self.exchange,
+                                timeframe=self.timeframe,
+                                metric_name="hyperparameter_info",
+                                metric_value=0.0,
+                                metric_type="hyperparameter",
+                                step_name="Step02_5_SR_Optimization",
+                                additional_data={param_name: str(param_value)}
+                            )
             
-            # Log S/R level metrics
+            # Log clustering details if available
+            clustering_results = ml_results.get('clustering_results', {})
+            if clustering_results:
+                # Log clustering quality metrics
+                financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="clustering_silhouette_score",
+                    metric_value=clustering_results.get('silhouette_score', 0.0),
+                    metric_type="quality",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="clustering_davies_bouldin_index",
+                    metric_value=clustering_results.get('davies_bouldin_index', 0.0),
+                    metric_type="quality",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="clustering_calinski_harabasz_index",
+                    metric_value=clustering_results.get('calinski_harabasz_index', 0.0),
+                    metric_type="quality",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=self.symbol,
+                    exchange=self.exchange,
+                    timeframe=self.timeframe,
+                    metric_name="clustering_n_clusters",
+                    metric_value=float(clustering_results.get('n_clusters', 0)),
+                    metric_type="technical",
+                    step_name="Step02_5_SR_Optimization"
+                )
+                
+                # Log cluster sizes
+                cluster_sizes = clustering_results.get('cluster_sizes', [])
+                if cluster_sizes:
+                    for i, size in enumerate(cluster_sizes):
+                        financial_logger.log_financial_metric(
+                            symbol=self.symbol,
+                            exchange=self.exchange,
+                            timeframe=self.timeframe,
+                            metric_name=f"cluster_{i}_size",
+                            metric_value=float(size),
+                            metric_type="clustering",
+                            step_name="Step02_5_SR_Optimization"
+                        )
+                
+                # Log cluster centers if available
+                cluster_centers = clustering_results.get('cluster_centers', [])
+                if cluster_centers:
+                    for i, center in enumerate(cluster_centers):
+                        if isinstance(center, (list, np.ndarray)):
+                            for j, coord in enumerate(center):
+                                financial_logger.log_financial_metric(
+                                    symbol=self.symbol,
+                                    exchange=self.exchange,
+                                    timeframe=self.timeframe,
+                                    metric_name=f"cluster_{i}_center_{j}",
+                                    metric_value=float(coord),
+                                    metric_type="clustering",
+                                    step_name="Step02_5_SR_Optimization"
+                                )
+                
+                # Log explained variance ratio if available
+                explained_variance = clustering_results.get('explained_variance_ratio', 0.0)
+                if explained_variance:
+                    financial_logger.log_financial_metric(
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
+                        metric_name="clustering_explained_variance_ratio",
+                        metric_value=explained_variance,
+                        metric_type="quality",
+                        step_name="Step02_5_SR_Optimization"
+                    )
+                
+                # Log feature reduction efficiency if available
+                feature_reduction_efficiency = clustering_results.get('feature_reduction_efficiency', 0.0)
+                if feature_reduction_efficiency:
+                    financial_logger.log_financial_metric(
+                        symbol=self.symbol,
+                        exchange=self.exchange,
+                        timeframe=self.timeframe,
+                        metric_name="clustering_feature_reduction_efficiency",
+                        metric_value=feature_reduction_efficiency,
+                        metric_type="quality",
+                        step_name="Step02_5_SR_Optimization"
+                    )
+            
+            # Log detailed S/R level metrics
             if sr_levels:
                 support_levels = sr_levels.get('support_levels', [])
                 resistance_levels = sr_levels.get('resistance_levels', [])
                 
+                # Log individual support levels with detailed characteristics
                 if support_levels:
                     support_strengths = [level.get('strength', 0) for level in support_levels]
                     financial_logger.log_financial_metric(
@@ -562,7 +814,36 @@ class Step02_5EnhancedReporter:
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
+                    
+                    # Log each support level individually with detailed characteristics
+                    for i, level in enumerate(support_levels):
+                        level_data = {
+                            'level_id': i,
+                            'price': level.get('price', 0.0),
+                            'strength': level.get('strength', 0.0),
+                            'touches': level.get('touches', 0),
+                            'bounces': level.get('bounces', 0),
+                            'bounce_rate': level.get('bounce_rate', 0.0),
+                            'age_days': level.get('age_days', 0),
+                            'distance_to_current': level.get('distance_to_current', 0.0),
+                            'reliability_score': level.get('reliability_score', 0.0),
+                            'trend_alignment': level.get('trend_alignment', 'unknown'),
+                            'volume_confirmation': level.get('volume_confirmation', False),
+                            'fractal_strength': level.get('fractal_strength', 0.0)
+                        }
+                        
+                        financial_logger.log_financial_metric(
+                            symbol=self.symbol,
+                            exchange=self.exchange,
+                            timeframe=self.timeframe,
+                            metric_name=f"support_level_{i}",
+                            metric_value=level.get('price', 0.0),
+                            metric_type="technical",
+                            step_name="Step02_5_SR_Optimization",
+                            additional_data=level_data
+                        )
                 
+                # Log individual resistance levels with detailed characteristics
                 if resistance_levels:
                     resistance_strengths = [level.get('strength', 0) for level in resistance_levels]
                     financial_logger.log_financial_metric(
@@ -584,6 +865,34 @@ class Step02_5EnhancedReporter:
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
+                    
+                    # Log each resistance level individually with detailed characteristics
+                    for i, level in enumerate(resistance_levels):
+                        level_data = {
+                            'level_id': i,
+                            'price': level.get('price', 0.0),
+                            'strength': level.get('strength', 0.0),
+                            'touches': level.get('touches', 0),
+                            'bounces': level.get('bounces', 0),
+                            'bounce_rate': level.get('bounce_rate', 0.0),
+                            'age_days': level.get('age_days', 0),
+                            'distance_to_current': level.get('distance_to_current', 0.0),
+                            'reliability_score': level.get('reliability_score', 0.0),
+                            'trend_alignment': level.get('trend_alignment', 'unknown'),
+                            'volume_confirmation': level.get('volume_confirmation', False),
+                            'fractal_strength': level.get('fractal_strength', 0.0)
+                        }
+                        
+                        financial_logger.log_financial_metric(
+                            symbol=self.symbol,
+                            exchange=self.exchange,
+                            timeframe=self.timeframe,
+                            metric_name=f"resistance_level_{i}",
+                            metric_value=level.get('price', 0.0),
+                            metric_type="technical",
+                            step_name="Step02_5_SR_Optimization",
+                            additional_data=level_data
+                        )
             
             # Log data quality metrics
             if data is not None and not data.empty:

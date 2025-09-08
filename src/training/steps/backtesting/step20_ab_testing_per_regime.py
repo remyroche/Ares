@@ -35,7 +35,45 @@ except ImportError:
     JSONSCHEMA_AVAILABLE = False
 
 # Core imports
-from src.core.decorators import handles_errors
+from src.core.decorators import (
+    handles_errors, 
+    traced, 
+    validates, 
+    error_boundary,
+    retry,
+    timeout,
+    log_execution_time,
+    monitor_function_calls
+)
+from src.core.errors import (
+    ValidationError,
+    DataIntegrityError,
+    BusinessRuleError,
+    AppError
+)
+from src.utils.common_operations import (
+    safe_json_load,
+    safe_json_dump,
+    ensure_directory,
+    safe_file_exists,
+    safe_mean,
+    safe_std,
+    safe_float,
+    safe_int,
+    get_logger,
+    safe_gather,
+    create_async_task
+)
+from src.utils.math_validation import (
+    safe_divide,
+    safe_sqrt,
+    validate_finite,
+    validate_positive,
+    validate_range,
+    MathValidationError,
+    math_safe
+)
+from src.utils.parquet_utils import get_parquet_utils
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.model_training.validation.step20_ab_testing import ABTestingStep
 
@@ -50,8 +88,6 @@ from src.utils.optimized_data_manager import OptimizedDataManager
 
 # Utility imports
 from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
-from src.utils.logger import get_logger
-from src.utils.decorators import traced, validates
 
 # Financial Metrics Logging import
 try:
@@ -203,45 +239,52 @@ class PerRegimeABTestingStep(ABTestingStep):
 
         self.logger.info("🔧 Per-Regime AB Testing Step initialized with M1 optimizations")
 
+    @validates()
     def _validate_input_parameters(self, symbol: str, exchange: str, timeframe: str, data_dir: str, regime_id: Optional[int] = None) -> None:
-        """Fast fail validation for input parameters."""
+        """Fast fail validation for input parameters using core error types."""
         if not symbol or not isinstance(symbol, str):
-            raise ValueError(f"Invalid symbol: {symbol}. Must be a non-empty string.")
+            raise ValidationError(f"Invalid symbol: {symbol}. Must be a non-empty string.")
         
         if not exchange or not isinstance(exchange, str):
-            raise ValueError(f"Invalid exchange: {exchange}. Must be a non-empty string.")
+            raise ValidationError(f"Invalid exchange: {exchange}. Must be a non-empty string.")
         
         if not timeframe or not isinstance(timeframe, str):
-            raise ValueError(f"Invalid timeframe: {timeframe}. Must be a non-empty string.")
+            raise ValidationError(f"Invalid timeframe: {timeframe}. Must be a non-empty string.")
         
         if not data_dir or not isinstance(data_dir, str):
-            raise ValueError(f"Invalid data_dir: {data_dir}. Must be a non-empty string.")
+            raise ValidationError(f"Invalid data_dir: {data_dir}. Must be a non-empty string.")
         
         data_path = Path(data_dir)
         if not data_path.exists():
-            raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+            raise ValidationError(f"Data directory does not exist: {data_dir}")
         
         if not data_path.is_dir():
-            raise NotADirectoryError(f"Data path is not a directory: {data_dir}")
+            raise ValidationError(f"Data path is not a directory: {data_dir}")
         
-        if regime_id is not None and (not isinstance(regime_id, int) or regime_id < 0):
-            raise ValueError(f"Invalid regime_id: {regime_id}. Must be a non-negative integer.")
+        if regime_id is not None:
+            try:
+                regime_id = safe_int(regime_id)
+                if regime_id < 0:
+                    raise ValidationError(f"Invalid regime_id: {regime_id}. Must be a non-negative integer.")
+            except (ValueError, TypeError):
+                raise ValidationError(f"Invalid regime_id: {regime_id}. Must be a valid integer.")
         
         # Check memory availability
         current_memory, within_limit = self.memory_monitor.check_memory_usage()
         if not within_limit:
-            raise MemoryError(f"Memory usage ({current_memory:.1f}MB) exceeds limit ({self.memory_monitor.max_memory_mb}MB)")
+            raise AppError(f"Memory usage ({current_memory:.1f}MB) exceeds limit ({self.memory_monitor.max_memory_mb}MB)")
 
+    @validates()
     def _validate_monte_carlo_data(self, mc_data: Dict[str, Any]) -> None:
-        """Validate Monte Carlo data structure and content."""
+        """Validate Monte Carlo data structure and content using core error types."""
         if not isinstance(mc_data, dict):
-            raise TypeError("Monte Carlo data must be a dictionary")
+            raise DataIntegrityError("Monte Carlo data must be a dictionary")
         
         if JSONSCHEMA_AVAILABLE:
             try:
                 jsonschema.validate(mc_data, MONTE_CARLO_SCHEMA)
             except jsonschema.ValidationError as e:
-                raise ValueError(f"Monte Carlo data validation failed: {e.message}")
+                raise DataIntegrityError(f"Monte Carlo data validation failed: {e.message}")
         
         # Additional validation checks
         simulation_results = mc_data.get('simulation_results', {})
@@ -249,36 +292,37 @@ class PerRegimeABTestingStep(ABTestingStep):
         
         for key in required_keys:
             if key not in simulation_results:
-                raise ValueError(f"Missing required key in simulation_results: {key}")
+                raise DataIntegrityError(f"Missing required key in simulation_results: {key}")
             
             data = simulation_results[key]
             if not isinstance(data, list) or len(data) == 0:
-                raise ValueError(f"Invalid data for {key}: must be a non-empty list")
+                raise DataIntegrityError(f"Invalid data for {key}: must be a non-empty list")
             
             if key == 'win_rates':
                 if not all(0 <= x <= 1 for x in data):
-                    raise ValueError(f"Invalid win_rates: all values must be between 0 and 1")
+                    raise DataIntegrityError(f"Invalid win_rates: all values must be between 0 and 1")
             elif key == 'max_drawdowns':
                 if not all(0 <= x <= 1 for x in data):
-                    raise ValueError(f"Invalid max_drawdowns: all values must be between 0 and 1")
+                    raise DataIntegrityError(f"Invalid max_drawdowns: all values must be between 0 and 1")
 
+    @validates()
     def _validate_ab_test_results(self, ab_results: Dict[str, Any]) -> None:
-        """Validate AB test results structure."""
+        """Validate AB test results structure using core error types."""
         if not isinstance(ab_results, dict):
-            raise TypeError("AB test results must be a dictionary")
+            raise DataIntegrityError("AB test results must be a dictionary")
         
         if JSONSCHEMA_AVAILABLE:
             try:
                 jsonschema.validate(ab_results, AB_TEST_RESULT_SCHEMA)
             except jsonschema.ValidationError as e:
-                raise ValueError(f"AB test results validation failed: {e.message}")
+                raise DataIntegrityError(f"AB test results validation failed: {e.message}")
         
         # Additional validation
         if 'regime_id' not in ab_results:
-            raise ValueError("Missing regime_id in AB test results")
+            raise DataIntegrityError("Missing regime_id in AB test results")
         
         if 'ab_tests' not in ab_results or not isinstance(ab_results['ab_tests'], dict):
-            raise ValueError("Missing or invalid ab_tests in results")
+            raise DataIntegrityError("Missing or invalid ab_tests in results")
 
     @lru_cache(maxsize=128)
     def _get_cached_statistical_calculation(self, cache_key: str) -> Optional[Dict[str, Any]]:
@@ -359,6 +403,9 @@ class PerRegimeABTestingStep(ABTestingStep):
 
     @traced(span_name='execute_per_regime_ab_testing')
     @per_regime_step('step20_ab_testing')
+    @handles_errors(default_return=False, context="execute_per_regime_ab_testing")
+    @log_execution_time
+    @monitor_function_calls
     async def execute_per_regime_ab_testing(self, symbol: str, exchange: str, timeframe: str, data_dir: str, force_rerun: bool = False, regime_id: Optional[int]=None, regime_context: Optional[Any]=None, per_regime: bool = True) -> bool:
         """Execute AB testing on a per-regime basis with fast fail validation."""
         try:
@@ -457,6 +504,10 @@ class PerRegimeABTestingStep(ABTestingStep):
             self.logger.exception(f'❌ Error in per-regime AB testing for regime {regime_id}: {e}')
             return False
 
+    @traced(span_name='execute_parallel_regime_processing')
+    @handles_errors(default_return={}, context="execute_parallel_regime_processing")
+    @log_execution_time
+    @monitor_function_calls
     async def execute_parallel_regime_processing(self, symbol: str, exchange: str, timeframe: str, data_dir: str, regime_ids: List[int], max_workers: int = 4) -> Dict[int, bool]:
         """Execute AB testing for multiple regimes in parallel."""
         try:
@@ -531,15 +582,14 @@ class PerRegimeABTestingStep(ABTestingStep):
                 self.logger.warning(f"⚠️ Monte Carlo data file not found: {mc_path}")
                 return None
             
-            # Use async file operations if available
+            # Use async file operations if available, fallback to common operations
             if AIOFILES_AVAILABLE:
                 async with aiofiles.open(mc_path, 'r') as f:
                     content = await f.read()
                     mc_data = json.loads(content)
             else:
-                # Fallback to synchronous operations
-                with open(mc_path, 'r') as f:
-                    mc_data = json.load(f)
+                # Use common operations safe JSON load
+                mc_data = safe_json_load(mc_path)
             
             # Validate the loaded data
             self._validate_monte_carlo_data(mc_data)
@@ -646,7 +696,8 @@ class PerRegimeABTestingStep(ABTestingStep):
             return 0.0
 
     @log_all_calls
-
+    @math_safe
+    @handles_errors(default_return={}, context="calculate_statistical_significance")
     def _calculate_statistical_significance(self, ab_tests: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate statistical significance of AB test results using proper statistical methods."""
         try:
@@ -671,9 +722,16 @@ class PerRegimeABTestingStep(ABTestingStep):
                 # Calculate performance difference
                 performance_diff = variant_accuracy - control_accuracy
 
-                # Calculate standard error using pooled variance
-                p_pooled = (control_accuracy * control_sample_size + variant_accuracy * variant_sample_size) / (control_sample_size + variant_sample_size)
-                se = np.sqrt(p_pooled * (1 - p_pooled) * (1/control_sample_size + 1/variant_sample_size))
+                # Calculate standard error using pooled variance with safe math operations
+                p_pooled = safe_divide(
+                    control_accuracy * control_sample_size + variant_accuracy * variant_sample_size,
+                    control_sample_size + variant_sample_size,
+                    default=0.5
+                )
+                se = safe_sqrt(
+                    p_pooled * (1 - p_pooled) * (1/control_sample_size + 1/variant_sample_size),
+                    default=0.0
+                )
 
                 # Calculate z-score and p-value
                 z_score = performance_diff / se if se > 0 else 0
@@ -736,6 +794,8 @@ class PerRegimeABTestingStep(ABTestingStep):
             self.logger.error(f'❌ Error determining winning variant: {e}')
             return {}
 
+    @math_safe
+    @handles_errors(default_return={}, context="calculate_statistical_significance_optimized")
     def _calculate_statistical_significance_optimized(self, ab_tests: Dict[str, Any], optimization_config: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate statistical significance of AB test results using optimized vectorized operations."""
         try:
@@ -902,15 +962,14 @@ class PerRegimeABTestingStep(ABTestingStep):
             # Ensure directory exists
             ab_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Use async file operations if available
+            # Use async file operations if available, fallback to common operations
             if AIOFILES_AVAILABLE:
                 async with aiofiles.open(ab_path, 'w') as f:
                     content = json.dumps(ab_results, indent=2, default=str)
                     await f.write(content)
             else:
-                # Fallback to synchronous operations
-                with open(ab_path, 'w') as f:
-                    json.dump(ab_results, f, indent=2, default=str)
+                # Use common operations safe JSON dump
+                safe_json_dump(ab_results, ab_path, indent=2, default=str)
             
             self.logger.info(f'✅ Saved AB testing results for regime {regime_id}')
             return True
@@ -920,7 +979,9 @@ class PerRegimeABTestingStep(ABTestingStep):
 
 @traced(span_name='run_per_regime_ab_testing_step')
 @validates()
-@handles_errors
+@handles_errors(default_return=False, context="run_per_regime_step")
+@log_execution_time
+@monitor_function_calls
 async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: Optional[Dict[str, Any]]=None, regime_ids: Optional[List[int]]=None, parallel_processing: bool = True) -> bool:
     """Run the per-regime AB testing step with enhanced capabilities."""
     logger.info('🚀 Starting Step 20: Per-Regime AB Testing')

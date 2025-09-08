@@ -14,13 +14,13 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, validates
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-# Enhanced Reporting import
+# Financial Metrics Logging import
 try:
-    from src.training.steps.backtesting.step19_enhanced_reporting import Step19EnhancedReporter
-    ENHANCED_REPORTING_AVAILABLE = True
+    from src.training.steps.backtesting.step19_financial_logging import Step19FinancialLogger
+    FINANCIAL_LOGGING_AVAILABLE = True
 except ImportError:
-    ENHANCED_REPORTING_AVAILABLE = False
-    Step19EnhancedReporter = None
+    FINANCIAL_LOGGING_AVAILABLE = False
+    Step19FinancialLogger = None
 
 logger = system_logger
 
@@ -32,17 +32,18 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
         super().__init__(config)
         self.per_regime_enabled = config.get('per_regime_monte_carlo_validation', True)
 
-        # Initialize enhanced reporting system
-        if ENHANCED_REPORTING_AVAILABLE and Step19EnhancedReporter is not None:
+        # Initialize financial metrics logging system
+        if FINANCIAL_LOGGING_AVAILABLE and Step19FinancialLogger is not None:
             try:
-                self.enhanced_reporter = Step19EnhancedReporter(config)
-                self.logger.info('✅ Enhanced reporting system initialized for Step19')
+                # Will be initialized with symbol, exchange, timeframe when needed
+                self.financial_logger = None
+                self.logger.info('✅ Financial metrics logging system available for Step19')
             except Exception as e:
-                self.logger.warning(f'Failed to initialize enhanced reporting: {e}')
-                self.enhanced_reporter = None
+                self.logger.warning(f'Failed to initialize financial logging: {e}')
+                self.financial_logger = None
         else:
-            self.logger.info('Enhanced reporting not available, using fallback reporting')
-            self.enhanced_reporter = None
+            self.logger.info('Financial logging not available, using fallback reporting')
+            self.financial_logger = None
 
     @traced(span_name='execute_per_regime_monte_carlo_validation')
     @per_regime_step('step19_monte_carlo_validation')
@@ -57,11 +58,14 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
             mc_results = await self._perform_monte_carlo_simulations(validation_data, regime_id)
             success = await self._save_mc_results(mc_results, symbol, exchange, timeframe, data_dir, regime_id)
 
-            # Enhanced reporting system integration
-            if self.enhanced_reporter is not None and success:
+            # Financial metrics logging system integration
+            if FINANCIAL_LOGGING_AVAILABLE and Step19FinancialLogger is not None and success:
                 try:
-                    # Prepare comprehensive analysis data for enhanced reporting
-                    monte_carlo_results_data = {
+                    # Initialize financial logger
+                    self.financial_logger = Step19FinancialLogger(symbol, exchange, timeframe)
+
+                    # Prepare comprehensive analysis data for financial logging
+                    advanced_backtest_results = {
                         'total_duration': mc_results.get('duration', 0.0),
                         'total_simulations': mc_results.get('n_simulations', 0),
                         'parallel_efficiency': mc_results.get('parallel_efficiency', 0.85),
@@ -74,19 +78,18 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
                         'simulation_results': mc_results.get('simulation_results', {})
                     }
 
-                    # Prepare statistical analysis data
-                    statistical_analysis_data = {
+                    # Prepare performance metrics data
+                    performance_metrics = {
                         'confidence_level': mc_results.get('statistics', {}).get('confidence_level', 0.95),
                         'significance_level': mc_results.get('statistics', {}).get('significance', 0.95),
-                        'confidence_intervals': mc_results.get('statistics', {}).get('confidence_intervals', {}),
                         'sample_size_score': mc_results.get('statistics', {}).get('sample_size_score', 0.87),
                         'normality_score': mc_results.get('statistics', {}).get('normality_score', 0.82),
-                        'p_values': mc_results.get('statistics', {}).get('p_values', {}),
-                        'hypothesis_tests': mc_results.get('statistics', {}).get('hypothesis_tests', {})
-                    }
-
-                    # Prepare risk analysis data
-                    risk_analysis_data = {
+                        'simulation_quality': mc_results.get('statistics', {}).get('simulation_quality', 0.88),
+                        'convergence_quality': mc_results.get('statistics', {}).get('convergence_quality', 0.85),
+                        'statistical_rigor': mc_results.get('statistics', {}).get('statistical_rigor', 0.87),
+                        'methodological_soundness': mc_results.get('statistics', {}).get('methodological_soundness', 0.89),
+                        'reproducibility': mc_results.get('statistics', {}).get('reproducibility', 0.93),
+                        'computational_efficiency': mc_results.get('statistics', {}).get('computational_efficiency', 0.84),
                         'var_95': mc_results.get('statistics', {}).get('var_95', 0.048),
                         'var_99': mc_results.get('statistics', {}).get('var_99', 0.072),
                         'expected_shortfall_95': mc_results.get('statistics', {}).get('es_95', 0.076),
@@ -94,20 +97,16 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
                         'tail_risk': mc_results.get('statistics', {}).get('tail_risk', 0.032),
                         'concentration': mc_results.get('statistics', {}).get('concentration', 0.45),
                         'downside_deviation': mc_results.get('statistics', {}).get('downside_deviation', 0.08),
-                        'max_loss_prob': mc_results.get('statistics', {}).get('max_loss_prob', 0.02)
-                    }
-
-                    # Prepare scenario analysis data
-                    scenario_analysis_data = {
-                        'coverage': mc_results.get('statistics', {}).get('scenario_coverage', 0.89),
-                        'diversity': mc_results.get('statistics', {}).get('scenario_diversity', 0.84),
+                        'max_loss_prob': mc_results.get('statistics', {}).get('max_loss_prob', 0.02),
+                        'scenario_coverage': mc_results.get('statistics', {}).get('scenario_coverage', 0.89),
+                        'scenario_diversity': mc_results.get('statistics', {}).get('scenario_diversity', 0.84),
                         'extreme_coverage': mc_results.get('statistics', {}).get('extreme_coverage', 0.76),
                         'black_swan_prob': mc_results.get('statistics', {}).get('black_swan_prob', 0.005),
                         'regime_shift_prob': mc_results.get('statistics', {}).get('regime_shift_prob', 0.12)
                     }
 
-                    # Prepare regime results data
-                    regime_results_data = {
+                    # Prepare execution data
+                    execution_data = {
                         'regimes': {
                             str(regime_id): {
                                 'performance': mc_results.get('statistics', {}).get('regime_performance', 0.82),
@@ -120,40 +119,25 @@ class PerRegimeMonteCarloValidationStep(Step19MonteCarloValidation):
                         'transition_impacts': mc_results.get('statistics', {}).get('transition_impacts', {})
                     }
 
-                    # Prepare quality assessment data
-                    quality_assessment_data = {
-                        'simulation_quality': mc_results.get('statistics', {}).get('simulation_quality', 0.88),
-                        'convergence_quality': mc_results.get('statistics', {}).get('convergence_quality', 0.85),
-                        'statistical_rigor': mc_results.get('statistics', {}).get('statistical_rigor', 0.87),
-                        'methodological_soundness': mc_results.get('statistics', {}).get('methodological_soundness', 0.89),
-                        'reproducibility': mc_results.get('statistics', {}).get('reproducibility', 0.93),
-                        'computational_efficiency': mc_results.get('statistics', {}).get('computational_efficiency', 0.84)
+                    # Prepare optimization results data
+                    optimization_results = {
+                        'confidence_intervals': mc_results.get('statistics', {}).get('confidence_intervals', {}),
+                        'p_values': mc_results.get('statistics', {}).get('p_values', {}),
+                        'hypothesis_tests': mc_results.get('statistics', {}).get('hypothesis_tests', {})
                     }
 
-                    # Generate comprehensive report
-                    comprehensive_report = self.enhanced_reporter.generate_comprehensive_report(
-                        monte_carlo_results=monte_carlo_results_data,
-                        statistical_analysis=statistical_analysis_data,
-                        risk_analysis=risk_analysis_data,
-                        scenario_analysis=scenario_analysis_data,
-                        regime_results=regime_results_data,
-                        quality_assessment=quality_assessment_data
+                    # Log comprehensive financial metrics
+                    self.financial_logger.log_step_execution(
+                        advanced_backtest_results=advanced_backtest_results,
+                        performance_metrics=performance_metrics,
+                        execution_data=execution_data,
+                        optimization_results=optimization_results
                     )
 
-                    # Save comprehensive reports
-                    saved_files = self.enhanced_reporter.save_comprehensive_report(
-                        report_data=comprehensive_report,
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe
-                    )
-
-                    self.logger.info(f'📊 Enhanced Step19 analysis completed - saved {len(saved_files)} report files')
-                    for file_path in saved_files:
-                        self.logger.info(f'   📄 {file_path}')
+                    self.logger.info(f'💰 Financial metrics logged for Step19 Monte Carlo validation')
 
                 except Exception as e:
-                    self.logger.warning(f'Enhanced reporting failed, continuing with basic saving: {e}')
+                    self.logger.warning(f'Financial logging failed, continuing with basic saving: {e}')
 
             if success:
                 self.logger.info(f'✅ Successfully completed Monte Carlo validation for regime {regime_id}')

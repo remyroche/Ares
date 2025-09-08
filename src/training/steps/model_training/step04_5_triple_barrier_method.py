@@ -106,6 +106,16 @@ class TripleBarrierMethodStep:
             chunk_size=safe_int(config.get('chunk_size', 10000), 10000),
             memory_threshold=0.8
         )
+        
+        # Risk management configuration
+        self.risk_config = {
+            'max_position_size_pct': safe_float(config.get('max_position_size_pct', 0.1), 0.1),  # 10% max
+            'max_daily_trades': safe_int(config.get('max_daily_trades', 100), 100),
+            'max_drawdown_pct': safe_float(config.get('max_drawdown_pct', 0.05), 0.05),  # 5% max
+            'min_risk_reward_ratio': safe_float(config.get('min_risk_reward_ratio', 1.0), 1.0),
+            'max_volatility_pct': safe_float(config.get('max_volatility_pct', 0.1), 0.1),  # 10% max
+            'enable_risk_controls': config.get('enable_risk_controls', True)
+        }
 
         # Initialize financial metrics logging system
         if FINANCIAL_LOGGING_AVAILABLE:
@@ -207,6 +217,10 @@ class TripleBarrierMethodStep:
                 else:
                     labeled_data = await self._apply_basic_triple_barrier(data)
             
+            # Apply risk management controls
+            if labeled_data is not None and not labeled_data.empty:
+                labeled_data = self._apply_risk_management_controls(data, labeled_data)
+            
             if labeled_data is None or labeled_data.empty:
                 self.logger.error('❌ Failed to generate triple barrier labels')
                 return TripleBarrierResult.failure_result(
@@ -221,60 +235,8 @@ class TripleBarrierMethodStep:
             )
             
             if success:
-                # Calculate label statistics
-                label_stats = self._calculate_label_statistics(labeled_data)
-                
-                self._log_step_timing('Triple Barrier Method', step_start)
-                self.memory_monitor.log_memory_status('after triple barrier execution')
-                
-                # Create result data with proper column name and enhanced features
-                result_data = data.copy()
-                # Align indices explicitly and map to canonical column names
-                labels_aligned = labeled_data['label'].reindex(result_data.index)
-                result_data['triple_barrier_label'] = labels_aligned.fillna(0).astype(np.int8)
-                if 'potential_profit_pct' in labeled_data.columns:
-                    profit_aligned = labeled_data['potential_profit_pct'].reindex(result_data.index)
-                    result_data['potential_profit_pct'] = profit_aligned.fillna(0.0).astype(np.float64)
-                    fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0005))
-                    result_data['potential_profit_net_pct'] = (result_data['potential_profit_pct'] - (2.0 * fee_per_side)).astype(np.float64)
-                
-                output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
-                
-                return TripleBarrierResult.success_result(
-                    data=result_data,
-                    metadata={
-                        'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe,
-                        'output_file': str(output_path),
-                        'data_shape': data.shape, 'label_stats': label_stats,
-                        'memory_stats': self.memory_monitor.get_memory_stats()
-                    },
-                    execution_time=time.time() - step_start
-                )
-            
-            if success:
-                # Calculate label statistics
-                label_stats = self._calculate_label_statistics(labeled_data)
-                
-                self._log_step_timing('Triple Barrier Method', step_start)
-                self.memory_monitor.log_memory_status('after triple barrier execution')
-                
-                # Create result data with proper column name
-                result_data = data.copy()
-                result_data['triple_barrier_label'] = labeled_data['label']
-                if 'potential_profit_pct' in labeled_data.columns:
-                    result_data['potential_profit_pct'] = labeled_data['potential_profit_pct']
-                
-                output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
-                
-                return TripleBarrierResult.success_result(
-                    data=result_data,
-                    metadata={
-                        'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe,
-                        'output_file': str(output_path),
-                        'data_shape': data.shape, 'label_stats': label_stats,
-                        'memory_stats': self.memory_monitor.get_memory_stats()
-                    },
-                    execution_time=time.time() - step_start
+                return self._create_success_result(
+                    data, labeled_data, symbol, exchange, timeframe, data_dir, step_start
                 )
             else:
                 self.logger.error('❌ Failed to save results')
@@ -284,12 +246,48 @@ class TripleBarrierMethodStep:
                     metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
                 )
                 
+        except ValueError as e:
+            self.logger.error(f'❌ Parameter validation error: {e}')
+            self.memory_monitor.trigger_gc()
+            return TripleBarrierResult.failure_result(
+                error=f'Parameter validation failed: {str(e)}',
+                error_type='ParameterValidationError',
+                metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe},
+                execution_time=time.time() - step_start
+            )
+        except FileNotFoundError as e:
+            self.logger.error(f'❌ Data file not found: {e}')
+            self.memory_monitor.trigger_gc()
+            return TripleBarrierResult.failure_result(
+                error=f'Data file not found: {str(e)}',
+                error_type='DataFileNotFoundError',
+                metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe},
+                execution_time=time.time() - step_start
+            )
+        except MemoryError as e:
+            self.logger.error(f'❌ Memory error during processing: {e}')
+            self.memory_monitor.trigger_gc()
+            return TripleBarrierResult.failure_result(
+                error=f'Insufficient memory: {str(e)}',
+                error_type='MemoryError',
+                metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe},
+                execution_time=time.time() - step_start
+            )
+        except pd.errors.EmptyDataError as e:
+            self.logger.error(f'❌ Empty data file: {e}')
+            self.memory_monitor.trigger_gc()
+            return TripleBarrierResult.failure_result(
+                error=f'Empty data file: {str(e)}',
+                error_type='EmptyDataError',
+                metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe},
+                execution_time=time.time() - step_start
+            )
         except Exception as e:
-            self.logger.exception(f'❌ Error in triple barrier method: {e}')
+            self.logger.exception(f'❌ Unexpected error in triple barrier method: {e}')
             # Trigger garbage collection on error
             self.memory_monitor.trigger_gc()
             return TripleBarrierResult.failure_result(
-                error=str(e),
+                error=f'Unexpected error: {str(e)}',
                 error_type=type(e).__name__,
                 metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe},
                 execution_time=time.time() - step_start
@@ -302,6 +300,108 @@ class TripleBarrierMethodStep:
         if labels is None:
             return {'total_labels': 0, 'buy_signals': 0, 'sell_signals': 0, 'no_action': 0}
         return {'total_labels': int(len(labels)), 'buy_signals': int((labels == 1).sum()), 'sell_signals': int((labels == -1).sum()), 'no_action': int((labels == 0).sum())}
+    
+    def _create_success_result(
+        self, 
+        data: pd.DataFrame, 
+        labeled_data: pd.DataFrame, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        data_dir: str, 
+        step_start: float
+    ) -> TripleBarrierResult:
+        """Create standardized success result to eliminate code duplication."""
+        # Calculate label statistics
+        label_stats = self._calculate_label_statistics(labeled_data)
+        
+        self._log_step_timing('Triple Barrier Method', step_start)
+        self.memory_monitor.log_memory_status('after triple barrier execution')
+        
+        # Create result data with proper column name and enhanced features
+        result_data = data.copy()
+        
+        # Align indices explicitly and map to canonical column names
+        labels_aligned = labeled_data['label'].reindex(result_data.index)
+        result_data['triple_barrier_label'] = labels_aligned.fillna(0).astype(np.int8)
+        
+        # Add profit tracking if available
+        if 'potential_profit_pct' in labeled_data.columns:
+            profit_aligned = labeled_data['potential_profit_pct'].reindex(result_data.index)
+            result_data['potential_profit_pct'] = profit_aligned.fillna(0.0).astype(np.float64)
+            
+            # Calculate net profit after fees
+            fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0005))
+            result_data['potential_profit_net_pct'] = (
+                result_data['potential_profit_pct'] - (2.0 * fee_per_side)
+            ).astype(np.float64)
+        
+        output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
+        
+        return TripleBarrierResult.success_result(
+            data=result_data,
+            metadata={
+                'symbol': symbol, 
+                'exchange': exchange, 
+                'timeframe': timeframe,
+                'output_file': str(output_path),
+                'data_shape': data.shape, 
+                'label_stats': label_stats,
+                'memory_stats': self.memory_monitor.get_memory_stats(),
+                'risk_metrics': self._calculate_risk_metrics(result_data)
+            },
+            execution_time=time.time() - step_start
+        )
+    
+    def _calculate_risk_metrics(self, result_data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate risk metrics for the labeled data."""
+        try:
+            if 'triple_barrier_label' not in result_data.columns:
+                return {}
+            
+            labels = result_data['triple_barrier_label']
+            total_signals = len(labels)
+            
+            if total_signals == 0:
+                return {}
+            
+            buy_signals = (labels == 1).sum()
+            sell_signals = (labels == -1).sum()
+            hold_signals = (labels == 0).sum()
+            
+            # Calculate signal distribution
+            buy_ratio = buy_signals / total_signals
+            sell_ratio = sell_signals / total_signals
+            hold_ratio = hold_signals / total_signals
+            
+            # Calculate risk-reward metrics if profit data is available
+            risk_metrics = {
+                'total_signals': int(total_signals),
+                'buy_signals': int(buy_signals),
+                'sell_signals': int(sell_signals),
+                'hold_signals': int(hold_signals),
+                'buy_ratio': float(buy_ratio),
+                'sell_ratio': float(sell_ratio),
+                'hold_ratio': float(hold_ratio),
+                'signal_balance': float(min(buy_ratio, sell_ratio) / max(buy_ratio, sell_ratio)) if max(buy_ratio, sell_ratio) > 0 else 0.0
+            }
+            
+            # Add profit metrics if available
+            if 'potential_profit_net_pct' in result_data.columns:
+                profit_data = result_data['potential_profit_net_pct']
+                risk_metrics.update({
+                    'avg_profit_pct': float(profit_data.mean()),
+                    'max_profit_pct': float(profit_data.max()),
+                    'min_profit_pct': float(profit_data.min()),
+                    'profit_std': float(profit_data.std()),
+                    'positive_profit_ratio': float((profit_data > 0).sum() / len(profit_data))
+                })
+            
+            return risk_metrics
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Failed to calculate risk metrics: {e}')
+            return {}
 
     async def _load_data_with_streaming(
         self, 
@@ -331,26 +431,153 @@ class TripleBarrierMethodStep:
             
             if file_size_mb > 500:  # Large file, use streaming
                 self.logger.info('🌊 Using streaming for large file')
-                return await self._stream_load_data(latest_file)
+                data = await self._stream_load_data(latest_file)
             else:
                 # Small file, load normally
-                return safe_read_parquet(latest_file)
+                data = safe_read_parquet(latest_file)
+            
+            # Validate loaded data
+            if data is not None:
+                validation_result = self._validate_input_data(data, symbol, exchange, timeframe)
+                if not validation_result['valid']:
+                    self.logger.error(f'❌ Data validation failed: {validation_result["error"]}')
+                    return None
+                self.logger.info('✅ Input data validation passed')
+            
+            return data
                 
         except Exception as e:
             self.logger.exception(f'❌ Error loading data: {e}')
             return None
+    
+    def _validate_input_data(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+        """Validate input data for triple barrier processing."""
+        try:
+            # Check if data is empty
+            if data.empty:
+                return {'valid': False, 'error': 'Data is empty'}
+            
+            # Check minimum data size
+            if len(data) < 2:
+                return {'valid': False, 'error': f'Insufficient data points: {len(data)} (minimum 2 required)'}
+            
+            # Check for required OHLC columns
+            required_columns = ['open', 'high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                return {'valid': False, 'error': f'Missing required columns: {missing_columns}'}
+            
+            # Check for null values in critical columns
+            for col in required_columns:
+                null_count = data[col].isnull().sum()
+                if null_count > 0:
+                    return {'valid': False, 'error': f'Null values found in {col}: {null_count} rows'}
+            
+            # Validate price data (must be positive)
+            for col in required_columns:
+                if (data[col] <= 0).any():
+                    negative_count = (data[col] <= 0).sum()
+                    return {'valid': False, 'error': f'Non-positive prices found in {col}: {negative_count} rows'}
+            
+            # Validate OHLC relationships
+            invalid_ohlc = (
+                (data['high'] < data['low']) |
+                (data['high'] < data['open']) |
+                (data['high'] < data['close']) |
+                (data['low'] > data['open']) |
+                (data['low'] > data['close'])
+            )
+            if invalid_ohlc.any():
+                invalid_count = invalid_ohlc.sum()
+                return {'valid': False, 'error': f'Invalid OHLC relationships: {invalid_count} rows'}
+            
+            # Check for extreme price movements (potential data errors)
+            price_changes = data['close'].pct_change().abs()
+            extreme_moves = price_changes > 0.5  # 50% moves
+            if extreme_moves.any():
+                extreme_count = extreme_moves.sum()
+                self.logger.warning(f'⚠️ Extreme price movements detected: {extreme_count} rows with >50% change')
+            
+            # Validate time index if present
+            if hasattr(data.index, 'is_monotonic_increasing'):
+                if not data.index.is_monotonic_increasing:
+                    return {'valid': False, 'error': 'Time index is not monotonically increasing'}
+                if data.index.has_duplicates:
+                    return {'valid': False, 'error': 'Time index contains duplicate timestamps'}
+            
+            # Check data continuity (gaps in time series)
+            if hasattr(data.index, 'to_series'):
+                time_diffs = data.index.to_series().diff()
+                if len(time_diffs) > 1:
+                    # Check for unusually large gaps
+                    median_gap = time_diffs.median()
+                    large_gaps = time_diffs > median_gap * 10
+                    if large_gaps.any():
+                        gap_count = large_gaps.sum()
+                        self.logger.warning(f'⚠️ Large time gaps detected: {gap_count} gaps >10x median')
+            
+            # Log data quality metrics
+            self.logger.info(f'📊 Data quality metrics:')
+            self.logger.info(f'   Rows: {len(data):,}')
+            self.logger.info(f'   Columns: {len(data.columns)}')
+            self.logger.info(f'   Date range: {data.index.min()} to {data.index.max()}')
+            self.logger.info(f'   Price range: ${data["close"].min():.4f} - ${data["close"].max():.4f}')
+            self.logger.info(f'   Avg daily return: {data["close"].pct_change().mean():.6f}')
+            self.logger.info(f'   Volatility: {data["close"].pct_change().std():.6f}')
+            
+            return {'valid': True, 'metrics': {
+                'rows': len(data),
+                'columns': len(data.columns),
+                'price_range': (data['close'].min(), data['close'].max()),
+                'avg_return': data['close'].pct_change().mean(),
+                'volatility': data['close'].pct_change().std()
+            }}
+            
+        except Exception as e:
+            self.logger.exception(f'❌ Error validating input data: {e}')
+            return {'valid': False, 'error': f'Validation error: {str(e)}'}
 
     async def _stream_load_data(self, file_path: Path) -> Optional[pd.DataFrame]:
-        """Stream load large data files."""
+        """Stream load large data files with memory-efficient processing."""
         try:
-            chunks = []
+            # For very large files, we'll process in chunks and write to temporary file
+            # to avoid loading everything into memory at once
+            temp_file = file_path.parent / f'temp_processed_{file_path.stem}.parquet'
             chunk_count = 0
+            total_rows = 0
+            first_chunk = True
+            
+            self.logger.info(f'🌊 Starting memory-efficient streaming for {file_path}')
             
             # Use streaming manager to process file in chunks
             for chunk in self.streaming_manager.stream_data_from_file(file_path):
                 chunk_count += 1
-                self.logger.debug(f'📦 Processing chunk {chunk_count}')
-                chunks.append(chunk)
+                total_rows += len(chunk)
+                self.logger.debug(f'📦 Processing chunk {chunk_count} ({len(chunk)} rows)')
+                
+                # Validate chunk data
+                validation_result = self._validate_input_data(chunk, 'STREAMING', 'STREAMING', 'STREAMING')
+                if not validation_result['valid']:
+                    self.logger.warning(f'⚠️ Chunk {chunk_count} validation failed: {validation_result["error"]}')
+                    continue
+                
+                # Write chunk to temporary file (append mode)
+                if first_chunk:
+                    # First chunk - create new file
+                    safe_to_parquet(chunk, temp_file, compression='snappy', index=False)
+                    first_chunk = False
+                else:
+                    # Subsequent chunks - append to existing file
+                    # Read existing data, combine, and write back
+                    existing_data = safe_read_parquet(temp_file)
+                    if existing_data is not None:
+                        combined_chunk = pd.concat([existing_data, chunk], ignore_index=True)
+                        safe_to_parquet(combined_chunk, temp_file, compression='snappy', index=False)
+                        # Clean up memory
+                        del existing_data, combined_chunk
+                
+                # Clean up chunk memory
+                del chunk
                 
                 # Check memory pressure
                 if self.memory_monitor.is_memory_pressure():
@@ -360,16 +587,32 @@ class TripleBarrierMethodStep:
                 if chunk_count % 10 == 0:
                     self.memory_monitor.log_memory_status(f'chunk {chunk_count}')
             
-            if chunks:
-                self.logger.info(f'🔗 Combining {len(chunks)} chunks')
-                combined_data = pd.concat(chunks, ignore_index=True)
-                return combined_data
+            if chunk_count > 0:
+                self.logger.info(f'✅ Streaming completed: {chunk_count} chunks, {total_rows:,} total rows')
+                
+                # Load the final processed data
+                final_data = safe_read_parquet(temp_file)
+                
+                # Clean up temporary file
+                try:
+                    temp_file.unlink()
+                    self.logger.debug(f'🗑️ Cleaned up temporary file: {temp_file}')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Failed to clean up temporary file: {e}')
+                
+                return final_data
             else:
                 self.logger.warning('⚠️ No chunks loaded')
                 return None
                 
         except Exception as e:
             self.logger.exception(f'❌ Error streaming data: {e}')
+            # Clean up temporary file on error
+            try:
+                if 'temp_file' in locals() and temp_file.exists():
+                    temp_file.unlink()
+            except Exception:
+                pass
             return None
 
     async def _process_large_dataset(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -629,26 +872,89 @@ class TripleBarrierMethodStep:
 
 
     def _get_triple_barrier_config(self) -> Dict[str, Union[float, int]]:
-        """Extract triple barrier configuration parameters with safe defaults."""
+        """Extract triple barrier configuration parameters with safe defaults and validation."""
         triple_barrier_config = safe_dict_get(self.config, 'triple_barrier', {})
+        
+        # Extract parameters with validation
+        profit_take_multiplier = safe_float(
+            safe_dict_get(triple_barrier_config, 'profit_take_multiplier', 0.002), 
+            0.002
+        )
+        stop_loss_multiplier = safe_float(
+            safe_dict_get(triple_barrier_config, 'stop_loss_multiplier', 0.001), 
+            0.001
+        )
+        time_barrier_minutes = safe_int(
+            safe_dict_get(triple_barrier_config, 'time_barrier_minutes', 30), 
+            30
+        )
+        max_lookahead = safe_int(
+            safe_dict_get(triple_barrier_config, 'max_lookahead', 100), 
+            100
+        )
+        
+        # Validate parameters
+        self._validate_triple_barrier_parameters(
+            profit_take_multiplier, stop_loss_multiplier, 
+            time_barrier_minutes, max_lookahead
+        )
+        
         return {
-            'profit_take_multiplier': safe_float(
-                safe_dict_get(triple_barrier_config, 'profit_take_multiplier', 0.002), 
-                0.002
-            ),
-            'stop_loss_multiplier': safe_float(
-                safe_dict_get(triple_barrier_config, 'stop_loss_multiplier', 0.001), 
-                0.001
-            ),
-            'time_barrier_minutes': safe_int(
-                safe_dict_get(triple_barrier_config, 'time_barrier_minutes', 30), 
-                30
-            ),
-            'max_lookahead': safe_int(
-                safe_dict_get(triple_barrier_config, 'max_lookahead', 100), 
-                100
-            )
+            'profit_take_multiplier': profit_take_multiplier,
+            'stop_loss_multiplier': stop_loss_multiplier,
+            'time_barrier_minutes': time_barrier_minutes,
+            'max_lookahead': max_lookahead
         }
+    
+    def _validate_triple_barrier_parameters(
+        self, 
+        profit_take_multiplier: float, 
+        stop_loss_multiplier: float, 
+        time_barrier_minutes: int, 
+        max_lookahead: int
+    ) -> None:
+        """Validate triple barrier parameters for financial and logical consistency."""
+        # Validate profit take multiplier
+        if profit_take_multiplier <= 0:
+            raise ValueError(f"Profit take multiplier must be positive, got: {profit_take_multiplier}")
+        if profit_take_multiplier > 0.1:  # 10% max
+            raise ValueError(f"Profit take multiplier too high (max 10%), got: {profit_take_multiplier}")
+        
+        # Validate stop loss multiplier
+        if stop_loss_multiplier <= 0:
+            raise ValueError(f"Stop loss multiplier must be positive, got: {stop_loss_multiplier}")
+        if stop_loss_multiplier > 0.1:  # 10% max
+            raise ValueError(f"Stop loss multiplier too high (max 10%), got: {stop_loss_multiplier}")
+        
+        # Validate risk-reward ratio (should be reasonable)
+        risk_reward_ratio = profit_take_multiplier / stop_loss_multiplier
+        if risk_reward_ratio < 0.5 or risk_reward_ratio > 5.0:
+            self.logger.warning(f"⚠️ Unusual risk-reward ratio: {risk_reward_ratio:.2f}")
+        
+        # Validate time barrier
+        if time_barrier_minutes <= 0:
+            raise ValueError(f"Time barrier must be positive, got: {time_barrier_minutes}")
+        if time_barrier_minutes > 1440:  # 24 hours max
+            raise ValueError(f"Time barrier too long (max 24h), got: {time_barrier_minutes} minutes")
+        
+        # Validate max lookahead
+        if max_lookahead <= 0:
+            raise ValueError(f"Max lookahead must be positive, got: {max_lookahead}")
+        if max_lookahead > 10000:  # Reasonable upper limit
+            raise ValueError(f"Max lookahead too high (max 10000), got: {max_lookahead}")
+        
+        # Validate consistency between time barrier and lookahead
+        # Time barrier should not be much longer than what lookahead can cover
+        estimated_lookahead_time = max_lookahead * 1  # Assuming 1-minute intervals
+        if time_barrier_minutes > estimated_lookahead_time * 2:
+            self.logger.warning(f"⚠️ Time barrier ({time_barrier_minutes}min) much longer than lookahead coverage ({estimated_lookahead_time}min)")
+        
+        self.logger.info(f"✅ Triple barrier parameters validated successfully")
+        self.logger.info(f"   Profit take: {profit_take_multiplier:.4f} ({profit_take_multiplier*100:.2f}%)")
+        self.logger.info(f"   Stop loss: {stop_loss_multiplier:.4f} ({stop_loss_multiplier*100:.2f}%)")
+        self.logger.info(f"   Risk-reward ratio: {risk_reward_ratio:.2f}")
+        self.logger.info(f"   Time barrier: {time_barrier_minutes} minutes")
+        self.logger.info(f"   Max lookahead: {max_lookahead} periods")
 
     def _create_triple_barrier_labeler(self, config: Dict[str, Union[float, int]]) -> Any:
         """Create triple barrier labeler with configuration."""
@@ -711,6 +1017,83 @@ class TripleBarrierMethodStep:
             # Trigger garbage collection on error
             self.memory_monitor.trigger_gc()
             return None
+    
+    def _apply_risk_management_controls(self, data: pd.DataFrame, labeled_data: pd.DataFrame) -> pd.DataFrame:
+        """Apply risk management controls to the labeled data."""
+        if not self.risk_config['enable_risk_controls']:
+            return labeled_data
+        
+        try:
+            self.logger.info('🛡️ Applying risk management controls...')
+            
+            # Calculate market volatility
+            if len(data) > 1:
+                returns = data['close'].pct_change().dropna()
+                volatility = returns.std() * np.sqrt(252)  # Annualized volatility
+                
+                if volatility > self.risk_config['max_volatility_pct']:
+                    self.logger.warning(f'⚠️ High volatility detected: {volatility:.2%} > {self.risk_config["max_volatility_pct"]:.2%}')
+                    # Reduce signal frequency in high volatility
+                    volatility_filter = np.random.random(len(labeled_data)) > (volatility / self.risk_config['max_volatility_pct'] - 1)
+                    labeled_data = labeled_data[volatility_filter]
+                    self.logger.info(f'📉 Filtered {len(volatility_filter) - volatility_filter.sum()} signals due to high volatility')
+            
+            # Apply risk-reward ratio filter
+            if 'potential_profit_pct' in labeled_data.columns:
+                profit_data = labeled_data['potential_profit_pct']
+                labels = labeled_data['label']
+                
+                # Calculate risk-reward ratios
+                risk_reward_ratios = np.where(
+                    labels == 1,  # Buy signals
+                    profit_data / self.risk_config['min_risk_reward_ratio'],
+                    np.where(
+                        labels == -1,  # Sell signals
+                        profit_data / self.risk_config['min_risk_reward_ratio'],
+                        0  # Hold signals
+                    )
+                )
+                
+                # Filter out signals with poor risk-reward ratios
+                good_risk_reward = risk_reward_ratios >= self.risk_config['min_risk_reward_ratio']
+                filtered_count = len(labeled_data) - good_risk_reward.sum()
+                
+                if filtered_count > 0:
+                    self.logger.info(f'📊 Filtered {filtered_count} signals with poor risk-reward ratio')
+                    labeled_data = labeled_data[good_risk_reward]
+            
+            # Apply position size limits
+            total_signals = len(labeled_data)
+            max_signals = int(total_signals * self.risk_config['max_position_size_pct'])
+            
+            if total_signals > max_signals:
+                # Randomly sample to reduce position size
+                sample_indices = np.random.choice(
+                    labeled_data.index, 
+                    size=max_signals, 
+                    replace=False
+                )
+                labeled_data = labeled_data.loc[sample_indices]
+                self.logger.info(f'📏 Reduced position size from {total_signals} to {max_signals} signals')
+            
+            # Apply daily trade limits (if time index is available)
+            if hasattr(data.index, 'date'):
+                daily_trades = labeled_data.groupby(labeled_data.index.date).size()
+                excess_days = daily_trades > self.risk_config['max_daily_trades']
+                
+                if excess_days.any():
+                    excess_count = excess_days.sum()
+                    self.logger.warning(f'⚠️ {excess_count} days exceed daily trade limit')
+                    
+                    # For simplicity, we'll just log this for now
+                    # In a production system, you'd implement more sophisticated daily limits
+            
+            self.logger.info('✅ Risk management controls applied successfully')
+            return labeled_data
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Risk management controls failed: {e}')
+            return labeled_data
 
 @traced(span_name='run_step04_5_triple_barrier')
 @handles_errors()

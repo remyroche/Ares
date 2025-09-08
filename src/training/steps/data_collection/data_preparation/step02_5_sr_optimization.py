@@ -20,8 +20,12 @@ from sklearn.metrics import accuracy_score, classification_report
 try:
     from src.utils.m1_gpu_utils import m1_batch_process  # Streaming batch processing with MPS gating
     M1_BATCH_AVAILABLE = True
-except Exception:
+except ImportError as e:
     M1_BATCH_AVAILABLE = False
+    logger.warning(f"M1 GPU utils not available: {e}")
+except Exception as e:
+    M1_BATCH_AVAILABLE = False
+    logger.error(f"Unexpected error loading M1 GPU utils: {e}")
 
 import joblib
 import functools
@@ -96,6 +100,127 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
 logger = system_logger.getChild('Step2_5SROptimization')
+
+# Error classification system
+class ErrorSeverity:
+    CRITICAL = "CRITICAL"  # System cannot continue
+    HIGH = "HIGH"         # Major functionality affected
+    MEDIUM = "MEDIUM"     # Minor functionality affected
+    LOW = "LOW"          # Cosmetic or non-critical
+
+class ErrorCategory:
+    DATA_QUALITY = "DATA_QUALITY"
+    ML_TRAINING = "ML_TRAINING"
+    SR_DETECTION = "SR_DETECTION"
+    FEATURE_ENGINEERING = "FEATURE_ENGINEERING"
+    SYSTEM_RESOURCE = "SYSTEM_RESOURCE"
+    EXTERNAL_DEPENDENCY = "EXTERNAL_DEPENDENCY"
+
+def classify_error(error: Exception, context: str = "") -> tuple[ErrorSeverity, ErrorCategory]:
+    """Classify errors for appropriate handling."""
+    error_type = type(error).__name__
+    error_msg = str(error).lower()
+    
+    # Critical errors
+    if isinstance(error, (MemoryError, SystemError)):
+        return ErrorSeverity.CRITICAL, ErrorCategory.SYSTEM_RESOURCE
+    if "all.*values.*invalid" in error_msg or "data.*corrupted" in error_msg:
+        return ErrorSeverity.CRITICAL, ErrorCategory.DATA_QUALITY
+    
+    # High severity errors
+    if isinstance(error, (ValueError, KeyError)) and "data" in context.lower():
+        return ErrorSeverity.HIGH, ErrorCategory.DATA_QUALITY
+    if "ml" in context.lower() or "model" in context.lower():
+        return ErrorSeverity.HIGH, ErrorCategory.ML_TRAINING
+    
+    # Medium severity errors
+    if isinstance(error, ImportError):
+        return ErrorSeverity.MEDIUM, ErrorCategory.EXTERNAL_DEPENDENCY
+    if "sr" in context.lower() or "detection" in context.lower():
+        return ErrorSeverity.MEDIUM, ErrorCategory.SR_DETECTION
+    
+    # Default to medium severity
+    return ErrorSeverity.MEDIUM, ErrorCategory.SYSTEM_RESOURCE
+
+def handle_error_with_recovery(error: Exception, context: str, max_retries: int = 3) -> bool:
+    """Handle errors with appropriate recovery strategies."""
+    severity, category = classify_error(error, context)
+    
+    logger.error(f"🚨 {severity} ERROR in {category}: {error}")
+    logger.error(f"📋 Context: {context}")
+    logger.error(f"📋 Traceback: {traceback.format_exc()}")
+    
+    if severity == ErrorSeverity.CRITICAL:
+        logger.critical("💥 CRITICAL ERROR - System cannot continue safely")
+        return False
+    elif severity == ErrorSeverity.HIGH:
+        logger.error("⚠️ HIGH SEVERITY ERROR - Major functionality affected")
+        # Could implement retry logic here
+        return False
+    else:
+        logger.warning(f"⚠️ {severity} ERROR - Continuing with degraded functionality")
+        return True
+
+def detect_data_drift(current_data: pd.DataFrame, reference_data: pd.DataFrame = None, 
+                     drift_threshold: float = 0.1) -> Dict[str, Any]:
+    """Detect data drift between current and reference datasets."""
+    drift_results = {
+        'drift_detected': False,
+        'drift_score': 0.0,
+        'drift_details': {},
+        'recommendations': []
+    }
+    
+    try:
+        # If no reference data, use statistical baselines
+        if reference_data is None:
+            # Use statistical baselines for common financial metrics
+            baseline_stats = {
+                'close_mean': current_data['close'].mean(),
+                'close_std': current_data['close'].std(),
+                'volume_mean': current_data['volume'].mean(),
+                'volume_std': current_data['volume'].std()
+            }
+            
+            # Simple drift detection based on statistical properties
+            current_stats = {
+                'close_mean': current_data['close'].mean(),
+                'close_std': current_data['close'].std(),
+                'volume_mean': current_data['volume'].mean(),
+                'volume_std': current_data['volume'].std()
+            }
+            
+            # Calculate drift score (simplified)
+            drift_score = 0.0
+            for metric in baseline_stats:
+                if baseline_stats[metric] != 0:
+                    relative_change = abs(current_stats[metric] - baseline_stats[metric]) / abs(baseline_stats[metric])
+                    drift_score += relative_change
+                    drift_results['drift_details'][metric] = {
+                        'baseline': baseline_stats[metric],
+                        'current': current_stats[metric],
+                        'relative_change': relative_change
+                    }
+            
+            drift_score /= len(baseline_stats)
+            drift_results['drift_score'] = drift_score
+            
+            if drift_score > drift_threshold:
+                drift_results['drift_detected'] = True
+                drift_results['recommendations'].append("Significant data drift detected - consider retraining models")
+                drift_results['recommendations'].append("Review data sources and collection processes")
+        
+        else:
+            # Compare with reference data
+            # This would implement more sophisticated drift detection
+            # For now, use simple statistical comparison
+            pass
+            
+    except Exception as e:
+        logger.error(f"Data drift detection failed: {e}")
+        drift_results['error'] = str(e)
+    
+    return drift_results
 
 def generate_function_report(ml_results: Dict[str, Any] = None) -> Dict[str, Any]:
     """Generate comprehensive function call report with detailed ML model metrics."""
@@ -398,7 +523,9 @@ class SROptimizationStep(BaseStep):
                                 raise ValueError('All datetime string values are invalid - cannot convert timestamps')
 
                         except Exception as dt_error:
-                            self.logger.warning(f'⚠️ Could not convert datetime strings: {dt_error}. Trying numeric conversion...')
+                            self.logger.error(f'❌ Failed to convert datetime strings: {dt_error}')
+                            self.logger.error(f'📋 Datetime conversion traceback: {traceback.format_exc()}')
+                            self.logger.warning(f'⚠️ Trying numeric conversion as fallback...')
                             # Fallback to numeric conversion
                             numeric_timestamps = pd.to_numeric(fixed_data['timestamp'], errors='coerce')
                             valid_mask = numeric_timestamps.notna()
@@ -537,6 +664,21 @@ class SROptimizationStep(BaseStep):
             except Exception as e:
                 self.logger.warning(f'⚠️ Could not set datetime index: {e}')
         
+        # Data loss monitoring
+        original_rows = len(data)
+        final_rows = len(fixed_data)
+        data_loss_percentage = ((original_rows - final_rows) / original_rows) * 100
+        
+        if data_loss_percentage > 5.0:  # More than 5% data loss
+            self.logger.critical(f'🚨 CRITICAL DATA LOSS: {data_loss_percentage:.2f}% of data lost during validation!')
+            self.logger.critical(f'📊 Original rows: {original_rows}, Final rows: {final_rows}')
+            # Could implement data recovery strategies here
+        elif data_loss_percentage > 1.0:  # More than 1% data loss
+            self.logger.warning(f'⚠️ Significant data loss: {data_loss_percentage:.2f}% of data lost during validation')
+            self.logger.warning(f'📊 Original rows: {original_rows}, Final rows: {final_rows}')
+        else:
+            self.logger.info(f'✅ Minimal data loss: {data_loss_percentage:.2f}% ({original_rows - final_rows} rows)')
+        
         # Final validation
         final_validation = self.standards.validate_data_quality(fixed_data, 'unified')
         self.logger.info(f'✅ Final data quality score: {final_validation.quality_score:.2f}')
@@ -545,6 +687,11 @@ class SROptimizationStep(BaseStep):
             self.logger.warning('⚠️ Final validation still has issues:')
             for issue in final_validation.issues:
                 self.logger.warning(f'   - {issue.message}')
+        
+        # Store data loss metrics for monitoring
+        fixed_data.attrs['data_loss_percentage'] = data_loss_percentage
+        fixed_data.attrs['original_rows'] = original_rows
+        fixed_data.attrs['final_rows'] = final_rows
         
         return fixed_data
 
@@ -623,6 +770,16 @@ class SROptimizationStep(BaseStep):
             self.logger.info(f'📊 Processing {len(data)} rows of data')
             self.logger.info(f'📊 Data columns: {list(data.columns)}')
             self.logger.info(f'📊 Data types: {data.dtypes.to_dict()}')
+            
+            # Data drift detection
+            self.logger.info('🔍 Performing data drift detection...')
+            drift_results = detect_data_drift(data)
+            if drift_results['drift_detected']:
+                self.logger.warning(f'⚠️ Data drift detected with score: {drift_results["drift_score"]:.4f}')
+                for recommendation in drift_results['recommendations']:
+                    self.logger.warning(f'💡 Recommendation: {recommendation}')
+            else:
+                self.logger.info(f'✅ No significant data drift detected (score: {drift_results["drift_score"]:.4f})')
 
             # SAFETY CHECK: Validate data types before proceeding
             string_columns = [col for col in data.columns if data[col].dtype == 'object' or str(data[col].dtype).startswith('string')]

@@ -24,9 +24,25 @@ from pathlib import Path
 import json
 import collections
 import logging
+import warnings
+import sys
 
-import numpy as np
-import pandas as pd
+# Enhanced dependency management with fallbacks
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    warnings.warn("NumPy not available - matrix operations will be limited")
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Pandas not available - DataFrame operations will be limited")
+    PANDAS_AVAILABLE = False
+    pd = None
 
 # Try to import Numba for JIT compilation
 try:
@@ -34,20 +50,35 @@ try:
     import numba as nb
     NUMBA_AVAILABLE = True
 except ImportError:
+    warnings.warn("Numba not available - JIT compilation disabled")
     NUMBA_AVAILABLE = False
+    jit = lambda *args, **kwargs: lambda func: func  # No-op decorator
+    prange = range  # Fallback to regular range
 
 # Try to import psutil for memory monitoring
 try:
     import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
+    warnings.warn("psutil not available - memory monitoring disabled")
     PSUTIL_AVAILABLE = False
+    # Create a mock psutil class
+    class MockPsutil:
+        class Process:
+            def memory_info(self):
+                class MemoryInfo:
+                    rss = 0
+                return MemoryInfo()
+            def cpu_percent(self):
+                return 0.0
+    psutil = MockPsutil()
 
 # Try to import torch for GPU acceleration
 try:
     import torch
     TORCH_AVAILABLE = True
 except ImportError:
+    warnings.warn("PyTorch not available - GPU acceleration disabled")
     TORCH_AVAILABLE = False
     torch = None
 
@@ -57,32 +88,165 @@ try:
     M1_GPU_UTILS_AVAILABLE = True
     M1_BATCH_AVAILABLE = True
 except ImportError:
+    warnings.warn("M1 GPU utilities not available - GPU acceleration disabled")
     M1_GPU_UTILS_AVAILABLE = False
     M1_BATCH_AVAILABLE = False
     get_m1_gpu_manager = None
+    m1_batch_process = None
 
-from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import (
-    log_step_functions, log_important_calls, log_all_calls,
-    log_internal_call, log_step_progress, log_data_operation
-)
-from ...core.decorators import handles_errors
-from src.training.base_step import BaseStep
-from src.training.steps.model_training.matrix_components import (
-    MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer,
-    AsyncMatrixProcessor, AsyncTask
-)
+# Safe imports with fallbacks
+try:
+    from src.utils.logger import system_logger
+    SYSTEM_LOGGER_AVAILABLE = True
+except ImportError:
+    warnings.warn("System logger not available - using basic logging")
+    SYSTEM_LOGGER_AVAILABLE = False
+    system_logger = logging.getLogger('step07_fallback')
+    logging.basicConfig(level=logging.INFO)
+
+try:
+    from src.utils.comprehensive_function_logger import (
+        log_step_functions, log_important_calls, log_all_calls,
+        log_internal_call, log_step_progress, log_data_operation
+    )
+    LOGGING_DECORATORS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Logging decorators not available - using no-op decorators")
+    LOGGING_DECORATORS_AVAILABLE = False
+    log_step_functions = lambda func: func
+    log_important_calls = lambda func: func
+    log_all_calls = lambda func: func
+    log_internal_call = lambda func: func
+    log_step_progress = lambda func: func
+    log_data_operation = lambda func: func
+
+try:
+    from ...core.decorators import handles_errors
+    HANDLES_ERRORS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Error handling decorator not available - using no-op decorator")
+    HANDLES_ERRORS_AVAILABLE = False
+    def handles_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+try:
+    from src.training.base_step import BaseStep
+    BASE_STEP_AVAILABLE = True
+except ImportError:
+    warnings.warn("BaseStep not available - using fallback implementation")
+    BASE_STEP_AVAILABLE = False
+    class BaseStep:
+        def __init__(self, config, step_id, step_name):
+            self.config = config
+            self.step_id = step_id
+            self.step_name = step_name
+        async def initialize(self): pass
+        async def execute(self, training_input, pipeline_state): return pipeline_state
+
+try:
+    from src.training.steps.model_training.matrix_components import (
+        MatrixProcessor, DiverseLookbackIntegrator, MatrixOptimizer,
+        AsyncMatrixProcessor, AsyncTask
+    )
+    MATRIX_COMPONENTS_AVAILABLE = True
+except ImportError:
+    warnings.warn("Matrix components not available - using fallback implementations")
+    MATRIX_COMPONENTS_AVAILABLE = False
+    class MatrixProcessor:
+        def __init__(self, *args, **kwargs): pass
+        async def compute_correlation_matrix(self, data): return data.corr().values if hasattr(data, 'corr') else None
+        async def compute_covariance_matrix(self, data): return data.cov().values if hasattr(data, 'cov') else None
+    class DiverseLookbackIntegrator:
+        def __init__(self, *args, **kwargs): pass
+        async def optimize_lookback_periods(self, *args, **kwargs): return {'optimized_periods': {'short': [5, 10, 20]}}
+    class MatrixOptimizer:
+        def __init__(self, *args, **kwargs): pass
+    class AsyncMatrixProcessor:
+        def __init__(self, *args, **kwargs): pass
+        async def submit_batch(self, tasks): return [task.task_id for task in tasks]
+        async def wait_for_all(self, timeout): return {}
+        async def shutdown(self): pass
+    class AsyncTask:
+        def __init__(self, func, args, kwargs, task_id, priority):
+            self.func = func
+            self.args = args
+            self.kwargs = kwargs
+            self.task_id = task_id
+            self.priority = priority
 
 # Import enhanced reporting system
 try:
     from src.training.steps.market_analysis.step07_enhanced_reporting import Step07EnhancedReporter
     ENHANCED_REPORTING_AVAILABLE = True
 except ImportError:
+    warnings.warn("Enhanced reporting not available - using basic reporting")
     ENHANCED_REPORTING_AVAILABLE = False
+    class Step07EnhancedReporter:
+        def __init__(self): pass
+        def generate_comprehensive_report(self, *args, **kwargs): return {}
+        def save_comprehensive_report(self, *args, **kwargs): return {}
 
 # Performance optimization flags
-PANDAS_AVAILABLE = pd is not None
-NUMPY_AVAILABLE = np is not None
+PANDAS_AVAILABLE = PANDAS_AVAILABLE and pd is not None
+NUMPY_AVAILABLE = NUMPY_AVAILABLE and np is not None
+
+# Dependency status logging
+if not NUMPY_AVAILABLE:
+    warnings.warn("NumPy not available - matrix operations will be severely limited")
+if not PANDAS_AVAILABLE:
+    warnings.warn("Pandas not available - DataFrame operations will be severely limited")
+if not NUMBA_AVAILABLE:
+    warnings.warn("Numba not available - JIT compilation disabled, performance will be reduced")
+if not TORCH_AVAILABLE:
+    warnings.warn("PyTorch not available - GPU acceleration disabled")
+if not PSUTIL_AVAILABLE:
+    warnings.warn("psutil not available - memory monitoring disabled")
+
+# Log dependency status
+logger = system_logger.getChild('Step07Dependencies')
+logger.info(f"Dependency status: NumPy={NUMPY_AVAILABLE}, Pandas={PANDAS_AVAILABLE}, Numba={NUMBA_AVAILABLE}, PyTorch={TORCH_AVAILABLE}, psutil={PSUTIL_AVAILABLE}")
+
+def check_step07_dependencies() -> Dict[str, bool]:
+    """Check Step07 dependency status and return availability."""
+    return {
+        'numpy': NUMPY_AVAILABLE,
+        'pandas': PANDAS_AVAILABLE,
+        'numba': NUMBA_AVAILABLE,
+        'torch': TORCH_AVAILABLE,
+        'psutil': PSUTIL_AVAILABLE,
+        'm1_gpu_utils': M1_GPU_UTILS_AVAILABLE,
+        'system_logger': SYSTEM_LOGGER_AVAILABLE,
+        'logging_decorators': LOGGING_DECORATORS_AVAILABLE,
+        'handles_errors': HANDLES_ERRORS_AVAILABLE,
+        'base_step': BASE_STEP_AVAILABLE,
+        'matrix_components': MATRIX_COMPONENTS_AVAILABLE,
+        'enhanced_reporting': ENHANCED_REPORTING_AVAILABLE
+    }
+
+def get_step07_capabilities() -> Dict[str, Any]:
+    """Get Step07 capabilities based on available dependencies."""
+    capabilities = {
+        'matrix_operations': NUMPY_AVAILABLE,
+        'dataframe_operations': PANDAS_AVAILABLE,
+        'jit_compilation': NUMBA_AVAILABLE,
+        'gpu_acceleration': TORCH_AVAILABLE and M1_GPU_UTILS_AVAILABLE,
+        'memory_monitoring': PSUTIL_AVAILABLE,
+        'async_processing': True,  # Always available
+        'enhanced_reporting': ENHANCED_REPORTING_AVAILABLE,
+        'performance_optimization': NUMBA_AVAILABLE or TORCH_AVAILABLE
+    }
+    
+    # Calculate overall capability score
+    total_capabilities = len(capabilities)
+    available_capabilities = sum(1 for available in capabilities.values() if available)
+    capability_score = available_capabilities / total_capabilities
+    
+    capabilities['overall_score'] = capability_score
+    capabilities['status'] = 'full' if capability_score >= 0.8 else 'limited' if capability_score >= 0.5 else 'minimal'
+    
+    return capabilities
 
 
 # Numba-optimized matrix operation functions
@@ -810,6 +974,23 @@ class EnhancedMatrixOperationsStep(BaseStep):
         """
         super().__init__(config, '07', 'enhanced_matrix_operations')
         self.logger = system_logger.getChild('EnhancedMatrixOperationsStep')
+        
+        # Check dependencies and capabilities
+        self.dependencies = check_step07_dependencies()
+        self.capabilities = get_step07_capabilities()
+        
+        self.logger.info(f'🔍 Step07 Dependencies: {self.dependencies}')
+        self.logger.info(f'📊 Step07 Capabilities: {self.capabilities}')
+        
+        # Initialize components based on availability
+        if self.capabilities['status'] == 'full':
+            self.logger.info('🚀 Full Step07 capabilities available')
+        elif self.capabilities['status'] == 'limited':
+            self.logger.warning('⚠️ Limited Step07 capabilities - some features disabled')
+        else:
+            self.logger.warning('⚠️ Minimal Step07 capabilities - using fallback implementations')
+        
+        # Initialize tracking systems
         self.call_tracker = FunctionCallTracker(self.logger)
         self.logger.info('🔍 Initialized comprehensive function call tracking system')
         self.error_handler = EnhancedErrorHandler(self.logger)
@@ -817,7 +998,28 @@ class EnhancedMatrixOperationsStep(BaseStep):
         self.logger.info('🛡️ Initialized enhanced error handling and validation system')
         self.performance_monitor = PerformanceMonitor(self.logger)
         self.logger.info('📊 Initialized performance monitoring system')
-        self.matrix_config = config.get('matrix_operations_config', {'use_gpu': True, 'use_diverse_lookback': True, 'optimization_level': 'high', 'batch_size': 1000, 'feature_selection': {'method': 'mutual_info', 'top_k': 50, 'min_importance': 0.01}, 'matrix_computations': {'correlation_matrix': True, 'covariance_matrix': True, 'feature_interaction_matrix': True, 'regime_transition_matrix': True}})
+        
+        # Configure matrix operations based on capabilities
+        self.matrix_config = config.get('matrix_operations_config', {
+            'use_gpu': self.capabilities['gpu_acceleration'],
+            'use_numba': self.capabilities['jit_compilation'],
+            'use_diverse_lookback': True,
+            'optimization_level': 'high' if self.capabilities['performance_optimization'] else 'basic',
+            'batch_size': 1000,
+            'feature_selection': {
+                'method': 'mutual_info',
+                'top_k': 50,
+                'min_importance': 0.01
+            },
+            'matrix_computations': {
+                'correlation_matrix': True,
+                'covariance_matrix': True,
+                'feature_interaction_matrix': True,
+                'regime_transition_matrix': True
+            }
+        })
+        
+        # Initialize matrix components based on availability
         self.matrix_processor = None
         self.lookback_integrator = None
         self.matrix_optimizer = None
@@ -1168,11 +1370,11 @@ class EnhancedMatrixOperationsStep(BaseStep):
             return {'optimized_periods': {'short': [5, 10, 20], 'medium': [50, 100], 'long': [200]}, 'method': 'default'}
 
     @comprehensive_function_tracker(None)
-    async def _compute_matrices(self, data: pd.DataFrame, selected_features: List[str], pipeline_state: Dict[str, Any]) -> Dict[str, np.ndarray]:
-        """Compute various matrices for the data.
+    async def _compute_matrices(self, data: Any, selected_features: List[str], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Compute various matrices for the data with fallback support.
         
         Args:
-            data: Data to process
+            data: Data to process (DataFrame, numpy array, or list)
             selected_features: List of selected features
             pipeline_state: Pipeline state for additional context
             
@@ -1180,30 +1382,181 @@ class EnhancedMatrixOperationsStep(BaseStep):
             Dictionary of computed matrices
         """
         matrices = {}
-        if selected_features:
-            feature_data = data[selected_features]
-        else:
-            feature_cols = [col for col in data.columns if col.startswith('feature_')]
-            feature_data = data[feature_cols]
-        matrix_computations = self.matrix_config.get('matrix_computations', {})
-        if matrix_computations.get('correlation_matrix', True):
-            if self.matrix_processor:
-                matrices['correlation_matrix'] = await self.matrix_processor.compute_correlation_matrix(feature_data)
+        
+        try:
+            # Handle different data types
+            if PANDAS_AVAILABLE and hasattr(data, 'columns'):
+                # Pandas DataFrame
+                if selected_features:
+                    feature_data = data[selected_features]
+                else:
+                    feature_cols = [col for col in data.columns if col.startswith('feature_')]
+                    feature_data = data[feature_cols] if feature_cols else data
+            elif NUMPY_AVAILABLE and hasattr(data, 'shape'):
+                # NumPy array
+                feature_data = data
             else:
-                matrices['correlation_matrix'] = feature_data.corr().values
-        if matrix_computations.get('covariance_matrix', True):
-            if self.matrix_processor:
-                matrices['covariance_matrix'] = await self.matrix_processor.compute_covariance_matrix(feature_data)
-            else:
-                matrices['covariance_matrix'] = feature_data.cov().values
-        if matrix_computations.get('feature_interaction_matrix', True):
-            matrices['feature_interaction_matrix'] = self._compute_interaction_matrix(feature_data)
-        if matrix_computations.get('regime_transition_matrix', True) and 'regime_label' in data.columns:
-            matrices['regime_transition_matrix'] = self._compute_regime_transition_matrix(data['regime_label'])
+                # Fallback: convert to list and use basic operations
+                self.logger.warning("⚠️ Using fallback matrix computation - limited functionality")
+                return self._compute_matrices_fallback(data, selected_features)
+            
+            matrix_computations = self.matrix_config.get('matrix_computations', {})
+            
+            # Compute correlation matrix
+            if matrix_computations.get('correlation_matrix', True):
+                try:
+                    if self.matrix_processor and MATRIX_COMPONENTS_AVAILABLE:
+                        matrices['correlation_matrix'] = await self.matrix_processor.compute_correlation_matrix(feature_data)
+                    elif PANDAS_AVAILABLE and hasattr(feature_data, 'corr'):
+                        matrices['correlation_matrix'] = feature_data.corr().values
+                    elif NUMPY_AVAILABLE:
+                        matrices['correlation_matrix'] = self._compute_correlation_fallback(feature_data)
+                    else:
+                        self.logger.warning("⚠️ Cannot compute correlation matrix - no suitable backend available")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to compute correlation matrix: {e}")
+            
+            # Compute covariance matrix
+            if matrix_computations.get('covariance_matrix', True):
+                try:
+                    if self.matrix_processor and MATRIX_COMPONENTS_AVAILABLE:
+                        matrices['covariance_matrix'] = await self.matrix_processor.compute_covariance_matrix(feature_data)
+                    elif PANDAS_AVAILABLE and hasattr(feature_data, 'cov'):
+                        matrices['covariance_matrix'] = feature_data.cov().values
+                    elif NUMPY_AVAILABLE:
+                        matrices['covariance_matrix'] = self._compute_covariance_fallback(feature_data)
+                    else:
+                        self.logger.warning("⚠️ Cannot compute covariance matrix - no suitable backend available")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to compute covariance matrix: {e}")
+            
+            # Compute feature interaction matrix
+            if matrix_computations.get('feature_interaction_matrix', True):
+                try:
+                    matrices['feature_interaction_matrix'] = self._compute_interaction_matrix(feature_data)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to compute interaction matrix: {e}")
+            
+            # Compute regime transition matrix
+            if matrix_computations.get('regime_transition_matrix', True):
+                try:
+                    if PANDAS_AVAILABLE and hasattr(data, 'columns') and 'regime_label' in data.columns:
+                        matrices['regime_transition_matrix'] = self._compute_regime_transition_matrix(data['regime_label'])
+                    else:
+                        self.logger.debug("⚠️ Regime labels not available for transition matrix")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to compute regime transition matrix: {e}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in matrix computation: {e}")
+            # Return fallback results
+            return self._compute_matrices_fallback(data, selected_features)
+        
         return matrices
+    
+    def _compute_matrices_fallback(self, data: Any, selected_features: List[str]) -> Dict[str, Any]:
+        """Fallback matrix computation using basic Python operations."""
+        matrices = {}
+        self.logger.info("🔄 Using fallback matrix computation")
+        
+        try:
+            # Convert data to list of lists
+            if hasattr(data, 'values'):
+                matrix_data = data.values.tolist()
+            elif hasattr(data, 'tolist'):
+                matrix_data = data.tolist()
+            elif isinstance(data, list):
+                matrix_data = data
+            else:
+                self.logger.warning("⚠️ Cannot convert data to matrix format")
+                return matrices
+            
+            if not matrix_data or len(matrix_data) == 0:
+                self.logger.warning("⚠️ No data available for matrix computation")
+                return matrices
+            
+            # Basic correlation computation
+            n_features = len(matrix_data[0])
+            corr_matrix = [[0.0 for _ in range(n_features)] for _ in range(n_features)]
+            
+            for i in range(n_features):
+                for j in range(n_features):
+                    if i == j:
+                        corr_matrix[i][j] = 1.0
+                    else:
+                        # Extract columns
+                        col_i = [row[i] for row in matrix_data]
+                        col_j = [row[j] for row in matrix_data]
+                        
+                        # Compute basic correlation
+                        corr_matrix[i][j] = self._compute_basic_correlation(col_i, col_j)
+            
+            matrices['correlation_matrix'] = corr_matrix
+            self.logger.info(f"✅ Computed fallback correlation matrix: {len(corr_matrix)}x{len(corr_matrix[0])}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in fallback matrix computation: {e}")
+        
+        return matrices
+    
+    def _compute_basic_correlation(self, x: List[float], y: List[float]) -> float:
+        """Compute basic correlation using standard library."""
+        if len(x) != len(y) or len(x) == 0:
+            return 0.0
+        
+        n = len(x)
+        
+        # Compute means
+        mean_x = sum(x) / n
+        mean_y = sum(y) / n
+        
+        # Compute correlation
+        numerator = sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(n))
+        
+        sum_sq_x = sum((x[i] - mean_x) ** 2 for i in range(n))
+        sum_sq_y = sum((y[i] - mean_y) ** 2 for i in range(n))
+        
+        denominator = (sum_sq_x * sum_sq_y) ** 0.5
+        
+        if denominator == 0:
+            return 0.0
+        
+        return numerator / denominator
+    
+    def _compute_correlation_fallback(self, data: Any) -> Any:
+        """Fallback correlation computation for NumPy arrays."""
+        if not NUMPY_AVAILABLE:
+            return None
+        
+        try:
+            # Convert to numpy array if needed
+            if not hasattr(data, 'shape'):
+                data = np.array(data)
+            
+            # Compute correlation using numpy
+            return np.corrcoef(data.T)
+        except Exception as e:
+            self.logger.warning(f"⚠️ NumPy correlation computation failed: {e}")
+            return None
+    
+    def _compute_covariance_fallback(self, data: Any) -> Any:
+        """Fallback covariance computation for NumPy arrays."""
+        if not NUMPY_AVAILABLE:
+            return None
+        
+        try:
+            # Convert to numpy array if needed
+            if not hasattr(data, 'shape'):
+                data = np.array(data)
+            
+            # Compute covariance using numpy
+            return np.cov(data.T)
+        except Exception as e:
+            self.logger.warning(f"⚠️ NumPy covariance computation failed: {e}")
+            return None
+    
     @log_all_calls
-
-    def _compute_interaction_matrix(self, feature_data: pd.DataFrame) -> np.ndarray:
+    def _compute_interaction_matrix(self, feature_data: Any) -> Any:
         """Compute feature interaction matrix.
         
         Args:

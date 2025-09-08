@@ -1,0 +1,30 @@
+FROM python:3.9-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy requirements
+COPY requirements_step07.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements_step07.txt
+
+# Copy source code
+COPY . .
+
+# Set environment variables
+ENV PYTHONPATH=/workspace
+ENV NUMBA_CACHE_DIR=/tmp/numba_cache
+
+# Create cache directory
+RUN mkdir -p /tmp/numba_cache
+
+# Default command
+CMD ["python", "step07_import_verification.py"]

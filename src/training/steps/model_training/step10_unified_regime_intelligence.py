@@ -19,9 +19,8 @@ import pandas as pd
 This unified step consolidates:
 1. Multi-timeframe HMM state analysis with intensity scores for regime detection
 2. Intensity-based regime transition prediction (entry/exit timing)
-3. TPSL-based direction prediction (long/short only)
-4. Position logic based on confidence and current position
-5. Integration with existing SRBreakoutPredictor for S/R analysis
+3. Position logic based on confidence and current position
+4. Integration with existing SRBreakoutPredictor for S/R analysis
 
 Replaces step9_5 and step10 with a single, efficient model.
 Integrates intensity-based transition detection from step1_7.
@@ -29,8 +28,8 @@ Uses existing S/R system for coherence.
 
 Key Features:
 - Dynamic regime count based on step1_7 data (not hard-coded)
-- Long/short only trading signals (no "hold" as separate class)
-- Position logic: buy when no position + high confidence, hold when position + high confidence, sell when confidence drops
+- Regime-based position logic: buy when no position + high confidence, hold when position + high confidence, sell when confidence drops
+- No TPSL calculations (handled by separate trading execution layer)
 """
 import os
 import collections
@@ -231,9 +230,6 @@ class MultiTimeframeHMMEncoder(nn.Module):
         self.regime_classifier: nn.Linear | None = None  # Will be initialized later
         self.intensity_predictor: nn.Linear | None = None  # Will be initialized later
         self.transition_predictor = nn.Linear(self.d_model, 2)  # transition probability
-        self.tpsl_predictor = nn.Linear(
-            self.d_model, 2,
-        )  # TPSL-based direction (long/short only)
         self.confidence_predictor = nn.Linear(self.d_model, 1)  # confidence score
         # Persisted feature projection (initialized lazily to match input feature dimension)
         self.feature_projection: nn.Linear | None = None
@@ -300,14 +296,12 @@ class MultiTimeframeHMMEncoder(nn.Module):
             self.intensity_predictor(pooled) if self.intensity_predictor is not None else torch.zeros((batch_size, 1), device=pooled.device)
         )
         transition_logits = self.transition_predictor(pooled)
-        tpsl_logits = self.tpsl_predictor(pooled)
         confidence_logits = self.confidence_predictor(pooled)
 
         return {
             "regime_logits": regime_logits,
             "intensity_logits": intensity_logits,
             "transition_logits": transition_logits,
-            "tpsl_logits": tpsl_logits,
             "confidence_logits": confidence_logits,
             "hidden_states": transformed,
         }
@@ -580,7 +574,6 @@ class UnifiedRegimeIntelligenceStep:
             # Initialize label encoders
             self.label_encoders["regime"] = LabelEncoder()
             self.label_encoders["transition"] = LabelEncoder()
-            self.label_encoders["tpsl"] = LabelEncoder()
 
             # Initialize SRBreakoutPredictor
             if self.sr_predictor is not None:
@@ -1246,7 +1239,7 @@ class UnifiedRegimeIntelligenceStep:
         """Create training sequences for the unified model."""
         try:
             sequences: list[dict[str, Any]] = []
-            labels: dict[str, list[int]] = {"regime": [], "transition": [], "tpsl": []}
+            labels: dict[str, list[int]] = {"regime": [], "transition": []}
 
             # Create cross-timeframe correlations
             cross_tf_correlations = await self._create_cross_timeframe_correlations(
@@ -1346,11 +1339,6 @@ class UnifiedRegimeIntelligenceStep:
                 )
                 transition_label = 1 if len(set(future_regimes)) > 1 else 0
 
-                # TPSL-based direction prediction (long/short only)
-                tpsl_direction = await self._calculate_tpsl_direction(
-                    hmm_data.get("1m", pd.DataFrame()), i, window_start, window_end,
-                )
-
                 # Intensity-based transition detection
                 transition_detected = self._detect_intensity_transition(
                     intensity_data, i, window_start, window_end,
@@ -1360,7 +1348,6 @@ class UnifiedRegimeIntelligenceStep:
 
                 labels["regime"].append(current_regime)
                 labels["transition"].append(int(transition_detected))
-                labels["tpsl"].append(int(tpsl_direction))
 
             # Convert to tensors
             hmm_tensors: dict[str, torch.Tensor] = {}
@@ -1521,49 +1508,6 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.warning(f"⚠️ Error detecting intensity transition: {e}")
             return 0  # no transition as fallback
 
-    async def _calculate_tpsl_direction(
-        self, hmm_data: pd.DataFrame, current_idx: int, window_start: int, window_end: int,
-    ) -> int:
-        """Calculate TPSL-based direction (long/short only)."""
-        try:
-            # Get current price and future prices for TPSL calculation
-            current_price = (
-                hmm_data.iloc[current_idx]["close"]
-                if "close" in hmm_data.columns
-                else 100.0
-            )
-
-            # TPSL parameters from step02-3 (triple barrier labeling)
-            profit_take_multiplier = 0.002  # 0.2% take profit
-            stop_loss_multiplier = 0.001  # 0.1% stop loss
-
-            # Calculate barriers
-            profit_barrier = current_price * (1.0 + profit_take_multiplier)
-            stop_barrier = current_price * (1.0 - stop_loss_multiplier)
-
-            # Look ahead for barrier hits (simplified - would need actual price data)
-            future_window = hmm_data.iloc[
-                current_idx + 1 : current_idx + 30
-            ]  # 30 bars lookahead
-
-            if len(future_window) == 0:
-                return 0  # no position (neutral)
-
-            # Check if profit barrier is hit first (long signal)
-            for _, row in future_window.iterrows():
-                high_price = row.get("high", current_price)
-                low_price = row.get("low", current_price)
-
-                if high_price >= profit_barrier:
-                    return 1  # long signal
-                if low_price <= stop_barrier:
-                    return 0  # short signal (or no position)
-
-            return 0  # no position (neutral)
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating TPSL direction: {e}")
-            return 0  # hold as fallback
 
     async def _train_model(self, train_data: dict[str, Any]) -> bool:
         """Train the unified regime intelligence model."""
@@ -1621,7 +1565,6 @@ class UnifiedRegimeIntelligenceStep:
                 train_features,
                 train_labels["regime"],
                 train_labels["transition"],
-                train_labels["tpsl"],
             )
             train_loader = DataLoader(
                 train_dataset, batch_size=self.batch_size, shuffle=False,
@@ -1631,7 +1574,6 @@ class UnifiedRegimeIntelligenceStep:
                 val_features,
                 val_labels["regime"],
                 val_labels["transition"],
-                val_labels["tpsl"],
             )
             val_loader = DataLoader(val_dataset, batch_size=self.batch_size)
 
@@ -1660,12 +1602,10 @@ class UnifiedRegimeIntelligenceStep:
                     batch_features,
                     batch_regime,
                     batch_transition,
-                    batch_tpsl,
                 ) in enumerate(train_loader):
                     batch_features = batch_features.to(device)
                     batch_regime = batch_regime.to(device)
                     batch_transition = batch_transition.to(device)
-                    batch_tpsl = batch_tpsl.to(device)
 
                     # Prepare HMM states for this batch
                     batch_hmm: dict[str, torch.Tensor] = {}
@@ -1682,12 +1622,11 @@ class UnifiedRegimeIntelligenceStep:
                             outputs = self.model(batch_hmm, batch_features)
                             regime_loss = criterion(outputs["regime_logits"], batch_regime)
                             transition_loss = criterion(outputs["transition_logits"], batch_transition)
-                            tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
                             confidence_loss = F.mse_loss(
                                 outputs["confidence_logits"].squeeze(),
                                 torch.ones_like(outputs["confidence_logits"].squeeze()),
                             )
-                            total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
+                            total_loss = (regime_loss + transition_loss + confidence_loss)
                         scaler.scale(total_loss).backward()
                         # Gradient clipping
                         scaler.unscale_(optimizer)
@@ -1698,12 +1637,11 @@ class UnifiedRegimeIntelligenceStep:
                         outputs = self.model(batch_hmm, batch_features)
                         regime_loss = criterion(outputs["regime_logits"], batch_regime)
                         transition_loss = criterion(outputs["transition_logits"], batch_transition)
-                        tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
                         confidence_loss = F.mse_loss(
                             outputs["confidence_logits"].squeeze(),
                             torch.ones_like(outputs["confidence_logits"].squeeze()),
                         )
-                        total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
+                        total_loss = (regime_loss + transition_loss + confidence_loss)
                         total_loss.backward()
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                         optimizer.step()
@@ -1719,12 +1657,10 @@ class UnifiedRegimeIntelligenceStep:
                         batch_features,
                         batch_regime,
                         batch_transition,
-                        batch_tpsl,
                     ) in enumerate(val_loader):
                         batch_features = batch_features.to(device)
                         batch_regime = batch_regime.to(device)
                         batch_transition = batch_transition.to(device)
-                        batch_tpsl = batch_tpsl.to(device)
 
                         batch_hmm: dict[str, torch.Tensor] = {}
                         start_idx = split_idx + batch_index * self.batch_size
@@ -1740,13 +1676,12 @@ class UnifiedRegimeIntelligenceStep:
                         transition_loss = criterion(
                             outputs["transition_logits"], batch_transition,
                         )
-                        tpsl_loss = criterion(outputs["tpsl_logits"], batch_tpsl)
                         confidence_loss = F.mse_loss(
                             outputs["confidence_logits"].squeeze(),
                             torch.ones_like(outputs["confidence_logits"].squeeze()),
                         )
 
-                        total_loss = (regime_loss + transition_loss + tpsl_loss + confidence_loss)
+                        total_loss = (regime_loss + transition_loss + confidence_loss)
                         val_loss += total_loss.item()
 
                 # Scheduler step and logging
@@ -1925,15 +1860,6 @@ class UnifiedRegimeIntelligenceStep:
                     }
 
                     integration_metrics = {
-                        'tpsl_integration': {
-                            'take_profit_signals': 150,
-                            'stop_loss_signals': 120,
-                            'combined_accuracy': 0.78,
-                            'prediction_confidence': 0.81,
-                            'risk_effectiveness': 0.75,
-                            'signal_distribution': {'take_profit': 150, 'stop_loss': 120, 'neutral': 230},
-                            'profit_factor': 1.35
-                        },
                         'sr_integration': {
                             'sr_levels_count': 25,
                             'sr_signals': 85,
@@ -2038,13 +1964,11 @@ class UnifiedRegimeIntelligenceStep:
             # Process outputs
             regime_probs = F.softmax(outputs["regime_logits"], dim=-1)
             transition_probs = F.softmax(outputs["transition_logits"], dim=-1)
-            tpsl_probs = F.softmax(outputs["tpsl_logits"], dim=-1)
             confidence_score = torch.sigmoid(outputs["confidence_logits"]).item()
 
             # Decode predictions
             regime_pred = torch.argmax(regime_probs, dim=-1).item()
             transition_pred = torch.argmax(transition_probs, dim=-1).item()
-            tpsl_pred = torch.argmax(tpsl_probs, dim=-1).item()
 
             result = {
                 "regime": {
@@ -2058,12 +1982,6 @@ class UnifiedRegimeIntelligenceStep:
                         0, 1,
                     ].item(),  # Probability of transition
                     "confidence": torch.max(transition_probs).item(),
-                },
-                "tpsl": {
-                    "prediction": tpsl_pred,
-                    "probabilities": tpsl_probs.cpu().numpy()[0],
-                    "confidence": torch.max(tpsl_probs).item(),
-                    "direction": "long" if tpsl_pred == 1 else "short",  # Only long/short
                 },
                 "confidence_score": confidence_score,
             }
@@ -2116,13 +2034,13 @@ class UnifiedRegimeIntelligenceStep:
             if base_prediction is None:
                 return None
 
-            # Extract TPSL prediction and confidence
-            tpsl_prediction = base_prediction["tpsl"]["prediction"]
+            # Extract regime prediction and confidence
+            regime_prediction = base_prediction["regime"]["prediction"]
             confidence_score = base_prediction["confidence_score"]
 
-            # Determine position action
+            # Determine position action based on regime
             position_action = self._determine_position_action(
-                tpsl_prediction=tpsl_prediction,
+                regime_prediction=regime_prediction,
                 confidence_score=confidence_score,
                 current_position=current_position,
                 confidence_threshold=confidence_threshold,
@@ -2138,6 +2056,7 @@ class UnifiedRegimeIntelligenceStep:
                     "confidence": confidence_score,
                     "regime": base_prediction["regime"]["prediction"],
                     "transition_probability": base_prediction["transition"]["probability"],
+                    "intended_direction": position_action["intended_direction"],
                 },
             }
 
@@ -2147,12 +2066,12 @@ class UnifiedRegimeIntelligenceStep:
     @log_all_calls
 
     def _determine_position_action(
-        self, tpsl_prediction: int, confidence_score: float, current_position: str = "none", confidence_threshold: float = 0.7,
+        self, regime_prediction: int, confidence_score: float, current_position: str = "none", confidence_threshold: float = 0.7,
     ) -> dict[str, Any]:
-        """Determine position action based on TPSL prediction, confidence, and current position."
+        """Determine position action based on regime prediction, confidence, and current position."
 
         Args:
-            tpsl_prediction: 0 for short/no position, 1 for long
+            regime_prediction: Regime ID (0-N)
             confidence_score: Model confidence (0-1)
             current_position: Current position ("long", "short", "none")
             confidence_threshold: Minimum confidence to take action
@@ -2162,14 +2081,31 @@ class UnifiedRegimeIntelligenceStep:
 
         """
         try:
-            # Determine intended direction from TPSL prediction
-            intended_direction = "long" if tpsl_prediction == 1 else "short"
+            # Determine intended direction from regime characteristics
+            # Low regime IDs (0-2) are typically trending/bullish
+            # High regime IDs (5+) are typically volatile/bearish
+            # Medium regime IDs (3-4) are typically sideways
+            if regime_prediction <= 2:
+                intended_direction = "long"  # Trending regimes favor long positions
+            elif regime_prediction >= 5:
+                intended_direction = "short"  # Volatile regimes favor short positions
+            else:
+                intended_direction = "hold"  # Sideways regimes favor holding
 
             # Check if confidence is high enough to take action
             if confidence_score < confidence_threshold:
                 return {
                     "action": "hold",
                     "reason": f"Confidence too low ({confidence_score:.3f} < {confidence_threshold})",
+                    "intended_direction": intended_direction,
+                    "confidence": confidence_score,
+                }
+
+            # Handle hold direction (sideways regimes)
+            if intended_direction == "hold":
+                return {
+                    "action": "hold",
+                    "reason": f"Sideways regime detected (regime {regime_prediction}), holding position",
                     "intended_direction": intended_direction,
                     "confidence": confidence_score,
                 }
@@ -2450,23 +2386,23 @@ class UnifiedRegimeIntelligenceStep:
             )
             outcome = sr_outcome.get("outcome", "consolidation")
 
-            # Adjust position sizing based on outcome
-            base_position_size = min(combined_confidence, 0.8)
+            # Adjust position sizing based on outcome (more conservative)
+            base_position_size = min(combined_confidence * 0.1, 0.05)  # Max 5% position size
 
             if outcome == "breakout":
-                # More aggressive for breakouts
-                position_size = base_position_size * 1.2
-                stop_loss_multiplier = (1.0 + (1.0 - combined_confidence) * 0.3
+                # More aggressive for breakouts but still conservative
+                position_size = base_position_size * 1.5
+                stop_loss_multiplier = (1.0 + (1.0 - combined_confidence) * 0.2
                 )  # Tighter stops
             elif outcome == "rebounce":
                 # Conservative for rebounds
-                position_size = base_position_size * 0.8
-                stop_loss_multiplier = (1.0 + (1.0 - combined_confidence) * 0.7
+                position_size = base_position_size * 0.7
+                stop_loss_multiplier = (1.0 + (1.0 - combined_confidence) * 0.5
                 )  # Wider stops
             else:  # consolidation
                 # Standard sizing
                 position_size = base_position_size
-                stop_loss_multiplier = 1.0 + (1.0 - combined_confidence) * 0.5
+                stop_loss_multiplier = 1.0 + (1.0 - combined_confidence) * 0.3
 
             # Risk level classification
             if combined_confidence >= 0.8:
@@ -2477,7 +2413,7 @@ class UnifiedRegimeIntelligenceStep:
                 risk_level = "HIGH"
 
             return {
-                "position_size": min(position_size, 0.8),  # Cap at 80%
+                "position_size": min(position_size, 0.05),  # Cap at 5% (much more conservative)
                 "stop_loss_multiplier": stop_loss_multiplier,
                 "risk_level": risk_level,
             }
@@ -2485,7 +2421,7 @@ class UnifiedRegimeIntelligenceStep:
         except Exception as e:
             self.logger.exception(f"🚨 Error calculating SR risk parameters: {e}")
             return {
-                "position_size": 0.5,
+                "position_size": 0.02,  # 2% fallback position size
                 "stop_loss_multiplier": 1.25,
                 "risk_level": "MEDIUM",
             }

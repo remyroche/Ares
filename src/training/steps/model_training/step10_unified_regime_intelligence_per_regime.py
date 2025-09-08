@@ -195,9 +195,9 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
                         'signal_persistence_required': 3
                     },
                     'risk_assessment': {
-                        'max_position_size': 0.1,
-                        'stop_loss_threshold': 0.02,
-                        'take_profit_ratio': 2.0
+                        'max_position_size': 0.08,  # 8% max position for trending regimes
+                        'stop_loss_threshold': 0.015,  # 1.5% stop loss
+                        'take_profit_ratio': 2.0  # 1:2 risk-reward ratio
                     }
                 }
             }
@@ -224,9 +224,9 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
                         'signal_persistence_required': 2
                     },
                     'risk_assessment': {
-                        'max_position_size': 0.05,
-                        'stop_loss_threshold': 0.015,
-                        'take_profit_ratio': 1.5
+                        'max_position_size': 0.03,  # 3% max position for volatile regimes
+                        'stop_loss_threshold': 0.01,  # 1% stop loss
+                        'take_profit_ratio': 1.5  # 1:1.5 risk-reward ratio
                     }
                 }
             }
@@ -252,9 +252,9 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
                         'signal_persistence_required': 2
                     },
                     'risk_assessment': {
-                        'max_position_size': 0.075,
-                        'stop_loss_threshold': 0.0175,
-                        'take_profit_ratio': 1.75
+                        'max_position_size': 0.05,  # 5% max position for balanced regimes
+                        'stop_loss_threshold': 0.012,  # 1.2% stop loss
+                        'take_profit_ratio': 1.75  # 1:1.75 risk-reward ratio
                     }
                 }
             }
@@ -535,15 +535,15 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
             # Develop risk assessment rules based on regime characteristics
             risk_rules = {
                 'position_sizing': {
-                    'max_position_size': intelligence_params.get('max_position_size', 0.1),
+                    'max_position_size': intelligence_params.get('max_position_size', 0.05),  # 5% max position
                     'regime_risk_multiplier': self._calculate_regime_risk_multiplier(regime_id)
                 },
                 'stop_loss': {
-                    'threshold': intelligence_params.get('stop_loss_threshold', 0.02),
+                    'threshold': intelligence_params.get('stop_loss_threshold', 0.01),  # 1% stop loss
                     'dynamic_adjustment': True
                 },
                 'take_profit': {
-                    'ratio': intelligence_params.get('take_profit_ratio', 2.0),
+                    'ratio': intelligence_params.get('take_profit_ratio', 2.0),  # 1:2 risk-reward ratio
                     'scaling_enabled': True
                 },
                 'risk_metrics': {
@@ -579,33 +579,42 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
             regime_id: Regime ID
             
         Returns:
-            Risk multiplier
+            Risk multiplier (0.0 to 1.0, where 1.0 is full risk, 0.0 is no risk)
         """
+        # More conservative and realistic risk multipliers
         if regime_id <= 2:  # Trending regimes - moderate risk
-            return 1.0
+            return 0.8  # 80% of base risk
         elif regime_id >= 5:  # Volatile regimes - high risk
-            return 0.5
+            return 0.3  # 30% of base risk (much more conservative)
         else:  # Balanced regimes - balanced risk
-            return 0.75
+            return 0.6  # 60% of base risk
     @log_all_calls
     
     def _calculate_var_95(self, models: Dict[str, Any]) -> float:
-        """Calculate Value at Risk (95%) from model predictions.
+        """Calculate Value at Risk (95%) from model returns.
         
         Args:
-            models: Model results
+            models: Model results with actual returns data
             
         Returns:
-            VaR 95% value
+            VaR 95% value (negative return threshold)
         """
         try:
-            all_probabilities = []
+            all_returns = []
             for model_data in models.values():
-                if 'probabilities' in model_data:
-                    all_probabilities.extend(model_data['probabilities'])
+                if 'returns' in model_data:
+                    all_returns.extend(model_data['returns'])
+                elif 'probabilities' in model_data:
+                    # Convert probabilities to returns (this is a fallback)
+                    # In practice, you should have actual returns data
+                    probabilities = model_data['probabilities']
+                    if len(probabilities) > 1:
+                        returns = np.diff(probabilities)
+                        all_returns.extend(returns.tolist())
             
-            if all_probabilities:
-                return float(np.percentile(all_probabilities, 5))  # 5th percentile
+            if all_returns:
+                # VaR 95% is the 5th percentile of returns (worst 5% of outcomes)
+                return float(np.percentile(all_returns, 5))
             return 0.0
             
         except Exception as e:
@@ -614,23 +623,31 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
     @log_all_calls
     
     def _calculate_expected_shortfall(self, models: Dict[str, Any]) -> float:
-        """Calculate Expected Shortfall from model predictions.
+        """Calculate Expected Shortfall (Conditional VaR) from model returns.
         
         Args:
-            models: Model results
+            models: Model results with actual returns data
             
         Returns:
-            Expected Shortfall value
+            Expected Shortfall value (average of worst 5% returns)
         """
         try:
-            all_probabilities = []
+            all_returns = []
             for model_data in models.values():
-                if 'probabilities' in model_data:
-                    all_probabilities.extend(model_data['probabilities'])
+                if 'returns' in model_data:
+                    all_returns.extend(model_data['returns'])
+                elif 'probabilities' in model_data:
+                    # Convert probabilities to returns (this is a fallback)
+                    probabilities = model_data['probabilities']
+                    if len(probabilities) > 1:
+                        returns = np.diff(probabilities)
+                        all_returns.extend(returns.tolist())
             
-            if all_probabilities:
-                var_95 = np.percentile(all_probabilities, 5)
-                tail_losses = [p for p in all_probabilities if p <= var_95]
+            if all_returns:
+                # Calculate VaR 95% first
+                var_95 = np.percentile(all_returns, 5)
+                # Expected Shortfall is the average of returns worse than VaR 95%
+                tail_losses = [r for r in all_returns if r <= var_95]
                 return float(np.mean(tail_losses)) if tail_losses else 0.0
             return 0.0
             
@@ -640,24 +657,35 @@ class PerRegimeUnifiedRegimeIntelligenceStep(Step10UnifiedRegimeIntelligence):
     @log_all_calls
     
     def _calculate_sharpe_ratio(self, models: Dict[str, Any]) -> float:
-        """Calculate Sharpe ratio from model predictions.
+        """Calculate Sharpe ratio from model returns.
         
         Args:
-            models: Model results
+            models: Model results with actual returns data
             
         Returns:
-            Sharpe ratio
+            Sharpe ratio (excess return per unit of risk)
         """
         try:
-            all_probabilities = []
+            all_returns = []
             for model_data in models.values():
-                if 'probabilities' in model_data:
-                    all_probabilities.extend(model_data['probabilities'])
+                if 'returns' in model_data:
+                    all_returns.extend(model_data['returns'])
+                elif 'probabilities' in model_data:
+                    # Convert probabilities to returns (this is a fallback)
+                    probabilities = model_data['probabilities']
+                    if len(probabilities) > 1:
+                        returns = np.diff(probabilities)
+                        all_returns.extend(returns.tolist())
             
-            if all_probabilities and len(all_probabilities) > 1:
-                returns = np.diff(all_probabilities)
-                if np.std(returns) > 0:
-                    return float(np.mean(returns) / np.std(returns))
+            if all_returns and len(all_returns) > 1:
+                returns_array = np.array(all_returns)
+                mean_return = np.mean(returns_array)
+                std_return = np.std(returns_array)
+                
+                # Sharpe ratio = (mean_return - risk_free_rate) / std_return
+                # Assuming risk-free rate is 0 for simplicity
+                if std_return > 0:
+                    return float(mean_return / std_return)
             return 0.0
             
         except Exception as e:

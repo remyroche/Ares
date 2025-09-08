@@ -195,8 +195,8 @@ class Step03EnhancedReporter:
                 'export_ready_data': self._prepare_export_data(hmm_results, clustering_results, performance_data)
                 }
 
-                # Log key financial metrics from the report
-                self._log_financial_metrics_from_report(report, symbol, exchange, timeframe)
+                # Log key financial metrics directly from step results
+                self._log_financial_metrics_from_results(hmm_results, clustering_results, performance_data, market_data, symbol, exchange, timeframe)
 
                 self.logger.info("✅ Comprehensive Step03 report generated successfully")
                 financial_logger.log_step_end("Step03_HMM_Regime_Discovery", symbol, exchange, timeframe, success=True)
@@ -225,18 +225,17 @@ class Step03EnhancedReporter:
             'description': 'Comprehensive analysis of market regimes using Hidden Markov Models'
         }
 
-    def _log_financial_metrics_from_report(self, report: Dict[str, Any], symbol: str, exchange: str, timeframe: str) -> None:
-        """Log key financial metrics from the comprehensive report."""
+    def _log_financial_metrics_from_results(self, hmm_results: Dict[str, Any], clustering_results: Dict[str, Any], performance_data: Dict[str, Any], market_data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> None:
+        """Log key financial metrics directly from step results."""
         try:
             # Log HMM performance metrics
-            hmm_analysis = report.get('hmm_analysis', {})
-            if hmm_analysis:
+            if hmm_results:
                 financial_logger.log_financial_metric(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
                     metric_name="hmm_log_likelihood",
-                    metric_value=hmm_analysis.get('log_likelihood', 0.0),
+                    metric_value=hmm_results.get('log_likelihood', 0.0),
                     metric_type="performance",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
@@ -246,20 +245,19 @@ class Step03EnhancedReporter:
                     exchange=exchange,
                     timeframe=timeframe,
                     metric_name="hmm_convergence_iterations",
-                    metric_value=float(hmm_analysis.get('convergence_iterations', 0)),
+                    metric_value=float(hmm_results.get('convergence_iterations', 0)),
                     metric_type="performance",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
             
             # Log clustering quality metrics
-            clustering_quality = report.get('clustering_quality_assessment', {})
-            if clustering_quality:
+            if clustering_results:
                 financial_logger.log_financial_metric(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
                     metric_name="silhouette_score",
-                    metric_value=clustering_quality.get('silhouette_score', 0.0),
+                    metric_value=clustering_results.get('silhouette_score', 0.0),
                     metric_type="quality",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
@@ -269,15 +267,24 @@ class Step03EnhancedReporter:
                     exchange=exchange,
                     timeframe=timeframe,
                     metric_name="davies_bouldin_index",
-                    metric_value=clustering_quality.get('davies_bouldin_index', 0.0),
+                    metric_value=clustering_results.get('davies_bouldin_index', 0.0),
                     metric_type="quality",
+                    step_name="Step03_HMM_Regime_Discovery"
+                )
+                
+                financial_logger.log_financial_metric(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    metric_name="n_clusters",
+                    metric_value=float(clustering_results.get('n_clusters', 0)),
+                    metric_type="technical",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
             
             # Log regime analysis metrics
-            regime_analysis = report.get('regime_analysis', {})
-            if regime_analysis:
-                regime_metrics = regime_analysis.get('regime_metrics', [])
+            if hmm_results and 'regime_metrics' in hmm_results:
+                regime_metrics = hmm_results.get('regime_metrics', [])
                 if regime_metrics:
                     # Log metrics for each regime
                     for regime_metric in regime_metrics:
@@ -305,14 +312,13 @@ class Step03EnhancedReporter:
                         )
             
             # Log performance metrics
-            performance_metrics = report.get('performance_metrics', {})
-            if performance_metrics:
+            if performance_data:
                 financial_logger.log_financial_metric(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
                     metric_name="hmm_execution_time",
-                    metric_value=performance_metrics.get('execution_time_seconds', 0.0),
+                    metric_value=performance_data.get('execution_time_seconds', 0.0),
                     metric_type="performance",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
@@ -322,61 +328,75 @@ class Step03EnhancedReporter:
                     exchange=exchange,
                     timeframe=timeframe,
                     metric_name="hmm_memory_usage",
-                    metric_value=performance_metrics.get('memory_usage_mb', 0.0),
+                    metric_value=performance_data.get('memory_usage_mb', 0.0),
                     metric_type="performance",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
             
             # Log market context metrics
-            market_context = report.get('market_context', {})
-            if market_context:
-                financial_logger.log_financial_metric(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    metric_name="current_volatility",
-                    metric_value=market_context.get('current_volatility', 0.0),
-                    metric_type="risk",
-                    step_name="Step03_HMM_Regime_Discovery"
-                )
+            if market_data is not None and not market_data.empty and 'close' in market_data.columns:
+                # Calculate current volatility
+                returns = market_data['close'].pct_change().dropna()
+                current_volatility = returns.std() if len(returns) > 0 else 0.0
                 
                 financial_logger.log_financial_metric(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
-                    metric_name="trend_strength",
-                    metric_value=market_context.get('trend_strength', 0.0),
-                    metric_type="technical",
+                    metric_name="current_volatility",
+                    metric_value=current_volatility,
+                    metric_type="risk",
                     step_name="Step03_HMM_Regime_Discovery"
                 )
+                
+                # Calculate trend strength
+                if len(market_data) > 20:
+                    sma_20 = market_data['close'].rolling(20).mean()
+                    sma_50 = market_data['close'].rolling(50).mean()
+                    trend_strength = abs(sma_20.iloc[-1] - sma_50.iloc[-1]) / sma_50.iloc[-1] if not pd.isna(sma_50.iloc[-1]) else 0.0
+                    
+                    financial_logger.log_financial_metric(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        metric_name="trend_strength",
+                        metric_value=trend_strength,
+                        metric_type="technical",
+                        step_name="Step03_HMM_Regime_Discovery"
+                    )
             
             # Log comprehensive trading performance if we have enough data
-            if hmm_analysis and regime_analysis:
-                # Create performance data dictionary for comprehensive logging
-                performance_data = {
+            if hmm_results and clustering_results:
+                silhouette_score = clustering_results.get('silhouette_score', 0.5)
+                current_volatility = 0.02  # Default
+                if market_data is not None and not market_data.empty and 'close' in market_data.columns:
+                    returns = market_data['close'].pct_change().dropna()
+                    current_volatility = returns.std() if len(returns) > 0 else 0.02
+                
+                performance_data_dict = {
                     'total_return': 0.0,  # HMM doesn't directly predict returns
                     'annualized_return': 0.0,
-                    'volatility': market_context.get('current_volatility', 0.02),
+                    'volatility': current_volatility,
                     'sharpe_ratio': 0.0,  # Would need return data to calculate
                     'sortino_ratio': 0.0,
                     'calmar_ratio': 0.0,
-                    'max_drawdown': market_context.get('current_volatility', 0.02) * 2,  # Estimate
+                    'max_drawdown': current_volatility * 2,  # Estimate
                     'max_drawdown_duration': 30,  # Default estimate
-                    'var_95': market_context.get('current_volatility', 0.02) * 1.5,  # Estimate
-                    'cvar_95': market_context.get('current_volatility', 0.02) * 2,  # Estimate
+                    'var_95': current_volatility * 1.5,  # Estimate
+                    'cvar_95': current_volatility * 2,  # Estimate
                     'win_rate': 0.5,  # Default for regime analysis
                     'profit_factor': 1.0,  # Default
                     'avg_win': 0.01,  # Default estimate
                     'avg_loss': 0.01,  # Default estimate
                     'largest_win': 0.03,  # Default estimate
-                    'largest_loss': market_context.get('current_volatility', 0.02) * 2,  # Estimate
+                    'largest_loss': current_volatility * 2,  # Estimate
                     'total_trades': 25,  # Default estimate
                     'winning_trades': 12,  # Default estimate
                     'losing_trades': 13,  # Default estimate
                     'additional_metrics': {
-                        'regime_count': len(regime_analysis.get('regime_metrics', [])),
-                        'hmm_convergence': hmm_analysis.get('convergence_achieved', False),
-                        'clustering_quality': clustering_quality.get('silhouette_score', 0.0)
+                        'regime_count': len(hmm_results.get('regime_metrics', [])),
+                        'hmm_convergence': hmm_results.get('convergence_achieved', False),
+                        'clustering_quality': silhouette_score
                     }
                 }
                 
@@ -385,14 +405,14 @@ class Step03EnhancedReporter:
                     exchange=exchange,
                     timeframe=timeframe,
                     step_name="Step03_HMM_Regime_Discovery",
-                    performance_data=performance_data,
-                    confidence_score=clustering_quality.get('silhouette_score', 0.5)
+                    performance_data=performance_data_dict,
+                    confidence_score=silhouette_score
                 )
             
-            self.logger.info("💰 Financial metrics logged successfully from Step03 report")
+            self.logger.info("💰 Financial metrics logged successfully from Step03 results")
             
         except Exception as e:
-            self.logger.warning(f"Could not log financial metrics from report: {e}")
+            self.logger.warning(f"Could not log financial metrics from results: {e}")
 
     def _generate_performance_metrics(self, performance_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate comprehensive performance metrics."""

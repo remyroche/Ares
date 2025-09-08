@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Common Utilities for Data Operations
@@ -712,7 +713,7 @@ class DataStorageManager:
             # Save based on format
             if format == DataFormat.PARQUET:
                 if isinstance(data, pd.DataFrame):
-                    data.to_parquet(file_path, compression = compression.value if compression != CompressionType.NONE else None)
+                    standardized_parquet_handler.write_parquet_standardized(data, file_path, compression = compression.value if compression != CompressionType.NONE else None)
                 else:
                     raise ValueError("Parquet format only supports pandas DataFrames")
             
@@ -791,7 +792,7 @@ class DataStorageManager:
             
             # Load based on format
             if format == DataFormat.PARQUET:
-                data = pd.read_parquet(file_path)
+                data = standardized_parquet_handler.read_parquet_standardized(file_path)
             elif format == DataFormat.CSV:
                 data = pd.read_csv(file_path)
             elif format == DataFormat.JSON:

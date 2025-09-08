@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Enhanced Critical Training Steps with Fail-Fast Behavior
 
@@ -62,7 +63,7 @@ class EnhancedHMMClusteringStep:
                 raise FileNotFoundError(f"Required data file not found: {data_path}")
             
             # Load and validate data
-            data = pd.read_parquet(data_path)
+            data = standardized_parquet_handler.read_parquet_standardized(data_path)
             if data.empty:
                 raise ValueError("Loaded data is empty")
             
@@ -169,7 +170,7 @@ class EnhancedFeatureGenerationStep:
             if not data_path.exists():
                 raise FileNotFoundError(f"Required data file not found: {data_path}")
             
-            data = pd.read_parquet(data_path)
+            data = standardized_parquet_handler.read_parquet_standardized(data_path)
             if data.empty:
                 raise ValueError("Loaded data is empty")
             
@@ -223,7 +224,7 @@ class EnhancedFeatureGenerationStep:
             
             # Save features
             features_path = Path(data_dir) / f"{exchange}_{symbol}_features.parquet"
-            features.to_parquet(features_path)
+            standardized_parquet_handler.write_parquet_standardized(features, features_path)
             
             self.logger.info(f'✅ Features generated and saved: {features.shape}')
             return True
@@ -268,7 +269,7 @@ class EnhancedMatrixOperationsStep:
             if not features_path.exists():
                 raise FileNotFoundError(f"Required features file not found: {features_path}")
             
-            features = pd.read_parquet(features_path)
+            features = standardized_parquet_handler.read_parquet_standardized(features_path)
             if features.empty:
                 raise ValueError("Loaded features are empty")
             
@@ -317,7 +318,7 @@ class EnhancedMatrixOperationsStep:
             
             # Save results
             result_path = Path(data_dir) / f"{exchange}_{symbol}_matrix_operations.parquet"
-            result.to_parquet(result_path)
+            standardized_parquet_handler.write_parquet_standardized(result, result_path)
             
             self.logger.info(f'✅ Matrix operations completed and saved: {result.shape}')
             return True
@@ -362,7 +363,7 @@ class EnhancedMLModelTrainingStep:
             if not data_path.exists():
                 raise FileNotFoundError(f"Required processed data file not found: {data_path}")
             
-            data = pd.read_parquet(data_path)
+            data = standardized_parquet_handler.read_parquet_standardized(data_path)
             if data.empty:
                 raise ValueError("Loaded processed data is empty")
             
@@ -455,7 +456,7 @@ class EnhancedSRLevelsDetectionStep:
             if not data_path.exists():
                 raise FileNotFoundError(f"Required data file not found: {data_path}")
             
-            data = pd.read_parquet(data_path)
+            data = standardized_parquet_handler.read_parquet_standardized(data_path)
             if data.empty:
                 raise ValueError("Loaded data is empty")
             

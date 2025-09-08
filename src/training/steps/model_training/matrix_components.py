@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Matrix operation components for enhanced matrix operations step.
 

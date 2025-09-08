@@ -1,6 +1,7 @@
 from typing import Any
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Step 3: Enhanced HMM Regime Discovery with All Improvements.\n\nThis module provides the main interface for enhanced HMM regime discovery with:\n1. Bayesian parameter optimization\n2. Enhanced regime discovery features\n3. Economic significance validation\n4. Ensemble clustering (HMM + K-means + DBSCAN)\n5. Enhanced ML transition detection (Random Forest + LGBM)\n6. Full MLflow integration and data persistence\n7. Standardized pipeline integration\n'
 import asyncio
@@ -104,7 +105,7 @@ class HMMClusteringStep:
             # Load and validate data
             data_file = data_path / f"{exchange}_{symbol}_processed.parquet"
             import pandas as pd
-            data = pd.read_parquet(data_file)
+            data = standardized_parquet_handler.read_parquet_standardized(data_file)
             
             # Validate data quality
             validation_result = await self.validator.validate_data_quality(
@@ -289,7 +290,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         logger = system_logger.getChild('Step3HMMClustering')
         if data_dir is None:
             from src.utils.pipeline_standards import pipeline_standards as _pipeline_standards
-            data_dir = _pipeline_standards.build_path('processed_data', exchange, symbol)
+            data_dir = _standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
         logger.info('=' * 80)
         logger.info('🚀 STEP 3: Enhanced HMM Clustering with Full Pipeline Integration')
         logger.info('=' * 80)

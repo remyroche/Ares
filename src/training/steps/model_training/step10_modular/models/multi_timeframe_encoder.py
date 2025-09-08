@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Multi-Timeframe HMM Encoder Model.
 
 This module contains the core neural network architecture for the unified

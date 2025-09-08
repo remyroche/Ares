@@ -1,4 +1,5 @@
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Validator for Step 13: Walk Forward Validation."""
 
 import asyncio

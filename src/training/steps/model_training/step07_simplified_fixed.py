@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 Step07 Enhanced Matrix Operations - Simplified with Fixed Imports
 
@@ -90,7 +91,7 @@ class SimplifiedMatrixOperationsStep(BaseStep):
                     path = advanced_features[split]
                     if isinstance(path, str) and Path(path).exists():
                         try:
-                            data_dict[split] = pd.read_parquet(path)
+                            data_dict[split] = standardized_parquet_handler.read_parquet_standardized(path)
                         except Exception as e:
                             self.logger.warning(f"⚠️ Failed to load {split} data: {e}")
             

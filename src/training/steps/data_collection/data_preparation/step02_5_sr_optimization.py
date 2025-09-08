@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 2.5: S/R Detection Optimization with Comprehensive Reporting and Function Call Monitoring."""
 import asyncio
 import sys

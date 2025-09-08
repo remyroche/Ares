@@ -7,6 +7,7 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time, validates, circuit_breaker, timeout, retry
 from src.core.decorators.logging import audit_log, set_correlation_id
 from src.training.steps.market_analysis.enhanced_pipeline_decorators import comprehensive_pipeline_protection
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced Market Analysis Orchestrator
@@ -132,7 +133,7 @@ class MarketAnalysisPipelineOrchestrator:
                 return False
         price_data_path = data_path / required_files[0]
         try:
-            price_data = pd.read_parquet(price_data_path)
+            price_data = standardized_parquet_handler.read_parquet_standardized(price_data_path)
             if price_data.empty:
                 self.logger.error('❌ Price data is empty')
                 return False
@@ -246,7 +247,7 @@ class MarketAnalysisPipelineOrchestrator:
                         from pathlib import Path
                         regime_path = Path(data_dir) / f'regimes_{exchange}_{symbol}_{timeframe}.parquet'
                         if regime_path.exists():
-                            regime_data = pd.read_parquet(regime_path)
+                            regime_data = standardized_parquet_handler.read_parquet_standardized(regime_path)
                             if 'regime' in regime_data.columns:
                                 self.enhanced_logger.log_regime_quality('hmm_clustering', regime_data['regime'])
                                 unique_regimes = regime_data['regime'].unique()
@@ -333,7 +334,7 @@ class MarketAnalysisPipelineOrchestrator:
                         from pathlib import Path
                         features_path = Path(data_dir) / f'features_{exchange}_{symbol}_{timeframe}.parquet'
                         if features_path.exists():
-                            features_data = pd.read_parquet(features_path)
+                            features_data = standardized_parquet_handler.read_parquet_standardized(features_path)
                             self.enhanced_logger.log_feature_quality('feature_engineering', features_data)
                             step6_metrics = {'total_features_created': len(features_data.columns), 'interaction_features': len([col for col in features_data.columns if '_x_' in col or '_*_' in col]), 'selected_features': len(features_data.columns), 'feature_importance_top_10': [], 'lookback_optimization': {'optimized_count': 0, 'optimization_time': 0.0}}
                             self.enhanced_logger.log_step6_metrics('feature_engineering', step6_metrics)
@@ -391,7 +392,7 @@ class MarketAnalysisPipelineOrchestrator:
                 step7_metrics = self._get_fallback_matrix_metrics()
                 self.enhanced_logger.log_step7_metrics('matrix_operations', step7_metrics)
                 return
-            matrix_data = pd.read_parquet(matrix_path)
+            matrix_data = standardized_parquet_handler.read_parquet_standardized(matrix_path)
             self.enhanced_logger.log_feature_quality('matrix_operations', matrix_data)
             numeric_cols = matrix_data.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0:

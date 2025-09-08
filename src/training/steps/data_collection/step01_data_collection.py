@@ -19,6 +19,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from ..standardized_parquet_handler import standardized_parquet_handler
 import pandas as pd
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.config', 'src.utils.logger', 'src.utils.error_handler', 'src.training.steps.data_collection.data_downloader', 'src.utils.enhanced_mlflow_integration', 'src.utils.centralized_decorators']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
@@ -200,7 +201,7 @@ class DataCollectionStep:
             return False
         self.logger.info(f'🔍 Validating {file_name}...')
         try:
-            df = pd.read_parquet(file_path)
+            df = standardized_parquet_handler.read_parquet_standardized(file_path)
             df = self.standards.standardize_timestamp(df, 'timestamp')
             schema_name = self._determine_schema_name(file_name)
             validation_result = self.standards.validate_data_quality(df, schema_name)
@@ -306,7 +307,7 @@ class DataCollectionStep:
                 if os.path.exists(file_path):
                     self.logger.info(f'✅ Found expected file: {file_name}')
                     try:
-                        df = pd.read_parquet(file_path)
+                        df = standardized_parquet_handler.read_parquet_standardized(file_path)
                         df = self.standards.standardize_timestamp(df, 'timestamp')
                         if 'klines' in file_name:
                             schema_name = 'klines'
@@ -371,9 +372,9 @@ class DataCollectionStep:
             klines_df = pd.DataFrame(klines_data)
             klines_df = self.standards.standardize_timestamp(klines_df, 'timestamp')
             klines_df = self.standards.enforce_schema(klines_df, 'klines')
-            klines_file = self.standards.generate_file_name('klines', exchange, symbol, timeframe)
+            klines_file = standardized_parquet_handler.get_standardized_filename('klines', exchange, symbol, timeframe)
             klines_path = os.path.join(data_dir, klines_file)
-            klines_df.to_parquet(klines_path, index=False)
+            standardized_parquet_handler.write_parquet_standardized(klines_df, klines_path, 'klines')
             self.logger.info(f'✅ Created mock klines data: {len(klines_df)} rows')
             self.logger.info(f'💾 Saved to: {klines_path}')
             aggtrades_data = []
@@ -388,9 +389,9 @@ class DataCollectionStep:
             aggtrades_df = pd.DataFrame(aggtrades_data)
             aggtrades_df = self.standards.standardize_timestamp(aggtrades_df, 'timestamp')
             aggtrades_df = self.standards.enforce_schema(aggtrades_df, 'aggtrades')
-            aggtrades_file = self.standards.generate_file_name('aggtrades', exchange, symbol)
+            aggtrades_file = standardized_parquet_handler.get_standardized_filename('aggtrades', exchange, symbol)
             aggtrades_path = os.path.join(data_dir, aggtrades_file)
-            aggtrades_df.to_parquet(aggtrades_path, index=False)
+            standardized_parquet_handler.write_parquet_standardized(aggtrades_df, aggtrades_path, 'aggtrades')
             self.logger.info(f'✅ Created mock aggtrades data: {len(aggtrades_df)} rows')
             self.logger.info(f'💾 Saved to: {aggtrades_path}')
             return True
@@ -457,7 +458,7 @@ class DataCollectionStep:
                 logger.info(f'🔍 Analyzing {data_type} data: {file_path}')
                 if Path(file_path).exists():
                     try:
-                        df = pd.read_parquet(file_path)
+                        df = standardized_parquet_handler.read_parquet_standardized(file_path)
                         logger.info(f'   📊 Shape: {df.shape}')
                         logger.info(f'   📁 File size: {Path(file_path).stat().st_size:,} bytes')
                         logger.info(f'   🗂️ Columns ({len(df.columns)}): {list(df.columns)}')
@@ -599,12 +600,12 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         logger.info(f'🏢 Exchange: {exchange}')
         logger.info(f'📊 Timeframe: {timeframe}')
         if data_dir is None:
-            data_dir = pipeline_standards.build_path('raw_data', exchange, symbol)
+            data_dir = standardized_parquet_handler.get_standardized_path('raw_data', exchange, symbol)
         logger.info(f'📁 Data directory: {data_dir}')
         logger.info(f'🔄 Force rerun: {force_rerun}')
         if not force_rerun:
-            klines_file = pipeline_standards.generate_file_name('klines', exchange, symbol, timeframe)
-            aggtrades_file = pipeline_standards.generate_file_name('aggtrades', exchange, symbol)
+            klines_file = standardized_parquet_handler.get_standardized_filename('klines', exchange, symbol, timeframe)
+            aggtrades_file = standardized_parquet_handler.get_standardized_filename('aggtrades', exchange, symbol)
             consolidated_files = [os.path.join(data_dir, klines_file), os.path.join(data_dir, aggtrades_file)]
             existing_files: list[str] = []
             for file_path in consolidated_files:
@@ -618,7 +619,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
                 try:
                     klines_path = os.path.join(data_dir, klines_file)
                     if Path(klines_path).exists():
-                        df = pd.read_parquet(klines_path)
+                        df = standardized_parquet_handler.read_parquet_standardized(klines_path)
                         if 'timestamp' in df.columns:
                             df = pipeline_standards.standardize_timestamp(df, 'timestamp', 'datetime64[ns]')
                             df['timestamp'].min().date()

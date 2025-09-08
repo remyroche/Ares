@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Data Utilities Component
 from src.utils.logger import system_logger
 Common utility functions for data processing and analysis.

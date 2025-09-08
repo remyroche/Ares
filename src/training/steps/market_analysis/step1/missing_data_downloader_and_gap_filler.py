@@ -2,6 +2,7 @@
 import pandas as pd
 from ....core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Missing Data Downloader and Gap Filler for Step1.
 
@@ -191,7 +192,7 @@ class MissingDataDownloaderAndGapFiller:
                     if list(df.columns) != list(column_mapping.values()):
                         df = df.rename(columns = column_mapping)
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                    df.to_parquet(file_path, compression='zstd', index = False)
+                    standardized_parquet_handler.write_parquet_standardized(df, file_path, compression='zstd', index = False)
                     logger.info(f'✅ Downloaded {filename}: {len(df)} rows')
                     return True
                 else:
@@ -211,7 +212,7 @@ class MissingDataDownloaderAndGapFiller:
             files = list(self.data_cache_path.glob(pattern))
             total_rows = 0
             for file_path in files:
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 total_rows += len(df)
             return total_rows
         except Exception as e:
@@ -283,7 +284,7 @@ class MissingDataDownloaderAndGapFiller:
                 if data:
                     df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                    df.to_parquet(file_path, compression='zstd', index = False)
+                    standardized_parquet_handler.write_parquet_standardized(df, file_path, compression='zstd', index = False)
                     logger.info(f'✅ Downloaded {filename}: {len(df)} rows')
                     return True
                 else:
@@ -303,7 +304,7 @@ class MissingDataDownloaderAndGapFiller:
             files = list(self.data_cache_path.glob(pattern))
             total_rows = 0
             for file_path in files:
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 total_rows += len(df)
             return total_rows
         except Exception as e:
@@ -377,7 +378,7 @@ class MissingDataDownloaderAndGapFiller:
                     if 'timestamp' not in df.columns and 'fundingTime' in df.columns:
                         df['timestamp'] = df['fundingTime']
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                    df.to_parquet(file_path, compression='zstd', index = False)
+                    standardized_parquet_handler.write_parquet_standardized(df, file_path, compression='zstd', index = False)
                     logger.info(f'✅ Downloaded {filename}: {len(df)} rows')
                     return True
                 else:
@@ -397,7 +398,7 @@ class MissingDataDownloaderAndGapFiller:
             files = list(self.data_cache_path.glob(pattern))
             total_rows = 0
             for file_path in files:
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 total_rows += len(df)
             return total_rows
         except Exception as e:

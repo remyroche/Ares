@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Step 3.5: Final Regime Clustering with Advanced Reporting."
 
@@ -679,7 +680,7 @@ class FinalRegimeClusteringStep:
                 self.logger.info(f"📦 Large file detected ({file_size_mb:.1f}MB), using chunked loading")
                 df = self.data_manager.load_large_file(file_path, chunk_size=50000)
             else:
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
             
             # Cache the data for future use
             if df is not None and not df.empty:
@@ -840,7 +841,7 @@ class FinalRegimeClusteringStep:
             }
 
         # Load data
-        df = pd.read_parquet(klines_path)
+        df = standardized_parquet_handler.read_parquet_standardized(klines_path)
 
         if df.empty:
             self.logger.error("❌ Data is empty")

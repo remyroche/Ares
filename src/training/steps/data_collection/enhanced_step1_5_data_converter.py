@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -65,7 +66,7 @@ class OptimizedUnifiedDataProcessor:
         chunks = []
         chunk_count = 0
         try:
-            for chunk in pd.read_parquet(file_path, chunksize = self.config.chunk_size):
+            for chunk in standardized_parquet_handler.read_parquet_standardized(file_path, chunksize = self.config.chunk_size):
                 chunk_count += 1
                 self.logger.debug(f'Processing {source_name} chunk {chunk_count}')
                 quality_result = await self.quality_validator.validate_unified_data_quality(chunk, f'{source_name}_chunk_{chunk_count}')
@@ -289,7 +290,7 @@ class EnhancedStep1_5DataConverter:
                 return True
             except ImportError:
                 self.logger.warning('pyarrow not available, using pandas fallback')
-                unified_data.to_parquet(os.path.join(output_dir, 'data.parquet'), compression = self.config.compression, index = False)
+                standardized_parquet_handler.write_parquet_standardized(unified_data, os.path.join(output_dir, 'data.parquet'), compression = self.config.compression, index = False)
                 self.logger.info('✅ Unified data saved successfully (pandas fallback)')
                 return True
         except Exception as e:

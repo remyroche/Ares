@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 5: Labeling (Enhanced Implementation with M1 Optimizations).
 
@@ -220,7 +221,7 @@ class LabelingStep:
                 df = await self.data_manager.load_data_async(str(path))
             else:
                 # Fallback to standard loading
-                df = pd.read_parquet(path)
+                df = standardized_parquet_handler.read_parquet_standardized(path)
 
             if df is not None and 'timestamp' in df.columns and (not isinstance(df.index, pd.DatetimeIndex)):
                 try:
@@ -379,7 +380,7 @@ class LabelingStep:
             await self.data_manager.save_data_async(data_to_save, str(out_path))
         else:
             # Standard saving
-            data_to_save.to_parquet(out_path)
+            standardized_parquet_handler.write_parquet_standardized(data_to_save, out_path)
 
         # Create metadata with performance metrics
         try:

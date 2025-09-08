@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Validator for Step 1: Data Collection."""
 
 import asyncio
@@ -393,7 +394,7 @@ class Step1DataCollectionValidator:
 
             try:
                 if klines_file.endswith(".parquet"):
-                    df = pd.read_parquet(klines_file)
+                    df = standardized_parquet_handler.read_parquet_standardized(klines_file)
                 elif klines_file.endswith(".csv"):
                     df = pd.read_csv(klines_file)
                 elif klines_file.endswith(".pkl"):

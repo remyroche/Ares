@@ -1,5 +1,6 @@
 from ...core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 7: Enhanced Matrix Operations - Per-Regime Implementation.
 
@@ -136,7 +137,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
                 feature_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_features_per_regime.parquet'
                 
                 if feature_path.exists():
-                    data = pd.read_parquet(feature_path)
+                    data = standardized_parquet_handler.read_parquet_standardized(feature_path)
                     # Filter by regime
                     if 'feature_regime_id' in data.columns:
                         data = data[data['feature_regime_id'] == regime_id]
@@ -147,7 +148,7 @@ class PerRegimeEnhancedMatrixOperationsStep(Step7EnhancedMatrixOperations):
                 feature_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_features.parquet'
             
             if feature_path.exists():
-                data = pd.read_parquet(feature_path)
+                data = standardized_parquet_handler.read_parquet_standardized(feature_path)
                 self.logger.info(f"✅ Loaded feature data for regime {regime_id}: {len(data)} rows")
                 return data
             else:
@@ -650,7 +651,7 @@ async def run_per_regime_step(
         config = {}
         
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     
     # Enable per-regime processing
     config['per_regime_matrix_operations'] = True

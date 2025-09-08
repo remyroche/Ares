@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 3: Parameter Optimization for HMM Regime Discovery.
 
 This module performs comprehensive parameter optimization for HMM regime discovery,
@@ -156,7 +157,7 @@ class ParameterOptimizationStep:
                 }
             
             # Load data
-            df = pd.read_parquet(klines_path)
+            df = standardized_parquet_handler.read_parquet_standardized(klines_path)
             
             if df.empty:
                 self.logger.error("❌ Data is empty")

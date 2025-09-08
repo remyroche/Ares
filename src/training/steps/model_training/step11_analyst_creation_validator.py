@@ -11,6 +11,7 @@ from .utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
 import json
 import logging
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 logger = system_logger.getChild("Step11AnalystCreationValidator")
 

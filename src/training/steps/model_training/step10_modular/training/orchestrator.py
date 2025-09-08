@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 """Step 10 Training Orchestrator.
 
 This module handles training orchestration for the unified regime intelligence system.

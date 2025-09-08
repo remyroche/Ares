@@ -2,6 +2,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 import pandas as pd
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 'Enhanced Step 5: Per-Regime Labeling.\n\nThis module provides per-HMM regime labeling functionality, ensuring that\nlabeling is performed on a per-regime basis for better regime-specific modeling.\n'
 import asyncio
@@ -78,7 +79,7 @@ class PerRegimeLabelingStep(LabelingStep):
                 if success:
                     aggregated = aggregate_regime_results(regime_results, 'concat')
                     output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_labeled_per_regime.parquet'
-                    aggregated.to_parquet(output_path, index=False)
+                    standardized_parquet_handler.write_parquet_standardized(aggregated, output_path, index=False)
                     self.logger.info(f'✅ Saved aggregated labeled data: {output_path}')
                     self._log_labeling_statistics(aggregated, regime_results)
                 return success
@@ -196,7 +197,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
     if config is None:
         config = {}
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     config['per_regime_labeling'] = True
     step = PerRegimeLabelingStep(config)
     await step.initialize()

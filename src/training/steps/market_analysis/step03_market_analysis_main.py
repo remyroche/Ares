@@ -1,3 +1,4 @@
+from ..standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
 """Step 3: Market Analysis Pipeline.
 
@@ -51,15 +52,15 @@ def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -
         with open(meta_file, 'r') as f:
             meta_data = json.load(f)
 
-        # Load HMM block states and clusters in parallel (optimization)
+        # Load HMM block states and clusters in parallel (optimization) with standardized handler
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             block_states_future = executor.submit(
-                pd.read_parquet, 
+                standardized_parquet_handler.read_parquet_standardized,
                 base_path / f"BINANCE_{symbol}_hmm_block_states_{timeframe}.parquet"
             )
             clusters_future = executor.submit(
-                pd.read_parquet, 
+                standardized_parquet_handler.read_parquet_standardized,
                 base_path / f"BINANCE_{symbol}_hmm_composite_clusters_{timeframe}.parquet"
             )
             
@@ -146,7 +147,7 @@ def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: s
 
         for file_path in labeled_files:
             try:
-                df = pd.read_parquet(file_path)
+                df = standardized_parquet_handler.read_parquet_standardized(file_path)
                 
                 # Validity checks: Data integrity validation
                 if df.empty:

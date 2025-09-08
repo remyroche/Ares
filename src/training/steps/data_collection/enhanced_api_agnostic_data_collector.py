@@ -2,6 +2,7 @@
 import pandas as pd
 from src.utils.logger import system_logger
 from ...core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Enhanced API-Agnostic Data Collector
@@ -191,7 +192,7 @@ class IncrementalDataDownloader:
             self.logger.info(f"📖 Reading latest file: {os.path.basename(latest_file)}")
             
             # Read the file and get the last timestamp
-            df = pd.read_parquet(latest_file)
+            df = standardized_parquet_handler.read_parquet_standardized(latest_file)
             if df.empty or 'timestamp' not in df.columns:
                 self.logger.warning(f"⚠️ No data or timestamp column in {latest_file}")
                 return None
@@ -814,7 +815,7 @@ class EnhancedAPIAgnosticDataCollector:
             # Load and combine all files
             dataframes = []
             for file in files:
-                df = pd.read_parquet(file)
+                df = standardized_parquet_handler.read_parquet_standardized(file)
                 dataframes.append(df)
             
             if dataframes:
@@ -851,7 +852,7 @@ class EnhancedAPIAgnosticDataCollector:
             
             # Convert to DataFrame and save
             df = pd.DataFrame(data)
-            df.to_parquet(filepath, index=False)
+            standardized_parquet_handler.write_parquet_standardized(df, filepath, index=False)
             
             self.logger.info(f"💾 Saved {len(data)} {data_type} rows to {filename}")
             

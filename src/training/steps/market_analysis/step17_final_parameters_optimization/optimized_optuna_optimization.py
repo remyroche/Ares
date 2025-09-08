@@ -14,6 +14,7 @@ from .utils.logger import setup_logging
 import pandas as pd
 import numpy as np
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 # src/training/steps/optimized_optuna_optimization.py
 

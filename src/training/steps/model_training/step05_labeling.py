@@ -4,6 +4,7 @@ from ...core.decorators import handles_errors
 from pathlib import Path
 import json
 from src.training.base_step import BaseStep
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """
 Step 5: Labeling - Refactored to use BaseStep.

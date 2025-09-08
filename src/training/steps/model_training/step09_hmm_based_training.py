@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 import os
 from src.utils.decorators import handles_errors
 from ..enhanced_error_handling import (
+from ..standardized_parquet_handler import standardized_parquet_handler
     enhanced_async_error_handler,
     critical_async_process,
     CriticalProcessError,

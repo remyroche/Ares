@@ -3,6 +3,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Fractional Triple Barrier Labeling for enhanced model training.
 

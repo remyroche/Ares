@@ -3,6 +3,7 @@ from . import missing_data_downloader_and_gap_filler  # noqa: F401
 import pandas as pd
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors, traced, validates
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Data Gap Detector for Step1.
 
@@ -326,7 +327,7 @@ class DataGapDetector:
                 if file_path.suffix.lower() == ".csv":
                     df = pd.read_csv(file_path, parse_dates=["timestamp"])
                 else:
-                    df = pd.read_parquet(file_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
 
                 if len(df) < 2:
                     continue

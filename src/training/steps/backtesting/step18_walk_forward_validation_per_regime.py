@@ -1,5 +1,6 @@
 from src.core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from ..standardized_parquet_handler import standardized_parquet_handler
 
 """Step 18: Walk Forward Validation - Per-Regime Implementation.
 
@@ -499,7 +500,7 @@ class PerRegimeWalkForwardValidationStep(Step18WalkForwardValidation):
             # Try to load regime-specific training data first
             regime_data_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_regime_{timeframe}_cluster_{regime_id}_train.parquet'
             if regime_data_path.exists():
-                data = pd.read_parquet(regime_data_path)
+                data = standardized_parquet_handler.read_parquet_standardized(regime_data_path)
                 self.logger.info(f'✅ Loaded regime-specific training data: {regime_data_path}')
                 return data
 
@@ -1285,7 +1286,7 @@ async def run_per_regime_step(symbol: str, exchange: str, timeframe: str, data_d
     if config is None:
         config = {}
     if data_dir is None:
-        data_dir = pipeline_standards.build_path('processed_data', exchange, symbol)
+        data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     config['per_regime_walk_forward_validation'] = True
     step = PerRegimeWalkForwardValidationStep(config)
     success = await step.execute_per_regime_walk_forward_validation(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)

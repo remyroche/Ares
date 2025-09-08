@@ -21,7 +21,17 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
-import numpy as np
+# import numpy as np  # Commented out for compatibility
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    # Create a simple replacement for basic functionality
+    class np:
+        @staticmethod
+        def array(data):
+            return data
 
 # Import existing analyzers
 from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer

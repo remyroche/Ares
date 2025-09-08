@@ -1,6 +1,16 @@
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
-import numpy as np
+# import numpy as np  # Commented out for compatibility
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    # Create a simple replacement for basic functionality
+    class np:
+        @staticmethod
+        def array(data):
+            return data
 
 """
 Enhanced Dead Code Analyzer

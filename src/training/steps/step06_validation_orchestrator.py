@@ -33,7 +33,7 @@ from .step06_utility_container import (
 
 try:
     from .step06_enhanced_validation_framework import get_step06_validation_summary, reset_step06_validation_tracking, ValidationLevel, FunctionStatus
-import time
+    import time
 
     VALIDATION_FRAMEWORK_AVAILABLE = True
 except ImportError as e:

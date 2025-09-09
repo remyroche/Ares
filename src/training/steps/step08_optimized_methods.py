@@ -22,6 +22,35 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 from sklearn.preprocessing import StandardScaler
 
+# Try to import optional dependencies
+try:
+    import numba
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+
+try:
+    from joblib import Parallel, delayed
+    JOBLIB_AVAILABLE = True
+except ImportError:
+    JOBLIB_AVAILABLE = False
+    Parallel = None
+    delayed = None
+
+try:
+    from concurrent.futures import ThreadPoolExecutor
+except ImportError:
+    ThreadPoolExecutor = None
+
+# Define fallback functions if numba is not available
+def fast_correlation_matrix(X):
+    """Fallback correlation matrix calculation."""
+    return np.corrcoef(X.T)
+
+def fast_mutual_info_discrete(X, y):
+    """Fallback mutual information calculation."""
+    return mutual_info_classif(X, y, random_state=42)
+
 # Add methods to the OptimizedStep08 class
 class OptimizedStep08Methods:
     """Optimized methods for Step08 with computational optimizations."""
@@ -1166,7 +1195,7 @@ class OptimizedStep08Methods:
             if len(class_distributions) > 1:
                 class_stability = np.std(class_distributions) / np.mean(class_distributions)
                 if class_stability > 0.5:  # High variation in class counts
-                    validation_results['recommendations'].append(".2f"
+                    validation_results['recommendations'].append(f"High class distribution variation: {class_stability:.2f}")
             # Provide optimal parameters
             optimal_n_splits = min(n_splits, max(2, len(X) // min_samples_per_fold))
             if optimal_n_splits != n_splits:

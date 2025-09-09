@@ -307,9 +307,18 @@ class MLTrainingSafeguards:
                 'test_size': test_size
             }
 
-            logger.info(f"✅ CV Results - Accuracy: {results['direction_accuracy_mean']:.4f} ± {results['direction_accuracy_std']:.4f}")
-            logger.info(f"✅ CV Results - Balanced Accuracy: {results['balanced_accuracy_mean']:.4f} ± {results['balanced_accuracy_std']:.4f}")
-            logger.info(f"✅ CV Results - F1 Macro: {results['f1_mean']:.4f} ± {results['f1_std']:.4f}")
+            acc_mean, acc_std = results.get('direction_accuracy_mean'), results.get('direction_accuracy_std')
+            bal_mean, bal_std = results.get('balanced_accuracy_mean'), results.get('balanced_accuracy_std')
+            f1_mean, f1_std = results.get('f1_mean'), results.get('f1_std')
+            acc_mean_s = f"{acc_mean:.4f}" if isinstance(acc_mean, (int, float, np.floating)) else str(acc_mean)
+            acc_std_s  = f"{acc_std:.4f}" if isinstance(acc_std,  (int, float, np.floating)) else str(acc_std)
+            bal_mean_s = f"{bal_mean:.4f}" if isinstance(bal_mean, (int, float, np.floating)) else str(bal_mean)
+            bal_std_s  = f"{bal_std:.4f}" if isinstance(bal_std,  (int, float, np.floating)) else str(bal_std)
+            f1_mean_s  = f"{f1_mean:.4f}" if isinstance(f1_mean,  (int, float, np.floating)) else str(f1_mean)
+            f1_std_s   = f"{f1_std:.4f}" if isinstance(f1_std,   (int, float, np.floating)) else str(f1_std)
+            logger.info(f"✅ CV Results - Accuracy: {acc_mean_s} ± {acc_std_s}")
+            logger.info(f"✅ CV Results - Balanced Accuracy: {bal_mean_s} ± {bal_std_s}")
+            logger.info(f"✅ CV Results - F1 Macro: {f1_mean_s} ± {f1_std_s}")
 
             return results
 
@@ -391,12 +400,20 @@ class MLTrainingSafeguards:
 
             # Data quality assessment
             if len(y_test) > 0:
-                unique_classes = np.unique(y_test)
+                unique_vals, counts = np.unique(y_test, return_counts=True)
+                class_dist = dict(zip(unique_vals.tolist(), counts.tolist()))
+                is_balanced = False
+                try:
+                    if len(unique_vals) > 1:
+                        ratio_std = np.std(counts / counts.sum())
+                        is_balanced = ratio_std < 0.1
+                except Exception:
+                    is_balanced = False
                 metrics['data_quality'] = {
                     'n_test_samples': len(X_test),
-                    'n_classes': len(unique_classes),
-                    'class_distribution': dict(zip(unique_classes, np.bincount(y_test.astype(int)))),
-                    'is_balanced': len(unique_classes) > 1 and np.std(np.bincount(y_test.astype(int))) < 0.1 * len(y_test)
+                    'n_classes': len(unique_vals),
+                    'class_distribution': class_dist,
+                    'is_balanced': is_balanced
                 }
 
             return metrics

@@ -44,7 +44,7 @@ try:
     from src.utils.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
     from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
     from src.utils.vectorized_processing_core import get_vectorized_processing_core
-    from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
+    from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager, OptimizationProfile, WorkloadType, OptimizationStrategy
     from src.utils.optimized_data_manager import get_optimized_data_manager
     import json
@@ -86,7 +86,7 @@ class AnalystCreationStep:
                 self.memory_optimizer = get_m1_memory_optimizer()
                 self.cpu_optimizer = get_m1_cpu_optimizer()
                 self.vectorized_core = get_vectorized_processing_core()
-                self.matrix_ops = get_enhanced_matrix_operations()
+                self.matrix_ops = EnhancedMatrixOperations()
                 self.optimization_manager = get_step_optimization_manager()
                 self.data_manager = get_optimized_data_manager()
                 

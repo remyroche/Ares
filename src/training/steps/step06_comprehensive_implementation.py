@@ -211,6 +211,8 @@ class Step06ComprehensiveImplementation:
             if not validation_results['is_valid']:
                 results['errors'].extend(validation_results['errors'])
                 results['pipeline_status'] = 'failed_validation'
+                # Ensure resources are released before returning
+                await self.cleanup()
                 return results
             
             # Step 2: Enhanced feature engineering with utilities
@@ -277,7 +279,9 @@ class Step06ComprehensiveImplementation:
             results['pipeline_status'] = 'failed'
             results['errors'].append(str(e))
             self.performance_metrics['validation_errors'] += 1
-        
+
+        # Final cleanup before returning irrespective of success or failure
+        await self.cleanup()
         return results
 
     @inject_utilities('common_ops', 'data_proc', 'math_val', 'parquet', 'serialization')
@@ -377,21 +381,15 @@ class Step06ComprehensiveImplementation:
                 # Calculate returns with safe division
                 returns = market_data['close'].pct_change()
                 
-                # Create labels based on return thresholds
-                labels = pd.Series(index=market_data.index, dtype='float64')
-                
-                for i, return_val in enumerate(returns):
-                    if pd.isna(return_val):
-                        labels.iloc[i] = np.nan
-                    elif math_val.validate_finite(return_val):
-                        if return_val > 0.004:  # 0.4% profit take
-                            labels.iloc[i] = 1.0
-                        elif return_val < -0.003:  # 0.3% stop loss
-                            labels.iloc[i] = -1.0
-                        else:
-                            labels.iloc[i] = 0.0
-                    else:
-                        labels.iloc[i] = np.nan
+                # Vectorised label assignment for significant speed-up on large datasets
+                labels = pd.cut(
+                    returns,
+                    bins=[-np.inf, -0.003, 0.004, np.inf],
+                    labels=[-1, 0, 1]
+                ).astype("Int8")
+
+                # Align index in case pct_change introduces NaNs at the head
+                labels = labels.reindex(market_data.index)
                 
                 # Use data processing utilities for label validation
                 if data_proc and data_proc.validator:
@@ -428,23 +426,26 @@ class Step06ComprehensiveImplementation:
             if m1_memory and m1_memory.optimizer:
                 # Use M1 memory optimizer for chunked processing
                 chunk_size = self.utility_config.data_processing_chunk_size
-                
-                # Process features in chunks
-                feature_chunks = list(m1_memory.optimizer.chunked_dataframe_processor(features, chunk_size))
-                self.logger.info(f"Features processed in {len(feature_chunks)} chunks")
-                
-                # Optimize memory usage
+
+                # Stream chunks without materialising the entire list in memory
+                cleaned_chunks = []
+                chunk_count = 0
+                for chunk in m1_memory.optimizer.chunked_dataframe_processor(features, chunk_size):
+                    chunk_count += 1
+                    if data_proc and data_proc.cleaner:
+                        chunk = data_proc.cleaner.clean_dataframe(chunk)
+                    cleaned_chunks.append(chunk)
+
+                self.logger.info(f"Features processed in {chunk_count} chunks")
+
+                # Concatenate cleaned dataframes back together
+                cleaned_features = pd.concat(cleaned_chunks, axis=0)
+
+                # Final memory optimisation pass
                 m1_memory.optimizer.optimize_memory()
-                
-                # Use data processing utilities for memory-efficient operations
-                if data_proc and data_proc.cleaner:
-                    # Clean data to reduce memory usage
-                    cleaned_features = data_proc.cleaner.clean_dataframe(features)
-                    optimized_data['features'] = cleaned_features
-                    optimized_data['memory_optimization_applied'] = True
-                
-                self.performance_metrics['utility_operations_count'] += 1
-                self.logger.info("✅ Memory optimization with M1 utilities completed")
+
+                optimized_data['features'] = cleaned_features
+                optimized_data['memory_optimization_applied'] = True
             
             return optimized_data
             
@@ -484,7 +485,7 @@ class Step06ComprehensiveImplementation:
                         performance_results['gpu_optimization_applied'] = True
                         self.logger.info("✅ GPU optimization applied")
                 except Exception as e:
-                    self.logger.warning(f"GPU optimization failed: {e}")
+                    self.logger.exception(f"GPU optimization failed: {e}")
             
             # CPU optimization
             if m1_cpu and m1_cpu.optimizer:
@@ -502,7 +503,7 @@ class Step06ComprehensiveImplementation:
                     performance_results['cpu_optimization_applied'] = True
                     self.logger.info("✅ CPU optimization applied")
                 except Exception as e:
-                    self.logger.warning(f"CPU optimization failed: {e}")
+                    self.logger.exception(f"CPU optimization failed: {e}")
             
             self.performance_metrics['utility_operations_count'] += 1
             return performance_results
@@ -738,7 +739,9 @@ class Step06ComprehensiveImplementation:
             
             # Check for timestamp gaps
             time_diffs = data.index.to_series().diff().dt.total_seconds()
-            large_gaps = (time_diffs > 0.5).sum()
+            expected_gap = time_diffs.median()
+            threshold = expected_gap * 1.5 if pd.notna(expected_gap) else 0.5
+            large_gaps = (time_diffs > threshold).sum()
             if large_gaps > 0:
                 warnings.append(f"Timestamp gaps detected: {large_gaps} gaps >0.5s")
             

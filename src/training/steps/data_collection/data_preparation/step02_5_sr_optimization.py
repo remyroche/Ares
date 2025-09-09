@@ -1924,8 +1924,14 @@ class SROptimizationStep(BaseStep):
             # Split data
             self.logger.info('✂️ Splitting data into train/test sets...')
             X_train, X_test, y_dir_train, y_dir_test, y_vol_train, y_vol_test = train_test_split(
-                X_selected, y_dir_selected, y_vol_selected, test_size=0.2, random_state=42, stratify=y_dir_selected
+                X_selected,
+                y_dir_selected,
+                y_vol_selected,
+                test_size=0.2,
+                random_state=42,
+                shuffle=False  # Preserve temporal ordering to avoid forward-looking bias
             )
+            # Note: stratify not used because shuffle=False; we rely on temporal integrity instead of class balancing here.
 
             # Memory cleanup after data splitting - delete original selected data
             import gc
@@ -3068,22 +3074,36 @@ class SROptimizationStep(BaseStep):
             self._log_filtered_sr_levels(filtered_sr_levels, sr_levels, current_prices)
             
             # Extract prices from filtered S/R levels (they're already SRLevel objects)
-            support_prices = []
-            resistance_prices = []
+            support_prices: List[Tuple[float, Optional[pd.Timestamp]]] = []
+            resistance_prices: List[Tuple[float, Optional[pd.Timestamp]]] = []
             
             # Extract prices from filtered support levels
             for level in filtered_sr_levels.get('support_levels', []):
+                price: Optional[float] = None
+                detected_at: Optional[pd.Timestamp] = None
+
                 if hasattr(level, 'price'):
-                    support_prices.append(level.price)
+                    price = float(level.price)
+                    detected_at = getattr(level, 'detected_at', None)
                 elif isinstance(level, (int, float)) and not np.isnan(level):
-                    support_prices.append(level)
+                    price = float(level)
+
+                if price is not None:
+                    support_prices.append((price, detected_at))
             
             # Extract prices from filtered resistance levels  
             for level in filtered_sr_levels.get('resistance_levels', []):
+                price: Optional[float] = None
+                detected_at: Optional[pd.Timestamp] = None
+
                 if hasattr(level, 'price'):
-                    resistance_prices.append(level.price)
+                    price = float(level.price)
+                    detected_at = getattr(level, 'detected_at', None)
                 elif isinstance(level, (int, float)) and not np.isnan(level):
-                    resistance_prices.append(level)
+                    price = float(level)
+
+                if price is not None:
+                    resistance_prices.append((price, detected_at))
             
             target_data = pd.DataFrame(index=features_data.index)
 
@@ -3707,15 +3727,24 @@ class SROptimizationStep(BaseStep):
     def _is_feature_constant(self, feature_series: pd.Series) -> bool:
         """Check if a feature is constant (all values are the same)."""
         try:
-            # Handle NaN values
-            non_null_values = feature_series.dropna()
-            if len(non_null_values) == 0:
-                return True  # All NaN values are considered constant
-            
-            # Check if all non-null values are the same
-            return non_null_values.nunique() <= 1
+            # Remove NaNs first
+            cleaned = feature_series.dropna()
+            if cleaned.empty:
+                return True  # treat all-NaN column as constant
+
+            # Use robust std check because float rounding can make nunique>1 even when constant
+            std = cleaned.astype(float).std(ddof=0)
+            if np.isfinite(std) and std < 1e-12:
+                return True
+
+            # Fallback to nunique for non-numeric dtypes
+            if not np.issubdtype(cleaned.dtype, np.number):
+                return cleaned.nunique() <= 1
+
+            return False
         except Exception:
-            return False  # If we can't determine, assume not constant
+            # On any unexpected error assume the column is NOT constant so it is kept
+            return False
 
     def _validate_temporal_integrity(self, features_data: pd.DataFrame) -> Dict[str, Any]:
         """Validate that data maintains temporal integrity and no forward bias."""

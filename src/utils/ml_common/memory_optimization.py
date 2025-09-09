@@ -592,8 +592,9 @@ class GPUMemoryPool:
                 # Force cleanup
                 self.cleanup()
 
-            # Allocate tensor
-            tensor = torch.zeros(shape, dtype=dtype, device='mps' if torch.backends.mps.is_available() else 'cpu')
+            # Allocate tensor on best available device (cuda > mps > cpu)
+            device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+            tensor = torch.zeros(shape, dtype=dtype, device=device)
 
             # Track allocation
             self.allocated_tensors.append(tensor)

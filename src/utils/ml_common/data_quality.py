@@ -643,7 +643,8 @@ class DataQualityUtilities:
                 )
 
                 if 'outlier_indices' in outlier_results and outlier_results['outlier_indices']:
-                    cleaned_df = cleaned_df.drop(outlier_results['outlier_indices'])
+                    idx_labels = cleaned_df.index[outlier_results['outlier_indices']]
+                    cleaned_df = cleaned_df.drop(index=idx_labels)
                     cleaning_report['removed_samples'] += len(outlier_results['outlier_indices'])
                     cleaning_report['cleaning_steps'].append({
                         'step': 'outlier_removal',

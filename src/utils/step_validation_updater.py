@@ -122,7 +122,7 @@ class StepValidationUpdater:
     def update_all_steps(self) -> Dict[str, bool]:
         """Update all known steps with validation."""
         update_results = {}
-        steps_to_update = ['step06_advanced_feature_engineering', 'step07_enhanced_matrix_operations', 'step08_advanced_feature_selection', 'step09_hmm_based_training', 'step10_unified_regime_intelligence', 'step11_analyst_creation', 'step12_analyst_enhancement', 'step13_analyst_ensemble_creation', 'step14_tactician_labeling', 'step15_tactician_specialist_training', 'step16_confidence_calibration', 'step17_parameter_optimization', 'step18_walk_forward_validation', 'step19_monte_carlo_validation', 'step20_ab_testing', 'step21_model_persistence']
+        steps_to_update = ['step06_advanced_feature_engineering', 'step08_advanced_feature_selection', 'step09_hmm_based_training', 'step10_unified_regime_intelligence', 'step11_analyst_creation', 'step12_analyst_enhancement', 'step13_analyst_ensemble_creation', 'step14_tactician_labeling', 'step15_tactician_specialist_training', 'step16_confidence_calibration', 'step17_parameter_optimization', 'step18_walk_forward_validation', 'step19_monte_carlo_validation', 'step20_ab_testing', 'step21_model_persistence']
         for step_name in steps_to_update:
             try:
                 step_class = self._import_step_class(step_name)

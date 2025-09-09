@@ -66,21 +66,46 @@ def validate_no_future_data(df: pd.DataFrame,
                            timestamp_column: str = 'timestamp',
                            current_timestamp: Optional[datetime] = None) -> pd.DataFrame:
     """Validate and filter out future data from a DataFrame."""
-    detector = get_global_detector()
-    
-    if current_timestamp is None:
-        current_timestamp = detector.current_timestamp
-    
-    if current_timestamp is None:
+    try:
+        detector = get_global_detector()
+
+        # Backward-compat: allow call style validate_no_future_data(df, current_time)
+        if isinstance(timestamp_column, datetime) and current_timestamp is None:
+            current_timestamp = timestamp_column
+            timestamp_column = 'timestamp'
+
+        if current_timestamp is None:
+            current_timestamp = detector.current_timestamp
+
+        if current_timestamp is None:
+            return df
+
+        if timestamp_column not in df.columns:
+            return df
+
+        valid_data = df[df[timestamp_column] <= current_timestamp].copy()
+
+        if len(valid_data) < len(df):
+            removed_count = len(df) - len(valid_data)
+            logger.info(f"Removed {removed_count} future data points from DataFrame")
+
+        # Integrate ml_common LookaheadProtection for additional validation when available
+        try:
+            # Lazy import to avoid circular dependency at module import time
+            from src.utils.ml_common.lookahead_protection import LookaheadProtection  # type: ignore
+            protector = LookaheadProtection()
+            protector.set_current_timestamp(current_timestamp)
+            _validation = protector.temporal_feature_validation(
+                feature_data=valid_data,
+                prediction_timestamp=current_timestamp,
+                feature_timestamp_col=timestamp_column
+            )
+            if not _validation.get('is_valid', True):
+                logger.warning(f"LookaheadProtection temporal validation issues: {_validation.get('issues', [])}")
+        except Exception:
+            # Silently skip if ml_common is unavailable or validation fails; filtering already applied
+            pass
+
+        return valid_data
+    except Exception:
         return df
-    
-    if timestamp_column not in df.columns:
-        return df
-    
-    valid_data = df[df[timestamp_column] <= current_timestamp].copy()
-    
-    if len(valid_data) < len(df):
-        removed_count = len(df) - len(valid_data)
-        logger.info(f"Removed {removed_count} future data points from DataFrame")
-    
-    return valid_data

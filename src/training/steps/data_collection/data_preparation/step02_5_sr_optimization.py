@@ -3029,6 +3029,25 @@ def cached_computation(cache_dir: str = "cache/step02_5"):
                     bias_detector.set_current_timestamp(current_time)
                     # Validate no future data
                     data = validate_no_future_data(data, 'timestamp', current_time)
+                    # Optional ml_common quality and lookahead checks
+                    if ML_COMMON_AVAILABLE and self.data_quality_utils:
+                        try:
+                            quality_report = await self.data_quality_utils.perform_comprehensive_validation(
+                                data, symbol=training_input.get('symbol', ''), exchange=training_input.get('exchange', ''), context='step02_5_preprocess'
+                            )
+                            if quality_report.get('has_critical_issues', False):
+                                self.logger.warning(f"⚠️ Data quality critical issues: {quality_report.get('critical_issues', [])}")
+                        except Exception as _qe:
+                            self.logger.warning(f"ML Common DataQualityUtilities validation failed: {_qe}")
+                    if ML_COMMON_AVAILABLE and getattr(self, 'lookahead_protector', None):
+                        try:
+                            lookahead_report = await self.lookahead_protector.detect_and_prevent_leakage(
+                                data, symbol=training_input.get('symbol', ''), exchange=training_input.get('exchange', ''), context='step02_5_preprocess'
+                            )
+                            if lookahead_report.get('has_leakage', False):
+                                self.logger.error(f"🚨 Lookahead leakage indications: {lookahead_report.get('leakage_details', [])}")
+                        except Exception as _le:
+                            self.logger.warning(f"ML Common LookaheadProtection check failed: {_le}")
             if data is None:
                 # Try to load data from the same path that step02 uses
                 self.logger.info('📊 No data in pipeline state, loading from data files...')

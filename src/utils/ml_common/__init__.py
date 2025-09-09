@@ -25,6 +25,7 @@ All utilities are designed to work seamlessly with:
 
 from .base_safeguards import *
 from .cv_utils import *
+from .cv import *
 from .lookahead_protection import *
 from .feature_selection import *
 from .model_evaluation import *
@@ -34,6 +35,11 @@ from .parallel_processing import *
 from .model_registry import *
 from .data_quality import *
 from .pipeline_orchestrator import *
+from .pareto import *
+from .thresholding import *
+from .stability import *
+from .ensembling import *
+from .logging_utils import *
 
 __version__ = "1.0.0"
 __all__ = [
@@ -47,6 +53,10 @@ __all__ = [
 
     # Cross-validation utilities
     'CrossValidationUtilities',
+    'PurgedSplitConfig',
+    'purged_time_series_splits',
+    'analyze_splits',
+    'validate_cv_integrity',
 
     # Lookahead bias protection
     'LookaheadProtection',
@@ -63,6 +73,35 @@ __all__ = [
 
     # Hyperparameter optimization
     'HyperparameterOptimization',
+
+    # Pareto utilities
+    'Solution',
+    'DEFAULT_FINANCIAL_WEIGHTS',
+    'filter_by_constraints',
+    'compute_pareto_front',
+    'select_knee_point',
+    'compute_hypervolume',
+    'scalarize_financial_goals',
+
+    # Thresholding
+    'optimize_threshold',
+    'calibrate_probabilities',
+
+    # Stability utils
+    'feature_selection_stability',
+    'aggregate_time_blocks',
+
+    # Ensembling
+    'simple_blend',
+    'learn_blend_weights',
+    'dynamic_regime_ensemble',
+
+    # Logging utils
+    'TrialLog',
+    'log_trial',
+    'summarize_trials',
+    'start_trial_log',
+    'end_trial_log',
 
     # Memory optimization
     'MemoryEfficientTraining',

@@ -56,6 +56,31 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("Scikit-learn not available - limited HPO functionality")
 
+# Optional ML libraries used in the codebase
+try:
+    from lightgbm import LGBMClassifier, LGBMRegressor
+    LGBM_AVAILABLE = True
+except Exception:
+    LGBM_AVAILABLE = False
+
+try:
+    from xgboost import XGBClassifier, XGBRegressor
+    XGB_AVAILABLE = True
+except Exception:
+    XGB_AVAILABLE = False
+
+try:
+    from catboost import CatBoostClassifier, CatBoostRegressor
+    CATBOOST_AVAILABLE = True
+except Exception:
+    CATBOOST_AVAILABLE = False
+
+try:
+    from ngboost import NGBClassifier, NGBRegressor
+    NGB_AVAILABLE = True
+except Exception:
+    NGB_AVAILABLE = False
+
 
 class HyperparameterOptimization:
     """Advanced hyperparameter optimization utilities."""
@@ -711,6 +736,12 @@ class HyperparameterOptimization:
                 'lambda_l1': {'type': 'float', 'low': 0, 'high': 10},
                 'lambda_l2': {'type': 'float', 'low': 0, 'high': 10}
             },
+            'lightgbm_quantile': {
+                'alpha': {'type': 'float', 'low': 0.1, 'high': 0.9},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
+                'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
+                'num_leaves': {'type': 'int', 'low': 15, 'high': 128}
+            },
             'random_forest': {
                 'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
                 'max_depth': {'type': 'int', 'low': 5, 'high': 50},
@@ -726,6 +757,16 @@ class HyperparameterOptimization:
                 'dropout_rate': {'type': 'float', 'low': 0.0, 'high': 0.5},
                 'batch_size': {'type': 'int', 'low': 16, 'high': 128},
                 'epochs': {'type': 'int', 'low': 10, 'high': 100}
+            },
+            'catboost': {
+                'depth': {'type': 'int', 'low': 4, 'high': 10},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
+                'iterations': {'type': 'int', 'low': 200, 'high': 1000},
+                'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
+            },
+            'ngboost': {
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
+                'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
             }
         }
 
@@ -760,6 +801,11 @@ class HyperparameterOptimization:
 
         return search_space
 
+    def _generate_catboost_search_space(self, n_samples: int, n_features: int,
+                                      n_classes: int, task_type: str) -> Dict[str, Any]:
+        search_space = self.default_search_spaces['catboost'].copy()
+        return search_space
+
     def _generate_rf_search_space(self, n_samples: int, n_features: int,
                                 n_classes: int) -> Dict[str, Any]:
         """Generate Random Forest search space."""
@@ -791,6 +837,82 @@ class HyperparameterOptimization:
             'gamma': {'type': 'categorical', 'choices': ['scale', 'auto', 0.001, 0.01, 0.1, 1.0]},
             'kernel': {'type': 'categorical', 'choices': ['rbf', 'linear', 'poly', 'sigmoid']}
         }
+
+    # ---- Model factories for used models ----
+    def get_model_factory(self, model_type: str, task_type: str = 'classification') -> Callable:
+        """Return a factory(**params) that builds a model of the requested type.
+
+        Supported: 'lightgbm', 'xgboost', 'catboost', 'ngboost', 'lightgbm_quantile'.
+        """
+        mt = model_type.lower()
+
+        def _identity_factory(**params):
+            raise ValueError(f"Unknown model_type: {model_type}")
+
+        if mt == 'lightgbm' and LGBM_AVAILABLE:
+            def factory(**params):
+                if task_type == 'classification':
+                    return LGBMClassifier(n_jobs=-1, random_state=42, **params)
+                return LGBMRegressor(n_jobs=-1, random_state=42, **params)
+            return factory
+
+        if mt == 'lightgbm_quantile' and LGBM_AVAILABLE:
+            def factory(**params):
+                alpha = params.pop('alpha', 0.5)
+                return LGBMRegressor(objective='quantile', alpha=alpha, n_jobs=-1, random_state=42, **params)
+            return factory
+
+        if mt == 'xgboost' and XGB_AVAILABLE:
+            def factory(**params):
+                base = {
+                    'n_estimators': params.pop('n_estimators', 200),
+                    'max_depth': params.pop('max_depth', 6),
+                    'learning_rate': params.pop('learning_rate', 0.1),
+                    'subsample': params.pop('subsample', 0.8),
+                    'colsample_bytree': params.pop('colsample_bytree', 0.8),
+                    'reg_alpha': params.pop('reg_alpha', 0.0),
+                    'reg_lambda': params.pop('reg_lambda', 1.0),
+                    'random_state': 42,
+                    'n_jobs': 1,  # outer CV controls parallelism
+                }
+                base.update(params)
+                if task_type == 'classification':
+                    return XGBClassifier(**base)
+                return XGBRegressor(**base)
+            return factory
+
+        if mt == 'catboost' and CATBOOST_AVAILABLE:
+            def factory(**params):
+                base = {
+                    'depth': params.pop('depth', 6),
+                    'learning_rate': params.pop('learning_rate', 0.1),
+                    'iterations': params.pop('iterations', 600),
+                    'l2_leaf_reg': params.pop('l2_leaf_reg', 3.0),
+                    'random_seed': 42,
+                    'thread_count': 1,
+                    'verbose': False,
+                }
+                base.update(params)
+                if task_type == 'classification':
+                    return CatBoostClassifier(**base)
+                return CatBoostRegressor(**base)
+            return factory
+
+        if mt == 'ngboost' and NGB_AVAILABLE:
+            def factory(**params):
+                base = {
+                    'n_estimators': params.pop('n_estimators', 400),
+                    'learning_rate': params.pop('learning_rate', 0.05),
+                    'random_state': 42,
+                    'natural_gradient': True,
+                }
+                base.update(params)
+                if task_type == 'classification':
+                    return NGBClassifier(**base)
+                return NGBRegressor(**base)
+            return factory
+
+        return _identity_factory
 
     def _generate_generic_search_space(self, model_type: str) -> Dict[str, Any]:
         """Generate generic search space for unknown model types."""

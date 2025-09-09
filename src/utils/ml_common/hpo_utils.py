@@ -294,7 +294,9 @@ class HyperparameterOptimization:
                 'final_patience_counter': patience_counter
             }
 
-            self.logger.info(f"✅ Early stopping optimization completed - Best score: {results['best_score']:.4f}")
+            best_val = results.get('best_score')
+            best_str = f"{best_val:.4f}" if isinstance(best_val, (int, float, np.floating)) else str(best_val)
+            self.logger.info(f"✅ Early stopping optimization completed - Best score: {best_str}")
             return results
 
         except Exception as e:
@@ -444,7 +446,9 @@ class HyperparameterOptimization:
                 'parameter_importance': self._calculate_parameter_importance(study)
             }
 
-            self.logger.info(f"✅ Bayesian optimization completed - Best score: {results['best_score']:.4f}")
+            best_val2 = results.get('best_score')
+            best_str2 = f"{best_val2:.4f}" if isinstance(best_val2, (int, float, np.floating)) else str(best_val2)
+            self.logger.info(f"✅ Bayesian optimization completed - Best score: {best_str2}")
             return results
 
         except Exception as e:

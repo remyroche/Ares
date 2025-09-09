@@ -323,9 +323,18 @@ class MLTrainingSafeguards:
                 'test_size': test_size
             }
 
-            logger.info(f"✅ CV Results - Accuracy: {results['direction_accuracy_mean']:.4f} ± {results['direction_accuracy_std']:.4f}")
-            logger.info(f"✅ CV Results - Balanced Accuracy: {results['balanced_accuracy_mean']:.4f} ± {results['balanced_accuracy_std']:.4f}")
-            logger.info(f"✅ CV Results - F1 Macro: {results['f1_mean']:.4f} ± {results['f1_std']:.4f}")
+            acc_mean, acc_std = results.get('direction_accuracy_mean'), results.get('direction_accuracy_std')
+            bal_mean, bal_std = results.get('balanced_accuracy_mean'), results.get('balanced_accuracy_std')
+            f1_mean, f1_std = results.get('f1_mean'), results.get('f1_std')
+            acc_mean_s = f"{acc_mean:.4f}" if isinstance(acc_mean, (int, float, np.floating)) else str(acc_mean)
+            acc_std_s  = f"{acc_std:.4f}" if isinstance(acc_std,  (int, float, np.floating)) else str(acc_std)
+            bal_mean_s = f"{bal_mean:.4f}" if isinstance(bal_mean, (int, float, np.floating)) else str(bal_mean)
+            bal_std_s  = f"{bal_std:.4f}" if isinstance(bal_std,  (int, float, np.floating)) else str(bal_std)
+            f1_mean_s  = f"{f1_mean:.4f}" if isinstance(f1_mean,  (int, float, np.floating)) else str(f1_mean)
+            f1_std_s   = f"{f1_std:.4f}" if isinstance(f1_std,   (int, float, np.floating)) else str(f1_std)
+            logger.info(f"✅ CV Results - Accuracy: {acc_mean_s} ± {acc_std_s}")
+            logger.info(f"✅ CV Results - Balanced Accuracy: {bal_mean_s} ± {bal_std_s}")
+            logger.info(f"✅ CV Results - F1 Macro: {f1_mean_s} ± {f1_std_s}")
 
             return results
 

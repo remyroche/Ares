@@ -185,8 +185,9 @@ class CrossValidationUtilities:
                     cv_results['training_times'].append(training_time)
                     cv_results['prediction_times'].append(prediction_time)
 
-                    self.logger.info(f"✅ Fold {fold_idx + 1} completed - "
-                                   f"Accuracy: {fold_metrics.get('accuracy', 'N/A'):.4f}")
+                    acc_val = fold_metrics.get('accuracy')
+                    acc_str = f"{acc_val:.4f}" if isinstance(acc_val, (int, float, np.floating)) else str(acc_val)
+                    self.logger.info(f"✅ Fold {fold_idx + 1} completed - Accuracy: {acc_str}")
 
                 except Exception as fold_e:
                     self.logger.warning(f"⚠️ Fold {fold_idx + 1} failed: {fold_e}")
@@ -197,8 +198,9 @@ class CrossValidationUtilities:
                 cv_results['metrics'] = self._aggregate_cv_metrics(cv_results['fold_metrics'])
                 cv_results['summary'] = self._create_cv_summary(cv_results)
 
-                self.logger.info(f"✅ Temporal CV completed: "
-                               f"Mean accuracy: {cv_results['metrics'].get('accuracy_mean', 'N/A'):.4f}")
+                mean_acc = cv_results['metrics'].get('accuracy_mean') if isinstance(cv_results.get('metrics'), dict) else None
+                mean_acc_str = f"{mean_acc:.4f}" if isinstance(mean_acc, (int, float, np.floating)) else str(mean_acc) if mean_acc is not None else "N/A"
+                self.logger.info(f"✅ Temporal CV completed: Mean accuracy: {mean_acc_str}")
             else:
                 self.logger.error("❌ No folds completed successfully")
                 cv_results['error'] = "No successful folds"
@@ -309,8 +311,9 @@ class CrossValidationUtilities:
                     # Move to next position
                     current_position += step_size
 
-                    self.logger.info(f"✅ Iteration {len(wfv_results['iterations'])} completed - "
-                                   f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
+                    it_acc = metrics.get('accuracy')
+                    it_acc_str = f"{it_acc:.4f}" if isinstance(it_acc, (int, float, np.floating)) else str(it_acc)
+                    self.logger.info(f"✅ Iteration {len(wfv_results['iterations'])} completed - Accuracy: {it_acc_str}")
 
                 except Exception as iter_e:
                     self.logger.warning(f"⚠️ Walk-forward iteration failed: {iter_e}")
@@ -323,9 +326,9 @@ class CrossValidationUtilities:
                 wfv_results['metrics'] = self._aggregate_cv_metrics(all_metrics)
                 wfv_results['summary'] = self._create_wfv_summary(wfv_results)
 
-                self.logger.info(f"✅ Walk-forward validation completed: "
-                               f"{len(wfv_results['iterations'])} iterations, "
-                               f"Mean accuracy: {wfv_results['metrics'].get('accuracy_mean', 'N/A'):.4f}")
+                wfv_mean_acc = wfv_results['metrics'].get('accuracy_mean') if isinstance(wfv_results.get('metrics'), dict) else None
+                wfv_mean_acc_str = f"{wfv_mean_acc:.4f}" if isinstance(wfv_mean_acc, (int, float, np.floating)) else str(wfv_mean_acc) if wfv_mean_acc is not None else "N/A"
+                self.logger.info(f"✅ Walk-forward validation completed: {len(wfv_results['iterations'])} iterations, Mean accuracy: {wfv_mean_acc_str}")
             else:
                 self.logger.error("❌ No walk-forward iterations completed")
 
@@ -513,8 +516,9 @@ class CrossValidationUtilities:
                 'test_set_size': len(X_test)
             }
 
-            self.logger.info(f"✅ Out-of-sample evaluation completed - "
-                           f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
+            oos_acc = metrics.get('accuracy')
+            oos_acc_str = f"{oos_acc:.4f}" if isinstance(oos_acc, (int, float, np.floating)) else str(oos_acc)
+            self.logger.info(f"✅ Out-of-sample evaluation completed - Accuracy: {oos_acc_str}")
 
             return metrics
 
@@ -571,7 +575,13 @@ class CrossValidationUtilities:
                 metrics['balanced_accuracy'] = balanced_accuracy_score(y_true, y_pred)
 
                 if len(unique_values) == 2:  # Binary classification
-                    metrics['f1'] = f1_score(y_true, y_pred, average='binary')
+                    try:
+                        # Choose positive label robustly
+                        labels_sorted = np.sort(unique_values)
+                        pos_label = labels_sorted[-1]
+                        metrics['f1'] = f1_score(y_true, y_pred, pos_label=pos_label)
+                    except Exception:
+                        metrics['f1'] = f1_score(y_true, y_pred, average='macro')
                     if y_pred_proba is not None:
                         try:
                             metrics['roc_auc'] = roc_auc_score(y_true, y_pred_proba[:, 1])

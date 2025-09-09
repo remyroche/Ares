@@ -691,13 +691,13 @@ class ModelEvaluationUtilities:
             }
 
             if task_type == 'classification':
-                unique_classes = np.unique(y_true)
+                unique_classes, class_counts = np.unique(y_true, return_counts=True)
                 characteristics.update({
                     'n_classes': len(unique_classes),
-                    'class_distribution': dict(zip(unique_classes, np.bincount(y_true.astype(int)))),
+                    'class_distribution': dict(zip(unique_classes.tolist(), class_counts.tolist())),
                     'is_binary': len(unique_classes) == 2,
-                    'min_class_samples': int(np.min(np.bincount(y_true.astype(int)))),
-                    'max_class_samples': int(np.max(np.bincount(y_true.astype(int))))
+                    'min_class_samples': int(np.min(class_counts)),
+                    'max_class_samples': int(np.max(class_counts))
                 })
 
                 if y_prob is not None:

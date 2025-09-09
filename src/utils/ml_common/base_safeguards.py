@@ -407,12 +407,20 @@ class MLTrainingSafeguards:
 
             # Data quality assessment
             if len(y_test) > 0:
-                unique_classes = np.unique(y_test)
+                unique_vals, counts = np.unique(y_test, return_counts=True)
+                class_dist = dict(zip(unique_vals.tolist(), counts.tolist()))
+                is_balanced = False
+                try:
+                    if len(unique_vals) > 1:
+                        ratio_std = np.std(counts / counts.sum())
+                        is_balanced = ratio_std < 0.1
+                except Exception:
+                    is_balanced = False
                 metrics['data_quality'] = {
                     'n_test_samples': len(X_test),
-                    'n_classes': len(unique_classes),
-                    'class_distribution': dict(zip(unique_classes, np.bincount(y_test.astype(int)))),
-                    'is_balanced': len(unique_classes) > 1 and np.std(np.bincount(y_test.astype(int))) < 0.1 * len(y_test)
+                    'n_classes': len(unique_vals),
+                    'class_distribution': class_dist,
+                    'is_balanced': is_balanced
                 }
 
             return metrics

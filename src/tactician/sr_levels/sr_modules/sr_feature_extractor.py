@@ -1,9 +1,9 @@
-from ...core.decorators import handles_errors
+from src.core.decorators import handles_errors
 """Support/Resistance Feature Extractor Module."""
 
 from typing import Any, Dict, List
 
-from ...utils.logger import system_logger
+from src.utils.logger import system_logger
 import numpy as np
 import pandas as pd
 import logging
@@ -92,28 +92,53 @@ class SRFeatureExtractor:
         try:
             features = {}
             
+            if market_data.empty:
+                return features
+                
+            data_length = len(market_data)
+            
             # Price position in range
-            high_20 = market_data["high"].rolling(20).max().iloc[-1]
-            low_20 = market_data["low"].rolling(20).min().iloc[-1]
-            if high_20 > low_20:
-                price_position = (current_price - low_20) / (high_20 - low_20)
+            if data_length >= 20:
+                high_20 = market_data["high"].rolling(20).max().iloc[-1]
+                low_20 = market_data["low"].rolling(20).min().iloc[-1]
+                if high_20 > low_20:
+                    price_position = (current_price - low_20) / (high_20 - low_20)
+                else:
+                    price_position = 0.5
+                features["price_position_20"] = float(price_position)
             else:
-                price_position = 0.5
-            features["price_position_20"] = float(price_position)
+                features["price_position_20"] = 0.5
             
             # Price relative to moving averages
-            sma_10 = market_data["close"].rolling(10).mean().iloc[-1]
-            sma_20 = market_data["close"].rolling(20).mean().iloc[-1]
-            sma_50 = market_data["close"].rolling(50).mean().iloc[-1]
-            
-            features["price_vs_sma10"] = float((current_price - sma_10) / sma_10)
-            features["price_vs_sma20"] = float((current_price - sma_20) / sma_20)
-            features["price_vs_sma50"] = float((current_price - sma_50) / sma_50)
+            if data_length >= 10:
+                sma_10 = market_data["close"].rolling(10).mean().iloc[-1]
+                features["price_vs_sma10"] = float((current_price - sma_10) / sma_10)
+            else:
+                features["price_vs_sma10"] = 0.0
+                
+            if data_length >= 20:
+                sma_20 = market_data["close"].rolling(20).mean().iloc[-1]
+                features["price_vs_sma20"] = float((current_price - sma_20) / sma_20)
+            else:
+                features["price_vs_sma20"] = 0.0
+                
+            if data_length >= 50:
+                sma_50 = market_data["close"].rolling(50).mean().iloc[-1]
+                features["price_vs_sma50"] = float((current_price - sma_50) / sma_50)
+            else:
+                features["price_vs_sma50"] = 0.0
             
             # Volatility
             returns = market_data["close"].pct_change()
-            features["volatility_20"] = float(returns.rolling(20).std().iloc[-1])
-            features["volatility_50"] = float(returns.rolling(50).std().iloc[-1])
+            if data_length >= 20:
+                features["volatility_20"] = float(returns.rolling(20).std().iloc[-1])
+            else:
+                features["volatility_20"] = 0.0
+                
+            if data_length >= 50:
+                features["volatility_50"] = float(returns.rolling(50).std().iloc[-1])
+            else:
+                features["volatility_50"] = 0.0
             
             return features
             
@@ -136,29 +161,29 @@ class SRFeatureExtractor:
             # Find nearest levels
             nearest_support = min(
                 support_levels,
-                key=lambda x: abs(x["price"] - current_price),
+                key=lambda x: abs(x.price - current_price),
                 default=None
             )
             nearest_resistance = min(
                 resistance_levels,
-                key=lambda x: abs(x["price"] - current_price),
+                key=lambda x: abs(x.price - current_price),
                 default=None
             )
             
             # Support proximity
             if nearest_support:
-                support_distance = (current_price - nearest_support["price"]) / current_price
+                support_distance = (current_price - nearest_support.price) / current_price
                 features["support_proximity"] = float(support_distance)
-                features["nearest_support_strength"] = float(nearest_support["strength"])
+                features["nearest_support_strength"] = float(nearest_support.strength)
             else:
                 features["support_proximity"] = 1.0
                 features["nearest_support_strength"] = 0.0
             
             # Resistance proximity
             if nearest_resistance:
-                resistance_distance = (nearest_resistance["price"] - current_price) / current_price
+                resistance_distance = (nearest_resistance.price - current_price) / current_price
                 features["resistance_proximity"] = float(resistance_distance)
-                features["nearest_resistance_strength"] = float(nearest_resistance["strength"])
+                features["nearest_resistance_strength"] = float(nearest_resistance.strength)
             else:
                 features["resistance_proximity"] = 1.0
                 features["nearest_resistance_strength"] = 0.0
@@ -185,15 +210,15 @@ class SRFeatureExtractor:
             
             # Average strengths
             if support_levels:
-                avg_support_strength = np.mean([l["strength"] for l in support_levels])
-                max_support_strength = max([l["strength"] for l in support_levels])
+                avg_support_strength = np.mean([l.strength for l in support_levels])
+                max_support_strength = max([l.strength for l in support_levels])
             else:
                 avg_support_strength = 0.0
                 max_support_strength = 0.0
                 
             if resistance_levels:
-                avg_resistance_strength = np.mean([l["strength"] for l in resistance_levels])
-                max_resistance_strength = max([l["strength"] for l in resistance_levels])
+                avg_resistance_strength = np.mean([l.strength for l in resistance_levels])
+                max_resistance_strength = max([l.strength for l in resistance_levels])
             else:
                 avg_resistance_strength = 0.0
                 max_resistance_strength = 0.0
@@ -205,8 +230,8 @@ class SRFeatureExtractor:
             
             # Overall strength
             all_strengths = (
-                [l["strength"] for l in support_levels] +
-                [l["strength"] for l in resistance_levels]
+                [l.strength for l in support_levels] +
+                [l.strength for l in resistance_levels]
             )
             features["overall_sr_strength"] = float(
                 np.mean(all_strengths) if all_strengths else 0.0
@@ -295,24 +320,52 @@ class SRFeatureExtractor:
         try:
             features = {}
             
+            if market_data.empty:
+                return features
+                
             close_prices = market_data["close"]
+            data_length = len(close_prices)
             
-            # Rate of change
-            features["roc_5"] = float(close_prices.pct_change(5).iloc[-1])
-            features["roc_10"] = float(close_prices.pct_change(10).iloc[-1])
-            features["roc_20"] = float(close_prices.pct_change(20).iloc[-1])
+            # Rate of change - use available data
+            if data_length > 5:
+                features["roc_5"] = float(close_prices.pct_change(5).iloc[-1])
+            else:
+                features["roc_5"] = 0.0
+                
+            if data_length > 10:
+                features["roc_10"] = float(close_prices.pct_change(10).iloc[-1])
+            else:
+                features["roc_10"] = 0.0
+                
+            if data_length > 20:
+                features["roc_20"] = float(close_prices.pct_change(20).iloc[-1])
+            else:
+                features["roc_20"] = 0.0
             
-            # Momentum
-            features["momentum_10"] = float(
-                (close_prices.iloc[-1] - close_prices.iloc[-10]) / close_prices.iloc[-10]
-            )
-            features["momentum_20"] = float(
-                (close_prices.iloc[-1] - close_prices.iloc[-20]) / close_prices.iloc[-20]
-            )
+            # Momentum - use available data
+            if data_length > 10:
+                features["momentum_10"] = float(
+                    (close_prices.iloc[-1] - close_prices.iloc[-10]) / close_prices.iloc[-10]
+                )
+            else:
+                features["momentum_10"] = 0.0
+                
+            if data_length > 20:
+                features["momentum_20"] = float(
+                    (close_prices.iloc[-1] - close_prices.iloc[-20]) / close_prices.iloc[-20]
+                )
+            else:
+                features["momentum_20"] = 0.0
             
             # Price acceleration
-            roc_5 = close_prices.pct_change(5)
-            features["acceleration"] = float(roc_5.diff().iloc[-1])
+            if data_length > 5:
+                roc_5 = close_prices.pct_change(5)
+                if len(roc_5.dropna()) > 1:
+                    features["acceleration"] = float(roc_5.diff().iloc[-1])
+                else:
+                    features["acceleration"] = 0.0
+            else:
+                features["acceleration"] = 0.0
             
             return features
             
@@ -415,14 +468,21 @@ class SRFeatureExtractor:
         lookback: int = 20
     ) -> int:
         """Count recent tests of S/R levels."""
-        if not levels:
+        if not levels or market_data.empty:
             return 0
             
         count = 0
-        recent_prices = market_data["close"].iloc[-lookback:]
+        # Ensure we don't go out of bounds
+        available_rows = len(market_data)
+        actual_lookback = min(lookback, available_rows)
+        
+        if actual_lookback <= 0:
+            return 0
+            
+        recent_prices = market_data["close"].iloc[-actual_lookback:]
         
         for level in levels:
-            level_price = level["price"]
+            level_price = level.price
             # Check if price came within 0.5% of level
             touches = abs(recent_prices - level_price) / level_price < 0.005
             count += touches.sum()
@@ -445,7 +505,7 @@ class SRFeatureExtractor:
             # Find nearest resistance
             nearest_resistance = min(
                 resistance_levels,
-                key=lambda x: abs(x["price"] - current_price)
+                key=lambda x: abs(x.price - current_price)
             )
             
             # Check momentum toward resistance
@@ -459,7 +519,7 @@ class SRFeatureExtractor:
             
             # Calculate potential
             distance_to_resistance = (
-                (nearest_resistance["price"] - current_price) / current_price
+                (nearest_resistance.price - current_price) / current_price
             )
             
             if distance_to_resistance < 0.01 and momentum > 0 and volume_ratio > 1:

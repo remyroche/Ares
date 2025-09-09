@@ -115,6 +115,8 @@ class HyperparameterOptimization:
                 search_space = self._generate_lightgbm_search_space(n_samples, n_features, n_classes, task_type)
             elif model_type.lower() == 'random_forest':
                 search_space = self._generate_rf_search_space(n_samples, n_features, n_classes)
+            elif model_type.lower() == 'histgradientboostingclassifier':
+                search_space = self._generate_histgb_search_space(n_samples, n_features, n_classes)
             elif model_type.lower() == 'neural_network':
                 search_space = self._generate_nn_search_space(n_samples, n_features, n_classes)
             elif model_type.lower() == 'svm':
@@ -136,7 +138,8 @@ class HyperparameterOptimization:
     def multi_objective_optimization(self, model_factory: Callable,
                                   X: np.ndarray, y: np.ndarray,
                                   objectives: List[str],
-                                  n_trials: int = 50) -> Dict[str, Any]:
+                                  n_trials: int = 50,
+                                  search_space: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Perform multi-objective hyperparameter optimization.
 
@@ -146,6 +149,7 @@ class HyperparameterOptimization:
             y: Target array
             objectives: List of objectives to optimize ('accuracy', 'f1', 'auc', 'speed')
             n_trials: Number of optimization trials
+            search_space: Dictionary defining the search space for hyperparameters
 
         Returns:
             Multi-objective optimization results
@@ -158,10 +162,10 @@ class HyperparameterOptimization:
 
             def objective(trial):
                 # Sample hyperparameters
-                params = self._sample_hyperparameters(trial, model_factory)
+                params = self._sample_hyperparameters(trial, model_factory, search_space)
 
                 # Create and train model
-                model = model_factory(**params)
+                model = model_factory(params)
 
                 # Evaluate multiple objectives
                 scores = {}
@@ -771,6 +775,17 @@ class HyperparameterOptimization:
 
         return search_space
 
+    def _generate_histgb_search_space(self, n_samples: int, n_features: int,
+                                    n_classes: int) -> Dict[str, Any]:
+        """Generate HistGradientBoostingClassifier search space."""
+        return {
+            'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3, 'log': True},
+            'max_iter': {'type': 'int', 'low': 50, 'high': 300, 'step': 10},
+            'max_depth': {'type': 'int', 'low': 3, 'high': 15},
+            'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 20},
+            'l2_regularization': {'type': 'float', 'low': 0.0, 'high': 1.0}
+        }
+
     def _generate_nn_search_space(self, n_samples: int, n_features: int,
                                 n_classes: int) -> Dict[str, Any]:
         """Generate Neural Network search space."""
@@ -830,16 +845,46 @@ class HyperparameterOptimization:
             self.logger.warning(f"Search space adjustment failed: {e}")
             return search_space
 
-    def _sample_hyperparameters(self, trial: Any, model_factory: Callable) -> Dict[str, Any]:
-        """Sample hyperparameters for a trial."""
+    def _sample_hyperparameters(self, trial: Any, model_factory: Callable, search_space: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Sample hyperparameters for a trial based on the provided search space."""
         try:
-            # This is a placeholder - in practice, you'd define specific sampling logic
-            # based on the model type and search space
-            params = {
-                'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.1),
-                'n_estimators': trial.suggest_int('n_estimators', 50, 300),
-                'max_depth': trial.suggest_int('max_depth', 3, 10)
-            }
+            if search_space is None:
+                # Fallback to default parameters if no search space provided
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+                    'max_depth': trial.suggest_int('max_depth', 3, 10)
+                }
+                return params
+
+            params = {}
+            for param_name, param_config in search_space.items():
+                if param_config['type'] == 'int':
+                    params[param_name] = trial.suggest_int(
+                        param_name, 
+                        param_config['low'], 
+                        param_config['high'],
+                        step=param_config.get('step', 1)
+                    )
+                elif param_config['type'] == 'float':
+                    if param_config.get('log', False):
+                        params[param_name] = trial.suggest_float(
+                            param_name, 
+                            param_config['low'], 
+                            param_config['high'],
+                            log=True
+                        )
+                    else:
+                        params[param_name] = trial.suggest_float(
+                            param_name, 
+                            param_config['low'], 
+                            param_config['high']
+                        )
+                elif param_config['type'] == 'categorical':
+                    params[param_name] = trial.suggest_categorical(
+                        param_name, 
+                        param_config['choices']
+                    )
+
             return params
 
         except Exception as e:

@@ -141,13 +141,32 @@ class FeatureSelectionFramework:
 
             # Start with most relevant feature
             if relevance_scores:
-                best_idx = max(relevance_scores.items(), key=lambda x: x[1])[0]
-                best_feature_idx = feature_names.index(best_idx)
-                selected_indices.append(best_feature_idx)
-                remaining_indices.remove(best_feature_idx)
+                try:
+                    best_feature_name = max(relevance_scores.items(), key=lambda x: x[1])[0]
+                    # Ensure best_feature_name is a string and exists in feature_names
+                    if isinstance(best_feature_name, str) and best_feature_name in feature_names:
+                        best_feature_idx = feature_names.index(best_feature_name)
+                        selected_indices.append(best_feature_idx)
+                        remaining_indices.remove(best_feature_idx)
 
-                mrmr_results['selected_features'].append(feature_names[best_feature_idx])
-                mrmr_results['mrmr_scores'][feature_names[best_feature_idx]] = relevance_scores[best_idx]
+                        mrmr_results['selected_features'].append(feature_names[best_feature_idx])
+                        mrmr_results['mrmr_scores'][feature_names[best_feature_idx]] = relevance_scores[best_feature_name]
+                    else:
+                        self.logger.warning(f"⚠️ Invalid feature name in relevance scores: {best_feature_name}")
+                        # Fallback: select first feature
+                        if feature_names:
+                            selected_indices.append(0)
+                            remaining_indices.remove(0)
+                            mrmr_results['selected_features'].append(feature_names[0])
+                            mrmr_results['mrmr_scores'][feature_names[0]] = 0.0
+                except (ValueError, KeyError, TypeError) as e:
+                    self.logger.warning(f"⚠️ Error selecting initial feature: {e}")
+                    # Fallback: select first feature
+                    if feature_names:
+                        selected_indices.append(0)
+                        remaining_indices.remove(0)
+                        mrmr_results['selected_features'].append(feature_names[0])
+                        mrmr_results['mrmr_scores'][feature_names[0]] = 0.0
 
             # Iteratively select features
             while len(selected_indices) < n_features and remaining_indices:
@@ -769,14 +788,27 @@ class FeatureSelectionFramework:
                 else:
                     # Fallback: use correlation for regression-like relevance
                     for idx, feature_name in enumerate(feature_names):
-                        if len(np.unique(y)) <= 10:  # Classification-like
-                            scores[feature_name] = abs(np.corrcoef(X[:, idx], y)[0, 1])
-                        else:  # Regression-like
-                            scores[feature_name] = abs(np.corrcoef(X[:, idx], y)[0, 1])
+                        try:
+                            corr_matrix = np.corrcoef(X[:, idx], y)
+                            if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
+                                corr_value = corr_matrix[0, 1]
+                            else:
+                                corr_value = float(corr_matrix) if np.isscalar(corr_matrix) else 0.0
+                            scores[feature_name] = abs(float(corr_value))
+                        except (ValueError, IndexError, TypeError):
+                            scores[feature_name] = 0.0
 
             elif method == 'correlation':
                 for idx, feature_name in enumerate(feature_names):
-                    scores[feature_name] = abs(np.corrcoef(X[:, idx], y)[0, 1])
+                    try:
+                        corr_matrix = np.corrcoef(X[:, idx], y)
+                        if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
+                            corr_value = corr_matrix[0, 1]
+                        else:
+                            corr_value = float(corr_matrix) if np.isscalar(corr_matrix) else 0.0
+                        scores[feature_name] = abs(float(corr_value))
+                    except (ValueError, IndexError, TypeError):
+                        scores[feature_name] = 0.0
 
             elif method == 'importance':
                 importance_scores = self._calculate_importance_scores(X, y, feature_names)
@@ -798,16 +830,24 @@ class FeatureSelectionFramework:
         """Calculate redundancy score between two features."""
         try:
             if method == 'correlation':
-                return abs(np.corrcoef(feature1, feature2)[0, 1])
+                corr_matrix = np.corrcoef(feature1, feature2)
+                if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
+                    return abs(float(corr_matrix[0, 1]))
+                else:
+                    return abs(float(corr_matrix)) if np.isscalar(corr_matrix) else 0.0
             elif method == 'mutual_info':
                 if SKLEARN_AVAILABLE:
                     mi_score = mutual_info_regression(feature1.reshape(-1, 1), feature2)[0]
-                    return mi_score
+                    return float(mi_score)
                 else:
-                    return abs(np.corrcoef(feature1, feature2)[0, 1])
+                    corr_matrix = np.corrcoef(feature1, feature2)
+                    if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
+                        return abs(float(corr_matrix[0, 1]))
+                    else:
+                        return abs(float(corr_matrix)) if np.isscalar(corr_matrix) else 0.0
             else:
                 return 0.0
-        except:
+        except (ValueError, IndexError, TypeError, np.linalg.LinAlgError):
             return 0.0
 
     def _calculate_importance_scores(self, X: np.ndarray, y: np.ndarray,

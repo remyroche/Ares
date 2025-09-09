@@ -8,20 +8,19 @@ parallel apply for DataFrame workloads and a convenience decorator.
 
 import asyncio
 import logging
+import multiprocessing as mp
 import os
 import platform
 import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from functools import partial, wraps
-from typing import TYPE_CHECKING
+from typing import Callable, Any
+from collections.abc import Iterable
 
 import psutil
 import numpy as np
 import pandas as pd
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -258,3 +257,46 @@ def optimize_for_m1_mac() -> None:
         logger.info(f'   Set OMP_NUM_THREADS={optimizer.max_workers}')
         logger.info(f'   Set MKL_NUM_THREADS={optimizer.max_workers}')
         logger.info(f'   Set OPENBLAS_NUM_THREADS={optimizer.max_workers}')
+
+
+class ParallelProcessor:
+    """
+    Simple parallel processor wrapper for ML Common utilities compatibility.
+    """
+
+    def __init__(self):
+        """Initialize the parallel processor."""
+        self.optimizer = get_parallel_optimizer()
+        self.logger = logger.getChild('ParallelProcessor')
+
+    def process_batch(self, items, func, max_workers=None):
+        """
+        Process items in parallel using the underlying optimizer.
+
+        Args:
+            items: Items to process
+            func: Function to apply to each item
+            max_workers: Maximum number of workers (optional)
+
+        Returns:
+            List of results
+        """
+        if not items:
+            return []
+
+        try:
+            # Use the optimizer's parallel processing capabilities
+            if hasattr(self.optimizer, 'parallel_apply'):
+                # For DataFrame operations
+                if hasattr(items, 'iterrows') or hasattr(items, 'itertuples'):
+                    return self.optimizer.parallel_apply(items, func)
+                else:
+                    # For general iterables
+                    return self.optimizer.parallel_apply(pd.DataFrame({'item': list(items)}), lambda df: df['item'].apply(func))
+            else:
+                # Fallback to sequential processing
+                self.logger.warning("Parallel processing not available, falling back to sequential")
+                return [func(item) for item in items]
+        except Exception as e:
+            self.logger.error(f"Parallel processing failed: {e}, falling back to sequential")
+            return [func(item) for item in items]

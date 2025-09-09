@@ -35,6 +35,7 @@ import warnings
 from ..data_processing_utils import safe_dataframe_operation
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
+from .shared_cache import shared_cache, SharedMLCache
 
 # Enhanced imports for new functionality
 try:
@@ -543,7 +544,17 @@ class DataQualityUtilities:
 
             # Calculate correlation matrix
             if method in ['pearson', 'spearman']:
-                corr_matrix = self._calculate_statistical_correlation(X_array, method)
+                # Cache key by data hash and method
+                key = SharedMLCache.hash_array(X_array) + f"_corr_{method}"
+                cached = shared_cache.get_corr_matrix(key)
+                if cached is not None:
+                    corr_matrix = cached
+                else:
+                    corr_matrix = self._calculate_statistical_correlation(X_array, method)
+                    try:
+                        shared_cache.set_corr_matrix(key, corr_matrix)
+                    except Exception:
+                        pass
             elif method == 'mutual_info':
                 corr_matrix = self._calculate_mutual_info_correlation(X_array)
             else:
@@ -1462,16 +1473,19 @@ class DataQualityUtilities:
             if method == 'pearson':
                 return np.corrcoef(X.T)
             elif method == 'spearman':
-                from scipy.stats import spearmanr
-                corr_matrix = np.zeros((X.shape[1], X.shape[1]))
-                for i in range(X.shape[1]):
-                    for j in range(X.shape[1]):
-                        if i != j:
-                            corr, _ = spearmanr(X[:, i], X[:, j])
-                            corr_matrix[i, j] = corr
-                        else:
-                            corr_matrix[i, j] = 1.0
-                return corr_matrix
+                # Vectorised Spearman: rank-transform then Pearson on ranks
+                try:
+                    import pandas as _pd
+                    ranked = _pd.DataFrame(X).rank(axis=0).to_numpy()
+                except Exception:
+                    # Fallback manual ranking per column
+                    ranked = np.zeros_like(X, dtype=float)
+                    for k in range(X.shape[1]):
+                        order = np.argsort(X[:, k], kind='mergesort')
+                        ranks = np.empty_like(order, dtype=float)
+                        ranks[order] = np.arange(1, len(order) + 1)
+                        ranked[:, k] = ranks
+                return np.corrcoef(ranked.T)
             else:
                 return np.eye(X.shape[1])
         except Exception:

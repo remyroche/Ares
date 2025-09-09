@@ -33,6 +33,8 @@ from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 from ..m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
+from .shared_cache import shared_cache, SharedMLCache
+from .thread_guard import limit_blas_threads
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +133,32 @@ class FeatureSelectionFramework:
                 }
             }
 
-            # Calculate relevance scores
-            relevance_scores = self._calculate_relevance_scores(X, y, feature_names, relevance_method)
+            # Calculate relevance scores with caching
+            mi_key = SharedMLCache.hash_two_arrays(X, y) + f"_relevance_{relevance_method}"
+            cached_scores = shared_cache.get_mi_scores(mi_key)
+            if cached_scores is not None:
+                relevance_scores = cached_scores
+            else:
+                relevance_scores = self._calculate_relevance_scores(X, y, feature_names, relevance_method)
+                try:
+                    shared_cache.set_mi_scores(mi_key, relevance_scores)
+                except Exception:
+                    pass
             mrmr_results['relevance_scores'] = relevance_scores
+
+            # Precompute correlation matrix once for redundancy (cached)
+            corr_key = SharedMLCache.hash_array(X) + f"_corr_{redundancy_method}"
+            corr_matrix = shared_cache.get_corr_matrix(corr_key)
+            if corr_matrix is None:
+                if redundancy_method == 'correlation':
+                    corr_matrix = np.corrcoef(X.T)
+                else:
+                    # Fallback to correlation if MI isn't readily vectorizable here
+                    corr_matrix = np.corrcoef(X.T)
+                try:
+                    shared_cache.set_corr_matrix(corr_key, corr_matrix)
+                except Exception:
+                    pass
 
             # mRMR algorithm
             selected_indices = []
@@ -150,35 +175,23 @@ class FeatureSelectionFramework:
                 mrmr_results['mrmr_scores'][feature_names[best_feature_idx]] = relevance_scores[best_idx]
 
             # Iteratively select features
+            # Early stop parameters
+            epsilon = 1e-4
+            last_best = None
+
             while len(selected_indices) < n_features and remaining_indices:
-                best_score = -np.inf
-                best_idx = None
+                # Vectorised redundancy update using precomputed corr
+                if selected_indices:
+                    redundancy_vec = np.mean(corr_matrix[np.ix_(remaining_indices, selected_indices)], axis=1)
+                else:
+                    redundancy_vec = np.zeros(len(remaining_indices))
 
-                for idx in remaining_indices:
-                    feature_name = feature_names[idx]
+                remaining_relevance = np.array([relevance_scores.get(feature_names[i], 0.0) for i in remaining_indices])
+                mrmr_scores_vec = remaining_relevance - redundancy_vec
 
-                    # Calculate relevance
-                    relevance = relevance_scores.get(feature_name, 0)
-
-                    # Calculate redundancy with already selected features
-                    redundancy = 0
-                    if selected_indices:
-                        redundancy_scores = []
-                        for selected_idx in selected_indices:
-                            selected_name = feature_names[selected_idx]
-                            score = self._calculate_redundancy_score(
-                                X[:, idx], X[:, selected_idx],
-                                feature_name, selected_name, redundancy_method
-                            )
-                            redundancy_scores.append(score)
-                        redundancy = np.mean(redundancy_scores)
-
-                    # mRMR score
-                    mrmr_score = relevance - redundancy
-
-                    if mrmr_score > best_score:
-                        best_score = mrmr_score
-                        best_idx = idx
+                best_local_idx = int(np.argmax(mrmr_scores_vec))
+                best_score = float(mrmr_scores_vec[best_local_idx])
+                best_idx = remaining_indices[best_local_idx]
 
                 if best_idx is not None:
                     selected_indices.append(best_idx)
@@ -193,6 +206,11 @@ class FeatureSelectionFramework:
                         'redundancy': redundancy,
                         'mrmr_score': best_score
                     }
+
+                # Early stopping on marginal gain plateau
+                if last_best is not None and (last_best - best_score) < epsilon and len(selected_indices) > 2:
+                    break
+                last_best = best_score
 
             mrmr_results['selection_metadata']['n_features_selected'] = len(mrmr_results['selected_features'])
 
@@ -817,6 +835,12 @@ class FeatureSelectionFramework:
             if not SKLEARN_AVAILABLE:
                 return {feature: 1.0 / len(feature_names) for feature in feature_names}
 
+            # Cache by (X,y) hash
+            rf_key = SharedMLCache.hash_two_arrays(X, y) + "_rf_importance"
+            cached = shared_cache.get_rf_importances(rf_key)
+            if cached is not None:
+                return cached
+
             # Choose appropriate model based on target
             if len(np.unique(y)) <= 10:  # Classification
                 model = RandomForestClassifier(
@@ -830,9 +854,15 @@ class FeatureSelectionFramework:
                     max_depth=self.method_configs['importance']['max_depth'],
                     random_state=self.random_state
                 )
-
-            model.fit(X, y)
+            # Use BLAS thread clamp to avoid oversubscription
+            with limit_blas_threads(1):
+                model.fit(X, y)
             importance_scores = dict(zip(feature_names, model.feature_importances_))
+
+            try:
+                shared_cache.set_rf_importances(rf_key, importance_scores)
+            except Exception:
+                pass
 
             return importance_scores
 

@@ -36,6 +36,9 @@ from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 from ..m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
+from .parallel_processing import ParallelProcessingCoordinator
+from .shared_cache import shared_cache, SharedMLCache
+from .thread_guard import limit_blas_threads
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +66,7 @@ class CrossValidationUtilities:
         self.logger = logger.getChild('CVUtils')
         self.gpu_manager = M1GPUManager() if TORCH_AVAILABLE else None
         self.parallel_processor = ParallelProcessor()
+        self.parallel_coordinator = ParallelProcessingCoordinator(self.config)
 
         # Configuration defaults
         self.enable_gpu = self.config.get('enable_gpu', TORCH_AVAILABLE)
@@ -98,6 +102,45 @@ class CrossValidationUtilities:
 
             if len(X) < (n_splits + 1) * 10:  # Minimum samples check
                 raise ValueError(f"Insufficient data for {n_splits} splits: {len(X)} samples")
+
+            # Optional distributed routing for large datasets
+            if self.config.get('enable_parallel', True) and len(X) >= self.config.get('distributed_threshold_rows', 50000):
+                try:
+                    # Build model factory to create fresh instances per fold
+                    def _model_factory():
+                        try:
+                            params = model.get_params()
+                            return model.__class__(**params)
+                        except Exception:
+                            return model.__class__()
+
+                    cv_obj = self._make_cv(X, n_splits=n_splits, gap=gap)
+                    with limit_blas_threads(1):
+                        dist = self.parallel_coordinator.distributed_cross_validation(
+                            model_factory=_model_factory,
+                            X=X, y=y,
+                            cv_folds=n_splits,
+                            cv=cv_obj
+                        )
+
+                    metrics = dist.get('aggregated_scores', {})
+                    summary = {
+                        'total_folds': dist.get('n_total_folds', n_splits),
+                        'successful_folds': dist.get('n_successful_folds', dist.get('n_total_folds', 0))
+                    }
+                    return {
+                        'fold_results': [],
+                        'predictions': [],
+                        'true_values': [],
+                        'metrics': metrics,
+                        'fold_metrics': [],
+                        'feature_importance': [],
+                        'training_times': [],
+                        'prediction_times': [],
+                        'summary': summary
+                    }
+                except Exception as e:
+                    self.logger.warning(f"Distributed CV routing failed, falling back to local CV: {e}")
 
             # Create time series split with gap
             if test_size is None:
@@ -208,6 +251,34 @@ class CrossValidationUtilities:
         except Exception as e:
             self.logger.error(f"❌ Temporal CV failed: {e}")
             return {'error': str(e), 'fold_results': []}
+
+    def _make_cv(self, X: np.ndarray, n_splits: int = 5, gap: int = 0) -> Any:
+        """Create or fetch cached TimeSeriesSplit-like object based on X."""
+        try:
+            key = SharedMLCache.hash_array(X) + f"_tscv_{n_splits}_{gap}"
+            cached = shared_cache.get_cv_splits(key)
+            if cached is not None:
+                class _CachedTS:
+                    def __init__(self, splits):
+                        self._splits = splits
+                    def split(self, _X, _y=None):
+                        for tr, te in self._splits:
+                            yield tr, te
+                return _CachedTS(cached)
+
+            tscv = TimeSeriesSplit(n_splits=n_splits, gap=gap, test_size=max(1, len(X)//(n_splits+1)))
+            splits = [pair for pair in tscv.split(X)]
+            shared_cache.set_cv_splits(key, splits)
+
+            class _CachedTS2:
+                def __init__(self, s):
+                    self._s = s
+                def split(self, _X, _y=None):
+                    for tr, te in self._s:
+                        yield tr, te
+            return _CachedTS2(splits)
+        except Exception:
+            return TimeSeriesSplit(n_splits=n_splits, gap=gap, test_size=max(1, len(X)//(n_splits+1)))
 
     def walk_forward_validation(self, X: np.ndarray, y: np.ndarray,
                               model: Any, initial_train_size: int = 1000,

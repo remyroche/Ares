@@ -86,4 +86,5 @@ __all__ = [
 
     # Pipeline orchestration
     'MLPipelineOrchestrator',
+    '_to_jsonable',
 ]

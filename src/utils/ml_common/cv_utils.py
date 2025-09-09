@@ -32,10 +32,43 @@ from sklearn.metrics import (
 from sklearn.utils.class_weight import compute_sample_weight
 import warnings
 
-from ..math_validation import safe_divide, safe_log
-from ..common_operations import create_fallback_logger
-from ..m1_gpu_utils import M1GPUManager
-from ..parallel_processing_optimizer import ParallelProcessor
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+def _to_jsonable(obj):  # pylint: disable=too-many-return-statements
+    """Recursively convert numpy / pandas objects into JSON-serialisable types."""
+    import numpy as _np
+    import pandas as _pd
+
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+
+    if isinstance(obj, _np.ndarray):
+        return obj.tolist()
+
+    if isinstance(obj, _np.generic):  # numpy scalar
+        return obj.item()
+
+    if isinstance(obj, dict):
+        return {k: _to_jsonable(v) for k, v in obj.items()}
+
+    if isinstance(obj, (list, tuple, set)):
+        return [_to_jsonable(v) for v in obj]
+
+    if isinstance(obj, _pd.DataFrame):
+        return obj.to_dict(orient="records")
+
+    if isinstance(obj, _pd.Series):
+        return obj.tolist()
+
+    # Fallback to string representation
+    return str(obj)
+
+from .math_validation import safe_divide, safe_log  # noqa: F401 relative one-level up is correct (utils)
+from .common_operations import create_fallback_logger
+from .m1_gpu_utils import M1GPUManager
+from .parallel_processing_optimizer import ParallelProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +136,12 @@ class CrossValidationUtilities:
             if test_size is None:
                 test_size = max(1, len(X) // (n_splits + 1))
 
-            tscv = TimeSeriesSplit(n_splits=n_splits, test_size=test_size, gap=gap)
+            # TimeSeriesSplit 'test_size' supported from sklearn 1.3.0
+            import inspect
+            if 'test_size' in inspect.signature(TimeSeriesSplit).parameters:
+                tscv = TimeSeriesSplit(n_splits=n_splits, test_size=test_size, gap=gap)
+            else:
+                tscv = TimeSeriesSplit(n_splits=n_splits, gap=gap)
 
             # Initialize results storage
             cv_results = {
@@ -120,7 +158,7 @@ class CrossValidationUtilities:
             # Perform cross-validation
             for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
                 try:
-                    self.logger.info(f"📊 Processing fold {fold_idx + 1}/{n_splits}")
+                    self.logger.debug(f"📊 Processing fold {fold_idx + 1}/{n_splits}")
 
                     # Split data
                     X_train_fold, X_test_fold = X[train_idx], X[test_idx]
@@ -185,8 +223,8 @@ class CrossValidationUtilities:
                     cv_results['training_times'].append(training_time)
                     cv_results['prediction_times'].append(prediction_time)
 
-                    self.logger.info(f"✅ Fold {fold_idx + 1} completed - "
-                                   f"Accuracy: {fold_metrics.get('accuracy', 'N/A'):.4f}")
+                    self.logger.debug(f"✅ Fold {fold_idx + 1} completed - "
+                                     f"Accuracy: {fold_metrics.get('accuracy', 'N/A'):.4f}")
 
                 except Exception as fold_e:
                     self.logger.warning(f"⚠️ Fold {fold_idx + 1} failed: {fold_e}")
@@ -203,11 +241,11 @@ class CrossValidationUtilities:
                 self.logger.error("❌ No folds completed successfully")
                 cv_results['error'] = "No successful folds"
 
-            return cv_results
+            return _to_jsonable(cv_results)
 
         except Exception as e:
             self.logger.error(f"❌ Temporal CV failed: {e}")
-            return {'error': str(e), 'fold_results': []}
+            return _to_jsonable({'error': str(e), 'fold_results': [], 'metrics': {}, 'summary': {}})
 
     def walk_forward_validation(self, X: np.ndarray, y: np.ndarray,
                               model: Any, initial_train_size: int = 1000,
@@ -270,7 +308,12 @@ class CrossValidationUtilities:
                     # Train model
                     start_time = datetime.now()
                     model_copy = self._clone_model(model)
-                    model_copy.fit(X_train, y_train, sample_weight=sample_weight)
+
+                    import inspect
+                    if 'sample_weight' in inspect.signature(model_copy.fit).parameters:
+                        model_copy.fit(X_train, y_train, sample_weight=sample_weight)
+                    else:
+                        model_copy.fit(X_train, y_train)
                     training_time = (datetime.now() - start_time).total_seconds()
 
                     # Make predictions
@@ -309,8 +352,8 @@ class CrossValidationUtilities:
                     # Move to next position
                     current_position += step_size
 
-                    self.logger.info(f"✅ Iteration {len(wfv_results['iterations'])} completed - "
-                                   f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
+                    self.logger.debug(f"✅ Iteration {len(wfv_results['iterations'])} completed - "
+                                     f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
 
                 except Exception as iter_e:
                     self.logger.warning(f"⚠️ Walk-forward iteration failed: {iter_e}")
@@ -329,11 +372,11 @@ class CrossValidationUtilities:
             else:
                 self.logger.error("❌ No walk-forward iterations completed")
 
-            return wfv_results
+            return _to_jsonable(wfv_results)
 
         except Exception as e:
             self.logger.error(f"❌ Walk-forward validation failed: {e}")
-            return {'error': str(e), 'iterations': []}
+            return _to_jsonable({'error': str(e), 'iterations': [], 'metrics': {}, 'summary': {}})
 
     def cross_validation_metrics(self, y_true: np.ndarray, y_pred: np.ndarray,
                                y_prob: Optional[np.ndarray] = None,
@@ -389,11 +432,11 @@ class CrossValidationUtilities:
             # Add stability metrics
             metrics.update(self._calculate_stability_metrics(y_true, y_pred))
 
-            return metrics
+            return _to_jsonable(metrics)
 
         except Exception as e:
             self.logger.error(f"❌ Metrics calculation failed: {e}")
-            return {'error': str(e)}
+            return _to_jsonable({'error': str(e)})
 
     def stability_assessment(self, cv_results: Dict[str, Any],
                            threshold: float = 0.1) -> Dict[str, Any]:
@@ -453,11 +496,11 @@ class CrossValidationUtilities:
                     'is_stable': np.mean(cv_values) < threshold
                 }
 
-            return stability_results
+            return _to_jsonable(stability_results)
 
         except Exception as e:
             self.logger.error(f"❌ Stability assessment failed: {e}")
-            return {'error': str(e)}
+            return _to_jsonable({'error': str(e)})
 
     def out_of_sample_performance(self, model: Any, X_train: np.ndarray,
                                 y_train: np.ndarray, X_test: np.ndarray,
@@ -516,11 +559,11 @@ class CrossValidationUtilities:
             self.logger.info(f"✅ Out-of-sample evaluation completed - "
                            f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
 
-            return metrics
+            return _to_jsonable(metrics)
 
         except Exception as e:
             self.logger.error(f"❌ Out-of-sample evaluation failed: {e}")
-            return {'error': str(e)}
+            return _to_jsonable({'error': str(e)})
 
     def _compute_sample_weights(self, y: np.ndarray) -> np.ndarray:
         """Compute sample weights for imbalanced classes."""
@@ -533,24 +576,19 @@ class CrossValidationUtilities:
             return np.ones(len(y))
 
     def _clone_model(self, model: Any) -> Any:
-        """Clone a model for CV folds."""
+        """Clone a model for CV folds using sklearn.base.clone when available."""
         try:
-            if hasattr(model, 'clone'):
-                return model.clone()
-            elif hasattr(model, '__class__'):
-                # Create new instance with same parameters
+            from sklearn.base import clone as skl_clone
+            return skl_clone(model)
+        except Exception:
+            # Fall back to previous best-effort cloning logic
+            try:
                 model_class = model.__class__
-                if hasattr(model, 'get_params'):
-                    params = model.get_params()
-                    return model_class(**params)
-                else:
-                    return model_class()
-            else:
-                # Fallback - return original model
+                params = model.get_params() if hasattr(model, 'get_params') else {}
+                return model_class(**params)
+            except Exception as e:
+                self.logger.warning(f"Model cloning failed: {e}")
                 return model
-        except Exception as e:
-            self.logger.warning(f"Model cloning failed: {e}")
-            return model
 
     def _calculate_fold_metrics(self, y_true: np.ndarray, y_pred: np.ndarray,
                               y_pred_proba: Optional[np.ndarray] = None) -> Dict[str, Any]:
@@ -559,11 +597,14 @@ class CrossValidationUtilities:
             metrics = {}
 
             # Determine task type from data
-            unique_values = np.unique(y_true)
-            if len(unique_values) <= 10 and all(isinstance(v, (int, np.integer)) for v in unique_values):
-                task_type = 'classification'
-            else:
-                task_type = 'regression'
+            try:
+                from sklearn.utils.multiclass import type_of_target
+                target_type = type_of_target(y_true)
+                task_type = 'classification' if target_type in {'binary', 'multiclass'} else 'regression'
+            except Exception:
+                # Fallback – original heuristic
+                unique_values = np.unique(y_true)
+                task_type = 'classification' if len(unique_values) <= 10 else 'regression'
 
             # Calculate appropriate metrics
             if task_type == 'classification':
@@ -607,7 +648,7 @@ class CrossValidationUtilities:
                 for metric_name, value in fold_metric.items():
                     if metric_name not in all_metrics:
                         all_metrics[metric_name] = []
-                    if isinstance(value, (int, float)) and not np.isnan(value):
+                    if isinstance(value, (int, float, np.floating)) and not np.isnan(value):
                         all_metrics[metric_name].append(value)
 
             # Calculate aggregated statistics

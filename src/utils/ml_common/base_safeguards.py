@@ -67,11 +67,9 @@ class MLTrainingSafeguards:
                 harmonized_df['year'] = harmonized_df['year'].astype('int32')
 
             # Handle other categorical/dictionary columns
-            categorical_cols = ['symbol', 'ticker', 'month', 'exchange']
-            for col in categorical_cols:
-                if col in harmonized_df.columns:
-                    # Convert to string to avoid dictionary encoding issues
-                    harmonized_df[col] = harmonized_df[col].astype('string')
+            categorical_cols = [col for col in harmonized_df.columns if col in ['symbol', 'ticker', 'month', 'exchange']]
+            if len(categorical_cols):
+                harmonized_df[categorical_cols] = harmonized_df[categorical_cols].astype('string')
 
             # Handle timestamp columns
             timestamp_cols = [col for col in harmonized_df.columns if 'timestamp' in col.lower() or 'time' in col.lower()]
@@ -85,19 +83,16 @@ class MLTrainingSafeguards:
                             # If conversion fails, convert to string for consistency
                             harmonized_df[col] = harmonized_df[col].astype('string')
 
-            # Optimize numeric dtypes
-            numeric_cols = harmonized_df.select_dtypes(include=[np.number]).columns
-            for col in numeric_cols:
-                if harmonized_df[col].dtype == 'float64':
-                    # Check if float32 is sufficient
-                    if harmonized_df[col].min() >= -3.4e38 and harmonized_df[col].max() <= 3.4e38:
-                        harmonized_df[col] = harmonized_df[col].astype('float32')
-                elif harmonized_df[col].dtype == 'int64':
-                    # Check if smaller int type is sufficient
-                    if harmonized_df[col].min() >= -32768 and harmonized_df[col].max() <= 32767:
-                        harmonized_df[col] = harmonized_df[col].astype('int16')
-                    elif harmonized_df[col].min() >= -2147483648 and harmonized_df[col].max() <= 2147483647:
-                        harmonized_df[col] = harmonized_df[col].astype('int32')
+            # ------------------------------------------------------------
+            # Vectorised numeric optimisation – much faster than per-col loops
+            # ------------------------------------------------------------
+            float_cols = harmonized_df.select_dtypes(include=["float64"]).columns
+            if len(float_cols):
+                harmonized_df[float_cols] = harmonized_df[float_cols].apply(pd.to_numeric, downcast="float")
+
+            int_cols = harmonized_df.select_dtypes(include=["int64"]).columns
+            if len(int_cols):
+                harmonized_df[int_cols] = harmonized_df[int_cols].apply(pd.to_numeric, downcast="integer")
 
             logger.info(f"✅ Parquet schema harmonized for {len(harmonized_df.columns)} columns")
             return harmonized_df
@@ -185,34 +180,20 @@ class MLTrainingSafeguards:
             class_analysis = MLTrainingSafeguards.check_class_distribution(y)
 
             if class_analysis['is_single_class']:
-                return {
-                    'is_valid': False,
-                    'reason': 'Single class chunk',
-                    'n_samples': len(X),
-                    'n_features': X.shape[1] if len(X.shape) > 1 else 0,
-                    'class_analysis': class_analysis
-                }
+                # Raise explicit error for downstream fast-fail handlers
+                raise SingleClassError("Single class detected in training chunk")
 
             # Check minimum samples per class
             min_class_samples = min(class_analysis['class_counts'].values())
             if min_class_samples < min_samples_per_class:
-                return {
-                    'is_valid': False,
-                    'reason': f'Insufficient samples per class (min: {min_class_samples} < {min_samples_per_class})',
-                    'n_samples': len(X),
-                    'n_features': X.shape[1] if len(X.shape) > 1 else 0,
-                    'class_analysis': class_analysis
-                }
+                # Too few samples in at least one class – classify as imbalance
+                raise ClassImbalanceError(
+                    f"Insufficient samples per class (min: {min_class_samples} < {min_samples_per_class})")
 
             # Check for extreme imbalance
             if class_analysis['is_extreme_imbalance']:
-                return {
-                    'is_valid': False,
-                    'reason': f'Extreme class imbalance (max ratio: {class_analysis["max_class_ratio"]:.2%})',
-                    'n_samples': len(X),
-                    'n_features': X.shape[1] if len(X.shape) > 1 else 0,
-                    'class_analysis': class_analysis
-                }
+                raise ClassImbalanceError(
+                    f"Extreme class imbalance (max ratio: {class_analysis['max_class_ratio']:.2%})")
 
             return {
                 'is_valid': True,
@@ -244,6 +225,9 @@ class MLTrainingSafeguards:
             Array of sample weights
         """
         try:
+            if len(y) == 0:
+                return np.array([])
+
             from sklearn.utils.class_weight import compute_sample_weight
 
             if strategy == 'balanced':
@@ -448,7 +432,7 @@ class MLTrainingSafeguards:
             return 'CLASS_IMBALANCE_ERROR'
         elif isinstance(error, DataQualityError) or 'data quality' in error_msg:
             return 'DATA_QUALITY_ERROR'
-        elif 'attributeerror' in error_type.lower() or 'hasattr' in error_msg:
+        elif isinstance(error, AttributeError) or 'attributeerror' in error_type.lower():
             return 'METHOD_VALIDATION_ERROR'
         elif 'optuna' in error_msg or 'study' in error_msg:
             return 'OPTUNA_ERROR'

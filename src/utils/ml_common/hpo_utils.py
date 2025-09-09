@@ -35,6 +35,8 @@ from ..m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
 from .parallel_processing import ParallelProcessingCoordinator
 from .memory_optimization import MemoryEfficientTraining
+from .thread_guard import limit_blas_threads
+from .shared_cache import shared_cache, SharedMLCache
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,12 @@ except ImportError:
 
 try:
     from sklearn.model_selection import cross_val_score, StratifiedKFold, TimeSeriesSplit, cross_validate
+    try:
+        from sklearn.experimental import enable_halving_search_cv  # noqa: F401
+        from sklearn.model_selection import HalvingGridSearchCV, HalvingRandomSearchCV
+        HALVING_AVAILABLE = True
+    except Exception:
+        HALVING_AVAILABLE = False
     from sklearn.metrics import make_scorer
     from sklearn.utils.class_weight import compute_sample_weight
     SKLEARN_AVAILABLE = True
@@ -312,7 +320,8 @@ class HyperparameterOptimization:
                             pruner: Optional[str] = 'median',
                             storage: Optional[str] = None,
                             study_name: Optional[str] = None,
-                            timeout: Optional[int] = None) -> Dict[str, Any]:
+                            timeout: Optional[int] = None,
+                            seed_trials: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Perform Bayesian hyperparameter optimization.
 
@@ -411,6 +420,12 @@ class HyperparameterOptimization:
             elif pruner == 'hyperband':
                 pruner_obj = HyperbandPruner()
 
+            # Default persistent storage for study (SQLite), if not provided
+            if storage is None:
+                storage = f"sqlite:///{os.environ.get('ARES_HPO_DB', '/tmp/ares_optuna.db')}"
+            if study_name is None:
+                study_name = f"ares_bayes_{int(datetime.now().timestamp())}"
+
             study = optuna.create_study(
                 direction='maximize',
                 sampler=sampler,
@@ -420,7 +435,17 @@ class HyperparameterOptimization:
                 load_if_exists=bool(storage and study_name)
             )
 
-            study.optimize(objective, n_trials=n_trials, timeout=timeout)
+            # Enqueue coarse winners to evaluate first
+            if seed_trials:
+                try:
+                    for params in seed_trials:
+                        study.enqueue_trial(params)
+                except Exception as _:
+                    pass
+
+            # Clamp BLAS threads during optimization to avoid oversubscription
+            with limit_blas_threads(1):
+                study.optimize(objective, n_trials=n_trials, timeout=timeout)
 
             results = {
                 'best_params': study.best_params,
@@ -470,40 +495,93 @@ class HyperparameterOptimization:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Subsampling failed, using full data: {e}")
 
-            # Precompute CV if not provided
-            cv_obj = cv if cv is not None else self._create_time_series_split(len(X_train))
+            # Precompute CV splits (cached) if not provided
+            cv_obj = cv if cv is not None else self._make_cv(X_train)
 
             # Build coarse parameter grid from search_space
             param_grid = self._coarse_grid_from_search_space(search_space, coarse_grid_points)
 
             coarse_results = {}
-            if self.parallel_coordinator:
-                # Use enhanced parallel random/grid search
-                coarse_results = self.parallel_coordinator.parallel_hyperparameter_search(
-                    parameter_grid=param_grid,
-                    model_factory=model_factory,
-                    X=X_train,
-                    y=y_train,
-                    evaluation_function=self._build_default_eval(scoring, cv_obj),
-                    search_strategy='random' if coarse_strategy == 'random' else 'grid',
-                    # extended parameter accepted after coordinator update
-                    n_random_samples=coarse_n_samples,
-                )
-            else:
-                # Fallback simple random sampling
-                sampled = self._generate_random_param_combinations(param_grid, coarse_n_samples)
-                best_score = -np.inf
-                best_params = {}
-                for p in sampled:
-                    model = model_factory(**p)
-                    score = self._evaluate_model_cv(model, X_train, y_train, cv_obj, scoring)
-                    if score > best_score:
-                        best_score, best_params = score, p
-                coarse_results = {'best_params': best_params, 'best_score': best_score, 'all_results': []}
+            used_halving = False
+            if SKLEARN_AVAILABLE and HALVING_AVAILABLE and coarse_strategy in ['grid', 'random']:
+                try:
+                    # Attempt to instantiate a base estimator without params
+                    base_estimator = model_factory()
+                    search_cls = HalvingRandomSearchCV if coarse_strategy == 'random' else HalvingGridSearchCV
+                    with limit_blas_threads(1):
+                        halver = search_cls(
+                            estimator=base_estimator,
+                            param_distributions=param_grid if coarse_strategy == 'random' else None,
+                            param_grid=param_grid if coarse_strategy == 'grid' else None,
+                            factor=self.config.get('coarse_halving_factor', 3),
+                            resource='n_samples',
+                            random_state=42 if coarse_strategy == 'random' else None,
+                            scoring=scoring,
+                            cv=cv_obj,
+                            n_jobs=1,
+                            aggressive_elimination=True,
+                        )
+                        halver.fit(X_train, y_train)
+                    best_params = halver.best_params_
+                    best_score = float(halver.best_score_)
+                    all_results = [
+                        {'params': r.params, 'score': float(r.mean_test_score)} for r in getattr(halver, 'cv_results_', {}).get('params', [])  # type: ignore
+                    ] if hasattr(halver, 'cv_results_') else []
+                    coarse_results = {'best_params': best_params, 'best_score': best_score, 'all_results': all_results}
+                    used_halving = True
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Halving search unavailable or failed, falling back: {e}")
+
+            if not used_halving:
+                if self.parallel_coordinator:
+                    # Use enhanced parallel random/grid search
+                    coarse_results = self.parallel_coordinator.parallel_hyperparameter_search(
+                        parameter_grid=param_grid,
+                        model_factory=model_factory,
+                        X=X_train,
+                        y=y_train,
+                        evaluation_function=self._build_default_eval(scoring, cv_obj),
+                        search_strategy='random' if coarse_strategy == 'random' else 'grid',
+                        n_random_samples=coarse_n_samples,
+                    )
+                else:
+                    # Fallback simple random sampling with early stop on plateau
+                    sampled = self._generate_random_param_combinations(param_grid, coarse_n_samples)
+                    best_score = -np.inf
+                    best_params = {}
+                    patience = int(self.config.get('coarse_plateau_patience', max(5, coarse_n_samples // 5)))
+                    stale = 0
+                    all_results = []
+                    for p in sampled:
+                        model = model_factory(**p)
+                        s = self._evaluate_model_cv(model, X_train, y_train, cv_obj, scoring)
+                        all_results.append({'params': p, 'score': s})
+                        if s > best_score + 1e-9:
+                            best_score, best_params = s, p
+                            stale = 0
+                        else:
+                            stale += 1
+                        if stale >= patience:
+                            self.logger.info("⏹️ Coarse search plateau detected; stopping early")
+                            break
+                    coarse_results = {'best_params': best_params, 'best_score': best_score, 'all_results': all_results}
 
             # Narrow search space around coarse best
             best_coarse = coarse_results.get('best_params', {})
             narrowed = self._narrow_search_space(search_space, best_coarse)
+
+            # Prepare seed trials from coarse stage (top-K)
+            seed_trials = []
+            try:
+                all_res = coarse_results.get('all_results') or []
+                if isinstance(all_res, list) and all_res:
+                    topk = min(5, len(all_res))
+                    sorted_res = sorted(all_res, key=lambda r: r.get('score', 0), reverse=True)
+                    seed_trials = [r['params'] for r in sorted_res[:topk] if 'params' in r]
+                elif 'best_params' in coarse_results:
+                    seed_trials = [coarse_results['best_params']]
+            except Exception:
+                pass
 
             # Bayesian stage on full data if feasible
             bayes_results = self.bayesian_optimization(
@@ -513,11 +591,12 @@ class HyperparameterOptimization:
                 search_space=narrowed,
                 n_trials=bayes_n_trials,
                 scoring=scoring,
-                cv=cv if cv is not None else self._create_time_series_split(len(X)),
+                cv=cv if cv is not None else self._make_cv(X),
                 pruner=pruner,
                 storage=storage,
                 study_name=study_name,
-                timeout=timeout
+                timeout=timeout,
+                seed_trials=seed_trials
             )
 
             final_params = dict(best_coarse)
@@ -941,6 +1020,35 @@ class HyperparameterOptimization:
             return TimeSeriesSplit(n_splits=n_splits, test_size=test_size, gap=gap)
         except Exception:
             return 3
+
+    def _make_cv(self, X: np.ndarray, n_splits: int = 5, gap: int = 0) -> Any:
+        """Create or fetch cached CV splits for X."""
+        try:
+            key = SharedMLCache.hash_array(X) + f"_tscv_{n_splits}_{gap}"
+            cached = shared_cache.get_cv_splits(key)
+            if cached is not None:
+                # Rebuild a TimeSeriesSplit-like object from indices
+                class _CachedTS:
+                    def __init__(self, splits):
+                        self._splits = splits
+                    def split(self, _X, _y=None):
+                        for tr, te in self._splits:
+                            yield tr, te
+                return _CachedTS(cached)
+
+            tscv = self._create_time_series_split(len(X), n_splits=n_splits, gap=gap)
+            splits = [pair for pair in tscv.split(X)]
+            shared_cache.set_cv_splits(key, splits)
+
+            class _CachedTS2:
+                def __init__(self, s):
+                    self._s = s
+                def split(self, _X, _y=None):
+                    for tr, te in self._s:
+                        yield tr, te
+            return _CachedTS2(splits)
+        except Exception:
+            return self._create_time_series_split(len(X), n_splits=n_splits, gap=gap)
 
     def _evaluate_model_cv(self, model: Any, X: np.ndarray, y: np.ndarray,
                            cv_obj: Any, scoring: Union[str, Callable]) -> float:

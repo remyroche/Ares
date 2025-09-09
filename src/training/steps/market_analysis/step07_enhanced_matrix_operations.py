@@ -92,7 +92,7 @@ except ImportError as e:
 # Processing Core Optimizations
 try:
     from src.utils.vectorized_processing_core import get_vectorized_processing_core
-    from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
+    from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations, ErrorHandler
     VECTORIZED_OPTIMIZATIONS_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Vectorized optimizations not available: {e}")
@@ -640,7 +640,7 @@ class Step7EnhancedMatrixOperations:
         if VECTORIZED_OPTIMIZATIONS_AVAILABLE:
             try:
                 self.vectorized_core = get_vectorized_processing_core()
-                self.matrix_operations = get_enhanced_matrix_operations()
+                self.matrix_operations = EnhancedMatrixOperations(config)
                 self.vectorized_optimizations_enabled = True
                 self.logger.info('🚀 Vectorized processing core initialized for Step 7')
                 self.logger.info('🔢 Enhanced matrix operations initialized for Step 7')

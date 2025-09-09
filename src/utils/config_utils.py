@@ -385,6 +385,23 @@ def load_config_file(filename: str, config_dir: Optional[Union[str, Path]] = Non
 # Global configuration manager instance
 global_config = ConfigManager()
 
+# ============================================================
+#  Step-specific lightweight config objects
+# ============================================================
+
+@dataclass(slots=True, frozen=True)
+class Step06LabelParams:
+    """Constant parameters for Step-06 labeling logic.
+
+    Keeping them in a dataclass lets tests inject alternate values without
+    touching production code.  The class is *frozen* to prevent accidental
+    mutation at runtime and *slots* to minimise memory usage.
+    """
+
+    profit_take: float = 0.004   # 0.4 % upward threshold
+    stop_loss:   float = 0.003   # 0.3 % downward threshold
+    tx_cost:     float = 0.0008  # 0.08 % transaction cost (future use)
+
 __all__ = [
     'ConfigError',
     'ConfigSource',
@@ -398,5 +415,6 @@ __all__ = [
     'get_env_float',
     'get_env_list',
     'load_config_file',
+    'Step06LabelParams',
     'global_config'
 ]

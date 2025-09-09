@@ -168,6 +168,35 @@ import typing
 from typing import Any, Optional
 from contextlib import nullcontext
 
+# Centralized utilities
+from src.utils.seed_utils import seed_everything
+from src.utils.artifact_manager import ArtifactManager
+from src.utils.defaults import Step03_5Defaults
+from src.utils.sklearn_utils import (
+	StandardScaler,
+	MiniBatchKMeans,
+	KMeans,
+	TimeSeriesSplit,
+	RandomForestClassifier,
+	HistGradientBoostingClassifier,
+	LogisticRegression,
+	compute_sample_weight,
+	balanced_accuracy_score,
+	davies_bouldin_score,
+	silhouette_score,
+	f1_score,
+	matthews_corrcoef,
+)
+from src.training.steps.market_analysis.hmm_clustering.hmm_executor import (
+	HMMDependencies,
+	train_hmm_optimized,
+)
+from src.training.steps.market_analysis.hmm_clustering.clustering_executor import (
+	ClusteringDependencies,
+	kmeans_standard,
+	kmeans_minibatch,
+)
+
 logger = system_logger.getChild("Step3_5FinalRegimeClustering")
 
 
@@ -252,7 +281,7 @@ class UtilityDependencyInjector:
             self.logger.info("✅ Common operations utilities injected successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to inject common operations utilities: {e}")
+            self.logger.exception("❌ Failed to inject common operations utilities")
             self._initialization_status['common_operations'] = False
     
     def _inject_common_utilities(self) -> None:
@@ -280,7 +309,7 @@ class UtilityDependencyInjector:
             self.logger.info("✅ Common utilities injected successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to inject common utilities: {e}")
+            self.logger.exception("❌ Failed to inject common utilities")
             self._initialization_status['common_utilities'] = False
     
     def _inject_math_validation(self) -> None:
@@ -307,7 +336,7 @@ class UtilityDependencyInjector:
             self.logger.info("✅ Math validation utilities injected successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to inject math validation utilities: {e}")
+            self.logger.exception("❌ Failed to inject math validation utilities")
             self._initialization_status['math_validation'] = False
     
     def _inject_parquet_utils(self) -> None:
@@ -322,7 +351,7 @@ class UtilityDependencyInjector:
             self.logger.info("✅ Parquet utilities injected successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to inject parquet utilities: {e}")
+            self.logger.exception("❌ Failed to inject parquet utilities")
             self._initialization_status['parquet_utils'] = False
     
     def _inject_serialization_utils(self) -> None:
@@ -347,7 +376,7 @@ class UtilityDependencyInjector:
             self.logger.info("✅ Serialization utilities injected successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to inject serialization utilities: {e}")
+            self.logger.exception("❌ Failed to inject serialization utilities")
             self._initialization_status['serialization_utils'] = False
     
     def _inject_data_processing_utils(self) -> None:
@@ -367,7 +396,7 @@ class UtilityDependencyInjector:
             self.logger.info("✅ Data processing utilities injected successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to inject data processing utilities: {e}")
+            self.logger.exception("❌ Failed to inject data processing utilities")
             self._initialization_status['data_processing_utils'] = False
     
     def _inject_m1_gpu_utils(self) -> None:
@@ -386,7 +415,7 @@ class UtilityDependencyInjector:
             self.logger.info("✅ M1 GPU utilities injected successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to inject M1 GPU utilities: {e}")
+            self.logger.exception("❌ Failed to inject M1 GPU utilities")
             self._initialization_status['m1_gpu_utils'] = False
     
     def _inject_m1_memory_optimizer(self) -> None:
@@ -404,7 +433,7 @@ class UtilityDependencyInjector:
             self.logger.info("✅ M1 memory optimizer utilities injected successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to inject M1 memory optimizer utilities: {e}")
+            self.logger.exception("❌ Failed to inject M1 memory optimizer utilities")
             self._initialization_status['m1_memory_optimizer'] = False
     
     def _inject_m1_cpu_optimizer(self) -> None:
@@ -424,7 +453,7 @@ class UtilityDependencyInjector:
             self.logger.info("✅ M1 CPU optimizer utilities injected successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to inject M1 CPU optimizer utilities: {e}")
+            self.logger.exception("❌ Failed to inject M1 CPU optimizer utilities")
             self._initialization_status['m1_cpu_optimizer'] = False
     
     def _perform_utility_health_check(self) -> None:
@@ -445,7 +474,7 @@ class UtilityDependencyInjector:
             ('math_safe_divide', lambda: math_safe_divide(10, 2)),
             ('validate_finite', lambda: validate_finite(42.0)),
             ('get_current_datetime', lambda: get_current_datetime()),
-            ('ensure_directory', lambda: ensure_directory('/tmp/test_dir'))
+            ('ensure_directory', lambda: ensure_directory(str(self.artifacts.get_tmp_dir("test_dir"))))
         ]
         
         for util_name, test_func in test_utilities:
@@ -852,11 +881,23 @@ class FinalRegimeClusteringStep:
     """Step 3.5: Final Regime Clustering with Advanced Reporting and Hardware Optimizations."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+        """Initialize the step with configuration and all required subsystems.
+
+        Args:
+            config: Configuration dictionary controlling data paths, parameters, and seeding.
+        """
         self.config = config
         self.logger = system_logger.getChild("FinalRegimeClusteringStep")
         self.start_time = None
         self.optimized_params = {}
         self.regime_results = {}
+        
+        # Reproducibility
+        seed = int(self.config.get('random_state', Step03_5Defaults.default_random_state))
+        seed_everything(seed, deterministic=Step03_5Defaults.seed_deterministic)
+        
+        # Centralized artifact manager
+        self.artifacts = ArtifactManager(self.config)
         
         # Initialize comprehensive utility dependency injection
         self.logger.info("🔧 Initializing comprehensive utility dependency injection...")
@@ -1005,7 +1046,7 @@ class FinalRegimeClusteringStep:
         # Initialize Optimized Data Manager
         try:
             self.data_manager = OptimizedDataManager(
-                base_path=Path("data_cache"),
+                base_path=self.artifacts.get_cache_dir(),
                 enable_compression=True,
                 enable_caching=True
             )
@@ -1134,7 +1175,7 @@ class FinalRegimeClusteringStep:
         """Load optimized parameters from step03."""
         try:
             # Load parameter optimization results
-            param_file = Path("data/optimization/parameter_optimization_results.json")
+            param_file = self.artifacts.get_optimization_dir().joinpath("parameter_optimization_results.json")
             if param_file.exists():
                 with open(param_file, 'r') as f:
                     param_results = json.load(f)
@@ -1307,7 +1348,7 @@ class FinalRegimeClusteringStep:
         symbol = self.config.get("SYMBOL", "ETHUSDT")
         exchange = self.config.get("EXCHANGE", "BINANCE")
         timeframe = self.config.get("TIMEFRAME", "1m")
-        data_dir = self.config.get("DATA_DIR", "data_cache")
+        data_dir = str(self.artifacts.get_cache_dir())
         
         # Use optimized data manager if available
         if self.data_manager:
@@ -1363,7 +1404,7 @@ class FinalRegimeClusteringStep:
             
             self.logger.info("✅ Comprehensive data validation passed")
         except Exception as e:
-            self.logger.error(f"❌ Data validation failed: {e}")
+            self.logger.exception("❌ Data validation failed")
             raise RuntimeError(f"Data validation failed: {e}")
 
         # Prepare features with comprehensive utility integration
@@ -1436,7 +1477,7 @@ class FinalRegimeClusteringStep:
             return df
             
         except Exception as e:
-            self.logger.error(f"Failed to load data with optimization: {e}")
+            self.logger.exception("Failed to load data with optimization")
             raise
 
     async def _prepare_features_optimized(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1451,7 +1492,7 @@ class FinalRegimeClusteringStep:
                 return await self._prepare_features_with_optimized_params(df)
             
         except Exception as e:
-            self.logger.error(f"Optimized feature preparation failed: {e}")
+            self.logger.exception("Optimized feature preparation failed")
             raise
 
     async def _prepare_features_parallel(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1503,7 +1544,7 @@ class FinalRegimeClusteringStep:
                 raise Exception("Pipeline execution failed")
             
         except Exception as e:
-            self.logger.error(f"Parallel feature preparation failed: {e}")
+            self.logger.exception("Parallel feature preparation failed")
             raise
 
     def _create_price_features_parallel(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1608,7 +1649,7 @@ class FinalRegimeClusteringStep:
             self.fast_fail_validator.validate_ohlc_relationships(df)
             self.logger.info("✅ Fast-fail validation passed")
         except Exception as e:
-            self.logger.error(f"❌ Fast-fail validation failed: {e}")
+            self.logger.exception("❌ Fast-fail validation failed")
             return {
                 "success": False,
                 "error": f"Data validation failed: {e}"
@@ -1789,34 +1830,33 @@ class FinalRegimeClusteringStep:
                 return await self._train_hmm_optimized(features, n_components, covariance_type, n_iter, random_state)
 
         except Exception as e:
-            self.logger.error(f"Enhanced HMM failed: {e}")
+            self.logger.exception("Enhanced HMM failed")
             raise
 
     async def _train_hmm_optimized(self, features: pd.DataFrame, n_components: int, covariance_type: str, n_iter: int, random_state: int) -> dict[str, Any]:
-        """Train HMM with optimizations and smart GPU usage."""
+        """Train HMM by delegating to hmm_executor with optimal backend selection."""
         try:
-            from hmmlearn import hmm
-            from sklearn.preprocessing import StandardScaler
-
-            # Pre-validate data size for GPU usage
-            if features.size > 1_000_000 and self.m1_gpu_manager:
-                self.logger.info("🎯 Using GPU for large dataset HMM training...")
-                return await self._train_hmm_gpu_optimized(features, n_components, covariance_type, n_iter, random_state)
-            else:
-                self.logger.info("💻 Using CPU for HMM training...")
-                return await self._train_hmm_cpu_optimized(features, n_components, covariance_type, n_iter, random_state)
-
-        except ImportError:
-            self.logger.error("⚠️ hmmlearn not available")
-            raise
-        except Exception as e:
-            self.logger.error(f"Enhanced HMM training failed: {e}")
+            deps = HMMDependencies(
+                logger=self.logger,
+                m1_gpu_manager=self.m1_gpu_manager,
+                m1_memory_optimizer=self.m1_memory_optimizer,
+            )
+            # Delegate to shared executor (synchronous function). Wrap in thread if needed later.
+            return train_hmm_optimized(
+                features=features,
+                n_components=n_components,
+                covariance_type=covariance_type,
+                n_iter=n_iter,
+                random_state=random_state,
+                deps=deps,
+            )
+        except Exception:
+            self.logger.exception("Enhanced HMM training failed")
             raise
     
     async def _train_hmm_gpu_optimized(self, features: pd.DataFrame, n_components: int, covariance_type: str, n_iter: int, random_state: int) -> dict[str, Any]:
         """Train HMM with GPU optimization for large datasets."""
         from hmmlearn import hmm
-        from sklearn.preprocessing import StandardScaler
         
         # Convert to numpy and optimize memory usage
         features_array = self.m1_memory_optimizer.create_memory_efficient_array(
@@ -1862,7 +1902,6 @@ class FinalRegimeClusteringStep:
     async def _train_hmm_cpu_optimized(self, features: pd.DataFrame, n_components: int, covariance_type: str, n_iter: int, random_state: int) -> dict[str, Any]:
         """Train HMM with CPU optimization for smaller datasets."""
         from hmmlearn import hmm
-        from sklearn.preprocessing import StandardScaler
         
         # Standard scaling
         scaler = StandardScaler()
@@ -1899,7 +1938,6 @@ class FinalRegimeClusteringStep:
         """Legacy HMM training method."""
         try:
             from hmmlearn import hmm
-            from sklearn.preprocessing import StandardScaler
 
             # Scale features
             scaler = StandardScaler()
@@ -2038,7 +2076,7 @@ class FinalRegimeClusteringStep:
             return validation_result
             
         except Exception as e:
-            self.logger.error(f"❌ HMM model validation failed: {e}")
+            self.logger.exception("❌ HMM model validation failed")
             return {
                 "converged": False,
                 "issues": [f"Validation error: {e}"],
@@ -2085,7 +2123,7 @@ class FinalRegimeClusteringStep:
             return regimes.tolist()
 
         except Exception as e:
-            self.logger.error(f"Vectorized regime classification failed: {e}")
+            self.logger.exception("Vectorized regime classification failed")
             raise
 
     @handles_errors(
@@ -2169,7 +2207,7 @@ class FinalRegimeClusteringStep:
                 return await self._execute_clustering_enhanced(composite_features, clustering_params)
 
         except Exception as e:
-            self.logger.error(f"Enhanced clustering failed: {e}")
+            self.logger.exception("Enhanced clustering failed")
             raise
 
     async def _execute_clustering_enhanced(self, composite_features: pd.DataFrame, clustering_params: dict[str, Any]) -> dict[str, Any]:
@@ -2190,61 +2228,37 @@ class FinalRegimeClusteringStep:
                 return await self._perform_standard_clustering(features_array, clustering_params)
 
         except Exception as e:
-            self.logger.error(f"Enhanced clustering execution failed: {e}")
+            self.logger.exception("Enhanced clustering execution failed")
             raise
 
     async def _perform_parallel_clustering(self, features_array: np.ndarray, clustering_params: dict[str, Any]) -> dict[str, Any]:
         """Perform clustering using optimized parallel processing with proper result merging."""
         try:
-            from sklearn.cluster import MiniBatchKMeans
 
-            # Use MiniBatchKMeans for better parallel performance
+            # Use MiniBatchKMeans via executor for better parallel performance
             n_workers = min(self.m1_cpu_optimizer.max_workers, 8)
-            chunk_size = max(1000, len(features_array) // n_workers)
-
             self.logger.info(f"📦 Using MiniBatchKMeans with {n_workers} workers for parallel clustering...")
 
-            # Use MiniBatchKMeans for parallel processing
-            kmeans = MiniBatchKMeans(
+            result = kmeans_minibatch(
+                features_array=features_array,
                 n_clusters=clustering_params["n_clusters"],
-                batch_size=min(100, len(features_array) // 10),
-                n_init=3,  # Reduced for speed
                 random_state=clustering_params["random_state"],
-                max_iter=100
+                logger=self.logger,
             )
 
-            # Fit the model
-            cluster_labels = kmeans.fit_predict(features_array)
-
-            # Calculate quality metrics
-            from sklearn.metrics import silhouette_score, davies_bouldin_score
-            
-            try:
-                silhouette = silhouette_score(features_array, cluster_labels)
-                davies_bouldin = davies_bouldin_score(features_array, cluster_labels)
-            except Exception as e:
-                self.logger.warning(f"Could not calculate quality metrics: {e}")
-                silhouette = 0.0
-                davies_bouldin = 1.0
-
-            return {
-                "model": kmeans,
-                "scaler": None,  # No scaling applied
-                "cluster_labels": cluster_labels,
-                "n_clusters": clustering_params["n_clusters"],
-                "method": clustering_params["method"],
-                "cluster_centers": kmeans.cluster_centers_,
-                "quality_metrics": {
-                    "silhouette_score": silhouette,
-                    "davies_bouldin_score": davies_bouldin
-                },
-                "optimization_applied": True,
-                "parallel_processing": True,
-                "n_workers": n_workers
-            }
+            result.update(
+                {
+                    "scaler": None,
+                    "method": clustering_params["method"],
+                    "optimization_applied": True,
+                    "parallel_processing": True,
+                    "n_workers": n_workers,
+                }
+            )
+            return result
 
         except Exception as e:
-            self.logger.error(f"Parallel clustering failed: {e}")
+            self.logger.exception("Parallel clustering failed")
             raise
     
     async def _execute_parallel_operations(self, operations: list[Callable]) -> list[Any]:
@@ -2285,8 +2299,6 @@ class FinalRegimeClusteringStep:
     async def _perform_standard_clustering(self, features_array: np.ndarray, clustering_params: dict[str, Any]) -> dict[str, Any]:
         """Perform standard clustering with optimizations."""
         try:
-            from sklearn.preprocessing import StandardScaler
-            from sklearn.cluster import KMeans
 
             # Scale features with enhanced operations
             scaler = StandardScaler()
@@ -2299,30 +2311,27 @@ class FinalRegimeClusteringStep:
                 features_scaled = self.m1_gpu_manager.to_device(features_scaled, "matrix_mult")
                 use_gpu = True
 
-            # Perform clustering
+            # Perform clustering via executor (always on CPU numpy arrays)
             with self.m1_gpu_manager.gpu_context("clustering") if use_gpu else nullcontext():
-                clustering = KMeans(
+                cpu_array = features_scaled.cpu().numpy() if use_gpu else features_scaled
+                result = kmeans_standard(
+                    features_array=cpu_array,
                     n_clusters=clustering_params["n_clusters"],
                     random_state=clustering_params["random_state"],
-                    n_init=10
+                    logger=self.logger,
                 )
 
-                if use_gpu:
-                    cluster_labels = clustering.fit_predict(features_scaled.cpu().numpy())
-                else:
-                    cluster_labels = clustering.fit_predict(features_scaled)
-
-            return {
-                "model": clustering,
-                "scaler": scaler,
-                "cluster_labels": cluster_labels,
-                "n_clusters": clustering_params["n_clusters"],
-                "method": clustering_params["method"],
-                "gpu_accelerated": use_gpu
-            }
+            result.update(
+                {
+                    "scaler": scaler,
+                    "method": clustering_params["method"],
+                    "gpu_accelerated": use_gpu,
+                }
+            )
+            return result
 
         except Exception as e:
-            self.logger.error(f"Standard enhanced clustering failed: {e}")
+            self.logger.exception("Standard enhanced clustering failed")
             raise
 
     @handles_errors(
@@ -2367,7 +2376,6 @@ class FinalRegimeClusteringStep:
     ) -> dict[str, Any]:
         """Execute the clustering algorithm."""
         # Scale features
-        from sklearn.preprocessing import StandardScaler
         scaler = StandardScaler()
         features_scaled = scaler.fit_transform(composite_features)
         
@@ -2394,12 +2402,11 @@ class FinalRegimeClusteringStep:
         clustering_params: dict[str, Any]
     ) -> tuple[Any, np.ndarray]:
         """Perform the actual clustering."""
-        from sklearn.cluster import KMeans
         
         clustering = KMeans(
             n_clusters=clustering_params["n_clusters"],
             random_state=clustering_params["random_state"],
-            n_init=10
+            n_init=Step03_5Defaults.kmeans_n_init
         )
         cluster_labels = clustering.fit_predict(features_scaled)
         
@@ -2580,7 +2587,7 @@ class FinalRegimeClusteringStep:
             return transitions
 
         except Exception as e:
-            self.logger.error(f"Vectorized regime transition analysis failed: {e}")
+            self.logger.exception("Vectorized regime transition analysis failed")
             raise
 
     @handles_errors(
@@ -2627,7 +2634,7 @@ class FinalRegimeClusteringStep:
             return persistence_stats
 
         except Exception as e:
-            self.logger.error(f"Vectorized regime persistence analysis failed: {e}")
+            self.logger.exception("Vectorized regime persistence analysis failed")
             raise
 
     @handles_errors(
@@ -3054,7 +3061,7 @@ class FinalRegimeClusteringStep:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Financial metrics validation failed: {e}")
+            self.logger.exception("❌ Financial metrics validation failed")
             return False
 
     def _validate_trading_performance_metrics(self, performance_data: dict[str, Any]) -> bool:
@@ -3100,7 +3107,7 @@ class FinalRegimeClusteringStep:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Trading performance metrics validation failed: {e}")
+            self.logger.exception("❌ Trading performance metrics validation failed")
             return False
 
     def _log_created_file_paths(self, symbol: str, exchange: str, timeframe: str) -> None:
@@ -3138,8 +3145,8 @@ class FinalRegimeClusteringStep:
             self.logger.info("💾 Saving final regime clustering results...")
             
             # Create results directory using common operations
-            results_dir = ensure_directory("data/regime_clustering")
-            reports_dir = ensure_directory("reports/regime_clustering")
+            results_dir = str(self.artifacts.get_data_dir("regime_clustering"))
+            reports_dir = str(self.artifacts.get_reports_dir("regime_clustering"))
             
             # Save clustering results using safe JSON operations
             clustering_file = results_dir / "final_clustering_results.json"
@@ -3221,7 +3228,7 @@ class FinalRegimeClusteringStep:
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to save final results: {e}")
+            self.logger.exception("Failed to save final results")
             raise
 
     # Helper methods for technical indicators
@@ -3348,7 +3355,7 @@ class FinalRegimeClusteringStep:
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to cleanup regime clustering: {e}")
+            self.logger.exception("Failed to cleanup regime clustering")
             raise
     
     async def _load_data_with_comprehensive_utilities(self, data_id: str, data_dir: str) -> Optional[pd.DataFrame]:
@@ -3389,7 +3396,7 @@ class FinalRegimeClusteringStep:
             return None
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to load data with comprehensive utilities: {e}")
+            self.logger.exception("❌ Failed to load data with comprehensive utilities")
             return None
     
     async def _prepare_features_with_comprehensive_utilities(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -3461,7 +3468,7 @@ class FinalRegimeClusteringStep:
             return features_df
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to prepare features with comprehensive utilities: {e}")
+            self.logger.exception("❌ Failed to prepare features with comprehensive utilities")
             # Return original dataframe as fallback
             return df
     
@@ -3499,7 +3506,7 @@ class FinalRegimeClusteringStep:
             # Serialization test using serialization utilities
             save_data_func = self.utilities.get('save_data', save_data)
             if save_data_func:
-                test_path = "/tmp/test_serialization.json"
+                test_path = str(self.artifacts.get_tmp_path("test_serialization.json"))
                 try:
                     # Test JSON serialization
                     test_data = {'test': 'data', 'timestamp': get_current_datetime().isoformat()}
@@ -3526,7 +3533,7 @@ class FinalRegimeClusteringStep:
             return results
             
         except Exception as e:
-            self.logger.error(f"❌ Comprehensive utility operations failed: {e}")
+            self.logger.exception("❌ Comprehensive utility operations failed")
             return results
     
     async def _analyze_cluster_statistics_with_utilities(
@@ -3903,7 +3910,7 @@ class FinalRegimeClusteringStep:
                         'features_used': ['volatility', 'momentum'],
                         'timestamp': self.utilities.get('get_current_datetime', get_current_datetime)().isoformat()
                     }
-                    save_data_func(hmm_intermediate, "/tmp/hmm_intermediate_results.json")
+                    save_data_func(hmm_intermediate, str(self.artifacts.get_tmp_path("hmm_intermediate_results.json")))
                     self.logger.info("✅ HMM intermediate results saved")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to save HMM intermediate results: {e}")
@@ -3919,7 +3926,7 @@ class FinalRegimeClusteringStep:
             return hmm_results
             
         except Exception as e:
-            self.logger.error(f"❌ HMM regime discovery with utilities failed: {e}")
+            self.logger.exception("❌ HMM regime discovery with utilities failed")
             # Return fallback results
             return await self._perform_simple_regime_detection_with_utilities(data)
     
@@ -3992,7 +3999,7 @@ class FinalRegimeClusteringStep:
             return simple_results
             
         except Exception as e:
-            self.logger.error(f"❌ Simple regime detection with utilities failed: {e}")
+            self.logger.exception("❌ Simple regime detection with utilities failed")
             # Return minimal fallback
             return {
                 'states': np.zeros(len(features)),
@@ -4048,7 +4055,7 @@ class FinalRegimeClusteringStep:
                         'features_used': list(clustering_features.columns) if hasattr(clustering_features, 'columns') else [],
                         'timestamp': self.utilities.get('get_current_datetime', get_current_datetime)().isoformat()
                     }
-                    save_data_func(clustering_intermediate, "/tmp/clustering_intermediate_results.json")
+                    save_data_func(clustering_intermediate, str(self.artifacts.get_tmp_path("clustering_intermediate_results.json")))
                     self.logger.info("✅ Clustering intermediate results saved")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to save clustering intermediate results: {e}")
@@ -4065,7 +4072,7 @@ class FinalRegimeClusteringStep:
             return clustering_results
             
         except Exception as e:
-            self.logger.error(f"❌ Final clustering with utilities failed: {e}")
+            self.logger.exception("❌ Final clustering with utilities failed")
             # Return fallback clustering results
             return {
                 'cluster_labels': np.zeros(len(data)),
@@ -4193,8 +4200,6 @@ class FinalRegimeClusteringStep:
     def _perform_optimized_clustering(self, features: pd.DataFrame) -> np.ndarray:
         """Perform optimized clustering using M1 CPU optimization."""
         try:
-            from sklearn.cluster import KMeans
-            from sklearn.preprocessing import StandardScaler
             
             if len(features) == 0:
                 return np.zeros(1)
@@ -4207,7 +4212,11 @@ class FinalRegimeClusteringStep:
             n_clusters = min(4, max(2, len(features) // 100))
             
             # Perform K-means clustering
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            kmeans = KMeans(
+                n_clusters=n_clusters,
+                random_state=self.config.get('random_state', Step03_5Defaults.default_random_state),
+                n_init=Step03_5Defaults.kmeans_n_init
+            )
             cluster_labels = kmeans.fit_predict(features_scaled)
             
             return cluster_labels
@@ -4255,7 +4264,6 @@ class FinalRegimeClusteringStep:
     def _calculate_clustering_metrics(self, cluster_labels: np.ndarray, features: pd.DataFrame) -> dict:
         """Calculate clustering quality metrics."""
         try:
-            from sklearn.metrics import silhouette_score
             
             if len(features) == 0 or len(np.unique(cluster_labels)) < 2:
                 return {'silhouette_score': 0, 'n_clusters': len(np.unique(cluster_labels))}
@@ -4279,15 +4287,15 @@ class FinalRegimeClusteringStep:
     def _perform_cross_validation(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> dict[str, Any]:
         """Perform cross-validation for model evaluation with temporal integrity and class imbalance handling."""
         try:
-            from sklearn.model_selection import TimeSeriesSplit
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.utils.class_weight import compute_sample_weight
-            from sklearn.metrics import balanced_accuracy_score, f1_score
 
             cv_results = {}
 
             # Use Random Forest for CV as it's robust and fast
-            rf_model = RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)
+            rf_model = RandomForestClassifier(
+                n_estimators=Step03_5Defaults.rf_n_estimators_cv,
+                random_state=self.config.get('random_state', Step03_5Defaults.default_random_state),
+                n_jobs=-1
+            )
 
             # Ensure minimum samples per fold with class balance considerations
             min_samples_per_fold = max(100, len(X) // 20)  # At least 100 samples or 5% of total
@@ -4360,7 +4368,7 @@ class FinalRegimeClusteringStep:
             return cv_results
 
         except Exception as e:
-            self.logger.error(f'❌ Cross-validation failed: {e}')
+            self.logger.exception('❌ Cross-validation failed')
             return self._get_fallback_cv_results()
 
     def _get_fallback_cv_results(self) -> dict[str, Any]:
@@ -4386,8 +4394,6 @@ class FinalRegimeClusteringStep:
                                     y_vol_test: np.ndarray, ensemble_model: dict[str, Any] = None) -> dict[str, Any]:
         """Calculate comprehensive evaluation metrics with class imbalance awareness."""
         try:
-            from sklearn.metrics import balanced_accuracy_score, f1_score, matthews_corrcoef
-            from sklearn.utils.class_weight import compute_sample_weight
 
             # Find best performing models using balanced metrics
             best_balanced_accuracy = 0
@@ -4474,7 +4480,7 @@ class FinalRegimeClusteringStep:
             }
 
         except Exception as e:
-            self.logger.error(f'❌ Evaluation metrics calculation failed: {e}')
+            self.logger.exception('❌ Evaluation metrics calculation failed')
             return {
                 'best_balanced_accuracy': 0.5,
                 'best_direction_model': 'fallback',
@@ -4588,7 +4594,7 @@ class FinalRegimeClusteringStep:
             return imbalance_info
 
         except Exception as e:
-            self.logger.error(f'❌ Class imbalance detection failed: {e}')
+            self.logger.exception('❌ Class imbalance detection failed')
             return {
                 'error': str(e),
                 'is_single_class': False,
@@ -4599,10 +4605,6 @@ class FinalRegimeClusteringStep:
                                           chunk_size: int = 50000, memory_limit_gb: float = 4.0) -> dict[str, Any]:
         """Train ML models with chunked processing, class imbalance handling, and single-class detection."""
         try:
-            from sklearn.linear_model import LogisticRegression
-            from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
-            from sklearn.utils.class_weight import compute_sample_weight
-            from sklearn.metrics import balanced_accuracy_score, f1_score
             import gc
 
             self.logger.info(f'🚀 Starting optimized chunked ML training: {len(X)} samples, chunk_size={chunk_size}')
@@ -4638,15 +4640,19 @@ class FinalRegimeClusteringStep:
                     # Prepare models for this chunk
                     models = {
                         'LogisticRegression': LogisticRegression(
-                            random_state=42, max_iter=1000,
+                            random_state=self.config.get('random_state', Step03_5Defaults.default_random_state),
+                            max_iter=1000,
                             class_weight='balanced' if imbalance_info['max_class_ratio'] > 0.75 else None
                         ),
                         'RandomForest': RandomForestClassifier(
-                            n_estimators=100, random_state=42, n_jobs=-1,
+                            n_estimators=Step03_5Defaults.rf_n_estimators,
+                            random_state=self.config.get('random_state', Step03_5Defaults.default_random_state),
+                            n_jobs=-1,
                             class_weight='balanced_subsample' if imbalance_info['max_class_ratio'] > 0.75 else None
                         ),
                         'HistGradientBoosting': HistGradientBoostingClassifier(
-                            random_state=42, max_iter=100,
+                            random_state=self.config.get('random_state', Step03_5Defaults.default_random_state),
+                            max_iter=Step03_5Defaults.hgb_max_iter,
                             class_weight='balanced' if imbalance_info['max_class_ratio'] > 0.75 else None
                         )
                     }
@@ -4721,8 +4727,8 @@ class FinalRegimeClusteringStep:
                     del X_chunk, y_chunk
                     gc.collect()
 
-                except Exception as chunk_e:
-                    self.logger.error(f'❌ Chunk {chunk_idx + 1} processing failed: {chunk_e}')
+                except Exception:
+                    self.logger.exception(f'❌ Chunk {chunk_idx + 1} processing failed')
                     failed_chunks += 1
                     continue
 
@@ -4795,7 +4801,7 @@ class FinalRegimeClusteringStep:
             }
 
         except Exception as e:
-            self.logger.error(f'❌ Result aggregation failed: {e}')
+            self.logger.exception('❌ Result aggregation failed')
             return {'error': str(e)}
 
     def _validate_ml_training_readiness(self) -> dict[str, Any]:
@@ -4847,11 +4853,11 @@ class FinalRegimeClusteringStep:
 
             # Check for sklearn dependencies
             sklearn_imports = [
-                'sklearn.model_selection.TimeSeriesSplit',
-                'sklearn.ensemble.RandomForestClassifier',
-                'sklearn.linear_model.LogisticRegression',
-                'sklearn.utils.class_weight.compute_sample_weight',
-                'sklearn.metrics.balanced_accuracy_score'
+                'sklearn_utils.TimeSeriesSplit',
+                'sklearn_utils.RandomForestClassifier',
+                'sklearn_utils.LogisticRegression',
+                'sklearn_utils.compute_sample_weight',
+                'sklearn_utils.balanced_accuracy_score'
             ]
 
             for import_path in sklearn_imports:
@@ -4929,7 +4935,6 @@ class FinalRegimeClusteringStep:
         }
 
         try:
-            from sklearn.model_selection import TimeSeriesSplit
 
             # Basic data validation
             if len(X) == 0 or len(y) == 0:

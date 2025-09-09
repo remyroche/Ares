@@ -52,7 +52,7 @@ try:
     from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
     from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
     from src.utils.vectorized_processing_core import get_vectorized_processing_core
-    from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
+    from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
     from src.utils.optimized_data_manager import get_optimized_data_manager
 import logging
@@ -62,7 +62,7 @@ import logging
     m1_memory_optimizer = get_m1_memory_optimizer()
     m1_cpu_optimizer = get_m1_cpu_optimizer()
     vectorized_core = get_vectorized_processing_core()
-    matrix_operations = get_enhanced_matrix_operations()
+    matrix_operations = EnhancedMatrixOperations()
     step_optimizer = get_step_optimization_manager()
     data_manager = get_optimized_data_manager()
 

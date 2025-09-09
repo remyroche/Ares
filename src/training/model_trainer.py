@@ -30,8 +30,9 @@ import ray
 import pandas as pd
 import shap
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, balanced_accuracy_score
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+from sklearn.base import clone
 from sklearn.preprocessing import StandardScaler
 
 from src.training.data_cleaning import handle_missing_data
@@ -67,6 +68,16 @@ from src.utils.warning_symbols import (
     failed,
     invalid,
     missing,
+)
+
+# New ML common utilities integration
+from src.utils.ml_common import (
+    PurgedSplitConfig,
+    purged_time_series_splits,
+    optimize_threshold,
+    start_trial_log,
+    end_trial_log,
+    log_trial,
 )
 
 # Temporarily commented out due to syntax errors
@@ -763,18 +774,47 @@ class RayModelTrainer:
                 )
             model.fit(X_train_scaled, y_train)
             y_pred = model.predict(X_test_scaled)
+            # Optional threshold tuning if probabilities are available
+            try:
+                if hasattr(model, 'predict_proba'):
+                    y_proba = model.predict_proba(X_test_scaled)
+                    best = optimize_threshold(y_test.values, y_proba, metric='balanced_accuracy')
+                    t = best.get('best_threshold', 0.5)
+                    if y_proba.shape[1] == 2:
+                        y_pred = (y_proba[:, 1] >= t).astype(int)
+            except Exception:
+                pass
             metrics = {
                 "accuracy": accuracy_score(y_test, y_pred),
                 "precision": precision_score(y_test, y_pred, zero_division=0),
                 "recall": recall_score(y_test, y_pred, zero_division=0),
                 "f1": f1_score(y_test, y_pred, zero_division=0),
             }
-            # ❌ REMOVED: Standard cross-validation (causes data leakage)
-            # ✅ IMPLEMENTED: Time-series cross-validation (leak-proof)
-            tscv = TimeSeriesSplit(n_splits=5, test_size=int(len(X_train_scaled) * 0.2))
-            cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=tscv)
-            metrics["cv_mean"] = float(cv_scores.mean())
-            metrics["cv_std"] = float(cv_scores.std())
+            # Leak-proof CV with purged/embargoed splits
+            try:
+                # Use purged splits on the original index
+                X_train_df = X_train.copy()
+                if not isinstance(X_train_df, pd.DataFrame):
+                    X_train_df = pd.DataFrame(X_train_df)
+                X_train_df.index = X.index[:len(X_train_df)]
+                split_cfg = PurgedSplitConfig(n_splits=5, purge_minutes=30, embargo_minutes=15)
+                splits = list(purged_time_series_splits(X_train_df, y_train, split_cfg))
+                fold_scores = []
+                for tr_idx, va_idx in splits:
+                    m = clone(model)
+                    m.fit(X_train_scaled[tr_idx], y_train.iloc[tr_idx])
+                    y_va = y_train.iloc[va_idx]
+                    y_hat = m.predict(X_train_scaled[va_idx])
+                    fold_scores.append(balanced_accuracy_score(y_va, y_hat))
+                if fold_scores:
+                    metrics["cv_mean"] = float(np.mean(fold_scores))
+                    metrics["cv_std"] = float(np.std(fold_scores))
+            except Exception as _e:
+                # Fallback to simple TimeSeriesSplit if something goes wrong
+                tscv = TimeSeriesSplit(n_splits=5, test_size=int(len(X_train_scaled) * 0.2))
+                cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=tscv)
+                metrics["cv_mean"] = float(cv_scores.mean())
+                metrics["cv_std"] = float(cv_scores.std())
             feature_importance = dict(
                 zip(X.columns, model.feature_importances_, strict=False),
             )
@@ -787,6 +827,13 @@ class RayModelTrainer:
                 "model_path": f"models/{model_config.model_type}_{model_config.timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
                 "scaler_path": f"models/{model_config.model_type}_{model_config.timeframe}_scaler_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl",
             }
+            # Trial logging
+            try:
+                st = start_trial_log(params=getattr(model, 'get_params', lambda: {})())
+                trial = end_trial_log(st, metrics)
+                log_trial(trial)
+            except Exception:
+                pass
             self._store_model_remote(result, model, scaler)
             return result
         except Exception as e:

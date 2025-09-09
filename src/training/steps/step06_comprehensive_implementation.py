@@ -37,8 +37,8 @@ from .step06_utility_container import (
 
 # Import validation utilities
 from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, validate_positive, 
-    validate_range, MathValidationError
+    safe_divide, safe_log, safe_sqrt, validate_positive,
+    validate_range, validate_finite, MathValidationError
 )
 
 # Import common utils
@@ -319,15 +319,15 @@ class Step06ComprehensiveImplementation:
             if math_val:
                 # Price-based features with safe mathematical operations
                 enhanced_features['price_range'] = enhanced_features['high'] - enhanced_features['low']
-                enhanced_features['price_range_pct'] = math_val.safe_divide(
-                    enhanced_features['price_range'], 
-                    enhanced_features['close'], 
+                enhanced_features['price_range_pct'] = safe_divide(
+                    enhanced_features['price_range'],
+                    enhanced_features['close'],
                     default=0.0
                 )
                 
                 # Volatility features
                 enhanced_features['volatility'] = enhanced_features['close'].rolling(20).std()
-                enhanced_features['volatility_pct'] = math_val.safe_divide(
+                enhanced_features['volatility_pct'] = safe_divide(
                     enhanced_features['volatility'],
                     enhanced_features['close'],
                     default=0.0
@@ -390,16 +390,17 @@ class Step06ComprehensiveImplementation:
             if math_val:
                 # Calculate returns with safe division
                 returns = market_data['close'].pct_change()
-                
-                # Vectorised label assignment for significant speed-up on large datasets
-                labels = pd.cut(
-                    returns,
-                    bins=[-np.inf, -self.label_params.stop_loss, self.label_params.profit_take, np.inf],
-                    labels=[-1, 0, 1]
-                ).astype("Int8")
-
-                # Align index in case pct_change introduces NaNs at the head
-                labels = labels.reindex(market_data.index)
+                # Vectorized, robust labeling using thresholds from OptimizedTripleBarrierLabeling to keep logic consistent
+                profit_take = self.optimized_labeling.profit_take_multiplier
+                stop_loss = self.optimized_labeling.stop_loss_multiplier
+                labels = pd.Series(index=market_data.index, dtype='float64')
+                finite_mask = returns.apply(lambda x: pd.notna(x) and validate_finite(x))
+                pos_mask = (returns > profit_take) & finite_mask
+                neg_mask = (returns < -stop_loss) & finite_mask
+                mid_mask = (~pos_mask & ~neg_mask) & finite_mask
+                labels[pos_mask] = 1.0
+                labels[neg_mask] = -1.0
+                labels[mid_mask] = 0.0
                 
                 # Use data processing utilities for label validation
                 if data_proc and data_proc.validator:
@@ -433,31 +434,24 @@ class Step06ComprehensiveImplementation:
                 'memory_optimization_applied': False
             }
             
-            if m1_memory and m1_memory.optimizer:
+            if m1_memory and getattr(m1_memory, 'memory_optimizer', None):
                 # Use M1 memory optimizer for chunked processing
                 chunk_size = self.utility_config.data_processing_chunk_size
-
-                # Stream chunks without materialising the entire list in memory
                 cleaned_chunks = []
                 chunk_count = 0
-                for chunk in m1_memory.optimizer.chunked_dataframe_processor(features, chunk_size):
+                for chunk in m1_memory.memory_optimizer.chunked_dataframe_processor(features, lambda x: x, chunk_size):
                     chunk_count += 1
-                    if data_proc and data_proc.cleaner:
+                    if data_proc and getattr(data_proc, 'cleaner', None):
                         chunk = data_proc.cleaner.clean_dataframe(chunk)
                     cleaned_chunks.append(chunk)
-
                 self.logger.info(f"Features processed in {chunk_count} chunks")
-
-                # Concatenate cleaned dataframes back together
                 enhanced_features = pd.concat(cleaned_chunks, axis=0)
-                # Reduce memory usage of concatenated df
-                enhanced_features = reduce_dataframe_memory(enhanced_features)
-
                 # Final memory optimisation pass
-                m1_memory.optimizer.optimize_memory()
-
+                m1_memory.memory_optimizer.optimize_memory()
                 optimized_data['features'] = enhanced_features
                 optimized_data['memory_optimization_applied'] = True
+                self.performance_metrics['utility_operations_count'] += 1
+                self.logger.info("✅ Memory optimization with M1 utilities completed")
             
             return optimized_data
             
@@ -480,19 +474,19 @@ class Step06ComprehensiveImplementation:
             }
             
             # GPU optimization
-            if m1_gpu and m1_gpu.manager:
+            if m1_gpu and getattr(m1_gpu, 'gpu_manager', None):
                 # Use M1 GPU for tensor operations if applicable
                 try:
                     # Convert to tensors for GPU processing
                     import torch
-                    if torch.cuda.is_available() or hasattr(torch.backends, 'mps'):
+                    if torch.cuda.is_available() or getattr(torch.backends, 'mps', None):
                         feature_tensor = torch.tensor(features.select_dtypes(include=[np.number]).values, dtype=torch.float32)
-                        feature_tensor = m1_gpu.manager.to_device(feature_tensor, "feature_processing")
+                        feature_tensor = m1_gpu.gpu_manager.to_device(feature_tensor, "feature_processing")
                         
                         # Perform some GPU-accelerated operations
-                        if m1_gpu.optimizer:
-                            optimal_batch_size = m1_gpu.optimizer.calculate_optimal_batch_size(feature_tensor.shape[0])
-                            performance_results['optimal_batch_size'] = optimal_batch_size
+                        if getattr(m1_gpu, 'performance_optimizer', None):
+                            optimal_batch_size = m1_gpu.performance_optimizer.get_optimal_batch_size(tuple(feature_tensor.shape), operation_type="general")
+                            performance_results['optimal_batch_size'] = int(optimal_batch_size)
                         
                         performance_results['gpu_optimization_applied'] = True
                         self.logger.info("✅ GPU optimization applied")
@@ -500,17 +494,17 @@ class Step06ComprehensiveImplementation:
                     self.logger.exception(f"GPU optimization failed: {e}")
             
             # CPU optimization
-            if m1_cpu and m1_cpu.optimizer:
+            if m1_cpu and getattr(m1_cpu, 'cpu_optimizer', None):
                 # Use M1 CPU optimizer for parallel processing
                 try:
                     # Calculate optimal workers
-                    optimal_workers = m1_cpu.optimizer.calculate_optimal_workers()
+                    optimal_workers = m1_cpu.cpu_optimizer.get_optimal_workers_for_task("general")
                     performance_results['optimal_workers'] = optimal_workers
                     
                     # Use parallel processing for data operations
-                    if m1_cpu.batch_processor:
+                    if getattr(m1_cpu, 'batch_processor', None):
                         optimal_batch_size = m1_cpu.batch_processor.calculate_optimal_batch_size(features.shape[0])
-                        performance_results['cpu_optimal_batch_size'] = optimal_batch_size
+                        performance_results['cpu_optimal_batch_size'] = int(optimal_batch_size)
                     
                     performance_results['cpu_optimization_applied'] = True
                     self.logger.info("✅ CPU optimization applied")
@@ -530,8 +524,8 @@ class Step06ComprehensiveImplementation:
         delta = prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
+        rs = safe_divide(gain, loss, default=1.0)
+        rsi = 100 - safe_divide(100, (1 + rs), default=50.0)
         return rsi
 
     @inject_utilities('common_ops', 'serialization', 'parquet')
@@ -593,6 +587,12 @@ class Step06ComprehensiveImplementation:
             self.performance_metrics['utility_operations_count'] += 1
             self.logger.info("✅ Results integration with utilities completed")
             
+            # Also attach final_data for downstream saving if needed
+            try:
+                final_df = pd.concat([enhanced_features, labels.rename('label')], axis=1)
+                integration_results['final_data'] = final_df
+            except Exception:
+                pass
             return integration_results
             
         except Exception as e:

@@ -21,6 +21,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -33,7 +34,6 @@ from .step06_utility_container import (
 
 try:
     from .step06_enhanced_validation_framework import get_step06_validation_summary, reset_step06_validation_tracking, ValidationLevel, FunctionStatus
-    import time
 
     VALIDATION_FRAMEWORK_AVAILABLE = True
 except ImportError as e:

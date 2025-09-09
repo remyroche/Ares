@@ -32,10 +32,43 @@ from sklearn.metrics import (
 from sklearn.utils.class_weight import compute_sample_weight
 import warnings
 
-from ..math_validation import safe_divide, safe_log
-from ..common_operations import create_fallback_logger
-from ..m1_gpu_utils import M1GPUManager
-from ..parallel_processing_optimizer import ParallelProcessor
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+def _to_jsonable(obj):  # pylint: disable=too-many-return-statements
+    """Recursively convert numpy / pandas objects into JSON-serialisable types."""
+    import numpy as _np
+    import pandas as _pd
+
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+
+    if isinstance(obj, _np.ndarray):
+        return obj.tolist()
+
+    if isinstance(obj, _np.generic):  # numpy scalar
+        return obj.item()
+
+    if isinstance(obj, dict):
+        return {k: _to_jsonable(v) for k, v in obj.items()}
+
+    if isinstance(obj, (list, tuple, set)):
+        return [_to_jsonable(v) for v in obj]
+
+    if isinstance(obj, _pd.DataFrame):
+        return obj.to_dict(orient="records")
+
+    if isinstance(obj, _pd.Series):
+        return obj.tolist()
+
+    # Fallback to string representation
+    return str(obj)
+
+from .math_validation import safe_divide, safe_log  # noqa: F401 relative one-level up is correct (utils)
+from .common_operations import create_fallback_logger
+from .m1_gpu_utils import M1GPUManager
+from .parallel_processing_optimizer import ParallelProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +136,12 @@ class CrossValidationUtilities:
             if test_size is None:
                 test_size = max(1, len(X) // (n_splits + 1))
 
-            tscv = TimeSeriesSplit(n_splits=n_splits, test_size=test_size, gap=gap)
+            # TimeSeriesSplit 'test_size' supported from sklearn 1.3.0
+            import inspect
+            if 'test_size' in inspect.signature(TimeSeriesSplit).parameters:
+                tscv = TimeSeriesSplit(n_splits=n_splits, test_size=test_size, gap=gap)
+            else:
+                tscv = TimeSeriesSplit(n_splits=n_splits, gap=gap)
 
             # Initialize results storage
             cv_results = {
@@ -203,11 +241,11 @@ class CrossValidationUtilities:
                 self.logger.error("❌ No folds completed successfully")
                 cv_results['error'] = "No successful folds"
 
-            return cv_results
+            return _to_jsonable(cv_results)
 
         except Exception as e:
             self.logger.error(f"❌ Temporal CV failed: {e}")
-            return {'error': str(e), 'fold_results': []}
+            return _to_jsonable({'error': str(e), 'fold_results': [], 'metrics': {}, 'summary': {}})
 
     def walk_forward_validation(self, X: np.ndarray, y: np.ndarray,
                               model: Any, initial_train_size: int = 1000,
@@ -334,11 +372,11 @@ class CrossValidationUtilities:
             else:
                 self.logger.error("❌ No walk-forward iterations completed")
 
-            return wfv_results
+            return _to_jsonable(wfv_results)
 
         except Exception as e:
             self.logger.error(f"❌ Walk-forward validation failed: {e}")
-            return {'error': str(e), 'iterations': []}
+            return _to_jsonable({'error': str(e), 'iterations': [], 'metrics': {}, 'summary': {}})
 
     def cross_validation_metrics(self, y_true: np.ndarray, y_pred: np.ndarray,
                                y_prob: Optional[np.ndarray] = None,
@@ -394,11 +432,11 @@ class CrossValidationUtilities:
             # Add stability metrics
             metrics.update(self._calculate_stability_metrics(y_true, y_pred))
 
-            return metrics
+            return _to_jsonable(metrics)
 
         except Exception as e:
             self.logger.error(f"❌ Metrics calculation failed: {e}")
-            return {'error': str(e)}
+            return _to_jsonable({'error': str(e)})
 
     def stability_assessment(self, cv_results: Dict[str, Any],
                            threshold: float = 0.1) -> Dict[str, Any]:
@@ -458,11 +496,11 @@ class CrossValidationUtilities:
                     'is_stable': np.mean(cv_values) < threshold
                 }
 
-            return stability_results
+            return _to_jsonable(stability_results)
 
         except Exception as e:
             self.logger.error(f"❌ Stability assessment failed: {e}")
-            return {'error': str(e)}
+            return _to_jsonable({'error': str(e)})
 
     def out_of_sample_performance(self, model: Any, X_train: np.ndarray,
                                 y_train: np.ndarray, X_test: np.ndarray,
@@ -521,11 +559,11 @@ class CrossValidationUtilities:
             self.logger.info(f"✅ Out-of-sample evaluation completed - "
                            f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
 
-            return metrics
+            return _to_jsonable(metrics)
 
         except Exception as e:
             self.logger.error(f"❌ Out-of-sample evaluation failed: {e}")
-            return {'error': str(e)}
+            return _to_jsonable({'error': str(e)})
 
     def _compute_sample_weights(self, y: np.ndarray) -> np.ndarray:
         """Compute sample weights for imbalanced classes."""

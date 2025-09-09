@@ -23,8 +23,7 @@ from pathlib import Path
 
 from src.training.steps.market_analysis.enhanced_logging_metrics import EnhancedPipelineLogger
 from src.training.steps.market_analysis.progress_monitor import progress_monitor
-from src.utils.common_operations import get_current_datetime, get_logger, safe_file_exists, validate_data_quality, format_datetime, safe_json_dump
-from src.utils.data_quality_framework import DataQualityFramework
+from src.utils.common_operations import get_current_datetime, get_logger, safe_file_exists, format_datetime, safe_json_dump
 from src.utils.validator_orchestrator import ValidatorOrchestrator
 from src.utils.step_dependency_validator import StepDependencyValidator
 from .step04_regime_data_splitting import RegimeDataSplittingStep
@@ -44,6 +43,18 @@ from .hmm_clustering.step03_enhanced_hmm_regime_discovery import run_enhanced_st
 import json
 import logging
 
+# Import ML Common utilities for enhanced functionality
+try:
+    from src.utils.ml_common import (
+        DataQualityUtilities,
+        FeatureSelectionFramework,
+        MLPipelineOrchestrator
+    )
+    ML_COMMON_AVAILABLE = True
+except ImportError as e:
+    ML_COMMON_AVAILABLE = False
+    logging.warning(f"⚠️ ML Common utilities not available in market analysis orchestrator: {e}")
+
 class MarketAnalysisPipelineOrchestrator:
     """
     Enhanced orchestrator for market analysis pipeline with comprehensive
@@ -56,10 +67,26 @@ class MarketAnalysisPipelineOrchestrator:
         self.config = config or {}
         self.logger = get_logger(__name__)
         self.enhanced_logger = EnhancedPipelineLogger('market_analysis_orchestrator')
-        self.data_quality_framework = DataQualityFramework()
         self.validator_orchestrator = ValidatorOrchestrator()
         self.dependency_validator = StepDependencyValidator()
         self.enhanced_validator = EnhancedStepValidator(config)
+
+        # Initialize ML Common utilities if available
+        if ML_COMMON_AVAILABLE:
+            try:
+                self.ml_data_quality = DataQualityUtilities()
+                self.ml_feature_selection = FeatureSelectionFramework()
+                self.ml_pipeline_orchestrator = MLPipelineOrchestrator()
+                self.logger.info("✅ ML Common utilities initialized in market analysis orchestrator")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize ML Common utilities: {e}")
+                self.ml_data_quality = None
+                self.ml_feature_selection = None
+                self.ml_pipeline_orchestrator = None
+        else:
+            self.ml_data_quality = None
+            self.ml_feature_selection = None
+            self.ml_pipeline_orchestrator = None
         self.pipeline_state = {'current_step': None, 'completed_steps': [], 'failed_steps': [], 'start_time': None, 'end_time': None, 'correlation_id': None}
         self.step_configs = {'hmm_clustering': {'enabled': True, 'timeout': 300, 'retry_attempts': 3, 'validator': None, 'step_number': 1}, 'regime_splitting': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': RegimeDataSplittingValidator(), 'step_number': 2}, 'labeling': {'enabled': True, 'timeout': 240, 'retry_attempts': 2, 'validator': LabelingValidator(), 'step_number': 3}, 'feature_engineering': {'enabled': True, 'timeout': 600, 'retry_attempts': 2, 'validator': FeatureEngineeringValidator(), 'step_number': 4}, 'matrix_operations': {'enabled': True, 'timeout': 300, 'retry_attempts': 2, 'validator': MatrixOperationsValidator(), 'step_number': 5}, 'feature_selection': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': None, 'step_number': 6}}
 
@@ -143,9 +170,20 @@ class MarketAnalysisPipelineOrchestrator:
             if missing_columns:
                 self.logger.error(f'❌ Missing required columns: {missing_columns}')
                 return False
-            quality_report = validate_data_quality(price_data)
-            if not quality_report['is_valid']:
-                self.logger.warning(f"⚠️ Data quality issues detected: {quality_report['issues']}")
+            # Enhanced data quality validation using ML Common utilities
+            if self.ml_data_quality:
+                try:
+                    enhanced_quality_report = await self.ml_data_quality.perform_comprehensive_validation(
+                        price_data, symbol=symbol, exchange=exchange
+                    )
+                    if enhanced_quality_report.get('has_critical_issues', False):
+                        self.logger.error(f"🚨 Critical data quality issues detected by ML utilities: {enhanced_quality_report.get('critical_issues', [])}")
+                        return False
+                    if enhanced_quality_report.get('warnings', []):
+                        self.logger.warning(f"⚠️ ML-enhanced data quality warnings: {enhanced_quality_report.get('warnings', [])}")
+                    self.logger.info("✅ ML-enhanced data quality validation passed")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ ML-enhanced data quality validation failed: {e}")
         except Exception as e:
             self.logger.error(f'❌ Failed to validate data quality: {e}')
             return False
@@ -421,13 +459,43 @@ class MarketAnalysisPipelineOrchestrator:
     @handles_errors(Exception, fallback = False)
     
     async def _execute_feature_selection(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
-        """Execute feature selection step."""
-        self.logger.info('🎯 Executing feature selection...')
+        """Execute feature selection step with ML utilities enhancement."""
+        self.logger.info('🎯 Executing feature selection with ML utilities...')
         try:
             feature_selector = AdvancedFeatureSelectionStep()
-            success = await feature_selector.select_features(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir)
+
+            # Enhanced feature selection using ML Common utilities
+            if self.ml_feature_selection:
+                try:
+                    self.logger.info('🔬 Running ML-enhanced feature importance analysis...')
+                    enhanced_feature_analysis = await self.ml_feature_selection.analyze_feature_importance(
+                        symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir
+                    )
+                    if enhanced_feature_analysis.get('recommendations'):
+                        self.logger.info(f'💡 ML feature selection recommendations: {enhanced_feature_analysis["recommendations"]}')
+
+                    # Pass enhanced analysis to the standard feature selector
+                    kwargs['ml_enhanced_analysis'] = enhanced_feature_analysis
+                except Exception as e:
+                    self.logger.warning(f'⚠️ ML-enhanced feature analysis failed: {e}')
+
+            success = await feature_selector.select_features(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs)
+
+            # Post-selection analysis with ML utilities
+            if success and self.ml_feature_selection:
+                try:
+                    self.logger.info('📊 Running post-selection validation with ML utilities...')
+                    validation_results = await self.ml_feature_selection.validate_feature_selection(
+                        symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir
+                    )
+                    if validation_results.get('warnings'):
+                        self.logger.warning(f'⚠️ Feature selection validation warnings: {validation_results["warnings"]}')
+                    self.logger.info('✅ ML-enhanced feature selection validation completed')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ ML-enhanced feature selection validation failed: {e}')
+
             if success:
-                self.logger.info('✅ Feature selection completed successfully')
+                self.logger.info('✅ Feature selection completed successfully with ML enhancements')
             else:
                 self.logger.error('❌ Feature selection failed')
             return success

@@ -37,6 +37,12 @@ from src.utils.common_operations import (
     validate_dataframe_schema,
     validate_data_quality
 )
+
+# Import ml_common utilities for enhanced functionality
+from src.utils.ml_common.data_quality import DataQualityUtilities
+from src.utils.ml_common.feature_selection import FeatureSelectionFramework
+from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
+from src.utils.ml_common.pipeline_orchestrator import MLPipelineOrchestrator
 from src.utils.math_validation import (
     safe_divide,
     safe_log,
@@ -115,10 +121,10 @@ class TripleBarrierMethodStep:
         self.logger = get_logger('TripleBarrierMethodStep')
         self.start_time: Optional[float] = None
         self.step_timings: Dict[str, float] = {}
-        
+
         # Initialize parquet utilities
         self.parquet_utils = get_parquet_utils()
-        
+
         # Memory management
         self.memory_config = MemoryConfig(
             max_memory_mb=safe_float(config.get('max_memory_mb', 2048.0), 2048.0),
@@ -126,12 +132,44 @@ class TripleBarrierMethodStep:
             critical_threshold=0.95
         )
         self.memory_monitor = MemoryMonitor(self.memory_config)
-        
+
         # Data streaming
         self.streaming_manager = DataStreamingManager(
             chunk_size=safe_int(config.get('chunk_size', 10000), 10000),
             memory_threshold=0.8
         )
+
+        # Initialize ml_common utilities
+        self.data_quality_utils = DataQualityUtilities({
+            'outlier_contamination': 0.05,  # More conservative for financial data
+            'missing_threshold': 0.1,  # 10% threshold for financial data
+            'drift_threshold': 0.05
+        })
+
+        self.feature_selector = FeatureSelectionFramework({
+            'enable_gpu': True,
+            'enable_parallel': True,
+            'max_workers': 4,
+            'random_state': 42
+        })
+
+        self.evaluator = ModelEvaluationUtilities({
+            'enable_gpu': True,
+            'enable_detailed_metrics': True,
+            'confidence_thresholds': [0.5, 0.7, 0.9],
+            'performance_stability_window': 30
+        })
+
+        # Initialize pipeline orchestrator for structured execution (optional)
+        if config.get('use_pipeline_orchestrator', False):
+            self.pipeline_orchestrator = MLPipelineOrchestrator({
+                'max_workers': 4,
+                'enable_parallel': True,
+                'default_timeout': 3600,
+                'enable_monitoring': True
+            })
+        else:
+            self.pipeline_orchestrator = None
         
         # Risk management configuration
         self.risk_config = {
@@ -229,11 +267,23 @@ class TripleBarrierMethodStep:
                     error_type='DataLoadError',
                     metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir}
                 )
-            
+
             self.logger.info(f'✅ Loaded data with shape: {data.shape}')
-            
+
             # Store data for volatility-based parameter calculation
             self._last_data = data
+
+            # Enhanced data quality assessment using ml_common
+            self.logger.info('🔍 Performing comprehensive data quality assessment...')
+            quality_report = await self._perform_data_quality_assessment(data, symbol, exchange, timeframe)
+            if quality_report.get('critical_issues', False):
+                self.logger.warning('⚠️ Critical data quality issues detected')
+                # Continue but log warnings
+
+            # Feature selection and optimization if enabled
+            if self.config.get('enable_feature_selection', True):
+                self.logger.info('🎯 Performing feature selection and optimization...')
+                data = await self._optimize_features(data, symbol, exchange, timeframe)
             
             # Check if data should be processed in chunks
             if self.streaming_manager.should_chunk_data(data):
@@ -262,10 +312,17 @@ class TripleBarrierMethodStep:
             success = await self._save_results_optimized(
                 data, labeled_data, symbol, exchange, timeframe, data_dir
             )
-            
+
             if success:
-                return self._create_success_result(
-                    data, labeled_data, symbol, exchange, timeframe, data_dir, step_start
+                # Enhanced evaluation using ml_common
+                self.logger.info('📊 Performing comprehensive triple barrier evaluation...')
+                evaluation_results = await self._perform_enhanced_evaluation(
+                    data, labeled_data, symbol, exchange, timeframe
+                )
+
+                return self._create_enhanced_success_result(
+                    data, labeled_data, symbol, exchange, timeframe, data_dir,
+                    step_start, evaluation_results
                 )
             else:
                 self.logger.error('❌ Failed to save results')
@@ -323,64 +380,24 @@ class TripleBarrierMethodStep:
             )
 
     def _calculate_label_statistics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate comprehensive label statistics."""
         labels = labeled_data.get('triple_barrier_label')
         if labels is None:
             labels = labeled_data.get('label')
         if labels is None:
             return {'total_labels': 0, 'buy_signals': 0, 'sell_signals': 0, 'no_action': 0}
-        return {'total_labels': int(len(labels)), 'buy_signals': int((labels == 1).sum()), 'sell_signals': int((labels == -1).sum()), 'no_action': int((labels == 0).sum())}
-    
-    def _create_success_result(
-        self, 
-        data: pd.DataFrame, 
-        labeled_data: pd.DataFrame, 
-        symbol: str, 
-        exchange: str, 
-        timeframe: str, 
-        data_dir: str, 
-        step_start: float
-    ) -> TripleBarrierResult:
-        """Create standardized success result to eliminate code duplication."""
-        # Calculate label statistics
-        label_stats = self._calculate_label_statistics(labeled_data)
-        
-        self._log_step_timing('Triple Barrier Method', step_start)
-        self.memory_monitor.log_memory_status('after triple barrier execution')
-        
-        # Create result data with proper column name and enhanced features
-        result_data = data.copy()
-        
-        # Align indices explicitly and map to canonical column names
-        labels_aligned = labeled_data['label'].reindex(result_data.index)
-        result_data['triple_barrier_label'] = labels_aligned.fillna(0).astype(np.int8)
-        
-        # Add profit tracking if available
-        if 'potential_profit_pct' in labeled_data.columns:
-            profit_aligned = labeled_data['potential_profit_pct'].reindex(result_data.index)
-            result_data['potential_profit_pct'] = profit_aligned.fillna(0.0).astype(np.float64)
-            
-            # Calculate net profit after fees (corrected fee: 0.04% per side)
-            fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0004))  # 0.04% per side
-            result_data['potential_profit_net_pct'] = (
-                result_data['potential_profit_pct'] - (2.0 * fee_per_side)
-            ).astype(np.float64)
-        
-        output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
-        
-        return TripleBarrierResult.success_result(
-            data=result_data,
-            metadata={
-                'symbol': symbol, 
-                'exchange': exchange, 
-                'timeframe': timeframe,
-                'output_file': str(output_path),
-                'data_shape': data.shape, 
-                'label_stats': label_stats,
-                'memory_stats': self.memory_monitor.get_memory_stats(),
-                'risk_metrics': self._calculate_risk_metrics(result_data)
-            },
-            execution_time=time.time() - step_start
-        )
+
+        stats = {
+            'total_labels': int(len(labels)),
+            'buy_signals': int((labels == 1).sum()),
+            'sell_signals': int((labels == -1).sum()),
+            'no_action': int((labels == 0).sum()),
+            'signal_ratio': float(((labels == 1).sum() + (labels == -1).sum()) / len(labels)),
+            'buy_ratio': float((labels == 1).sum() / len(labels)),
+            'sell_ratio': float((labels == -1).sum() / len(labels)),
+            'hold_ratio': float((labels == 0).sum() / len(labels))
+        }
+        return stats
     
     def _calculate_risk_metrics(self, result_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate risk metrics for the labeled data."""
@@ -770,139 +787,6 @@ class TripleBarrierMethodStep:
             self.logger.exception(f'❌ Error in basic triple barrier: {e}')
             return pd.DataFrame()
 
-    async def _load_data(self, file_path: str) -> Optional[pd.DataFrame]:
-        """Legacy method for backward compatibility."""
-        try:
-            return safe_read_parquet(file_path)
-        except Exception as e:
-            self.logger.warning(f'⚠️ Failed to load data from {file_path}: {e}')
-            return None
-
-    async def _apply_triple_barrier(
-        self, 
-        data: pd.DataFrame, 
-        profit_target: float, 
-        stop_loss: float, 
-        max_holding: int
-    ) -> Optional[pd.DataFrame]:
-        """Legacy method for backward compatibility."""
-        try:
-            # Prefer optimized vectorized labeler when available
-            if (getattr(self, 'triple_barrier_labeler', None) is not None and 
-                hasattr(self.triple_barrier_labeler, 'apply_triple_barrier_labeling_vectorized')):
-                labeled = self.triple_barrier_labeler.apply_triple_barrier_labeling_vectorized(data)
-                return labeled
-                
-            # Fallback to basic implementation
-            return self._apply_basic_triple_barrier_sync(data)
-        except Exception as e:
-            self.logger.exception(f'❌ Error applying triple barrier: {e}')
-            return None
-
-    async def _save_labeled_data(self, labeled_data: pd.DataFrame, output_path: Path) -> bool:
-        """Legacy method for backward compatibility."""
-        try:
-            ensure_directory(output_path.parent)
-            return safe_to_parquet(labeled_data, output_path, compression='snappy')
-        except Exception as e:
-            self.logger.warning(f'⚠️ Failed to save labeled data: {e}')
-            return False
-
-    @with_enhanced_mlflow_logging('step04_5_triple_barrier_method')
-    @traced(span_name='step04_5_triple_barrier_execute')
-    @handles_errors()
-    @log_execution_time()
-    @memory_efficient(max_memory_mb=2048.0)
-    async def execute(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str = 'data_cache'
-    ) -> Dict[str, Any]:
-        """Execute the triple barrier method with enhanced error handling and memory management."""
-        step_start = time.time()
-        try:
-            # Use the new streaming-aware data loading
-            data = await self._load_data_with_streaming(symbol, exchange, timeframe, data_dir)
-            if data is None or data.empty:
-                return {'success': False, 'error': 'data_load_failed'}
-            
-            # Get configuration with safe defaults
-            triple_barrier_config = self._get_triple_barrier_config()
-            
-            # Apply triple barrier labeling
-            if self.triple_barrier_labeler:
-                labeled_data = await self._apply_optimized_triple_barrier(data)
-            else:
-                labeled_data = await self._apply_basic_triple_barrier(data)
-            
-            if labeled_data is not None:
-                # Save labeled data
-                output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
-                success = await self._save_labeled_data(labeled_data, output_path)
-                
-                if success:
-                    # Generate financial metrics logging if available
-                    if FINANCIAL_LOGGING_AVAILABLE and labeled_data is not None:
-                        try:
-                            self.logger.info('📊 Generating financial metrics logging for Step04_5...')
-
-                            # Prepare triple barrier results
-                            triple_barrier_results = {
-                                'success': True,
-                                'total_signals': len(labeled_data),
-                                'profit_take_multiplier': triple_barrier_config.get('profit_take_multiplier', 0.002),
-                                'stop_loss_multiplier': triple_barrier_config.get('stop_loss_multiplier', 0.001),
-                                'time_barrier_minutes': triple_barrier_config.get('time_barrier_minutes', 7200),  # 5 days in minutes
-                                'signal_generation_rate': len(labeled_data) / (time.time() - step_start) if (time.time() - step_start) > 0 else 0,
-                                'label_success_rate': 1.0
-                            }
-
-                            # Prepare performance data
-                            execution_time_total = time.time() - step_start
-                            performance_data = {
-                                'execution_time_seconds': execution_time_total,
-                                'memory_usage_mb': 0,  # Would need to be measured
-                                'signal_generation_rate': len(labeled_data) / execution_time_total if execution_time_total > 0 else 0
-                            }
-
-                            # Calculate label statistics for logging
-                            label_stats = self._calculate_label_statistics(labeled_data)
-
-                            # Initialize and use financial logger
-                            financial_logger = Step04_5FinancialLogger(symbol, exchange, timeframe)
-                            financial_logger.log_step_execution(
-                                labeled_data=labeled_data,
-                                label_stats=label_stats,
-                                execution_data=performance_data,
-                                triple_barrier_results=triple_barrier_results
-                            )
-
-                            self.logger.info('✅ Financial metrics logging completed for Step04_5')
-
-                        except Exception as e:
-                            self.logger.warning(f'⚠️ Financial metrics logging failed for Step04_5, continuing with basic reporting: {e}')
-
-                    return {
-                        'status': 'success',
-                        'output_file': str(output_path),
-                        'data_shape': labeled_data.shape,
-                        'execution_time': time.time() - step_start
-                    }
-            
-            return {
-                'status': 'failed',
-                'execution_time': time.time() - step_start
-            }
-            
-        except Exception as e:
-            self.logger.exception(f'❌ Error in triple barrier method: {e}')
-            return {
-                'status': 'error',
-                'error': str(e),
-                'execution_time': time.time() - step_start
-            }
 
     def _get_triple_barrier_config(self) -> Dict[str, Union[float, int]]:
         """Extract triple barrier configuration parameters with safe defaults, validation, and volatility-based suggestions."""
@@ -1135,6 +1019,275 @@ class TripleBarrierMethodStep:
             self.memory_monitor.trigger_gc()
             return None
     
+    async def _perform_data_quality_assessment(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+        """Perform comprehensive data quality assessment using ml_common utilities."""
+        try:
+            self.logger.info('🔍 Running automated data quality analysis...')
+
+            # Missing value analysis
+            missing_analysis = self.data_quality_utils.missing_value_analysis(data)
+            if missing_analysis.get('severity_assessment', {}).get('action_required', False):
+                self.logger.warning(f'⚠️ Missing value issues detected: {missing_analysis["severity_assessment"]["severity_level"]}')
+
+            # Outlier detection
+            outlier_analysis = self.data_quality_utils.automated_outlier_detection(data)
+            if outlier_analysis.get('summary', {}).get('outlier_percentage', 0) > 5:
+                self.logger.warning(f'⚠️ High outlier percentage detected: {outlier_analysis["summary"]["outlier_percentage"]:.2f}%')
+
+            # Feature correlation analysis
+            correlation_analysis = self.data_quality_utils.feature_correlation_analysis(data)
+            if correlation_analysis.get('multicollinearity_analysis', {}).get('highly_correlated_pairs_count', 0) > 0:
+                self.logger.warning(f'⚠️ Multicollinearity detected: {correlation_analysis["multicollinearity_analysis"]["highly_correlated_pairs_count"]} pairs')
+
+            # Compile quality report
+            quality_report = {
+                'missing_analysis': missing_analysis,
+                'outlier_analysis': outlier_analysis,
+                'correlation_analysis': correlation_analysis,
+                'critical_issues': (
+                    missing_analysis.get('severity_assessment', {}).get('severity_level') == 'critical' or
+                    outlier_analysis.get('summary', {}).get('outlier_percentage', 0) > 10
+                ),
+                'recommendations': []
+            }
+
+            # Collect recommendations
+            quality_report['recommendations'].extend(missing_analysis.get('recommendations', []))
+            quality_report['recommendations'].extend(outlier_analysis.get('recommendations', []))
+            quality_report['recommendations'].extend(correlation_analysis.get('recommendations', []))
+
+            self.logger.info(f'✅ Data quality assessment completed - {len(quality_report["recommendations"])} recommendations')
+            return quality_report
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Data quality assessment failed: {e}')
+            return {'error': str(e), 'critical_issues': False}
+
+    async def _optimize_features(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
+        """Optimize features using ml_common feature selection utilities."""
+        try:
+            self.logger.info('🎯 Starting feature optimization...')
+
+            # Prepare target variable (use returns for feature selection)
+            if 'close' in data.columns:
+                # Calculate returns as target for feature relevance
+                data_with_target = data.copy()
+                data_with_target['returns'] = data_with_target['close'].pct_change().fillna(0)
+
+                # Get feature columns (exclude target and non-numeric)
+                feature_cols = [col for col in data_with_target.columns
+                              if col not in ['returns', 'timestamp', 'datetime'] and
+                              data_with_target[col].dtype in ['float64', 'float32', 'int64', 'int32']]
+
+                if len(feature_cols) > 10:  # Only if we have enough features
+                    # Correlation-based filtering
+                    correlation_results = self.feature_selector.correlation_based_filtering(
+                        data_with_target[feature_cols].values,
+                        feature_cols,
+                        correlation_threshold=0.95
+                    )
+
+                    selected_features = correlation_results.get('selected_features', feature_cols)
+                    self.logger.info(f'📊 Correlation filtering: {len(feature_cols)} -> {len(selected_features)} features')
+
+                    # Update data to include only selected features plus required columns
+                    required_cols = ['open', 'high', 'low', 'close', 'volume'] if 'volume' in data.columns else ['open', 'high', 'low', 'close']
+                    optimized_data = data[required_cols + [col for col in selected_features if col in data.columns]]
+
+                    self.logger.info(f'✅ Feature optimization completed: {data.shape[1]} -> {optimized_data.shape[1]} columns')
+                    return optimized_data
+                else:
+                    self.logger.info('ℹ️ Insufficient features for optimization, using original data')
+                    return data
+            else:
+                self.logger.warning('⚠️ No close price column found for feature optimization')
+                return data
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Feature optimization failed: {e}')
+            return data
+
+    async def _perform_enhanced_evaluation(self, data: pd.DataFrame, labeled_data: pd.DataFrame,
+                                         symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+        """Perform comprehensive evaluation of triple barrier results using ml_common utilities."""
+        try:
+            self.logger.info('📊 Starting enhanced triple barrier evaluation...')
+
+            # Extract labels for evaluation
+            labels = labeled_data['label'].values if 'label' in labeled_data.columns else labeled_data.get('triple_barrier_label', pd.Series()).values
+
+            # Create dummy target for evaluation (we evaluate signal quality)
+            # Use future returns as pseudo-target for signal evaluation
+            if len(data) > 1:
+                future_returns = data['close'].shift(-1).pct_change().fillna(0).values[:len(labels)]
+            else:
+                future_returns = np.zeros(len(labels))
+
+            # Multi-metric evaluation
+            evaluation_results = self.evaluator.multi_metric_evaluation(
+                y_true=(future_returns > 0).astype(int),  # Binary target: positive return or not
+                y_pred=(labels > 0).astype(int),  # Binary prediction: buy signal or not
+                task_type='classification'
+            )
+
+            # Class imbalance analysis
+            imbalance_analysis = self.evaluator.class_imbalance_aware_metrics(
+                y_true=(future_returns > 0).astype(int),
+                y_pred=(labels > 0).astype(int)
+            )
+
+            # Signal quality assessment
+            signal_quality = self._assess_signal_quality(data, labeled_data)
+
+            # Compile enhanced evaluation
+            enhanced_evaluation = {
+                'multi_metric_evaluation': evaluation_results,
+                'imbalance_analysis': imbalance_analysis,
+                'signal_quality': signal_quality,
+                'triple_barrier_metrics': self._calculate_triple_barrier_metrics(labeled_data),
+                'evaluation_summary': {
+                    'total_signals': len(labels),
+                    'buy_signals': int((labels > 0).sum()),
+                    'sell_signals': int((labels < 0).sum()),
+                    'hold_signals': int((labels == 0).sum()),
+                    'signal_distribution': {
+                        'buy_ratio': float((labels > 0).mean()),
+                        'sell_ratio': float((labels < 0).mean()),
+                        'hold_ratio': float((labels == 0).mean())
+                    }
+                }
+            }
+
+            self.logger.info(f'✅ Enhanced evaluation completed - {len(labels)} signals analyzed')
+            return enhanced_evaluation
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Enhanced evaluation failed: {e}')
+            return {'error': str(e)}
+
+    def _assess_signal_quality(self, data: pd.DataFrame, labeled_data: pd.DataFrame) -> Dict[str, Any]:
+        """Assess the quality of trading signals."""
+        try:
+            signals = labeled_data['label'].values if 'label' in labeled_data.columns else labeled_data.get('triple_barrier_label', pd.Series()).values
+
+            # Calculate signal quality metrics
+            signal_quality = {
+                'signal_purity': float(np.mean(np.abs(signals) > 0)),  # Ratio of non-zero signals
+                'signal_balance': float(min(np.mean(signals > 0), np.mean(signals < 0)) / max(np.mean(signals > 0), np.mean(signals < 0))) if max(np.mean(signals > 0), np.mean(signals < 0)) > 0 else 0.0,
+                'signal_strength_distribution': {
+                    'weak_signals': float(np.mean(np.abs(signals) < 0.5)),
+                    'medium_signals': float(np.mean((np.abs(signals) >= 0.5) & (np.abs(signals) < 0.8))),
+                    'strong_signals': float(np.mean(np.abs(signals) >= 0.8))
+                }
+            }
+
+            # Profit potential analysis if available
+            if 'potential_profit_pct' in labeled_data.columns:
+                profits = labeled_data['potential_profit_pct'].values
+                signal_quality['profitability_analysis'] = {
+                    'avg_profit_buy_signals': float(profits[signals > 0].mean()) if np.any(signals > 0) else 0.0,
+                    'avg_profit_sell_signals': float(profits[signals < 0].mean()) if np.any(signals < 0) else 0.0,
+                    'profitable_signals_ratio': float(np.mean(profits > 0)),
+                    'high_profit_signals': float(np.mean(profits > 0.01))  # >1% profit
+                }
+
+            return signal_quality
+
+        except Exception as e:
+            return {'error': str(e)}
+
+    def _calculate_triple_barrier_metrics(self, labeled_data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate specific triple barrier method metrics."""
+        try:
+            metrics = {}
+
+            if 'potential_profit_pct' in labeled_data.columns:
+                profits = labeled_data['potential_profit_pct'].values
+                metrics['profit_distribution'] = {
+                    'mean_profit': float(np.mean(profits)),
+                    'std_profit': float(np.std(profits)),
+                    'max_profit': float(np.max(profits)),
+                    'min_profit': float(np.min(profits)),
+                    'profit_percentiles': {
+                        '25': float(np.percentile(profits, 25)),
+                        '50': float(np.percentile(profits, 50)),
+                        '75': float(np.percentile(profits, 75)),
+                        '95': float(np.percentile(profits, 95))
+                    }
+                }
+
+            # Barrier hit analysis
+            labels = labeled_data['label'].values if 'label' in labeled_data.columns else labeled_data.get('triple_barrier_label', pd.Series()).values
+            metrics['barrier_analysis'] = {
+                'profit_barrier_hits': int(np.sum(labels == 1)),
+                'stop_barrier_hits': int(np.sum(labels == -1)),
+                'time_barrier_hits': int(np.sum(labels == 0)),
+                'total_signals': len(labels)
+            }
+
+            return metrics
+
+        except Exception as e:
+            return {'error': str(e)}
+
+    def _create_enhanced_success_result(
+        self,
+        data: pd.DataFrame,
+        labeled_data: pd.DataFrame,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str,
+        step_start: float,
+        evaluation_results: Dict[str, Any]
+    ) -> TripleBarrierResult:
+        """Create enhanced success result with comprehensive evaluation metrics."""
+        # Calculate label statistics
+        label_stats = self._calculate_label_statistics(labeled_data)
+
+        self._log_step_timing('Triple Barrier Method', step_start)
+        self.memory_monitor.log_memory_status('after triple barrier execution')
+
+        # Create result data with proper column name and enhanced features
+        result_data = data.copy()
+
+        # Align indices explicitly and map to canonical column names
+        labels_aligned = labeled_data['label'].reindex(result_data.index)
+        result_data['triple_barrier_label'] = labels_aligned.fillna(0).astype(np.int8)
+
+        # Add profit tracking if available
+        if 'potential_profit_pct' in labeled_data.columns:
+            profit_aligned = labeled_data['potential_profit_pct'].reindex(result_data.index)
+            result_data['potential_profit_pct'] = profit_aligned.fillna(0.0).astype(np.float64)
+
+            # Calculate net profit after fees (corrected fee: 0.04% per side)
+            fee_per_side = float(self.config.get('TRADING_FEE_PCT_PER_SIDE', 0.0004))  # 0.04% per side
+            result_data['potential_profit_net_pct'] = (
+                result_data['potential_profit_pct'] - (2.0 * fee_per_side)
+            ).astype(np.float64)
+
+        output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet'
+
+        # Enhanced metadata with evaluation results
+        enhanced_metadata = {
+            'symbol': symbol,
+            'exchange': exchange,
+            'timeframe': timeframe,
+            'output_file': str(output_path),
+            'data_shape': data.shape,
+            'label_stats': label_stats,
+            'memory_stats': self.memory_monitor.get_memory_stats(),
+            'risk_metrics': self._calculate_risk_metrics(result_data),
+            'evaluation_results': evaluation_results,
+            'ml_common_enhanced': True
+        }
+
+        return TripleBarrierResult.success_result(
+            data=result_data,
+            metadata=enhanced_metadata,
+            execution_time=time.time() - step_start
+        )
+
     def _apply_risk_management_controls(self, data: pd.DataFrame, labeled_data: pd.DataFrame) -> pd.DataFrame:
         """Apply risk management controls to the labeled data."""
         if not self.risk_config['enable_risk_controls']:
@@ -1213,6 +1366,199 @@ class TripleBarrierMethodStep:
             return labeled_data
 
 
+    async def execute_with_pipeline_orchestrator(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str = 'data_cache',
+        force_rerun: bool = False
+    ) -> TripleBarrierResult:
+        """Execute step04 using pipeline orchestrator for structured workflow management."""
+        try:
+            self.logger.info('🔧 Creating structured pipeline for triple barrier method...')
+
+            # Initialize pipeline context
+            pipeline_context = {}
+
+            # Define pipeline steps with context passing
+            def data_loading_step():
+                return self._pipeline_data_loading(symbol, exchange, timeframe, data_dir, pipeline_context)
+
+            def data_quality_step():
+                return self._pipeline_data_quality(symbol, exchange, timeframe, pipeline_context)
+
+            def feature_optimization_step():
+                return self._pipeline_feature_optimization(symbol, exchange, timeframe, pipeline_context)
+
+            def triple_barrier_step():
+                return self._pipeline_triple_barrier_labeling(symbol, exchange, timeframe, data_dir, pipeline_context)
+
+            def evaluation_step():
+                return self._pipeline_enhanced_evaluation(symbol, exchange, timeframe, pipeline_context)
+
+            def save_step():
+                return self._pipeline_save_results(symbol, exchange, timeframe, data_dir, pipeline_context)
+
+            # Execute pipeline steps sequentially with error handling
+            try:
+                # Step 1: Data Loading
+                self.logger.info('📁 Executing: Data Loading')
+                data_loading_result = data_loading_step()
+                self.logger.info(f'✅ Data loading completed: {data_loading_result}')
+
+                # Step 2: Data Quality Assessment
+                self.logger.info('🔍 Executing: Data Quality Assessment')
+                quality_result = data_quality_step()
+                self.logger.info(f'✅ Data quality assessment completed: {len(quality_result.get("recommendations", []))} recommendations')
+
+                # Step 3: Feature Optimization
+                self.logger.info('🎯 Executing: Feature Optimization')
+                feature_result = feature_optimization_step()
+                self.logger.info(f'✅ Feature optimization completed: {feature_result}')
+
+                # Step 4: Triple Barrier Labeling
+                self.logger.info('🏷️ Executing: Triple Barrier Labeling')
+                labeling_result = triple_barrier_step()
+                self.logger.info(f'✅ Triple barrier labeling completed: {labeling_result}')
+
+                # Step 5: Enhanced Evaluation
+                self.logger.info('📊 Executing: Enhanced Evaluation')
+                evaluation_result = evaluation_step()
+                self.logger.info(f'✅ Enhanced evaluation completed: {len(evaluation_result)} metrics')
+
+                # Step 6: Save Results
+                self.logger.info('💾 Executing: Save Results')
+                final_result = save_step()
+                self.logger.info('✅ Pipeline execution completed successfully')
+
+                return final_result
+
+            except Exception as step_error:
+                self.logger.error(f'❌ Pipeline step failed: {step_error}')
+                return TripleBarrierResult.failure_result(
+                    error=f'Pipeline step failed: {str(step_error)}',
+                    error_type=type(step_error).__name__,
+                    metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+                )
+
+        except Exception as e:
+            self.logger.exception(f'❌ Pipeline orchestrator execution failed: {e}')
+            return TripleBarrierResult.failure_result(
+                error=str(e),
+                error_type=type(e).__name__
+            )
+
+    # Pipeline step methods for orchestrator (static methods for pipeline execution)
+    def _pipeline_data_loading(self, symbol: str, exchange: str, timeframe: str, data_dir: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Pipeline step: Load data."""
+        import asyncio
+        async def async_load():
+            self.logger.info('📁 Pipeline Step: Data Loading')
+            data = await self._load_data_with_streaming(symbol, exchange, timeframe, data_dir)
+            if data is None or data.empty:
+                raise ValueError('Failed to load data')
+            context['data'] = data
+            return {'data_shape': data.shape, 'success': True}
+        return asyncio.run(async_load())
+
+    def _pipeline_data_quality(self, symbol: str, exchange: str, timeframe: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Pipeline step: Data quality assessment."""
+        import asyncio
+        async def async_quality():
+            self.logger.info('🔍 Pipeline Step: Data Quality Assessment')
+            data = context.get('data')
+            if data is None:
+                raise ValueError('No data available from previous step')
+
+            quality_report = await self._perform_data_quality_assessment(data, symbol, exchange, timeframe)
+            context['quality_report'] = quality_report
+            return quality_report
+        return asyncio.run(async_quality())
+
+    def _pipeline_feature_optimization(self, symbol: str, exchange: str, timeframe: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Pipeline step: Feature optimization."""
+        import asyncio
+        async def async_optimize():
+            self.logger.info('🎯 Pipeline Step: Feature Optimization')
+            data = context.get('data')
+            if data is None:
+                raise ValueError('No data available from previous step')
+
+            optimized_data = await self._optimize_features(data, symbol, exchange, timeframe)
+            context['optimized_data'] = optimized_data
+            return {'original_shape': data.shape, 'optimized_shape': optimized_data.shape}
+        return asyncio.run(async_optimize())
+
+    def _pipeline_triple_barrier_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Pipeline step: Triple barrier labeling."""
+        import asyncio
+        async def async_label():
+            self.logger.info('🏷️ Pipeline Step: Triple Barrier Labeling')
+            data = context.get('optimized_data', context.get('data'))
+            if data is None:
+                raise ValueError('No data available for labeling')
+
+            # Use streaming for large datasets
+            if self.streaming_manager.should_chunk_data(data):
+                labeled_data = await self._process_large_dataset(data)
+            else:
+                if self.triple_barrier_labeler:
+                    labeled_data = await self._apply_optimized_triple_barrier(data)
+                else:
+                    labeled_data = await self._apply_basic_triple_barrier(data)
+
+            if labeled_data is None or labeled_data.empty:
+                raise ValueError('Failed to generate triple barrier labels')
+
+            # Apply risk management
+            labeled_data = self._apply_risk_management_controls(data, labeled_data)
+            context['labeled_data'] = labeled_data
+            return {'labeled_shape': labeled_data.shape, 'success': True}
+        return asyncio.run(async_label())
+
+    def _pipeline_enhanced_evaluation(self, symbol: str, exchange: str, timeframe: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Pipeline step: Enhanced evaluation."""
+        import asyncio
+        async def async_evaluate():
+            self.logger.info('📊 Pipeline Step: Enhanced Evaluation')
+            data = context.get('optimized_data', context.get('data'))
+            labeled_data = context.get('labeled_data')
+
+            if data is None or labeled_data is None:
+                raise ValueError('Missing data or labeled data for evaluation')
+
+            evaluation_results = await self._perform_enhanced_evaluation(data, labeled_data, symbol, exchange, timeframe)
+            context['evaluation_results'] = evaluation_results
+            return evaluation_results
+        return asyncio.run(async_evaluate())
+
+    def _pipeline_save_results(self, symbol: str, exchange: str, timeframe: str, data_dir: str, context: Dict[str, Any]) -> TripleBarrierResult:
+        """Pipeline step: Save results."""
+        import asyncio
+        async def async_save():
+            self.logger.info('💾 Pipeline Step: Save Results')
+            data = context.get('optimized_data', context.get('data'))
+            labeled_data = context.get('labeled_data')
+            evaluation_results = context.get('evaluation_results')
+
+            if data is None or labeled_data is None:
+                raise ValueError('Missing data for saving results')
+
+            # Save results
+            success = await self._save_results_optimized(data, labeled_data, symbol, exchange, timeframe, data_dir)
+
+            if success:
+                # Create final result
+                return self._create_enhanced_success_result(
+                    data, labeled_data, symbol, exchange, timeframe, data_dir,
+                    time.time(), evaluation_results
+                )
+            else:
+                raise ValueError('Failed to save results')
+        return asyncio.run(async_save())
+
+
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False, config: Optional[Dict[str, Any]]=None) -> StepResult:
     """Run Step 4: Triple Barrier Method with standardized return types.
     
@@ -1231,27 +1577,45 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str='da
         config = {}
     
     step_config = {
-        'SYMBOL': symbol, 'EXCHANGE': exchange, 'TIMEFRAME': timeframe, 'DATA_DIR': data_dir, 
+        'SYMBOL': symbol, 'EXCHANGE': exchange, 'TIMEFRAME': timeframe, 'DATA_DIR': data_dir,
         'triple_barrier': {
-            'profit_take_multiplier': 0.002, 
-            'stop_loss_multiplier': 0.001, 
-            'time_barrier_minutes': 30, 
+            'profit_take_multiplier': 0.002,
+            'stop_loss_multiplier': 0.001,
+            'time_barrier_minutes': 30,
             'max_lookahead': 100
-        }, 
-        **config
+        }
     }
+
+    # Merge config if provided
+    if config:
+        step_config.update(config)
     
     step_start = time.time()
     try:
         step = TripleBarrierMethodStep(step_config)
         await step.initialize()
-        result = await step.execute_triple_barrier_method(
-            symbol=symbol, 
-            exchange=exchange, 
-            timeframe=timeframe, 
-            data_dir=data_dir, 
-            force_rerun=force_rerun
-        )
+
+        # Choose execution mode based on config
+        use_pipeline_orchestrator = config.get('use_pipeline_orchestrator', False) if config else False
+
+        if use_pipeline_orchestrator:
+            # Use structured pipeline execution
+            result = await step.execute_with_pipeline_orchestrator(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=force_rerun
+            )
+        else:
+            # Use traditional execution with ml_common enhancements
+            result = await step.execute_triple_barrier_method(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=force_rerun
+            )
         
         # Standardize the result if it's not already a StepResult
         standardized_result = standardize_result(result, "triple_barrier_method")

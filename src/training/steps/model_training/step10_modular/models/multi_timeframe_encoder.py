@@ -161,14 +161,74 @@ class MultiTimeframeHMMEncoder(nn.Module):
         }
 
     def initialize_output_layers(self, num_regimes: int, num_intensity_features: int) -> None:
-        """Initialize output layers based on data characteristics.
+        """Initialize output layers based on data characteristics with class imbalance validation.
 
         Args:
             num_regimes: Number of regimes detected in the data
             num_intensity_features: Number of intensity features
         """
+        # Validate regime count (prevent single-class issues)
+        if num_regimes < 2:
+            logger.error(f"❌ SINGLE-CLASS ERROR: Only {num_regimes} regime(s) detected, need at least 2 for classification")
+            raise ValueError(f"Insufficient regimes for classification: {num_regimes}")
+
+        if num_regimes > 10:
+            logger.warning(f"⚠️ High number of regimes detected: {num_regimes}. Consider regime consolidation.")
+
         self.num_regimes = num_regimes
         self.regime_classifier = nn.Linear(self.d_model, num_regimes)
         self.intensity_predictor = nn.Linear(self.d_model, num_intensity_features)
 
         logger.info(f"✅ Output layers initialized: {num_regimes} regimes, {num_intensity_features} intensity features")
+
+    def validate_class_distribution(self, regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Validate class distribution to prevent imbalance issues.
+
+        Args:
+            regime_labels: Array of regime labels
+
+        Returns:
+            Validation results dictionary
+        """
+        try:
+            unique_classes, class_counts = np.unique(regime_labels, return_counts=True)
+            total_samples = len(regime_labels)
+
+            validation_results = {
+                'num_classes': len(unique_classes),
+                'class_counts': class_counts.tolist(),
+                'total_samples': total_samples,
+                'is_valid': True,
+                'warnings': [],
+                'errors': []
+            }
+
+            # Check for single class
+            if len(unique_classes) < 2:
+                validation_results['errors'].append('Single class detected')
+                validation_results['is_valid'] = False
+
+            # Check class distribution
+            class_ratios = class_counts / total_samples
+            max_ratio = np.max(class_ratios)
+            min_ratio = np.min(class_ratios)
+
+            # Severe imbalance alerts
+            if max_ratio > 0.95:
+                validation_results['errors'].append('.1%'                validation_results['is_valid'] = False
+            elif max_ratio > 0.8:
+                validation_results['warnings'].append('.1%')
+
+            # Log results
+            if validation_results['errors']:
+                logger.error(f"❌ Class distribution validation failed: {validation_results['errors']}")
+            elif validation_results['warnings']:
+                logger.warning(f"⚠️ Class distribution warnings: {validation_results['warnings']}")
+            else:
+                logger.info(f"✅ Class distribution valid: {len(unique_classes)} classes, ratios: {class_ratios}")
+
+            return validation_results
+
+        except Exception as e:
+            logger.error(f"❌ Class distribution validation failed: {e}")
+            return {'is_valid': False, 'errors': [str(e)]}

@@ -49,6 +49,18 @@ try:
 except ImportError:
     NUMBA_AVAILABLE = False
 
+# Import ML Common utilities for enhanced functionality
+try:
+    from src.utils.ml_common import (
+        DataQualityUtilities,
+        FeatureSelectionFramework,
+        MLPipelineOrchestrator
+    )
+    ML_COMMON_AVAILABLE = True
+except ImportError as e:
+    ML_COMMON_AVAILABLE = False
+    system_logger.warning(f"⚠️ ML Common utilities not available in advanced feature selection: {e}")
+
 try:
     from joblib import Parallel, delayed
     JOBLIB_AVAILABLE = True
@@ -1000,39 +1012,14 @@ class Step08AdvancedFeatureSelection(EnhancedStep08AdvancedFeatureSelection):
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize Step 8 Advanced Feature Selection."""
-        self.config = config
+        # Initialize parent class first
+        super().__init__(config)
+
+        # Override logger name for legacy compatibility
         self.logger = system_logger.getChild('Step08AdvancedFeatureSelection')
-        self.standards = pipeline_standards
-        self.step_config = config.get('step08_advanced_feature_selection', {})
-        self.output_dir = ensure_directory(self.step_config.get('output_dir', 'data/selected_features'))
-        self.phase1_target_features = self.step_config.get('phase1_target_features', 150)
-        self.enable_mrmr = self.step_config.get('enable_mrmr', True)
-        self.enable_rf_importance = self.step_config.get('enable_rf_importance', True)
-        self.phase2_targets = self.step_config.get('phase2_targets', [100, 80, 60])
-        self.boruta_max_iter = self.step_config.get('boruta_max_iter', 100)
-        self.boruta_alpha = self.step_config.get('boruta_alpha', 0.05)
-        self.enable_redundancy_analysis = self.step_config.get('enable_redundancy_analysis', True)
-        self.min_redundancy_correlation = self.step_config.get('min_redundancy_correlation', 0.7)
-        self.redundancy_groups_per_concept = self.step_config.get('redundancy_groups_per_concept', 2)
-        self.feature_concept_patterns = self.step_config.get('feature_concept_patterns', {'momentum': ['rsi', 'macd', 'momentum', 'roc'], 'volatility': ['bb_', 'atr', 'volatility', 'std'], 'volume': ['volume', 'vwap', 'obv', 'mfi'], 'trend': ['ema', 'sma', 'trend', 'adx'], 'microstructure': ['spread', 'imbalance', 'flow', 'tick'], 'regime': ['regime', 'cluster', 'state'], 'support_resistance': ['sr_', 'support', 'resistance', 'level']})
-        self.n_splits_ts = self.step_config.get('n_splits_ts', 5)
-        self.min_regime_samples = self.step_config.get('min_regime_samples', 100)
-        self.enable_shap = self.step_config.get('enable_shap', True) and SHAP_AVAILABLE
-        self.enable_lime = self.step_config.get('enable_lime', True) and LIME_AVAILABLE
-        self.n_lime_samples = self.step_config.get('n_lime_samples', 10)
-        self.n_jobs = self.step_config.get('n_jobs', -1)
-        self.use_parallel = JOBLIB_AVAILABLE and self.n_jobs != 1
-        self.logger.info('🚀 Step 8 Advanced Feature Selection initialized')
-        self.logger.info(f'   Phase 1 target: {self.phase1_target_features} features')
-        self.logger.info(f'   Phase 2 targets: {self.phase2_targets}')
-        self.logger.info(f'   Computational optimizations:')
-        self.logger.info(f'     - Numba: {NUMBA_AVAILABLE}')
-        self.logger.info(f'     - Joblib: {JOBLIB_AVAILABLE}')
-        self.logger.info(f'     - Parallel jobs: {self.n_jobs}')
-        self.logger.info(f'   Feature selection methods:')
-        self.logger.info(f'     - Boruta: {BORUTA_AVAILABLE}')
-        self.logger.info(f'     - SHAP: {SHAP_AVAILABLE}')
-        self.logger.info(f'     - LIME: {LIME_AVAILABLE}')
+
+        # Parent class initialization already handles all configuration
+        self.logger.info('🚀 Legacy Step 8 Advanced Feature Selection initialized (inherits from enhanced version)')
 
     @handles_errors(exceptions=(ValueError, RuntimeError), default_return = False)
     async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:

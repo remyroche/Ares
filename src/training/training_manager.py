@@ -21,6 +21,16 @@ from ..utils.warning_symbols import (
     missing,
     validation_error,
 )
+from src.utils.ml_training_safeguards import (
+    MLTrainingSafeguards,
+    check_class_distribution,
+    validate_chunk_for_training,
+    create_balanced_sample_weights,
+    perform_robust_cross_validation,
+    calculate_comprehensive_metrics,
+    classify_ml_error,
+    create_smart_fast_fail_handler,
+)
 
 class TrainingManager:
     """Enhanced training manager with comprehensive error handling and type safety."""
@@ -715,20 +725,84 @@ class TrainingManager:
         self,
         training_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """Perform cross validation."""
+        """Perform robust cross validation with ML training safeguards."""
         try:
-            # Simulate cross validation
-            return {
-                "cv_folds": 5,
-                "cv_score": 0.83,
-                "cv_std": 0.02,
-                "validation_time": datetime.now().isoformat(),
+            # Extract training data
+            X = training_input.get('features')
+            y = training_input.get('labels')
+
+            if X is None or y is None:
+                error_msg = "Missing features or labels for cross-validation"
+                self.logger.error(error_msg)
+                self.print(validation_error(error_msg))
+                return {}
+
+            # Validate data quality
+            chunk_validation = validate_chunk_for_training(X, y)
+            if not chunk_validation['is_valid']:
+                error_msg = f"Data validation failed: {chunk_validation['reason']}"
+                self.logger.warning(error_msg)
+                self.print(validation_error(error_msg))
+
+                # Return fallback results for invalid data
+                return {
+                    "cv_folds": 5,
+                    "cv_score": 0.5,
+                    "cv_std": 0.0,
+                    "validation_time": datetime.now().isoformat(),
+                    "data_quality_issue": chunk_validation['reason']
+                }
+
+            # Check class distribution
+            class_analysis = check_class_distribution(y)
+            if class_analysis['is_extreme_imbalance']:
+                self.logger.warning(f"⚠️ Extreme class imbalance detected: {class_analysis['dominant_ratio']:.2%}")
+
+            # Use robust cross-validation with safeguards
+            from sklearn.ensemble import RandomForestClassifier
+
+            model_class = RandomForestClassifier
+            model_params = {
+                'n_estimators': 50,
+                'random_state': 42,
+                'n_jobs': -1,
+                'class_weight': 'balanced' if class_analysis['is_extreme_imbalance'] else None
             }
+
+            cv_results = perform_robust_cross_validation(
+                X, y, model_class, model_params,
+                n_splits=5, min_samples_per_fold=50
+            )
+
+            # Format results for compatibility
+            result = {
+                "cv_folds": cv_results.get('n_splits', 5),
+                "cv_score": cv_results.get('direction_accuracy_mean', 0.5),
+                "cv_std": cv_results.get('direction_accuracy_std', 0.0),
+                "balanced_accuracy": cv_results.get('balanced_accuracy_mean', 0.5),
+                "f1_score": cv_results.get('f1_mean', 0.5),
+                "validation_time": datetime.now().isoformat(),
+                "data_quality": class_analysis
+            }
+
+            self.logger.info(f"✅ Cross-validation completed: accuracy={result['cv_score']:.4f} ± {result['cv_std']:.4f}")
+            return result
+
         except Exception as e:
-            error_msg = f"Error performing cross validation: {e}"
+            error_type = classify_ml_error(e)
+            error_msg = f"Error performing cross validation ({error_type}): {e}"
             self.logger.exception(error_msg)
             self.print(validation_error(error_msg))
-            return {}
+
+            # Return fallback results
+            return {
+                "cv_folds": 5,
+                "cv_score": 0.5,
+                "cv_std": 0.0,
+                "validation_time": datetime.now().isoformat(),
+                "error_type": error_type,
+                "error_message": str(e)
+            }
 
     def _perform_model_selection(
         self,

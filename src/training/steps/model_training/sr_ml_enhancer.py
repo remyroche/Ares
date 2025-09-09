@@ -27,7 +27,19 @@ try:
     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingRegressor
     from sklearn.preprocessing import StandardScaler
     from sklearn.model_selection import cross_val_score
-import json
+    import json
+
+    # ML Training Safeguards
+    from src.utils.ml_training_safeguards import (
+        MLTrainingSafeguards,
+        check_class_distribution,
+        validate_chunk_for_training,
+        create_balanced_sample_weights,
+        perform_robust_cross_validation,
+        calculate_comprehensive_metrics,
+        classify_ml_error,
+        create_smart_fast_fail_handler,
+    )
 import logging
 import time
 
@@ -137,13 +149,52 @@ class SRMLEnhancer:
             features_array = np.array(features)
             targets_array = np.array(targets)
             feature_names = await self._get_combined_feature_names()
+
+            # Apply ML training safeguards
+            # Check class distribution for imbalance
+            if len(targets_array) > 0:
+                class_analysis = check_class_distribution(targets_array)
+                if class_analysis['is_extreme_imbalance']:
+                    self.logger.warning(f"⚠️ Extreme class imbalance detected: {class_analysis['dominant_ratio']:.2%}")
+                    self.logger.info(f"📊 Class distribution: {class_analysis['class_counts']}")
+
+                # Validate data quality
+                chunk_validation = validate_chunk_for_training(features_array, targets_array)
+                if not chunk_validation['is_valid']:
+                    error_msg = f"Data validation failed: {chunk_validation['reason']}"
+                    self.logger.warning(f"⚠️ {error_msg}")
+
+                    # Log detailed information about the issue
+                    if chunk_validation['reason'] == 'Single class chunk':
+                        self.logger.error("❌ Single class detected - this will cause training failures")
+                    elif 'Insufficient samples' in chunk_validation['reason']:
+                        self.logger.warning("⚠️ Limited samples per class - consider data augmentation")
+
+                # Create sample weights if needed for imbalanced data
+                sample_weights = None
+                if class_analysis['is_extreme_imbalance']:
+                    sample_weights = create_balanced_sample_weights(targets_array, strategy='balanced')
+                    self.logger.info("⚖️ Created balanced sample weights for imbalanced data")
+
             self.logger.info(f'📊 Training data prepared: {len(features)} samples, {len(feature_names)} features')
             self.logger.info(f'   - S/R specific features: {len(await self._get_feature_names())} (47 features)')
             self.logger.info(f'   - Step06 features: {len(step06_features)} (200+ features)')
             self.logger.info(f'   - S/R feature breakdown: Core(15), HVN(5), Fibonacci(6), Psychological(5), Pivot(4), Trendline(4), S/R Specific(8)')
             self.logger.info(f'   - Target calculation: Optimized weights based on trading performance')
             self.logger.info(f'   - Quality definition: Bounce rate, false breakout rate, volume confirmation, timeframe consistency')
-            return MLFeatureSet(features = features_array, feature_names = feature_names, target = targets_array, metadata={'n_samples': len(features), 'n_features': len(feature_names), 'sr_features': len(await self._get_feature_names()), 'step06_features': len(step06_features), 'target_distribution': np.bincount(targets_array.astype(int)) if len(targets_array) > 0 else []})
+            # Include safeguards information in metadata
+            metadata = {
+                'n_samples': len(features),
+                'n_features': len(feature_names),
+                'sr_features': len(await self._get_feature_names()),
+                'step06_features': len(step06_features),
+                'target_distribution': np.bincount(targets_array.astype(int)) if len(targets_array) > 0 else [],
+                'sample_weights': sample_weights,
+                'class_analysis': class_analysis if 'class_analysis' in locals() else None,
+                'data_quality': chunk_validation if 'chunk_validation' in locals() else None
+            }
+
+            return MLFeatureSet(features=features_array, feature_names=feature_names, target=targets_array, metadata=metadata)
         except Exception as e:
             self.logger.error(f'Training data preparation failed: {e}')
             return None

@@ -44,6 +44,18 @@ from src.training.steps.market_analysis.progress_monitor import progress_monitor
 from src.training.reports import save_training_report
 import logging
 
+# Import ML Common utilities for enhanced functionality
+try:
+    from src.utils.ml_common import (
+        DataQualityUtilities,
+        FeatureSelectionFramework,
+        MLPipelineOrchestrator
+    )
+    ML_COMMON_AVAILABLE = True
+except ImportError as e:
+    ML_COMMON_AVAILABLE = False
+    logging.warning(f"⚠️ ML Common utilities not available in market analysis main: {e}")
+
 async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -> dict:
     """Analyze HMM clustering results and return comprehensive summary with utility integration."""
     try:
@@ -54,6 +66,19 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
         data_processing_utils = DataProcessingUtils()
         m1_memory_optimizer = M1MemoryOptimizer()
         m1_cpu_optimizer = M1CPUOptimizer()
+
+        # Initialize ML Common utilities if available
+        ml_data_quality = None
+        ml_feature_selection = None
+        ml_pipeline_orchestrator = None
+        if ML_COMMON_AVAILABLE:
+            try:
+                ml_data_quality = DataQualityUtilities()
+                ml_feature_selection = FeatureSelectionFramework()
+                ml_pipeline_orchestrator = MLPipelineOrchestrator()
+                logging.info("✅ ML Common utilities initialized in HMM analysis")
+            except Exception as e:
+                logging.warning(f"⚠️ Failed to initialize ML Common utilities: {e}")
         
         # Import optimization components
         from src.training.steps.market_analysis.hmm_clustering.step03_fast_fail_validation import get_fast_fail_validator

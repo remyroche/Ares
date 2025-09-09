@@ -91,8 +91,8 @@ class EnhancedFinancialMetricsLogger:
     - Integration with existing financial_metrics_logger
     """
     
-    def __init__(self, 
-                 log_dir: str = "logs/financial_metrics",
+    def __init__(self,
+                 log_dir: Optional[str] = None,
                  enable_console: bool = True,
                  enable_file: bool = True,
                  enable_csv: bool = True,
@@ -115,6 +115,11 @@ class EnhancedFinancialMetricsLogger:
             min_regime_samples: Minimum samples required per regime
             max_regime_imbalance: Maximum allowed regime imbalance ratio
         """
+        if log_dir is None:
+            # Use absolute path based on project root
+            project_root = Path(__file__).parent.parent.parent  # src/utils -> src -> project root
+            log_dir = str(project_root / "logs" / "financial_metrics")
+
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
@@ -1101,7 +1106,7 @@ def get_enhanced_financial_metrics_logger() -> EnhancedFinancialMetricsLogger:
         _enhanced_financial_metrics_logger = EnhancedFinancialMetricsLogger()
     return _enhanced_financial_metrics_logger
 
-def setup_enhanced_financial_metrics_logging(log_dir: str = "logs/financial_metrics", **kwargs) -> EnhancedFinancialMetricsLogger:
+def setup_enhanced_financial_metrics_logging(log_dir: Optional[str] = None, **kwargs) -> EnhancedFinancialMetricsLogger:
     """Setup the global enhanced financial metrics logger."""
     global _enhanced_financial_metrics_logger
     _enhanced_financial_metrics_logger = EnhancedFinancialMetricsLogger(log_dir=log_dir, **kwargs)

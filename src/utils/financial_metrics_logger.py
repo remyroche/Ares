@@ -96,8 +96,8 @@ class FinancialMetricsLogger:
     - Integration with main logging system
     """
     
-    def __init__(self, 
-                 log_dir: str = "logs/financial_metrics",
+    def __init__(self,
+                 log_dir: Optional[str] = None,
                  enable_console: bool = True,
                  enable_file: bool = True,
                  enable_csv: bool = True,
@@ -106,9 +106,9 @@ class FinancialMetricsLogger:
                  backup_count: int = 10):
         """
         Initialize the financial metrics logger.
-        
+
         Args:
-            log_dir: Directory for financial metrics logs
+            log_dir: Directory for financial metrics logs (if None, uses project root + logs/financial_metrics)
             enable_console: Enable console output
             enable_file: Enable file logging
             enable_csv: Enable CSV export
@@ -116,9 +116,14 @@ class FinancialMetricsLogger:
             max_file_size_mb: Maximum log file size in MB
             backup_count: Number of backup files to keep
         """
+        if log_dir is None:
+            # Use absolute path based on project root
+            project_root = Path(__file__).parent.parent.parent  # src/utils -> src -> project root
+            log_dir = str(project_root / "logs" / "financial_metrics")
+
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.enable_console = enable_console
         self.enable_file = enable_file
         self.enable_csv = enable_csv
@@ -694,15 +699,15 @@ class FinancialMetricsLogger:
         with self._lock:
             try:
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                
+
                 # Create a more readable step name
                 readable_step = self._format_step_name(step_name)
-                
+
                 # Enhanced human-readable message
                 message = f"🚀 STARTING {readable_step}"
                 message += f" | Symbol: {symbol} | Exchange: {exchange} | Timeframe: {timeframe}"
                 message += f" | Time: {timestamp}"
-                
+
                 self.logger.info(message)
                 
                 # Add separator for better readability
@@ -1038,7 +1043,7 @@ def get_financial_metrics_logger() -> FinancialMetricsLogger:
         _financial_metrics_logger = FinancialMetricsLogger()
     return _financial_metrics_logger
 
-def setup_financial_metrics_logging(log_dir: str = "logs/financial_metrics", **kwargs) -> FinancialMetricsLogger:
+def setup_financial_metrics_logging(log_dir: Optional[str] = None, **kwargs) -> FinancialMetricsLogger:
     """Setup the global financial metrics logger."""
     global _financial_metrics_logger
     _financial_metrics_logger = FinancialMetricsLogger(log_dir=log_dir, **kwargs)

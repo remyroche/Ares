@@ -1,4 +1,3 @@
-
 """Step 06: Advanced Feature Engineering with Hardware Acceleration (standard path for orchestrator).
 
 Mandatory components: wavelet features and multi-timeframe/resampling are required.
@@ -40,7 +39,7 @@ except ImportError:
 # Import optimization utilities for enhanced performance
 try:
     from src.utils.vectorized_processing_core import get_vectorized_processing_core
-    from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
+    from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
     from src.utils.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager

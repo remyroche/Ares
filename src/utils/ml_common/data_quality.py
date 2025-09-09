@@ -673,8 +673,8 @@ class DataQualityUtilities:
 
             # Final statistics
             cleaning_report['final_shape'] = cleaned_df.shape
-            cleaning_report['total_removed_samples'] = cleaning_report['original_shape'][0] - cleaned_report['final_shape'][0]
-            cleaning_report['total_removed_features'] = cleaning_report['original_shape'][1] - cleaned_report['final_shape'][1]
+            cleaning_report['total_removed_samples'] = cleaning_report['original_shape'][0] - cleaning_report['final_shape'][0]
+            cleaning_report['total_removed_features'] = cleaning_report['original_shape'][1] - cleaning_report['final_shape'][1]
 
             self.logger.info(f"✅ Automated data cleaning completed: "
                            f"Shape: {cleaning_report['original_shape']} -> {cleaning_report['final_shape']}")

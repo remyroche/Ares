@@ -526,9 +526,16 @@ class ModelRegistry:
         }
 
         # Update latest version
-        versions = list(self.registry_metadata['models'][model_name].keys())
+        versions = [v for v in self.registry_metadata['models'][model_name].keys() if v != 'latest_version']
         if versions:
-            self.registry_metadata['models'][model_name]['latest_version'] = max(versions)
+            # Prefer numeric comparison when possible
+            def _vkey(v: str):
+                try:
+                    return (0, int(v))
+                except Exception:
+                    return (1, v)
+            latest = sorted(versions, key=_vkey)[-1]
+            self.registry_metadata['models'][model_name]['latest_version'] = latest
 
         # Save registry metadata
         safe_json_dump(self.registry_metadata, self.metadata_file)

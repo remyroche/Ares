@@ -126,13 +126,26 @@ class CrossValidationUtilities:
                     X_train_fold, X_test_fold = X[train_idx], X[test_idx]
                     y_train_fold, y_test_fold = y[train_idx], y[test_idx]
 
-                    # Handle class imbalance
-                    sample_weight = self._compute_sample_weights(y_train_fold)
+                    # Handle class imbalance (guarded for estimator support)
+                    sample_weight = None
+                    try:
+                        sample_weight = self._compute_sample_weights(y_train_fold)
+                        # Only pass if estimator supports sample_weight in fit signature
+                        if hasattr(model, 'fit'):
+                            import inspect
+                            sig = inspect.signature(model.fit)
+                            if 'sample_weight' not in sig.parameters:
+                                sample_weight = None
+                    except Exception:
+                        sample_weight = None
 
                     # Train model
                     start_time = datetime.now()
                     model_copy = self._clone_model(model)
-                    model_copy.fit(X_train_fold, y_train_fold, sample_weight=sample_weight)
+                    if sample_weight is not None:
+                        model_copy.fit(X_train_fold, y_train_fold, sample_weight=sample_weight)
+                    else:
+                        model_copy.fit(X_train_fold, y_train_fold)
                     training_time = (datetime.now() - start_time).total_seconds()
 
                     # Make predictions

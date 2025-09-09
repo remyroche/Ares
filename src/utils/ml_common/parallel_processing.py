@@ -72,7 +72,7 @@ class ParallelProcessingCoordinator:
 
         # Initialize utilities
         self.parallel_processor = ParallelProcessor()
-        self.cpu_optimizer = M1CPUOptimizer() if hasattr(self, 'M1CPUOptimizer') else None
+        self.cpu_optimizer = M1CPUOptimizer() if 'M1CPUOptimizer' in globals() else None
 
         # Task management
         self.active_tasks = {}
@@ -221,14 +221,11 @@ class ParallelProcessingCoordinator:
 
             # Initialize GPU manager if available
             gpu_manager = None
-            if self.gpu_manager:
-                gpu_manager = self.gpu_manager
-            elif GPU_AVAILABLE:
-                try:
-                    from ..m1_gpu_utils import M1GPUManager
-                    gpu_manager = M1GPUManager(gpu_config)
-                except ImportError:
-                    pass
+            try:
+                from ..m1_gpu_utils import M1GPUManager as _M1GPU
+                gpu_manager = _M1GPU(gpu_config)
+            except Exception:
+                gpu_manager = None
 
             # Prepare GPU-optimized task execution
             gpu_tasks = []
@@ -1390,23 +1387,24 @@ class ParallelProcessingCoordinator:
         except Exception as e:
             self.logger.warning(f"Ray initialization failed: {e}")
 
-    @staticmethod
-    @ray.remote
-    def _execute_single_task_ray(task: Dict[str, Any], task_function: Optional[Callable]) -> Any:
-        """Execute single task with Ray (remote function)."""
-        try:
-            if task_function:
-                return task_function(task)
-            else:
-                func = task.get('function')
-                if func:
-                    args = task.get('args', [])
-                    kwargs = task.get('kwargs', {})
-                    return func(*args, **kwargs)
+    if RAY_AVAILABLE:
+        @staticmethod
+        @ray.remote
+        def _execute_single_task_ray(task: Dict[str, Any], task_function: Optional[Callable]) -> Any:
+            """Execute single task with Ray (remote function)."""
+            try:
+                if task_function:
+                    return task_function(task)
                 else:
-                    return {'error': 'No function specified'}
-        except Exception as e:
-            return {'error': str(e)}
+                    func = task.get('function')
+                    if func:
+                        args = task.get('args', [])
+                        kwargs = task.get('kwargs', {})
+                        return func(*args, **kwargs)
+                    else:
+                        return {'error': 'No function specified'}
+            except Exception as e:
+                return {'error': str(e)}
 
 
 class ResourceMonitor:

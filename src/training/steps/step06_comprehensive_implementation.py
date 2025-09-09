@@ -37,8 +37,8 @@ from .step06_utility_container import (
 
 # Import validation utilities
 from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, validate_positive, 
-    validate_range, MathValidationError
+    safe_divide, safe_log, safe_sqrt, validate_positive,
+    validate_range, validate_finite, MathValidationError
 )
 
 logger = logging.getLogger(__name__)
@@ -305,15 +305,15 @@ class Step06ComprehensiveImplementation:
             if math_val:
                 # Price-based features with safe mathematical operations
                 enhanced_features['price_range'] = enhanced_features['high'] - enhanced_features['low']
-                enhanced_features['price_range_pct'] = math_val.safe_divide(
-                    enhanced_features['price_range'], 
-                    enhanced_features['close'], 
+                enhanced_features['price_range_pct'] = safe_divide(
+                    enhanced_features['price_range'],
+                    enhanced_features['close'],
                     default=0.0
                 )
                 
                 # Volatility features
                 enhanced_features['volatility'] = enhanced_features['close'].rolling(20).std()
-                enhanced_features['volatility_pct'] = math_val.safe_divide(
+                enhanced_features['volatility_pct'] = safe_divide(
                     enhanced_features['volatility'],
                     enhanced_features['close'],
                     default=0.0
@@ -379,19 +379,14 @@ class Step06ComprehensiveImplementation:
                 
                 # Create labels based on return thresholds
                 labels = pd.Series(index=market_data.index, dtype='float64')
-                
-                for i, return_val in enumerate(returns):
-                    if pd.isna(return_val):
-                        labels.iloc[i] = np.nan
-                    elif math_val.validate_finite(return_val):
-                        if return_val > 0.004:  # 0.4% profit take
-                            labels.iloc[i] = 1.0
-                        elif return_val < -0.003:  # 0.3% stop loss
-                            labels.iloc[i] = -1.0
-                        else:
-                            labels.iloc[i] = 0.0
-                    else:
-                        labels.iloc[i] = np.nan
+                finite_mask = returns.apply(lambda x: pd.notna(x) and validate_finite(x))
+                labels[:] = np.nan
+                pos_mask = (returns > 0.004) & finite_mask
+                neg_mask = (returns < -0.003) & finite_mask
+                mid_mask = (~pos_mask & ~neg_mask) & finite_mask
+                labels[pos_mask] = 1.0
+                labels[neg_mask] = -1.0
+                labels[mid_mask] = 0.0
                 
                 # Use data processing utilities for label validation
                 if data_proc and data_proc.validator:
@@ -425,16 +420,16 @@ class Step06ComprehensiveImplementation:
                 'memory_optimization_applied': False
             }
             
-            if m1_memory and m1_memory.optimizer:
+            if m1_memory and getattr(m1_memory, 'memory_optimizer', None):
                 # Use M1 memory optimizer for chunked processing
                 chunk_size = self.utility_config.data_processing_chunk_size
                 
                 # Process features in chunks
-                feature_chunks = list(m1_memory.optimizer.chunked_dataframe_processor(features, chunk_size))
+                feature_chunks = list(m1_memory.memory_optimizer.chunked_dataframe_processor(features, lambda x: x, chunk_size))
                 self.logger.info(f"Features processed in {len(feature_chunks)} chunks")
                 
                 # Optimize memory usage
-                m1_memory.optimizer.optimize_memory()
+                m1_memory.memory_optimizer.optimize_memory()
                 
                 # Use data processing utilities for memory-efficient operations
                 if data_proc and data_proc.cleaner:
@@ -467,19 +462,19 @@ class Step06ComprehensiveImplementation:
             }
             
             # GPU optimization
-            if m1_gpu and m1_gpu.manager:
+            if m1_gpu and getattr(m1_gpu, 'gpu_manager', None):
                 # Use M1 GPU for tensor operations if applicable
                 try:
                     # Convert to tensors for GPU processing
                     import torch
-                    if torch.cuda.is_available() or hasattr(torch.backends, 'mps'):
+                    if torch.cuda.is_available() or getattr(torch.backends, 'mps', None):
                         feature_tensor = torch.tensor(features.select_dtypes(include=[np.number]).values, dtype=torch.float32)
-                        feature_tensor = m1_gpu.manager.to_device(feature_tensor, "feature_processing")
+                        feature_tensor = m1_gpu.gpu_manager.to_device(feature_tensor, "feature_processing")
                         
                         # Perform some GPU-accelerated operations
-                        if m1_gpu.optimizer:
-                            optimal_batch_size = m1_gpu.optimizer.calculate_optimal_batch_size(feature_tensor.shape[0])
-                            performance_results['optimal_batch_size'] = optimal_batch_size
+                        if getattr(m1_gpu, 'performance_optimizer', None):
+                            optimal_batch_size = m1_gpu.performance_optimizer.get_optimal_batch_size(tuple(feature_tensor.shape), operation_type="general")
+                            performance_results['optimal_batch_size'] = int(optimal_batch_size)
                         
                         performance_results['gpu_optimization_applied'] = True
                         self.logger.info("✅ GPU optimization applied")
@@ -487,17 +482,17 @@ class Step06ComprehensiveImplementation:
                     self.logger.warning(f"GPU optimization failed: {e}")
             
             # CPU optimization
-            if m1_cpu and m1_cpu.optimizer:
+            if m1_cpu and getattr(m1_cpu, 'cpu_optimizer', None):
                 # Use M1 CPU optimizer for parallel processing
                 try:
                     # Calculate optimal workers
-                    optimal_workers = m1_cpu.optimizer.calculate_optimal_workers()
+                    optimal_workers = m1_cpu.cpu_optimizer.get_optimal_workers_for_task("general")
                     performance_results['optimal_workers'] = optimal_workers
                     
                     # Use parallel processing for data operations
-                    if m1_cpu.batch_processor:
+                    if getattr(m1_cpu, 'batch_processor', None):
                         optimal_batch_size = m1_cpu.batch_processor.calculate_optimal_batch_size(features.shape[0])
-                        performance_results['cpu_optimal_batch_size'] = optimal_batch_size
+                        performance_results['cpu_optimal_batch_size'] = int(optimal_batch_size)
                     
                     performance_results['cpu_optimization_applied'] = True
                     self.logger.info("✅ CPU optimization applied")
@@ -517,8 +512,8 @@ class Step06ComprehensiveImplementation:
         delta = prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
+        rs = safe_divide(gain, loss, default=1.0)
+        rsi = 100 - safe_divide(100, (1 + rs), default=50.0)
         return rsi
 
     @inject_utilities('common_ops', 'serialization', 'parquet')
@@ -579,6 +574,12 @@ class Step06ComprehensiveImplementation:
             self.performance_metrics['utility_operations_count'] += 1
             self.logger.info("✅ Results integration with utilities completed")
             
+            # Also attach final_data for downstream saving if needed
+            try:
+                final_df = pd.concat([enhanced_features, labels.rename('label')], axis=1)
+                integration_results['final_data'] = final_df
+            except Exception:
+                pass
             return integration_results
             
         except Exception as e:

@@ -496,7 +496,10 @@ class EnhancedFeatureEngineeringStep(BaseStep):
 
     def _calculate_feature_statistics(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate statistics for engineered features."""
-        feature_cols = [col for col in data.columns if col.startswith(('feature_', 'regime_', 'sr_', 'time_'))]
+        feature_cols = [
+            col for col in data.columns
+            if col.startswith(('feature_', 'regime_', 'sr_', 'time_', 'RSI_', 'MACD_', 'SMA_', 'EMA_', 'ATR_', 'BB_', 'Stoch_', 'ADX_', 'OBV', 'MFI_', 'poly_', 'cross_', 'pattern_', 'momentum_', 'regime_'))
+        ]
         
         stats = {
             'n_features': len(feature_cols),
@@ -534,7 +537,10 @@ class EnhancedFeatureEngineeringStep(BaseStep):
                                        feature_statistics: Dict[str, Dict[str, Any]]) -> Tuple[Dict[str, pd.DataFrame], List[str]]:
         """Perform feature selection."""
         train_data = engineered_data.get('train', next(iter(engineered_data.values())))
-        all_features = [col for col in train_data.columns if col.startswith(('feature_', 'regime_', 'sr_', 'time_'))]
+        all_features = [
+            col for col in train_data.columns
+            if col.startswith(('feature_', 'regime_', 'sr_', 'time_', 'RSI_', 'MACD_', 'SMA_', 'EMA_', 'ATR_', 'BB_', 'Stoch_', 'ADX_', 'OBV', 'MFI_', 'poly_', 'cross_', 'pattern_', 'momentum_', 'regime_'))
+        ]
         
         # Remove zero variance features
         zero_var_features = set()
@@ -558,7 +564,10 @@ class EnhancedFeatureEngineeringStep(BaseStep):
         
         # Select features
         selected_data = {}
-        base_columns = [col for col in train_data.columns if not col.startswith(('feature_', 'regime_', 'sr_', 'time_'))]
+        base_columns = [
+            col for col in train_data.columns
+            if not col.startswith(('feature_', 'regime_', 'sr_', 'time_', 'RSI_', 'MACD_', 'SMA_', 'EMA_', 'ATR_', 'BB_', 'Stoch_', 'ADX_', 'OBV', 'MFI_', 'poly_', 'cross_', 'pattern_', 'momentum_', 'regime_'))
+        ]
         selected_columns = base_columns + valid_features
         
         for split_name, data in engineered_data.items():
@@ -572,7 +581,10 @@ class EnhancedFeatureEngineeringStep(BaseStep):
         all_features = set()
         for data in engineered_data.values():
             if isinstance(data, pd.DataFrame):
-                features = [col for col in data.columns if col.startswith(('feature_', 'regime_', 'sr_', 'time_'))]
+                features = [
+                    col for col in data.columns
+                    if col.startswith(('feature_', 'regime_', 'sr_', 'time_', 'RSI_', 'MACD_', 'SMA_', 'EMA_', 'ATR_', 'BB_', 'Stoch_', 'ADX_', 'OBV', 'MFI_', 'poly_', 'cross_', 'pattern_', 'momentum_', 'regime_'))
+                ]
                 all_features.update(features)
         return sorted(list(all_features))
 

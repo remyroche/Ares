@@ -140,8 +140,9 @@ class MLTrainingSafeguards:
             }
 
             if analysis['is_extreme_imbalance']:
-                logger.warning(".2%"
-                               f"Dominant class {analysis['dominant_class']}: {analysis['dominant_ratio']:.2%}")
+                logger.warning(
+                    f"Dominant class {analysis['dominant_class']}: {analysis['dominant_ratio']:.2%}"
+                )
 
             if analysis['is_single_class']:
                 logger.error(f"❌ Single class detected: {unique_classes[0] if len(unique_classes) > 0 else 'No classes'}")

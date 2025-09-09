@@ -459,13 +459,16 @@ class HyperparameterOptimization:
         try:
             self.logger.info("🌀 Starting staged HPO: coarse → bayesian → refine")
 
-            # Optional subsampling for coarse stage
+            # Optional subsampling for coarse stage (memmap-aware)
             X_train, y_train = X, y
             if 0 < subsample_rate < 1.0 and len(X) > 100:
-                n_sub = max(100, int(len(X) * subsample_rate))
-                idx = np.linspace(0, len(X) - 1, num=n_sub, dtype=int)
-                X_train = X[idx]
-                y_train = y[idx]
+                try:
+                    n_sub = max(100, int(len(X) * subsample_rate))
+                    idx = np.linspace(0, len(X) - 1, num=n_sub, dtype=int)
+                    X_train = X[idx]
+                    y_train = y[idx]
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Subsampling failed, using full data: {e}")
 
             # Precompute CV if not provided
             cv_obj = cv if cv is not None else self._create_time_series_split(len(X_train))

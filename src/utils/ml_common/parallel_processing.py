@@ -168,14 +168,45 @@ class ParallelProcessingCoordinator:
 
             # Create CV tasks
             cv_tasks = []
+            # Detect memmap to avoid copying large arrays in task payloads
+            X_is_memmap = isinstance(X, np.memmap) and hasattr(X, 'filename')
+            y_is_memmap = isinstance(y, np.memmap) and hasattr(y, 'filename')
+            X_memmap_info = None
+            y_memmap_info = None
+            if X_is_memmap:
+                try:
+                    X_memmap_info = {
+                        'filename': X.filename,
+                        'dtype': str(X.dtype),
+                        'shape': X.shape,
+                        'mode': 'r'
+                    }
+                except Exception:
+                    X_memmap_info = None
+            if y_is_memmap:
+                try:
+                    y_memmap_info = {
+                        'filename': y.filename,
+                        'dtype': str(y.dtype),
+                        'shape': y.shape,
+                        'mode': 'r'
+                    }
+                except Exception:
+                    y_memmap_info = None
+
             for fold_idx, (train_idx, test_idx) in enumerate(skf.split(X, y)):
                 task = {
                     'fold_idx': fold_idx,
                     'model_factory': model_factory,
-                    'X_train': X[train_idx],
-                    'y_train': y[train_idx],
-                    'X_test': X[test_idx],
-                    'y_test': y[test_idx],
+                    # If memmap, pass indices and memmap info; otherwise pass sliced arrays
+                    'train_idx': train_idx,
+                    'test_idx': test_idx,
+                    'X_train': None if X_memmap_info else X[train_idx],
+                    'y_train': None if y_memmap_info else y[train_idx],
+                    'X_test': None if X_memmap_info else X[test_idx],
+                    'y_test': None if y_memmap_info else y[test_idx],
+                    'X_memmap': X_memmap_info,
+                    'y_memmap': y_memmap_info,
                     'scoring_functions': scoring_functions or []
                 }
                 try:
@@ -760,15 +791,41 @@ class ParallelProcessingCoordinator:
             else:
                 raise ValueError(f"Unsupported search strategy: {search_strategy}")
 
-            # Create search tasks
+            # Create search tasks (memmap-aware)
             search_tasks = []
+            X_is_memmap = isinstance(X, np.memmap) and hasattr(X, 'filename')
+            y_is_memmap = isinstance(y, np.memmap) and hasattr(y, 'filename')
+            X_memmap_info = None
+            y_memmap_info = None
+            if X_is_memmap:
+                try:
+                    X_memmap_info = {
+                        'filename': X.filename,
+                        'dtype': str(X.dtype),
+                        'shape': X.shape,
+                        'mode': 'r'
+                    }
+                except Exception:
+                    X_memmap_info = None
+            if y_is_memmap:
+                try:
+                    y_memmap_info = {
+                        'filename': y.filename,
+                        'dtype': str(y.dtype),
+                        'shape': y.shape,
+                        'mode': 'r'
+                    }
+                except Exception:
+                    y_memmap_info = None
             for param_idx, params in enumerate(param_combinations):
                 task = {
                     'param_idx': param_idx,
                     'params': params,
                     'model_factory': model_factory,
-                    'X': X,
-                    'y': y,
+                    'X': None if X_memmap_info else X,
+                    'y': None if y_memmap_info else y,
+                    'X_memmap': X_memmap_info,
+                    'y_memmap': y_memmap_info,
                     'evaluation_function': evaluation_function
                 }
                 search_tasks.append(task)
@@ -1038,10 +1095,34 @@ class ParallelProcessingCoordinator:
         try:
             fold_idx = task['fold_idx']
             model_factory = task['model_factory']
-            X_train = task['X_train']
-            y_train = task['y_train']
-            X_test = task['X_test']
-            y_test = task['y_test']
+            # Rehydrate memmap if info provided to avoid copying large arrays
+            if task.get('X_memmap'):
+                try:
+                    info = task['X_memmap']
+                    X_full = np.memmap(info['filename'], dtype=np.dtype(info['dtype']), mode=info['mode'], shape=tuple(info['shape']))
+                    train_idx = task['train_idx']
+                    test_idx = task['test_idx']
+                    X_train = X_full[train_idx]
+                    X_test = X_full[test_idx]
+                except Exception as e:
+                    return {'fold_idx': fold_idx, 'error': f"Memmap load failed for X: {e}", 'success': False}
+            else:
+                X_train = task['X_train']
+                X_test = task['X_test']
+
+            if task.get('y_memmap'):
+                try:
+                    infoy = task['y_memmap']
+                    y_full = np.memmap(infoy['filename'], dtype=np.dtype(infoy['dtype']), mode=infoy['mode'], shape=tuple(infoy['shape']))
+                    train_idx = task['train_idx']
+                    test_idx = task['test_idx']
+                    y_train = y_full[train_idx]
+                    y_test = y_full[test_idx]
+                except Exception as e:
+                    return {'fold_idx': fold_idx, 'error': f"Memmap load failed for y: {e}", 'success': False}
+            else:
+                y_train = task['y_train']
+                y_test = task['y_test']
             scoring_functions = task['scoring_functions']
 
             # Create and train model
@@ -1107,8 +1188,24 @@ class ParallelProcessingCoordinator:
             param_idx = task['param_idx']
             params = task['params']
             model_factory = task['model_factory']
-            X = task['X']
-            y = task['y']
+            # Rehydrate memmap if needed
+            if task.get('X_memmap'):
+                try:
+                    info = task['X_memmap']
+                    X = np.memmap(info['filename'], dtype=np.dtype(info['dtype']), mode=info['mode'], shape=tuple(info['shape']))
+                except Exception as e:
+                    return {'param_idx': param_idx, 'params': params, 'error': f"Memmap load failed for X: {e}", 'success': False}
+            else:
+                X = task['X']
+
+            if task.get('y_memmap'):
+                try:
+                    infoy = task['y_memmap']
+                    y = np.memmap(infoy['filename'], dtype=np.dtype(infoy['dtype']), mode=infoy['mode'], shape=tuple(infoy['shape']))
+                except Exception as e:
+                    return {'param_idx': param_idx, 'params': params, 'error': f"Memmap load failed for y: {e}", 'success': False}
+            else:
+                y = task['y']
             evaluation_function = task['evaluation_function']
 
             # Create model with parameters

@@ -504,6 +504,9 @@ class FeatureSelectionFramework:
                 importance_scores = self._calculate_tree_importance(model, X, y, feature_names)
             elif method == 'coefficients':
                 importance_scores = self._calculate_coefficient_importance(model, X, y, feature_names)
+            elif method == 'shap':
+                shap_result = self._calculate_shap_importance(model, X, feature_names)
+                importance_scores = shap_result.get('importance_scores', {})
             else:
                 raise ValueError(f"Unsupported importance method: {method}")
 
@@ -527,6 +530,46 @@ class FeatureSelectionFramework:
         except Exception as e:
             self.logger.error(f"❌ Feature importance ranking failed: {e}")
             return {'error': str(e), 'ranking': []}
+
+    def _calculate_shap_importance(self, model: Any, X: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
+        """Calculate SHAP-based feature importance with robust fallbacks."""
+        try:
+            import shap
+            self.logger.info("🧠 Computing SHAP values for interpretability")
+            # Choose explainer based on model type
+            explainer = None
+            try:
+                explainer = shap.Explainer(model, X)
+            except Exception:
+                try:
+                    explainer = shap.KernelExplainer(lambda data: model.predict(data), X[: min(len(X), 200)])
+                except Exception as e:
+                    self.logger.warning(f"SHAP explainer creation failed: {e}")
+                    return {'importance_scores': {}, 'error': str(e)}
+
+            subset_size = min(1000, len(X))
+            shap_values = explainer(X[:subset_size])
+
+            import numpy as _np
+            vals = getattr(shap_values, 'values', None)
+            if vals is None:
+                vals = _np.array(shap_values)
+
+            if vals.ndim == 3:
+                abs_mean = _np.mean(_np.mean(_np.abs(vals), axis=2), axis=0)
+            else:
+                abs_mean = _np.mean(_np.abs(vals), axis=0)
+
+            scores = {name: float(abs_mean[i]) for i, name in enumerate(feature_names[: len(abs_mean)])}
+
+            return {
+                'importance_scores': scores,
+                'method': 'shap',
+                'n_samples_used': subset_size
+            }
+        except Exception as e:
+            self.logger.warning(f"⚠️ SHAP importance failed: {e}")
+            return {'importance_scores': {}, 'error': str(e)}
 
     def composite_feature_scoring(self, X: np.ndarray, y: np.ndarray,
                                 feature_names: List[str],

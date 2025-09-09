@@ -403,7 +403,7 @@ REQUIRED_MODULES = [
     "src.utils.m1_cpu_optimizer",
     # Processing Core Optimizations
     "src.utils.vectorized_processing_core",
-    "src.utils.enhanced_matrix_operations",
+    "src.utils.ml_common.matrix_operations",
     # Data Management Optimizations
     "src.utils.optimized_data_manager",
     # Financial Logging
@@ -434,7 +434,7 @@ step10_financial_logging = PipelineStandards.safe_import("src.training.steps.mod
 
 # Processing Core Optimization imports
 vectorized_processing_core = PipelineStandards.safe_import("src.utils.vectorized_processing_core", None)
-enhanced_matrix_operations = PipelineStandards.safe_import("src.utils.enhanced_matrix_operations", None)
+enhanced_matrix_operations = PipelineStandards.safe_import("src.utils.ml_common.matrix_operations", None)
 
 # Data Management Optimization imports
 optimized_data_manager = PipelineStandards.safe_import("src.utils.optimized_data_manager", None)

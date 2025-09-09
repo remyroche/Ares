@@ -157,7 +157,7 @@ from src.utils.m1_cpu_optimizer import (
 # Enhanced reporting system removed - using financial metrics logger instead
 ENHANCED_REPORTING_AVAILABLE = False
 from src.utils.vectorized_processing_core import OptimizedPipelineExecutor, PipelineStage, PipelineExecutionMode
-from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations, ErrorHandler
+from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations, ErrorHandler
 from src.utils.enhanced_step_optimizations import IntelligentOptimizationSelector, OptimizationStrategy, WorkloadType, OptimizationProfile
 from src.utils.optimized_data_manager import OptimizedDataManager, DataMetadata
 

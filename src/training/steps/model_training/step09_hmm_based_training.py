@@ -42,13 +42,6 @@ except ImportError:
     OPTIMIZATIONS_AVAILABLE = False
 
 # Utility functions
-def safe_file_exists(file_path: str) -> bool:
-    """Safely check if a file exists."""
-    try:
-        return os.path.exists(file_path)
-    except Exception:
-        return False
-
 def validate_dataframe_schema(df, required_columns: list) -> tuple[bool, list]:
     """Validate DataFrame schema."""
     try:
@@ -84,7 +77,7 @@ from src.core.decorators import validates, traced
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
-    safe_read_parquet, safe_to_parquet, safe_copy
+    safe_read_parquet, safe_to_parquet, safe_copy, safe_file_exists
 )
 from sklearn.feature_selection import (
     f_classif,
@@ -98,6 +91,18 @@ from sklearn.metrics import (
     average_precision_score
 )
 from sklearn.model_selection import TimeSeriesSplit
+
+# ML Training Safeguards
+from src.utils.ml_training_safeguards import (
+    MLTrainingSafeguards,
+    check_class_distribution,
+    validate_chunk_for_training,
+    create_balanced_sample_weights,
+    perform_robust_cross_validation,
+    calculate_comprehensive_metrics,
+    classify_ml_error,
+    create_smart_fast_fail_handler,
+)
 from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 
@@ -467,15 +472,40 @@ class EnhancedHMMBasedTrainingStep:
             raise
 
     def _preprocess_training_data(self, prepared_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Preprocess training data with optimizations."""
+        """Preprocess training data with optimizations and ML safeguards."""
         try:
-            self.logger.info("🔧 Preprocessing training data with optimizations...")
+            self.logger.info("🔧 Preprocessing training data with optimizations and safeguards...")
 
             features = prepared_data["features"]
             target = prepared_data.get("single_target") or prepared_data.get("direction_target")
 
             if target is None:
                 raise ValueError("No target data found")
+
+            # Apply ML training safeguards
+            # Check class distribution for imbalance
+            class_analysis = check_class_distribution(target.values)
+            if class_analysis['is_extreme_imbalance']:
+                self.logger.warning(f"⚠️ Extreme class imbalance detected: {class_analysis['dominant_ratio']:.2%}")
+                self.logger.info(f"📊 Class distribution: {class_analysis['class_counts']}")
+
+            # Validate data quality
+            chunk_validation = validate_chunk_for_training(features.values, target.values)
+            if not chunk_validation['is_valid']:
+                error_msg = f"Data validation failed: {chunk_validation['reason']}"
+                self.logger.warning(f"⚠️ {error_msg}")
+
+                # Log detailed information about the issue
+                if chunk_validation['reason'] == 'Single class chunk':
+                    self.logger.error("❌ Single class detected - this will cause training failures")
+                elif 'Insufficient samples' in chunk_validation['reason']:
+                    self.logger.warning("⚠️ Limited samples per class - consider data augmentation")
+
+            # Create sample weights if needed
+            sample_weights = None
+            if class_analysis['is_extreme_imbalance']:
+                sample_weights = create_balanced_sample_weights(target.values, strategy='balanced')
+                self.logger.info("⚖️ Created balanced sample weights for imbalanced data")
 
             # Use enhanced matrix operations for preprocessing
             if self.matrix_operations:
@@ -503,7 +533,10 @@ class EnhancedHMMBasedTrainingStep:
                 "target": target.values,
                 "feature_names": features.columns.tolist(),
                 "n_samples": len(features),
-                "n_features": len(features.columns)
+                "n_features": len(features.columns),
+                "sample_weights": sample_weights,
+                "class_analysis": class_analysis,
+                "data_quality": chunk_validation
             }
 
         except Exception as e:

@@ -873,12 +873,29 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def safe_read_parquet(file_path: str | Path, columns: list[str] | None=None) -> None:
-    """Safely read parquet file with error handling."""
+def safe_read_parquet(file_path: str | Path, columns: list[str] | None=None,
+                     harmonize_schema: bool = True) -> pd.DataFrame | None:
+    """Safely read parquet file with error handling and optional schema harmonization."""
     try:
         if hasattr(pd, 'read_parquet'):
-            return pd.read_parquet(file_path, columns=columns)
-        return {}
+            df = pd.read_parquet(file_path, columns=columns)
+
+            # Apply schema harmonization if requested
+            if harmonize_schema and df is not None and not df.empty:
+                try:
+                    from src.utils.parquet_utils import get_parquet_utils
+                    parquet_utils = get_parquet_utils()
+                    df = parquet_utils.harmonize_schema_after_read(df)
+                except ImportError:
+                    # Fallback if parquet_utils not available
+                    logger = get_logger(__name__)
+                    logger.debug("Parquet utils not available for schema harmonization")
+                except Exception as e:
+                    logger = get_logger(__name__)
+                    logger.warning(f"Schema harmonization failed: {e}")
+
+            return df
+        return pd.DataFrame()
     except Exception as e:
         logger = get_logger(__name__)
         logger.exception(f'Failed to read parquet file {file_path}: {e}')

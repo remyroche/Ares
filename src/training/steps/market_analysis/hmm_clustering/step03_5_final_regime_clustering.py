@@ -16,6 +16,8 @@ import threading
 from contextlib import contextmanager
 from functools import wraps
 from typing import Callable, Any
+import numpy as np
+import pandas as pd
 
 from src.core.decorators import handles_errors
 
@@ -4273,6 +4275,797 @@ class FinalRegimeClusteringStep:
         except Exception as e:
             self.logger.warning(f"⚠️ Clustering metrics calculation failed: {e}")
             return {'silhouette_score': 0, 'n_clusters': 1}
+
+    def _perform_cross_validation(self, X: np.ndarray, y: np.ndarray, feature_names: np.ndarray) -> dict[str, Any]:
+        """Perform cross-validation for model evaluation with temporal integrity and class imbalance handling."""
+        try:
+            from sklearn.model_selection import TimeSeriesSplit
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.utils.class_weight import compute_sample_weight
+            from sklearn.metrics import balanced_accuracy_score, f1_score
+
+            cv_results = {}
+
+            # Use Random Forest for CV as it's robust and fast
+            rf_model = RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)
+
+            # Ensure minimum samples per fold with class balance considerations
+            min_samples_per_fold = max(100, len(X) // 20)  # At least 100 samples or 5% of total
+            max_splits = min(5, max(2, len(X) // 1000))
+
+            # Calculate appropriate test size
+            test_size = max(min_samples_per_fold, len(X) // (max_splits + 1))
+            n_splits = min(max_splits, max(2, (len(X) - test_size) // test_size))
+
+            tscv = TimeSeriesSplit(n_splits=n_splits, test_size=test_size)
+            self.logger.info(f'🔄 Using TimeSeriesSplit CV: {n_splits} splits, test_size={test_size}')
+
+            # Initialize metrics arrays
+            direction_scores = []
+            balanced_accuracy_scores = []
+            f1_macro_scores = []
+
+            for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+                try:
+                    X_train_fold, X_test_fold = X[train_idx], X[test_idx]
+                    y_train_fold, y_test_fold = y[train_idx], y[test_idx]
+
+                    # Check for single-class folds
+                    if len(np.unique(y_train_fold)) < 2 or len(np.unique(y_test_fold)) < 2:
+                        self.logger.warning(f'⚠️ Skipping fold {fold_idx}: single-class detected (train: {len(np.unique(y_train_fold))}, test: {len(np.unique(y_test_fold))})')
+                        continue
+
+                    # Compute class weights for imbalanced data
+                    sample_weight = compute_sample_weight('balanced', y_train_fold)
+
+                    # Fit model with class weights
+                    rf_model.fit(X_train_fold, y_train_fold, sample_weight=sample_weight)
+
+                    # Make predictions
+                    y_pred = rf_model.predict(X_test_fold)
+
+                    # Calculate balanced metrics
+                    direction_scores.append(rf_model.score(X_test_fold, y_test_fold))
+                    balanced_accuracy_scores.append(balanced_accuracy_score(y_test_fold, y_pred))
+                    f1_macro_scores.append(f1_score(y_test_fold, y_pred, average='macro'))
+
+                except Exception as fold_e:
+                    self.logger.warning(f'⚠️ Fold {fold_idx} failed: {fold_e}')
+                    continue
+
+            # Store results only if we have valid folds
+            if direction_scores:
+                cv_results['direction_accuracy_scores'] = direction_scores
+                cv_results['direction_accuracy_mean'] = np.mean(direction_scores)
+                cv_results['direction_accuracy_std'] = np.std(direction_scores)
+
+                cv_results['balanced_accuracy_scores'] = balanced_accuracy_scores
+                cv_results['balanced_accuracy_mean'] = np.mean(balanced_accuracy_scores)
+                cv_results['balanced_accuracy_std'] = np.std(balanced_accuracy_scores)
+
+                cv_results['f1_macro_scores'] = f1_macro_scores
+                cv_results['f1_macro_mean'] = np.mean(f1_macro_scores)
+                cv_results['f1_macro_std'] = np.std(f1_macro_scores)
+
+                cv_results['n_folds_completed'] = len(direction_scores)
+                cv_results['total_folds'] = n_splits
+
+                self.logger.info(f'🔄 CV Results - Accuracy: {cv_results["direction_accuracy_mean"]:.4f} ± {cv_results["direction_accuracy_std"]:.4f}')
+                self.logger.info(f'🔄 CV Results - Balanced Accuracy: {cv_results["balanced_accuracy_mean"]:.4f} ± {cv_results["balanced_accuracy_std"]:.4f}')
+                self.logger.info(f'🔄 CV Results - F1 Macro: {cv_results["f1_macro_mean"]:.4f} ± {cv_results["f1_macro_std"]:.4f}')
+            else:
+                self.logger.warning('⚠️ No valid CV folds completed')
+                cv_results = self._get_fallback_cv_results()
+
+            return cv_results
+
+        except Exception as e:
+            self.logger.error(f'❌ Cross-validation failed: {e}')
+            return self._get_fallback_cv_results()
+
+    def _get_fallback_cv_results(self) -> dict[str, Any]:
+        """Get fallback cross-validation results."""
+        return {
+            'direction_accuracy_scores': [0.5] * 5,
+            'direction_accuracy_mean': 0.5,
+            'direction_accuracy_std': 0.0,
+            'balanced_accuracy_scores': [0.5] * 5,
+            'balanced_accuracy_mean': 0.5,
+            'balanced_accuracy_std': 0.0,
+            'f1_macro_scores': [0.5] * 5,
+            'f1_macro_mean': 0.5,
+            'f1_macro_std': 0.0,
+            'n_folds_completed': 0,
+            'total_folds': 5,
+            'error': 'CV failed - using fallback results'
+        }
+
+    def _calculate_evaluation_metrics(self, models_results: dict[str, Any],
+                                    cv_results: dict[str, Any],
+                                    X_test: np.ndarray, y_dir_test: np.ndarray,
+                                    y_vol_test: np.ndarray, ensemble_model: dict[str, Any] = None) -> dict[str, Any]:
+        """Calculate comprehensive evaluation metrics with class imbalance awareness."""
+        try:
+            from sklearn.metrics import balanced_accuracy_score, f1_score, matthews_corrcoef
+            from sklearn.utils.class_weight import compute_sample_weight
+
+            # Find best performing models using balanced metrics
+            best_balanced_accuracy = 0
+            best_direction_model = None
+            best_volatility_mae = float('inf')
+            best_volatility_model = None
+
+            # Aggregate feature importance across models
+            all_feature_importance = {}
+
+            for model_name, model_result in models_results.items():
+                # Check direction performance with balanced metrics
+                if 'direction' in model_result and 'predictions' in model_result['direction']:
+                    try:
+                        y_pred = model_result['direction']['predictions']
+
+                        # Calculate balanced metrics
+                        balanced_acc = balanced_accuracy_score(y_dir_test, y_pred)
+                        f1_macro = f1_score(y_dir_test, y_pred, average='macro')
+                        mcc = matthews_corrcoef(y_dir_test, y_pred)
+
+                        # Store balanced metrics
+                        model_result['direction']['balanced_accuracy'] = balanced_acc
+                        model_result['direction']['f1_macro'] = f1_macro
+                        model_result['direction']['matthews_corrcoef'] = mcc
+
+                        # Update best model
+                        if balanced_acc > best_balanced_accuracy:
+                            best_balanced_accuracy = balanced_acc
+                            best_direction_model = model_name
+
+                        # Aggregate feature importance
+                        if 'feature_importance' in model_result['direction']:
+                            for feature, importance in model_result['direction']['feature_importance'].items():
+                                if feature not in all_feature_importance:
+                                    all_feature_importance[feature] = []
+                                all_feature_importance[feature].append(importance)
+
+                    except Exception as metric_e:
+                        self.logger.warning(f'⚠️ Could not calculate balanced metrics for {model_name}: {metric_e}')
+                        continue
+
+                # Check volatility performance
+                if 'volatility' in model_result and 'mae' in model_result['volatility']:
+                    mae = model_result['volatility']['mae']
+                    if mae < best_volatility_mae:
+                        best_volatility_mae = mae
+                        best_volatility_model = model_name
+
+            # Calculate average feature importance
+            avg_feature_importance = {}
+            for feature, importances in all_feature_importance.items():
+                avg_feature_importance[feature] = np.mean(importances)
+
+            # Sort features by importance
+            sorted_features = sorted(avg_feature_importance.items(), key=lambda x: x[1], reverse=True)
+            top_features = dict(sorted_features[:20])  # Top 20 features
+
+            # Class distribution analysis
+            class_distribution = {}
+            if len(y_dir_test) > 0:
+                unique_classes, class_counts = np.unique(y_dir_test, return_counts=True)
+                class_distribution = {
+                    f'class_{int(cls)}': int(count) for cls, count in zip(unique_classes, class_counts)
+                }
+                class_distribution['total_samples'] = len(y_dir_test)
+                class_distribution['num_classes'] = len(unique_classes)
+
+            return {
+                'best_balanced_accuracy': best_balanced_accuracy,
+                'best_direction_model': best_direction_model,
+                'best_volatility_mae': best_volatility_mae,
+                'best_volatility_model': best_volatility_model,
+                'top_features': top_features,
+                'avg_feature_importance': avg_feature_importance,
+                'class_distribution': class_distribution,
+                'cv_results_summary': {
+                    'direction_accuracy_mean': cv_results.get('direction_accuracy_mean', 0.5),
+                    'balanced_accuracy_mean': cv_results.get('balanced_accuracy_mean', 0.5),
+                    'f1_macro_mean': cv_results.get('f1_macro_mean', 0.5),
+                    'n_folds_completed': cv_results.get('n_folds_completed', 0),
+                    'total_folds': cv_results.get('total_folds', 5)
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f'❌ Evaluation metrics calculation failed: {e}')
+            return {
+                'best_balanced_accuracy': 0.5,
+                'best_direction_model': 'fallback',
+                'error': str(e)
+            }
+
+    def _handle_ml_failure(self, error_message: str, error_type: str = "UNKNOWN_ERROR") -> dict[str, Any]:
+        """Handle ML training failures with intelligent fast fail mechanism and proper error classification."""
+        # Initialize failure tracking if not exists
+        if not hasattr(self, 'ml_failure_count'):
+            self.ml_failure_count = 0
+            self.ml_failure_reasons = []
+
+        self.ml_failure_count += 1
+        self.ml_failure_reasons.append({
+            'timestamp': datetime.now().isoformat(),
+            'error_type': error_type,
+            'error_message': error_message,
+            'failure_count': self.ml_failure_count
+        })
+
+        # Classify failure severity with better granularity
+        critical_errors = ["FORWARD_BIAS_ERROR", "DATA_UNAVAILABLE", "EMPTY_DATA", "NO_VALID_CHUNKS"]
+        recoverable_errors = ["OPTUNA_ERROR", "CV_ERROR", "MODEL_FIT_ERROR", "ML_TRAINING_ERROR", "METHOD_VALIDATION_ERROR"]
+        data_related_errors = ["SINGLE_CLASS_ERROR", "EXTREME_IMBALANCE_ERROR", "INSUFFICIENT_DATA_ERROR"]
+
+        is_critical = error_type in critical_errors
+        is_recoverable = error_type in recoverable_errors
+        is_data_related = error_type in data_related_errors
+
+        # Log with appropriate emoji and context
+        if is_critical:
+            self.logger.error(f'❌ CRITICAL ML Training Failure #{self.ml_failure_count}: {error_message}')
+            self.logger.error(f'🚨 Critical Error Type: {error_type}')
+        elif is_data_related:
+            self.logger.warning(f'⚠️ DATA-RELATED ML Training Failure #{self.ml_failure_count}: {error_message}')
+            self.logger.warning(f'📊 Data Error Type: {error_type} - may be expected in some chunks')
+        elif is_recoverable:
+            self.logger.warning(f'⚠️ RECOVERABLE ML Training Failure #{self.ml_failure_count}: {error_message}')
+            self.logger.warning(f'📊 Recoverable Error Type: {error_type}')
+        else:
+            self.logger.warning(f'⚠️ ML Training Failure #{self.ml_failure_count}: {error_message}')
+            self.logger.warning(f'📊 Error Type: {error_type}')
+
+        # Intelligent fast fail logic with differentiated thresholds
+        if hasattr(self, 'enable_fast_fail') and self.enable_fast_fail:
+            if is_critical and self.ml_failure_count >= 2:  # Fail faster on critical errors
+                self.logger.critical(f'🚨 FAST FAIL: {self.ml_failure_count} critical ML failures detected, aborting training')
+                raise RuntimeError(f"Fast fail triggered after {self.ml_failure_count} critical ML training failures")
+            elif is_data_related and self.ml_failure_count >= 10:  # More tolerant of data issues
+                self.logger.warning(f'🚨 FAST FAIL: {self.ml_failure_count} data-related ML failures detected, aborting training')
+                raise RuntimeError(f"Fast fail triggered after {self.ml_failure_count} data-related ML training failures")
+            elif self.ml_failure_count >= getattr(self, 'max_ml_failures', 5):  # Original threshold for other errors
+                self.logger.critical(f'🚨 FAST FAIL: {self.ml_failure_count} ML failures detected, aborting training')
+                raise RuntimeError(f"Fast fail triggered after {self.ml_failure_count} ML training failures")
+
+        # Return fallback result with failure information
+        return self._get_fallback_ml_result_with_failure_info(error_message, error_type)
+
+    def _get_fallback_ml_result_with_failure_info(self, error_message: str, error_type: str) -> dict[str, Any]:
+        """Get fallback ML result with detailed failure information."""
+        return {
+            'direction_accuracy': 0.5,
+            'balanced_accuracy': 0.5,
+            'volatility_mae': 0.1,
+            'model_type': 'fallback_due_to_failure',
+            'training_samples': 0,
+            'failure_info': {
+                'error_message': error_message,
+                'error_type': error_type,
+                'timestamp': datetime.now().isoformat()
+            }
+        }
+
+    def _detect_class_imbalance(self, y: np.ndarray, threshold: float = 0.95) -> dict[str, Any]:
+        """Detect and analyze class imbalance in target variable."""
+        try:
+            unique_classes, class_counts = np.unique(y, return_counts=True)
+            total_samples = len(y)
+
+            # Calculate class ratios
+            class_ratios = class_counts / total_samples
+            max_class_ratio = np.max(class_ratios)
+            min_class_ratio = np.min(class_ratios)
+
+            # Identify dominant class
+            dominant_class_idx = np.argmax(class_counts)
+            dominant_class = unique_classes[dominant_class_idx]
+
+            imbalance_info = {
+                'num_classes': len(unique_classes),
+                'total_samples': total_samples,
+                'class_distribution': {f'class_{int(cls)}': int(count) for cls, count in zip(unique_classes, class_counts)},
+                'class_ratios': {f'class_{int(cls)}': float(ratio) for cls, ratio in zip(unique_classes, class_ratios)},
+                'max_class_ratio': float(max_class_ratio),
+                'min_class_ratio': float(min_class_ratio),
+                'dominant_class': int(dominant_class),
+                'is_single_class': len(unique_classes) < 2,
+                'is_extreme_imbalance': max_class_ratio > threshold,
+                'imbalance_severity': 'extreme' if max_class_ratio > 0.95 else 'severe' if max_class_ratio > 0.85 else 'moderate' if max_class_ratio > 0.75 else 'balanced'
+            }
+
+            # Log imbalance information
+            if imbalance_info['is_single_class']:
+                self.logger.warning(f'🚨 Single-class dataset detected: only class {dominant_class} present ({total_samples} samples)')
+            elif imbalance_info['is_extreme_imbalance']:
+                self.logger.warning(f'⚠️ Extreme class imbalance: {max_class_ratio:.2%} of samples are class {dominant_class} ({imbalance_info["imbalance_severity"]} imbalance)')
+            elif imbalance_info['max_class_ratio'] > 0.75:
+                self.logger.info(f'ℹ️ Class imbalance detected: {max_class_ratio:.2%} of samples are class {dominant_class} ({imbalance_info["imbalance_severity"]} imbalance)')
+
+            return imbalance_info
+
+        except Exception as e:
+            self.logger.error(f'❌ Class imbalance detection failed: {e}')
+            return {
+                'error': str(e),
+                'is_single_class': False,
+                'is_extreme_imbalance': False
+            }
+
+    def _train_ml_models_chunked_optimized(self, X: np.ndarray, y: np.ndarray, feature_names: list[str],
+                                          chunk_size: int = 50000, memory_limit_gb: float = 4.0) -> dict[str, Any]:
+        """Train ML models with chunked processing, class imbalance handling, and single-class detection."""
+        try:
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
+            from sklearn.utils.class_weight import compute_sample_weight
+            from sklearn.metrics import balanced_accuracy_score, f1_score
+            import gc
+
+            self.logger.info(f'🚀 Starting optimized chunked ML training: {len(X)} samples, chunk_size={chunk_size}')
+
+            # Initialize results storage
+            all_models_results = {}
+            successful_chunks = 0
+            failed_chunks = 0
+
+            # Process data in chunks
+            for chunk_idx, start_idx in enumerate(range(0, len(X), chunk_size)):
+                end_idx = min(start_idx + chunk_size, len(X))
+                self.logger.info(f'📦 Processing chunk {chunk_idx + 1}: samples {start_idx}-{end_idx}')
+
+                try:
+                    # Extract chunk data
+                    X_chunk = X[start_idx:end_idx]
+                    y_chunk = y[start_idx:end_idx]
+
+                    # Detect class imbalance in chunk
+                    imbalance_info = self._detect_class_imbalance(y_chunk)
+
+                    # Skip single-class chunks
+                    if imbalance_info['is_single_class']:
+                        self.logger.warning(f'⚠️ Skipping single-class chunk {chunk_idx + 1}: only class {imbalance_info["dominant_class"]} present')
+                        failed_chunks += 1
+                        continue
+
+                    # Check for extreme imbalance
+                    if imbalance_info['is_extreme_imbalance']:
+                        self.logger.warning(f'⚠️ Extreme imbalance in chunk {chunk_idx + 1}: {imbalance_info["max_class_ratio"]:.2%} single class')
+
+                    # Prepare models for this chunk
+                    models = {
+                        'LogisticRegression': LogisticRegression(
+                            random_state=42, max_iter=1000,
+                            class_weight='balanced' if imbalance_info['max_class_ratio'] > 0.75 else None
+                        ),
+                        'RandomForest': RandomForestClassifier(
+                            n_estimators=100, random_state=42, n_jobs=-1,
+                            class_weight='balanced_subsample' if imbalance_info['max_class_ratio'] > 0.75 else None
+                        ),
+                        'HistGradientBoosting': HistGradientBoostingClassifier(
+                            random_state=42, max_iter=100,
+                            class_weight='balanced' if imbalance_info['max_class_ratio'] > 0.75 else None
+                        )
+                    }
+
+                    chunk_results = {}
+
+                    # Train each model
+                    for model_name, model in models.items():
+                        try:
+                            self.logger.debug(f'🏃 Training {model_name} on chunk {chunk_idx + 1}')
+
+                            # Special handling for single-class errors in specific models
+                            if model_name == 'LogisticRegression' and imbalance_info['num_classes'] < 2:
+                                self.logger.warning(f'⚠️ LogisticRegression failed on single-class chunk {chunk_idx + 1}')
+                                continue
+
+                            # Compute sample weights for imbalanced data
+                            if imbalance_info['max_class_ratio'] > 0.75:
+                                sample_weight = compute_sample_weight('balanced', y_chunk)
+                            else:
+                                sample_weight = None
+
+                            # Train model
+                            if hasattr(model, 'fit') and sample_weight is not None:
+                                if model_name == 'HistGradientBoosting':
+                                    # HistGradientBoosting uses sample_weight parameter
+                                    model.fit(X_chunk, y_chunk, sample_weight=sample_weight)
+                                else:
+                                    model.fit(X_chunk, y_chunk, sample_weight=sample_weight)
+                            else:
+                                model.fit(X_chunk, y_chunk)
+
+                            # Make predictions for evaluation
+                            y_pred = model.predict(X_chunk)
+
+                            # Calculate balanced metrics
+                            balanced_acc = balanced_accuracy_score(y_chunk, y_pred)
+                            f1_macro = f1_score(y_chunk, y_pred, average='macro')
+
+                            # Store results
+                            chunk_results[model_name] = {
+                                'model': model,
+                                'balanced_accuracy': balanced_acc,
+                                'f1_macro': f1_macro,
+                                'training_samples': len(y_chunk),
+                                'class_distribution': imbalance_info['class_distribution'],
+                                'predictions': y_pred.tolist()
+                            }
+
+                            self.logger.info(f'✅ {model_name} trained successfully: Balanced Acc={balanced_acc:.4f}, F1={f1_macro:.4f}')
+
+                        except Exception as model_e:
+                            error_str = str(model_e)
+                            if 'needs samples of at least 2 classes' in error_str and model_name == 'LogisticRegression':
+                                self.logger.warning(f'⚠️ LogisticRegression single-class error in chunk {chunk_idx + 1}: {error_str}')
+                            else:
+                                self.logger.warning(f'⚠️ {model_name} training failed in chunk {chunk_idx + 1}: {error_str}')
+                            continue
+
+                    # Store successful chunk results
+                    if chunk_results:
+                        all_models_results[f'chunk_{chunk_idx + 1}'] = {
+                            'models': chunk_results,
+                            'imbalance_info': imbalance_info,
+                            'chunk_size': len(y_chunk),
+                            'successful_models': len(chunk_results)
+                        }
+                        successful_chunks += 1
+                        self.logger.info(f'✅ Chunk {chunk_idx + 1} completed: {len(chunk_results)} models trained')
+
+                    # Memory management
+                    del X_chunk, y_chunk
+                    gc.collect()
+
+                except Exception as chunk_e:
+                    self.logger.error(f'❌ Chunk {chunk_idx + 1} processing failed: {chunk_e}')
+                    failed_chunks += 1
+                    continue
+
+            # Aggregate results across chunks
+            if all_models_results:
+                aggregated_results = self._aggregate_chunked_results(all_models_results)
+                aggregated_results['total_chunks'] = len(all_models_results)
+                aggregated_results['successful_chunks'] = successful_chunks
+                aggregated_results['failed_chunks'] = failed_chunks
+
+                self.logger.info(f'🎉 Chunked training completed: {successful_chunks} successful, {failed_chunks} failed chunks')
+                return aggregated_results
+            else:
+                self.logger.warning('⚠️ No chunks were successfully processed')
+                return self._handle_ml_failure("No chunks were successfully processed", "NO_VALID_CHUNKS")
+
+        except Exception as e:
+            error_msg = f"Chunked ML training failed: {e}"
+            self.logger.error(f'❌ {error_msg}')
+            return self._handle_ml_failure(error_msg, "CHUNKED_TRAINING_ERROR")
+
+    def _aggregate_chunked_results(self, chunked_results: dict[str, Any]) -> dict[str, Any]:
+        """Aggregate results from multiple chunks."""
+        try:
+            # Initialize aggregation structures
+            model_aggregates = {}
+            all_balanced_accuracies = {}
+            all_f1_scores = {}
+
+            # Process each chunk
+            for chunk_name, chunk_data in chunked_results.items():
+                for model_name, model_result in chunk_data['models'].items():
+                    if model_name not in model_aggregates:
+                        model_aggregates[model_name] = []
+                        all_balanced_accuracies[model_name] = []
+                        all_f1_scores[model_name] = []
+
+                    model_aggregates[model_name].append(model_result)
+                    all_balanced_accuracies[model_name].append(model_result['balanced_accuracy'])
+                    all_f1_scores[model_name].append(model_result['f1_macro'])
+
+            # Calculate aggregate statistics
+            aggregated_results = {}
+            for model_name in model_aggregates:
+                balanced_accs = all_balanced_accuracies[model_name]
+                f1_scores = all_f1_scores[model_name]
+
+                aggregated_results[model_name] = {
+                    'mean_balanced_accuracy': np.mean(balanced_accs),
+                    'std_balanced_accuracy': np.std(balanced_accs),
+                    'mean_f1_macro': np.mean(f1_scores),
+                    'std_f1_macro': np.std(f1_scores),
+                    'chunk_count': len(balanced_accs),
+                    'best_chunk_performance': np.max(balanced_accs)
+                }
+
+            # Find best overall model
+            best_model = None
+            best_score = 0
+            for model_name, stats in aggregated_results.items():
+                if stats['mean_balanced_accuracy'] > best_score:
+                    best_score = stats['mean_balanced_accuracy']
+                    best_model = model_name
+
+            return {
+                'aggregated_results': aggregated_results,
+                'best_model': best_model,
+                'best_score': best_score,
+                'total_chunks_processed': len(chunked_results)
+            }
+
+        except Exception as e:
+            self.logger.error(f'❌ Result aggregation failed: {e}')
+            return {'error': str(e)}
+
+    def _validate_ml_training_readiness(self) -> dict[str, Any]:
+        """Comprehensive preflight validation for ML training readiness."""
+        validation_results = {
+            'is_ready': True,
+            'issues': [],
+            'warnings': [],
+            'method_availability': {},
+            'configuration_validity': {},
+            'data_requirements': {}
+        }
+
+        try:
+            # Check required methods availability
+            required_methods = [
+                '_perform_cross_validation',
+                '_calculate_evaluation_metrics',
+                '_handle_ml_failure',
+                '_detect_class_imbalance',
+                '_train_ml_models_chunked_optimized'
+            ]
+
+            for method_name in required_methods:
+                has_method = hasattr(self, method_name) and callable(getattr(self, method_name))
+                validation_results['method_availability'][method_name] = has_method
+
+                if not has_method:
+                    validation_results['is_ready'] = False
+                    validation_results['issues'].append(f"Missing required method: {method_name}")
+                    self.logger.error(f'❌ Missing required ML method: {method_name}')
+                else:
+                    self.logger.debug(f'✅ Method available: {method_name}')
+
+            # Check configuration validity
+            config_checks = {
+                'enable_fast_fail': getattr(self, 'enable_fast_fail', None),
+                'max_ml_failures': getattr(self, 'max_ml_failures', None),
+                'ml_chunk_size': getattr(self, 'ml_chunk_size', 50000),
+                'enable_memory_optimization': getattr(self, 'enable_memory_optimization', True)
+            }
+
+            for config_key, config_value in config_checks.items():
+                validation_results['configuration_validity'][config_key] = config_value
+
+                if config_value is None:
+                    validation_results['warnings'].append(f"Configuration not set: {config_key}")
+                    self.logger.warning(f'⚠️ ML configuration not set: {config_key}')
+
+            # Check for sklearn dependencies
+            sklearn_imports = [
+                'sklearn.model_selection.TimeSeriesSplit',
+                'sklearn.ensemble.RandomForestClassifier',
+                'sklearn.linear_model.LogisticRegression',
+                'sklearn.utils.class_weight.compute_sample_weight',
+                'sklearn.metrics.balanced_accuracy_score'
+            ]
+
+            for import_path in sklearn_imports:
+                try:
+                    module_parts = import_path.split('.')
+                    module_name = '.'.join(module_parts[:-1])
+                    class_name = module_parts[-1]
+
+                    module = __import__(module_name, fromlist=[class_name])
+                    getattr(module, class_name)
+                    self.logger.debug(f'✅ sklearn import available: {import_path}')
+                except (ImportError, AttributeError) as e:
+                    validation_results['is_ready'] = False
+                    validation_results['issues'].append(f"Missing sklearn dependency: {import_path}")
+                    self.logger.error(f'❌ Missing sklearn dependency: {import_path} - {e}')
+
+            # Check data requirements (if data is available)
+            if hasattr(self, 'X_train') and hasattr(self, 'y_train'):
+                try:
+                    X_shape = getattr(self, 'X_train', None)
+                    y_shape = getattr(self, 'y_train', None)
+
+                    if X_shape is not None and y_shape is not None:
+                        validation_results['data_requirements']['X_shape'] = X_shape.shape if hasattr(X_shape, 'shape') else len(X_shape)
+                        validation_results['data_requirements']['y_shape'] = y_shape.shape if hasattr(y_shape, 'shape') else len(y_shape)
+
+                        # Check for minimum data requirements
+                        min_samples = 100
+                        if len(X_shape) < min_samples:
+                            validation_results['warnings'].append(f"Low sample count: {len(X_shape)} < {min_samples}")
+                            self.logger.warning(f'⚠️ Low sample count for ML training: {len(X_shape)} < {min_samples}')
+
+                        # Check class distribution
+                        if hasattr(y_shape, '__len__') and len(y_shape) > 0:
+                            unique_classes = len(np.unique(y_shape))
+                            if unique_classes < 2:
+                                validation_results['is_ready'] = False
+                                validation_results['issues'].append("Single-class dataset detected")
+                                self.logger.error('❌ Single-class dataset detected - ML training not possible')
+                            else:
+                                validation_results['data_requirements']['num_classes'] = unique_classes
+
+                except Exception as e:
+                    validation_results['warnings'].append(f"Could not validate data: {e}")
+                    self.logger.warning(f'⚠️ Could not validate training data: {e}')
+
+            # Log validation summary
+            if validation_results['is_ready']:
+                self.logger.info('✅ All required ML methods are available and valid')
+                if validation_results['warnings']:
+                    self.logger.warning(f'⚠️ ML training warnings: {len(validation_results["warnings"])}')
+                    for warning in validation_results['warnings']:
+                        self.logger.warning(f'  - {warning}')
+            else:
+                self.logger.error(f'❌ ML training not ready: {len(validation_results["issues"])} issues found')
+                for issue in validation_results['issues']:
+                    self.logger.error(f'  - {issue}')
+
+        except Exception as e:
+            validation_results['is_ready'] = False
+            validation_results['issues'].append(f"Validation failed: {e}")
+            self.logger.error(f'❌ ML training readiness validation failed: {e}')
+
+        return validation_results
+
+    def _validate_temporal_cv_integrity(self, X: np.ndarray, y: np.ndarray, n_splits: int = 5,
+                                       min_samples_per_fold: int = 100) -> dict[str, Any]:
+        """Validate temporal cross-validation integrity and provide safeguards."""
+        validation_results = {
+            'is_valid': True,
+            'issues': [],
+            'recommendations': [],
+            'fold_analysis': {},
+            'temporal_integrity': True
+        }
+
+        try:
+            from sklearn.model_selection import TimeSeriesSplit
+
+            # Basic data validation
+            if len(X) == 0 or len(y) == 0:
+                validation_results['is_valid'] = False
+                validation_results['issues'].append("Empty dataset provided")
+                return validation_results
+
+            if len(X) != len(y):
+                validation_results['is_valid'] = False
+                validation_results['issues'].append(f"X and y length mismatch: {len(X)} vs {len(y)}")
+                return validation_results
+
+            # Check for minimum total samples
+            total_min_samples = min_samples_per_fold * n_splits
+            if len(X) < total_min_samples:
+                validation_results['is_valid'] = False
+                validation_results['issues'].append(f"Insufficient total samples: {len(X)} < {total_min_samples} (need {min_samples_per_fold} per fold * {n_splits} folds)")
+                validation_results['recommendations'].append(f"Reduce n_splits to {max(2, len(X) // min_samples_per_fold)} or increase min_samples_per_fold")
+
+            # Analyze potential CV splits
+            max_reasonable_splits = min(n_splits, max(2, len(X) // min_samples_per_fold))
+            tscv = TimeSeriesSplit(n_splits=max_reasonable_splits)
+
+            fold_analysis = {}
+            temporal_issues = []
+
+            for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+                fold_info = {
+                    'train_samples': len(train_idx),
+                    'test_samples': len(test_idx),
+                    'train_classes': len(np.unique(y[train_idx])),
+                    'test_classes': len(np.unique(y[test_idx])),
+                    'is_valid': True,
+                    'issues': []
+                }
+
+                # Check minimum samples per fold
+                if len(train_idx) < min_samples_per_fold:
+                    fold_info['is_valid'] = False
+                    fold_info['issues'].append(f"Insufficient train samples: {len(train_idx)} < {min_samples_per_fold}")
+
+                if len(test_idx) < min_samples_per_fold // 2:  # Test set can be smaller
+                    fold_info['is_valid'] = False
+                    fold_info['issues'].append(f"Insufficient test samples: {len(test_idx)} < {min_samples_per_fold // 2}")
+
+                # Check for single-class folds
+                if fold_info['train_classes'] < 2:
+                    fold_info['is_valid'] = False
+                    fold_info['issues'].append(f"Single-class train fold: only {fold_info['train_classes']} class(es)")
+                    temporal_issues.append(f"Fold {fold_idx}: single-class training data")
+
+                if fold_info['test_classes'] < 2:
+                    fold_info['is_valid'] = False
+                    fold_info['issues'].append(f"Single-class test fold: only {fold_info['test_classes']} class(es)")
+                    temporal_issues.append(f"Fold {fold_idx}: single-class test data")
+
+                # Check temporal ordering (basic)
+                if len(train_idx) > 0 and len(test_idx) > 0:
+                    if train_idx[-1] >= test_idx[0]:
+                        temporal_issues.append(f"Fold {fold_idx}: temporal ordering violated")
+
+                fold_analysis[f'fold_{fold_idx}'] = fold_info
+
+                if not fold_info['is_valid']:
+                    validation_results['is_valid'] = False
+
+            validation_results['fold_analysis'] = fold_analysis
+
+            # Analyze temporal integrity
+            if temporal_issues:
+                validation_results['temporal_integrity'] = False
+                validation_results['issues'].extend(temporal_issues)
+                validation_results['recommendations'].append("Consider shuffling data or adjusting fold strategy")
+
+            # Check class distribution stability across folds
+            class_distributions = []
+            for fold_info in fold_analysis.values():
+                if fold_info['is_valid']:
+                    class_distributions.append(fold_info['train_classes'])
+
+            if len(class_distributions) > 1:
+                class_stability = np.std(class_distributions) / np.mean(class_distributions)
+                if class_stability > 0.5:  # High variation in class counts
+                    validation_results['recommendations'].append(".2f"
+            # Provide optimal parameters
+            optimal_n_splits = min(n_splits, max(2, len(X) // min_samples_per_fold))
+            if optimal_n_splits != n_splits:
+                validation_results['recommendations'].append(f"Optimal n_splits: {optimal_n_splits} (instead of {n_splits})")
+
+            # Log validation results
+            if validation_results['is_valid']:
+                self.logger.info(f'✅ Temporal CV integrity validated: {len(fold_analysis)} folds analyzed')
+            else:
+                self.logger.warning(f'⚠️ Temporal CV integrity issues found: {len(validation_results["issues"])} issues')
+                for issue in validation_results['issues']:
+                    self.logger.warning(f'  - {issue}')
+
+            if validation_results['recommendations']:
+                self.logger.info(f'💡 CV recommendations: {len(validation_results["recommendations"])} suggestions')
+                for rec in validation_results['recommendations']:
+                    self.logger.info(f'  - {rec}')
+
+        except Exception as e:
+            validation_results['is_valid'] = False
+            validation_results['issues'].append(f"CV validation failed: {e}")
+            self.logger.error(f'❌ Temporal CV integrity validation failed: {e}')
+
+        return validation_results
+
+    def _perform_robust_cross_validation(self, X: np.ndarray, y: np.ndarray, feature_names: list[str],
+                                       n_splits: int = 5, min_samples_per_fold: int = 100) -> dict[str, Any]:
+        """Perform robust cross-validation with comprehensive integrity checks and safeguards."""
+        try:
+            # First validate CV integrity
+            cv_validation = self._validate_temporal_cv_integrity(X, y, n_splits, min_samples_per_fold)
+
+            if not cv_validation['is_valid']:
+                self.logger.warning('⚠️ CV integrity validation failed, attempting with adjusted parameters')
+
+                # Try to find optimal parameters
+                optimal_n_splits = min(n_splits, max(2, len(X) // min_samples_per_fold))
+                if optimal_n_splits != n_splits:
+                    self.logger.info(f'🔧 Adjusting n_splits from {n_splits} to {optimal_n_splits}')
+                    n_splits = optimal_n_splits
+                    cv_validation = self._validate_temporal_cv_integrity(X, y, n_splits, min_samples_per_fold)
+
+            # Proceed with CV if validation passes or we have adjusted parameters
+            if cv_validation['is_valid']:
+                return self._perform_cross_validation(X, y, feature_names)
+            else:
+                self.logger.error('❌ CV validation failed even with adjusted parameters')
+                return self._get_fallback_cv_results()
+
+        except Exception as e:
+            self.logger.error(f'❌ Robust CV failed: {e}')
+            return self._get_fallback_cv_results()
 
 
 @handles_errors(

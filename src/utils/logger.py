@@ -442,7 +442,7 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
     try:
         global system_logger
         if config is None:
-            log_dir = Path('log')
+            log_dir = Path('logs')
             log_dir.mkdir(exist_ok = True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             log_file = log_dir / f'ares_{timestamp}.log'

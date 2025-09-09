@@ -58,7 +58,7 @@ class StandardizedParquetHandler:
             'exchange': 'string',
             'symbol': 'string',
             'timeframe': 'string',
-            'year': 'int16',
+            'year': 'int32',
             'month': 'int8',
             'day': 'int8',
             'trade_volume': 'float64',
@@ -161,7 +161,7 @@ class StandardizedParquetHandler:
                 for col in partition_cols:
                     if col in df.columns:
                         if col in ['year', 'month', 'day']:
-                            partition_fields.append(pa.field(col, pa.int16() if col == 'year' else pa.int8()))
+                            partition_fields.append(pa.field(col, pa.int32() if col == 'year' else pa.int8()))
                         else:
                             partition_fields.append(pa.field(col, pa.string()))
                 

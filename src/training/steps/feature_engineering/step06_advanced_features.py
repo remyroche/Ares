@@ -50,6 +50,18 @@ try:
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False
 
+# Import ML Common utilities for enhanced functionality
+try:
+    from src.utils.ml_common import (
+        LookaheadProtection,
+        DataQualityUtilities,
+        FeatureSelectionFramework
+    )
+    ML_COMMON_AVAILABLE = True
+except ImportError as e:
+    ML_COMMON_AVAILABLE = False
+    logging.warning(f"⚠️ ML Common utilities not available in feature engineering: {e}")
+
 class AdvancedFeatureEngineeringStep(BaseStep):
     """Advanced feature engineering using the standardized BaseStep."""
 
@@ -90,6 +102,21 @@ class AdvancedFeatureEngineeringStep(BaseStep):
 
         if is_step02_5_mode and self.logger:
             self.logger.info('🚫 Step02_5 compatibility mode: wavelets disabled, feature interactions disabled, regime features disabled, lookback optimization disabled')
+
+        # Initialize ML Common utilities if available
+        self.ml_lookahead_protection = None
+        self.ml_data_quality = None
+        self.ml_feature_selection = None
+        if ML_COMMON_AVAILABLE:
+            try:
+                self.ml_lookahead_protection = LookaheadProtection()
+                self.ml_data_quality = DataQualityUtilities()
+                self.ml_feature_selection = FeatureSelectionFramework()
+                if self.logger:
+                    self.logger.info('✅ ML Common utilities initialized in feature engineering')
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f'⚠️ Failed to initialize ML Common utilities: {e}')
 
         # Initialize enhanced reporting system
         if ENHANCED_REPORTING_AVAILABLE and Step06EnhancedReporter is not None:
@@ -225,6 +252,43 @@ class AdvancedFeatureEngineeringStep(BaseStep):
                 f"🔧 Engineering features for labeled dataset: rows={len(labeled)} cols={len(labeled.columns)}"
             )
 
+        # ML utilities: Lookahead protection and data quality validation
+        if self.ml_lookahead_protection and self.ml_data_quality:
+            try:
+                if self.logger:
+                    self.logger.info('🔍 Running ML-enhanced data quality validation...')
+
+                # Perform comprehensive data quality validation
+                quality_report = await self.ml_data_quality.perform_comprehensive_validation(
+                    labeled, symbol=symbol, exchange=exchange, context='feature_engineering'
+                )
+                if quality_report.get('has_critical_issues', False):
+                    if self.logger:
+                        self.logger.error(f"🚨 Critical data quality issues detected: {quality_report.get('critical_issues', [])}")
+                    raise ValueError(f"Data quality validation failed: {quality_report.get('critical_issues', [])}")
+
+                if quality_report.get('warnings', []):
+                    if self.logger:
+                        self.logger.warning(f"⚠️ Data quality warnings: {quality_report.get('warnings', [])}")
+
+                # Lookahead bias protection
+                if self.logger:
+                    self.logger.info('🛡️ Running lookahead bias protection...')
+                lookahead_report = await self.ml_lookahead_protection.detect_and_prevent_leakage(
+                    labeled, symbol=symbol, exchange=exchange, context='feature_engineering'
+                )
+                if lookahead_report.get('has_leakage', False):
+                    if self.logger:
+                        self.logger.error(f"🚨 Lookahead bias detected: {lookahead_report.get('leakage_details', [])}")
+                    raise ValueError(f"Lookahead bias detected: {lookahead_report.get('leakage_details', [])}")
+
+                if self.logger:
+                    self.logger.info('✅ ML-enhanced data validation and lookahead protection passed')
+
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f'⚠️ ML utilities validation failed, continuing with standard processing: {e}')
+
         # Core feature sets (must succeed)
         base_features = self._build_basic_features(labeled)
         wavelet_features = self._build_wavelet_features_required(labeled)
@@ -238,6 +302,33 @@ class AdvancedFeatureEngineeringStep(BaseStep):
 
         # Combine all features and retain labels (no internal NaN/inf filling here)
         features = pd.concat([base_features, wavelet_features, mtf_features, microstructure_features, technical_features], axis = 1)
+
+        # ML utilities: Enhanced feature selection and importance analysis
+        if self.ml_feature_selection:
+            try:
+                if self.logger:
+                    self.logger.info('🎯 Running ML-enhanced feature importance analysis...')
+
+                # Perform feature importance analysis
+                importance_report = await self.ml_feature_selection.analyze_feature_importance(
+                    features, labels=labeled.get('label'), symbol=symbol, exchange=exchange, context='feature_engineering'
+                )
+
+                if importance_report.get('recommendations'):
+                    if self.logger:
+                        self.logger.info(f'💡 ML feature selection recommendations: {importance_report["recommendations"]}')
+
+                # Store feature importance for potential use in downstream steps
+                if importance_report.get('feature_importance'):
+                    features.attrs['ml_feature_importance'] = importance_report['feature_importance']
+
+                if self.logger:
+                    self.logger.info('✅ ML-enhanced feature importance analysis completed')
+
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f'⚠️ ML feature importance analysis failed, continuing with standard processing: {e}')
+
         features = self._finalize_features(features, labeled)
 
         # Split features train/val by simple ratio if no index provided

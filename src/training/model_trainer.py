@@ -37,6 +37,18 @@ from sklearn.preprocessing import StandardScaler
 from src.training.data_cleaning import handle_missing_data
 from src.training.multi_output_model_trainer import create_multi_output_trainer, MultiOutputModelConfig
 
+# ML Training Safeguards
+from src.utils.ml_training_safeguards import (
+    MLTrainingSafeguards,
+    check_class_distribution,
+    validate_chunk_for_training,
+    create_balanced_sample_weights,
+    perform_robust_cross_validation,
+    calculate_comprehensive_metrics,
+    classify_ml_error,
+    create_smart_fast_fail_handler,
+)
+
 # Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
 # Import HPO manager lazily inside the method when HPO is actually used.
 
@@ -551,7 +563,22 @@ class RayModelTrainer:
                     return None
             
             data = handle_missing_data(data)
-            
+
+            # Apply ML training safeguards to loaded data
+            # Check for parquet schema issues by harmonizing
+            if hasattr(data, 'values'):
+                # Use harmonized parquet reading if available
+                try:
+                    from src.utils.common_operations import safe_read_parquet
+                    # Re-read with harmonization if we suspect schema issues
+                    if os.path.exists(labeled_path):
+                        harmonized_data = safe_read_parquet(labeled_path, harmonize_schema=True)
+                        if harmonized_data is not None and not harmonized_data.empty:
+                            data = harmonized_data
+                            self.logger.info("✅ Applied parquet schema harmonization")
+                except Exception as e:
+                    self.logger.debug(f"Parquet harmonization not applied: {e}")
+
             # Check if we have multi-output targets (direction and profit)
             has_direction = "direction" in data.columns
             has_profit = "potential_profit_pct" in data.columns

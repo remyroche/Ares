@@ -44,7 +44,7 @@ except ImportError:
 # Processing Core Optimizations
 try:
     from src.utils.vectorized_processing_core import OptimizedPipelineExecutor
-    from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations
+    from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
     from src.utils.enhanced_step_optimizations import IntelligentOptimizationSelector, OptimizationStrategy
 import logging
 

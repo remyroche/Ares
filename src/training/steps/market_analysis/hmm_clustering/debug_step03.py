@@ -70,8 +70,7 @@ async def run_memory_diagnostics() -> Dict[str, Any]:
     mem_cfg = MemoryConfig(enable_memory_monitoring=True, chunk_size_mb=50)
     mem_mgr = get_enhanced_memory_manager(mem_cfg)
     await mem_mgr.initialize()
-    stats = mem_mgr.get_memory_stats().__dict__  # Convert dataclass to dict
-    report = {k: float(v) if isinstance(v, (int, float)) else v for k, v in stats.items()}
+    report = mem_mgr.get_memory_report()
     await mem_mgr.cleanup()
     logger.info("✅ Memory diagnostics complete")
     return report

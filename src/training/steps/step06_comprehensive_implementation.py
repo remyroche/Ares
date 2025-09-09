@@ -41,6 +41,14 @@ from src.utils.math_validation import (
     validate_range, validate_finite, MathValidationError
 )
 
+# Import common utils
+from src.utils.config_utils import Step06LabelParams
+from src.utils.enhanced_data_operations import calculate_rsi
+from src.utils.parallel_processing_optimizer import ParallelProcessingOptimizer
+
+# Data type optimizer
+from src.utils.data_type_optimizer import reduce_dataframe_memory
+
 logger = logging.getLogger(__name__)
 
 class Step06ComprehensiveImplementation:
@@ -74,10 +82,12 @@ class Step06ComprehensiveImplementation:
         # Initialize all components
         self.enhanced_feature_engineering = EnhancedFeatureEngineering(config)
         self.enhanced_feature_step = EnhancedFeatureEngineeringStep(config)
+        self.label_params = Step06LabelParams()
+
         self.optimized_labeling = OptimizedTripleBarrierLabeling(
-            profit_take_multiplier=0.004,  # 0.4%
-            stop_loss_multiplier=0.003,    # 0.3%
-            transaction_cost=0.0008        # 0.08%
+            profit_take_multiplier=self.label_params.profit_take,
+            stop_loss_multiplier=self.label_params.stop_loss,
+            transaction_cost=self.label_params.tx_cost
         )
         
         # Enhanced performance tracking with utility metrics
@@ -211,6 +221,8 @@ class Step06ComprehensiveImplementation:
             if not validation_results['is_valid']:
                 results['errors'].extend(validation_results['errors'])
                 results['pipeline_status'] = 'failed_validation'
+                # Ensure resources are released before returning
+                await self.cleanup()
                 return results
             
             # Step 2: Enhanced feature engineering with utilities
@@ -277,7 +289,9 @@ class Step06ComprehensiveImplementation:
             results['pipeline_status'] = 'failed'
             results['errors'].append(str(e))
             self.performance_metrics['validation_errors'] += 1
-        
+
+        # Final cleanup before returning irrespective of success or failure
+        await self.cleanup()
         return results
 
     @inject_utilities('common_ops', 'data_proc', 'math_val', 'parquet', 'serialization')
@@ -330,7 +344,7 @@ class Step06ComprehensiveImplementation:
                 enhanced_features = data_proc.transformer.add_column(
                     enhanced_features, 
                     'rsi_14', 
-                    self._calculate_rsi(enhanced_features['close'], 14)
+                    calculate_rsi(enhanced_features['close'], 14)
                 )
                 enhanced_features = data_proc.transformer.add_column(
                     enhanced_features,
@@ -376,13 +390,13 @@ class Step06ComprehensiveImplementation:
             if math_val:
                 # Calculate returns with safe division
                 returns = market_data['close'].pct_change()
-                
-                # Create labels based on return thresholds
+                # Vectorized, robust labeling using thresholds from OptimizedTripleBarrierLabeling to keep logic consistent
+                profit_take = self.optimized_labeling.profit_take_multiplier
+                stop_loss = self.optimized_labeling.stop_loss_multiplier
                 labels = pd.Series(index=market_data.index, dtype='float64')
                 finite_mask = returns.apply(lambda x: pd.notna(x) and validate_finite(x))
-                labels[:] = np.nan
-                pos_mask = (returns > 0.004) & finite_mask
-                neg_mask = (returns < -0.003) & finite_mask
+                pos_mask = (returns > profit_take) & finite_mask
+                neg_mask = (returns < -stop_loss) & finite_mask
                 mid_mask = (~pos_mask & ~neg_mask) & finite_mask
                 labels[pos_mask] = 1.0
                 labels[neg_mask] = -1.0
@@ -423,21 +437,19 @@ class Step06ComprehensiveImplementation:
             if m1_memory and getattr(m1_memory, 'memory_optimizer', None):
                 # Use M1 memory optimizer for chunked processing
                 chunk_size = self.utility_config.data_processing_chunk_size
-                
-                # Process features in chunks
-                feature_chunks = list(m1_memory.memory_optimizer.chunked_dataframe_processor(features, lambda x: x, chunk_size))
-                self.logger.info(f"Features processed in {len(feature_chunks)} chunks")
-                
-                # Optimize memory usage
+                cleaned_chunks = []
+                chunk_count = 0
+                for chunk in m1_memory.memory_optimizer.chunked_dataframe_processor(features, lambda x: x, chunk_size):
+                    chunk_count += 1
+                    if data_proc and getattr(data_proc, 'cleaner', None):
+                        chunk = data_proc.cleaner.clean_dataframe(chunk)
+                    cleaned_chunks.append(chunk)
+                self.logger.info(f"Features processed in {chunk_count} chunks")
+                enhanced_features = pd.concat(cleaned_chunks, axis=0)
+                # Final memory optimisation pass
                 m1_memory.memory_optimizer.optimize_memory()
-                
-                # Use data processing utilities for memory-efficient operations
-                if data_proc and data_proc.cleaner:
-                    # Clean data to reduce memory usage
-                    cleaned_features = data_proc.cleaner.clean_dataframe(features)
-                    optimized_data['features'] = cleaned_features
-                    optimized_data['memory_optimization_applied'] = True
-                
+                optimized_data['features'] = enhanced_features
+                optimized_data['memory_optimization_applied'] = True
                 self.performance_metrics['utility_operations_count'] += 1
                 self.logger.info("✅ Memory optimization with M1 utilities completed")
             
@@ -479,7 +491,7 @@ class Step06ComprehensiveImplementation:
                         performance_results['gpu_optimization_applied'] = True
                         self.logger.info("✅ GPU optimization applied")
                 except Exception as e:
-                    self.logger.warning(f"GPU optimization failed: {e}")
+                    self.logger.exception(f"GPU optimization failed: {e}")
             
             # CPU optimization
             if m1_cpu and getattr(m1_cpu, 'cpu_optimizer', None):
@@ -497,7 +509,7 @@ class Step06ComprehensiveImplementation:
                     performance_results['cpu_optimization_applied'] = True
                     self.logger.info("✅ CPU optimization applied")
                 except Exception as e:
-                    self.logger.warning(f"CPU optimization failed: {e}")
+                    self.logger.exception(f"CPU optimization failed: {e}")
             
             self.performance_metrics['utility_operations_count'] += 1
             return performance_results
@@ -560,7 +572,8 @@ class Step06ComprehensiveImplementation:
                 try:
                     # Save enhanced features
                     features_file = Path('/tmp/step06_enhanced_features.parquet')
-                    enhanced_features.to_parquet(features_file)
+                    from src.utils.parquet_utils import ParquetWriter
+                    ParquetWriter.write_partitioned(enhanced_features, features_file, partition_size=500_000)
                     
                     # Validate saved parquet file
                     validation_result = parquet.parquet_utils.validate_parquet_file(str(features_file))
@@ -739,7 +752,9 @@ class Step06ComprehensiveImplementation:
             
             # Check for timestamp gaps
             time_diffs = data.index.to_series().diff().dt.total_seconds()
-            large_gaps = (time_diffs > 0.5).sum()
+            expected_gap = time_diffs.median()
+            threshold = expected_gap * 1.5 if pd.notna(expected_gap) else 0.5
+            large_gaps = (time_diffs > threshold).sum()
             if large_gaps > 0:
                 warnings.append(f"Timestamp gaps detected: {large_gaps} gaps >0.5s")
             
@@ -773,10 +788,21 @@ class Step06ComprehensiveImplementation:
                 'MFI': [7, 14, 30]
             }
             
-            # Extract indicators
-            indicators = self.enhanced_feature_engineering.extract_indicators_batch(
-                market_data, lookback_periods
+            # Parallel indicator extraction for speed-up
+            ppo = ParallelProcessingOptimizer(max_workers=self.utility_config.m1_max_workers)
+
+            # Split lookback dict into roughly equal partitions
+            keys = list(lookback_periods.keys())
+            chunks = [
+                {k: lookback_periods[k] for k in keys[i::self.utility_config.m1_max_workers]}
+                for i in range(self.utility_config.m1_max_workers)
+            ]
+
+            indicator_parts = ppo.map(
+                lambda lb_dict: self.enhanced_feature_engineering.extract_indicators_batch(market_data, lb_dict),
+                chunks
             )
+            indicators = pd.concat(indicator_parts, axis=1)
             
             # Create sophisticated interactions
             interactions = self.enhanced_feature_engineering.create_sophisticated_interactions(
@@ -920,7 +946,9 @@ class Step06ComprehensiveImplementation:
         # Save final data if available
         if 'integration_results' in results and 'final_data' in results['integration_results']:
             final_data_path = output_path / 'final_engineered_data.parquet'
-            results['integration_results']['final_data'].to_parquet(final_data_path)
+            from src.utils.parquet_utils import ParquetWriter
+            final_reduced = reduce_dataframe_memory(results['integration_results']['final_data'])
+            ParquetWriter.write_partitioned(final_reduced, final_data_path, partition_size=500_000)
         
         self.logger.info(f"💾 Results saved to {output_path}")
 

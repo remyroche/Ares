@@ -19,6 +19,16 @@ from ....core.decorators import handles_errors
 from ....utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from ....utils.logger import system_logger
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+# Optional ml_common utilities
+try:
+    from src.utils.ml_common import (
+        LookaheadProtection,
+        DataQualityUtilities,
+        FeatureSelectionFramework
+    )
+    ML_COMMON_AVAILABLE = True
+except Exception:
+    ML_COMMON_AVAILABLE = False
 
 import numpy as np_random_pickle
 
@@ -344,6 +354,10 @@ class RegimeAwareAnalystEnhancementStep:
         await self._initialize_optimization_tools()
 
         self.logger.info('Analyst Enhancement Step initialized successfully.')
+        # Initialize ml_common utilities (optional)
+        self.ml_data_quality = DataQualityUtilities() if ML_COMMON_AVAILABLE else None
+        self.ml_lookahead = LookaheadProtection() if ML_COMMON_AVAILABLE else None
+        self.ml_feature_selection = FeatureSelectionFramework() if ML_COMMON_AVAILABLE else None
 
     async def _initialize_optimization_tools(self) -> None:
         """Initialize all optimization tools for enhanced performance."""
@@ -465,6 +479,18 @@ class RegimeAwareAnalystEnhancementStep:
                     self.logger.info(f'🔧 Enhancing model {i}/{len(regime_models)}: {model_name} for {regime_name}...')
                     enhanced_model_package = await self._enhance_single_model(model_data, model_name, regime_name, X_train, y_train, X_val, y_val)
                     enhanced_regime_models[model_name] = enhanced_model_package
+                    # ml_common: feature importance audit per model (best-effort)
+                    try:
+                        if ML_COMMON_AVAILABLE and self.ml_feature_selection:
+                            symbol_mc = str(self.config.get('symbol', ''))
+                            exchange_mc = str(self.config.get('exchange', ''))
+                            imp = await self.ml_feature_selection.analyze_feature_importance(
+                                X_train, labels=y_train, symbol=symbol_mc, exchange=exchange_mc, context=f'step12_{regime_name}_{model_name}'
+                            )
+                            if imp.get('recommendations'):
+                                self.logger.info(f"🎯 [{regime_name}/{model_name}] ML recs: {imp['recommendations']}")
+                    except Exception as _e:
+                        self.logger.warning(f"ml_common feature analysis skipped [{regime_name}/{model_name}]: {_e}")
                     self.logger.info(f'✅ Completed enhancement for {model_name} in regime {regime_name}')
                     self.logger.info(f'🧹 Memory cleanup after {model_name}')
                     gc.collect()
@@ -831,6 +857,22 @@ class RegimeAwareAnalystEnhancementStep:
                 y_val = y[train_size:]
                 self.logger.info(f'Data loaded and split: X_train shape {X_train.shape}, X_val shape {X_val.shape}')
                 self.logger.info(f'Target classes in training: {y_train.unique()}, in validation: {y_val.unique()}')
+                # ml_common: validate train/val frames
+                try:
+                    symbol_mc = str(self.config.get('symbol', ''))
+                    exchange_mc = str(self.config.get('exchange', ''))
+                    if ML_COMMON_AVAILABLE and self.ml_data_quality:
+                        dq_tr = await self.ml_data_quality.perform_comprehensive_validation(X_train, symbol=symbol_mc, exchange=exchange_mc, context=f'step12_train_{timeframe_name}')
+                        dq_va = await self.ml_data_quality.perform_comprehensive_validation(X_val, symbol=symbol_mc, exchange=exchange_mc, context=f'step12_val_{timeframe_name}')
+                        if dq_tr.get('has_critical_issues') or dq_va.get('has_critical_issues'):
+                            self.logger.warning(f"⚠️ Data quality issues detected for {timeframe_name}")
+                    if ML_COMMON_AVAILABLE and self.ml_lookahead and 'timestamp' in data.columns:
+                        lr_tr = await self.ml_lookahead.detect_and_prevent_leakage(X_train.assign(timestamp=data['timestamp'].iloc[:len(X_train)].values), symbol=symbol_mc, exchange=exchange_mc, context=f'step12_train_{timeframe_name}')
+                        lr_va = await self.ml_lookahead.detect_and_prevent_leakage(X_val.assign(timestamp=data['timestamp'].iloc[len(X_train):].values), symbol=symbol_mc, exchange=exchange_mc, context=f'step12_val_{timeframe_name}')
+                        if lr_tr.get('has_leakage') or lr_va.get('has_leakage'):
+                            self.logger.error(f"🚨 Lookahead indications for {timeframe_name}")
+                except Exception as _e:
+                    self.logger.warning(f"ml_common validation skipped [{timeframe_name}]: {_e}")
                 return (X_train, y_train, X_val, y_val)
             msg = f"HMM data file for timeframe '{timeframe_name}' not found: {hmm_data_path}. Step 6 requires HMM data from Step 5."
             raise FileNotFoundError(msg)

@@ -26,6 +26,17 @@ from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
 
+# Optional ml_common utilities
+try:
+    from src.utils.ml_common import (
+        LookaheadProtection,
+        DataQualityUtilities,
+        FeatureSelectionFramework
+    )
+    ML_COMMON_AVAILABLE = True
+except Exception:
+    ML_COMMON_AVAILABLE = False
+
 class OptimizedStep08:
     """
     Optimized Step08: Advanced Feature Selection with Comprehensive Optimizations
@@ -48,6 +59,10 @@ class OptimizedStep08:
         self._initialize_configuration()
         self._initialize_metrics()
         self._initialize_caching()
+        # Initialize ml_common utilities (optional)
+        self.ml_data_quality = DataQualityUtilities() if ML_COMMON_AVAILABLE else None
+        self.ml_lookahead = LookaheadProtection() if ML_COMMON_AVAILABLE else None
+        self.ml_feature_selection = FeatureSelectionFramework() if ML_COMMON_AVAILABLE else None
         
         self.logger.info('🚀 Optimized Step08 initialized successfully')
 
@@ -552,6 +567,25 @@ class OptimizedStep08:
             unified_data = await self._load_and_validate_data(training_input, pipeline_state)
             if unified_data is None:
                 return {'success': False, 'error': 'Failed to load or validate data'}
+
+            # ml_common: data quality + lookahead checks on unified_data
+            if ML_COMMON_AVAILABLE and isinstance(unified_data, pd.DataFrame):
+                try:
+                    symbol = (training_input or {}).get('symbol', '') if training_input else ''
+                    exchange = (training_input or {}).get('exchange', '') if training_input else ''
+                    dq = await self.ml_data_quality.perform_comprehensive_validation(
+                        unified_data, symbol=symbol, exchange=exchange, context='step08_optimized_load'
+                    ) if self.ml_data_quality else None
+                    if dq and dq.get('has_critical_issues'):
+                        self.logger.warning(f"⚠️ Data quality issues detected: {dq.get('critical_issues', [])}")
+                    if self.ml_lookahead:
+                        lr = await self.ml_lookahead.detect_and_prevent_leakage(
+                            unified_data, symbol=symbol, exchange=exchange, context='step08_optimized_load'
+                        )
+                        if lr.get('has_leakage'):
+                            self.logger.error(f"🚨 Lookahead leakage indications: {lr.get('leakage_details', [])}")
+                except Exception as _e:
+                    self.logger.warning(f"ml_common validation skipped: {_e}")
             
             # Fast fail data quality
             if not self._fast_fail_data_quality(unified_data):
@@ -582,6 +616,22 @@ class OptimizedStep08:
             # Step 3: Advanced feature selection with optimizations
             self.logger.info('🔍 Step 3: Advanced feature selection with optimizations...')
             selected_features = await self._advanced_feature_selection_optimized(balanced_data)
+
+            # ml_common: post-selection feature importance audit
+            if ML_COMMON_AVAILABLE and self.ml_feature_selection and isinstance(balanced_data, pd.DataFrame):
+                try:
+                    label_col = 'label' if 'label' in balanced_data.columns else None
+                    labels = balanced_data[label_col] if label_col else None
+                    symbol = (training_input or {}).get('symbol', '') if training_input else ''
+                    exchange = (training_input or {}).get('exchange', '') if training_input else ''
+                    imp = await self.ml_feature_selection.analyze_feature_importance(
+                        balanced_data.drop(columns=['timestamp'], errors='ignore'),
+                        labels=labels, symbol=symbol, exchange=exchange, context='step08_optimized_post_select'
+                    )
+                    if imp.get('recommendations'):
+                        self.logger.info(f"🎯 ML recommendations: {imp['recommendations']}")
+                except Exception as _e:
+                    self.logger.warning(f"ml_common feature analysis skipped: {_e}")
             
             # Step 4: Financial metrics calculation
             self.logger.info('💰 Step 4: Calculating financial metrics...')

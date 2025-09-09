@@ -46,6 +46,17 @@ from src.utils.logger import get_logger
 from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
+# Optional ml_common utilities
+try:
+    from src.utils.ml_common import (
+        LookaheadProtection,
+        DataQualityUtilities,
+        FeatureSelectionFramework
+    )
+    ML_COMMON_AVAILABLE = True
+except Exception:
+    ML_COMMON_AVAILABLE = False
+
 # Enhanced Optimization Components
 try:
     from src.utils.m1_gpu_utils import get_m1_gpu_manager
@@ -110,6 +121,9 @@ class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
         self.matrix_operations = matrix_operations
         self.step_optimizer = step_optimizer
         self.data_manager = data_manager
+        # Initialize ml_common utilities (optional)
+        self.ml_data_quality = DataQualityUtilities() if ML_COMMON_AVAILABLE else None
+        self.ml_lookahead = LookaheadProtection() if ML_COMMON_AVAILABLE else None
 
         # Optimization configuration
         self.enable_gpu_acceleration = config.get('enable_gpu_acceleration', True)
@@ -223,6 +237,23 @@ class PerRegimeTacticianLabelingStep(Step14TacticianLabeling):
                 if ensemble_data is None:
                     self.logger.error(f"❌ Failed to load analyst ensemble data for regime {regime_id}")
                     return False
+
+                # ml_common: validate and guard against lookahead on ensemble_data if timestamp present
+                try:
+                    if ML_COMMON_AVAILABLE and self.ml_data_quality and isinstance(ensemble_data, pd.DataFrame):
+                        dq = await self.ml_data_quality.perform_comprehensive_validation(
+                            ensemble_data, symbol=symbol, exchange=exchange, context=f'step14_regime_{regime_id}'
+                        )
+                        if dq.get('has_critical_issues'):
+                            self.logger.warning(f"⚠️ Data quality issues for regime {regime_id}: {dq.get('critical_issues', [])}")
+                    if ML_COMMON_AVAILABLE and self.ml_lookahead and isinstance(ensemble_data, pd.DataFrame) and 'timestamp' in ensemble_data.columns:
+                        lr = await self.ml_lookahead.detect_and_prevent_leakage(
+                            ensemble_data, symbol=symbol, exchange=exchange, context=f'step14_regime_{regime_id}'
+                        )
+                        if lr.get('has_leakage'):
+                            self.logger.error(f"🚨 Lookahead indications for regime {regime_id}: {lr.get('leakage_details', [])}")
+                except Exception as _e:
+                    self.logger.warning(f"ml_common validation skipped for regime {regime_id}: {_e}")
 
                 # Get regime-specific configuration
                 regime_config = self._get_regime_tactician_config(regime_id)

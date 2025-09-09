@@ -72,6 +72,17 @@ from ....utils.comprehensive_function_logger import (
     log_internal_call, log_step_progress, log_data_operation
 )
 
+# Optional ml_common utilities
+try:
+    from src.utils.ml_common import (
+        LookaheadProtection,
+        DataQualityUtilities,
+        FeatureSelectionFramework
+    )
+    ML_COMMON_AVAILABLE = True
+except Exception:
+    ML_COMMON_AVAILABLE = False
+
 # Import XGBoost with fallback
 try:
     import xgboost as xgb
@@ -947,6 +958,26 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 labeled_data = await self._enhance_training_data_with_sr_context(labeled_data, symbol, current_timeframe)
             except Exception as _e:
                 self.logger.warning(f'Failed to enhance training data with HMM-aware S/R context: {_e}')
+
+            # ml_common: validate labeled_data and guard against lookahead if timestamp exists
+            try:
+                if ML_COMMON_AVAILABLE:
+                    if 'timestamp' in labeled_data.columns:
+                        if 'timestamp' not in labeled_data.columns and 'time' in labeled_data.columns:
+                            labeled_data = labeled_data.rename(columns={'time': 'timestamp'})
+                    if 'timestamp' in labeled_data.columns and isinstance(labeled_data['timestamp'].iloc[0], (np.datetime64, pd.Timestamp)):
+                        labeled_data['timestamp'] = pd.to_datetime(labeled_data['timestamp'])
+                    if 'timestamp' in labeled_data.columns and ML_COMMON_AVAILABLE:
+                        dq = DataQualityUtilities()
+                        dq_report = await dq.perform_comprehensive_validation(labeled_data, symbol=symbol, exchange=exchange, context='step15_labeled')
+                        if dq_report.get('has_critical_issues'):
+                            self.logger.warning(f"⚠️ Data quality issues in step15_labeled: {dq_report.get('critical_issues', [])}")
+                        protector = LookaheadProtection()
+                        lr = await protector.detect_and_prevent_leakage(labeled_data, symbol=symbol, exchange=exchange, context='step15_labeled')
+                        if lr.get('has_leakage'):
+                            self.logger.error(f"🚨 Lookahead indications in step15_labeled: {lr.get('leakage_details', [])}")
+            except Exception as _e:
+                self.logger.warning(f"ml_common validation skipped [step15]: {_e}")
 
             # Use step optimization context manager
             if self.step_optimizer:

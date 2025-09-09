@@ -30,7 +30,8 @@ from .feature_selection import *
 from .model_evaluation import *
 from .hpo_utils import *
 from .memory_optimization import *
-from .parallel_processing import *
+# Expose coordinator class but not its instance methods as globals
+from .parallel_processing import ParallelProcessingCoordinator
 from .model_registry import *
 from .data_quality import *
 from .pipeline_orchestrator import *
@@ -69,10 +70,6 @@ __all__ = [
 
     # Parallel processing
     'ParallelProcessingCoordinator',
-    'gpu_accelerated_processing',
-    'adaptive_load_balancing',
-    'fault_tolerant_parallel_execution',
-    'parallel_feature_engineering_gpu',
 
     # Model registry
     'ModelRegistry',

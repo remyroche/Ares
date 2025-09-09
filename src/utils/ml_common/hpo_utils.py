@@ -294,7 +294,9 @@ class HyperparameterOptimization:
                 'final_patience_counter': patience_counter
             }
 
-            self.logger.info(f"✅ Early stopping optimization completed - Best score: {results['best_score']:.4f}")
+            best_val = results.get('best_score')
+            best_str = f"{best_val:.4f}" if isinstance(best_val, (int, float, np.floating)) else str(best_val)
+            self.logger.info(f"✅ Early stopping optimization completed - Best score: {best_str}")
             return results
 
         except Exception as e:
@@ -384,20 +386,34 @@ class HyperparameterOptimization:
                 except Exception:
                     pass
 
-                # Evaluate with cross_validate to report intermediate values for pruning
+                # Manual CV loop to support sample_weight without passing fit_params
                 try:
-                    cv_res = cross_validate(
-                        model, X, y, cv=cv_obj, scoring=scoring, n_jobs=1, return_train_score=False,
-                        fit_params=fp
-                    )
-                    scores = cv_res.get('test_score', None)
-                    if scores is not None:
-                        for i, s in enumerate(scores):
-                            trial.report(float(s), step=i)
-                            if trial.should_prune():
-                                raise optuna.TrialPruned()
-                        return float(np.mean(scores))
-                except Exception as _:
+                    fold_scores: list[float] = []
+                    for i, (train_idx, test_idx) in enumerate(cv_obj.split(X, y)):
+                        X_tr, X_te = X[train_idx], X[test_idx]
+                        y_tr, y_te = y[train_idx], y[test_idx]
+                        mdl = model_factory(**params)
+                        try:
+                            import inspect
+                            if 'sample_weight' in inspect.signature(mdl.fit).parameters and 'sample_weight' in fp:
+                                mdl.fit(X_tr, y_tr, sample_weight=fp['sample_weight'][train_idx])
+                            else:
+                                mdl.fit(X_tr, y_tr)
+                        except Exception:
+                            mdl.fit(X_tr, y_tr)
+                        try:
+                            from sklearn.metrics import get_scorer
+                            scorer = get_scorer(scoring) if isinstance(scoring, str) else scoring
+                            score = scorer(mdl, X_te, y_te)
+                        except Exception:
+                            score = mdl.score(X_te, y_te) if hasattr(mdl, 'score') else 0.0
+                        fold_scores.append(float(score))
+                        trial.report(float(score), step=i)
+                        if trial.should_prune():
+                            raise optuna.TrialPruned()
+                    if fold_scores:
+                        return float(np.mean(fold_scores))
+                except Exception:
                     pass
 
                 # Fallback single-score
@@ -430,7 +446,9 @@ class HyperparameterOptimization:
                 'parameter_importance': self._calculate_parameter_importance(study)
             }
 
-            self.logger.info(f"✅ Bayesian optimization completed - Best score: {results['best_score']:.4f}")
+            best_val2 = results.get('best_score')
+            best_str2 = f"{best_val2:.4f}" if isinstance(best_val2, (int, float, np.floating)) else str(best_val2)
+            self.logger.info(f"✅ Bayesian optimization completed - Best score: {best_str2}")
             return results
 
         except Exception as e:
@@ -960,11 +978,32 @@ class HyperparameterOptimization:
                     fit_params['sample_weight'] = compute_sample_weight('balanced', y)
             except Exception:
                 pass
-            res = cross_validate(model, X, y, cv=cv_obj, scoring=scoring, n_jobs=1,
-                                 return_train_score=False, fit_params=fit_params)
-            scores = res.get('test_score', None)
-            if scores is not None:
-                return float(np.mean(scores))
+            # Manual CV to handle sample_weight safely
+            try:
+                fold_scores: list[float] = []
+                for train_idx, test_idx in cv_obj.split(X, y):
+                    X_tr, X_te = X[train_idx], X[test_idx]
+                    y_tr, y_te = y[train_idx], y[test_idx]
+                    mdl = model
+                    try:
+                        import inspect
+                        if 'sample_weight' in inspect.signature(mdl.fit).parameters and 'sample_weight' in fit_params:
+                            mdl.fit(X_tr, y_tr, sample_weight=fit_params['sample_weight'][train_idx])
+                        else:
+                            mdl.fit(X_tr, y_tr)
+                    except Exception:
+                        mdl.fit(X_tr, y_tr)
+                    try:
+                        from sklearn.metrics import get_scorer
+                        scorer = get_scorer(scoring) if isinstance(scoring, str) else scoring
+                        score = scorer(mdl, X_te, y_te)
+                    except Exception:
+                        score = mdl.score(X_te, y_te) if hasattr(mdl, 'score') else 0.0
+                    fold_scores.append(float(score))
+                if fold_scores:
+                    return float(np.mean(fold_scores))
+            except Exception:
+                pass
             return 0.5
         except Exception as e:
             self.logger.warning(f"CV evaluation failed: {e}")

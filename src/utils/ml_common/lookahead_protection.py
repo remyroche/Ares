@@ -363,8 +363,9 @@ class LookaheadProtection:
                     validation_results['windows'].append(window_result)
                     validation_results['temporal_integrity_checks'].append(temporal_check)
 
-                    self.logger.debug(f"✅ Window {window_result['window_id']} completed - "
-                                    f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
+                    acc = metrics.get('accuracy')
+                    acc_str = f"{acc:.4f}" if isinstance(acc, (int, float, np.floating)) else str(acc)
+                    self.logger.debug(f"✅ Window {window_result['window_id']} completed - Accuracy: {acc_str}")
 
                 except Exception as window_e:
                     self.logger.warning(f"⚠️ Window {len(validation_results['windows'])} failed: {window_e}")
@@ -622,8 +623,8 @@ class LookaheadProtection:
                 elif overlap < 3600:  # Less than 1 hour
                     analysis['warnings'].append(f"Limited temporal overlap: {overlap/3600:.1f} hours")
 
-                # Check for future targets relative to features
-                future_targets = target_df[target_df[timestamp_col] <= feature_times.max()]
+                # Check for targets that occur after max feature time (potential leakage)
+                future_targets = target_df[target_df[timestamp_col] >= feature_times.max()]
                 if len(future_targets) > 0:
                     analysis['issues'].append(
                         f"Found {len(future_targets)} target values in feature future"
@@ -1039,9 +1040,9 @@ class LookaheadProtection:
             self.logger.error(f"❌ Timestamp alignment validation failed: {e}")
             return {'error': str(e), 'is_aligned': False}
 
-    def automated_future_data_filtering(self, data_stream: Iterator[pd.DataFrame],
-                                      current_timestamp: Optional[datetime] = None,
-                                      filter_config: Optional[Dict[str, Any]] = None) -> Iterator[pd.DataFrame]:
+    def automated_future_data_filtering_stream(self, data_stream: Iterator[pd.DataFrame],
+                                             current_timestamp: Optional[datetime] = None,
+                                             filter_config: Optional[Dict[str, Any]] = None) -> Iterator[pd.DataFrame]:
         """
         Automated filtering of future-looking data from streaming data.
 

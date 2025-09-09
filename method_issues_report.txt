@@ -1,0 +1,56 @@
+🔍 Method Reference Analysis Report
+==================================================
+Analysis Time: 2025-09-09T11:54:35.300069
+Directory: src
+
+📊 SUMMARY:
+  Total Files: 1004
+  Total Issues: 3121
+  Errors: 565
+  Warnings: 2556
+
+❌ ERRORS:
+  • ConfigurationManager._initialize_config_sections: Missing critical method '_initialize_config_sections' in class ConfigurationManager
+    File: src/config.py:200
+  • ConfigurationManager._initialize_config_service: Missing critical method '_initialize_config_service' in class ConfigurationManager
+    File: src/config.py:201
+  • ConfigurationManager._validate_configuration_sections: Missing critical method '_validate_configuration_sections' in class ConfigurationManager
+    File: src/config.py:277
+  • ConfigurationManager._initialize_config_sections: Missing critical method '_initialize_config_sections' in class ConfigurationManager
+    File: src/config.py:301
+  • PaperTrader._initialize_trading_state: Missing critical method '_initialize_trading_state' in class PaperTrader
+    File: src/paper_trader.py:138
+  • PaperTrader._initialize_enhanced_monitoring: Missing critical method '_initialize_enhanced_monitoring' in class PaperTrader
+    File: src/paper_trader.py:141
+  • AresPipeline._initialize_configuration_service: Missing critical method '_initialize_configuration_service' in class AresPipeline
+    File: src/ares_pipeline.py:106
+  • AresPipeline._initialize_components: Missing critical method '_initialize_components' in class AresPipeline
+    File: src/ares_pipeline.py:109
+  • AresPipeline._initialize_dual_model_system: Missing critical method '_initialize_dual_model_system' in class AresPipeline
+    File: src/ares_pipeline.py:110
+  • AresPipeline._initialize_performance_monitoring: Missing critical method '_initialize_performance_monitoring' in class AresPipeline
+    File: src/ares_pipeline.py:111
+  ... and 555 more errors
+
+⚠️  WARNINGS:
+  • ConfigurationManager._load_config_manager_configuration: Potentially missing method '_load_config_manager_configuration' in class ConfigurationManager
+    File: src/config.py:196
+  • ConfigurationManager._update_configuration: Potentially missing method '_update_configuration' in class ConfigurationManager
+    File: src/config.py:276
+  • ConfigurationManager._update_config_service: Potentially missing method '_update_config_service' in class ConfigurationManager
+    File: src/config.py:278
+  • PaperTrader._load_trader_configuration: Potentially missing method '_load_trader_configuration' in class PaperTrader
+    File: src/paper_trader.py:130
+  • PaperTrader._record_trade_in_monitoring: Potentially missing method '_record_trade_in_monitoring' in class PaperTrader
+    File: src/paper_trader.py:421
+  • PaperTrader._record_trade_in_monitoring: Potentially missing method '_record_trade_in_monitoring' in class PaperTrader
+    File: src/paper_trader.py:539
+  • AresPipeline.stop: Potentially missing method 'stop' in class AresPipeline
+    File: src/ares_pipeline.py:330
+  • AresPipeline._register_core_services: Potentially missing method '_register_core_services' in class AresPipeline
+    File: src/ares_pipeline.py:107
+  • AresPipeline._resolve_pipeline_components: Potentially missing method '_resolve_pipeline_components' in class AresPipeline
+    File: src/ares_pipeline.py:108
+  • AresPipeline._launch_auto_monitoring: Potentially missing method '_launch_auto_monitoring' in class AresPipeline
+    File: src/ares_pipeline.py:113
+  ... and 2546 more warnings

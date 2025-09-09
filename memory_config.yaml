@@ -1,0 +1,17 @@
+# Memory Management Configuration
+# Automatic memory monitoring and cleanup settings
+
+memory_manager:
+  # Memory thresholds (as fraction of total)
+  memory_threshold: 0.85  # Trigger cleanup at 85% memory usage
+  disk_threshold: 0.90    # Trigger cleanup at 90% disk usage
+
+  # Monitoring settings
+  check_interval: 30      # Check every 30 seconds
+  cleanup_enabled: true   # Enable automatic cleanup
+
+  # Ray-specific settings
+  ray_memory_limit: 2147483648  # 2GB max for Ray object store
+
+  # Logging level for memory operations
+  log_level: INFO

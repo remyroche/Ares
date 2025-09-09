@@ -1,0 +1,37 @@
+🔍 Attribute Access Analysis Report
+==================================================
+Analysis Time: 2025-09-09T11:54:41.298245
+Directory: src
+
+📊 SUMMARY:
+  Total Files: 1004
+  Total Issues: 3328
+  Errors: 1
+  Warnings: 3327
+
+❌ ERRORS:
+  • StepConfig.retry_count: Unsafe access to 'retry_count' in class StepConfig
+    File: src/training/simplified_architecture/enhanced_interfaces.py
+
+⚠️  WARNINGS:
+  • ConfigurationManager.max_config_history: Unsafe access to 'max_config_history' in class ConfigurationManager
+    File: src/config.py
+  • PaperTrader._update_equity: Unsafe access to '_update_equity' in class PaperTrader
+    File: src/paper_trader.py
+  • PaperTrader.max_position_size: Unsafe access to 'max_position_size' in class PaperTrader
+    File: src/paper_trader.py
+  • AresPipeline._signal_handler: Unsafe access to '_signal_handler' in class AresPipeline
+    File: src/ares_pipeline.py
+  • SQLiteManager.max_connections: Unsafe access to 'max_connections' in class SQLiteManager
+    File: src/database/sqlite_manager.py
+  • SQLiteManager.max_recovery_attempts: Unsafe access to 'max_recovery_attempts' in class SQLiteManager
+    File: src/database/sqlite_manager.py
+  • FirestoreManager._db: Unsafe access to '_db' in class FirestoreManager
+    File: src/database/firestore_manager.py
+  • FirestoreManager._app_id: Unsafe access to '_app_id' in class FirestoreManager
+    File: src/database/firestore_manager.py
+  • FirestoreManager._auth: Unsafe access to '_auth' in class FirestoreManager
+    File: src/database/firestore_manager.py
+  • FirestoreManager._user_id: Unsafe access to '_user_id' in class FirestoreManager
+    File: src/database/firestore_manager.py
+  ... and 3317 more warnings

@@ -75,11 +75,7 @@ try:
 except Exception:
     CATBOOST_AVAILABLE = False
 
-try:
-    from ngboost import NGBClassifier, NGBRegressor
-    NGB_AVAILABLE = True
-except Exception:
-    NGB_AVAILABLE = False
+# NGBoost not used per current scope
 
 
 class HyperparameterOptimization:
@@ -736,12 +732,7 @@ class HyperparameterOptimization:
                 'lambda_l1': {'type': 'float', 'low': 0, 'high': 10},
                 'lambda_l2': {'type': 'float', 'low': 0, 'high': 10}
             },
-            'lightgbm_quantile': {
-                'alpha': {'type': 'float', 'low': 0.1, 'high': 0.9},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
-                'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
-                'num_leaves': {'type': 'int', 'low': 15, 'high': 128}
-            },
+            # quantile variant omitted per scope
             'random_forest': {
                 'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
                 'max_depth': {'type': 'int', 'low': 5, 'high': 50},
@@ -764,10 +755,7 @@ class HyperparameterOptimization:
                 'iterations': {'type': 'int', 'low': 200, 'high': 1000},
                 'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0}
             },
-            'ngboost': {
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3},
-                'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
-            }
+            # ngboost omitted per scope
         }
 
     def _generate_xgboost_search_space(self, n_samples: int, n_features: int,
@@ -803,8 +791,7 @@ class HyperparameterOptimization:
 
     def _generate_catboost_search_space(self, n_samples: int, n_features: int,
                                       n_classes: int, task_type: str) -> Dict[str, Any]:
-        search_space = self.default_search_spaces['catboost'].copy()
-        return search_space
+        return self.default_search_spaces['catboost'].copy()
 
     def _generate_rf_search_space(self, n_samples: int, n_features: int,
                                 n_classes: int) -> Dict[str, Any]:
@@ -856,11 +843,7 @@ class HyperparameterOptimization:
                 return LGBMRegressor(n_jobs=-1, random_state=42, **params)
             return factory
 
-        if mt == 'lightgbm_quantile' and LGBM_AVAILABLE:
-            def factory(**params):
-                alpha = params.pop('alpha', 0.5)
-                return LGBMRegressor(objective='quantile', alpha=alpha, n_jobs=-1, random_state=42, **params)
-            return factory
+        # quantile variant intentionally omitted
 
         if mt == 'xgboost' and XGB_AVAILABLE:
             def factory(**params):
@@ -898,19 +881,7 @@ class HyperparameterOptimization:
                 return CatBoostRegressor(**base)
             return factory
 
-        if mt == 'ngboost' and NGB_AVAILABLE:
-            def factory(**params):
-                base = {
-                    'n_estimators': params.pop('n_estimators', 400),
-                    'learning_rate': params.pop('learning_rate', 0.05),
-                    'random_state': 42,
-                    'natural_gradient': True,
-                }
-                base.update(params)
-                if task_type == 'classification':
-                    return NGBClassifier(**base)
-                return NGBRegressor(**base)
-            return factory
+        # ngboost intentionally omitted
 
         return _identity_factory
 

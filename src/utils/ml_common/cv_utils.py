@@ -158,7 +158,7 @@ class CrossValidationUtilities:
             # Perform cross-validation
             for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
                 try:
-                    self.logger.info(f"📊 Processing fold {fold_idx + 1}/{n_splits}")
+                    self.logger.debug(f"📊 Processing fold {fold_idx + 1}/{n_splits}")
 
                     # Split data
                     X_train_fold, X_test_fold = X[train_idx], X[test_idx]
@@ -223,8 +223,8 @@ class CrossValidationUtilities:
                     cv_results['training_times'].append(training_time)
                     cv_results['prediction_times'].append(prediction_time)
 
-                    self.logger.info(f"✅ Fold {fold_idx + 1} completed - "
-                                   f"Accuracy: {fold_metrics.get('accuracy', 'N/A'):.4f}")
+                    self.logger.debug(f"✅ Fold {fold_idx + 1} completed - "
+                                     f"Accuracy: {fold_metrics.get('accuracy', 'N/A'):.4f}")
 
                 except Exception as fold_e:
                     self.logger.warning(f"⚠️ Fold {fold_idx + 1} failed: {fold_e}")
@@ -352,8 +352,8 @@ class CrossValidationUtilities:
                     # Move to next position
                     current_position += step_size
 
-                    self.logger.info(f"✅ Iteration {len(wfv_results['iterations'])} completed - "
-                                   f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
+                    self.logger.debug(f"✅ Iteration {len(wfv_results['iterations'])} completed - "
+                                     f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
 
                 except Exception as iter_e:
                     self.logger.warning(f"⚠️ Walk-forward iteration failed: {iter_e}")

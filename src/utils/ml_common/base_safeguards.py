@@ -67,11 +67,9 @@ class MLTrainingSafeguards:
                 harmonized_df['year'] = harmonized_df['year'].astype('int32')
 
             # Handle other categorical/dictionary columns
-            categorical_cols = ['symbol', 'ticker', 'month', 'exchange']
-            for col in categorical_cols:
-                if col in harmonized_df.columns:
-                    # Convert to string to avoid dictionary encoding issues
-                    harmonized_df[col] = harmonized_df[col].astype('string')
+            categorical_cols = [col for col in harmonized_df.columns if col in ['symbol', 'ticker', 'month', 'exchange']]
+            if len(categorical_cols):
+                harmonized_df[categorical_cols] = harmonized_df[categorical_cols].astype('string')
 
             # Handle timestamp columns
             timestamp_cols = [col for col in harmonized_df.columns if 'timestamp' in col.lower() or 'time' in col.lower()]
@@ -85,19 +83,16 @@ class MLTrainingSafeguards:
                             # If conversion fails, convert to string for consistency
                             harmonized_df[col] = harmonized_df[col].astype('string')
 
-            # Optimize numeric dtypes
-            numeric_cols = harmonized_df.select_dtypes(include=[np.number]).columns
-            for col in numeric_cols:
-                if harmonized_df[col].dtype == 'float64':
-                    # Check if float32 is sufficient
-                    if harmonized_df[col].min() >= -3.4e38 and harmonized_df[col].max() <= 3.4e38:
-                        harmonized_df[col] = harmonized_df[col].astype('float32')
-                elif harmonized_df[col].dtype == 'int64':
-                    # Check if smaller int type is sufficient
-                    if harmonized_df[col].min() >= -32768 and harmonized_df[col].max() <= 32767:
-                        harmonized_df[col] = harmonized_df[col].astype('int16')
-                    elif harmonized_df[col].min() >= -2147483648 and harmonized_df[col].max() <= 2147483647:
-                        harmonized_df[col] = harmonized_df[col].astype('int32')
+            # ------------------------------------------------------------
+            # Vectorised numeric optimisation – much faster than per-col loops
+            # ------------------------------------------------------------
+            float_cols = harmonized_df.select_dtypes(include=["float64"]).columns
+            if len(float_cols):
+                harmonized_df[float_cols] = harmonized_df[float_cols].apply(pd.to_numeric, downcast="float")
+
+            int_cols = harmonized_df.select_dtypes(include=["int64"]).columns
+            if len(int_cols):
+                harmonized_df[int_cols] = harmonized_df[int_cols].apply(pd.to_numeric, downcast="integer")
 
             logger.info(f"✅ Parquet schema harmonized for {len(harmonized_df.columns)} columns")
             return harmonized_df

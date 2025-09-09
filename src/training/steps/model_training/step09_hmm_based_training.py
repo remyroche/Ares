@@ -1841,7 +1841,7 @@ class EnhancedHMMBasedTrainingStep:
                 
                 # Create enhanced matrix operations manager with proper validation
                 try:
-                    from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations
+                    from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
                     feature_selector = EnhancedMatrixOperations(self.config)
                     self.logger.info("✅ Enhanced feature selector initialized")
                 except ImportError:

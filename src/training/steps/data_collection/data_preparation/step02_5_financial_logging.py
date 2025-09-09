@@ -6,6 +6,7 @@ Enhanced with per-HMM regime logging and fail-fast validation.
 """
 
 import pandas as pd
+import numpy as np
 import logging
 from typing import Dict, Any, Optional, List
 

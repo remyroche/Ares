@@ -96,6 +96,63 @@ class FeatureSelectionFramework:
         if 'method_configs' in self.config:
             self.method_configs.update(self.config['method_configs'])
 
+    async def analyze_feature_importance(self, features: pd.DataFrame | np.ndarray = None,
+                                        labels: Optional[Union[np.ndarray, pd.Series]] = None,
+                                        symbol: str = "", exchange: str = "",
+                                        context: str = "") -> Dict[str, Any]:
+        """Async wrapper to compute feature importance from DataFrame/ndarray as used by training steps."""
+        try:
+            if features is None:
+                return {'feature_importance': {}, 'recommendations': ['No features provided']}
+
+            if isinstance(features, pd.DataFrame):
+                feature_names = features.select_dtypes(include=[np.number]).columns.tolist()
+                X = features[feature_names].values if feature_names else features.values
+            else:
+                X = features
+                feature_names = [f'feature_{i}' for i in range(X.shape[1])] if X is not None else []
+
+            if labels is None:
+                # Fallback pseudo-importance based on variance
+                scores = self._calculate_variance_scores(X, feature_names)
+            else:
+                y = labels.values if isinstance(labels, pd.Series) else labels
+                scores = self._calculate_importance_scores(X, y, feature_names)
+
+            ranking = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            recs: List[str] = []
+            if len(ranking) > 0:
+                recs.append(f"Consider prioritizing top features: {[f for f, _ in ranking[: min(10, len(ranking))]]}")
+
+            return {
+                'feature_importance': scores,
+                'ranking': [{'feature': f, 'importance': float(s)} for f, s in ranking],
+                'recommendations': recs,
+                'metadata': {'symbol': symbol, 'exchange': exchange, 'context': context}
+            }
+        except Exception as e:
+            self.logger.warning(f"Feature importance analysis failed: {e}")
+            return {'feature_importance': {}, 'recommendations': [str(e)], 'error': str(e)}
+
+    async def validate_feature_selection(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        """Async placeholder to align with training code; performs simple sanity checks."""
+        try:
+            result = {
+                'passed': True,
+                'warnings': [],
+                'checks': ['non_empty_selection', 'no_nan_importance']
+            }
+            selection = kwargs.get('selection')
+            importance = kwargs.get('importance', {})
+            if selection is not None and isinstance(selection, list) and len(selection) == 0:
+                result['passed'] = False
+                result['warnings'].append('Empty feature selection set')
+            if any(pd.isna(v) for v in importance.values() if isinstance(v, (int, float))):
+                result['warnings'].append('NaN values found in importance scores')
+            return result
+        except Exception as e:
+            return {'passed': False, 'warnings': [str(e)], 'error': str(e)}
+
     def mrmr_selection(self, X: np.ndarray, y: np.ndarray,
                       feature_names: List[str], n_features: int,
                       relevance_method: str = 'mutual_info',

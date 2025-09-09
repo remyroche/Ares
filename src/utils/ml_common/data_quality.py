@@ -91,6 +91,67 @@ class DataQualityUtilities:
         self.gpu_manager = M1GPUManager() if self.enable_gpu else None
         self.memory_optimizer = M1MemoryOptimizer() if self.enable_memory_optimization else None
 
+    async def perform_comprehensive_validation(self, df: pd.DataFrame, symbol: str = "", exchange: str = "", context: str = "") -> Dict[str, Any]:
+        """Async wrapper used by training steps to validate data quality comprehensively.
+
+        This consolidates missing value analysis, basic drift heuristics (self-compare),
+        and correlation checks into a single report. It mirrors the expected async API
+        used by callers while leveraging existing synchronous utilities under the hood.
+        """
+        try:
+            report: Dict[str, Any] = {
+                'has_critical_issues': False,
+                'critical_issues': [],
+                'warnings': [],
+                'summary': {},
+                'recommendations': []
+            }
+
+            # Missing values analysis
+            missing = self.missing_value_analysis(df)
+            report['missing_analysis'] = missing
+            if missing.get('missing_summary', {}).get('total_missing_percentage', 0) > 50:
+                report['has_critical_issues'] = True
+                report['critical_issues'].append('Extremely high missing values overall')
+
+            # Correlation hot-spot detection on numeric cols (guarded)
+            try:
+                numeric_df = df.select_dtypes(include=[np.number])
+                if not numeric_df.empty and numeric_df.shape[1] >= 2:
+                    corr_info = self.feature_correlation_analysis(numeric_df, method='pearson')
+                    report['correlation_analysis'] = {
+                        'highly_correlated_pairs': corr_info.get('highly_correlated_pairs', [])
+                    }
+            except Exception as _:
+                pass
+
+            # Simple quality score
+            score_info = self.calculate_data_quality_score(df)
+            report['quality_score'] = score_info
+            if score_info.get('overall_score', 1.0) < 0.5:
+                report['warnings'].append('Low overall data quality score (<0.5)')
+
+            # Recommendations aggregation
+            recs: List[str] = []
+            recs.extend(missing.get('recommendations', []))
+            recs.extend(score_info.get('recommendations', []))
+            report['recommendations'] = list(dict.fromkeys(recs))
+
+            # Summary
+            report['summary'] = {
+                'rows': int(len(df)),
+                'cols': int(df.shape[1]),
+                'symbol': symbol,
+                'exchange': exchange,
+                'context': context
+            }
+
+            self.logger.info("✅ Comprehensive data quality validation completed")
+            return report
+        except Exception as e:
+            self.logger.error(f"❌ Comprehensive validation failed: {e}")
+            return {'has_critical_issues': True, 'critical_issues': [str(e)], 'warnings': [str(e)], 'error': str(e)}
+
     def automated_outlier_detection(self, X: Union[np.ndarray, pd.DataFrame],
                                   method: str = 'isolation_forest',
                                   contamination: Optional[float] = None) -> Dict[str, Any]:

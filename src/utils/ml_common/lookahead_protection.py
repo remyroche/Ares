@@ -90,6 +90,53 @@ class LookaheadProtection:
         else:
             self.base_detector = None
 
+    async def detect_and_prevent_leakage(self, df: pd.DataFrame,
+                                         symbol: str = "", exchange: str = "",
+                                         context: str = "",
+                                         timestamp_col: str = 'timestamp') -> Dict[str, Any]:
+        """Async wrapper expected by training steps to detect and mitigate leakage.
+
+        It runs temporal_feature_validation and automated_future_data_filtering logic,
+        returning a consolidated report compatible with callers.
+        """
+        try:
+            report: Dict[str, Any] = {
+                'has_leakage': False,
+                'leakage_details': [],
+                'recommendations': [],
+                'actions': []
+            }
+
+            # Temporal validation relative to latest timestamp in df
+            if timestamp_col in df.columns:
+                df_local = self._ensure_timestamp_format(df, timestamp_col)
+                latest_ts = df_local[timestamp_col].max()
+                temp_val = self.temporal_feature_validation(df_local, latest_ts, feature_timestamp_col=timestamp_col)
+                if not temp_val.get('is_valid', True):
+                    report['has_leakage'] = True
+                    issues = temp_val.get('issues', [])
+                    report['leakage_details'].extend(issues)
+                    report['recommendations'].append('Fix temporal inconsistencies and future timestamps')
+
+            # Existing detector integration
+            if self.base_detector and timestamp_col in df.columns:
+                try:
+                    self.base_detector.set_current_timestamp(df[timestamp_col].max())
+                    # base detector may raise on leakage; use safe call pattern
+                    _ = self.base_detector.validate_features(df, timestamp_col)
+                except Exception as e:
+                    report['has_leakage'] = True
+                    report['leakage_details'].append(str(e))
+
+            # Automatic filtering suggestion only (non-mutating)
+            if report['has_leakage'] and self.enable_automatic_filtering:
+                report['actions'].append('Suggested: filter out rows beyond latest permissible timestamp')
+
+            return report
+        except Exception as e:
+            self.logger.error(f"Leakage detection failed: {e}")
+            return {'has_leakage': True, 'leakage_details': [str(e)], 'error': str(e)}
+
     def set_current_timestamp(self, timestamp: datetime) -> None:
         """Set the current timestamp for bias detection."""
         self.current_timestamp = timestamp

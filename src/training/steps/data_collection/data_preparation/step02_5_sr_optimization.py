@@ -899,9 +899,8 @@ class SROptimizationStep(BaseStep):
             # Fill numeric columns with 0, leave categorical columns as they are
             numeric_cols = features_data.select_dtypes(include=['number']).columns
             if len(numeric_cols) > 0:
-                features_data[numeric_cols] = (features_data[numeric_cols]
-                                               .fillna(method='ffill')
-                                               .fillna(method='bfill'))
+                features_data[numeric_cols] = safe_fillna(features_data[numeric_cols], method='ffill')
+                features_data[numeric_cols] = safe_fillna(features_data[numeric_cols], method='bfill')
 
             # Drop residual NaNs to avoid silent zero-imputation bias
             features_data = features_data.dropna(axis=0, how='any')
@@ -1996,8 +1995,13 @@ class SROptimizationStep(BaseStep):
             elif class_ratio < 0.15 or class_ratio > 0.85:  # Severe imbalance
                 self.logger.warning(f'⚠️ Severe class imbalance detected ({class_ratio:.1%}) - enabling class weights')
                 # Enable class weights for severe imbalance
+                from sklearn.utils import class_weight
                 self.enable_class_weights = True
-                self.class_weight_config = 'balanced'  # Auto-calculate weights
+                # Compute balanced weights once; handle potential unlabelled case later
+                unique_classes = np.unique(y_dir_selected)
+                self.class_weight_config = {
+                    i: w for i, w in zip(unique_classes, class_weight.compute_class_weight('balanced', classes=unique_classes, y=y_dir_selected))
+                }
                 preferred_models = ['RandomForestClassifier', 'HistGradientBoostingClassifier', 'LogisticRegression']
                 self.logger.info(f'   Class weights enabled: {self.class_weight_config}')
                 self.logger.info(f'   Using weight-aware models: {preferred_models}')
@@ -3110,52 +3114,60 @@ class SROptimizationStep(BaseStep):
             # CRITICAL: Create targets WITHOUT forward bias
             # Only use SR levels that were detected using historical data up to each point
             proximity_threshold = self.proximity_threshold  # Configurable proximity threshold (default 0.2%)
-            near_support = np.zeros(len(current_prices))
-            near_resistance = np.zeros(len(current_prices))
+            near_support = np.zeros(len(current_prices), dtype=float)
+            near_resistance = np.zeros(len(current_prices), dtype=float)
 
-            # Filter SR levels to only include those that could be known at each point in time
-            # This prevents forward bias by ensuring we only use SR levels detected from past data
-            valid_support_prices = []
-            valid_resistance_prices = []
+            # Extract prices and remove levels detected in the future relative to the last feature timestamp
+            last_feature_time: Optional[pd.Timestamp] = None
+            if isinstance(features_data.index, pd.DatetimeIndex):
+                last_feature_time = features_data.index.max()
 
-            # For each SR level, ensure it was detected using only historical data
-            for price in support_prices:
-                if isinstance(price, (int, float)) and not np.isnan(price):
-                    valid_support_prices.append(price)
+            def _filter_prices(level_tuples):
+                prices: List[float] = []
+                for price_val, detected_at in level_tuples:
+                    if np.isnan(price_val):
+                        continue
+                    if detected_at is not None and last_feature_time is not None and detected_at > last_feature_time:
+                        # Level detected in the future -> skip to prevent forward bias
+                        continue
+                    prices.append(price_val)
+                return prices
 
-            for price in resistance_prices:
-                if isinstance(price, (int, float)) and not np.isnan(price):
-                    valid_resistance_prices.append(price)
+            valid_support_prices = _filter_prices(support_prices)
+            valid_resistance_prices = _filter_prices(resistance_prices)
 
-            # Calculate proximity for each time point using ONLY historical SR levels
-            proximity_debug = []
-            support_matches = 0
-            resistance_matches = 0
-            
-            # Sample every 1000th point for debugging to avoid too much output
-            debug_indices = list(range(0, len(current_prices), max(1, len(current_prices) // 1000)))
-            
-            for i, current_price in enumerate(current_prices):
-                # Check proximity to support levels
-                for support_price in valid_support_prices:
-                    distance_pct = abs(current_price - support_price) / current_price
-                    if i in debug_indices:
-                        proximity_debug.append(f"Price {current_price:.2f} vs Support {support_price:.2f} = {distance_pct:.3f} ({distance_pct*100:.1f}%)")
-                    if distance_pct <= proximity_threshold:
-                        near_support[i] = 1.0
-                        support_matches += 1
-                        break
+            # Convert to numpy arrays for vectorised distance computation
+            support_arr = np.array(valid_support_prices, dtype=float)
+            resistance_arr = np.array(valid_resistance_prices, dtype=float)
 
-                # Check proximity to resistance levels
-                for resistance_price in valid_resistance_prices:
-                    distance_pct = abs(current_price - resistance_price) / current_price
-                    if i in debug_indices:
-                        proximity_debug.append(f"Price {current_price:.2f} vs Resistance {resistance_price:.2f} = {distance_pct:.3f} ({distance_pct*100:.1f}%)")
-                    if distance_pct <= proximity_threshold:
-                        near_resistance[i] = 1.0
-                        resistance_matches += 1
-                        break
-            
+            # Quick exit if no SR prices available
+            if support_arr.size == 0 and resistance_arr.size == 0:
+                self.logger.warning('⚠️ No valid SR prices after forward-bias filtering – returning empty targets.')
+                target_data['near_support'] = 0
+                target_data['near_resistance'] = 0
+                target_data['sr_target'] = 0
+                return target_data
+
+            prices_col = current_prices.astype(float)  # ensure float
+
+            # Broadcast distances; guard against division by zero
+            with np.errstate(divide='ignore', invalid='ignore'):
+                if support_arr.size > 0:
+                    dist_support = np.abs(prices_col[:, None] - support_arr[None, :]) / prices_col[:, None]
+                    near_support = (dist_support <= proximity_threshold).any(axis=1).astype(float)
+                if resistance_arr.size > 0:
+                    dist_resist = np.abs(prices_col[:, None] - resistance_arr[None, :]) / prices_col[:, None]
+                    near_resistance = (dist_resist <= proximity_threshold).any(axis=1).astype(float)
+
+            support_matches = int(near_support.sum())
+            resistance_matches = int(near_resistance.sum())
+
+            # Debug info sampling (first 10)
+            debug_indices = list(range(0, len(prices_col), max(1, len(prices_col) // 1000)))[:10]
+            for idx in debug_indices:
+                self.logger.debug(
+                    f"Price {prices_col[idx]:.2f} -> near_support={near_support[idx]}, near_resistance={near_resistance[idx]}")
+
             # Log proximity debug info (first 10 examples)
             if proximity_debug:
                 self.logger.info(f'🔍 Proximity calculation examples (threshold: {proximity_threshold*100:.1f}%):')
@@ -3189,6 +3201,8 @@ class SROptimizationStep(BaseStep):
                         # Check proximity to support levels
                         for support_price in valid_support_prices:
                             distance_pct = abs(current_price - support_price) / current_price
+                            if i in debug_indices:
+                                proximity_debug.append(f"Price {current_price:.2f} vs Support {support_price:.2f} = {distance_pct:.3f} ({distance_pct*100:.1f}%)")
                             if distance_pct <= proximity_threshold:
                                 near_support[i] = 1.0
                                 support_matches += 1
@@ -3197,6 +3211,8 @@ class SROptimizationStep(BaseStep):
                         # Check proximity to resistance levels
                         for resistance_price in valid_resistance_prices:
                             distance_pct = abs(current_price - resistance_price) / current_price
+                            if i in debug_indices:
+                                proximity_debug.append(f"Price {current_price:.2f} vs Resistance {resistance_price:.2f} = {distance_pct:.3f} ({distance_pct*100:.1f}%)")
                             if distance_pct <= proximity_threshold:
                                 near_resistance[i] = 1.0
                                 resistance_matches += 1
@@ -3955,6 +3971,12 @@ class SROptimizationStep(BaseStep):
                         best_params = optimization_success['best_params']
                         best_scores = optimization_success['best_scores']
                         pareto_info = optimization_success.get('pareto_info', {})
+
+                        # Cast integer hyperparameters explicitly to int to avoid float issues
+                        int_fields = ['n_estimators', 'max_depth', 'min_samples_split', 'min_samples_leaf']
+                        for k in int_fields:
+                            if k in best_params:
+                                best_params[k] = int(best_params[k])
 
                         return {
                             'method': 'ml_common_hpo',

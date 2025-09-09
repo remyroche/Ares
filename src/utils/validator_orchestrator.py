@@ -272,7 +272,6 @@ class ValidatorOrchestrator:
             'step04_5_triple_barrier_method': 'step04_5_triple_barrier_method_validator',
             'step05_labeling': 'step05_labeling_validator',
             'step06_feature_engineering': 'step06_feature_engineering_validator',
-            'step07_enhanced_matrix_operations': 'step07_enhanced_matrix_operations_validator',
             'step08_regime_data_splitting': 'step08_regime_data_splitting_validator',
             'step09_hmm_based_training': 'step09_hmm_based_training_validator',
             'step09_5_multi_timeframe_hmm_ensemble': 'step09_5_multi_timeframe_hmm_ensemble_validator',
@@ -304,7 +303,7 @@ class ValidatorOrchestrator:
         # Determine the correct subdirectory based on the step name
         if validator_module_name.startswith('step01') or validator_module_name.startswith('step02'):
             module_path = f'src.training.steps.data_collection.{validator_module_name}'
-        elif validator_module_name.startswith('step03') or validator_module_name.startswith('step04') or validator_module_name.startswith('step05') or validator_module_name.startswith('step06') or validator_module_name.startswith('step07') or validator_module_name.startswith('step08'):
+        elif validator_module_name.startswith('step03') or validator_module_name.startswith('step04') or validator_module_name.startswith('step05') or validator_module_name.startswith('step06') or validator_module_name.startswith('step08'):
             module_path = f'src.training.steps.market_analysis.{validator_module_name}'
         elif validator_module_name.startswith('step09') or validator_module_name.startswith('step10') or validator_module_name.startswith('step11') or validator_module_name.startswith('step12') or validator_module_name.startswith('step13') or validator_module_name.startswith('step14') or validator_module_name.startswith('step15'):
             module_path = f'src.training.steps.model_training.{validator_module_name}'

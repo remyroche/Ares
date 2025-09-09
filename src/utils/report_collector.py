@@ -333,7 +333,6 @@ class ReportCollector:
                 
                 # Step-specific reports
                 ("src.training.steps.model_training.step05_labeling", "_generate_labeling_reports"),
-                ("src.training.steps.model_training.step07_enhanced_matrix_operations", "_generate_matrix_reports"),
                 ("src.training.steps.model_training.step10_unified_regime_intelligence_validator", "_generate_validation_report"),
                 
                 # Optimization reports

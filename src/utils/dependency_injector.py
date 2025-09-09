@@ -32,11 +32,28 @@ class UtilityDependencyInjector(_OldUtilityDependencyInjector):
 
     # --- logging tweaks -----------------------------------------------------
     def __init__(self, config: dict[str, Any], logger: "logging.Logger") -> None:  # type: ignore[name-defined]
-        # Import late to avoid unnecessary cost if the injector is never used.
         import logging  # noqa: WPS433 (allow stdlib import inside function)
         super().__init__(config, logger)
-        # Downgrade noisy info-level calls by aliasing .info to .debug
         self.logger.info = self.logger.debug  # type: ignore[assignment]
+        self._utilities_loaded = False  # lazy-load flag
+
+    # -----------------------------------------------------------------------
+    # Lazy-loading support
+    # -----------------------------------------------------------------------
+    def _ensure_loaded(self) -> None:
+        if not self._utilities_loaded:
+            self.logger.debug("Lazy-loading all utilities on first access ...")
+            self.inject_all_utilities()
+            self._utilities_loaded = True
+
+    def __getattr__(self, name: str):  # noqa: D401
+        """Provide transparent attribute access to injected utilities lazily."""
+        # Avoid recursion – only trigger for unknown attrs
+        self._ensure_loaded()
+        if name in self._injected_utilities:
+            return self._injected_utilities[name]
+        # Fallback to parent class behaviour (will raise AttributeError if unknown)
+        return super().__getattribute__(name)
 
     # -----------------------------------------------------------------------
     # Platform helpers

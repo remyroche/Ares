@@ -378,7 +378,11 @@ class RayModelTrainer:
                         cv_folds=5,
                         early_stopping_patience=10,
                     )
-                    best_params = hpo_result.get("best_params")
+                    # Prefer Pareto knee (recommended) if available, else Optuna best
+                    best_params = (
+                        hpo_result.get("recommended_params")
+                        or hpo_result.get("best_params")
+                    )
                     if best_params:
                         log_params_with_metadata(
                             params=best_params,
@@ -387,11 +391,15 @@ class RayModelTrainer:
                             lookback_period=lookback_period,
                             run_id=run.info.run_id,
                             additional_metadata={
-                                "optimization_type": "optuna_hpo",
+                                "optimization_type": "optuna_pareto_knee" if hpo_result.get("recommended_params") else "optuna_hpo",
                                 "n_trials": hpo_trials,
                             }
                         )
-                    self.logger.info(f"Optuna HPO best params: {best_params}")
+                    self.logger.info(
+                        "HPO selected params (%s): %s",
+                        "pareto_knee" if hpo_result.get("recommended_params") else "best_value",
+                        best_params,
+                    )
                 training_results = self._train_models_with_ray(
                     training_data,
                     training_input,

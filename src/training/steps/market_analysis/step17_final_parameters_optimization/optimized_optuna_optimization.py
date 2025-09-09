@@ -14,6 +14,12 @@ import pandas as pd
 import numpy as np
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.ml_common import (
+    Solution,
+    compute_pareto_front,
+    select_knee_point,
+    DEFAULT_FINANCIAL_WEIGHTS,
+)
 
 # src/training/steps/optimized_optuna_optimization.py
 
@@ -155,6 +161,8 @@ class AdvancedOptunaManager:
         cv_folds: int = 5,
         early_stopping_patience: int | None = 15,
         subsample_fraction: float | None = None,
+        constraints: dict[str, Any] | None = None,
+        custom_metric_fn: Any | None = None,
     ) -> dict[str, Any]:
         """Runs a full hyperparameter optimization for a specified model.
 
@@ -236,6 +244,21 @@ class AdvancedOptunaManager:
                     scoring="accuracy",
                 ).mean()
                 trial.report(score, step = 0)  # Report final score
+                trial.set_user_attr("accuracy", float(score))
+                # Optional: compute custom financial metrics on full sample (fast baseline)
+                if callable(custom_metric_fn):
+                    try:
+                        # Fit once on subsample for metric estimation
+                        model.fit(X_sample, y_sample)
+                        extra = custom_metric_fn(model, X_sample, y_sample)
+                        if isinstance(extra, dict):
+                            for k, v in extra.items():
+                                try:
+                                    trial.set_user_attr(str(k), float(v))
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
                 return score
 
             except optuna.TrialPruned:
@@ -263,7 +286,53 @@ class AdvancedOptunaManager:
         elapsed_time = time.time() - start_time
         self.logger.info(f"Optimization finished in {elapsed_time:.2f} seconds.")
 
-        return self._summarize_study(study)
+        summary = self._summarize_study(study)
+
+        # --- Pareto front selection (post-study) ---
+        try:
+            complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+            if complete_trials:
+                metric_keys = None
+                # Prefer financial metrics if available
+                example_attrs = complete_trials[0].user_attrs
+                if all(k in example_attrs for k in ("pnl", "win_rate", "sharpe")):
+                    metric_keys = ("pnl", "win_rate", "sharpe")
+                    objectives = {"pnl": "max", "win_rate": "max", "sharpe": "max"}
+                    weights = DEFAULT_FINANCIAL_WEIGHTS
+                else:
+                    # Fallback to accuracy vs fit_time if available, otherwise accuracy only
+                    metric_keys = tuple(k for k in ("accuracy", "fit_time") if k in example_attrs)
+                    if not metric_keys:
+                        metric_keys = ("accuracy",)
+                    objectives = {k: ("min" if k == "fit_time" else "max") for k in metric_keys}
+                    weights = None
+
+                solutions: list[Solution] = []
+                for t in complete_trials:
+                    metrics = {k: float(t.user_attrs.get(k)) for k in metric_keys if k in t.user_attrs}
+                    if metrics:
+                        solutions.append(Solution(metrics=metrics, params=t.params))
+
+                if solutions:
+                    if constraints:
+                        # simple threshold-based filter
+                        from src.utils.ml_common import filter_by_constraints
+                        solutions = filter_by_constraints(solutions, constraints)
+
+                    front = compute_pareto_front(solutions, objectives)
+                    knee = select_knee_point(front, objectives, weights=weights)
+
+                    # Populate summary
+                    summary["pareto_front"] = [s.metrics for s in front]
+                    if knee:
+                        summary["pareto_knee_metrics"] = knee.metrics
+                        summary["pareto_knee_params"] = knee.params
+                        # Convenience: recommend params
+                        summary["recommended_params"] = knee.params
+        except Exception as e:
+            self.logger.warning(f"Pareto post-processing failed: {e}")
+
+        return summary
 
 if __name__ == "__main__":
     # --- Example Usage ---

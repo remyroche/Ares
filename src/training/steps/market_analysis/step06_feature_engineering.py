@@ -92,34 +92,35 @@ from ..enhanced_error_handling import (
 )
 from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel as EnhancedValidationLevel
 from ..enhanced_monitoring_system import monitor_critical_process
-    
-    def step06_function_validator(*args, **kwargs) -> None:
-        def decorator(func: Callable) -> None:
-            return func
-        return decorator
 
-    def step06_function_tracker(func: Callable) -> None:
+def step06_function_validator(*args, **kwargs) -> None:
+    def decorator(func: Callable) -> None:
         return func
+    return decorator
 
-    def step06_validation_context(*args, **kwargs) -> None:
-        from contextlib import nullcontext
-        return nullcontext()
+def step06_function_tracker(func: Callable) -> None:
+    return func
 
-    def get_step06_validation_summary() -> Any:
-        return {'error': 'Validation framework not available'}
+def step06_validation_context(*args, **kwargs) -> None:
+    from contextlib import nullcontext
+    return nullcontext()
 
-    class ValidationLevel:
-        BASIC = 'basic'
-        DETAILED = 'detailed'
-        COMPREHENSIVE = 'comprehensive'
+def get_step06_validation_summary() -> Any:
+    return {'error': 'Validation framework not available'}
 
-    class FunctionStatus:
-        PENDING = 'pending'
-        IN_PROGRESS = 'in_progress'
-        COMPLETED = 'completed'
-        FAILED = 'failed'
-        TIMEOUT = 'timeout'
-    VALIDATION_AVAILABLE = False
+class ValidationLevel:
+    BASIC = 'basic'
+    DETAILED = 'detailed'
+    COMPREHENSIVE = 'comprehensive'
+
+class FunctionStatus:
+    PENDING = 'pending'
+    IN_PROGRESS = 'in_progress'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
+    TIMEOUT = 'timeout'
+
+VALIDATION_AVAILABLE = False
 
 class FeatureInteractionEngine:
     """

@@ -69,6 +69,7 @@ class ParallelProcessingCoordinator:
         self.chunk_size = self.config.get('chunk_size', 1000)
         self.error_retry_limit = self.config.get('error_retry_limit', 3)
         self.task_timeout_seconds = self.config.get('task_timeout_seconds', 3600)
+        self.prefer_process_pool = self.config.get('prefer_process_pool', False)
 
         # Initialize utilities
         self.parallel_processor = ParallelProcessor()
@@ -140,7 +141,8 @@ class ParallelProcessingCoordinator:
     def distributed_cross_validation(self, model_factory: Callable,
                                    X: np.ndarray, y: np.ndarray,
                                    cv_folds: int = 5,
-                                   scoring_functions: Optional[List[Callable]] = None) -> Dict[str, Any]:
+                                   scoring_functions: Optional[List[Callable]] = None,
+                                   cv: Optional[Any] = None) -> Dict[str, Any]:
         """
         Perform distributed cross-validation with parallel fold processing.
 
@@ -157,8 +159,12 @@ class ParallelProcessingCoordinator:
         try:
             self.logger.info(f"🔀 Starting distributed cross-validation: {cv_folds} folds")
 
-            from sklearn.model_selection import StratifiedKFold
-            skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+            from sklearn.model_selection import TimeSeriesSplit
+            if cv is None:
+                test_size = max(1, len(X) // (cv_folds + 1))
+                skf = TimeSeriesSplit(n_splits=cv_folds, test_size=test_size)
+            else:
+                skf = cv
 
             # Create CV tasks
             cv_tasks = []
@@ -172,6 +178,12 @@ class ParallelProcessingCoordinator:
                     'y_test': y[test_idx],
                     'scoring_functions': scoring_functions or []
                 }
+                try:
+                    if len(np.unique(y[train_idx])) > 1:
+                        from sklearn.utils.class_weight import compute_sample_weight
+                        task['sample_weight'] = compute_sample_weight('balanced', y[train_idx])
+                except Exception:
+                    pass
                 cv_tasks.append(task)
 
             # Execute CV tasks in parallel
@@ -721,7 +733,8 @@ class ParallelProcessingCoordinator:
                                      model_factory: Callable,
                                      X: np.ndarray, y: np.ndarray,
                                      evaluation_function: Optional[Callable] = None,
-                                     search_strategy: str = 'grid') -> Dict[str, Any]:
+                                     search_strategy: str = 'grid',
+                                     n_random_samples: Optional[int] = None) -> Dict[str, Any]:
         """
         Perform parallel hyperparameter search.
 
@@ -743,7 +756,7 @@ class ParallelProcessingCoordinator:
             if search_strategy == 'grid':
                 param_combinations = self._generate_grid_parameters(parameter_grid)
             elif search_strategy == 'random':
-                param_combinations = self._generate_random_parameters(parameter_grid, n_samples=50)
+                param_combinations = self._generate_random_parameters(parameter_grid, n_samples=(n_random_samples or 50))
             else:
                 raise ValueError(f"Unsupported search strategy: {search_strategy}")
 
@@ -956,20 +969,37 @@ class ParallelProcessingCoordinator:
                 results = ray.get(ray_results)
 
             else:
-                # Use ThreadPoolExecutor as fallback
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = [
-                        executor.submit(self._execute_single_task, task, task_function)
-                        for task in tasks
-                    ]
+                # Prefer process pool for CPU-bound tasks if configured
+                ExecutorClass = ProcessPoolExecutor if self.prefer_process_pool else ThreadPoolExecutor
+                try:
+                    with ExecutorClass(max_workers=max_workers) as executor:
+                        futures = [
+                            executor.submit(self._execute_single_task, task, task_function)
+                            for task in tasks
+                        ]
 
-                    for future in as_completed(futures):
-                        try:
-                            result = future.result(timeout=self.task_timeout_seconds)
-                            results.append(result)
-                        except Exception as task_e:
-                            self.logger.warning(f"Task execution failed: {task_e}")
-                            results.append({'error': str(task_e)})
+                        for future in as_completed(futures):
+                            try:
+                                result = future.result(timeout=self.task_timeout_seconds)
+                                results.append(result)
+                            except Exception as task_e:
+                                self.logger.warning(f"Task execution failed: {task_e}")
+                                results.append({'error': str(task_e)})
+                except Exception as e:
+                    # Fallback to threads on process pool failure
+                    self.logger.debug(f"Process pool unavailable, falling back to threads: {e}")
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        futures = [
+                            executor.submit(self._execute_single_task, task, task_function)
+                            for task in tasks
+                        ]
+                        for future in as_completed(futures):
+                            try:
+                                result = future.result(timeout=self.task_timeout_seconds)
+                                results.append(result)
+                            except Exception as task_e:
+                                self.logger.warning(f"Task execution failed: {task_e}")
+                                results.append({'error': str(task_e)})
 
             return results
 
@@ -1016,7 +1046,22 @@ class ParallelProcessingCoordinator:
 
             # Create and train model
             model = model_factory()
-            model.fit(X_train, y_train)
+            try:
+                if hasattr(model, 'set_params') and hasattr(model, 'get_params'):
+                    params = model.get_params()
+                    if 'n_jobs' in params:
+                        model.set_params(n_jobs=1)
+            except Exception:
+                pass
+            try:
+                import inspect
+                sample_weight = task.get('sample_weight')
+                if sample_weight is not None and 'sample_weight' in inspect.signature(model.fit).parameters:
+                    model.fit(X_train, y_train, sample_weight=sample_weight)
+                else:
+                    model.fit(X_train, y_train)
+            except Exception:
+                model.fit(X_train, y_train)
 
             # Make predictions
             if hasattr(model, 'predict_proba'):

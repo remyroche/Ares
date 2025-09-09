@@ -33,6 +33,8 @@ from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 from ..m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
+from .parallel_processing import ParallelProcessingCoordinator
+from .memory_optimization import MemoryEfficientTraining
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +48,9 @@ except ImportError:
     logger.warning("Optuna not available - limited HPO functionality")
 
 try:
-    from sklearn.model_selection import cross_val_score, StratifiedKFold
+    from sklearn.model_selection import cross_val_score, StratifiedKFold, TimeSeriesSplit, cross_validate
     from sklearn.metrics import make_scorer
+    from sklearn.utils.class_weight import compute_sample_weight
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -73,6 +76,8 @@ class HyperparameterOptimization:
         # Initialize utilities
         self.gpu_manager = M1GPUManager() if self.enable_gpu else None
         self.parallel_processor = ParallelProcessor() if self.enable_parallel else None
+        self.parallel_coordinator = ParallelProcessingCoordinator(self.config) if self.enable_parallel else None
+        self.memory_tools = MemoryEfficientTraining(self.config)
 
         # Optimization history
         self.optimization_history = []
@@ -300,7 +305,14 @@ class HyperparameterOptimization:
                             X: np.ndarray, y: np.ndarray,
                             search_space: Dict[str, Any],
                             n_trials: int = 50,
-                            acquisition_function: str = 'ucb') -> Dict[str, Any]:
+                            acquisition_function: str = 'ucb',
+                            scoring: Union[str, Callable] = 'accuracy',
+                            cv: Optional[Any] = None,
+                            fit_params: Optional[Dict[str, Any]] = None,
+                            pruner: Optional[str] = 'median',
+                            storage: Optional[str] = None,
+                            study_name: Optional[str] = None,
+                            timeout: Optional[int] = None) -> Dict[str, Any]:
         """
         Perform Bayesian hyperparameter optimization.
 
@@ -354,17 +366,61 @@ class HyperparameterOptimization:
 
                 # Create and evaluate model
                 model = model_factory(**params)
-                score = self._evaluate_model(model, X, y)
+                # Cap per-trial parallelism if supported
+                try:
+                    if hasattr(model, 'set_params'):
+                        model.set_params(**{k: v for k, v in {'n_jobs': 1}.items() if k in getattr(model, 'get_params')().keys()})
+                except Exception:
+                    pass
 
-                return score
+                # Prepare CV and fit params
+                cv_obj = cv if cv is not None else self._create_time_series_split(len(X))
 
-            # Create study with TPE sampler (Bayesian optimization)
+                # Compute sample weights if classification and estimator supports it
+                fp = dict(fit_params or {})
+                try:
+                    if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
+                        fp.setdefault('sample_weight', compute_sample_weight('balanced', y))
+                except Exception:
+                    pass
+
+                # Evaluate with cross_validate to report intermediate values for pruning
+                try:
+                    cv_res = cross_validate(
+                        model, X, y, cv=cv_obj, scoring=scoring, n_jobs=1, return_train_score=False,
+                        fit_params=fp
+                    )
+                    scores = cv_res.get('test_score', None)
+                    if scores is not None:
+                        for i, s in enumerate(scores):
+                            trial.report(float(s), step=i)
+                            if trial.should_prune():
+                                raise optuna.TrialPruned()
+                        return float(np.mean(scores))
+                except Exception as _:
+                    pass
+
+                # Fallback single-score
+                return self._evaluate_model(model, X, y)
+
+            # Create study with TPE sampler (Bayesian optimization) and pruner/storage
+            sampler = TPESampler()
+            pruner_obj = None
+            if pruner == 'median':
+                pruner_obj = MedianPruner()
+            elif pruner == 'hyperband':
+                pruner_obj = HyperbandPruner()
+
             study = optuna.create_study(
                 direction='maximize',
-                sampler=TPESampler()
+                sampler=sampler,
+                pruner=pruner_obj,
+                study_name=study_name,
+                storage=storage,
+                load_if_exists=bool(storage and study_name)
             )
 
-            study.optimize(objective, n_trials=n_trials)
+            study.optimize(objective, n_trials=n_trials, timeout=timeout)
 
             results = {
                 'best_params': study.best_params,
@@ -379,6 +435,109 @@ class HyperparameterOptimization:
 
         except Exception as e:
             self.logger.error(f"❌ Bayesian optimization failed: {e}")
+            return {'error': str(e)}
+
+    def staged_hpo(self, model_factory: Callable,
+                   X: np.ndarray, y: np.ndarray,
+                   search_space: Dict[str, Any],
+                   coarse_strategy: str = 'random',
+                   coarse_grid_points: int = 3,
+                   coarse_n_samples: int = 50,
+                   bayes_n_trials: int = 50,
+                   scoring: Union[str, Callable] = 'balanced_accuracy',
+                   cv: Optional[Any] = None,
+                   pruner: str = 'hyperband',
+                   storage: Optional[str] = None,
+                   study_name: Optional[str] = None,
+                   timeout: Optional[int] = None,
+                   subsample_rate: float = 0.3,
+                   finalize_refine: bool = True) -> Dict[str, Any]:
+        """Staged HPO: coarse grid/random → narrowed Bayesian → optional fine-tune.
+
+        Returns dict with coarse_results, bayes_results, final_params, final_score.
+        """
+        try:
+            self.logger.info("🌀 Starting staged HPO: coarse → bayesian → refine")
+
+            # Optional subsampling for coarse stage
+            X_train, y_train = X, y
+            if 0 < subsample_rate < 1.0 and len(X) > 100:
+                n_sub = max(100, int(len(X) * subsample_rate))
+                idx = np.linspace(0, len(X) - 1, num=n_sub, dtype=int)
+                X_train = X[idx]
+                y_train = y[idx]
+
+            # Precompute CV if not provided
+            cv_obj = cv if cv is not None else self._create_time_series_split(len(X_train))
+
+            # Build coarse parameter grid from search_space
+            param_grid = self._coarse_grid_from_search_space(search_space, coarse_grid_points)
+
+            coarse_results = {}
+            if self.parallel_coordinator:
+                # Use enhanced parallel random/grid search
+                coarse_results = self.parallel_coordinator.parallel_hyperparameter_search(
+                    parameter_grid=param_grid,
+                    model_factory=model_factory,
+                    X=X_train,
+                    y=y_train,
+                    evaluation_function=self._build_default_eval(scoring, cv_obj),
+                    search_strategy='random' if coarse_strategy == 'random' else 'grid',
+                    # extended parameter accepted after coordinator update
+                    n_random_samples=coarse_n_samples,
+                )
+            else:
+                # Fallback simple random sampling
+                sampled = self._generate_random_param_combinations(param_grid, coarse_n_samples)
+                best_score = -np.inf
+                best_params = {}
+                for p in sampled:
+                    model = model_factory(**p)
+                    score = self._evaluate_model_cv(model, X_train, y_train, cv_obj, scoring)
+                    if score > best_score:
+                        best_score, best_params = score, p
+                coarse_results = {'best_params': best_params, 'best_score': best_score, 'all_results': []}
+
+            # Narrow search space around coarse best
+            best_coarse = coarse_results.get('best_params', {})
+            narrowed = self._narrow_search_space(search_space, best_coarse)
+
+            # Bayesian stage on full data if feasible
+            bayes_results = self.bayesian_optimization(
+                model_factory=model_factory,
+                X=X,
+                y=y,
+                search_space=narrowed,
+                n_trials=bayes_n_trials,
+                scoring=scoring,
+                cv=cv if cv is not None else self._create_time_series_split(len(X)),
+                pruner=pruner,
+                storage=storage,
+                study_name=study_name,
+                timeout=timeout
+            )
+
+            final_params = dict(best_coarse)
+            final_score = coarse_results.get('best_score', 0.0)
+            if 'best_params' in bayes_results:
+                final_params = bayes_results['best_params']
+                final_score = bayes_results.get('best_score', final_score)
+
+            # Optional local fine-tune around best (small random jitters)
+            if finalize_refine:
+                fine_params, fine_score = self._local_refine(model_factory, X, y, final_params, scoring,
+                                                             cv if cv is not None else self._create_time_series_split(len(X)))
+                if fine_score > final_score:
+                    final_params, final_score = fine_params, fine_score
+
+            return {
+                'coarse_results': coarse_results,
+                'bayes_results': bayes_results,
+                'final_params': final_params,
+                'final_score': final_score
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Staged HPO failed: {e}")
             return {'error': str(e)}
 
     def hyperparameter_importance_analysis(self, study_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -771,6 +930,138 @@ class HyperparameterOptimization:
         except Exception as e:
             self.logger.warning(f"Model evaluation failed: {e}")
             return 0.5
+
+    # ---- Helpers for staged HPO ----
+    def _create_time_series_split(self, n_samples: int, n_splits: int = 5, gap: int = 0) -> Any:
+        try:
+            test_size = max(1, n_samples // (n_splits + 1))
+            return TimeSeriesSplit(n_splits=n_splits, test_size=test_size, gap=gap)
+        except Exception:
+            return 3
+
+    def _evaluate_model_cv(self, model: Any, X: np.ndarray, y: np.ndarray,
+                           cv_obj: Any, scoring: Union[str, Callable]) -> float:
+        try:
+            # Cap nested parallelism if possible
+            try:
+                if hasattr(model, 'set_params') and hasattr(model, 'get_params'):
+                    params = model.get_params()
+                    if 'n_jobs' in params:
+                        model.set_params(n_jobs=1)
+            except Exception:
+                pass
+
+            fit_params = {}
+            try:
+                if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
+                    fit_params['sample_weight'] = compute_sample_weight('balanced', y)
+            except Exception:
+                pass
+            res = cross_validate(model, X, y, cv=cv_obj, scoring=scoring, n_jobs=1,
+                                 return_train_score=False, fit_params=fit_params)
+            scores = res.get('test_score', None)
+            if scores is not None:
+                return float(np.mean(scores))
+            return 0.5
+        except Exception as e:
+            self.logger.warning(f"CV evaluation failed: {e}")
+            return 0.5
+
+    def _coarse_grid_from_search_space(self, search_space: Dict[str, Any], grid_points: int) -> Dict[str, List[Any]]:
+        grid = {}
+        try:
+            for name, cfg in search_space.items():
+                if isinstance(cfg, dict):
+                    typ = cfg.get('type', 'float')
+                    if typ == 'float':
+                        low, high = cfg['low'], cfg['high']
+                        grid[name] = np.linspace(low, high, num=max(2, grid_points)).tolist()
+                    elif typ == 'int':
+                        low, high = cfg['low'], cfg['high']
+                        if high == low:
+                            grid[name] = [low]
+                        else:
+                            pts = np.linspace(low, high, num=max(2, grid_points))
+                            grid[name] = sorted({int(round(v)) for v in pts})
+                    elif typ == 'categorical':
+                        grid[name] = cfg.get('choices', [])
+                else:
+                    # Legacy tuple(low, high)
+                    if isinstance(cfg, tuple) and len(cfg) == 2:
+                        grid[name] = np.linspace(cfg[0], cfg[1], num=max(2, grid_points)).tolist()
+            return grid
+        except Exception:
+            return {}
+
+    def _generate_random_param_combinations(self, grid: Dict[str, List[Any]], n_samples: int) -> List[Dict[str, Any]]:
+        try:
+            import random
+            keys = list(grid.keys())
+            combos = []
+            for _ in range(n_samples):
+                p = {k: random.choice(grid[k]) for k in keys if grid.get(k)}
+                combos.append(p)
+            return combos
+        except Exception:
+            return []
+
+    def _narrow_search_space(self, search_space: Dict[str, Any], center_params: Dict[str, Any],
+                              shrink: float = 0.5) -> Dict[str, Any]:
+        try:
+            narrowed = {}
+            for name, cfg in search_space.items():
+                if name not in center_params:
+                    narrowed[name] = cfg
+                    continue
+                val = center_params[name]
+                if isinstance(cfg, dict):
+                    typ = cfg.get('type', 'float')
+                    if typ in ('float', 'int'):
+                        low, high = cfg['low'], cfg['high']
+                        span = (high - low) * shrink / 2.0
+                        new_low = max(low, val - span)
+                        new_high = min(high, val + span)
+                        narrowed[name] = {'type': typ, 'low': new_low, 'high': new_high}
+                    else:
+                        narrowed[name] = cfg
+                else:
+                    narrowed[name] = cfg
+            return narrowed
+        except Exception:
+            return search_space
+
+    def _local_refine(self, model_factory: Callable, X: np.ndarray, y: np.ndarray,
+                       best_params: Dict[str, Any], scoring: Union[str, Callable], cv_obj: Any,
+                       n_trials: int = 15, jitter: float = 0.1) -> Tuple[Dict[str, Any], float]:
+        try:
+            import random
+            best_p = dict(best_params)
+            best_s = -np.inf
+            # Evaluate baseline
+            base_model = model_factory(**best_params)
+            base_score = self._evaluate_model_cv(base_model, X, y, cv_obj, scoring)
+            best_p, best_s = best_params, base_score
+            for _ in range(n_trials):
+                cand = dict(best_params)
+                for k, v in best_params.items():
+                    if isinstance(v, (int, float)):
+                        delta = v * jitter if v != 0 else jitter
+                        if isinstance(v, int):
+                            cand[k] = max(1, int(round(v + random.uniform(-delta, delta))))
+                        else:
+                            cand[k] = v + random.uniform(-delta, delta)
+                model = model_factory(**cand)
+                s = self._evaluate_model_cv(model, X, y, cv_obj, scoring)
+                if s > best_s:
+                    best_p, best_s = cand, s
+            return best_p, best_s
+        except Exception:
+            return best_params, base_score if 'base_score' in locals() else 0.0
+
+    def _build_default_eval(self, scoring: Union[str, Callable], cv_obj: Any) -> Callable:
+        def _eval(model, X, y):
+            return self._evaluate_model_cv(model, X, y, cv_obj, scoring)
+        return _eval
 
     def _calculate_parameter_importance(self, study: Any) -> Dict[str, float]:
         """Calculate parameter importance from study."""

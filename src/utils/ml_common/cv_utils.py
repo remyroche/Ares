@@ -270,7 +270,12 @@ class CrossValidationUtilities:
                     # Train model
                     start_time = datetime.now()
                     model_copy = self._clone_model(model)
-                    model_copy.fit(X_train, y_train, sample_weight=sample_weight)
+
+                    import inspect
+                    if 'sample_weight' in inspect.signature(model_copy.fit).parameters:
+                        model_copy.fit(X_train, y_train, sample_weight=sample_weight)
+                    else:
+                        model_copy.fit(X_train, y_train)
                     training_time = (datetime.now() - start_time).total_seconds()
 
                     # Make predictions
@@ -533,24 +538,19 @@ class CrossValidationUtilities:
             return np.ones(len(y))
 
     def _clone_model(self, model: Any) -> Any:
-        """Clone a model for CV folds."""
+        """Clone a model for CV folds using sklearn.base.clone when available."""
         try:
-            if hasattr(model, 'clone'):
-                return model.clone()
-            elif hasattr(model, '__class__'):
-                # Create new instance with same parameters
+            from sklearn.base import clone as skl_clone
+            return skl_clone(model)
+        except Exception:
+            # Fall back to previous best-effort cloning logic
+            try:
                 model_class = model.__class__
-                if hasattr(model, 'get_params'):
-                    params = model.get_params()
-                    return model_class(**params)
-                else:
-                    return model_class()
-            else:
-                # Fallback - return original model
+                params = model.get_params() if hasattr(model, 'get_params') else {}
+                return model_class(**params)
+            except Exception as e:
+                self.logger.warning(f"Model cloning failed: {e}")
                 return model
-        except Exception as e:
-            self.logger.warning(f"Model cloning failed: {e}")
-            return model
 
     def _calculate_fold_metrics(self, y_true: np.ndarray, y_pred: np.ndarray,
                               y_pred_proba: Optional[np.ndarray] = None) -> Dict[str, Any]:
@@ -559,11 +559,14 @@ class CrossValidationUtilities:
             metrics = {}
 
             # Determine task type from data
-            unique_values = np.unique(y_true)
-            if len(unique_values) <= 10 and all(isinstance(v, (int, np.integer)) for v in unique_values):
-                task_type = 'classification'
-            else:
-                task_type = 'regression'
+            try:
+                from sklearn.utils.multiclass import type_of_target
+                target_type = type_of_target(y_true)
+                task_type = 'classification' if target_type in {'binary', 'multiclass'} else 'regression'
+            except Exception:
+                # Fallback – original heuristic
+                unique_values = np.unique(y_true)
+                task_type = 'classification' if len(unique_values) <= 10 else 'regression'
 
             # Calculate appropriate metrics
             if task_type == 'classification':
@@ -607,7 +610,7 @@ class CrossValidationUtilities:
                 for metric_name, value in fold_metric.items():
                     if metric_name not in all_metrics:
                         all_metrics[metric_name] = []
-                    if isinstance(value, (int, float)) and not np.isnan(value):
+                    if isinstance(value, (int, float, np.floating)) and not np.isnan(value):
                         all_metrics[metric_name].append(value)
 
             # Calculate aggregated statistics

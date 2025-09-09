@@ -185,24 +185,14 @@ class MLTrainingSafeguards:
             class_analysis = MLTrainingSafeguards.check_class_distribution(y)
 
             if class_analysis['is_single_class']:
-                return {
-                    'is_valid': False,
-                    'reason': 'Single class chunk',
-                    'n_samples': len(X),
-                    'n_features': X.shape[1] if len(X.shape) > 1 else 0,
-                    'class_analysis': class_analysis
-                }
+                # Raise explicit error for downstream fast-fail handlers
+                raise SingleClassError("Single class detected in training chunk")
 
             # Check minimum samples per class
             min_class_samples = min(class_analysis['class_counts'].values())
             if min_class_samples < min_samples_per_class:
-                return {
-                    'is_valid': False,
-                    'reason': f'Insufficient samples per class (min: {min_class_samples} < {min_samples_per_class})',
-                    'n_samples': len(X),
-                    'n_features': X.shape[1] if len(X.shape) > 1 else 0,
-                    'class_analysis': class_analysis
-                }
+                # Too few samples in at least one class – classify as imbalance
+                raise ClassImbalanceError(f"Insufficient samples per class (min: {min_class_samples} < {min_samples_per_class})")
 
             # Check for extreme imbalance
             if class_analysis['is_extreme_imbalance']:
@@ -244,6 +234,9 @@ class MLTrainingSafeguards:
             Array of sample weights
         """
         try:
+            if len(y) == 0:
+                return np.array([])
+
             from sklearn.utils.class_weight import compute_sample_weight
 
             if strategy == 'balanced':

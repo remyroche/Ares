@@ -363,8 +363,9 @@ class LookaheadProtection:
                     validation_results['windows'].append(window_result)
                     validation_results['temporal_integrity_checks'].append(temporal_check)
 
-                    self.logger.debug(f"✅ Window {window_result['window_id']} completed - "
-                                    f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
+                    acc = metrics.get('accuracy')
+                    acc_str = f"{acc:.4f}" if isinstance(acc, (int, float, np.floating)) else str(acc)
+                    self.logger.debug(f"✅ Window {window_result['window_id']} completed - Accuracy: {acc_str}")
 
                 except Exception as window_e:
                     self.logger.warning(f"⚠️ Window {len(validation_results['windows'])} failed: {window_e}")

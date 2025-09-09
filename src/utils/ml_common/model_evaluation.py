@@ -489,8 +489,9 @@ class ModelEvaluationUtilities:
                 calibration_results['calibration_metrics']
             )
 
-            self.logger.info(f"✅ Model calibration assessment completed - "
-                           f"ECE: {calibration_results['calibration_metrics'].get('expected_calibration_error', 'N/A'):.4f}")
+            ece = calibration_results.get('calibration_metrics', {}).get('expected_calibration_error')
+            ece_str = f"{ece:.4f}" if isinstance(ece, (int, float, np.floating)) else (str(ece) if ece is not None else 'N/A')
+            self.logger.info(f"✅ Model calibration assessment completed - ECE: {ece_str}")
             return calibration_results
 
         except Exception as e:

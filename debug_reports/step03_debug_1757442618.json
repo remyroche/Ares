@@ -1,0 +1,130 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "BINANCE",
+  "timeframe": "1m",
+  "timestamp": "2025-09-09T18:30:18.296799",
+  "memory_report": {
+    "system_memory": {
+      "total_mb": 16017.66796875,
+      "available_mb": 14816.05078125,
+      "used_mb": 865.984375,
+      "usage_percent": 7.5
+    },
+    "process_memory": {
+      "current_mb": 79.12109375,
+      "peak_mb": 79.12109375
+    },
+    "processing_stats": {
+      "chunks_processed": 0,
+      "gc_count": 0,
+      "last_cleanup": 0
+    },
+    "cache_stats": {
+      "total_entries": 0,
+      "total_size_mb": 0,
+      "hit_rate": 0,
+      "cache_hits": 0,
+      "cache_misses": 0
+    },
+    "config": {
+      "max_memory_percent": 80.0,
+      "chunk_size_mb": 50,
+      "monitoring_enabled": true
+    }
+  },
+  "validation_report": {
+    "system_resources": {
+      "passed": true,
+      "message": "System resources validation passed",
+      "level": {
+        "str": "ValidationLevel.INFO"
+      },
+      "details": {
+        "available_memory_gb": 14.468799591064453,
+        "available_disk_gb": 113.32067108154297,
+        "cpu_usage_percent": 4.2,
+        "cpu_count": 4
+      },
+      "timestamp": "2025-09-09 18:30:19.298313",
+      "str": "\u2705 PASS [INFO] System resources validation passed"
+    },
+    "config_validation": {
+      "passed": true,
+      "message": "Configuration validation passed",
+      "level": {
+        "str": "ValidationLevel.INFO"
+      },
+      "details": {
+        "config_keys": [
+          "symbol",
+          "exchange",
+          "timeframe"
+        ]
+      },
+      "timestamp": "2025-09-09 18:30:19.298665",
+      "str": "\u2705 PASS [INFO] Configuration validation passed"
+    },
+    "summary": {
+      "total_validations": 2,
+      "failures": 0,
+      "warnings": 0,
+      "success_rate": 1.0,
+      "recent_validations": [
+        {
+          "result": "\u2705 PASS [INFO] System resources validation passed",
+          "context": "system_resources",
+          "timestamp": "2025-09-09 18:30:19.298320"
+        },
+        {
+          "result": "\u2705 PASS [INFO] Configuration validation passed",
+          "context": "configuration",
+          "timestamp": "2025-09-09 18:30:19.298667"
+        }
+      ]
+    }
+  },
+  "io_report": {
+    "skipped": true
+  },
+  "cache_report": {
+    "performance": {
+      "total_requests": 3,
+      "cache_hits": 2,
+      "cache_misses": 1,
+      "hit_rate": 0.6666666666666666,
+      "eviction_count": 0,
+      "cleanup_count": 0,
+      "last_cleanup": 0.0
+    },
+    "memory_cache": {
+      "entries": 2,
+      "size_bytes": 34,
+      "size_mb": 3.24249267578125e-05,
+      "max_size_bytes": 52428800,
+      "max_entries": 10000,
+      "utilization_percent": 6.4849853515625e-05
+    },
+    "disk_cache": {
+      "entries": 2,
+      "size_bytes": 31,
+      "size_mb": 2.956390380859375e-05,
+      "max_size_bytes": 2097152000,
+      "utilization_percent": 1.4781951904296875e-06
+    },
+    "config": {
+      "max_memory_cache_size_mb": 50,
+      "max_disk_cache_size_mb": 2000,
+      "cache_ttl_seconds": 30,
+      "enable_memory_cache": true,
+      "enable_disk_cache": true,
+      "cache_eviction_policy": "lru"
+    },
+    "total_size_mb": 6.198883056640625e-05,
+    "memoization_speedup": 1730.0569105691056
+  },
+  "optimized_initialisation": {
+    "skipped": true,
+    "available": false
+  },
+  "duration_seconds": 1.0708487033843994
+}

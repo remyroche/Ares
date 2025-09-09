@@ -80,8 +80,8 @@ async def run_validation(symbol: str, exchange: str, timeframe: str, data_dir: s
     val_cfg = ValidationConfig(enable_extensive_logging=False)
     validator = get_fast_fail_validator(val_cfg)
     # Perform a subset of validations that do not require heavy data
-    sys_res = await validator.validate_system_resources()
-    cfg_ok = await validator.validate_configuration({
+    sys_res_raw = await validator.validate_system_resources()
+    cfg_ok_raw = await validator.validate_configuration({
         "symbol": symbol,
         "exchange": exchange,
         "timeframe": timeframe,
@@ -89,9 +89,21 @@ async def run_validation(symbol: str, exchange: str, timeframe: str, data_dir: s
     summary = validator.get_validation_summary()
     logger.info("✅ Validation complete – %s validations, %.1f%% success",
                 summary["total_validations"], summary["success_rate"] * 100)
+
+    def _serialize(res):
+        if hasattr(res, "__dict__"):
+            base = {k: _serialize(v) for k, v in res.__dict__.items() if not k.startswith('_')}
+            base["str"] = str(res)
+            return base
+        if isinstance(res, (list, tuple)):
+            return [_serialize(v) for v in res]
+        if isinstance(res, dict):
+            return {k: _serialize(v) for k, v in res.items()}
+        return res
+
     return {
-        "system_resources": sys_res,
-        "config_validation": cfg_ok,
+        "system_resources": _serialize(sys_res_raw),
+        "config_validation": _serialize(cfg_ok_raw),
         "summary": summary,
     }
 
@@ -214,6 +226,21 @@ async def main_async() -> None:
         "optimized_initialisation": optimized_report,
         "duration_seconds": time.time() - start,
     })
+
+    # Ensure everything JSON serialisable (convert any Path etc.)
+    def _sanitize(o):
+        from pathlib import Path
+        if isinstance(o, (str, int, float, bool)) or o is None:
+            return o
+        if isinstance(o, Path):
+            return str(o)
+        if isinstance(o, dict):
+            return {k: _sanitize(v) for k, v in o.items()}
+        if isinstance(o, (list, tuple)):
+            return [_sanitize(v) for v in o]
+        return str(o)
+
+    report = _sanitize(report)
 
     # Persist debug report
     out_file = Path("debug_reports") / f"step03_debug_{int(start)}.json"

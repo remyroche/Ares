@@ -192,17 +192,13 @@ class MLTrainingSafeguards:
             min_class_samples = min(class_analysis['class_counts'].values())
             if min_class_samples < min_samples_per_class:
                 # Too few samples in at least one class – classify as imbalance
-                raise ClassImbalanceError(f"Insufficient samples per class (min: {min_class_samples} < {min_samples_per_class})")
+                raise ClassImbalanceError(
+                    f"Insufficient samples per class (min: {min_class_samples} < {min_samples_per_class})")
 
             # Check for extreme imbalance
             if class_analysis['is_extreme_imbalance']:
-                return {
-                    'is_valid': False,
-                    'reason': f'Extreme class imbalance (max ratio: {class_analysis["max_class_ratio"]:.2%})',
-                    'n_samples': len(X),
-                    'n_features': X.shape[1] if len(X.shape) > 1 else 0,
-                    'class_analysis': class_analysis
-                }
+                raise ClassImbalanceError(
+                    f"Extreme class imbalance (max ratio: {class_analysis['max_class_ratio']:.2%})")
 
             return {
                 'is_valid': True,
@@ -441,7 +437,7 @@ class MLTrainingSafeguards:
             return 'CLASS_IMBALANCE_ERROR'
         elif isinstance(error, DataQualityError) or 'data quality' in error_msg:
             return 'DATA_QUALITY_ERROR'
-        elif 'attributeerror' in error_type.lower() or 'hasattr' in error_msg:
+        elif isinstance(error, AttributeError) or 'attributeerror' in error_type.lower():
             return 'METHOD_VALIDATION_ERROR'
         elif 'optuna' in error_msg or 'study' in error_msg:
             return 'OPTUNA_ERROR'

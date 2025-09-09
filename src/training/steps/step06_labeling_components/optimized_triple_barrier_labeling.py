@@ -58,22 +58,16 @@ from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate
 try:
     from src.utils.dataframe_guards import guard_dataframe_nulls, handle_errors, with_tracing_span
 except ImportError:
-
-    def guard_dataframe_nulls(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
+    def guard_dataframe_nulls(*args, **kwargs):
+        def decorator(func: Callable):
             return func
         return decorator
-
-    def handle_errors(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
+    def handle_errors(*args, **kwargs):
+        def decorator(func: Callable):
             return func
         return decorator
-
-    def with_tracing_span(*args, **kwargs) -> None:
-
-        def decorator(func: Callable) -> None:
+    def with_tracing_span(*args, **kwargs):
+        def decorator(func: Callable):
             return func
         return decorator
 try:
@@ -90,7 +84,9 @@ except Exception:
 if 'numba' in globals() and numba is not None:
 
     @numba.jit(nopython = True, cache = True)
-    def _numba_triple_barrier_labels(close: np.ndarray, high: np.ndarray, low: np.ndarray, pt_mult: float, sl_mult: float, end_idx_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _numba_triple_barrier_labels(close: np.ndarray, high: np.ndarray, low: np.ndarray,
+                                     pt_mult: float, sl_mult: float, end_idx_arr: np.ndarray,
+                                     transaction_cost: float) -> tuple[np.ndarray, np.ndarray]:
         """Numba-accelerated triple barrier labeling with profit tracking."
         
         Returns:
@@ -114,11 +110,11 @@ if 'numba' in globals() and numba is not None:
             for j in range(i + 1, end_idx):
                 if high[j] >= profit_barrier:
                     lab = 1
-                    profit_pct = pt_mult - self.transaction_cost  # Net profit after transaction costs
+                    profit_pct = pt_mult - transaction_cost
                     break
                 if low[j] <= stop_barrier:
                     lab = -1
-                    profit_pct = -(sl_mult + self.transaction_cost)  # Net loss including transaction costs
+                    profit_pct = -(sl_mult + transaction_cost)
                     break
             labels[i] = lab
             profit_pcts[i] = profit_pct
@@ -357,8 +353,7 @@ class OptimizedTripleBarrierLabeling:
     @step06_function_validator(function_type='labeling', validation_level = ValidationLevel.COMPREHENSIVE)
     @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='optimized_triple_barrier_labeling.vectorized')
     @log_execution_time
-    @validates
-    @traced(span_name='TripleBarrier.apply_vectorized')
+    @with_tracing_span('TripleBarrier.apply_vectorized')
     def apply_triple_barrier_labeling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply a correct forward-looking Triple Barrier Method with profit tracking and transaction costs.
 
@@ -434,7 +429,10 @@ class OptimizedTripleBarrierLabeling:
         use_numba = 'numba' in globals() and numba is not None and callable(globals().get('_numba_triple_barrier_labels'))
         if use_numba and n >= 512:
             self.logger.info('⚡ Using Numba-accelerated triple barrier labeling with profit tracking')
-            labels, profit_pcts = _numba_triple_barrier_labels(close.astype(np.float64), high.astype(np.float64), low.astype(np.float64), pt_mult, sl_mult, end_idx_arr.astype(np.int64))
+            labels, profit_pcts = _numba_triple_barrier_labels(
+                close.astype(np.float64), high.astype(np.float64), low.astype(np.float64),
+                pt_mult, sl_mult, end_idx_arr.astype(np.int64), float(self.transaction_cost)
+            )
         else:
             self.logger.info('🐍 Using Python vectorized triple barrier labeling with profit tracking')
             labels = np.zeros(n, dtype = np.int8)

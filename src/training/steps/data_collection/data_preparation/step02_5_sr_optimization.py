@@ -594,12 +594,14 @@ class SROptimizationStep(BaseStep):
 
                 self.logger.info("✅ ML Common utilities initialized successfully")
             else:
-                self.logger.error("❌ ML Common utilities not available")
-                raise ImportError("ML Common utilities are required but not available")
+                self.logger.warning("⚠️ ML Common utilities not available, using fallback ML utilities")
+                self._initialize_fallback_utilities()
+                return
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize ML Common utilities: {e}")
-            raise ImportError(f"ML Common utilities initialization failed: {e}")
+            self.logger.warning(f"⚠️ Failed to initialize ML Common utilities: {e} - proceeding with fallback utilities")
+            self._initialize_fallback_utilities()
+            return
 
     def _configure_ml_utilities(self) -> None:
         """Configure ML utilities with step-specific settings."""

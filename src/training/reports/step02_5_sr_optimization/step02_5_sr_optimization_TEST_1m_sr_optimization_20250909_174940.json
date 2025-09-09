@@ -1,0 +1,21 @@
+{
+  "method_weights": {},
+  "strength_weights": {},
+  "dbscan_params": {},
+  "timeframe_weights": {},
+  "advanced_params": {},
+  "performance_metrics": {
+    "optimization_score": 0.5,
+    "sharpe_ratio": 0.0,
+    "win_rate": 0.5
+  },
+  "validation_metrics": {
+    "cross_validation_score": 0.5
+  },
+  "metadata": {
+    "step": "step02_5_sr_optimization",
+    "timestamp": "2025-09-09T17:49:40.156294",
+    "data_rows": 1200,
+    "sr_levels_count": 19
+  }
+}

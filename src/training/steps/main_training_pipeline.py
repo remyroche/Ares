@@ -26,23 +26,56 @@ from dataclasses import dataclass, field
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 
-# Import sub-pipelines
-from .data_collection.sub_pipeline import (
-    DataCollectionSubPipeline, SubPipelineConfig as DataCollectionConfig,
-    SubPipelineResult as DataCollectionResult, ExecutionMode, SubPipelineStatus
-)
-from .market_analysis.sub_pipeline import (
-    MarketAnalysisSubPipeline, SubPipelineConfig as MarketAnalysisConfig,
-    SubPipelineResult as MarketAnalysisResult
-)
-from .model_training.sub_pipeline import (
-    ModelTrainingSubPipeline, SubPipelineConfig as ModelTrainingConfig,
-    SubPipelineResult as ModelTrainingResult
-)
-from .backtesting.sub_pipeline import (
-    BacktestingSubPipeline, SubPipelineConfig as BacktestingConfig,
-    SubPipelineResult as BacktestingResult
-)
+# Import sub-pipelines with optional imports
+try:
+    from .data_collection.sub_pipeline import (
+        DataCollectionSubPipeline, SubPipelineConfig as DataCollectionConfig,
+        SubPipelineResult as DataCollectionResult, ExecutionMode, SubPipelineStatus
+    )
+    DATA_COLLECTION_AVAILABLE = True
+except ImportError:
+    DATA_COLLECTION_AVAILABLE = False
+    DataCollectionSubPipeline = None
+    DataCollectionConfig = None
+    DataCollectionResult = None
+    ExecutionMode = None
+    SubPipelineStatus = None
+
+try:
+    from .market_analysis.sub_pipeline import (
+        MarketAnalysisSubPipeline, SubPipelineConfig as MarketAnalysisConfig,
+        SubPipelineResult as MarketAnalysisResult
+    )
+    MARKET_ANALYSIS_AVAILABLE = True
+except ImportError:
+    MARKET_ANALYSIS_AVAILABLE = False
+    MarketAnalysisSubPipeline = None
+    MarketAnalysisConfig = None
+    MarketAnalysisResult = None
+
+try:
+    from .model_training.sub_pipeline import (
+        ModelTrainingSubPipeline, SubPipelineConfig as ModelTrainingConfig,
+        SubPipelineResult as ModelTrainingResult
+    )
+    MODEL_TRAINING_AVAILABLE = True
+except ImportError:
+    MODEL_TRAINING_AVAILABLE = False
+    ModelTrainingSubPipeline = None
+    ModelTrainingConfig = None
+    ModelTrainingResult = None
+
+try:
+    from .backtesting.sub_pipeline import (
+        BacktestingSubPipeline, SubPipelineConfig as BacktestingConfig,
+        SubPipelineResult as BacktestingResult
+    )
+    BACKTESTING_AVAILABLE = True
+except ImportError:
+    BACKTESTING_AVAILABLE = False
+    BacktestingSubPipeline = None
+    BacktestingConfig = None
+    BacktestingResult = None
 
 logger = system_logger.getChild('MainTrainingPipeline')
 
@@ -145,11 +178,11 @@ class MainTrainingPipeline:
         self.config = config or MainPipelineConfig()
         self.logger = logger.getChild('MainTrainingPipeline')
         
-        # Initialize sub-pipeline managers
-        self.data_collection_pipeline = DataCollectionSubPipeline()
-        self.market_analysis_pipeline = MarketAnalysisSubPipeline()
-        self.model_training_pipeline = ModelTrainingSubPipeline()
-        self.backtesting_pipeline = BacktestingSubPipeline()
+        # Initialize sub-pipeline managers (only if available)
+        self.data_collection_pipeline = DataCollectionSubPipeline() if DATA_COLLECTION_AVAILABLE else None
+        self.market_analysis_pipeline = MarketAnalysisSubPipeline() if MARKET_ANALYSIS_AVAILABLE else None
+        self.model_training_pipeline = ModelTrainingSubPipeline() if MODEL_TRAINING_AVAILABLE else None
+        self.backtesting_pipeline = BacktestingSubPipeline() if BACKTESTING_AVAILABLE else None
         
         # Pipeline state
         self.current_stage: Optional[PipelineStage] = None
@@ -251,12 +284,24 @@ class MainTrainingPipeline:
         
         # Execute sub-pipelines based on stage
         if stage == PipelineStage.DATA_COLLECTION:
+            if not DATA_COLLECTION_AVAILABLE:
+                self.logger.warning("⚠️ Data collection sub-pipeline not available")
+                return []
             return await self._execute_data_collection_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.MARKET_ANALYSIS:
+            if not MARKET_ANALYSIS_AVAILABLE:
+                self.logger.warning("⚠️ Market analysis sub-pipeline not available")
+                return []
             return await self._execute_market_analysis_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.MODEL_TRAINING:
+            if not MODEL_TRAINING_AVAILABLE:
+                self.logger.warning("⚠️ Model training sub-pipeline not available")
+                return []
             return await self._execute_model_training_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.BACKTESTING:
+            if not BACKTESTING_AVAILABLE:
+                self.logger.warning("⚠️ Backtesting sub-pipeline not available")
+                return []
             return await self._execute_backtesting_stage(enabled_sub_pipelines, stage_config)
         else:
             raise ValueError(f"Unknown pipeline stage: {stage}")
@@ -280,13 +325,25 @@ class MainTrainingPipeline:
         }
         
         if stage == PipelineStage.DATA_COLLECTION:
-            return DataCollectionConfig(**base_config)
+            if DATA_COLLECTION_AVAILABLE:
+                return DataCollectionConfig(**base_config)
+            else:
+                return base_config
         elif stage == PipelineStage.MARKET_ANALYSIS:
-            return MarketAnalysisConfig(**base_config)
+            if MARKET_ANALYSIS_AVAILABLE:
+                return MarketAnalysisConfig(**base_config)
+            else:
+                return base_config
         elif stage == PipelineStage.MODEL_TRAINING:
-            return ModelTrainingConfig(**base_config)
+            if MODEL_TRAINING_AVAILABLE:
+                return ModelTrainingConfig(**base_config)
+            else:
+                return base_config
         elif stage == PipelineStage.BACKTESTING:
-            return BacktestingConfig(**base_config)
+            if BACKTESTING_AVAILABLE:
+                return BacktestingConfig(**base_config)
+            else:
+                return base_config
         else:
             raise ValueError(f"Unknown pipeline stage: {stage}")
     
@@ -438,13 +495,25 @@ class MainTrainingPipeline:
     def get_available_sub_pipelines(self, stage: PipelineStage) -> List[str]:
         """Get available sub-pipelines for a specific stage."""
         if stage == PipelineStage.DATA_COLLECTION:
-            return self.data_collection_pipeline.get_available_sub_pipelines()
+            if self.data_collection_pipeline:
+                return self.data_collection_pipeline.get_available_sub_pipelines()
+            else:
+                return []
         elif stage == PipelineStage.MARKET_ANALYSIS:
-            return self.market_analysis_pipeline.get_available_sub_pipelines()
+            if self.market_analysis_pipeline:
+                return self.market_analysis_pipeline.get_available_sub_pipelines()
+            else:
+                return []
         elif stage == PipelineStage.MODEL_TRAINING:
-            return self.model_training_pipeline.get_available_sub_pipelines()
+            if self.model_training_pipeline:
+                return self.model_training_pipeline.get_available_sub_pipelines()
+            else:
+                return []
         elif stage == PipelineStage.BACKTESTING:
-            return self.backtesting_pipeline.get_available_sub_pipelines()
+            if self.backtesting_pipeline:
+                return self.backtesting_pipeline.get_available_sub_pipelines()
+            else:
+                return []
         else:
             return []
     

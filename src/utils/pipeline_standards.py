@@ -18,8 +18,20 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
-import numpy as np
-import pandas as pd
+# Optional imports
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 import time
 
 project_root = Path(__file__).parent.parent.parent
@@ -150,7 +162,7 @@ class PipelineStandards:
         return path_template.format(exchange = exchange.lower(), asset = asset.lower(), **kwargs)
 
     @staticmethod
-    def standardize_timestamp(df: pd.DataFrame, column: str='timestamp', target_format: str='int64') -> None:
+    def standardize_timestamp(df: 'pd.DataFrame', column: str='timestamp', target_format: str='int64') -> None:
         _check_pandas_available()
         '\n        Standardize timestamp column to consistent format.\n\n        Args:\n            df: DataFrame to process\n            column: Timestamp column name\n            target_format: Target format ("int64" for milliseconds, "datetime64[ns]" for datetime)\n\n        Returns:\n            DataFrame with standardized timestamp\n        '
         if column not in df.columns:
@@ -181,7 +193,7 @@ class PipelineStandards:
         return df
 
     @staticmethod
-    def validate_timestamp_format(df: pd.DataFrame, column: str='timestamp', expected_format: str='int64') -> ValidationResult:
+    def validate_timestamp_format(df: 'pd.DataFrame', column: str='timestamp', expected_format: str='int64') -> ValidationResult:
         """
         Validate timestamp format consistency.
 
@@ -227,7 +239,7 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def validate_schema(df: pd.DataFrame, schema_name: str) -> ValidationResult:
+    def validate_schema(df: 'pd.DataFrame', schema_name: str) -> ValidationResult:
         """
         Validate DataFrame against standard schema.
 
@@ -264,7 +276,7 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def enforce_schema(df: pd.DataFrame, schema_name: str) -> None:
+    def enforce_schema(df: 'pd.DataFrame', schema_name: str) -> None:
         """
         Enforce schema by converting data types and adding missing columns.
 
@@ -307,7 +319,7 @@ class PipelineStandards:
         return df
 
     @staticmethod
-    def validate_data_quality(df: pd.DataFrame, schema_name: str, quality_thresholds: dict[str, Any] | None = None) -> ValidationResult:
+    def validate_data_quality(df: 'pd.DataFrame', schema_name: str, quality_thresholds: dict[str, Any] | None = None) -> ValidationResult:
         """
         Comprehensive data quality validation.
 
@@ -428,7 +440,7 @@ class PipelineStandards:
         return result
 
     @staticmethod
-    def track_data_lineage(data: Union[pd.DataFrame, Dict[str, Any]], source_step: str, transformations: list[str]) -> dict[str, Any]:
+    def track_data_lineage(data: Union['pd.DataFrame', Dict[str, Any]], source_step: str, transformations: list[str]) -> dict[str, Any]:
         """
         Track data lineage and transformations.
 
@@ -443,7 +455,7 @@ class PipelineStandards:
         return {'source_step': source_step, 'transformations': transformations, 'timestamp': datetime.now().isoformat(), 'data_shape': data.shape, 'columns': list(data.columns), 'memory_usage': data.memory_usage(deep = True).sum(), 'dtypes': data.dtypes.to_dict()}
 
     @staticmethod
-    def calculate_comprehensive_quality_score(data: Union[pd.DataFrame, Dict[str, Any]], context: str='general') -> float:
+    def calculate_comprehensive_quality_score(data: Union['pd.DataFrame', Dict[str, Any]], context: str='general') -> float:
         """
         Calculate comprehensive data quality score.
 
@@ -485,7 +497,7 @@ class PipelineStandards:
         return np.mean(scores)
 
     @staticmethod
-    def validate_feature_engineering_output(features: Union[pd.DataFrame, np.ndarray], original_data: Any) -> ValidationResult:
+    def validate_feature_engineering_output(features: Union['pd.DataFrame', 'np.ndarray'], original_data: Any) -> ValidationResult:
         """
         Validate feature engineering output.
 

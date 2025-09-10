@@ -23,7 +23,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from .compose import P, R, uniform_wrapper
-import numpy as np
+# Optional imports
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
 
 error_context: ContextVar[Dict[str, Any]] = ContextVar('error_context', default={})
 error_history: ContextVar[List[Dict[str, Any]]] = ContextVar('error_history', default=[])

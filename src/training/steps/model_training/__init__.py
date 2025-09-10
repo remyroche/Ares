@@ -1,10 +1,23 @@
 from typing import Dict, List, Optional, Union, Any, Tuple
-import numpy as np
+
+# Optional imports
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-import pandas as pd
 
 """Model Training Package for Trading Pipeline.
 

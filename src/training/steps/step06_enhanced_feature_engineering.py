@@ -961,7 +961,7 @@ class EnhancedFeatureEngineering:
             if math_val:
                 # Price-based features with safe mathematical operations
                 enhanced_features['price_range'] = enhanced_features['high'] - enhanced_features['low']
-                enhanced_features['price_range_pct'] = math_val.safe_divide(
+                enhanced_features['price_range_pct'] = safe_divide(
                     enhanced_features['price_range'], 
                     enhanced_features['close'], 
                     default=0.0
@@ -969,7 +969,7 @@ class EnhancedFeatureEngineering:
                 
                 # Volatility features
                 enhanced_features['volatility'] = enhanced_features['close'].rolling(20).std()
-                enhanced_features['volatility_pct'] = math_val.safe_divide(
+                enhanced_features['volatility_pct'] = safe_divide(
                     enhanced_features['volatility'],
                     enhanced_features['close'],
                     default=0.0
@@ -1041,8 +1041,8 @@ class EnhancedFeatureEngineering:
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
         
         # Use safe division
-        rs = math_val.safe_divide(gain, loss, default=1.0)
-        rsi = 100 - math_val.safe_divide(100, 1 + rs, default=50.0)
+        rs = safe_divide(gain, loss, default=1.0)
+        rsi = 100 - safe_divide(100, 1 + rs, default=50.0)
         
         return rsi
 

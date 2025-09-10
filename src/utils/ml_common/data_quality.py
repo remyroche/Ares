@@ -414,8 +414,7 @@ class DataQualityUtilities:
                     "Monitor these features closely in production"
                 ])
 
-            self.logger.info(f"✅ Data drift detection completed: "
-                           f"{'Drift detected' if drift_results['drift_detected'] else 'No drift detected'}")
+            self.logger.info(f"✅ Data drift detection completed: {'Drift detected' if drift_results['drift_detected'] else 'No drift detected'}")
             return drift_results
 
         except Exception as e:
@@ -643,7 +642,8 @@ class DataQualityUtilities:
                 )
 
                 if 'outlier_indices' in outlier_results and outlier_results['outlier_indices']:
-                    cleaned_df = cleaned_df.drop(outlier_results['outlier_indices'])
+                    idx_labels = cleaned_df.index[outlier_results['outlier_indices']]
+                    cleaned_df = cleaned_df.drop(index=idx_labels)
                     cleaning_report['removed_samples'] += len(outlier_results['outlier_indices'])
                     cleaning_report['cleaning_steps'].append({
                         'step': 'outlier_removal',
@@ -861,8 +861,9 @@ class DataQualityUtilities:
             if stability_results['anomaly_periods']:
                 stability_results['recommendations'].append(f"Anomalous periods detected: {len(stability_results['anomaly_periods'])}")
 
-            self.logger.info(f"✅ Feature stability analysis completed - "
-                           f"Stability score: {stability_results['stability_score']:.4f}")
+            stab = stability_results.get('stability_score')
+            stab_str = f"{stab:.4f}" if isinstance(stab, (int, float, np.floating)) else str(stab)
+            self.logger.info(f"✅ Feature stability analysis completed - Stability score: {stab_str}")
             return stability_results
 
         except Exception as e:

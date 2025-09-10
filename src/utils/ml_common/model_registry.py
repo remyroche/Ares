@@ -422,7 +422,7 @@ class ModelRegistry:
         """Generate unique model name."""
         try:
             # Use algorithm type from metadata or model
-            algorithm = metadata.get('algorithm', getattr(model, '__class__', {}).get('__name__', 'unknown'))
+            algorithm = metadata.get('algorithm', type(model).__name__)
 
             # Add timestamp for uniqueness
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

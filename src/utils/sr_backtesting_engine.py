@@ -15,6 +15,18 @@ from abc import ABC, abstractmethod
 
 from .logger import system_logger
 
+# Import enhanced matrix operations
+try:
+    from .ml_common.matrix_operations import (
+        get_enhanced_matrix_operations,
+        m1_matrix_correlation_analysis
+    )
+    ENHANCED_MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    ENHANCED_MATRIX_OPS_AVAILABLE = False
+    get_enhanced_matrix_operations = None
+    m1_matrix_correlation_analysis = None
+
 @dataclass
 class SRLevel:
     """Support/Resistance level for backtesting."""
@@ -604,10 +616,34 @@ class SRBacktestingEngine:
         
         quality_scores = [r.quality_score for r in results]
         
-        for feature in all_features:
-            feature_values = [getattr(r, feature, 0.0) for r in results]
-            correlation = np.corrcoef(feature_values, quality_scores)[0, 1]
-            correlations[feature] = correlation if not np.isnan(correlation) else 0.0
+        # Use enhanced matrix operations for correlation calculation if available
+        if ENHANCED_MATRIX_OPS_AVAILABLE and m1_matrix_correlation_analysis:
+            # Prepare data matrix for enhanced correlation analysis
+            feature_data = []
+            for feature in all_features:
+                feature_values = [getattr(r, feature, 0.0) for r in results]
+                feature_data.append(feature_values)
+            
+            # Add quality scores as the last column
+            feature_data.append(quality_scores)
+            
+            # Convert to numpy array and transpose for correlation analysis
+            data_matrix = np.array(feature_data).T
+            
+            # Use enhanced M1-optimized correlation analysis
+            correlation_matrix = m1_matrix_correlation_analysis(data_matrix)
+            
+            # Extract correlations with quality scores (last column)
+            quality_correlations = correlation_matrix[:, -1]
+            
+            for i, feature in enumerate(all_features):
+                correlations[feature] = quality_correlations[i] if not np.isnan(quality_correlations[i]) else 0.0
+        else:
+            # Fallback to standard correlation calculation
+            for feature in all_features:
+                feature_values = [getattr(r, feature, 0.0) for r in results]
+                correlation = np.corrcoef(feature_values, quality_scores)[0, 1]
+                correlations[feature] = correlation if not np.isnan(correlation) else 0.0
         
         return correlations
     

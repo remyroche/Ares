@@ -11,7 +11,7 @@ import joblib
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from src.training.steps.model_training.step11_analyst_creation import AnalystCreationStep, AnalystModelBuilder, MultiOutputAnalystBuilder
+from src.training.steps.consolidated_model_training import ConsolidatedAnalystEnhancement, AnalystModelBuilder, MultiOutputAnalystBuilder
 from copy import copy
 import asyncio
 
@@ -150,7 +150,7 @@ class TestAnalystCreationStep:
     def step(self) -> None:
         """Create step instance."""
         config = {'model_types': ['random_forest'], 'optimization_trials': 2, 'cv_folds': 2, 'use_multi_output': False, 'validation_split': 0.2, 'random_state': 42, 'artifacts_dir': 'test_artifacts'}
-        return AnalystCreationStep(config)
+        return ConsolidatedConsolidatedAnalystEnhancement(config)
 
     @pytest.fixture
     def valid_pipeline_state(self) -> None:

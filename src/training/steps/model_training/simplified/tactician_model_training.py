@@ -45,6 +45,10 @@ from src.core.decorators import (
     timeout, error_boundary, compose, validate_data_quality, 
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
+from src.utils.intensity_scaler import (
+    get_intensity_from_environment, get_scaled_hpo_trials, 
+    get_scaled_hpo_timeout, log_intensity_info, apply_intensity_scaling
+)
 from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     MathValidationError, TimeoutError
@@ -114,6 +118,15 @@ class TacticianTrainingConfig:
     hpo_timeout: int = 7200  # 2 hours
     enable_multi_objective_optimization: bool = True
     optimization_objectives: List[str] = field(default_factory=lambda: ['sharpe_ratio', 'max_drawdown', 'win_rate'])
+    
+    def __post_init__(self):
+        """Apply intensity scaling after initialization."""
+        intensity_pct = get_intensity_from_environment()
+        if intensity_pct < 1.0:
+            self.hpo_trials = get_scaled_hpo_trials(self.hpo_trials, intensity_pct)
+            self.hpo_timeout = get_scaled_hpo_timeout(self.hpo_timeout, intensity_pct)
+            self.early_stopping_patience = max(1, int(self.early_stopping_patience * intensity_pct))
+            logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%): HPO trials={self.hpo_trials}, timeout={self.hpo_timeout}s")
     
     # Tactical-specific configuration
     enable_regime_awareness: bool = True

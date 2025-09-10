@@ -29,7 +29,7 @@ from src.utils.common_operations import (
     get_current_datetime,
     format_datetime,
 )
-from src.utils.ml_common.unified_quality_verification import (
+from src.utils.ml_common.data_validation import (
     UnifiedQualityVerifier,
     VerificationStage,
     DataType,

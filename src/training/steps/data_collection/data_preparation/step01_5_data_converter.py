@@ -17,6 +17,11 @@ import warnings
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.ml_common.data_validation import (
+    verify_stage_beginning_quality,
+    DataType,
+    get_quality_integration
+)
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -865,6 +870,28 @@ class UnifiedDataConverter:
                 self.logger.error('❌ No klines data found - cannot proceed with conversion')
                 return False
             self.logger.info(f'✅ Loaded {len(klines_data)} klines rows')
+            
+            # Verify data quality before conversion
+            try:
+                self.logger.info('🔍 Verifying data quality before conversion...')
+                quality_integration = get_quality_integration()
+                cleaned_data, quality_report = await quality_integration.verify_stage_beginning(
+                    klines_data, "data_conversion", DataType.KLINES
+                )
+                
+                self.logger.info(f'✅ Data quality verification completed')
+                self.logger.info(f'   Quality score: {quality_report.quality_score:.3f}')
+                self.logger.info(f'   Issues found: {len(quality_report.issues)}')
+                
+                # Use cleaned data if quality verification made changes
+                if len(cleaned_data) != len(klines_data):
+                    self.logger.info(f'📊 Data cleaned: {len(klines_data)} -> {len(cleaned_data)} rows')
+                    klines_data = cleaned_data
+                
+            except Exception as e:
+                self.logger.warning(f'⚠️ Data quality verification failed: {e}')
+                # Continue with original data if quality verification fails
+            
             return await self._process_data_incrementally(klines_data, symbol, exchange, timeframe)
         except Exception as e:
             self.logger.exception(f'❌ Data conversion failed: {e}')

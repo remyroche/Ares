@@ -42,6 +42,11 @@ from src.core.decorators import (
     timeout, error_boundary, compose, validate_data_quality, 
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
+from src.utils.ml_common.data_validation import (
+    enforce_quality_gate,
+    DataType,
+    get_quality_integration
+)
 from src.utils.intensity_scaler import (
     get_intensity_from_environment, get_scaled_hpo_trials, 
     get_scaled_hpo_timeout, log_intensity_info
@@ -209,6 +214,7 @@ class GeneralModelTrainer:
     
     @traced(span_name='train_model')
     @log_execution_time
+    @enforce_quality_gate(0.8, "model_training")
     async def train_model(
         self, 
         data: pd.DataFrame,

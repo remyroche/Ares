@@ -11,6 +11,11 @@ from typing import Any, Dict, Tuple
 from src.core.decorators import handles_errors
 from src.training.base_step import BaseStep
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.ml_common.data_validation import (
+    verify_data_collection_quality,
+    DataType,
+    get_quality_integration
+)
 import pandas as pd
 import numpy as np
 
@@ -96,6 +101,35 @@ class DataCollectionStep(BaseStep):
             try:
                 data = standardized_parquet_handler.read_parquet_standardized(consolidated_file)
                 self.logger.info(f'✅ Loaded {len(data)} rows of existing data')
+                
+                # Verify data quality for existing data
+                try:
+                    self.logger.info('🔍 Verifying existing data quality...')
+                    quality_integration = get_quality_integration()
+                    cleaned_data, quality_report = await quality_integration.verify_data_collection_completion(
+                        data, exchange, symbol, DataType.KLINES
+                    )
+                    
+                    self.logger.info(f'✅ Existing data quality verification completed')
+                    self.logger.info(f'   Quality score: {quality_report.quality_score:.3f}')
+                    self.logger.info(f'   Issues found: {len(quality_report.issues)}')
+                    
+                    # Update pipeline state with quality information
+                    pipeline_state['data_quality_score'] = quality_report.quality_score
+                    pipeline_state['data_quality_issues'] = len(quality_report.issues)
+                    pipeline_state['data_quality_report'] = quality_report
+                    
+                    # Use cleaned data if quality verification made changes
+                    if len(cleaned_data) != len(data):
+                        self.logger.info(f'📊 Data cleaned: {len(data)} -> {len(cleaned_data)} rows')
+                        # Save cleaned data
+                        standardized_parquet_handler.write_parquet_standardized(cleaned_data, consolidated_file)
+                        data = cleaned_data
+                    
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Data quality verification failed: {e}')
+                    # Continue with original data if quality verification fails
+                
                 pipeline_state['raw_market_data'] = consolidated_file
                 pipeline_state['data_shape'] = data.shape
                 pipeline_state['data_columns'] = list(data.columns)
@@ -113,6 +147,35 @@ class DataCollectionStep(BaseStep):
                 if success and consolidated_file.exists():
                     data = standardized_parquet_handler.read_parquet_standardized(consolidated_file)
                     self.logger.info(f'✅ Downloaded {len(data)} rows of data')
+                    
+                    # Verify data quality after collection
+                    try:
+                        self.logger.info('🔍 Verifying data collection quality...')
+                        quality_integration = get_quality_integration()
+                        cleaned_data, quality_report = await quality_integration.verify_data_collection_completion(
+                            data, exchange, symbol, DataType.KLINES
+                        )
+                        
+                        self.logger.info(f'✅ Data collection quality verification completed')
+                        self.logger.info(f'   Quality score: {quality_report.quality_score:.3f}')
+                        self.logger.info(f'   Issues found: {len(quality_report.issues)}')
+                        
+                        # Update pipeline state with quality information
+                        pipeline_state['data_quality_score'] = quality_report.quality_score
+                        pipeline_state['data_quality_issues'] = len(quality_report.issues)
+                        pipeline_state['data_quality_report'] = quality_report
+                        
+                        # Use cleaned data if quality verification made changes
+                        if len(cleaned_data) != len(data):
+                            self.logger.info(f'📊 Data cleaned: {len(data)} -> {len(cleaned_data)} rows')
+                            # Save cleaned data
+                            standardized_parquet_handler.write_parquet_standardized(cleaned_data, consolidated_file)
+                            data = cleaned_data
+                        
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ Data quality verification failed: {e}')
+                        # Continue with original data if quality verification fails
+                    
                     pipeline_state['raw_market_data'] = str(consolidated_file)
                     pipeline_state['data_shape'] = data.shape
                     pipeline_state['data_columns'] = list(data.columns)

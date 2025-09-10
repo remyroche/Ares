@@ -48,6 +48,13 @@ except ImportError:
     BIAS_DETECTION_AVAILABLE = False
     def get_global_detector():
         return None
+
+# Import quality verification
+from src.utils.ml_common.data_validation import (
+    verify_stage_beginning_quality,
+    DataType,
+    get_quality_integration
+)
     def validate_no_future_data(data, timestamp_col, current_time):
         return data
 
@@ -943,6 +950,27 @@ class EnhancedFeatureEngineering:
         self.logger.info("🔧 Creating enhanced features with utility integration...")
         
         try:
+            # Verify data quality before feature engineering
+            try:
+                self.logger.info('🔍 Verifying data quality before feature engineering...')
+                quality_integration = get_quality_integration()
+                cleaned_data, quality_report = await quality_integration.verify_stage_beginning(
+                    market_data, "feature_engineering", DataType.KLINES
+                )
+                
+                self.logger.info(f'✅ Data quality verification completed')
+                self.logger.info(f'   Quality score: {quality_report.quality_score:.3f}')
+                self.logger.info(f'   Issues found: {len(quality_report.issues)}')
+                
+                # Use cleaned data if quality verification made changes
+                if len(cleaned_data) != len(market_data):
+                    self.logger.info(f'📊 Data cleaned: {len(market_data)} -> {len(cleaned_data)} rows')
+                    market_data = cleaned_data
+                
+            except Exception as e:
+                self.logger.warning(f'⚠️ Data quality verification failed: {e}')
+                # Continue with original data if quality verification fails
+            
             # Use common operations for data validation
             if common_ops:
                 validation_result = common_ops.get_operation('validation', 'validate_dataframe')(market_data, ['open', 'high', 'low', 'close'])

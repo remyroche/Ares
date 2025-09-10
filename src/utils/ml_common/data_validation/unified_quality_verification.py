@@ -28,11 +28,11 @@ from dataclasses import dataclass
 from enum import Enum
 import warnings
 
-from ..math_validation import safe_divide, MathValidationError
-from ..validation_utils import ValidationError
+from ...math_validation import safe_divide, MathValidationError
+from ...validation_utils import ValidationError
 from .aggtrades_quality_verification import AggtradesQualityVerifier, QualityReport as AggtradesQualityReport
 from .klines_quality_verification import KlinesQualityVerifier, QualityReport as KlinesQualityReport
-from ..structured_logging import StructuredLogger
+from ...structured_logging import StructuredLogger
 
 logger = logging.getLogger(__name__)
 

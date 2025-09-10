@@ -31,8 +31,8 @@ from .unified_quality_verification import (
     create_unified_quality_verifier,
     create_pipeline_quality_config
 )
-from ..validation_utils import ValidationError
-from ..structured_logging import StructuredLogger
+from ...validation_utils import ValidationError
+from ...structured_logging import StructuredLogger
 
 logger = logging.getLogger(__name__)
 

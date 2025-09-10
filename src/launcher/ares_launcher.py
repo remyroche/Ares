@@ -199,7 +199,7 @@ class AresLauncher:
                 'next_stage': 'reporting',
                 'required_files': ['backtest_results.json', 'performance_report.json', 'final_report.pdf'],
                 'required_artifacts': ['trade_analysis', 'risk_metrics', 'portfolio_analysis'],
-                'sub_pipelines': ['final_parameters_optimization', 'basic_backtesting', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+                'sub_pipelines': ['basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
                                 'model_persistence', 'performance_analytics',
                                 'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting']
             }
@@ -727,8 +727,9 @@ class AresLauncher:
             'walk_forward_validation': "Walk-forward backtesting",
             'monte_carlo_simulation': "Monte Carlo backtesting",
             'ab_testing': "A/B testing for strategies",
+            'basic_backtesting_pre': "Basic historical backtesting (pre-optimization baseline)",
             'final_parameters_optimization': "System-wide parameter optimization",
-            'basic_backtesting': "Basic historical backtesting for comparison",
+            'basic_backtesting_post': "Basic historical backtesting (post-optimization comparison)",
             'performance_analytics': "Performance analysis and reporting",
             'risk_analysis': "Risk metrics and analysis",
             'trade_analysis': "Trade-level analysis",
@@ -774,9 +775,10 @@ class AresLauncher:
             'model_evaluation': ['model_persistence'],
             
             # Backtesting dependencies
-            'final_parameters_optimization': [],
-            'basic_backtesting': ['final_parameters_optimization'],
-            'walk_forward_validation': ['basic_backtesting'],
+            'basic_backtesting_pre': [],
+            'final_parameters_optimization': ['basic_backtesting_pre'],
+            'basic_backtesting_post': ['final_parameters_optimization'],
+            'walk_forward_validation': ['basic_backtesting_post'],
             'monte_carlo_simulation': ['walk_forward_validation'],
             'ab_testing': ['monte_carlo_simulation'],
             'performance_analytics': ['ab_testing'],
@@ -830,8 +832,9 @@ class AresLauncher:
             'walk_forward_validation': ['backtest_results.json'],
             'monte_carlo_simulation': ['mc_results.json'],
             'ab_testing': ['ab_test_results.json'],
+            'basic_backtesting_pre': ['basic_backtest_pre_results.json'],
             'final_parameters_optimization': ['optimized_parameters.json'],
-            'basic_backtesting': ['basic_backtest_results.json'],
+            'basic_backtesting_post': ['basic_backtest_post_results.json'],
             'performance_analytics': ['performance_report.json'],
             'risk_analysis': ['risk_report.json'],
             'trade_analysis': ['trade_analysis.json'],
@@ -914,10 +917,13 @@ Examples:
   # Execute specific sub-pipeline with full execution mode (730 days, 100% intensity)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline hmm_regime_discovery --execution-mode full --symbol ETHUSDT
 
-  # Execute basic backtesting for comparison (after parameter optimization)
-  python ares_launcher.py --mode sub_pipeline --sub_pipeline basic_backtesting --execution-mode full --symbol ETHUSDT
+  # Execute basic backtesting (pre-optimization baseline)
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline basic_backtesting_pre --execution-mode full --symbol ETHUSDT
 
-  # Execute walk-forward validation (after basic backtesting)
+  # Execute basic backtesting (post-optimization comparison)
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline basic_backtesting_post --execution-mode full --symbol ETHUSDT
+
+  # Execute walk-forward validation (after post-optimization basic backtesting)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline walk_forward_validation --execution-mode full --symbol ETHUSDT
 
   # Blank mode for testing (180 days, 10% intensity)
@@ -971,7 +977,7 @@ Examples:
     
     parser.add_argument(
         '--sub-pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, general_model_training, basic_backtesting, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, general_model_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(

@@ -26,23 +26,56 @@ from dataclasses import dataclass, field
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 
-# Import sub-pipelines
-from .data_collection.sub_pipeline import (
-    DataCollectionSubPipeline, SubPipelineConfig as DataCollectionConfig,
-    SubPipelineResult as DataCollectionResult, ExecutionMode, SubPipelineStatus
-)
-from .market_analysis.sub_pipeline import (
-    MarketAnalysisSubPipeline, SubPipelineConfig as MarketAnalysisConfig,
-    SubPipelineResult as MarketAnalysisResult
-)
-from .model_training.sub_pipeline import (
-    ModelTrainingSubPipeline, SubPipelineConfig as ModelTrainingConfig,
-    SubPipelineResult as ModelTrainingResult
-)
-from .backtesting.sub_pipeline import (
-    BacktestingSubPipeline, SubPipelineConfig as BacktestingConfig,
-    SubPipelineResult as BacktestingResult
-)
+# Import sub-pipelines with optional imports
+try:
+    from .data_collection.sub_pipeline import (
+        DataCollectionSubPipeline, SubPipelineConfig as DataCollectionConfig,
+        SubPipelineResult as DataCollectionResult, ExecutionMode, SubPipelineStatus
+    )
+    DATA_COLLECTION_AVAILABLE = True
+except ImportError:
+    DATA_COLLECTION_AVAILABLE = False
+    DataCollectionSubPipeline = None
+    DataCollectionConfig = None
+    DataCollectionResult = None
+    ExecutionMode = None
+    SubPipelineStatus = None
+
+try:
+    from .market_analysis.sub_pipeline import (
+        MarketAnalysisSubPipeline, SubPipelineConfig as MarketAnalysisConfig,
+        SubPipelineResult as MarketAnalysisResult
+    )
+    MARKET_ANALYSIS_AVAILABLE = True
+except ImportError:
+    MARKET_ANALYSIS_AVAILABLE = False
+    MarketAnalysisSubPipeline = None
+    MarketAnalysisConfig = None
+    MarketAnalysisResult = None
+
+try:
+    from .model_training.sub_pipeline import (
+        ModelTrainingSubPipeline, SubPipelineConfig as ModelTrainingConfig,
+        SubPipelineResult as ModelTrainingResult
+    )
+    MODEL_TRAINING_AVAILABLE = True
+except ImportError:
+    MODEL_TRAINING_AVAILABLE = False
+    ModelTrainingSubPipeline = None
+    ModelTrainingConfig = None
+    ModelTrainingResult = None
+
+try:
+    from .backtesting.sub_pipeline import (
+        BacktestingSubPipeline, SubPipelineConfig as BacktestingConfig,
+        SubPipelineResult as BacktestingResult
+    )
+    BACKTESTING_AVAILABLE = True
+except ImportError:
+    BACKTESTING_AVAILABLE = False
+    BacktestingSubPipeline = None
+    BacktestingConfig = None
+    BacktestingResult = None
 
 logger = system_logger.getChild('MainTrainingPipeline')
 
@@ -84,24 +117,32 @@ class MainPipelineConfig:
     enabled_sub_pipelines: Dict[PipelineStage, List[str]] = field(default_factory=lambda: {
         PipelineStage.DATA_COLLECTION: [
             'data_download', 'data_conversion', 'data_validation', 'data_preparation',
-            'feature_engineering', 'data_quality_check', 'data_storage'
+            'feature_engineering', 'data_quality_check', 'data_storage', 'data_monitoring',
+            'data_integration', 'data_export'
         ],
         PipelineStage.MARKET_ANALYSIS: [
-            'sr_detection', 'sr_clustering', 'hmm_regime_discovery', 'regime_data_splitting',
-            'triple_barrier_labeling', 'feature_lookback_optimization'
+            'sr_detection', 'sr_clustering', 'sr_ml_learning', 'hmm_clustering',
+            'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
+            'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis'
         ],
         PipelineStage.MODEL_TRAINING: [
             'general_model_training', 'analyst_model_training', 'tactician_model_training',
-            'model_validation', 'model_persistence'
+            'hmm_training', 'ensemble_training', 'multi_timeframe_training',
+            'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation'
         ],
         PipelineStage.BACKTESTING: [
-            'walk_forward_validation', 'monte_carlo_simulation', 'final_parameters_optimization',
-            'performance_analytics', 'reporting'
+            'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+            'model_persistence', 'performance_analytics',
+            'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting'
         ]
     })
     
     # Custom parameters for each stage
     stage_params: Dict[PipelineStage, Dict[str, Any]] = field(default_factory=dict)
+    
+    # Intensity parameters for ML training
+    intensity_percentage: float = 1.0  # Default to 100% intensity
+    training_mode_config: Optional[Dict[str, Any]] = None
 
 @dataclass
 class MainPipelineResult:
@@ -145,11 +186,11 @@ class MainTrainingPipeline:
         self.config = config or MainPipelineConfig()
         self.logger = logger.getChild('MainTrainingPipeline')
         
-        # Initialize sub-pipeline managers
-        self.data_collection_pipeline = DataCollectionSubPipeline()
-        self.market_analysis_pipeline = MarketAnalysisSubPipeline()
-        self.model_training_pipeline = ModelTrainingSubPipeline()
-        self.backtesting_pipeline = BacktestingSubPipeline()
+        # Initialize sub-pipeline managers (only if available)
+        self.data_collection_pipeline = DataCollectionSubPipeline() if DATA_COLLECTION_AVAILABLE else None
+        self.market_analysis_pipeline = MarketAnalysisSubPipeline() if MARKET_ANALYSIS_AVAILABLE else None
+        self.model_training_pipeline = ModelTrainingSubPipeline() if MODEL_TRAINING_AVAILABLE else None
+        self.backtesting_pipeline = BacktestingSubPipeline() if BACKTESTING_AVAILABLE else None
         
         # Pipeline state
         self.current_stage: Optional[PipelineStage] = None
@@ -251,12 +292,24 @@ class MainTrainingPipeline:
         
         # Execute sub-pipelines based on stage
         if stage == PipelineStage.DATA_COLLECTION:
+            if not DATA_COLLECTION_AVAILABLE:
+                self.logger.warning("⚠️ Data collection sub-pipeline not available")
+                return []
             return await self._execute_data_collection_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.MARKET_ANALYSIS:
+            if not MARKET_ANALYSIS_AVAILABLE:
+                self.logger.warning("⚠️ Market analysis sub-pipeline not available")
+                return []
             return await self._execute_market_analysis_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.MODEL_TRAINING:
+            if not MODEL_TRAINING_AVAILABLE:
+                self.logger.warning("⚠️ Model training sub-pipeline not available")
+                return []
             return await self._execute_model_training_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.BACKTESTING:
+            if not BACKTESTING_AVAILABLE:
+                self.logger.warning("⚠️ Backtesting sub-pipeline not available")
+                return []
             return await self._execute_backtesting_stage(enabled_sub_pipelines, stage_config)
         else:
             raise ValueError(f"Unknown pipeline stage: {stage}")
@@ -280,13 +333,25 @@ class MainTrainingPipeline:
         }
         
         if stage == PipelineStage.DATA_COLLECTION:
-            return DataCollectionConfig(**base_config)
+            if DATA_COLLECTION_AVAILABLE:
+                return DataCollectionConfig(**base_config)
+            else:
+                return base_config
         elif stage == PipelineStage.MARKET_ANALYSIS:
-            return MarketAnalysisConfig(**base_config)
+            if MARKET_ANALYSIS_AVAILABLE:
+                return MarketAnalysisConfig(**base_config)
+            else:
+                return base_config
         elif stage == PipelineStage.MODEL_TRAINING:
-            return ModelTrainingConfig(**base_config)
+            if MODEL_TRAINING_AVAILABLE:
+                return ModelTrainingConfig(**base_config)
+            else:
+                return base_config
         elif stage == PipelineStage.BACKTESTING:
-            return BacktestingConfig(**base_config)
+            if BACKTESTING_AVAILABLE:
+                return BacktestingConfig(**base_config)
+            else:
+                return base_config
         else:
             raise ValueError(f"Unknown pipeline stage: {stage}")
     
@@ -438,13 +503,25 @@ class MainTrainingPipeline:
     def get_available_sub_pipelines(self, stage: PipelineStage) -> List[str]:
         """Get available sub-pipelines for a specific stage."""
         if stage == PipelineStage.DATA_COLLECTION:
-            return self.data_collection_pipeline.get_available_sub_pipelines()
+            if self.data_collection_pipeline:
+                return self.data_collection_pipeline.get_available_sub_pipelines()
+            else:
+                return []
         elif stage == PipelineStage.MARKET_ANALYSIS:
-            return self.market_analysis_pipeline.get_available_sub_pipelines()
+            if self.market_analysis_pipeline:
+                return self.market_analysis_pipeline.get_available_sub_pipelines()
+            else:
+                return []
         elif stage == PipelineStage.MODEL_TRAINING:
-            return self.model_training_pipeline.get_available_sub_pipelines()
+            if self.model_training_pipeline:
+                return self.model_training_pipeline.get_available_sub_pipelines()
+            else:
+                return []
         elif stage == PipelineStage.BACKTESTING:
-            return self.backtesting_pipeline.get_available_sub_pipelines()
+            if self.backtesting_pipeline:
+                return self.backtesting_pipeline.get_available_sub_pipelines()
+            else:
+                return []
         else:
             return []
     
@@ -475,18 +552,33 @@ async def execute_main_training_pipeline(
 
 # Predefined pipeline configurations
 def get_full_pipeline_config(
-    symbol: str = "BTCUSDT",
+    symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
     data_dir: str = "data/training"
 ) -> MainPipelineConfig:
     """Get a full pipeline configuration with all stages and sub-pipelines enabled."""
+    from datetime import datetime, timedelta
+    from src.config.training_modes import get_training_mode_config, get_intensity_percentage
+    
+    # Get training mode configuration
+    mode_config = get_training_mode_config("full")
+    intensity_pct = get_intensity_percentage("full")
+    
+    # Full mode: 730 days of data
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=mode_config.lookback_days)
+    
     return MainPipelineConfig(
         mode=ExecutionMode.FULL,
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
         data_dir=data_dir,
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d'),
+        intensity_percentage=intensity_pct,
+        training_mode_config=mode_config.__dict__,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -509,26 +601,41 @@ def get_full_pipeline_config(
                 'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation'
             ],
             PipelineStage.BACKTESTING: [
-                'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
-                'model_persistence', 'final_parameters_optimization', 'performance_analytics',
+                'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+                'model_persistence', 'performance_analytics',
                 'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting'
             ]
         }
     )
 
 def get_light_pipeline_config(
-    symbol: str = "BTCUSDT",
+    symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
     data_dir: str = "data/training"
 ) -> MainPipelineConfig:
     """Get a light pipeline configuration with essential sub-pipelines only."""
+    from datetime import datetime, timedelta
+    from src.config.training_modes import get_training_mode_config, get_intensity_percentage
+    
+    # Get training mode configuration
+    mode_config = get_training_mode_config("light")
+    intensity_pct = get_intensity_percentage("light")
+    
+    # Light mode: 10 days of data
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=mode_config.lookback_days)
+    
     return MainPipelineConfig(
         mode=ExecutionMode.LIGHT,
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
         data_dir=data_dir,
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d'),
+        intensity_percentage=intensity_pct,
+        training_mode_config=mode_config.__dict__,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -552,18 +659,33 @@ def get_light_pipeline_config(
     )
 
 def get_blank_pipeline_config(
-    symbol: str = "BTCUSDT",
+    symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
     data_dir: str = "data/training"
 ) -> MainPipelineConfig:
     """Get a blank pipeline configuration for testing/validation."""
+    from datetime import datetime, timedelta
+    from src.config.training_modes import get_training_mode_config, get_intensity_percentage
+    
+    # Get training mode configuration
+    mode_config = get_training_mode_config("blank")
+    intensity_pct = get_intensity_percentage("blank")
+    
+    # Blank mode: 180 days of data
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=mode_config.lookback_days)
+    
     return MainPipelineConfig(
         mode=ExecutionMode.BLANK,
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
         data_dir=data_dir,
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d'),
+        intensity_percentage=intensity_pct,
+        training_mode_config=mode_config.__dict__,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,

@@ -14,8 +14,20 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
 from datetime import datetime
-import pandas as pd
-import numpy as np
+# Optional imports
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.logger import system_logger
@@ -80,7 +92,7 @@ class StandardizedParquetHandler:
         
         self.logger.info('✅ StandardizedParquetHandler initialized')
     
-    def add_partition_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+    def add_partition_columns(self, df: 'pd.DataFrame') -> 'pd.DataFrame':
         """Add partition columns (year, month, day) to DataFrame based on timestamp.
         
         Args:
@@ -115,7 +127,7 @@ class StandardizedParquetHandler:
     
     def write_partitioned_parquet(
         self, 
-        df: pd.DataFrame, 
+        df: 'pd.DataFrame', 
         base_path: str, 
         schema_name: str = 'unified',
         partition_cols: List[str] = None,
@@ -201,7 +213,7 @@ class StandardizedParquetHandler:
         filters: List[Tuple] = None,
         columns: List[str] = None,
         **kwargs
-    ) -> Optional[pd.DataFrame]:
+    ) -> Optional['pd.DataFrame']:
         """Read partitioned Parquet dataset.
         
         Args:
@@ -342,7 +354,7 @@ class StandardizedParquetHandler:
             # Fallback filename pattern
             return f"{file_type}_{exchange}_{symbol}_{timeframe}.parquet"
     
-    def standardize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+    def standardize_columns(self, df: 'pd.DataFrame') -> 'pd.DataFrame':
         """Standardize column names in DataFrame.
         
         Args:
@@ -368,7 +380,7 @@ class StandardizedParquetHandler:
         
         return df
     
-    def standardize_dtypes(self, df: pd.DataFrame, schema_name: str = 'unified') -> pd.DataFrame:
+    def standardize_dtypes(self, df: 'pd.DataFrame', schema_name: str = 'unified') -> 'pd.DataFrame':
         """Standardize data types in DataFrame.
         
         Args:
@@ -410,7 +422,7 @@ class StandardizedParquetHandler:
             
             return df
     
-    def standardize_timestamp(self, df: pd.DataFrame, column: str = 'timestamp') -> pd.DataFrame:
+    def standardize_timestamp(self, df: 'pd.DataFrame', column: str = 'timestamp') -> 'pd.DataFrame':
         """Standardize timestamp column.
         
         Args:
@@ -433,7 +445,7 @@ class StandardizedParquetHandler:
             self.logger.error(f"Error standardizing timestamp: {e}")
             return df
     
-    def validate_data_quality(self, df: pd.DataFrame, schema_name: str = 'unified') -> Dict[str, Any]:
+    def validate_data_quality(self, df: 'pd.DataFrame', schema_name: str = 'unified') -> Dict[str, Any]:
         """Validate data quality using pipeline standards.
         
         Args:
@@ -469,7 +481,7 @@ class StandardizedParquetHandler:
         file_path: Union[str, Path], 
         schema_name: str = 'unified',
         validate_quality: bool = True
-    ) -> Optional[pd.DataFrame]:
+    ) -> Optional['pd.DataFrame']:
         """Read Parquet file with standardized processing.
         
         Args:
@@ -516,7 +528,7 @@ class StandardizedParquetHandler:
     
     def write_parquet_standardized(
         self, 
-        df: pd.DataFrame, 
+        df: 'pd.DataFrame', 
         file_path: Union[str, Path], 
         schema_name: str = 'unified',
         validate_quality: bool = True,
@@ -570,7 +582,7 @@ class StandardizedParquetHandler:
             self.logger.error(f"Error writing Parquet file {file_path}: {e}")
             return False
     
-    def _create_metadata_file(self, df: pd.DataFrame, file_path: Path, schema_name: str) -> None:
+    def _create_metadata_file(self, df: 'pd.DataFrame', file_path: Path, schema_name: str) -> None:
         """Create metadata file for the Parquet file.
         
         Args:
@@ -716,12 +728,12 @@ standardized_parquet_handler = StandardizedParquetHandler()
 
 
 # Convenience functions for backward compatibility
-def read_parquet_standardized(file_path: Union[str, Path], **kwargs) -> Optional[pd.DataFrame]:
+def read_parquet_standardized(file_path: Union[str, Path], **kwargs) -> Optional['pd.DataFrame']:
     """Convenience function to read Parquet file with standardization."""
     return standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
 
 
-def write_parquet_standardized(df: pd.DataFrame, file_path: Union[str, Path], **kwargs) -> bool:
+def write_parquet_standardized(df: 'pd.DataFrame', file_path: Union[str, Path], **kwargs) -> bool:
     """Convenience function to write Parquet file with standardization."""
     return standardized_parquet_handler.write_parquet_standardized(df, file_path, **kwargs)
 

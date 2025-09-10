@@ -22,6 +22,26 @@ except ImportError:
     log_step_progress = log_important_calls
     log_data_operation = log_important_calls
 
+# Import enhanced matrix operations
+try:
+    from src.utils.ml_common.matrix_operations import (
+        get_enhanced_matrix_operations,
+        m1_matrix_correlation_analysis,
+        m1_matrix_eigendecomposition,
+        m1_matrix_svd,
+        m1_matrix_condition_number,
+        m1_matrix_rank
+    )
+    ENHANCED_MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    ENHANCED_MATRIX_OPS_AVAILABLE = False
+    get_enhanced_matrix_operations = None
+    m1_matrix_correlation_analysis = None
+    m1_matrix_eigendecomposition = None
+    m1_matrix_svd = None
+    m1_matrix_condition_number = None
+    m1_matrix_rank = None
+
 # Optional dependencies with fallback handling
 try:
     NUMPY_AVAILABLE = True
@@ -38,8 +58,8 @@ except ImportError:
 try:
     import scipy.sparse as sp
     import scipy.sparse.linalg as spla
-import logging
-import time
+    import logging
+    import time
 
     SCIPY_SPARSE_AVAILABLE = True
 except ImportError:
@@ -53,14 +73,140 @@ class MatrixOperations:
     
     def __init__(self, logger):
         self.logger = logger
+        self.enhanced_matrix_ops = None
+        
+        # Initialize enhanced matrix operations if available
+        if ENHANCED_MATRIX_OPS_AVAILABLE:
+            try:
+                self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+                self.logger.info('🚀 Enhanced M1-optimized matrix operations available')
+            except Exception as e:
+                self.logger.warning(f'Failed to initialize enhanced matrix operations: {e}')
     
     async def execute_standard_matrix_operations(self, numeric_df: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute standard matrix operations."""
+        """Execute standard matrix operations with enhanced M1 optimization."""
         if not NUMPY_AVAILABLE or not PANDAS_AVAILABLE:
             return {'error': 'NumPy or Pandas not available'}
         
         results = {}
-        self.logger.info('📊 Performing correlation analysis...')
+        
+        # Use enhanced matrix operations if available
+        if self.enhanced_matrix_ops and ENHANCED_MATRIX_OPS_AVAILABLE:
+            self.logger.info('🚀 Using enhanced M1-optimized matrix operations')
+            
+            try:
+                # Enhanced correlation analysis
+                self.logger.info('📊 Performing enhanced correlation analysis...')
+                if m1_matrix_correlation_analysis:
+                    correlation_matrix = m1_matrix_correlation_analysis(numeric_df.values)
+                    results['correlation_analysis'] = {
+                        'correlation_matrix': pd.DataFrame(correlation_matrix, 
+                                                         index=numeric_df.columns, 
+                                                         columns=numeric_df.columns).to_dict(),
+                        'high_correlations': self._find_high_correlations(
+                            pd.DataFrame(correlation_matrix, 
+                                       index=numeric_df.columns, 
+                                       columns=numeric_df.columns), 
+                            config['correlation_threshold']
+                        )
+                    }
+                else:
+                    # Fallback to standard
+                    correlation_matrix = numeric_df.corr()
+                    results['correlation_analysis'] = {
+                        'correlation_matrix': correlation_matrix.to_dict(),
+                        'high_correlations': self._find_high_correlations(correlation_matrix, config['correlation_threshold'])
+                    }
+                
+                # Enhanced condition number check
+                self.logger.info('🔍 Checking condition number with enhanced operations...')
+                if m1_matrix_condition_number:
+                    condition_number = m1_matrix_condition_number(numeric_df.values)
+                    results['condition_number_check'] = {
+                        'condition_number': float(condition_number),
+                        'is_well_conditioned': condition_number < config['condition_number_threshold']
+                    }
+                else:
+                    # Fallback to standard
+                    condition_number = np.linalg.cond(numeric_df.values)
+                    results['condition_number_check'] = {
+                        'condition_number': float(condition_number),
+                        'is_well_conditioned': condition_number < config['condition_number_threshold']
+                    }
+                
+                # Enhanced eigenvalue analysis
+                self.logger.info('📈 Performing enhanced eigenvalue analysis...')
+                if m1_matrix_eigendecomposition:
+                    eigenvalues, _ = m1_matrix_eigendecomposition(numeric_df.values)
+                    results['eigenvalue_analysis'] = {
+                        'eigenvalues': eigenvalues.tolist(),
+                        'min_eigenvalue': float(np.min(eigenvalues)),
+                        'max_eigenvalue': float(np.max(eigenvalues)),
+                        'eigenvalue_ratio': float(np.max(eigenvalues) / np.min(eigenvalues)),
+                        'small_eigenvalues': int(np.sum(np.abs(eigenvalues) < config['min_eigenvalue_threshold']))
+                    }
+                else:
+                    # Fallback to standard
+                    eigenvalues = np.linalg.eigvals(numeric_df.values)
+                    results['eigenvalue_analysis'] = {
+                        'eigenvalues': eigenvalues.tolist(),
+                        'min_eigenvalue': float(np.min(eigenvalues)),
+                        'max_eigenvalue': float(np.max(eigenvalues)),
+                        'eigenvalue_ratio': float(np.max(eigenvalues) / np.min(eigenvalues)),
+                        'small_eigenvalues': int(np.sum(np.abs(eigenvalues) < config['min_eigenvalue_threshold']))
+                    }
+                
+                # Enhanced SVD analysis
+                self.logger.info('🔧 Performing enhanced SVD analysis...')
+                if m1_matrix_svd:
+                    U, s, Vt = m1_matrix_svd(numeric_df.values)
+                    results['singular_value_decomposition'] = {
+                        'singular_values': s.tolist(),
+                        'rank': int(np.sum(s > config['min_eigenvalue_threshold'])),
+                        'condition_number_svd': float(s[0] / s[-1]) if len(s) > 1 else float('inf')
+                    }
+                else:
+                    # Fallback to standard
+                    try:
+                        U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices=False)
+                        results['singular_value_decomposition'] = {
+                            'singular_values': s.tolist(),
+                            'rank': int(np.sum(s > config['min_eigenvalue_threshold'])),
+                            'condition_number_svd': float(s[0] / s[-1]) if len(s) > 1 else float('inf')
+                        }
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ SVD failed: {str(e)}')
+                        results['singular_value_decomposition'] = {'error': str(e)}
+                
+                # Enhanced matrix rank analysis
+                self.logger.info('📊 Analyzing matrix rank with enhanced operations...')
+                if m1_matrix_rank:
+                    rank = m1_matrix_rank(numeric_df.values)
+                    results['matrix_rank_analysis'] = {
+                        'rank': int(rank),
+                        'full_rank': rank == min(numeric_df.shape),
+                        'rank_deficiency': min(numeric_df.shape) - rank
+                    }
+                else:
+                    # Fallback to standard
+                    try:
+                        rank = np.linalg.matrix_rank(numeric_df.values)
+                        results['matrix_rank_analysis'] = {
+                            'rank': int(rank),
+                            'full_rank': rank == min(numeric_df.shape),
+                            'rank_deficiency': min(numeric_df.shape) - rank
+                        }
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ Rank analysis failed: {str(e)}')
+                        results['matrix_rank_analysis'] = {'error': str(e)}
+                
+                return results
+                
+            except Exception as e:
+                self.logger.warning(f'Enhanced operations failed: {e}, falling back to standard operations')
+        
+        # Standard operations (fallback)
+        self.logger.info('📊 Performing standard correlation analysis...')
         correlation_matrix = numeric_df.corr()
         results['correlation_analysis'] = {
             'correlation_matrix': correlation_matrix.to_dict(),

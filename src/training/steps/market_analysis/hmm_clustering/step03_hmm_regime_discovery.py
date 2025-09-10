@@ -23,6 +23,22 @@ from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
     validate_positive, validate_range, MathValidationError
 )
+
+# Import enhanced matrix operations
+try:
+    from src.utils.ml_common.matrix_operations import (
+        get_enhanced_matrix_operations,
+        m1_matrix_cholesky,
+        m1_matrix_eigendecomposition,
+        m1_matrix_correlation_analysis
+    )
+    ENHANCED_MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    ENHANCED_MATRIX_OPS_AVAILABLE = False
+    get_enhanced_matrix_operations = None
+    m1_matrix_cholesky = None
+    m1_matrix_eigendecomposition = None
+    m1_matrix_correlation_analysis = None
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
@@ -1062,12 +1078,23 @@ class HMMRegimeDiscoveryStep:
                 reg_param = 1e-6
                 cov_matrix += reg_param * np.eye(cov_matrix.shape[0])
                 
-                # Ensure positive-definiteness using Cholesky decomposition
+                # Ensure positive-definiteness using enhanced M1-optimized operations
                 try:
-                    np.linalg.cholesky(cov_matrix)
+                    if ENHANCED_MATRIX_OPS_AVAILABLE and m1_matrix_cholesky:
+                        # Use enhanced M1-optimized Cholesky decomposition
+                        m1_matrix_cholesky(cov_matrix)
+                    else:
+                        # Fallback to standard Cholesky decomposition
+                        np.linalg.cholesky(cov_matrix)
                 except np.linalg.LinAlgError:
-                    # If Cholesky fails, use eigenvalue decomposition to fix
-                    eigenvals, eigenvecs = np.linalg.eigh(cov_matrix)
+                    # If Cholesky fails, use enhanced eigenvalue decomposition to fix
+                    if ENHANCED_MATRIX_OPS_AVAILABLE and m1_matrix_eigendecomposition:
+                        # Use enhanced M1-optimized eigendecomposition
+                        eigenvals, eigenvecs = m1_matrix_eigendecomposition(cov_matrix)
+                    else:
+                        # Fallback to standard eigendecomposition
+                        eigenvals, eigenvecs = np.linalg.eigh(cov_matrix)
+                    
                     eigenvals = np.maximum(eigenvals, reg_param)  # Ensure positive eigenvalues
                     cov_matrix = eigenvecs @ np.diag(eigenvals) @ eigenvecs.T
                 

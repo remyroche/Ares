@@ -13,7 +13,13 @@ import asyncio
 import functools
 import inspect
 import logging
-import psutil
+# Optional imports
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 
 import time
 
@@ -24,7 +30,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from pathlib import Path
 from .compose import P, R, uniform_wrapper
-import numpy as np
+# Optional imports
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
 
 function_call_stack: ContextVar[List[str]] = ContextVar('function_call_stack', default=[])
 execution_report: ContextVar[Dict[str, Any]] = ContextVar('execution_report', default={})

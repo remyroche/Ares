@@ -8,6 +8,7 @@ from .sr_backtesting_engine import SRBacktestingEngine, BacktestConfig, SRLevel,
 from .backtesting_enhanced_clustering import BacktestingEnhancedClustering, BacktestingEnhancedConfig, get_backtesting_enhanced_clustering
 from .weight_optimization_engine import WeightOptimizationEngine, WeightOptimizationConfig, get_weight_optimization_engine
 from .predictive_sr_engine import PredictiveSREngine, PredictiveConfig, SRPrediction, get_predictive_sr_engine
+from .trading_ml_integration import TradingMLIntegration, TradingMLConfig, TradingSignal, get_trading_ml_integration
 
 __all__ = [
     'SRBacktestingEngine',
@@ -24,5 +25,9 @@ __all__ = [
     'PredictiveSREngine',
     'PredictiveConfig',
     'SRPrediction',
-    'get_predictive_sr_engine'
+    'get_predictive_sr_engine',
+    'TradingMLIntegration',
+    'TradingMLConfig',
+    'TradingSignal',
+    'get_trading_ml_integration'
 ]

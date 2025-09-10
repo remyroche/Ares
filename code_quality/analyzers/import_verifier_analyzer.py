@@ -104,6 +104,16 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         unimported_files = total_files - imported_files
         only_non_production_files = sum(1 for status in import_status.values() if status.get("only_imported_by_non_production", False))
         
+        # Advanced analysis
+        circular_imports = self._detect_circular_imports(import_status, file_to_module)
+        import_depths = self._calculate_import_depths(import_status, file_to_module)
+        critical_paths = self._identify_critical_paths(import_status)
+        
+        # Add import depths to import status
+        for file_path, depth in import_depths.items():
+            if file_path in import_status:
+                import_status[file_path]["import_depth"] = depth
+        
         # Find most/least imported files
         most_imported = max(import_status.items(), 
                           key=lambda x: x[1].get("import_count", 0)) if import_status else None
@@ -127,6 +137,11 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
                     "file": least_imported[0] if least_imported else None,
                     "import_count": least_imported[1].get("import_count", 0) if least_imported else 0
                 }
+            },
+            "advanced_analysis": {
+                "circular_imports": circular_imports,
+                "import_depths": import_depths,
+                "critical_paths": critical_paths
             },
             "stats": self.stats
         }
@@ -260,6 +275,114 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         
         return True  # All imports are from non-production files
     
+    def _detect_circular_imports(self, import_status: Dict[str, Any], file_to_module: Dict[str, str]) -> List[List[str]]:
+        """Detect circular imports between files."""
+        circular_imports = []
+        visited = set()
+        rec_stack = set()
+        
+        def dfs(file_path: str, path: List[str]) -> None:
+            if file_path in rec_stack:
+                # Found a cycle
+                cycle_start = path.index(file_path)
+                cycle = path[cycle_start:] + [file_path]
+                circular_imports.append(cycle)
+                return
+            
+            if file_path in visited:
+                return
+            
+            visited.add(file_path)
+            rec_stack.add(file_path)
+            path.append(file_path)
+            
+            # Check all files that import this file
+            file_info = import_status.get(file_path, {})
+            imported_by = file_info.get("imported_by", [])
+            
+            for importer in imported_by:
+                dfs(importer, path.copy())
+            
+            rec_stack.remove(file_path)
+            path.pop()
+        
+        for file_path in import_status:
+            if file_path not in visited:
+                dfs(file_path, [])
+        
+        return circular_imports
+    
+    def _calculate_import_depths(self, import_status: Dict[str, Any], file_to_module: Dict[str, str]) -> Dict[str, int]:
+        """Calculate the maximum import depth for each file."""
+        depths = {}
+        visited = set()
+        
+        def calculate_depth(file_path: str, current_path: List[str]) -> int:
+            if file_path in current_path:
+                # Circular dependency - return current depth
+                return len(current_path)
+            
+            if file_path in depths:
+                return depths[file_path]
+            
+            if file_path not in import_status:
+                return 0
+            
+            current_path.append(file_path)
+            max_depth = 0
+            
+            file_info = import_status[file_path]
+            imported_by = file_info.get("imported_by", [])
+            
+            for importer in imported_by:
+                depth = calculate_depth(importer, current_path.copy())
+                max_depth = max(max_depth, depth)
+            
+            current_path.pop()
+            depth = max_depth + 1
+            depths[file_path] = depth
+            return depth
+        
+        for file_path in import_status:
+            if file_path not in visited:
+                calculate_depth(file_path, [])
+                visited.add(file_path)
+        
+        return depths
+    
+    def _identify_critical_paths(self, import_status: Dict[str, Any]) -> Dict[str, Any]:
+        """Identify critical files that, if removed, would break many others."""
+        critical_paths = {
+            "high_impact_files": [],
+            "dependency_chains": {},
+            "bottleneck_files": []
+        }
+        
+        # Find files with high import counts (many depend on them)
+        import_counts = {}
+        for file_path, file_info in import_status.items():
+            import_count = file_info.get("import_count", 0)
+            import_counts[file_path] = import_count
+        
+        # Sort by import count to find high-impact files
+        sorted_files = sorted(import_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        # Top 10% of files by import count are considered high-impact
+        top_count = max(1, len(sorted_files) // 10)
+        critical_paths["high_impact_files"] = sorted_files[:top_count]
+        
+        # Find bottleneck files (files that import many others)
+        bottleneck_files = []
+        for file_path, file_info in import_status.items():
+            # This would require analyzing what each file imports, not just what imports it
+            # For now, we'll use a simple heuristic based on import count
+            if file_info.get("import_count", 0) > 5:  # Arbitrary threshold
+                bottleneck_files.append((file_path, file_info.get("import_count", 0)))
+        
+        critical_paths["bottleneck_files"] = sorted(bottleneck_files, key=lambda x: x[1], reverse=True)
+        
+        return critical_paths
+    
     def get_simple_yes_no_report(self, results: Dict[str, Any]) -> Dict[str, str]:
         """
         Generate a simple yes/no report for each file.
@@ -300,13 +423,15 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
             file_info = import_status.get(file_path, {})
             imported_by = file_info.get("imported_by", [])
             only_non_production = file_info.get("only_imported_by_non_production", False)
+            import_depth = file_info.get("import_depth", 0)
             
             # Show relative path for better readability
             try:
                 rel_path = Path(file_path).relative_to(Path.cwd())
-                # Add flag indicator
+                # Add flag indicators
                 flag_indicator = " [NON-PROD]" if only_non_production else ""
-                print(f"{status:3} | {rel_path}{flag_indicator}")
+                depth_indicator = f" [D{import_depth}]" if import_depth > 0 else ""
+                print(f"{status:3} | {rel_path}{flag_indicator}{depth_indicator}")
                 
                 # Show which files import this file (if any)
                 if imported_by:
@@ -322,7 +447,8 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
                     
             except ValueError:
                 flag_indicator = " [NON-PROD]" if only_non_production else ""
-                print(f"{status:3} | {file_path}{flag_indicator}")
+                depth_indicator = f" [D{import_depth}]" if import_depth > 0 else ""
+                print(f"{status:3} | {file_path}{flag_indicator}{depth_indicator}")
                 if imported_by:
                     print(f"     └─ Imported by {len(imported_by)} file(s):")
                     for importer in sorted(imported_by):
@@ -338,3 +464,66 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         least_imported = summary.get("least_imported_file", {})
         if least_imported.get("file"):
             print(f"Least imported file: {least_imported['file']} ({least_imported['import_count']} imports)")
+        
+        # Advanced analysis section
+        self._print_advanced_analysis(results)
+    
+    def _print_advanced_analysis(self, results: Dict[str, Any]) -> None:
+        """Print advanced analysis results."""
+        advanced = results.get("advanced_analysis", {})
+        
+        print("\n" + "="*80)
+        print("ADVANCED ANALYSIS")
+        print("="*80)
+        
+        # Circular imports
+        circular_imports = advanced.get("circular_imports", [])
+        print(f"\n🔄 CIRCULAR IMPORTS: {len(circular_imports)} found")
+        if circular_imports:
+            for i, cycle in enumerate(circular_imports, 1):
+                print(f"  {i}. {' → '.join(cycle)}")
+        else:
+            print("  ✅ No circular imports detected")
+        
+        # Import depths
+        import_depths = advanced.get("import_depths", {})
+        if import_depths:
+            max_depth = max(import_depths.values()) if import_depths else 0
+            avg_depth = sum(import_depths.values()) / len(import_depths) if import_depths else 0
+            print(f"\n📊 IMPORT DEPTH ANALYSIS:")
+            print(f"  Maximum depth: {max_depth}")
+            print(f"  Average depth: {avg_depth:.1f}")
+            
+            # Show files with highest depths
+            sorted_depths = sorted(import_depths.items(), key=lambda x: x[1], reverse=True)
+            print(f"  Deepest import chains:")
+            for file_path, depth in sorted_depths[:5]:
+                try:
+                    rel_path = Path(file_path).relative_to(Path.cwd())
+                    print(f"    • {rel_path} (depth: {depth})")
+                except ValueError:
+                    print(f"    • {file_path} (depth: {depth})")
+        
+        # Critical paths
+        critical_paths = advanced.get("critical_paths", {})
+        high_impact_files = critical_paths.get("high_impact_files", [])
+        bottleneck_files = critical_paths.get("bottleneck_files", [])
+        
+        print(f"\n🎯 CRITICAL PATH ANALYSIS:")
+        print(f"  High-impact files (top 10% by import count): {len(high_impact_files)}")
+        if high_impact_files:
+            for file_path, count in high_impact_files[:5]:
+                try:
+                    rel_path = Path(file_path).relative_to(Path.cwd())
+                    print(f"    • {rel_path} ({count} imports)")
+                except ValueError:
+                    print(f"    • {file_path} ({count} imports)")
+        
+        print(f"  Bottleneck files (high import count): {len(bottleneck_files)}")
+        if bottleneck_files:
+            for file_path, count in bottleneck_files[:5]:
+                try:
+                    rel_path = Path(file_path).relative_to(Path.cwd())
+                    print(f"    • {rel_path} ({count} imports)")
+                except ValueError:
+                    print(f"    • {file_path} ({count} imports)")

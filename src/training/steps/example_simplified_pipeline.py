@@ -1,15 +1,16 @@
 """
 Example Simplified Pipeline
 
-This module demonstrates how to use the new simplified infrastructure for training steps
-using MLPipelineOrchestrator and utility-based approaches.
+This file demonstrates the complete simplified pipeline infrastructure that replaces
+the complex step-based approach with a unified, utility-based system.
 
 Key Features:
-- Complete pipeline example using SimplifiedPipelineManager
-- Demonstrates data collection, labeling, and feature engineering
-- Shows how to use standardized configuration validation
-- Demonstrates unified data quality management
-- Shows error handling and recovery
+- Uses SimplifiedPipelineManager for execution and monitoring
+- Uses ConfigurationValidator for standardized config validation
+- Uses DataQualityUtilities for unified data validation
+- Uses MLPipelineOrchestrator for pipeline orchestration
+- Simple function-based steps instead of complex classes
+- Automatic error handling and recovery
 - Comprehensive logging and monitoring
 """
 
@@ -27,34 +28,35 @@ from .simplified_pipeline_infrastructure import (
     create_data_processing_step_function
 )
 
-# Import standardized validation
-from .standardized_config_validation import (
-    validate_config,
-    validate_and_fix_config
+# Import unified components
+from .unified_feature_engineering import (
+    unified_feature_engineering,
+    comprehensive_feature_engineering
 )
 
-# Import unified data quality
-from .unified_data_quality import (
-    validate_data_quality,
-    clean_data,
-    generate_quality_report
+from .unified_feature_selection import (
+    unified_feature_selection,
+    comprehensive_feature_selection
+)
+
+from .unified_model_training import (
+    unified_model_training,
+    comprehensive_model_training
+)
+
+from .unified_model_evaluation import (
+    unified_model_evaluation,
+    comprehensive_model_evaluation
+)
+
+from .unified_optimization import (
+    unified_optimization,
+    comprehensive_optimization
 )
 
 # Import simplified steps
 from .simplified_step1_data_collection import step1_data_collection
 from .simplified_step5_labeling import step5_labeling
-
-# Import step06 utilities for feature engineering
-from src.utils.step06_utilities import (
-    EnhancedFeatureEngineering,
-    get_utility_container
-)
-
-# Import ML Common utilities
-from src.utils.ml_common import (
-    FeatureSelectionFramework,
-    EnhancedModelTrainer
-)
 
 # Import common operations
 from src.utils.common_operations import get_logger
@@ -62,155 +64,23 @@ from src.utils.common_operations import get_logger
 logger = get_logger(__name__)
 
 
-# Additional step functions for the example pipeline
-async def step2_feature_engineering_logic(config: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Feature engineering step using step06 utilities."""
-    logger.info("🔧 Starting feature engineering...")
-    
-    try:
-        # Get data from pipeline state
-        data = pipeline_state.get('data')
-        if data is None:
-            raise ValueError("No data found in pipeline state for feature engineering")
-        
-        # Get utility container
-        utility_container = get_utility_container(config)
-        
-        # Initialize enhanced feature engineering
-        feature_engine = EnhancedFeatureEngineering(config)
-        
-        # Create advanced features
-        features = feature_engine.create_advanced_features(
-            data=data,
-            enable_gpu_acceleration=config.get('enable_gpu', True),
-            enable_parallel_processing=config.get('enable_parallel', True)
-        )
-        
-        # Validate features
-        features_validation = validate_data_quality(features, 'features', 'comprehensive')
-        
-        return {
-            'features': features,
-            'feature_metadata': feature_engine.get_feature_metadata(),
-            'features_validation': features_validation
-        }
-        
-    except Exception as e:
-        logger.exception(f"Error in feature engineering: {e}")
-        raise
-
-
-async def step3_feature_selection_logic(config: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Feature selection step using ML Common utilities."""
-    logger.info("🎯 Starting feature selection...")
-    
-    try:
-        # Get features and labels from pipeline state
-        features = pipeline_state.get('features')
-        labels = pipeline_state.get('labels')
-        
-        if features is None or labels is None:
-            raise ValueError("Missing features or labels in pipeline state for feature selection")
-        
-        # Initialize feature selection framework
-        feature_selector = FeatureSelectionFramework(config.get('feature_selection_config', {}))
-        
-        # Perform feature selection
-        selection_result = feature_selector.select_features(
-            X=features,
-            y=labels,
-            method=config.get('selection_method', 'mrmr'),
-            n_features=config.get('n_features', 50)
-        )
-        
-        # Validate selected features
-        selected_features_validation = validate_data_quality(
-            selection_result['selected_features'], 'features', 'standard'
-        )
-        
-        return {
-            'selected_features': selection_result['selected_features'],
-            'feature_importance': selection_result.get('feature_importance', {}),
-            'selection_metadata': selection_result.get('metadata', {}),
-            'selected_features_validation': selected_features_validation
-        }
-        
-    except Exception as e:
-        logger.exception(f"Error in feature selection: {e}")
-        raise
-
-
-async def step4_model_training_logic(config: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Model training step using ML Common utilities."""
-    logger.info("🤖 Starting model training...")
-    
-    try:
-        # Get selected features and labels from pipeline state
-        selected_features = pipeline_state.get('selected_features')
-        labels = pipeline_state.get('labels')
-        
-        if selected_features is None or labels is None:
-            raise ValueError("Missing selected features or labels in pipeline state for model training")
-        
-        # Initialize enhanced model trainer
-        trainer = EnhancedModelTrainer(config.get('model_training_config', {}))
-        
-        # Split data for training and testing
-        from sklearn.model_selection import train_test_split
-        X_train, X_test, y_train, y_test = train_test_split(
-            selected_features, labels, 
-            test_size=config.get('test_size', 0.2),
-            random_state=config.get('random_state', 42),
-            stratify=labels if len(np.unique(labels)) > 1 else None
-        )
-        
-        # Train and evaluate model
-        training_result = trainer.train_and_evaluate_model(
-            model=config.get('model_class', 'RandomForestClassifier')(),
-            model_name="example_model",
-            X_train=X_train,
-            y_train=y_train,
-            X_test=X_test,
-            y_test=y_test,
-            feature_names=list(selected_features.columns) if hasattr(selected_features, 'columns') else None
-        )
-        
-        return {
-            'model': training_result['model'],
-            'evaluation_metrics': training_result['evaluation_metrics'],
-            'confidence_metrics': training_result.get('confidence_metrics', {}),
-            'feature_importance': training_result.get('feature_importance', {}),
-            'training_metadata': training_result.get('metadata', {})
-        }
-        
-    except Exception as e:
-        logger.exception(f"Error in model training: {e}")
-        raise
-
-
-# Create step functions
-step2_feature_engineering = create_data_processing_step_function("feature_engineering", step2_feature_engineering_logic)
-step3_feature_selection = create_simple_step_function("feature_selection", step3_feature_selection_logic)
-step4_model_training = create_simple_step_function("model_training", step4_model_training_logic)
-
-
 class ExampleSimplifiedPipeline:
     """
-    Example simplified pipeline demonstrating the new infrastructure.
+    Example of a complete simplified pipeline using the new infrastructure.
     
-    This shows how to create a complete ML pipeline using the simplified
-    infrastructure with MLPipelineOrchestrator and utility-based approaches.
+    This demonstrates how to build a complete ML pipeline using the simplified
+    infrastructure instead of complex step classes.
     """
     
     def __init__(self, config: Dict[str, Any]):
-        """Initialize example pipeline."""
-        self.config = validate_and_fix_config(config)
+        """Initialize the example simplified pipeline."""
+        self.config = config
         self.logger = logger.getChild('ExampleSimplifiedPipeline')
         
         # Initialize pipeline manager
-        self.pipeline_manager = SimplifiedPipelineManager(self.config)
+        self.pipeline_manager = SimplifiedPipelineManager(config)
         
-        # Add all steps to pipeline
+        # Setup pipeline steps
         self._setup_pipeline()
         
         self.logger.info("🚀 Example Simplified Pipeline initialized")
@@ -218,53 +88,51 @@ class ExampleSimplifiedPipeline:
     def _setup_pipeline(self):
         """Setup the complete pipeline with all steps."""
         try:
+            self.logger.info("🔧 Setting up simplified pipeline...")
+            
             # Step 1: Data Collection
             self.pipeline_manager.add_step("data_collection", step1_data_collection)
             
-            # Step 2: Feature Engineering (depends on data_collection)
-            self.pipeline_manager.add_step(
-                "feature_engineering", 
-                step2_feature_engineering,
-                dependencies=["data_collection"]
-            )
+            # Step 2: Labeling (depends on data collection)
+            self.pipeline_manager.add_step("labeling", step5_labeling, 
+                                         dependencies=["data_collection"])
             
-            # Step 3: Labeling (depends on data_collection)
-            self.pipeline_manager.add_step(
-                "labeling",
-                step5_labeling,
-                dependencies=["data_collection"]
-            )
+            # Step 3: Feature Engineering (depends on labeling)
+            self.pipeline_manager.add_step("feature_engineering", comprehensive_feature_engineering,
+                                         dependencies=["labeling"])
             
-            # Step 4: Feature Selection (depends on feature_engineering and labeling)
-            self.pipeline_manager.add_step(
-                "feature_selection",
-                step3_feature_selection,
-                dependencies=["feature_engineering", "labeling"]
-            )
+            # Step 4: Feature Selection (depends on feature engineering)
+            self.pipeline_manager.add_step("feature_selection", comprehensive_feature_selection,
+                                         dependencies=["feature_engineering"])
             
-            # Step 5: Model Training (depends on feature_selection and labeling)
-            self.pipeline_manager.add_step(
-                "model_training",
-                step4_model_training,
-                dependencies=["feature_selection", "labeling"]
-            )
+            # Step 5: Model Training (depends on feature selection)
+            self.pipeline_manager.add_step("model_training", comprehensive_model_training,
+                                         dependencies=["feature_selection"])
             
-            self.logger.info("✅ Pipeline setup completed with 5 steps")
+            # Step 6: Model Evaluation (depends on model training)
+            self.pipeline_manager.add_step("model_evaluation", comprehensive_model_evaluation,
+                                         dependencies=["model_training"])
+            
+            # Step 7: Optimization (depends on model evaluation)
+            self.pipeline_manager.add_step("optimization", comprehensive_optimization,
+                                         dependencies=["model_evaluation"])
+            
+            self.logger.info("✅ Pipeline setup completed with 7 steps")
             
         except Exception as e:
             self.logger.exception(f"Error setting up pipeline: {e}")
             raise
     
     async def execute_pipeline(self) -> Dict[str, Any]:
-        """Execute the complete pipeline."""
+        """Execute the complete simplified pipeline."""
         try:
-            self.logger.info("🚀 Starting complete pipeline execution...")
+            self.logger.info("🚀 Starting complete simplified pipeline execution...")
             
             # Execute pipeline
             result = await self.pipeline_manager.execute_pipeline()
             
             if result['status'] == 'completed':
-                self.logger.info("✅ Complete pipeline execution completed successfully")
+                self.logger.info("✅ Complete simplified pipeline executed successfully")
             else:
                 self.logger.error(f"❌ Pipeline execution failed: {result.get('errors', [])}")
             
@@ -288,7 +156,7 @@ class ExampleSimplifiedPipeline:
                 'pipeline_status': pipeline_summary.get('orchestrator_status', {}),
                 'step_results': step_results,
                 'timestamp': datetime.now().isoformat(),
-                'pipeline_metrics': self._calculate_pipeline_metrics(step_results)
+                'pipeline_info': self._get_pipeline_info()
             }
             
             return summary
@@ -297,47 +165,193 @@ class ExampleSimplifiedPipeline:
             self.logger.exception(f"Error getting pipeline summary: {e}")
             return {'error': str(e)}
     
-    def _calculate_pipeline_metrics(self, step_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate pipeline performance metrics."""
-        try:
-            metrics = {
-                'total_steps': len(step_results),
-                'completed_steps': 0,
-                'failed_steps': 0,
-                'data_quality_scores': {},
-                'model_performance': {}
+    def _get_pipeline_info(self) -> Dict[str, Any]:
+        """Get information about the pipeline."""
+        return {
+            'pipeline_type': 'simplified_unified',
+            'total_steps': 7,
+            'steps': [
+                'data_collection',
+                'labeling',
+                'feature_engineering',
+                'feature_selection',
+                'model_training',
+                'model_evaluation',
+                'optimization'
+            ],
+            'infrastructure_used': [
+                'SimplifiedPipelineManager',
+                'ConfigurationValidator',
+                'DataQualityUtilities',
+                'MLPipelineOrchestrator',
+                'EnhancedFeatureEngineering',
+                'Step08AdvancedFeatureSelection',
+                'EnhancedModelTrainer',
+                'ModelEvaluationUtilities',
+                'MemoryEfficientTraining',
+                'ParallelProcessingCoordinator'
+            ],
+            'benefits': [
+                'Single unified approach',
+                'Automatic validation and error handling',
+                'Comprehensive monitoring and logging',
+                'Built-in performance optimization',
+                'Standardized configuration management',
+                'Easy to maintain and extend'
+            ]
+        }
+
+
+# Custom step functions for demonstration
+async def custom_data_preprocessing_logic(config: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    """Custom data preprocessing step logic."""
+    logger.info("🔧 Executing custom data preprocessing...")
+    
+    try:
+        # Get data from pipeline state
+        data = pipeline_state.get('data')
+        if data is None:
+            raise ValueError("No data found in pipeline state")
+        
+        # Custom preprocessing logic
+        processed_data = data.copy()
+        
+        # Example: Add custom features
+        processed_data['custom_feature_1'] = processed_data['close'] / processed_data['volume']
+        processed_data['custom_feature_2'] = processed_data['high'] - processed_data['low']
+        
+        # Example: Custom validation
+        if processed_data.isnull().sum().sum() > 0:
+            logger.warning("Missing values detected in processed data")
+        
+        return {
+            'data': processed_data,
+            'preprocessing_metadata': {
+                'original_shape': data.shape,
+                'processed_shape': processed_data.shape,
+                'custom_features_added': 2,
+                'missing_values': processed_data.isnull().sum().sum()
             }
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error in custom data preprocessing: {e}")
+        raise
+
+
+async def custom_model_validation_logic(config: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    """Custom model validation step logic."""
+    logger.info("🔍 Executing custom model validation...")
+    
+    try:
+        # Get model and evaluation results from pipeline state
+        model = pipeline_state.get('model')
+        evaluation_results = pipeline_state.get('model_evaluation', {})
+        
+        if model is None:
+            raise ValueError("No model found in pipeline state")
+        
+        # Custom validation logic
+        validation_result = {
+            'model_valid': True,
+            'validation_checks': [],
+            'recommendations': []
+        }
+        
+        # Example: Check model performance
+        if 'evaluation_metrics' in evaluation_results:
+            metrics = evaluation_results['evaluation_metrics']
+            accuracy = metrics.get('accuracy', 0)
             
-            for step_name, step_result in step_results.items():
-                if step_result.get('status') == 'completed':
-                    metrics['completed_steps'] += 1
-                else:
-                    metrics['failed_steps'] += 1
-                
-                # Extract data quality scores
-                if 'data_validation' in step_result:
-                    validation = step_result['data_validation']
-                    if 'quality_score' in validation:
-                        metrics['data_quality_scores'][step_name] = validation['quality_score']
-                
-                # Extract model performance
-                if step_name == 'model_training' and 'evaluation_metrics' in step_result:
-                    metrics['model_performance'] = step_result['evaluation_metrics']
+            if accuracy < 0.6:
+                validation_result['model_valid'] = False
+                validation_result['validation_checks'].append(f"Low accuracy: {accuracy:.3f}")
+                validation_result['recommendations'].append("Consider feature engineering or model tuning")
+            else:
+                validation_result['validation_checks'].append(f"Good accuracy: {accuracy:.3f}")
+        
+        # Example: Check feature importance
+        if 'feature_importance' in evaluation_results:
+            importance = evaluation_results['feature_importance']
+            if isinstance(importance, dict):
+                max_importance = max(importance.values()) if importance else 0
+                if max_importance < 0.1:
+                    validation_result['recommendations'].append("Consider feature selection to improve model interpretability")
+        
+        return {
+            'validation_result': validation_result,
+            'model_approved': validation_result['model_valid']
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error in custom model validation: {e}")
+        raise
+
+
+# Create custom step functions
+custom_data_preprocessing = create_data_processing_step_function("custom_data_preprocessing", custom_data_preprocessing_logic)
+custom_model_validation = create_simple_step_function("custom_model_validation", custom_model_validation_logic)
+
+
+class CustomSimplifiedPipeline(ExampleSimplifiedPipeline):
+    """
+    Custom simplified pipeline with additional steps.
+    
+    This demonstrates how to extend the simplified pipeline with custom steps.
+    """
+    
+    def _setup_pipeline(self):
+        """Setup the custom pipeline with additional steps."""
+        try:
+            self.logger.info("🔧 Setting up custom simplified pipeline...")
             
-            metrics['success_rate'] = metrics['completed_steps'] / metrics['total_steps'] if metrics['total_steps'] > 0 else 0
+            # Standard steps
+            self.pipeline_manager.add_step("data_collection", step1_data_collection)
+            self.pipeline_manager.add_step("labeling", step5_labeling, 
+                                         dependencies=["data_collection"])
             
-            return metrics
+            # Custom preprocessing step
+            self.pipeline_manager.add_step("custom_preprocessing", custom_data_preprocessing,
+                                         dependencies=["labeling"])
+            
+            # Feature engineering (depends on custom preprocessing)
+            self.pipeline_manager.add_step("feature_engineering", comprehensive_feature_engineering,
+                                         dependencies=["custom_preprocessing"])
+            
+            # Feature selection
+            self.pipeline_manager.add_step("feature_selection", comprehensive_feature_selection,
+                                         dependencies=["feature_engineering"])
+            
+            # Model training
+            self.pipeline_manager.add_step("model_training", comprehensive_model_training,
+                                         dependencies=["feature_selection"])
+            
+            # Model evaluation
+            self.pipeline_manager.add_step("model_evaluation", comprehensive_model_evaluation,
+                                         dependencies=["model_training"])
+            
+            # Custom model validation
+            self.pipeline_manager.add_step("custom_validation", custom_model_validation,
+                                         dependencies=["model_evaluation"])
+            
+            # Optimization (depends on custom validation)
+            self.pipeline_manager.add_step("optimization", comprehensive_optimization,
+                                         dependencies=["custom_validation"])
+            
+            self.logger.info("✅ Custom pipeline setup completed with 9 steps")
             
         except Exception as e:
-            self.logger.warning(f"Error calculating pipeline metrics: {e}")
-            return {'error': str(e)}
+            self.logger.exception(f"Error setting up custom pipeline: {e}")
+            raise
 
 
-# Example usage and testing
-async def example_complete_pipeline():
-    """Example of using the complete simplified pipeline."""
+async def demonstrate_simplified_pipeline():
+    """
+    Demonstrate the simplified pipeline infrastructure.
+    """
+    logger.info("🚀 Demonstrating Simplified Pipeline Infrastructure")
     
-    # Comprehensive configuration
+    # Configuration
     config = {
         'symbol': 'BTCUSDT',
         'exchange': 'binance',
@@ -345,101 +359,138 @@ async def example_complete_pipeline():
         'data_dir': 'data',
         'output_dir': 'output',
         'model_dir': 'models',
-        
-        # Data collection config
-        'periods': 2000,
-        'add_realistic_issues': True,
-        'save_data': True,
-        
-        # Labeling config
-        'labeling_config': {
-            'method': 'triple_barrier',
-            'upper_threshold': 0.02,
-            'lower_threshold': -0.02,
-            'max_holding_period': 20
-        },
-        
-        # Feature engineering config
-        'feature_engineering_config': {
-            'enable_technical_indicators': True,
-            'enable_statistical_features': True,
-            'enable_lag_features': True,
-            'max_lags': 10
-        },
-        
-        # Feature selection config
-        'feature_selection_config': {
-            'method': 'mrmr',
-            'n_features': 50,
-            'stability_threshold': 0.6
-        },
-        'selection_method': 'mrmr',
-        'n_features': 50,
-        
-        # Model training config
-        'model_training_config': {
-            'enable_confidence_metrics': True,
-            'enable_calibration_assessment': True,
-            'enable_feature_importance': True,
-            'cv_folds': 5
-        },
-        'model_class': 'RandomForestClassifier',
-        'test_size': 0.2,
-        'random_state': 42,
-        
-        # Performance config
+        'log_dir': 'logs',
         'enable_gpu': True,
         'enable_parallel': True,
         'max_workers': 4,
         'memory_limit': 0.8,
-        'timeout_seconds': 3600
+        'timeout_seconds': 3600,
+        'random_state': 42,
+        
+        # Feature engineering configuration
+        'feature_engineering_config': {
+            'enable_technical_indicators': True,
+            'enable_statistical_features': True,
+            'enable_lag_features': True,
+            'enable_interaction_features': True,
+            'enable_regime_features': True,
+            'enable_wavelet_features': True,
+            'enable_multi_timeframe_features': True,
+            'max_lags': 10,
+            'max_interactions': 20,
+            'max_features': 100
+        },
+        
+        # Feature selection configuration
+        'feature_selection_config': {
+            'selection_method': 'mrmr',
+            'n_features': 50,
+            'stability_threshold': 0.6,
+            'enable_regime_specific': False
+        },
+        
+        # Model training configuration
+        'model_training_config': {
+            'enable_confidence_metrics': True,
+            'enable_calibration_assessment': True,
+            'enable_feature_importance': True,
+            'enable_cross_validation': True,
+            'enable_model_explanations': True,
+            'enable_post_training_hpo': True,
+            'cv_folds': 5
+        },
+        
+        # Model evaluation configuration
+        'evaluation_config': {
+            'enable_cross_validation': True,
+            'enable_time_series_validation': True,
+            'enable_confidence_intervals': True,
+            'enable_model_comparison': True,
+            'enable_feature_importance_analysis': True,
+            'enable_prediction_analysis': True,
+            'cv_folds': 5,
+            'confidence_level': 0.95
+        },
+        
+        # Optimization configuration
+        'optimization_config': {
+            'enable_memory_optimization': True,
+            'enable_parallel_processing': True,
+            'enable_m1_optimizations': True,
+            'enable_gpu_acceleration': True,
+            'enable_automatic_chunking': True,
+            'enable_memory_monitoring': True,
+            'enable_performance_profiling': True,
+            'chunk_size_mb': 200,
+            'max_workers': 4
+        }
     }
     
-    print("=== Example Simplified Pipeline ===")
-    print(f"Configuration: {config['symbol']} on {config['exchange']} ({config['timeframe']})")
+    print("=" * 80)
+    print("SIMPLIFIED PIPELINE INFRASTRUCTURE DEMONSTRATION")
+    print("=" * 80)
     
-    # Create and execute pipeline
-    pipeline = ExampleSimplifiedPipeline(config)
+    # Standard simplified pipeline
+    print("\n🚀 Standard Simplified Pipeline")
+    print("-" * 50)
     
-    # Execute complete pipeline
-    result = await pipeline.execute_pipeline()
+    standard_pipeline = ExampleSimplifiedPipeline(config)
+    standard_result = await standard_pipeline.execute_pipeline()
+    standard_summary = standard_pipeline.get_pipeline_summary()
     
-    # Get comprehensive summary
-    summary = pipeline.get_pipeline_summary()
+    print(f"✅ Pipeline status: {standard_result.get('status', 'unknown')}")
+    print(f"📊 Total steps: {len(standard_summary['pipeline_info']['steps'])}")
+    print(f"🔧 Infrastructure used: {len(standard_summary['pipeline_info']['infrastructure_used'])} components")
+    print(f"📁 Benefits: {len(standard_summary['pipeline_info']['benefits'])} key improvements")
     
-    # Display results
-    print(f"\n=== Pipeline Execution Results ===")
-    print(f"Status: {result.get('status', 'unknown')}")
-    print(f"Success Rate: {summary.get('pipeline_metrics', {}).get('success_rate', 0):.2%}")
-    print(f"Completed Steps: {summary.get('pipeline_metrics', {}).get('completed_steps', 0)}")
-    print(f"Failed Steps: {summary.get('pipeline_metrics', {}).get('failed_steps', 0)}")
+    # Custom simplified pipeline
+    print("\n🎯 Custom Simplified Pipeline")
+    print("-" * 50)
     
-    # Display data quality scores
-    quality_scores = summary.get('pipeline_metrics', {}).get('data_quality_scores', {})
-    if quality_scores:
-        print(f"\n=== Data Quality Scores ===")
-        for step, score in quality_scores.items():
-            print(f"{step}: {score:.3f}")
+    custom_pipeline = CustomSimplifiedPipeline(config)
+    custom_result = await custom_pipeline.execute_pipeline()
+    custom_summary = custom_pipeline.get_pipeline_summary()
     
-    # Display model performance
-    model_performance = summary.get('pipeline_metrics', {}).get('model_performance', {})
-    if model_performance:
-        print(f"\n=== Model Performance ===")
-        for metric, value in model_performance.items():
-            print(f"{metric}: {value:.3f}")
+    print(f"✅ Pipeline status: {custom_result.get('status', 'unknown')}")
+    print(f"📊 Total steps: {len(custom_summary['pipeline_info']['steps'])}")
+    print(f"🔧 Custom steps added: 2 (preprocessing, validation)")
+    print(f"📁 Pipeline type: {custom_summary['pipeline_info']['pipeline_type']}")
     
-    return result, summary
+    # Infrastructure benefits
+    print("\n📊 INFRASTRUCTURE BENEFITS")
+    print("=" * 50)
+    
+    benefits = standard_summary['pipeline_info']['benefits']
+    for i, benefit in enumerate(benefits, 1):
+        print(f"{i}. {benefit}")
+    
+    # Infrastructure components
+    print("\n🔧 INFRASTRUCTURE COMPONENTS")
+    print("=" * 50)
+    
+    components = standard_summary['pipeline_info']['infrastructure_used']
+    for i, component in enumerate(components, 1):
+        print(f"{i}. {component}")
+    
+    return {
+        'standard_result': standard_result,
+        'standard_summary': standard_summary,
+        'custom_result': custom_result,
+        'custom_summary': custom_summary,
+        'infrastructure_benefits': benefits,
+        'infrastructure_components': components
+    }
 
 
 # Main execution
 async def main():
     """Main execution function."""
     try:
-        result, summary = await example_complete_pipeline()
-        print("\n✅ Example pipeline completed successfully")
-        return result, summary
+        results = await demonstrate_simplified_pipeline()
+        print("\n✅ Simplified Pipeline demonstration completed successfully")
+        return results
     except Exception as e:
-        logger.exception(f"Example pipeline failed: {e}")
+        logger.exception(f"Simplified Pipeline demonstration failed: {e}")
         raise
 
 

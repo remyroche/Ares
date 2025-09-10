@@ -9,6 +9,7 @@ from .advanced_feature_engineering import AdvancedFeatureEngineering
 from .autoencoder_feature_generator import AutoencoderFeatureGenerator
 from ..analytics.limited_microstructure_features import LimitedMicrostructureFeatures
 from ..training.steps.data_collection.feature_engineering.feature_components import EntropyFeatureEngine
+from ..utils.step06_utilities import CrossTimeframeFeatureGenerator
 from ..config import CONFIG
 from ..core.domain import handle_data_processing_errors, handle_file_operations
 from ..utils.logger import system_logger
@@ -35,6 +36,7 @@ class FeatureEngineeringOrchestrator:
         self.autoencoder_generator = AutoencoderFeatureGenerator(config)
         self.microstructure_features = LimitedMicrostructureFeatures(config)
         self.entropy_engine = EntropyFeatureEngine(config)
+        self.cross_timeframe_generator = CrossTimeframeFeatureGenerator()
         self.model_storage_path = os.path.join(CONFIG['CHECKPOINT_DIR'], 'analyst_models', 'feature_engineering')
         os.makedirs(self.model_storage_path, exist_ok = True)
         self.autoencoder_model_path = os.path.join(self.model_storage_path, 'autoencoder_model.h5')
@@ -87,11 +89,18 @@ class FeatureEngineeringOrchestrator:
                 features_df = self._generate_legacy_features(features_df, agg_trades_df, futures_df, sr_levels)
                 self.logger.info(f'✅ Legacy features generated. Shape: {features_df.shape}')
             if self.config.get('enable_multi_timeframe', True):
-                self.logger.info('⏰ Generating multi-timeframe features...')
+                self.logger.info('⏰ Generating cross-timeframe features...')
+                cross_timeframe_features = await self._generate_cross_timeframe_features(klines_df, agg_trades_df)
+                if not cross_timeframe_features.empty:
+                    features_df = pd.concat([features_df, cross_timeframe_features], axis = 1)
+                    self.logger.info(f'✅ Cross-timeframe features generated. Shape: {features_df.shape}')
+                
+                # Also generate legacy multi-timeframe features for compatibility
+                self.logger.info('⏰ Generating legacy multi-timeframe features...')
                 multi_timeframe_features = await self._calculate_multi_timeframe_features(klines_df, agg_trades_df, None)
                 if not multi_timeframe_features.empty:
                     features_df = pd.concat([features_df, multi_timeframe_features], axis = 1)
-                    self.logger.info(f'✅ Multi-timeframe features generated. Shape: {features_df.shape}')
+                    self.logger.info(f'✅ Legacy multi-timeframe features generated. Shape: {features_df.shape}')
             if self.config.get('enable_meta_labeling', True):
                 self.logger.info('🏷️ Generating meta-labeling features...')
                 meta_labeling_features = await self._calculate_meta_labeling_features(klines_df, agg_trades_df, None)
@@ -161,6 +170,30 @@ class FeatureEngineeringOrchestrator:
             return features_df
 
     @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='multi-timeframe feature calculation')
+    async def _generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame = None) -> pd.DataFrame:
+        """Generate cross-timeframe features using the CrossTimeframeFeatureGenerator from step06_utilities."""
+        try:
+            # Prepare data for cross-timeframe feature generation
+            if volume_data is not None and not volume_data.empty:
+                # Use volume data if available
+                cross_features = self.cross_timeframe_generator.generate_cross_timeframe_features(price_data, volume_data)
+            else:
+                # Create mock volume data if not available
+                mock_volume = pd.DataFrame({'volume': price_data.get('volume', 1000.0)})
+                cross_features = self.cross_timeframe_generator.generate_cross_timeframe_features(price_data, mock_volume)
+            
+            # Convert dictionary to DataFrame
+            if isinstance(cross_features, dict) and cross_features:
+                cross_features_df = pd.DataFrame(cross_features, index=price_data.index)
+                return cross_features_df
+            else:
+                self.logger.warning("No cross-timeframe features generated")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            self.logger.error(f"Error generating cross-timeframe features: {e}")
+            return pd.DataFrame()
+    
     async def _calculate_multi_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None) -> pd.DataFrame:
         """Calculate multi-timeframe features."""
         try:

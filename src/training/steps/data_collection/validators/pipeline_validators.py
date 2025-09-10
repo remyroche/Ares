@@ -26,12 +26,17 @@ from src.core.domain.decorators import (
 import pandas as pd
 
 from src.utils.common_operations import (
-import datetime
-import typing
-
     get_current_datetime,
     format_datetime,
 )
+from src.utils.ml_common.unified_quality_verification import (
+    UnifiedQualityVerifier,
+    VerificationStage,
+    DataType,
+    create_unified_quality_verifier
+)
+import datetime
+import typing
 
 class ValidationResult(Enum):
     """Validation result status."""
@@ -59,6 +64,17 @@ class DataCollectionValidator:
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.validation_reports: List[ValidationReport] = []
+        
+        # Initialize unified quality verifier
+        self.quality_verifier = create_unified_quality_verifier(
+            config={
+                'enable_pipeline_integration': True,
+                'auto_fix_enabled': True,
+                'export_reports': True,
+                'reports_directory': 'reports/quality'
+            },
+            logger=self.logger
+        )
         
     @monitor_step_execution(step_name="data_collection_validation")
     @ensure_data_integrity
@@ -574,6 +590,86 @@ class DataCollectionValidator:
                     print(f"     • {error}")
         
         print("="*80)
+
+    async def verify_data_collection_quality(self, data: pd.DataFrame, 
+                                           exchange: str, symbol: str, 
+                                           data_type: Optional[DataType] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Verify data quality at the end of data collection.
+        
+        Args:
+            data: Collected data
+            exchange: Exchange name
+            symbol: Symbol name
+            data_type: Data type (auto-detected if None)
+            
+        Returns:
+            Tuple of (cleaned_data, quality_report)
+        """
+        try:
+            self.logger.info(f"🔍 Verifying data collection quality for {exchange}_{symbol}")
+            
+            cleaned_data, quality_report = self.quality_verifier.verify_data_collection_completion(
+                data, exchange, symbol, data_type
+            )
+            
+            # Log quality results
+            self.logger.info(f"✅ Data collection quality verification completed")
+            self.logger.info(f"   Quality score: {quality_report.quality_score:.3f}")
+            self.logger.info(f"   Issues found: {len(quality_report.issues)}")
+            self.logger.info(f"   Rows processed: {quality_report.total_rows}")
+            
+            return cleaned_data, {
+                'quality_score': quality_report.quality_score,
+                'issues_count': len(quality_report.issues),
+                'total_rows': quality_report.total_rows,
+                'data_type': quality_report.data_type.value,
+                'recommendations': quality_report.recommendations
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Data collection quality verification failed: {e}")
+            raise
+
+    async def verify_stage_beginning_quality(self, data: pd.DataFrame, 
+                                           stage_name: str, 
+                                           data_type: Optional[DataType] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Verify data quality at the beginning of a pipeline stage.
+        
+        Args:
+            data: Input data for the stage
+            stage_name: Name of the stage
+            data_type: Data type (auto-detected if None)
+            
+        Returns:
+            Tuple of (cleaned_data, quality_report)
+        """
+        try:
+            self.logger.info(f"🔍 Verifying stage beginning quality for: {stage_name}")
+            
+            cleaned_data, quality_report = self.quality_verifier.verify_stage_beginning(
+                data, stage_name, data_type
+            )
+            
+            # Log quality results
+            self.logger.info(f"✅ Stage beginning quality verification completed")
+            self.logger.info(f"   Quality score: {quality_report.quality_score:.3f}")
+            self.logger.info(f"   Issues found: {len(quality_report.issues)}")
+            self.logger.info(f"   Rows processed: {quality_report.total_rows}")
+            
+            return cleaned_data, {
+                'quality_score': quality_report.quality_score,
+                'issues_count': len(quality_report.issues),
+                'total_rows': quality_report.total_rows,
+                'data_type': quality_report.data_type.value,
+                'stage': quality_report.stage.value,
+                'recommendations': quality_report.recommendations
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Stage beginning quality verification failed: {e}")
+            raise
 
 class PipelineStepValidator:
     """Validator for individual pipeline steps with comprehensive checks."""

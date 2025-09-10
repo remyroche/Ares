@@ -25,7 +25,7 @@ except ImportError:
 from ...utils.logger import system_logger
 from ...core.decorators import handles_errors, traced
 from ...utils.clustering_alternatives import get_clustering_manager
-from ...utils.backtesting_enhanced_clustering import get_backtesting_enhanced_clustering, BacktestingEnhancedConfig
+from ...utils.sr_clustering.backtesting_enhanced_clustering import get_backtesting_enhanced_clustering, BacktestingEnhancedConfig
 
 import hashlib
 import logging

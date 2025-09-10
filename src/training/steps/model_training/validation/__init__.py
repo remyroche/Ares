@@ -1,20 +1,19 @@
 """Validation package for model training steps."""
 
-# Only import step20_ab_testing to avoid pandas dependencies from other files
-# Use importlib to avoid loading other modules in the directory
-
-from pathlib import Path
-
-# Get the path to step20_ab_testing.py
-step20_path = Path(__file__).parent / 'step20_ab_testing.py'
-
-# Load the module using importlib
-spec = importlib.util.spec_from_file_location('step20_ab_testing', step20_path)
-step20_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(step20_module)
-
-# Make the classes available at package level
-ABTestingStep = step20_module.ABTestingStep
-run_step = step20_module.run_step
-
-__all__ = ['ABTestingStep', 'run_step']
+# Import from consolidated backtesting step
+try:
+    from src.training.steps.backtesting import ConsolidatedBacktestingStep
+    from src.utils.common_ml.backtesting import ABTestingEngine
+    
+    # Create compatibility aliases
+    ABTestingStep = ABTestingEngine
+    run_step = None  # Use ConsolidatedBacktestingStep instead
+    
+    __all__ = ['ABTestingStep', 'run_step', 'ConsolidatedBacktestingStep']
+except ImportError:
+    # Fallback if consolidated backtesting is not available
+    ABTestingStep = None
+    run_step = None
+    ConsolidatedBacktestingStep = None
+    
+    __all__ = ['ABTestingStep', 'run_step', 'ConsolidatedBacktestingStep']

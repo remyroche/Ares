@@ -1411,10 +1411,8 @@ class TrainingManager:
                         from .steps import step15_saving
                         from .steps import step16_confidence_calibration
                         from .steps import step17_final_parameters_optimization
-                        from .steps import step18_walk_forward_validation
-                        from .steps import step19_monte_carlo_validation
-                        from .steps import step20_ab_testing
-                        from .steps import step21_saving
+                        # Use consolidated backtesting step instead of individual steps
+                        from .steps.backtesting import ConsolidatedBacktestingStep
                         from .steps import step2_feature_engineering
                         from pathlib import Path
                         import glob
@@ -1594,7 +1592,8 @@ class TrainingManager:
                     return False
 
                 async def _execute_step13() -> None:
-                    from .steps.model_training.validation.step19_monte_carlo_validation import run_step as step13_run_step
+                    # Use consolidated backtesting step instead
+                    from .steps.backtesting import ConsolidatedBacktestingStep
                     return await step13_run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                 step13_success = await self._execute_pipeline_step_with_validation(step_name='step13_monte_carlo_validation', step_key='step13_monte_carlo_validation', step_description='Step 13: Monte Carlo Validation', step_function = _execute_step13, step_args={}, pipeline_state = pipeline_state, training_input = training_input, step_times = step_times, start_step_key = start_step_key, _should_run = _should_run, is_fatal = True)
                 if not step13_success:

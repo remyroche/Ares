@@ -22,6 +22,7 @@ from src.utils.ml_common.data_validation import (
     DataType,
     get_quality_integration
 )
+from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -688,6 +689,9 @@ class UnifiedDataConverter:
         self.backup_dir = standards_instance.build_path('backup', 'binance', 'ethusdt')
         ensure_directory(self.unified_dir)
         ensure_directory(self.backup_dir)
+        
+        # Initialize enhanced data quality validator
+        self.data_quality_validator = EnhancedDataQualityValidator(config.get('data_quality', {}))
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -862,6 +866,22 @@ class UnifiedDataConverter:
         except Exception as e:
             self.logger.warning(f'⚠️ Backup process failed: {e}')
 
+    async def _load_converted_data(self, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
+        """Load converted data for validation."""
+        try:
+            # Build path to converted data
+            standards_instance = self.standards(self.logger)
+            converted_path = standards_instance.build_path('unified_data', exchange, symbol, timeframe=timeframe)
+            
+            if Path(converted_path).exists():
+                return standardized_parquet_handler.read_parquet_standardized(converted_path)
+            else:
+                self.logger.warning(f'⚠️ Converted data not found at {converted_path}')
+                return None
+        except Exception as e:
+            self.logger.warning(f'⚠️ Failed to load converted data: {e}')
+            return None
+
     async def _convert_existing_data(self, symbol: str, exchange: str, timeframe: str) -> bool:
         try:
             self.logger.info('🔄 Converting existing consolidated data to unified format incrementally...')
@@ -892,7 +912,50 @@ class UnifiedDataConverter:
                 self.logger.warning(f'⚠️ Data quality verification failed: {e}')
                 # Continue with original data if quality verification fails
             
-            return await self._process_data_incrementally(klines_data, symbol, exchange, timeframe)
+            # Process data incrementally
+            success = await self._process_data_incrementally(klines_data, symbol, exchange, timeframe)
+            
+            if success:
+                # Validate converted data quality
+                try:
+                    self.logger.info('🔍 Validating converted data quality...')
+                    
+                    # Load the converted data for validation
+                    converted_data = await self._load_converted_data(symbol, exchange, timeframe)
+                    if converted_data is not None and not converted_data.empty:
+                        # Use enhanced data quality validator
+                        quality_result = self.data_quality_validator.validate_dataframe_quality(
+                            converted_data, context=f'converted_data_{symbol}_{exchange}_{timeframe}'
+                        )
+                        
+                        self.logger.info(f'📊 Converted data quality validation:')
+                        self.logger.info(f'   Quality score: {quality_result.quality_score:.3f}')
+                        self.logger.info(f'   Critical issues: {len(quality_result.issues)}')
+                        self.logger.info(f'   Warnings: {len(quality_result.warnings)}')
+                        
+                        # Log detailed analysis
+                        if quality_result.metrics:
+                            metrics = quality_result.metrics
+                            self.logger.info(f'   Memory usage: {metrics.get("memory_usage_mb", 0):.1f} MB')
+                            self.logger.info(f'   Row count: {metrics.get("row_count", 0):,}')
+                            self.logger.info(f'   Column count: {metrics.get("column_count", 0)}')
+                        
+                        # Log recommendations
+                        if quality_result.recommendations:
+                            self.logger.info(f'💡 Quality recommendations:')
+                            for rec in quality_result.recommendations[:3]:  # Show first 3
+                                self.logger.info(f'   - {rec}')
+                        
+                        # Check for critical issues
+                        if not quality_result.passed:
+                            self.logger.warning('⚠️ Converted data quality validation failed - review issues before proceeding')
+                        else:
+                            self.logger.info('✅ Converted data quality validation passed')
+                    
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Converted data validation failed: {e}')
+            
+            return success
         except Exception as e:
             self.logger.exception(f'❌ Data conversion failed: {e}')
             return False

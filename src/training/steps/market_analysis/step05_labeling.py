@@ -3,6 +3,8 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
+from src.utils.feature_engineering_validation import FeatureEngineeringValidator
 import numpy as np
 import pandas as pd
 
@@ -656,6 +658,10 @@ class LabelingStep:
         self.timer = SimpleTimer(self.logger)
         self.error_handler = EnhancedErrorHandler(self.logger)
         self.validation_framework = ComprehensiveValidationFramework(self.logger)
+        
+        # Initialize enhanced validators
+        self.data_quality_validator = EnhancedDataQualityValidator(config.get('data_quality', {}))
+        self.feature_validator = FeatureEngineeringValidator(config.get('feature_validation', {}))
 
         # Initialize comprehensive optimization components
         if OPTIMIZATIONS_AVAILABLE:
@@ -1290,6 +1296,61 @@ class LabelingStep:
             if data is None:
                 self.logger.error('❌ Comprehensive labeling failed')
                 return False
+            
+            # Validate labeled data quality
+            try:
+                self.logger.info('🔍 Validating labeled data quality...')
+                
+                # Use data quality validator for comprehensive validation
+                quality_result = self.data_quality_validator.validate_dataframe_quality(
+                    data, context=f'labeled_data_{symbol}_{exchange}_{timeframe}'
+                )
+                
+                self.logger.info(f'📊 Labeled data quality validation:')
+                self.logger.info(f'   Quality score: {quality_result.quality_score:.3f}')
+                self.logger.info(f'   Critical issues: {len(quality_result.issues)}')
+                self.logger.info(f'   Warnings: {len(quality_result.warnings)}')
+                
+                # Log detailed analysis
+                if quality_result.metrics:
+                    metrics = quality_result.metrics
+                    self.logger.info(f'   Memory usage: {metrics.get("memory_usage_mb", 0):.1f} MB')
+                    self.logger.info(f'   Row count: {metrics.get("row_count", 0):,}')
+                    self.logger.info(f'   Column count: {metrics.get("column_count", 0)}')
+                
+                # Validate label distribution
+                if 'label' in data.columns:
+                    label_dist = data['label'].value_counts()
+                    self.logger.info(f'📊 Label distribution:')
+                    for label, count in label_dist.items():
+                        percentage = (count / len(data)) * 100
+                        self.logger.info(f'   Label {label}: {count:,} ({percentage:.1f}%)')
+                    
+                    # Check for class imbalance
+                    max_class_ratio = label_dist.max() / label_dist.sum()
+                    if max_class_ratio > 0.8:
+                        self.logger.warning(f'⚠️ Severe class imbalance detected: {max_class_ratio:.1%} in majority class')
+                    elif max_class_ratio > 0.6:
+                        self.logger.warning(f'⚠️ Moderate class imbalance detected: {max_class_ratio:.1%} in majority class')
+                
+                # Log recommendations
+                if quality_result.recommendations:
+                    self.logger.info(f'💡 Quality recommendations:')
+                    for rec in quality_result.recommendations[:3]:  # Show first 3
+                        self.logger.info(f'   - {rec}')
+                
+                # Store validation results in metadata
+                validation_metadata = {
+                    'quality_score': quality_result.quality_score,
+                    'validation_passed': quality_result.passed,
+                    'critical_issues': quality_result.issues,
+                    'warnings': quality_result.warnings,
+                    'label_distribution': data['label'].value_counts().to_dict() if 'label' in data.columns else {}
+                }
+                
+            except Exception as e:
+                self.logger.warning(f'⚠️ Labeled data validation failed: {e}')
+                validation_metadata = {'validation_error': str(e)}
             # Use optimized data saving
             if self.data_manager and optimization_context.get('data_manager_session'):
                 self.logger.info('💾 Using optimized data manager for saving')

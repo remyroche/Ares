@@ -12,6 +12,8 @@ from ..enhanced_error_handling import (
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
 from ..enhanced_monitoring_system import monitor_critical_process
+from src.utils.feature_engineering_validation import FeatureEngineeringValidator, FeatureValidationResult
+from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
 
 """Enhanced Step 6: Per-Regime Feature Engineering.
 
@@ -90,7 +92,12 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         self.config = config
         self.force_regime_specific_periods = True
         self.validator = EnhancedValidator()
-        self.logger.info('🎯 Per-regime feature engineering initialized with regime-specific optimization enabled')
+        
+        # Initialize enhanced validators
+        self.feature_validator = FeatureEngineeringValidator(config.get('feature_validation', {}))
+        self.data_quality_validator = EnhancedDataQualityValidator(config.get('data_quality', {}))
+        
+        self.logger.info('🎯 Per-regime feature engineering initialized with regime-specific optimization and enhanced validation enabled')
 
     @critical_async_process('feature_generation')
     @monitor_critical_process('feature_generation')
@@ -261,8 +268,63 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
             features_df = await self._apply_feature_engineering(regime_labeled, regime_config)
             if features_df is None:
                 return (None, None)
+            
+            # Validate engineered features
+            try:
+                self.logger.info(f'🔍 Validating engineered features for regime {regime_id}...')
+                
+                # Use feature validator for comprehensive validation
+                validation_result = self.feature_validator.validate_features(
+                    features_df, context=f'regime_{regime_id}_features'
+                )
+                
+                self.logger.info(f'📊 Feature validation for regime {regime_id}:')
+                self.logger.info(f'   Quality score: {validation_result.quality_score:.3f}')
+                self.logger.info(f'   Critical issues: {len(validation_result.issues)}')
+                self.logger.info(f'   Warnings: {len(validation_result.warnings)}')
+                
+                # Log detailed analysis
+                if validation_result.feature_analysis:
+                    analysis = validation_result.feature_analysis
+                    self.logger.info(f'   Total features: {analysis.get("total_features", 0)}')
+                    self.logger.info(f'   Highly correlated pairs: {analysis.get("highly_correlated_pairs", 0)}')
+                    self.logger.info(f'   Low importance features: {analysis.get("low_importance_features", 0)}')
+                
+                # Log recommendations
+                if validation_result.recommendations:
+                    self.logger.info(f'   Recommendations: {len(validation_result.recommendations)}')
+                    for rec in validation_result.recommendations[:3]:  # Show first 3
+                        self.logger.info(f'     - {rec}')
+                
+                # Add validation results to feature info
+                validation_info = {
+                    'quality_score': validation_result.quality_score,
+                    'validation_passed': validation_result.passed,
+                    'critical_issues': validation_result.issues,
+                    'warnings': validation_result.warnings,
+                    'feature_analysis': validation_result.feature_analysis
+                }
+                
+            except Exception as e:
+                self.logger.warning(f'⚠️ Feature validation failed for regime {regime_id}: {e}')
+                validation_info = {'validation_error': str(e)}
+            
             features_df['feature_regime_id'] = regime_id
-            feature_info = {'regime_id': regime_id, 'num_features': len([c for c in features_df.columns if c not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']]), 'feature_names': [c for c in features_df.columns if c not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']], 'regime_config': regime_config, 'data_shape': features_df.shape, 'context_rows': int(context_mask.sum()) if context_mask is not None else 0, 'optimization_info': {'adaptive_lookback_enabled': self.adaptive_lookback, 'optimized_periods': regime_config.get('optimized_periods', {}), 'optimization_priority': regime_config.get('optimization_priority', 'unknown'), 'emphasis': regime_config.get('emphasis', 'unknown')}}
+            feature_info = {
+                'regime_id': regime_id, 
+                'num_features': len([c for c in features_df.columns if c not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']]), 
+                'feature_names': [c for c in features_df.columns if c not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']], 
+                'regime_config': regime_config, 
+                'data_shape': features_df.shape, 
+                'context_rows': int(context_mask.sum()) if context_mask is not None else 0, 
+                'optimization_info': {
+                    'adaptive_lookback_enabled': self.adaptive_lookback, 
+                    'optimized_periods': regime_config.get('optimized_periods', {}), 
+                    'optimization_priority': regime_config.get('optimization_priority', 'unknown'), 
+                    'emphasis': regime_config.get('emphasis', 'unknown')
+                },
+                'validation_info': validation_info
+            }
             return (features_df, feature_info)
         except Exception as e:
             self.logger.error(f'❌ Error engineering features for regime {regime_id}: {e}')

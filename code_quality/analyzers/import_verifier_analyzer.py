@@ -218,9 +218,10 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         return simple_report
     
     def print_simple_report(self, results: Dict[str, Any]) -> None:
-        """Print a simple yes/no report to console."""
+        """Print a simple yes/no report to console with import details."""
         simple_report = self.get_simple_yes_no_report(results)
         summary = results.get("summary", {})
+        import_status = results.get("import_status", {})
         
         print("\n" + "="*80)
         print("IMPORT VERIFICATION REPORT")
@@ -236,12 +237,34 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         # Sort files for consistent output
         for file_path in sorted(simple_report.keys()):
             status = simple_report[file_path]
+            file_info = import_status.get(file_path, {})
+            imported_by = file_info.get("imported_by", [])
+            
             # Show relative path for better readability
             try:
                 rel_path = Path(file_path).relative_to(Path.cwd())
                 print(f"{status:3} | {rel_path}")
+                
+                # Show which files import this file (if any)
+                if imported_by:
+                    print(f"     └─ Imported by {len(imported_by)} file(s):")
+                    for importer in sorted(imported_by):
+                        try:
+                            rel_importer = Path(importer).relative_to(Path.cwd())
+                            print(f"        • {rel_importer}")
+                        except ValueError:
+                            print(f"        • {importer}")
+                elif status == "NO":
+                    print(f"     └─ Not imported by any other files")
+                    
             except ValueError:
                 print(f"{status:3} | {file_path}")
+                if imported_by:
+                    print(f"     └─ Imported by {len(imported_by)} file(s):")
+                    for importer in sorted(imported_by):
+                        print(f"        • {importer}")
+                elif status == "NO":
+                    print(f"     └─ Not imported by any other files")
         
         print("\n" + "-"*80)
         most_imported = summary.get("most_imported_file", {})

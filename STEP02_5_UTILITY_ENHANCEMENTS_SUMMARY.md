@@ -7,11 +7,9 @@ This document summarizes the comprehensive utility enhancements implemented in s
 
 ### ✅ Human-Readable Timestamps
 - **Added** `_format_timestamp_human_readable()` method
-- **Added** `_format_age_human_readable()` method
 - **Enhanced** S/R level logging with:
   - Relative time formatting (e.g., "2 days ago", "3 hours ago")
-  - Time span calculations between first and last touch
-  - Age formatting with context (e.g., "1,250 bars (span: 5 days)")
+  - Standard age formatting in bars
 
 ### 📍 Comprehensive Level Information
 - **Type**: Support/Resistance classification
@@ -19,7 +17,7 @@ This document summarizes the comprehensive utility enhancements implemented in s
 - **Strength**: Numerical strength score
 - **Touch Count**: Number of times level was touched
 - **First/Last Touch**: Human-readable timestamps with relative time
-- **Age**: Bars with time span context
+- **Age**: Bars count
 - **Validation Status**: Level validation state
 - **Cluster ID**: Clustering assignment
 - **Volume Confirmation**: Volume-based confirmation score
@@ -185,7 +183,7 @@ This document summarizes the comprehensive utility enhancements implemented in s
 
 ## 🎯 Key Improvements Summary
 
-1. **✅ Human-readable timestamps** in S/R level logging
+1. **✅ Human-readable timestamps** in S/R level logging (simplified age formatting)
 2. **✅ Multi-layer memory optimization** using M1 and ml_common utilities
 3. **✅ Enhanced parallel processing** with Apple Silicon optimization
 4. **✅ Comprehensive data validation** using multiple utility layers

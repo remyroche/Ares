@@ -47,6 +47,8 @@ from src.utils.ml_common.data_validation import (
     DataType,
     get_quality_integration
 )
+from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
+from src.utils.feature_engineering_validation import FeatureEngineeringValidator
 from src.utils.intensity_scaler import (
     get_intensity_from_environment, get_scaled_hpo_trials, 
     get_scaled_hpo_timeout, log_intensity_info
@@ -202,6 +204,10 @@ class GeneralModelTrainer:
         # Initialize model factory
         self.model_factory = ModelFactory()
         
+        # Initialize enhanced validators
+        self.data_quality_validator = EnhancedDataQualityValidator(config.__dict__.get('data_quality', {}))
+        self.feature_validator = FeatureEngineeringValidator(config.__dict__.get('feature_validation', {}))
+        
         # Ensure output directory exists
         ensure_directory(config.output_dir)
         
@@ -225,8 +231,9 @@ class GeneralModelTrainer:
         self.logger.info("🚀 Starting model training...")
         start_time = time.time()
         
-        # Validate inputs
+        # Enhanced data and feature validation
         self._validate_data(data)
+        await self._enhanced_feature_validation(data)
         
         # Memory optimization context
         if self.m1_memory:
@@ -273,6 +280,68 @@ class GeneralModelTrainer:
         target_data = data[self.config.target_column]
         if target_data.isnull().any():
             self.logger.warning("⚠️ Missing values detected in target")
+
+    async def _enhanced_feature_validation(self, data: pd.DataFrame) -> None:
+        """Enhanced feature validation with detailed analysis."""
+        try:
+            self.logger.info('🔍 Performing enhanced feature validation...')
+            
+            # Prepare feature data
+            feature_data = data[self.config.feature_columns]
+            target_data = data[self.config.target_column]
+            
+            # Use enhanced data quality validator
+            quality_result = self.data_quality_validator.validate_dataframe_quality(
+                data, context=f'model_training_{self.config.model_name}'
+            )
+            
+            self.logger.info(f'📊 Data quality validation:')
+            self.logger.info(f'   Quality score: {quality_result.quality_score:.3f}')
+            self.logger.info(f'   Critical issues: {len(quality_result.issues)}')
+            self.logger.info(f'   Warnings: {len(quality_result.warnings)}')
+            
+            # Use feature engineering validator
+            feature_result = self.feature_validator.validate_features(
+                feature_data, target_data, context=f'model_training_features_{self.config.model_name}'
+            )
+            
+            self.logger.info(f'📊 Feature validation:')
+            self.logger.info(f'   Quality score: {feature_result.quality_score:.3f}')
+            self.logger.info(f'   Critical issues: {len(feature_result.issues)}')
+            self.logger.info(f'   Warnings: {len(feature_result.warnings)}')
+            
+            # Log detailed feature analysis
+            if feature_result.feature_analysis:
+                analysis = feature_result.feature_analysis
+                self.logger.info(f'   Total features: {analysis.get("total_features", 0)}')
+                self.logger.info(f'   Highly correlated pairs: {analysis.get("highly_correlated_pairs", 0)}')
+                self.logger.info(f'   Low importance features: {analysis.get("low_importance_features", 0)}')
+                self.logger.info(f'   Memory usage: {analysis.get("memory_usage_mb", 0):.1f} MB')
+            
+            # Log recommendations
+            all_recommendations = quality_result.recommendations + feature_result.recommendations
+            if all_recommendations:
+                self.logger.info(f'💡 Validation recommendations:')
+                for rec in all_recommendations[:5]:  # Show first 5
+                    self.logger.info(f'   - {rec}')
+            
+            # Check for critical issues
+            critical_issues = quality_result.issues + feature_result.issues
+            if critical_issues:
+                self.logger.warning('⚠️ Critical validation issues found:')
+                for issue in critical_issues[:3]:  # Show first 3
+                    self.logger.warning(f'   - {issue}')
+            
+            # Store validation results for later use
+            self._validation_results = {
+                'data_quality': quality_result,
+                'feature_validation': feature_result,
+                'combined_score': (quality_result.quality_score + feature_result.quality_score) / 2
+            }
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Enhanced feature validation failed: {e}')
+            self._validation_results = {'validation_error': str(e)}
     
     async def _train_model_internal(
         self, 

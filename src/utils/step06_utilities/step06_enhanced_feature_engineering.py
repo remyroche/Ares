@@ -27,6 +27,8 @@ from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, 
     validate_positive, validate_range, MathValidationError
 )
+from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
+from src.utils.feature_engineering_validation import FeatureEngineeringValidator
 
 # Import utility integration
 from .step06_utility_container import (
@@ -138,6 +140,10 @@ class EnhancedFeatureEngineering:
         
         # Utility services will be initialized when needed
         self.utility_container = None
+        
+        # Initialize enhanced validators
+        self.data_quality_validator = EnhancedDataQualityValidator(config.get('data_quality', {}))
+        self.feature_validator = FeatureEngineeringValidator(config.get('feature_validation', {}))
         
         # Configuration parameters
         self.chunk_size = self.feature_config.get('chunk_size', 10000)
@@ -1054,6 +1060,41 @@ class EnhancedFeatureEngineering:
             self.processing_stats['utility_operations_count'] += 1
             self.processing_stats['total_features_created'] = len(enhanced_features.columns)
             self.logger.info(f"✅ Enhanced features created with utilities: {len(enhanced_features.columns)} features")
+            
+            # Validate engineered features
+            try:
+                self.logger.info('🔍 Validating engineered features...')
+                
+                # Use enhanced feature validator
+                validation_result = self.feature_validator.validate_features(
+                    enhanced_features, context=f'step06_enhanced_features'
+                )
+                
+                self.logger.info(f'📊 Feature validation completed:')
+                self.logger.info(f'   Quality score: {validation_result.quality_score:.3f}')
+                self.logger.info(f'   Critical issues: {len(validation_result.issues)}')
+                self.logger.info(f'   Warnings: {len(validation_result.warnings)}')
+                
+                # Log detailed analysis
+                if validation_result.feature_analysis:
+                    analysis = validation_result.feature_analysis
+                    self.logger.info(f'   Total features: {analysis.get("total_features", 0)}')
+                    self.logger.info(f'   Highly correlated pairs: {analysis.get("highly_correlated_pairs", 0)}')
+                    self.logger.info(f'   Low importance features: {analysis.get("low_importance_features", 0)}')
+                    self.logger.info(f'   Memory usage: {analysis.get("memory_usage_mb", 0):.1f} MB')
+                
+                # Log recommendations
+                if validation_result.recommendations:
+                    self.logger.info(f'💡 Feature recommendations:')
+                    for rec in validation_result.recommendations[:3]:  # Show first 3
+                        self.logger.info(f'   - {rec}')
+                
+                # Store validation results
+                self._validation_results = validation_result
+                
+            except Exception as e:
+                self.logger.warning(f'⚠️ Feature validation failed: {e}')
+                self._validation_results = {'validation_error': str(e)}
             
             return enhanced_features
             

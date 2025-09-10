@@ -32,6 +32,8 @@ from src.utils.math_validation import (
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
+from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
+from src.utils.feature_engineering_validation import FeatureEngineeringValidator
 
 """Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring.
 
@@ -660,6 +662,10 @@ class RegimeDataSplittingStep:
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
+        
+        # Initialize enhanced validators
+        self.data_quality_validator = EnhancedDataQualityValidator(config.get('data_quality', {}))
+        self.feature_validator = FeatureEngineeringValidator(config.get('feature_validation', {}))
 
         # Initialize parquet utilities through dependency injection
         try:
@@ -1120,12 +1126,75 @@ class RegimeDataSplittingStep:
                     }
                     self.logger.info(f'📊 Memory Summary: Current {current_memory:.1f}MB')
 
+                # Validate regime-split data quality
+                try:
+                    self.logger.info('🔍 Validating regime-split data quality...')
+                    
+                    # Get the unified dataset for validation
+                    unified_data = dataset_info.get('unified_data')
+                    if unified_data is not None and not unified_data.empty:
+                        # Use enhanced data quality validator
+                        quality_result = self.data_quality_validator.validate_dataframe_quality(
+                            unified_data, context=f'regime_split_{symbol}_{exchange}_{timeframe}'
+                        )
+                        
+                        self.logger.info(f'📊 Regime-split data quality validation:')
+                        self.logger.info(f'   Quality score: {quality_result.quality_score:.3f}')
+                        self.logger.info(f'   Critical issues: {len(quality_result.issues)}')
+                        self.logger.info(f'   Warnings: {len(quality_result.warnings)}')
+                        
+                        # Log detailed analysis
+                        if quality_result.metrics:
+                            metrics = quality_result.metrics
+                            self.logger.info(f'   Memory usage: {metrics.get("memory_usage_mb", 0):.1f} MB')
+                            self.logger.info(f'   Row count: {metrics.get("row_count", 0):,}')
+                            self.logger.info(f'   Column count: {metrics.get("column_count", 0)}')
+                        
+                        # Validate regime distribution
+                        if 'regime' in unified_data.columns:
+                            regime_dist = unified_data['regime'].value_counts()
+                            self.logger.info(f'📊 Regime distribution:')
+                            for regime, count in regime_dist.items():
+                                percentage = (count / len(unified_data)) * 100
+                                self.logger.info(f'   Regime {regime}: {count:,} ({percentage:.1f}%)')
+                            
+                            # Check for regime balance
+                            min_regime_ratio = regime_dist.min() / regime_dist.sum()
+                            if min_regime_ratio < 0.1:
+                                self.logger.warning(f'⚠️ Severe regime imbalance detected: {min_regime_ratio:.1%} in smallest regime')
+                            elif min_regime_ratio < 0.2:
+                                self.logger.warning(f'⚠️ Moderate regime imbalance detected: {min_regime_ratio:.1%} in smallest regime')
+                        
+                        # Log recommendations
+                        if quality_result.recommendations:
+                            self.logger.info(f'💡 Quality recommendations:')
+                            for rec in quality_result.recommendations[:3]:  # Show first 3
+                                self.logger.info(f'   - {rec}')
+                        
+                        # Store validation results in metadata
+                        validation_metadata = {
+                            'quality_score': quality_result.quality_score,
+                            'validation_passed': quality_result.passed,
+                            'critical_issues': quality_result.issues,
+                            'warnings': quality_result.warnings,
+                            'regime_distribution': unified_data['regime'].value_counts().to_dict() if 'regime' in unified_data.columns else {}
+                        }
+                        
+                    else:
+                        self.logger.warning('⚠️ No unified data available for validation')
+                        validation_metadata = {'validation_error': 'No unified data available'}
+                    
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Regime-split data validation failed: {e}')
+                    validation_metadata = {'validation_error': str(e)}
+
                 return RegimeDataResult.success_result(
                     data = dataset_info.get('unified_data'),
                     metadata={
                         'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe,
                         'regime_count': num_regimes, 'regime_ids': regime_ids.tolist(),
-                        'memory_usage': memory_summary
+                        'memory_usage': memory_summary,
+                        'validation_metadata': validation_metadata
                     },
                     execution_time = time.time() - step_start
                 )

@@ -2,6 +2,8 @@
 from src.utils.logger import system_logger
 from ....core.decorators import handles_errors, traced, validates
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator
+from src.utils.feature_engineering_validation import FeatureEngineeringValidator
 """Enhanced Data Quality Manager for Step1 and Step1_5.
 
 This module provides comprehensive data quality management including:
@@ -27,9 +29,14 @@ logger = system_logger.getChild("EnhancedDataQualityManager")
 class EnhancedDataQualityManager:
     """Comprehensive data quality manager with gap detection, filling, and validation."""
 
-    def __init__(self, data_cache_path: str = "data_cache") -> None:
+    def __init__(self, data_cache_path: str = "data_cache", config: Optional[Dict[str, Any]] = None) -> None:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
+        self.config = config or {}
+        
+        # Initialize enhanced validators
+        self.data_quality_validator = EnhancedDataQualityValidator(self.config.get('data_quality', {}))
+        self.feature_validator = FeatureEngineeringValidator(self.config.get('feature_validation', {}))
         
         # Initialize components
         self.gap_detector = None
@@ -101,7 +108,43 @@ import logging
         }
 
         try:
-            # Step 1: Check for data gaps
+            # Step 1: Enhanced data quality validation
+            logger.info("🔍 Performing enhanced data quality validation...")
+            try:
+                # Load data for validation
+                data_path = self.data_cache_path / "unified_data" / exchange / f"{symbol}_{timeframe}.parquet"
+                if data_path.exists():
+                    data = standardized_parquet_handler.read_parquet_standardized(str(data_path))
+                    
+                    # Use enhanced data quality validator
+                    quality_result = self.data_quality_validator.validate_dataframe_quality(
+                        data, context=f'data_quality_manager_{symbol}_{exchange}_{timeframe}'
+                    )
+                    
+                    results["quality_metrics"] = {
+                        "quality_score": quality_result.quality_score,
+                        "validation_passed": quality_result.passed,
+                        "critical_issues": quality_result.issues,
+                        "warnings": quality_result.warnings,
+                        "detailed_metrics": quality_result.metrics
+                    }
+                    
+                    logger.info(f"📊 Enhanced data quality validation: Score {quality_result.quality_score:.3f}")
+                    logger.info(f"   Critical issues: {len(quality_result.issues)}")
+                    logger.info(f"   Warnings: {len(quality_result.warnings)}")
+                    
+                    # Add recommendations from enhanced validator
+                    results["recommendations"].extend(quality_result.recommendations)
+                    
+                else:
+                    logger.warning(f"⚠️ Data file not found at {data_path}")
+                    results["recommendations"].append("Data file not found - check data collection")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Enhanced data quality validation failed: {e}")
+                results["recommendations"].append(f"Data quality validation failed: {str(e)}")
+            
+            # Step 2: Check for data gaps (legacy functionality)
             if check_gaps and self.gap_detector:
                 gap_results = await self._check_data_gaps(symbol, exchange, timeframe)
                 results["gaps_detected"] = gap_results.get("gaps", [])
@@ -110,7 +153,7 @@ import logging
                     logger.warning(f"⚠️ Found {len(gap_results['gaps'])} data gaps")
                     results["recommendations"].append("Data gaps detected - consider filling them")
                     
-                    # Step 2: Fill gaps if requested
+                    # Step 3: Fill gaps if requested
                     if fill_gaps and self.gap_filler:
                         fill_results = await self._fill_data_gaps(symbol, exchange, timeframe, gap_results["gaps"])
                         results["gaps_filled"] = fill_results.get("filled_gaps", [])

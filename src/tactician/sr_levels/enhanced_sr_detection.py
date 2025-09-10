@@ -25,6 +25,7 @@ except ImportError:
 from ...utils.logger import system_logger
 from ...core.decorators import handles_errors, traced
 from ...utils.clustering_alternatives import get_clustering_manager
+from ...utils.backtesting_enhanced_clustering import get_backtesting_enhanced_clustering, BacktestingEnhancedConfig
 
 import hashlib
 import logging
@@ -4063,12 +4064,12 @@ class EnhancedSRDetector:
         return self._apply_unified_strength_prominence_filtering(levels, data)
 
     def _cluster_nearby_levels(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[List[SRLevel], Dict[str, Any]]:
-        """Cluster nearby SR levels using strength-proximity clustering for optimal grouping."""
+        """Cluster nearby SR levels using backtesting-enhanced clustering for optimal grouping."""
         try:
             if len(levels) < 2:
                 return levels, {'clustered': False, 'reason': 'insufficient_levels'}
 
-            self.logger.info(f'🔗 Applying strength-proximity clustering to {len(levels)} levels')
+            self.logger.info(f'🔗 Applying backtesting-enhanced clustering to {len(levels)} levels')
 
             # Get price range for clustering
             prices = [level.price for level in levels]
@@ -4082,20 +4083,27 @@ class EnhancedSRDetector:
                     'strength': level.strength,
                     'touches': getattr(level, 'touches', 1),
                     'type': level.type,
+                    'detection_time': getattr(level, 'detection_time', None),
+                    'metadata': getattr(level, 'metadata', {}),
                     'original_level': level  # Keep reference to original object
                 }
                 level_dicts.append(level_dict)
 
-            # Initialize clustering manager
-            clustering_manager = get_clustering_manager()
-
-            # Cluster levels using strength-proximity approach
-            result = clustering_manager.cluster_with_fallback(
-                levels=level_dicts,
-                price_range=price_range,
+            # Initialize backtesting-enhanced clustering
+            backtesting_config = BacktestingEnhancedConfig(
                 proximity_threshold=0.01,  # 1% of price range
                 strength_similarity_threshold=0.2,  # 20% strength difference
-                preferred_algorithm='strength_proximity'
+                min_quality_score=0.3,  # Minimum quality score to keep level
+                quality_weight_in_clustering=0.4  # Weight of quality in clustering decisions
+            )
+            
+            backtesting_clustering = get_backtesting_enhanced_clustering(backtesting_config)
+
+            # Cluster levels using backtesting-enhanced approach
+            result = backtesting_clustering.cluster_with_backtesting(
+                levels=level_dicts,
+                data=data,
+                price_range=price_range
             )
 
             # Convert clustering result back to SRLevel objects
@@ -4106,7 +4114,7 @@ class EnhancedSRDetector:
                 if len(cluster) > 1:
                     # Multiple levels in cluster - merge them
                     cluster_levels = [level_dicts[i]['original_level'] for i in cluster]
-                    merged_level = self._merge_cluster_strength_proximity(cluster_levels, data, cluster_count)
+                    merged_level = self._merge_cluster_backtesting_enhanced(cluster_levels, data, cluster_count, result)
                     clustered_levels.append(merged_level)
                     cluster_count += 1
                 else:
@@ -4124,19 +4132,23 @@ class EnhancedSRDetector:
                 'reduction_percentage': ((len(levels) - len(clustered_levels)) / len(levels)) * 100 if len(levels) > 0 else 0,
                 'algorithm_used': result.algorithm_used,
                 'quality_score': result.quality_score,
-                'parameters': result.parameters
+                'parameters': result.parameters,
+                'backtesting_enhanced': True,
+                'learning_summary': backtesting_clustering.get_learning_summary()
             }
 
-            self.logger.info(f'🔗 Strength-proximity clustering complete: {len(clustered_levels)} levels after clustering '
+            self.logger.info(f'🔗 Backtesting-enhanced clustering complete: {len(clustered_levels)} levels after clustering '
                            f'({len(levels)} -> {len(clustered_levels)})')
             self.logger.info(f'   Algorithm: {result.algorithm_used}, Quality: {result.quality_score:.3f}')
             self.logger.info(f'   Clusters formed: {clustering_info["total_clusters"]}')
+            self.logger.info(f'   Backtesting-enhanced: {clustering_info["backtesting_enhanced"]}')
 
             return clustered_levels, clustering_info
 
         except Exception as e:
-            self.logger.warning(f'Strength-proximity clustering failed: {e}')
-            return levels, {'clustered': False, 'error': str(e)}
+            self.logger.warning(f'Backtesting-enhanced clustering failed: {e}')
+            # Fallback to standard strength-proximity clustering
+            return self._fallback_to_standard_clustering(levels, data)
 
     def _dbscan_cluster_levels(self, levels: List[SRLevel], data: pd.DataFrame, level_type: str) -> List[SRLevel]:
         """
@@ -4288,6 +4300,143 @@ class EnhancedSRDetector:
         except Exception as e:
             # Fallback to simple price distance
             return abs(point1[0] - point2[0])
+
+    def _merge_cluster_backtesting_enhanced(self, cluster: List[SRLevel], data: pd.DataFrame, cluster_id: int, clustering_result) -> SRLevel:
+        """Merge a cluster of SR levels using backtesting-enhanced approach."""
+        try:
+            if not cluster:
+                return None
+            
+            if len(cluster) == 1:
+                return cluster[0]
+            
+            # Calculate weighted average price (weighted by strength and quality)
+            total_weight = 0
+            weighted_price = 0
+            
+            for level in cluster:
+                # Weight by both strength and any backtesting quality score
+                quality_score = getattr(level, 'backtest_quality', level.strength)
+                weight = level.strength * quality_score
+                weighted_price += level.price * weight
+                total_weight += weight
+            
+            if total_weight > 0:
+                final_price = weighted_price / total_weight
+            else:
+                final_price = sum(level.price for level in cluster) / len(cluster)
+            
+            # Calculate combined strength (weighted average)
+            combined_strength = sum(level.strength * getattr(level, 'backtest_quality', level.strength) for level in cluster) / len(cluster)
+            
+            # Calculate combined touches
+            combined_touches = sum(getattr(level, 'touches', 1) for level in cluster)
+            
+            # Determine type (majority vote)
+            support_count = sum(1 for level in cluster if level.type == 'support')
+            resistance_count = len(cluster) - support_count
+            combined_type = 'support' if support_count > resistance_count else 'resistance'
+            
+            # Create merged level with backtesting metadata
+            merged_level = SRLevel(
+                price=final_price,
+                strength=combined_strength,
+                type=combined_type,
+                touches=combined_touches,
+                metadata={
+                    'clustered_by': 'backtesting_enhanced',
+                    'cluster_id': cluster_id,
+                    'original_levels': len(cluster),
+                    'original_prices': [level.price for level in cluster],
+                    'original_strengths': [level.strength for level in cluster],
+                    'price_spread': max(level.price for level in cluster) - min(level.price for level in cluster),
+                    'strength_spread': max(level.strength for level in cluster) - min(level.strength for level in cluster),
+                    'backtesting_quality': getattr(clustering_result, 'quality_score', 0.5),
+                    'algorithm_used': getattr(clustering_result, 'algorithm_used', 'backtesting_enhanced')
+                }
+            )
+            
+            self.logger.debug(f'Merged {len(cluster)} levels into backtesting-enhanced cluster {cluster_id}: '
+                            f'${final_price:.2f} (strength: {combined_strength:.3f})')
+            
+            return merged_level
+            
+        except Exception as e:
+            self.logger.warning(f'Failed to merge backtesting-enhanced cluster: {e}')
+            # Return the strongest level as fallback
+            return max(cluster, key=lambda x: x.strength)
+
+    def _fallback_to_standard_clustering(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[List[SRLevel], Dict[str, Any]]:
+        """Fallback to standard strength-proximity clustering if backtesting-enhanced fails."""
+        try:
+            self.logger.info('Falling back to standard strength-proximity clustering')
+            
+            if len(levels) < 2:
+                return levels, {'clustered': False, 'reason': 'insufficient_levels'}
+
+            # Get price range for clustering
+            prices = [level.price for level in levels]
+            price_range = (min(prices), max(prices))
+
+            # Convert SRLevel objects to dictionaries for clustering
+            level_dicts = []
+            for level in levels:
+                level_dict = {
+                    'price': level.price,
+                    'strength': level.strength,
+                    'touches': getattr(level, 'touches', 1),
+                    'type': level.type,
+                    'original_level': level
+                }
+                level_dicts.append(level_dict)
+
+            # Initialize standard clustering manager
+            clustering_manager = get_clustering_manager()
+
+            # Cluster levels using standard strength-proximity approach
+            result = clustering_manager.cluster_with_fallback(
+                levels=level_dicts,
+                price_range=price_range,
+                proximity_threshold=0.01,
+                strength_similarity_threshold=0.2,
+                preferred_algorithm='strength_proximity'
+            )
+
+            # Convert clustering result back to SRLevel objects
+            clustered_levels = []
+            cluster_count = 0
+
+            for cluster in result.clusters:
+                if len(cluster) > 1:
+                    cluster_levels = [level_dicts[i]['original_level'] for i in cluster]
+                    merged_level = self._merge_cluster_strength_proximity(cluster_levels, data, cluster_count)
+                    clustered_levels.append(merged_level)
+                    cluster_count += 1
+                else:
+                    clustered_levels.append(level_dicts[cluster[0]]['original_level'])
+
+            # Calculate clustering statistics
+            clustering_info = {
+                'clustered': True,
+                'original_levels': len(levels),
+                'final_levels': len(clustered_levels),
+                'support_clusters': len([c for c in result.clusters if len(c) > 1 and any(level_dicts[i]['type'] == 'support' for i in c)]),
+                'resistance_clusters': len([c for c in result.clusters if len(c) > 1 and any(level_dicts[i]['type'] == 'resistance' for i in c)]),
+                'total_clusters': len([c for c in result.clusters if len(c) > 1]),
+                'reduction_percentage': ((len(levels) - len(clustered_levels)) / len(levels)) * 100 if len(levels) > 0 else 0,
+                'algorithm_used': result.algorithm_used,
+                'quality_score': result.quality_score,
+                'parameters': result.parameters,
+                'backtesting_enhanced': False,
+                'fallback_used': True
+            }
+
+            self.logger.info(f'Standard clustering fallback complete: {len(clustered_levels)} levels after clustering')
+            return clustered_levels, clustering_info
+
+        except Exception as e:
+            self.logger.error(f'Standard clustering fallback also failed: {e}')
+            return levels, {'clustered': False, 'error': str(e)}
 
     def _merge_cluster_strength_proximity(self, cluster: List[SRLevel], data: pd.DataFrame, cluster_id: int) -> SRLevel:
         """Merge a cluster of SR levels using strength-proximity approach."""

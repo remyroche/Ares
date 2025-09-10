@@ -18,9 +18,9 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.cross_step_validation import CrossStepValidator
-from src.utils.feature_engineering_validation import FeatureEngineeringValidator
+from src.feature_engineering_validation import FeatureEngineeringValidator
 from src.utils.logger import system_logger
-from src.utils.statistical_distribution_validation import StatisticalValidator
+from src.utils.data.quality.statistical_distribution_validation import StatisticalValidator
 import numpy as np
 import pandas as pd
 import logging
@@ -129,7 +129,7 @@ async def demo_cross_step_validation():
 
     # Test 1: Normal transition (should pass)
     logger.info("\n📊 Test 1: Normal data transition")
-    step1_data = await {func}(1000)
+    step1_data = create_sample_data(1000)
     step2_data = step1_data.copy()
 
     result = validator.validate_step_transition(
@@ -144,8 +144,8 @@ async def demo_cross_step_validation():
 
     # Test 2: Data with row count changes
     logger.info("\n📊 Test 2: Data with significant row loss")
-    step1_data = await {func}(1000)
-    step2_data = await {func}(800, issue_type="missing_data")
+    step1_data = create_sample_data(1000)
+    step2_data = create_sample_data(800, issue_type="missing_data")
 
     result = validator.validate_step_transition(
         previous_step_output = step1_data,
@@ -172,7 +172,7 @@ async def demo_statistical_validation():
 
     # Test 1: Normal data
     logger.info("\n📊 Test 1: Well-behaved market data")
-    data = await {func}(1000)
+    data = create_sample_data(1000)
 
     result = validator.validate_distribution(
         df = data,
@@ -185,7 +185,7 @@ async def demo_statistical_validation():
 
     # Test 2: Data with outliers
     logger.info("\n📊 Test 2: Data with extreme outliers")
-    data = await {func}(1000, issue_type="outliers")
+    data = create_sample_data(1000, issue_type="outliers")
 
     result = validator.validate_distribution(
         df = data,
@@ -202,7 +202,7 @@ async def demo_statistical_validation():
 
     # Test 3: Non-stationary data
     logger.info("\n📊 Test 3: Non-stationary data with trends")
-    data = await {func}(1000, issue_type="non_stationary")
+    data = create_sample_data(1000, issue_type="non_stationary")
 
     result = validator.validate_distribution(
         df = data,
@@ -224,7 +224,7 @@ async def demo_feature_engineering_validation():
 
     # Test 1: Correct feature engineering
     logger.info("\n📊 Test 1: Correctly engineered features")
-    original_data = await {func}(1000)
+    original_data = create_sample_data(1000)
     features_data = create_sample_features(original_data)
 
     result = validator.validate_engineered_features(
@@ -240,7 +240,7 @@ async def demo_feature_engineering_validation():
 
     # Test 2: Features with calculation errors
     logger.info("\n📊 Test 2: Features with calculation errors")
-    original_data = await {func}(1000)
+    original_data = create_sample_data(1000)
     features_data = create_sample_features(original_data, issue_type="calculation_error")
 
     result = validator.validate_engineered_features(
@@ -256,7 +256,7 @@ async def demo_feature_engineering_validation():
 
     # Test 3: Features with out-of-range values
     logger.info("\n📊 Test 3: Features with out-of-range values")
-    original_data = await {func}(1000)
+    original_data = create_sample_data(1000)
     features_data = create_sample_features(original_data, issue_type="out_of_range")
 
     result = validator.validate_engineered_features(
@@ -276,7 +276,7 @@ async def demo_feature_engineering_validation():
 
     # Test 4: Feature leakage detection
     logger.info("\n📊 Test 4: Feature leakage detection")
-    original_data = await {func}(1000)
+    original_data = create_sample_data(1000)
     features_data = create_sample_features(original_data, issue_type="feature_leakage")
 
     result = validator.validate_engineered_features(

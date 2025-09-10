@@ -32,6 +32,27 @@ import json
 warnings.filterwarnings('ignore', category = UserWarning, module='arch')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
+# Import M1 optimization utilities
+try:
+    from src.utils.hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
+    from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations, M1EnhancedMatrixOperations
+    from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
+    M1_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    M1_OPTIMIZATIONS_AVAILABLE = False
+    get_m1_memory_optimizer = None
+    get_enhanced_matrix_operations = None
+    get_memory_manager = None
+    print(f"⚠️ M1 optimizations not available: {e}")
+
+# Import PyTorch for MPS acceleration
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+
 class BaseEnsemble:
     """
     Base class for all child ensembles to train highly optimized and robust models.
@@ -40,7 +61,7 @@ class BaseEnsemble:
     """
 
     @handles_errors(default_return = None, context='ensemble initialization')
-    def __init__(self, config: dict, ensemble_name: str) -> None:
+    def __init__(self, config: dict, ensemble_name: str, enable_m1_optimizations: bool = True) -> None:
         self.config = config.get('analyst', {}).get(ensemble_name, {})
         self.ensemble_name = ensemble_name
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -58,6 +79,24 @@ class BaseEnsemble:
         self.ensemble_weights = {self.ensemble_name: 1.0}
         self.regularization_config: dict[str, Any] | None = None
         self.normalization_windows = {'short': 20, 'medium': 60, 'long': 120}
+        
+        # Initialize M1 optimizations
+        self.enable_m1_optimizations = enable_m1_optimizations and M1_OPTIMIZATIONS_AVAILABLE
+        self.enable_gpu_acceleration = TORCH_AVAILABLE
+        
+        if self.enable_m1_optimizations:
+            try:
+                self.m1_memory_optimizer = get_m1_memory_optimizer()
+                self.matrix_ops = get_enhanced_matrix_operations()
+                self.memory_monitor = get_memory_manager()
+                self.logger.info("✅ M1 optimizations initialized for ensemble training")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize M1 optimizations: {e}")
+                self.enable_m1_optimizations = False
+        else:
+            self.m1_memory_optimizer = None
+            self.matrix_ops = None
+            self.memory_monitor = None
         self.sequence_features = ['close', 'volume', 'ADX', 'MACD_HIST', 'ATR', 'volume_delta', 'autoencoder_reconstruction_error', 'funding_rate', 'Realized_Volatility', 'Volatility_Regime_Numeric', 'Hour_Sin', 'Hour_Cos', 'DayOfWeek_Sin', 'DayOfWeek_Cos', 'VROC', 'OBV_Divergence', 'Buy_Sell_Pressure_Ratio', 'Order_Flow_Imbalance', 'Funding_Momentum', 'Funding_Divergence', 'Funding_Extreme', 'Price_Momentum', 'Volatility_Momentum', 'RSI_MACD_Divergence', 'Volume_Price_Divergence', 'distance_to_sr', 'sr_strength', 'sr_type', 'price_position', 'momentum_5', 'momentum_10', 'volume_ratio', 'volatility']
         self.flat_features = ['RSI_14', 'MACD_12_26_9', 'MACDs_12_26_9', 'MACDh_12_26_9', 'BBU_20_2.0', 'BBM_20_2.0', 'BBL_20_2.0', 'BBW_20_2.0', 'BBP_20_2.0', 'STOCHk_14_3_3', 'STOCHd_14_3_3', 'ATR_14', 'ADX_14', 'OBV', 'VWAP', 'SMA_9', 'SMA_21', 'SMA_50', 'EMA_12', 'EMA_26', 'CCI_14', 'MFI_14', 'ROC_10', 'Williams_R_14', 'Parabolic_SAR', 'SuperTrend_10_2.0', 'DCU_20', 'DCL_20', 'DCM_20', 'ATRr_14', 'Volatility_Regime_Numeric', 'Hour_Sin', 'Hour_Cos', 'DayOfWeek_Sin', 'DayOfWeek_Cos', 'VROC', 'OBV_Divergence', 'Buy_Sell_Pressure_Ratio', 'Order_Flow_Imbalance', 'Large_Order_Count', 'Liquidity_Score', 'Funding_Momentum', 'Funding_Divergence', 'Funding_Extreme', 'Price_Momentum', 'Price_Acceleration', 'Volume_Momentum', 'Volume_Acceleration', 'Volatility_Momentum', 'RSI_MACD_Divergence', 'Volume_Price_Divergence', 'Price_SMA_9_Ratio', 'Price_SMA_21_Ratio', 'Price_SMA_50_Ratio', 'Volatility_Regime', 'volume_liquidity', 'price_impact', 'spread_liquidity', 'liquidity_regime', 'liquidity_percentile', 'kyle_lambda', 'amihud_illiquidity', 'order_flow_imbalance', 'large_order_ratio', 'vwap', 'volume_roc', 'volume_ma_ratio', 'liquidity_health', 'realized_volatility', 'parkinson_volatility', 'garman_klass_volatility', 'volatility_regime', 'volatility_percentile', 'autocorrelation_5', 'autocorrelation_20', 'cross_timeframe_correlation', 'momentum_5', 'momentum_20', 'momentum_50', 'momentum_acceleration', 'momentum_strength', 'momentum_divergence', 'adaptive_sma', 'adaptive_ema', 'adaptive_period', 'volume_log_diff', 'volume_pct_change', 'volume_z_score', 'spread_liquidity_bps', 'spread_liquidity_z_score', 'spread_liquidity_change', 'spread_liquidity_pct_change', 'price_impact_bps', 'price_impact_z_score', 'price_impact_change', 'price_impact_pct_change', 'kyle_lambda_z_score', 'kyle_lambda_change', 'kyle_lambda_pct_change', 'amihud_illiquidity_z_score', 'amihud_illiquidity_change', 'amihud_illiquidity_pct_change', 'volume_liquidity_log', 'volume_liquidity_z_score', 'volume_liquidity_change', 'liquidity_percentile_z_score', 'liquidity_health_z_score', 'liquidity_health_change', 'order_flow_imbalance_bounded', 'order_flow_imbalance_z_score', 'order_flow_imbalance_change_1', 'order_flow_imbalance_change_3', 'Order_Flow_Imbalance_bounded', 'Order_Flow_Imbalance_z_score', 'Order_Flow_Imbalance_change_1', 'Order_Flow_Imbalance_change_3', 'Buy_Sell_Pressure_Ratio_bounded', 'Buy_Sell_Pressure_Ratio_z_score', 'Buy_Sell_Pressure_Ratio_change_1', 'Buy_Sell_Pressure_Ratio_change_3', 'vwap_deviation', 'vwap_deviation_z_score', 'large_order_ratio_bounded', 'large_order_ratio_z_score', 'funding_rate_z_score', 'funding_rate_change', 'funding_rate_acceleration', 'realized_volatility_log', 'realized_volatility_z_score', 'realized_volatility_change', 'realized_volatility_pct_change', 'parkinson_volatility_log', 'parkinson_volatility_z_score', 'parkinson_volatility_change', 'parkinson_volatility_pct_change', 'garman_klass_volatility_log', 'garman_klass_volatility_z_score', 'garman_klass_volatility_change', 'garman_klass_volatility_pct_change', 'momentum_5_z_score', 'momentum_5_acceleration', 'momentum_10_z_score', 'momentum_10_acceleration', 'momentum_20_z_score', 'momentum_20_acceleration', 'momentum_50_z_score', 'momentum_50_acceleration', 'nearest_bid_wall_dist_pct', 'nearest_ask_wall_dist_pct', 'nearest_bid_wall_size_change', 'nearest_ask_wall_size_change', 'nearest_bid_wall_size_returns', 'nearest_ask_wall_size_returns', 'orderbook_wall_imbalance', 'weighted_mid_price_returns', 'weighted_mid_price_change', 'depth_profile_slope_proxy', 'orderbook_pressure', 'trade_to_order_ratio']
         self.order_flow_features = ['volume', 'volume_delta', 'cvd_slope', 'OBV', 'CMF', 'volume_liquidity', 'price_impact', 'spread_liquidity', 'liquidity_regime', 'liquidity_percentile', 'kyle_lambda', 'amihud_illiquidity', 'order_flow_imbalance', 'large_order_ratio', 'vwap', 'volume_roc', 'volume_ma_ratio', 'liquidity_stress', 'liquidity_health', 'Buy_Sell_Pressure_Ratio', 'Order_Flow_Imbalance', 'Large_Order_Count', 'Liquidity_Score', 'volume_log_diff', 'volume_pct_change', 'volume_z_score', 'spread_liquidity_bps', 'spread_liquidity_z_score', 'spread_liquidity_change', 'price_impact_bps', 'price_impact_z_score', 'price_impact_change', 'kyle_lambda_z_score', 'kyle_lambda_change', 'amihud_illiquidity_z_score', 'amihud_illiquidity_change', 'volume_liquidity_log', 'volume_liquidity_z_score', 'volume_liquidity_change', 'liquidity_percentile_z_score', 'liquidity_stress_log', 'liquidity_stress_z_score', 'liquidity_stress_change', 'liquidity_health_z_score', 'liquidity_health_change', 'order_flow_imbalance_bounded', 'order_flow_imbalance_z_score', 'order_flow_imbalance_change_1', 'order_flow_imbalance_change_3', 'Order_Flow_Imbalance_bounded', 'Order_Flow_Imbalance_z_score', 'Order_Flow_Imbalance_change_1', 'Order_Flow_Imbalance_change_3', 'Buy_Sell_Pressure_Ratio_bounded', 'Buy_Sell_Pressure_Ratio_z_score', 'Buy_Sell_Pressure_Ratio_change_1', 'Buy_Sell_Pressure_Ratio_change_3', 'vwap_deviation', 'vwap_deviation_z_score', 'large_order_ratio_bounded', 'large_order_ratio_z_score', 'nearest_bid_wall_dist_pct', 'nearest_ask_wall_dist_pct', 'nearest_bid_wall_size_change', 'nearest_ask_wall_size_change', 'nearest_bid_wall_size_returns', 'nearest_ask_wall_size_returns', 'orderbook_wall_imbalance', 'weighted_mid_price_returns', 'weighted_mid_price_change', 'depth_profile_slope_proxy', 'orderbook_pressure', 'trade_to_order_ratio']
@@ -109,6 +148,277 @@ class BaseEnsemble:
         self.trained = True
         self.logger.info(f'Training pipeline for {self.ensemble_name} complete.')
         self._validate_ensemble_state()
+
+    def train_ensemble_m1_optimized(self, historical_features: pd.DataFrame, historical_targets: pd.Series | None = None) -> None:
+        """Train ensemble with M1 optimization."""
+        if not self.enable_m1_optimizations:
+            self.logger.warning("⚠️ M1 optimizations not available, falling back to standard method")
+            return self.train_ensemble(historical_features, historical_targets)
+        
+        self.logger.info(f'🚀 Starting M1-optimized training pipeline for {self.ensemble_name}...')
+        
+        if historical_features.empty:
+            self.logger.warning(f'No historical features for {self.ensemble_name}. Skipping training.')
+            return
+        
+        # Memory checkpoint for M1 optimization
+        with self.m1_memory_optimizer.memory_checkpoint("ensemble_training"):
+            # Check if data should be processed in chunks
+            data_size_mb = historical_features.memory_usage(deep=True).sum() / (1024**2)
+            
+            if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "ensemble_training"):
+                self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks")
+                return self._chunked_ensemble_training(historical_features, historical_targets)
+            
+            # Use GPU acceleration for heavy computations
+            if self.enable_gpu_acceleration and self.matrix_ops:
+                self.logger.info("🎯 Using GPU acceleration for ensemble training")
+                return self._gpu_accelerated_ensemble_training(historical_features, historical_targets)
+            
+            # Standard M1-optimized processing
+            return self._m1_optimized_ensemble_training(historical_features, historical_targets)
+
+    def _m1_optimized_ensemble_training(self, historical_features: pd.DataFrame, historical_targets: pd.Series | None = None) -> None:
+        """M1-optimized ensemble training."""
+        self.logger.info('🔧 Applying M1-optimized feature normalization...')
+        
+        # M1-optimized feature normalization
+        historical_features = self._m1_normalize_features(historical_features)
+        
+        # Ensure all expected features are present
+        all_expected_features = list(set(self.sequence_features + self.flat_features + self.order_flow_features))
+        for col in all_expected_features:
+            if col not in historical_features.columns:
+                historical_features[col] = 0.0
+        
+        if historical_targets is None:
+            self.logger.warning(f'No historical targets for {self.ensemble_name}. Skipping training.')
+            return
+        
+        # M1-optimized data alignment
+        aligned_data = self._m1_align_data(historical_features, historical_targets)
+        
+        if aligned_data.empty:
+            self.logger.warning(f'Aligned data is empty for {self.ensemble_name} after dropping NaNs. Skipping training.')
+            return
+        
+        try:
+            y_encoded = self.label_encoder.fit_transform(aligned_data['target'])
+        except ValueError as e:
+            self.logger.error(f'Error encoding labels for {self.ensemble_name}: {e}. Skipping training.', exc_info=True)
+            return
+        
+        # M1-optimized base model training
+        self._train_base_models_m1_optimized(aligned_data, y_encoded)
+        
+        # M1-optimized meta-feature generation
+        meta_features_train = self._get_meta_features_m1_optimized(aligned_data, is_live=False)
+        
+        if not isinstance(meta_features_train, pd.DataFrame) or meta_features_train.empty:
+            self.logger.warning(f'Meta-features are empty for {self.ensemble_name}. Cannot train meta-learner.')
+            return
+        
+        y_meta_train = pd.Series(y_encoded, index=aligned_data.index).loc[meta_features_train.index].values
+        X_meta_train = meta_features_train
+        
+        if X_meta_train.empty or len(np.unique(y_meta_train)) < 2:
+            self.logger.warning(f'Insufficient or single-class data for meta-learner in {self.ensemble_name}. Skipping meta-learner training.')
+            return
+        
+        # M1-optimized scaling and PCA
+        self.logger.info('🔧 M1-optimized scaling and PCA to meta-features...')
+        X_meta_scaled, X_meta_pca_df = self._m1_scale_and_pca(X_meta_train)
+        
+        # M1-optimized hyperparameter tuning
+        self.logger.info('🎯 M1-optimized hyperparameter tuning for meta-learner...')
+        self.best_meta_params = self._tune_hyperparameters_m1_optimized(LGBMClassifier, self._get_lgbm_search_space, X_meta_pca_df, y_meta_train)
+        
+        # M1-optimized meta-learner training
+        self._train_meta_learner_m1_optimized(X_meta_pca_df, y_meta_train, self.best_meta_params)
+        
+        self.trained = True
+        self.logger.info(f'✅ M1-optimized training pipeline for {self.ensemble_name} complete.')
+        self._validate_ensemble_state()
+
+    def _m1_normalize_features(self, features: pd.DataFrame) -> pd.DataFrame:
+        """M1-optimized feature normalization."""
+        # Use M1 memory-efficient operations
+        normalized_features = features.copy()
+        
+        # M1-optimized normalization for different feature types
+        for window_name, window_size in self.normalization_windows.items():
+            for feature in self.flat_features:
+                if feature in normalized_features.columns:
+                    # Use M1 memory-efficient rolling operations
+                    if self.m1_memory_optimizer:
+                        # Chunked rolling operations for large datasets
+                        data_size_mb = normalized_features[feature].memory_usage(deep=True) / (1024**2)
+                        if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "rolling_normalization"):
+                            normalized_features[f"{feature}_{window_name}_norm"] = self._chunked_rolling_normalize(
+                                normalized_features[feature], window_size
+                            )
+                        else:
+                            normalized_features[f"{feature}_{window_name}_norm"] = self._rolling_normalize(
+                                normalized_features[feature], window_size
+                            )
+                    else:
+                        normalized_features[f"{feature}_{window_name}_norm"] = self._rolling_normalize(
+                            normalized_features[feature], window_size
+                        )
+        
+        return normalized_features
+
+    def _m1_align_data(self, features: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
+        """M1-optimized data alignment."""
+        # Use M1 memory-efficient join operations
+        if self.m1_memory_optimizer:
+            # Check if data should be processed in chunks
+            data_size_mb = features.memory_usage(deep=True).sum() / (1024**2)
+            
+            if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "data_alignment"):
+                return self._chunked_data_alignment(features, targets)
+        
+        # Standard alignment with M1 memory optimization
+        aligned_data = features.join(targets.rename('target')).dropna()
+        
+        # M1 memory cleanup
+        if self.m1_memory_optimizer:
+            self.m1_memory_optimizer.optimize_memory()
+        
+        return aligned_data
+
+    def _m1_scale_and_pca(self, X_meta_train: pd.DataFrame) -> Tuple[np.ndarray, pd.DataFrame]:
+        """M1-optimized scaling and PCA."""
+        # M1-optimized scaling
+        self.meta_feature_scaler = StandardScaler()
+        X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
+        
+        # GPU-accelerated PCA if available
+        if self.enable_gpu_acceleration and self.matrix_ops:
+            try:
+                with self.matrix_ops.gpu_context("pca_analysis"):
+                    # Convert to tensor for GPU processing
+                    X_tensor = torch.from_numpy(X_meta_scaled.astype(np.float32))
+                    X_tensor = self.matrix_ops.gpu_manager.to_device(X_tensor, "pca_analysis")
+                    
+                    # GPU-accelerated SVD for PCA
+                    U, S, V = torch.linalg.svd(X_tensor)
+                    
+                    # Select components
+                    n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
+                    X_meta_pca = (U[:, :n_components] * S[:n_components]).cpu().numpy()
+                    
+                    # Store PCA components
+                    self.pca = type('PCA', (), {
+                        'components_': V[:n_components].cpu().numpy(),
+                        'explained_variance_ratio_': (S[:n_components] ** 2 / (S ** 2).sum()).cpu().numpy()
+                    })()
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ GPU PCA failed: {e}, using CPU")
+                # Fallback to CPU PCA
+                n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
+                self.pca = PCA(n_components=n_components)
+                X_meta_pca = self.pca.fit_transform(X_meta_scaled)
+        else:
+            # CPU PCA with M1 optimization
+            n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
+            self.pca = PCA(n_components=n_components)
+            X_meta_pca = self.pca.fit_transform(X_meta_scaled)
+        
+        X_meta_pca_df = pd.DataFrame(X_meta_pca, index=X_meta_train.index)
+        return X_meta_scaled, X_meta_pca_df
+
+    def _rolling_normalize(self, series: pd.Series, window: int) -> pd.Series:
+        """M1-optimized rolling normalization."""
+        # Use M1 memory-efficient rolling operations
+        rolling_mean = series.rolling(window=window, min_periods=1).mean()
+        rolling_std = series.rolling(window=window, min_periods=1).std()
+        
+        # Avoid division by zero
+        normalized = (series - rolling_mean) / rolling_std.replace(0, 1)
+        return normalized
+
+    def _chunked_rolling_normalize(self, series: pd.Series, window: int) -> pd.Series:
+        """Chunked rolling normalization for large datasets."""
+        chunk_size = self.m1_memory_optimizer.calculate_optimal_chunk_size((len(series),), "rolling_normalization")
+        normalized_chunks = []
+        
+        for start_idx in range(0, len(series), chunk_size):
+            end_idx = min(start_idx + chunk_size, len(series))
+            chunk = series.iloc[start_idx:end_idx]
+            
+            # Apply rolling normalization to chunk
+            chunk_normalized = self._rolling_normalize(chunk, window)
+            normalized_chunks.append(chunk_normalized)
+            
+            # Memory cleanup
+            if start_idx % (chunk_size * 3) == 0:
+                self.m1_memory_optimizer.optimize_memory()
+        
+        return pd.concat(normalized_chunks)
+
+    def _chunked_data_alignment(self, features: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
+        """Chunked data alignment for large datasets."""
+        chunk_size = self.m1_memory_optimizer.calculate_optimal_chunk_size(features.shape, "data_alignment")
+        aligned_chunks = []
+        
+        for start_idx in range(0, len(features), chunk_size):
+            end_idx = min(start_idx + chunk_size, len(features))
+            feature_chunk = features.iloc[start_idx:end_idx]
+            target_chunk = targets.iloc[start_idx:end_idx]
+            
+            # Align chunk
+            aligned_chunk = feature_chunk.join(target_chunk.rename('target')).dropna()
+            aligned_chunks.append(aligned_chunk)
+            
+            # Memory cleanup
+            if start_idx % (chunk_size * 3) == 0:
+                self.m1_memory_optimizer.optimize_memory()
+        
+        return pd.concat(aligned_chunks, ignore_index=True)
+
+    def _train_base_models_m1_optimized(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray) -> None:
+        """M1-optimized base model training."""
+        # Use M1 memory-efficient base model training
+        self.logger.info("🔧 M1-optimized base model training...")
+        
+        # Check if data should be processed in chunks
+        data_size_mb = aligned_data.memory_usage(deep=True).sum() / (1024**2)
+        
+        if self.m1_memory_optimizer and self.m1_memory_optimizer.should_chunk_data(data_size_mb, "base_model_training"):
+            self.logger.info("📦 Using chunked base model training")
+            self._chunked_base_model_training(aligned_data, y_encoded)
+        else:
+            # Standard base model training with M1 memory optimization
+            self._train_base_models(aligned_data, y_encoded)
+
+    def _get_meta_features_m1_optimized(self, aligned_data: pd.DataFrame, is_live: bool = False) -> pd.DataFrame:
+        """M1-optimized meta-feature generation."""
+        # Use M1 memory-efficient meta-feature generation
+        if self.m1_memory_optimizer:
+            with self.m1_memory_optimizer.memory_checkpoint("meta_features"):
+                return self._get_meta_features(aligned_data, is_live)
+        else:
+            return self._get_meta_features(aligned_data, is_live)
+
+    def _tune_hyperparameters_m1_optimized(self, model_class, search_space_func, X, y) -> Dict[str, Any]:
+        """M1-optimized hyperparameter tuning."""
+        # Use M1 memory-efficient hyperparameter tuning
+        if self.m1_memory_optimizer:
+            with self.m1_memory_optimizer.memory_checkpoint("hyperparameter_tuning"):
+                return self._tune_hyperparameters(model_class, search_space_func, X, y)
+        else:
+            return self._tune_hyperparameters(model_class, search_space_func, X, y)
+
+    def _train_meta_learner_m1_optimized(self, X_meta_pca_df: pd.DataFrame, y_meta_train: np.ndarray, best_params: Dict[str, Any]) -> None:
+        """M1-optimized meta-learner training."""
+        # Use M1 memory-efficient meta-learner training
+        if self.m1_memory_optimizer:
+            with self.m1_memory_optimizer.memory_checkpoint("meta_learner_training"):
+                self._train_meta_learner(X_meta_pca_df, y_meta_train, best_params)
+        else:
+            self._train_meta_learner(X_meta_pca_df, y_meta_train, best_params)
 
     @handles_errors(default_return = False, context='ensemble state validation')
     def _validate_ensemble_state(self) -> bool:

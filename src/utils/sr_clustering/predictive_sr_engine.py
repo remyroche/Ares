@@ -71,6 +71,11 @@ class PredictiveSREngine:
         self.config = config or PredictiveConfig()
         self.logger = system_logger.getChild('PredictiveSREngine')
         
+        self.logger.info("Initializing PredictiveSREngine")
+        self.logger.info(f"Configuration: model_type={self.config.model_type}, ensemble_models={self.config.ensemble_models}")
+        self.logger.info(f"Feature flags: market_context={self.config.include_market_context}, time={self.config.include_time_features}")
+        self.logger.info(f"Prediction settings: horizon={self.config.prediction_horizon_days} days, confidence_threshold={self.config.confidence_threshold}")
+        
         # Core components
         self.backtesting_engine: Optional[SRBacktestingEngine] = None
         self.weight_optimizer: Optional[WeightOptimizationEngine] = None
@@ -89,15 +94,21 @@ class PredictiveSREngine:
         self.prediction_history: List[SRPrediction] = []
         self.model_performance: Dict[str, float] = {}
         
+        self.logger.info("✅ PredictiveSREngine initialization completed")
+        
     def train_predictive_model(self, historical_data: pd.DataFrame, 
                              sr_levels: List[SRLevel],
                              optimize_weights: bool = True) -> Dict[str, Any]:
         """Train the predictive model using historical data and optimized weights."""
         try:
-            self.logger.info(f"Training predictive model with {len(sr_levels)} SR levels")
+            self.logger.info(f"🚀 Starting predictive model training with {len(sr_levels)} SR levels")
+            self.logger.info(f"Historical data shape: {historical_data.shape}")
+            self.logger.info(f"Weight optimization enabled: {optimize_weights}")
             
             # Step 1: Run backtesting on historical data
+            self.logger.info("📊 Step 1: Running backtesting on historical data")
             if not self.backtesting_engine:
+                self.logger.info("Initializing backtesting engine")
                 from .sr_backtesting_engine import get_backtesting_engine, BacktestConfig
                 backtest_config = BacktestConfig()
                 self.backtesting_engine = get_backtesting_engine(backtest_config)
@@ -105,25 +116,38 @@ class PredictiveSREngine:
             backtest_results = self.backtesting_engine.backtest_multiple_levels(sr_levels, historical_data)
             self.training_data = backtest_results
             
-            self.logger.info(f"Backtesting completed. Average quality: {np.mean([r.quality_score for r in backtest_results]):.3f}")
+            if backtest_results:
+                quality_scores = [r.quality_score for r in backtest_results]
+                self.logger.info(f"✅ Backtesting completed: {len(backtest_results)} results")
+                self.logger.info(f"Quality statistics: mean={np.mean(quality_scores):.3f}, std={np.std(quality_scores):.3f}, min={np.min(quality_scores):.3f}, max={np.max(quality_scores):.3f}")
+            else:
+                self.logger.warning("⚠️ Backtesting completed but no results returned")
             
             # Step 2: Optimize weights if requested
             if optimize_weights:
+                self.logger.info("🎯 Step 2: Optimizing weights")
                 self._optimize_weights(backtest_results, historical_data)
+            else:
+                self.logger.info("⏭️ Step 2: Skipping weight optimization")
             
             # Step 3: Engineer predictive features
+            self.logger.info("🔧 Step 3: Engineering predictive features")
             feature_matrix, target_scores = self._engineer_predictive_features(
                 backtest_results, historical_data
             )
             
             if len(feature_matrix) < self.config.min_training_samples:
-                self.logger.warning(f"Insufficient training samples: {len(feature_matrix)} < {self.config.min_training_samples}")
+                self.logger.warning(f"⚠️ Insufficient training samples: {len(feature_matrix)} < {self.config.min_training_samples}")
                 return {'status': 'insufficient_data'}
             
+            self.logger.info(f"✅ Feature engineering completed: {feature_matrix.shape[0]} samples, {feature_matrix.shape[1]} features")
+            
             # Step 4: Train predictive model
+            self.logger.info("🧠 Step 4: Training predictive model")
             model_result = self._train_quality_predictor(feature_matrix, target_scores)
             
             # Step 5: Validate model performance
+            self.logger.info("✅ Step 5: Validating model performance")
             validation_result = self._validate_model(feature_matrix, target_scores)
             
             training_result = {
@@ -135,19 +159,27 @@ class PredictiveSREngine:
                 'feature_importance': self.feature_importance
             }
             
-            self.logger.info(f"Predictive model training completed. R² Score: {validation_result.get('r2_score', 0.0):.3f}")
+            r2_score = validation_result.get('cv_r2_mean', 0.0)
+            self.logger.info(f"🎉 Predictive model training completed successfully")
+            self.logger.info(f"Model performance: R² Score: {r2_score:.3f}")
+            self.logger.info(f"Training samples: {len(feature_matrix)}, Features: {feature_matrix.shape[1]}")
             
             return training_result
             
         except Exception as e:
-            self.logger.error(f"Predictive model training failed: {e}")
+            self.logger.error(f"❌ Predictive model training failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {'status': 'failed', 'error': str(e)}
     
     def _optimize_weights(self, backtest_results: List[BacktestResult], 
                          historical_data: pd.DataFrame) -> None:
         """Optimize weights using the weight optimization engine."""
         try:
+            self.logger.info(f"🎯 Starting weight optimization with {len(backtest_results)} backtest results")
+            
             if not self.weight_optimizer:
+                self.logger.info("Initializing weight optimization engine")
                 from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
                 weight_config = WeightOptimizationConfig(
                     optimization_method='scipy_minimize',
@@ -155,65 +187,100 @@ class PredictiveSREngine:
                     secondary_objective='stability'
                 )
                 self.weight_optimizer = get_weight_optimization_engine(weight_config)
+                self.logger.info(f"Weight optimization config: method={weight_config.optimization_method}, objective={weight_config.primary_objective}")
             
             optimization_result = self.weight_optimizer.optimize_weights(backtest_results, historical_data)
             
             if optimization_result and optimization_result.get('optimization_success', False):
                 self.optimized_weights = optimization_result.get('best_weights', {})
-                self.logger.info(f"Weight optimization completed. Best score: {optimization_result.get('best_score', 0.0):.4f}")
+                best_score = optimization_result.get('best_score', 0.0)
+                
+                self.logger.info(f"✅ Weight optimization completed successfully")
+                self.logger.info(f"Best optimization score: {best_score:.4f}")
+                self.logger.info(f"Optimized weights for {len(self.optimized_weights)} features")
+                
+                # Log top optimized weights
+                if self.optimized_weights:
+                    sorted_weights = sorted(self.optimized_weights.items(), key=lambda x: x[1], reverse=True)
+                    self.logger.info("Top 5 optimized weights:")
+                    for feature, weight in sorted_weights[:5]:
+                        self.logger.info(f"  {feature}: {weight:.3f}")
             else:
-                self.logger.warning("Weight optimization failed, using default weights")
+                self.logger.warning("⚠️ Weight optimization failed, using default weights")
                 self.optimized_weights = {}
                 
         except Exception as e:
-            self.logger.warning(f"Weight optimization failed: {e}")
+            self.logger.error(f"❌ Weight optimization failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             self.optimized_weights = {}
     
     def _engineer_predictive_features(self, backtest_results: List[BacktestResult], 
                                     historical_data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         """Engineer features for predictive modeling."""
         try:
+            self.logger.info(f"🔧 Engineering predictive features for {len(backtest_results)} backtest results")
+            
             features = []
             targets = []
+            feature_engineering_errors = 0
             
-            for result in backtest_results:
-                # Extract SR level features
-                level_features = self._extract_level_features(result)
-                
-                # Extract market context features
-                if self.config.include_market_context:
-                    market_features = self._extract_market_context_features(result, historical_data)
-                    level_features.update(market_features)
-                
-                # Extract time-based features
-                if self.config.include_time_features:
-                    time_features = self._extract_time_features(result)
-                    level_features.update(time_features)
-                
-                # Extract volatility features
-                if self.config.include_volatility_features:
-                    volatility_features = self._extract_volatility_features(result, historical_data)
-                    level_features.update(volatility_features)
-                
-                # Extract volume features
-                if self.config.include_volume_features:
-                    volume_features = self._extract_volume_features(result, historical_data)
-                    level_features.update(volume_features)
-                
-                # Convert to array
-                feature_array = np.array(list(level_features.values()))
-                features.append(feature_array)
-                targets.append(result.quality_score)
+            for i, result in enumerate(backtest_results):
+                try:
+                    # Extract SR level features
+                    level_features = self._extract_level_features(result)
+                    
+                    # Extract market context features
+                    if self.config.include_market_context:
+                        market_features = self._extract_market_context_features(result, historical_data)
+                        level_features.update(market_features)
+                    
+                    # Extract time-based features
+                    if self.config.include_time_features:
+                        time_features = self._extract_time_features(result)
+                        level_features.update(time_features)
+                    
+                    # Extract volatility features
+                    if self.config.include_volatility_features:
+                        volatility_features = self._extract_volatility_features(result, historical_data)
+                        level_features.update(volatility_features)
+                    
+                    # Extract volume features
+                    if self.config.include_volume_features:
+                        volume_features = self._extract_volume_features(result, historical_data)
+                        level_features.update(volume_features)
+                    
+                    # Convert to array
+                    feature_array = np.array(list(level_features.values()))
+                    features.append(feature_array)
+                    targets.append(result.quality_score)
+                    
+                    # Log progress every 10 results
+                    if i % 10 == 0:
+                        self.logger.debug(f"Engineered features for result {i+1}/{len(backtest_results)}")
+                        
+                except Exception as e:
+                    feature_engineering_errors += 1
+                    self.logger.warning(f"Failed to engineer features for result {i+1}: {e}")
+                    continue
+            
+            if not features:
+                self.logger.error("❌ No features could be engineered from backtest results")
+                return np.array([]), np.array([])
             
             feature_matrix = np.array(features)
             target_scores = np.array(targets)
             
-            self.logger.info(f"Engineered {feature_matrix.shape[1]} features for {len(features)} samples")
+            self.logger.info(f"✅ Feature engineering completed: {feature_matrix.shape[1]} features for {len(features)} samples")
+            self.logger.info(f"Feature engineering errors: {feature_engineering_errors}")
+            self.logger.debug(f"Feature matrix shape: {feature_matrix.shape}, target shape: {target_scores.shape}")
             
             return feature_matrix, target_scores
             
         except Exception as e:
-            self.logger.error(f"Feature engineering failed: {e}")
+            self.logger.error(f"❌ Feature engineering failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return np.array([]), np.array([])
     
     def _extract_level_features(self, result: BacktestResult) -> Dict[str, float]:
@@ -517,16 +584,23 @@ class PredictiveSREngine:
                                target_scores: np.ndarray) -> Dict[str, Any]:
         """Train the quality prediction model."""
         try:
+            self.logger.info(f"🧠 Training quality predictor with {feature_matrix.shape[0]} samples and {feature_matrix.shape[1]} features")
+            
             # Scale features
+            self.logger.info("Scaling features using RobustScaler")
             self.feature_scaler = RobustScaler()
             scaled_features = self.feature_scaler.fit_transform(feature_matrix)
+            self.logger.debug(f"Feature scaling completed: {scaled_features.shape}")
             
             # Train ensemble model
             if self.config.model_type == 'ensemble':
+                self.logger.info(f"Training ensemble model with {len(self.config.ensemble_models)} models: {self.config.ensemble_models}")
                 models = []
                 predictions = []
                 
-                for model_name in self.config.ensemble_models:
+                for i, model_name in enumerate(self.config.ensemble_models):
+                    self.logger.info(f"Training model {i+1}/{len(self.config.ensemble_models)}: {model_name}")
+                    
                     if model_name == 'ridge':
                         model = Ridge(alpha=1.0)
                     elif model_name == 'elastic_net':
@@ -536,6 +610,7 @@ class PredictiveSREngine:
                     elif model_name == 'gradient_boosting':
                         model = GradientBoostingRegressor(n_estimators=100, random_state=42)
                     else:
+                        self.logger.warning(f"Unknown model type: {model_name}, skipping")
                         continue
                     
                     # Train model
@@ -545,9 +620,12 @@ class PredictiveSREngine:
                     # Get predictions for ensemble
                     pred = model.predict(scaled_features)
                     predictions.append(pred)
+                    
+                    self.logger.debug(f"Model {model_name} trained successfully")
                 
                 # Create ensemble predictor
                 self.quality_predictor = models
+                self.logger.info(f"✅ Ensemble training completed: {len(models)} models trained")
                 
                 # Calculate feature importance (average across models)
                 feature_importance = {}
@@ -570,6 +648,7 @@ class PredictiveSREngine:
                     feature_importance[feature_name] = np.mean(feature_importance[feature_name])
                 
                 self.feature_importance = feature_importance
+                self.logger.info(f"Feature importance calculated for {len(feature_importance)} features")
                 
                 # Calculate ensemble predictions
                 ensemble_predictions = np.mean(predictions, axis=0)
@@ -578,6 +657,8 @@ class PredictiveSREngine:
                 r2 = r2_score(target_scores, ensemble_predictions)
                 mse = mean_squared_error(target_scores, ensemble_predictions)
                 mae = mean_absolute_error(target_scores, ensemble_predictions)
+                
+                self.logger.info(f"Ensemble performance: R²={r2:.3f}, MSE={mse:.4f}, MAE={mae:.4f}")
                 
                 return {
                     'model_type': 'ensemble',
@@ -590,6 +671,8 @@ class PredictiveSREngine:
             
             else:
                 # Single model training
+                self.logger.info(f"Training single model: {self.config.model_type}")
+                
                 if self.config.model_type == 'ridge':
                     model = Ridge(alpha=1.0)
                 elif self.config.model_type == 'elastic_net':
@@ -597,10 +680,12 @@ class PredictiveSREngine:
                 elif self.config.model_type == 'random_forest':
                     model = RandomForestRegressor(n_estimators=100, random_state=42)
                 else:
+                    self.logger.warning(f"Unknown model type: {self.config.model_type}, using Ridge as default")
                     model = Ridge(alpha=1.0)  # Default
                 
                 model.fit(scaled_features, target_scores)
                 self.quality_predictor = model
+                self.logger.info(f"✅ Single model training completed: {self.config.model_type}")
                 
                 # Calculate feature importance
                 if hasattr(model, 'feature_importances_'):
@@ -612,12 +697,15 @@ class PredictiveSREngine:
                 
                 feature_importance = {f"feature_{i}": importance for i, importance in enumerate(importances)}
                 self.feature_importance = feature_importance
+                self.logger.info(f"Feature importance calculated for {len(feature_importance)} features")
                 
                 # Calculate performance metrics
                 predictions = model.predict(scaled_features)
                 r2 = r2_score(target_scores, predictions)
                 mse = mean_squared_error(target_scores, predictions)
                 mae = mean_absolute_error(target_scores, predictions)
+                
+                self.logger.info(f"Single model performance: R²={r2:.3f}, MSE={mse:.4f}, MAE={mae:.4f}")
                 
                 return {
                     'model_type': self.config.model_type,
@@ -628,7 +716,9 @@ class PredictiveSREngine:
                 }
                 
         except Exception as e:
-            self.logger.error(f"Model training failed: {e}")
+            self.logger.error(f"❌ Model training failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {'status': 'failed', 'error': str(e)}
     
     def _validate_model(self, feature_matrix: np.ndarray, 
@@ -711,10 +801,13 @@ class PredictiveSREngine:
                           prediction_horizon: Optional[int] = None) -> SRPrediction:
         """Predict the future quality of an SR level."""
         try:
+            self.logger.debug(f"🔮 Predicting quality for SR level at price {sr_level.price}, type {sr_level.level_type}")
+            
             if self.quality_predictor is None or self.feature_scaler is None:
                 raise ValueError("Model not trained. Call train_predictive_model first.")
             
             prediction_horizon = prediction_horizon or self.config.prediction_horizon_days
+            self.logger.debug(f"Prediction horizon: {prediction_horizon} days")
             
             # Create a temporary backtest result for feature extraction
             temp_result = BacktestResult(
@@ -741,46 +834,61 @@ class PredictiveSREngine:
             )
             
             # Extract features
+            self.logger.debug("Extracting features for prediction")
             level_features = self._extract_level_features(temp_result)
             
             if self.config.include_market_context:
                 market_features = self._extract_market_context_features(temp_result, current_market_data)
                 level_features.update(market_features)
+                self.logger.debug(f"Added {len(market_features)} market context features")
             
             if self.config.include_time_features:
                 time_features = self._extract_time_features(temp_result)
                 level_features.update(time_features)
+                self.logger.debug(f"Added {len(time_features)} time features")
             
             if self.config.include_volatility_features:
                 volatility_features = self._extract_volatility_features(temp_result, current_market_data)
                 level_features.update(volatility_features)
+                self.logger.debug(f"Added {len(volatility_features)} volatility features")
             
             if self.config.include_volume_features:
                 volume_features = self._extract_volume_features(temp_result, current_market_data)
                 level_features.update(volume_features)
+                self.logger.debug(f"Added {len(volume_features)} volume features")
+            
+            self.logger.debug(f"Total features extracted: {len(level_features)}")
             
             # Convert to array and scale
             feature_array = np.array(list(level_features.values())).reshape(1, -1)
             scaled_features = self.feature_scaler.transform(feature_array)
+            self.logger.debug(f"Features scaled: {scaled_features.shape}")
             
             # Make prediction
             if isinstance(self.quality_predictor, list):  # Ensemble
+                self.logger.debug(f"Making ensemble prediction with {len(self.quality_predictor)} models")
                 predictions = []
                 for model_name, model in self.quality_predictor:
                     pred = model.predict(scaled_features)[0]
                     predictions.append(pred)
+                    self.logger.debug(f"Model {model_name} prediction: {pred:.3f}")
                 
                 predicted_quality = np.mean(predictions)
                 confidence = 1.0 - np.std(predictions)  # Lower std = higher confidence
+                self.logger.debug(f"Ensemble prediction: {predicted_quality:.3f}, confidence: {confidence:.3f}")
             else:  # Single model
+                self.logger.debug("Making single model prediction")
                 predicted_quality = self.quality_predictor.predict(scaled_features)[0]
                 confidence = 0.8  # Default confidence for single model
+                self.logger.debug(f"Single model prediction: {predicted_quality:.3f}, confidence: {confidence:.3f}")
             
             # Calculate key factors (feature contributions)
             key_factors = self._calculate_feature_contributions(level_features, scaled_features[0])
+            self.logger.debug(f"Calculated {len(key_factors)} key factors")
             
             # Extract market context
             market_context = self._extract_market_context_features(temp_result, current_market_data)
+            self.logger.debug(f"Extracted {len(market_context)} market context features")
             
             # Create prediction result
             prediction = SRPrediction(
@@ -797,12 +905,14 @@ class PredictiveSREngine:
             # Store prediction
             self.prediction_history.append(prediction)
             
-            self.logger.info(f"Predicted quality for SR level at {sr_level.price}: {predicted_quality:.3f} (confidence: {confidence:.3f})")
+            self.logger.info(f"✅ Predicted quality for SR level at {sr_level.price}: {predicted_quality:.3f} (confidence: {confidence:.3f})")
             
             return prediction
             
         except Exception as e:
-            self.logger.error(f"SR quality prediction failed: {e}")
+            self.logger.error(f"❌ SR quality prediction failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             raise
     
     def _calculate_feature_contributions(self, features: Dict[str, float], 
@@ -858,41 +968,61 @@ class PredictiveSREngine:
             min_quality = min_quality or self.config.quality_threshold
             min_confidence = min_confidence or self.config.confidence_threshold
             
-            predictions = []
+            self.logger.info(f"🔍 Finding high-quality predictions for {len(sr_levels)} SR levels")
+            self.logger.info(f"Quality threshold: {min_quality:.3f}, Confidence threshold: {min_confidence:.3f}")
             
-            for sr_level in sr_levels:
+            predictions = []
+            prediction_errors = 0
+            
+            for i, sr_level in enumerate(sr_levels):
                 try:
+                    self.logger.debug(f"Evaluating level {i+1}/{len(sr_levels)}: price={sr_level.price}")
+                    
                     prediction = self.predict_sr_quality(sr_level, current_market_data)
                     
                     if (prediction.predicted_quality >= min_quality and 
                         prediction.confidence >= min_confidence):
                         predictions.append(prediction)
+                        self.logger.debug(f"Level {sr_level.price} qualifies: quality={prediction.predicted_quality:.3f}, confidence={prediction.confidence:.3f}")
+                    else:
+                        self.logger.debug(f"Level {sr_level.price} does not qualify: quality={prediction.predicted_quality:.3f}, confidence={prediction.confidence:.3f}")
                         
                 except Exception as e:
+                    prediction_errors += 1
                     self.logger.warning(f"Failed to predict quality for level at {sr_level.price}: {e}")
                     continue
             
             # Sort by predicted quality (descending)
             predictions.sort(key=lambda x: x.predicted_quality, reverse=True)
             
-            self.logger.info(f"Found {len(predictions)} high-quality SR level predictions")
+            self.logger.info(f"✅ Found {len(predictions)} high-quality SR level predictions ({prediction_errors} errors)")
+            
+            if predictions:
+                top_quality = predictions[0].predicted_quality
+                avg_quality = np.mean([p.predicted_quality for p in predictions])
+                self.logger.info(f"Quality range: {top_quality:.3f} (top) to {predictions[-1].predicted_quality:.3f} (bottom), avg: {avg_quality:.3f}")
             
             return predictions
             
         except Exception as e:
-            self.logger.error(f"High quality prediction failed: {e}")
+            self.logger.error(f"❌ High quality prediction failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
     
     def get_prediction_summary(self) -> Dict[str, Any]:
         """Get a summary of prediction performance and history."""
+        self.logger.info("📊 Generating prediction summary")
+        
         if not self.prediction_history:
+            self.logger.warning("No prediction history available")
             return {'status': 'no_predictions'}
         
         predictions = self.prediction_history
         predicted_qualities = [p.predicted_quality for p in predictions]
         confidences = [p.confidence for p in predictions]
         
-        return {
+        summary = {
             'total_predictions': len(predictions),
             'avg_predicted_quality': np.mean(predicted_qualities),
             'avg_confidence': np.mean(confidences),
@@ -901,7 +1031,20 @@ class PredictiveSREngine:
             'model_performance': self.model_performance,
             'feature_importance': self.feature_importance
         }
+        
+        self.logger.info(f"Prediction summary: {summary}")
+        
+        return summary
 
 def get_predictive_sr_engine(config: Optional[PredictiveConfig] = None) -> PredictiveSREngine:
     """Get a predictive SR engine instance."""
-    return PredictiveSREngine(config)
+    logger = system_logger.getChild('PredictiveSREngine')
+    logger.info("Creating new PredictiveSREngine instance")
+    
+    try:
+        instance = PredictiveSREngine(config)
+        logger.info("✅ Successfully created PredictiveSREngine instance")
+        return instance
+    except Exception as e:
+        logger.error(f"❌ Failed to create PredictiveSREngine instance: {e}")
+        raise

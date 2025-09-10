@@ -13,23 +13,41 @@ import numpy as np
 from datetime import datetime, timedelta
 import sys
 import os
+import logging
 
 # Add the project root to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
-from src.utils.sr_clustering import (
-    get_backtesting_engine, BacktestConfig, SRLevel,
-    get_predictive_sr_engine, PredictiveConfig,
-    get_trading_ml_integration, TradingMLConfig
-)
+# Import logging system
+from src.utils.logger import system_logger
+
+# Initialize logger for this example
+logger = system_logger.getChild('complete_trading_pipeline_example')
+
+logger.info("Starting Complete Trading Pipeline Example")
+
+try:
+    from src.utils.sr_clustering import (
+        get_backtesting_engine, BacktestConfig, SRLevel,
+        get_predictive_sr_engine, PredictiveConfig,
+        get_trading_ml_integration, TradingMLConfig
+    )
+    logger.info("✅ Successfully imported SR clustering components")
+except ImportError as e:
+    logger.error(f"❌ Failed to import SR clustering components: {e}")
+    raise
 
 def create_comprehensive_market_data(days: int = 300) -> pd.DataFrame:
     """Create comprehensive market data with trends, volatility, and volume patterns."""
+    logger.info(f"📊 Creating comprehensive market data for {days} days")
+    
     dates = pd.date_range(start=datetime.now() - timedelta(days=days), periods=days, freq='D')
+    logger.debug(f"Generated date range: {dates[0]} to {dates[-1]}")
     
     # Generate realistic price data with multiple trends
     np.random.seed(42)
     base_price = 100.0
+    logger.debug(f"Base price: {base_price}, random seed: 42")
     
     # Create multiple trend periods
     trend_periods = [
@@ -40,8 +58,15 @@ def create_comprehensive_market_data(days: int = 300) -> pd.DataFrame:
         (250, 300, 0.12)   # Recovery: 12% gain
     ]
     
+    logger.info(f"Defined {len(trend_periods)} trend periods")
+    for i, (start, end, trend) in enumerate(trend_periods):
+        logger.debug(f"Period {i+1}: days {start}-{end}, trend: {trend:.1%}")
+    
     # Generate prices with trends
+    logger.info("Generating price data with trend periods")
     prices = [base_price]
+    trend_changes = 0
+    
     for i in range(1, days):
         # Find current trend period
         current_trend = 0.0
@@ -52,11 +77,22 @@ def create_comprehensive_market_data(days: int = 300) -> pd.DataFrame:
         
         # Add trend and random noise
         daily_return = current_trend + np.random.normal(0, 0.02)
-        prices.append(prices[-1] * (1 + daily_return))
+        new_price = prices[-1] * (1 + daily_return)
+        prices.append(new_price)
+        
+        # Log trend changes
+        if i in [100, 150, 200, 250]:
+            trend_changes += 1
+            logger.debug(f"Trend change at day {i}: price={new_price:.2f}, trend={current_trend:.4f}")
+    
+    logger.info(f"Generated {len(prices)} price points with {trend_changes} trend changes")
+    logger.debug(f"Price range: {min(prices):.2f} - {max(prices):.2f}")
     
     # Generate volume with patterns
+    logger.info("Generating volume data with trend-based patterns")
     base_volume = 1000000
     volumes = []
+    
     for i in range(days):
         # Volume increases during trends
         trend_multiplier = 1.0
@@ -69,8 +105,13 @@ def create_comprehensive_market_data(days: int = 300) -> pd.DataFrame:
         volume = base_volume * trend_multiplier * np.random.lognormal(0, 0.3)
         volumes.append(volume)
     
+    logger.info(f"Generated {len(volumes)} volume points")
+    logger.debug(f"Volume range: {min(volumes):.0f} - {max(volumes):.0f}")
+    
     # Generate OHLC data
+    logger.info("Generating OHLC data with realistic patterns")
     data = []
+    
     for i, (date, close, volume) in enumerate(zip(dates, prices, volumes)):
         # Generate realistic OHLC
         daily_volatility = 0.01 + 0.005 * np.sin(i / 10)  # Cyclical volatility
@@ -86,15 +127,31 @@ def create_comprehensive_market_data(days: int = 300) -> pd.DataFrame:
             'close': close,
             'volume': volume
         })
+        
+        # Log progress every 50 days
+        if i % 50 == 0:
+            logger.debug(f"Generated OHLC data for day {i+1}/{days}")
     
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    logger.info(f"✅ Created comprehensive market data: {len(df)} rows")
+    logger.info(f"Data columns: {list(df.columns)}")
+    logger.debug(f"Data shape: {df.shape}")
+    
+    return df
 
 def create_historical_performance_data(market_data: pd.DataFrame, sr_levels: list) -> pd.DataFrame:
     """Create historical performance data for training."""
+    logger.info(f"📈 Creating historical performance data for {len(sr_levels)} SR levels")
+    logger.info(f"Market data shape: {market_data.shape}")
+    
     performance_data = []
+    
+    processed_days = 0
+    skipped_days = 0
     
     for i, row in market_data.iterrows():
         if i < 30:  # Skip first 30 days for stability
+            skipped_days += 1
             continue
         
         # Find nearby SR levels
@@ -107,6 +164,8 @@ def create_historical_performance_data(market_data: pd.DataFrame, sr_levels: lis
         
         if not nearby_levels:
             continue
+        
+        processed_days += 1
         
         # Calculate future return (30 days ahead)
         future_idx = min(i + 30, len(market_data) - 1)
@@ -134,16 +193,33 @@ def create_historical_performance_data(market_data: pd.DataFrame, sr_levels: lis
                 'day_of_week': row['date'].weekday(),
                 'month': row['date'].month
             })
+        
+        # Log progress every 50 days
+        if processed_days % 50 == 0:
+            logger.debug(f"Processed {processed_days} days, created {len(performance_data)} performance records")
     
-    return pd.DataFrame(performance_data)
+    df = pd.DataFrame(performance_data)
+    logger.info(f"✅ Created historical performance data: {len(df)} records")
+    logger.info(f"Processed {processed_days} days, skipped {skipped_days} days")
+    logger.info(f"Performance data columns: {list(df.columns)}")
+    
+    if len(df) > 0:
+        success_rate = df['trade_success'].mean()
+        avg_return = df['future_return'].mean()
+        logger.info(f"Performance stats: success_rate={success_rate:.3f}, avg_return={avg_return:.3f}")
+    
+    return df
 
 def create_diverse_sr_levels() -> list:
     """Create diverse SR levels for testing."""
+    logger.info("🎯 Creating diverse SR levels for testing")
     levels = []
     
     # Strong support levels
     strong_support_prices = [95.0, 98.0, 102.0, 105.0]
-    for price in strong_support_prices:
+    logger.info(f"Creating {len(strong_support_prices)} strong support levels")
+    
+    for i, price in enumerate(strong_support_prices):
         level = SRLevel(
             price=price,
             level_type='support',
@@ -156,10 +232,13 @@ def create_diverse_sr_levels() -> list:
             source='example'
         )
         levels.append(level)
+        logger.debug(f"Created strong support level {i+1}: price={price}, strength=0.8")
     
     # Weak resistance levels
     weak_resistance_prices = [108.0, 112.0, 118.0, 122.0]
-    for price in weak_resistance_prices:
+    logger.info(f"Creating {len(weak_resistance_prices)} weak resistance levels")
+    
+    for i, price in enumerate(weak_resistance_prices):
         level = SRLevel(
             price=price,
             level_type='resistance',
@@ -172,13 +251,17 @@ def create_diverse_sr_levels() -> list:
             source='example'
         )
         levels.append(level)
+        logger.debug(f"Created weak resistance level {i+1}: price={price}, strength=0.3")
     
     # Medium quality levels
     medium_prices = [110.0, 115.0, 120.0]
-    for price in medium_prices:
+    logger.info(f"Creating {len(medium_prices)} medium quality levels")
+    
+    for i, price in enumerate(medium_prices):
+        level_type = 'support' if price < 115 else 'resistance'
         level = SRLevel(
             price=price,
-            level_type='support' if price < 115 else 'resistance',
+            level_type=level_type,
             strength=0.6,
             first_touch=datetime.now() - timedelta(days=100),
             last_touch=datetime.now() - timedelta(days=15),
@@ -188,6 +271,14 @@ def create_diverse_sr_levels() -> list:
             source='example'
         )
         levels.append(level)
+        logger.debug(f"Created medium quality level {i+1}: price={price}, type={level_type}, strength=0.6")
+    
+    logger.info(f"✅ Created {len(levels)} diverse SR levels total")
+    
+    # Log level distribution
+    support_count = len([l for l in levels if l.level_type == 'support'])
+    resistance_count = len([l for l in levels if l.level_type == 'resistance'])
+    logger.info(f"Level distribution: {support_count} support, {resistance_count} resistance")
     
     return levels
 
@@ -312,10 +403,12 @@ def demonstrate_complete_trading_pipeline():
     print(f"   Average Confidence: {trading_summary.get('avg_confidence', 0.0):.3f}")
     print(f"   Average Expected Return: {trading_summary.get('avg_expected_return', 0.0):.3f}")
     
+    logger.info("🎉 Complete trading pipeline demo completed successfully")
     print(f"\n🎉 Complete trading pipeline demo completed!")
     print("=" * 70)
     
     # Show how this answers the key question
+    logger.info("💡 Demonstrating how the pipeline answers the key question")
     print(f"\n💡 How This Answers 'What Makes a Strong SR Level for Trading?':")
     print(f"   1. ✅ Weight Optimization: Learned optimal weights from historical data")
     print(f"   2. ✅ SR Quality Prediction: Predicted quality of each SR level")
@@ -325,6 +418,7 @@ def demonstrate_complete_trading_pipeline():
     print(f"   6. ✅ Risk Assessment: Provided confidence and risk scores")
     print(f"   7. ✅ Market Context: Considered momentum, volatility, volume, regime")
     
+    logger.info("🎯 Providing key insights from the demonstration")
     print(f"\n🎯 Key Insights:")
     print(f"   • SR quality is now a quantifiable feature in trading models")
     print(f"   • Models learn which SR levels work best in different market conditions")
@@ -334,8 +428,12 @@ def demonstrate_complete_trading_pipeline():
 
 if __name__ == "__main__":
     try:
+        logger.info("Starting complete trading pipeline demonstration")
         demonstrate_complete_trading_pipeline()
+        logger.info("✅ Complete trading pipeline demonstration completed successfully")
     except Exception as e:
-        print(f"❌ Demo failed: {e}")
+        logger.error(f"❌ Demo failed: {e}")
         import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        print(f"❌ Demo failed: {e}")
         traceback.print_exc()

@@ -20,8 +20,19 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 from datetime import datetime
 from collections import Counter
 import traceback
+import time
 
-logger = logging.getLogger(__name__)
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.BaseSafeguards")
+    print("✅ Custom logger available for MLCommon.BaseSafeguards")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.BaseSafeguards")
+    _LOGGER.setLevel(logging.INFO)
+
+logger = _LOGGER
 
 class MLTrainingError(Exception):
     """Base exception for ML training errors."""
@@ -44,6 +55,8 @@ class MLTrainingSafeguards:
 
     def __init__(self):
         self.logger = logger.getChild('MLTrainingSafeguards')
+        _LOGGER.info("🚀 Initializing MLTrainingSafeguards...")
+        _LOGGER.info("✅ MLTrainingSafeguards initialized successfully")
 
     @staticmethod
     def harmonize_parquet_schema(df: pd.DataFrame, schema_reference: Optional[Dict[str, str]] = None) -> pd.DataFrame:
@@ -57,48 +70,59 @@ class MLTrainingSafeguards:
         Returns:
             DataFrame with harmonized schema
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting parquet schema harmonization...")
+        _LOGGER.debug(f"📊 Input DataFrame shape: {df.shape}, Columns: {len(df.columns)}")
+        
         try:
             # Common dtype harmonization rules
             harmonized_df = df.copy()
 
             # Handle year column specifically (common issue)
             if 'year' in harmonized_df.columns:
-                # Force year to consistent integer type
+                _LOGGER.debug("📅 Harmonizing year column to int32")
                 harmonized_df['year'] = harmonized_df['year'].astype('int32')
 
             # Handle other categorical/dictionary columns
             categorical_cols = [col for col in harmonized_df.columns if col in ['symbol', 'ticker', 'month', 'exchange']]
             if len(categorical_cols):
+                _LOGGER.debug(f"📝 Harmonizing categorical columns: {categorical_cols}")
                 harmonized_df[categorical_cols] = harmonized_df[categorical_cols].astype('string')
 
             # Handle timestamp columns
             timestamp_cols = [col for col in harmonized_df.columns if 'timestamp' in col.lower() or 'time' in col.lower()]
-            for col in timestamp_cols:
-                if col in harmonized_df.columns:
-                    # Ensure consistent datetime format
-                    if not pd.api.types.is_datetime64_any_dtype(harmonized_df[col]):
-                        try:
-                            harmonized_df[col] = pd.to_datetime(harmonized_df[col])
-                        except Exception:
-                            # If conversion fails, convert to string for consistency
-                            harmonized_df[col] = harmonized_df[col].astype('string')
+            if timestamp_cols:
+                _LOGGER.debug(f"⏰ Harmonizing timestamp columns: {timestamp_cols}")
+                for col in timestamp_cols:
+                    if col in harmonized_df.columns:
+                        # Ensure consistent datetime format
+                        if not pd.api.types.is_datetime64_any_dtype(harmonized_df[col]):
+                            try:
+                                harmonized_df[col] = pd.to_datetime(harmonized_df[col])
+                            except Exception:
+                                # If conversion fails, convert to string for consistency
+                                harmonized_df[col] = harmonized_df[col].astype('string')
 
             # ------------------------------------------------------------
             # Vectorised numeric optimisation – much faster than per-col loops
             # ------------------------------------------------------------
             float_cols = harmonized_df.select_dtypes(include=["float64"]).columns
             if len(float_cols):
+                _LOGGER.debug(f"🔢 Optimizing {len(float_cols)} float64 columns")
                 harmonized_df[float_cols] = harmonized_df[float_cols].apply(pd.to_numeric, downcast="float")
 
             int_cols = harmonized_df.select_dtypes(include=["int64"]).columns
             if len(int_cols):
+                _LOGGER.debug(f"🔢 Optimizing {len(int_cols)} int64 columns")
                 harmonized_df[int_cols] = harmonized_df[int_cols].apply(pd.to_numeric, downcast="integer")
 
-            logger.info(f"✅ Parquet schema harmonized for {len(harmonized_df.columns)} columns")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Parquet schema harmonized for {len(harmonized_df.columns)} columns in {execution_time:.3f}s")
             return harmonized_df
 
         except Exception as e:
-            logger.warning(f"⚠️ Schema harmonization failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Schema harmonization failed after {execution_time:.3f}s: {e}")
             return df
 
     @staticmethod
@@ -113,6 +137,10 @@ class MLTrainingSafeguards:
         Returns:
             Dictionary with distribution analysis
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting class distribution analysis...")
+        _LOGGER.debug(f"📊 Input array length: {len(y)}, Threshold: {threshold}")
+        
         try:
             unique_classes, counts = np.unique(y, return_counts=True)
             total_samples = len(y)
@@ -134,18 +162,27 @@ class MLTrainingSafeguards:
                 'dominant_ratio': max_ratio
             }
 
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Class distribution analysis completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Classes: {len(unique_classes)}, Total samples: {total_samples}")
+            _LOGGER.info(f"📊 Class distribution: {dict(zip(unique_classes, counts))}")
+
             if analysis['is_extreme_imbalance']:
-                logger.warning(
-                    f"Dominant class {analysis['dominant_class']}: {analysis['dominant_ratio']:.2%}"
-                )
+                _LOGGER.warning(f"⚠️ Extreme class imbalance detected!")
+                _LOGGER.warning(f"⚠️ Dominant class {analysis['dominant_class']}: {analysis['dominant_ratio']:.2%}")
+            else:
+                _LOGGER.info(f"✅ Class distribution appears balanced (max ratio: {max_ratio:.2%})")
 
             if analysis['is_single_class']:
-                logger.error(f"❌ Single class detected: {unique_classes[0] if len(unique_classes) > 0 else 'No classes'}")
+                _LOGGER.error(f"❌ Single class detected: {unique_classes[0] if len(unique_classes) > 0 else 'No classes'}")
+            else:
+                _LOGGER.info(f"✅ Multiple classes detected: {len(unique_classes)}")
 
             return analysis
 
         except Exception as e:
-            logger.error(f"❌ Class distribution check failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Class distribution check failed after {execution_time:.3f}s: {e}")
             return {
                 'error': str(e),
                 'n_classes': 0,

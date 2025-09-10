@@ -29,6 +29,10 @@ class PerformanceMonitor:
 
     @log_important_calls
     def __init__(self, logger: Any = None):
+        # 🖨️ THOROUGH PRINTING: Performance Monitor Initialization
+        print("🔧 INITIALIZING PERFORMANCE MONITOR")
+        print(f"   📊 Logger provided: {logger is not None}")
+        
         self.logger = logger or logging.getLogger(__name__)
         self.performance_history: List[Dict[str, Any]] = []
         self.function_performance_stats: Dict[str, Dict[str, Any]] = {}
@@ -36,11 +40,24 @@ class PerformanceMonitor:
         self.memory_usage_history: List[Dict[str, Any]] = []
         self.cpu_usage_history: List[Dict[str, Any]] = []
         
+        print("   ✅ Performance history initialized")
+        print("   ✅ Function performance stats initialized")
+        print("   ✅ Performance thresholds initialized")
+        print("   ✅ Memory usage history initialized")
+        print("   ✅ CPU usage history initialized")
+        print("   🎉 Performance monitor initialization complete")
+        
     def start_performance_monitoring(self, function_name: str, call_id: str) -> Dict[str, Any]:
         """Start performance monitoring for a function call."""
+        print(f"🚀 STARTING PERFORMANCE MONITORING")
+        print(f"   📋 Function name: {function_name}")
+        print(f"   🔗 Call ID: {call_id}")
+        
         try:
             # Get initial system metrics
+            print("   📊 Getting initial system metrics...")
             initial_metrics = self._get_system_metrics()
+            print(f"   ✅ Initial metrics obtained: {bool(initial_metrics)}")
             
             performance_record = {
                 'function_name': function_name,

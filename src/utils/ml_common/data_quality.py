@@ -31,10 +31,21 @@ import logging
 from scipy import stats
 from collections import Counter
 import warnings
+import time
 
 from ..common_utilities import safe_dataframe_operation
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
+
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.DataQuality")
+    print("✅ Custom logger available for MLCommon.DataQuality")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.DataQuality")
+    _LOGGER.setLevel(logging.INFO)
 
 # Enhanced imports for new functionality
 try:
@@ -49,7 +60,7 @@ try:
 except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+logger = _LOGGER
 
 try:
     from sklearn.ensemble import IsolationForest
@@ -68,6 +79,8 @@ class DataQualityUtilities:
         """Initialize data quality utilities with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('DataQuality')
+        
+        _LOGGER.info("🚀 Initializing DataQualityUtilities...")
 
         # Configuration defaults
         self.outlier_contamination = self.config.get('outlier_contamination', 0.1)
@@ -90,6 +103,13 @@ class DataQualityUtilities:
         # Initialize utilities
         self.gpu_manager = M1GPUManager() if self.enable_gpu else None
         self.memory_optimizer = M1MemoryOptimizer() if self.enable_memory_optimization else None
+        
+        _LOGGER.info(f"⚙️ Configuration - Outlier contamination: {self.outlier_contamination}")
+        _LOGGER.info(f"⚙️ Configuration - Missing threshold: {self.missing_threshold}")
+        _LOGGER.info(f"⚙️ Configuration - Drift threshold: {self.drift_threshold}")
+        _LOGGER.info(f"⚙️ Configuration - GPU enabled: {self.enable_gpu}")
+        _LOGGER.info(f"⚙️ Configuration - Memory optimization: {self.enable_memory_optimization}")
+        _LOGGER.info("✅ DataQualityUtilities initialized successfully")
 
     def automated_outlier_detection(self, X: Union[np.ndarray, pd.DataFrame],
                                   method: str = 'isolation_forest',
@@ -105,21 +125,27 @@ class DataQualityUtilities:
         Returns:
             Outlier detection results
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting automated outlier detection using {method}...")
+        
         try:
             if contamination is None:
                 contamination = self.outlier_contamination
 
-            self.logger.info(f"🔍 Detecting outliers using {method} (contamination={contamination})")
+            _LOGGER.info(f"📊 Parameters - Method: {method}, Contamination: {contamination}")
 
             if not SKLEARN_AVAILABLE:
+                _LOGGER.error("❌ Scikit-learn required for outlier detection")
                 return {'error': 'Scikit-learn required for outlier detection'}
 
             if isinstance(X, pd.DataFrame):
                 X_array = X.select_dtypes(include=[np.number]).values
                 feature_names = X.select_dtypes(include=[np.number]).columns.tolist()
+                _LOGGER.debug(f"📊 DataFrame input - Shape: {X.shape}, Numeric features: {len(feature_names)}")
             else:
                 X_array = X
                 feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+                _LOGGER.debug(f"📊 Array input - Shape: {X.shape}")
 
             outlier_results = {
                 'method': method,
@@ -131,23 +157,35 @@ class DataQualityUtilities:
             }
 
             if method == 'isolation_forest':
+                _LOGGER.debug("🌲 Using Isolation Forest for outlier detection...")
                 outlier_results.update(self._isolation_forest_detection(X_array, feature_names, contamination))
 
             # Calculate summary statistics
+            outlier_count = len(outlier_results['outlier_indices'])
+            outlier_percentage = (outlier_count / len(X_array)) * 100 if len(X_array) > 0 else 0
+            
             outlier_results['summary'] = {
                 'total_samples': len(X_array),
-                'outlier_count': len(outlier_results['outlier_indices']),
-                'outlier_percentage': safe_divide(len(outlier_results['outlier_indices']), len(X_array)) * 100,
+                'outlier_count': outlier_count,
+                'outlier_percentage': outlier_percentage,
                 'features_analyzed': len(feature_names)
             }
 
-            self.logger.info(f"✅ Outlier detection completed: "
-                           f"{outlier_results['summary']['outlier_count']} outliers found")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Outlier detection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Total samples: {len(X_array)}, Outliers: {outlier_count} ({outlier_percentage:.2f}%)")
+            
+            if outlier_count > 0:
+                _LOGGER.warning(f"⚠️ Found {outlier_count} outliers ({outlier_percentage:.2f}%) - consider data cleaning")
+            else:
+                _LOGGER.info("✅ No outliers detected - data appears clean")
+
             return outlier_results
 
         except Exception as e:
-            self.logger.error(f"❌ Outlier detection failed: {e}")
-            return {'error': str(e)}
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Outlier detection failed after {execution_time:.3f}s: {e}")
+            return {'error': f'Outlier detection failed: {e}'}
 
     def missing_value_analysis(self, df: pd.DataFrame,
                              missing_threshold: Optional[float] = None) -> Dict[str, Any]:
@@ -161,11 +199,14 @@ class DataQualityUtilities:
         Returns:
             Missing value analysis results
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting missing value analysis...")
+        
         try:
             if missing_threshold is None:
                 missing_threshold = self.missing_threshold
 
-            self.logger.info(f"🔍 Analyzing missing values (threshold={missing_threshold})")
+            _LOGGER.info(f"📊 Parameters - Threshold: {missing_threshold}, DataFrame shape: {df.shape}")
 
             missing_analysis = {
                 'missing_summary': {},
@@ -224,11 +265,20 @@ class DataQualityUtilities:
                 'action_required': severity in ['high', 'critical']
             }
 
-            self.logger.info(f"✅ Missing value analysis completed - Severity: {severity}")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Missing value analysis completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Severity: {severity}, Total missing: {total_missing_pct:.2f}%")
+            
+            if severity in ['high', 'critical']:
+                _LOGGER.warning(f"⚠️ High missing value severity ({severity}) - action required")
+            else:
+                _LOGGER.info(f"✅ Missing value severity is acceptable ({severity})")
+
             return missing_analysis
 
         except Exception as e:
-            self.logger.error(f"❌ Missing value analysis failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Missing value analysis failed after {execution_time:.3f}s: {e}")
             return {'error': str(e)}
 
     def feature_distribution_stability(self, train_df: pd.DataFrame,

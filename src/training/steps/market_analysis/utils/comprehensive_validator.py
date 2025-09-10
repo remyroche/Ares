@@ -26,23 +26,44 @@ class ComprehensiveValidator:
     """Comprehensive validation framework for step07 operations."""
     
     def __init__(self, logger):
+        # 🖨️ THOROUGH PRINTING: Comprehensive Validator Initialization
+        print("🔧 INITIALIZING COMPREHENSIVE VALIDATOR")
+        print(f"   📊 Logger provided: {logger is not None}")
+        print(f"   📦 Pandas available: {PANDAS_AVAILABLE}")
+        print(f"   🔢 NumPy available: {NUMPY_AVAILABLE}")
+        
         self.logger = logger
         self.validation_results = {}
         self.validation_rules = {}
+        
+        print("   ✅ Validation results initialized")
+        print("   ✅ Validation rules initialized")
+        print("   🎉 Comprehensive validator initialization complete")
     
     def validate_input_data(self, data: Any, data_type: str) -> Tuple[bool, List[str]]:
         """Validate input data based on type."""
+        print(f"🔍 VALIDATING INPUT DATA")
+        print(f"   📊 Data type: {data_type}")
+        print(f"   📋 Data provided: {data is not None}")
+        
         errors = []
         
         if data_type == "dataframe":
+            print("   📊 Validating DataFrame...")
             if not PANDAS_AVAILABLE:
+                print("   ❌ Pandas not available for DataFrame validation")
                 errors.append("Pandas not available for DataFrame validation")
             elif not isinstance(data, pd.DataFrame):
+                print("   ❌ Data is not a pandas DataFrame")
                 errors.append("Data is not a pandas DataFrame")
             elif data.empty:
+                print("   ❌ DataFrame is empty")
                 errors.append("DataFrame is empty")
             elif data.isnull().all().any():
+                print("   ⚠️ DataFrame has columns with all null values")
                 errors.append("DataFrame has columns with all null values")
+            else:
+                print("   ✅ DataFrame validation passed")
         
         elif data_type == "numpy_array":
             if not NUMPY_AVAILABLE:

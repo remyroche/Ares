@@ -20,6 +20,27 @@ import itertools
 from ..logger import system_logger
 from .sr_backtesting_engine import SRBacktestingEngine, BacktestResult, SRLevel
 
+# Import M1 optimization utilities
+try:
+    from ..hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
+    from ..ml_common.matrix_operations import get_enhanced_matrix_operations, M1EnhancedMatrixOperations
+    from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
+    M1_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    M1_OPTIMIZATIONS_AVAILABLE = False
+    get_m1_memory_optimizer = None
+    get_enhanced_matrix_operations = None
+    get_memory_manager = None
+    print(f"⚠️ M1 optimizations not available: {e}")
+
+# Import PyTorch for MPS acceleration
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+
 @dataclass
 class WeightOptimizationConfig:
     """Configuration for weight optimization."""
@@ -36,6 +57,14 @@ class WeightOptimizationConfig:
     min_weight: float = 0.0
     max_weight: float = 1.0
     weight_sum_constraint: bool = True  # Whether weights should sum to 1.0
+    
+    # M1 optimization parameters
+    enable_m1_optimizations: bool = True
+    enable_gpu_acceleration: bool = True
+    enable_memory_optimization: bool = True
+    enable_parallel_processing: bool = True
+    memory_limit_gb: float = 8.0
+    chunk_size: int = 1000
     
     # Feature groups for optimization
     primary_features: List[str] = field(default_factory=lambda: [
@@ -59,24 +88,56 @@ class WeightOptimizationEngine:
     def __init__(self, config: Optional[WeightOptimizationConfig] = None):
         self.config = config or WeightOptimizationConfig()
         self.logger = system_logger.getChild('WeightOptimizationEngine')
+        
+        self.logger.info("Initializing WeightOptimizationEngine")
+        self.logger.info(f"Configuration: optimization_method={self.config.optimization_method}, max_iterations={self.config.max_iterations}")
+        self.logger.info(f"Cross-validation: n_splits={self.config.n_splits}, test_size={self.config.test_size}")
+        self.logger.info(f"Primary objective: {self.config.primary_objective}, Secondary objective: {self.config.secondary_objective}")
+        self.logger.info(f"Feature groups: primary={len(self.config.primary_features)}, penetration={len(self.config.penetration_features)}, pattern={len(self.config.pattern_features)}")
+        
+        # Initialize M1 optimizations
+        self.enable_m1_optimizations = self.config.enable_m1_optimizations and M1_OPTIMIZATIONS_AVAILABLE
+        self.enable_gpu_acceleration = self.config.enable_gpu_acceleration and TORCH_AVAILABLE
+        
+        if self.enable_m1_optimizations:
+            try:
+                self.m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=self.config.memory_limit_gb)
+                self.matrix_ops = get_enhanced_matrix_operations()
+                self.memory_monitor = get_memory_manager()
+                self.logger.info("✅ M1 optimizations initialized for weight optimization")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize M1 optimizations: {e}")
+                self.enable_m1_optimizations = False
+        else:
+            self.m1_memory_optimizer = None
+            self.matrix_ops = None
+            self.memory_monitor = None
+        
         self.optimization_history: List[Dict[str, Any]] = []
         self.best_weights: Dict[str, float] = {}
         self.best_score: float = 0.0
+        
+        self.logger.info("✅ WeightOptimizationEngine initialization completed")
         
     def optimize_weights(self, backtest_results: List[BacktestResult], 
                         market_data: pd.DataFrame) -> Dict[str, Any]:
         """Optimize quality score parameter weights using backtesting."""
         try:
-            self.logger.info(f"Starting weight optimization for {len(backtest_results)} backtest results")
+            self.logger.info(f"🚀 Starting weight optimization for {len(backtest_results)} backtest results")
+            self.logger.info(f"Market data shape: {market_data.shape}")
             
             # Prepare data for optimization
+            self.logger.info("🔧 Preparing optimization data")
             optimization_data = self._prepare_optimization_data(backtest_results, market_data)
             
             if not optimization_data:
-                self.logger.warning("No valid data for optimization")
+                self.logger.warning("⚠️ No valid data for optimization")
                 return {}
             
+            self.logger.info(f"Optimization data prepared: {len(optimization_data)} samples")
+            
             # Run optimization based on method
+            self.logger.info(f"🎯 Running optimization using {self.config.optimization_method}")
             if self.config.optimization_method == 'scipy_minimize':
                 result = self._optimize_with_scipy(optimization_data)
             elif self.config.optimization_method == 'grid_search':
@@ -84,6 +145,7 @@ class WeightOptimizationEngine:
             elif self.config.optimization_method == 'genetic_algorithm':
                 result = self._optimize_with_genetic_algorithm(optimization_data)
             else:
+                self.logger.error(f"❌ Unknown optimization method: {self.config.optimization_method}")
                 raise ValueError(f"Unknown optimization method: {self.config.optimization_method}")
             
             # Store results
@@ -91,13 +153,182 @@ class WeightOptimizationEngine:
             self.best_score = result['best_score']
             self.optimization_history.append(result)
             
-            self.logger.info(f"Weight optimization completed. Best score: {self.best_score:.4f}")
+            self.logger.info(f"✅ Weight optimization completed successfully")
+            self.logger.info(f"Best score: {self.best_score:.4f}")
             self.logger.info(f"Best weights: {self.best_weights}")
+            
+            # Log optimization statistics
+            if 'optimization_iterations' in result:
+                self.logger.info(f"Optimization iterations: {result['optimization_iterations']}")
+            if 'convergence_achieved' in result:
+                self.logger.info(f"Convergence achieved: {result['convergence_achieved']}")
             
             return result
             
         except Exception as e:
-            self.logger.error(f"Weight optimization failed: {e}")
+            self.logger.error(f"❌ Weight optimization failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return {}
+
+    def optimize_weights_m1_optimized(self, backtest_results: List[BacktestResult], 
+                                    market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Optimize quality score parameter weights using M1-optimized backtesting."""
+        if not self.enable_m1_optimizations:
+            self.logger.warning("⚠️ M1 optimizations not available, falling back to standard method")
+            return self.optimize_weights(backtest_results, market_data)
+        
+        try:
+            self.logger.info(f"🚀 Starting M1-optimized weight optimization for {len(backtest_results)} backtest results")
+            self.logger.info(f"Market data shape: {market_data.shape}")
+            
+            # Memory checkpoint for M1 optimization
+            with self.m1_memory_optimizer.memory_checkpoint("weight_optimization"):
+                # Check if data should be processed in chunks
+                data_size_mb = market_data.memory_usage(deep=True).sum() / (1024**2)
+                
+                if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "weight_optimization"):
+                    self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks")
+                    return self._chunked_weight_optimization(backtest_results, market_data)
+                
+                # Use GPU acceleration for optimization if available
+                if self.enable_gpu_acceleration and self.matrix_ops:
+                    self.logger.info("🎯 Using GPU acceleration for weight optimization")
+                    return self._gpu_accelerated_weight_optimization(backtest_results, market_data)
+                
+                # Standard M1-optimized processing
+                return self._m1_optimized_weight_optimization(backtest_results, market_data)
+                
+        except Exception as e:
+            self.logger.error(f"❌ M1-optimized weight optimization failed: {e}")
+            return {}
+
+    def _m1_optimized_weight_optimization(self, backtest_results: List[BacktestResult], 
+                                        market_data: pd.DataFrame) -> Dict[str, Any]:
+        """M1-optimized weight optimization."""
+        # Prepare data with M1 memory optimization
+        optimization_data = self._prepare_optimization_data_m1_optimized(backtest_results, market_data)
+        
+        if not optimization_data:
+            self.logger.warning("⚠️ No valid data for M1 optimization")
+            return {}
+        
+        # Run optimization with M1 optimizations
+        if self.config.optimization_method == 'scipy_minimize':
+            result = self._m1_optimize_with_scipy(optimization_data)
+        else:
+            # Fallback to standard optimization
+            result = self._optimize_with_scipy(optimization_data)
+        
+        # Store results
+        self.best_weights = result['best_weights']
+        self.best_score = result['best_score']
+        self.optimization_history.append(result)
+        
+        self.logger.info("✅ M1-optimized weight optimization completed")
+        return result
+
+    def _prepare_optimization_data_m1_optimized(self, backtest_results: List[BacktestResult], 
+                                              market_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """Prepare optimization data with M1 memory optimization."""
+        try:
+            # Use M1 memory-efficient data preparation
+            feature_data = []
+            target_data = []
+            
+            for result in backtest_results:
+                # Extract features with M1 optimization
+                features = [
+                    result.success_rate,
+                    result.avg_bounce_strength,
+                    result.total_volume_at_level,
+                    result.time_persistence,
+                    result.touch_frequency
+                ]
+                
+                # Use M1 memory-efficient array creation
+                if self.m1_memory_optimizer:
+                    feature_array = self.m1_memory_optimizer.create_memory_efficient_array(features, np.float32)
+                else:
+                    feature_array = np.array(features, dtype=np.float32)
+                
+                feature_data.append(feature_array)
+                target_data.append(result.quality_score)
+            
+            # Convert to numpy arrays with M1 optimization
+            feature_matrix = np.array(feature_data, dtype=np.float32)
+            target_array = np.array(target_data, dtype=np.float32)
+            
+            return {
+                'features': feature_matrix,
+                'targets': target_array,
+                'feature_names': self.config.primary_features
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to prepare M1 optimization data: {e}")
+            return None
+
+    def _m1_optimize_with_scipy(self, optimization_data: Dict[str, Any]) -> Dict[str, Any]:
+        """M1-optimized scipy optimization."""
+        try:
+            features = optimization_data['features']
+            targets = optimization_data['targets']
+            feature_names = optimization_data['feature_names']
+            
+            # Define objective function with M1 memory optimization
+            def objective(weights):
+                with self.m1_memory_optimizer.memory_checkpoint("scipy_objective"):
+                    # Calculate weighted features
+                    weighted_features = np.dot(features, weights)
+                    
+                    # Calculate R² score
+                    ss_res = np.sum((targets - weighted_features) ** 2)
+                    ss_tot = np.sum((targets - np.mean(targets)) ** 2)
+                    r2 = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                    
+                    return -r2  # Minimize negative R²
+            
+            # Initial weights
+            n_features = len(feature_names)
+            initial_weights = np.ones(n_features) / n_features
+            
+            # Constraints
+            constraints = []
+            if self.config.weight_sum_constraint:
+                constraints.append({
+                    'type': 'eq',
+                    'fun': lambda w: np.sum(w) - 1.0
+                })
+            
+            # Bounds
+            bounds = [(self.config.min_weight, self.config.max_weight) for _ in range(n_features)]
+            
+            # Optimize with M1 memory management
+            with self.m1_memory_optimizer.memory_checkpoint("scipy_optimization"):
+                result = minimize(
+                    objective,
+                    initial_weights,
+                    method='SLSQP',
+                    bounds=bounds,
+                    constraints=constraints,
+                    options={'maxiter': self.config.max_iterations}
+                )
+            
+            # Extract results
+            best_weights = dict(zip(feature_names, result.x))
+            best_score = -result.fun
+            
+            return {
+                'best_weights': best_weights,
+                'best_score': best_score,
+                'optimization_method': 'scipy_minimize_m1_optimized',
+                'convergence_achieved': result.success,
+                'optimization_iterations': result.nit
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ M1 scipy optimization failed: {e}")
             return {}
     
     def _prepare_optimization_data(self, backtest_results: List[BacktestResult], 
@@ -105,14 +336,21 @@ class WeightOptimizationEngine:
         """Prepare data for weight optimization."""
         try:
             if not backtest_results:
+                self.logger.warning("No backtest results provided for optimization data preparation")
                 return {}
+            
+            self.logger.info(f"Preparing optimization data from {len(backtest_results)} backtest results")
             
             # Extract features and target
             all_features = (self.config.primary_features + 
                           self.config.penetration_features + 
                           self.config.pattern_features)
             
+            self.logger.info(f"Feature groups: primary={len(self.config.primary_features)}, penetration={len(self.config.penetration_features)}, pattern={len(self.config.pattern_features)}")
+            self.logger.info(f"Total features: {len(all_features)}")
+            
             # Build feature matrix
+            self.logger.info("Building feature matrix")
             feature_data = {}
             for feature in all_features:
                 feature_values = []
@@ -120,14 +358,20 @@ class WeightOptimizationEngine:
                     value = getattr(result, feature, 0.0)
                     feature_values.append(value)
                 feature_data[feature] = np.array(feature_values)
+                
+                # Log feature statistics
+                feature_array = feature_data[feature]
+                self.logger.debug(f"Feature {feature}: mean={np.mean(feature_array):.3f}, std={np.std(feature_array):.3f}, min={np.min(feature_array):.3f}, max={np.max(feature_array):.3f}")
             
             # Target variable (actual quality scores from backtesting)
             target_scores = np.array([result.quality_score for result in backtest_results])
+            self.logger.info(f"Target scores: mean={np.mean(target_scores):.3f}, std={np.std(target_scores):.3f}, min={np.min(target_scores):.3f}, max={np.max(target_scores):.3f}")
             
             # Market context features (if available)
+            self.logger.info("Extracting market context")
             market_context = self._extract_market_context(backtest_results, market_data)
             
-            return {
+            optimization_data = {
                 'feature_data': feature_data,
                 'target_scores': target_scores,
                 'market_context': market_context,
@@ -135,37 +379,58 @@ class WeightOptimizationEngine:
                 'feature_names': all_features
             }
             
+            self.logger.info(f"✅ Optimization data prepared successfully: {len(feature_data)} features, {len(target_scores)} targets")
+            
+            return optimization_data
+            
         except Exception as e:
-            self.logger.error(f"Failed to prepare optimization data: {e}")
+            self.logger.error(f"❌ Failed to prepare optimization data: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
     def _extract_market_context(self, backtest_results: List[BacktestResult], 
                               market_data: pd.DataFrame) -> Dict[str, Any]:
         """Extract market context for optimization."""
         try:
+            self.logger.debug("Extracting market context features")
+            
             # Calculate market regime features
             if len(market_data) > 0:
+                self.logger.debug(f"Processing market data with {len(market_data)} rows")
+                
                 # Volatility regime
                 returns = market_data['close'].pct_change().dropna()
                 volatility = returns.rolling(20).std()
                 volatility_regime = np.mean(volatility) if len(volatility) > 0 else 0.0
+                
+                self.logger.debug(f"Volatility regime: {volatility_regime:.4f}")
                 
                 # Trend strength
                 sma_short = market_data['close'].rolling(10).mean()
                 sma_long = market_data['close'].rolling(50).mean()
                 trend_strength = abs(np.mean((sma_short - sma_long) / sma_long)) if len(sma_short) > 0 else 0.0
                 
+                self.logger.debug(f"Trend strength: {trend_strength:.4f}")
+                
                 # Volume regime
                 volume_avg = market_data['volume'].mean() if 'volume' in market_data.columns else 1.0
                 volume_regime = volume_avg / 1000000  # Normalize
                 
-                return {
+                self.logger.debug(f"Volume regime: {volume_regime:.4f}")
+                
+                market_context = {
                     'volatility_regime': volatility_regime,
                     'trend_strength': trend_strength,
                     'volume_regime': volume_regime,
                     'market_periods': len(market_data)
                 }
+                
+                self.logger.debug(f"Market context extracted: {market_context}")
+                
+                return market_context
             else:
+                self.logger.warning("No market data available for context extraction")
                 return {
                     'volatility_regime': 0.0,
                     'trend_strength': 0.0,
@@ -180,6 +445,8 @@ class WeightOptimizationEngine:
     def _optimize_with_scipy(self, optimization_data: Dict[str, Any]) -> Dict[str, Any]:
         """Optimize weights using scipy minimize."""
         try:
+            self.logger.info("🎯 Starting scipy optimization")
+            
             feature_data = optimization_data['feature_data']
             target_scores = optimization_data['target_scores']
             feature_names = optimization_data['feature_names']
@@ -187,6 +454,9 @@ class WeightOptimizationEngine:
             # Initial weights (equal weights)
             n_features = len(feature_names)
             initial_weights = np.ones(n_features) / n_features
+            
+            self.logger.info(f"Optimization setup: {n_features} features, {len(target_scores)} targets")
+            self.logger.info(f"Initial weights: {dict(zip(feature_names, initial_weights))}")
             
             # Define objective function
             def objective(weights):
@@ -199,11 +469,14 @@ class WeightOptimizationEngine:
                     'type': 'eq',
                     'fun': lambda w: np.sum(w) - 1.0
                 })
+                self.logger.info("Weight sum constraint enabled (weights must sum to 1.0)")
             
             # Define bounds
             bounds = [(self.config.min_weight, self.config.max_weight) for _ in range(n_features)]
+            self.logger.info(f"Weight bounds: [{self.config.min_weight}, {self.config.max_weight}]")
             
             # Optimize
+            self.logger.info(f"Running SLSQP optimization with max_iter={self.config.max_iterations}, ftol={self.config.convergence_tolerance}")
             result = minimize(
                 objective,
                 initial_weights,
@@ -217,6 +490,17 @@ class WeightOptimizationEngine:
                 best_weights = dict(zip(feature_names, result.x))
                 best_score = -result.fun
                 
+                self.logger.info(f"✅ Scipy optimization completed successfully")
+                self.logger.info(f"Best score: {best_score:.4f}")
+                self.logger.info(f"Iterations: {result.nit}")
+                self.logger.info(f"Convergence message: {result.message}")
+                
+                # Log top weights
+                sorted_weights = sorted(best_weights.items(), key=lambda x: x[1], reverse=True)
+                self.logger.info("Top 5 optimized weights:")
+                for feature, weight in sorted_weights[:5]:
+                    self.logger.info(f"  {feature}: {weight:.3f}")
+                
                 return {
                     'method': 'scipy_minimize',
                     'best_weights': best_weights,
@@ -226,22 +510,29 @@ class WeightOptimizationEngine:
                     'convergence_message': result.message
                 }
             else:
-                self.logger.warning(f"Scipy optimization failed: {result.message}")
+                self.logger.warning(f"⚠️ Scipy optimization failed: {result.message}")
                 return self._get_default_weights(feature_names)
                 
         except Exception as e:
-            self.logger.error(f"Scipy optimization failed: {e}")
+            self.logger.error(f"❌ Scipy optimization failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return self._get_default_weights(optimization_data['feature_names'])
     
     def _optimize_with_grid_search(self, optimization_data: Dict[str, Any]) -> Dict[str, Any]:
         """Optimize weights using grid search."""
         try:
+            self.logger.info("🔍 Starting grid search optimization")
+            
             feature_data = optimization_data['feature_data']
             target_scores = optimization_data['target_scores']
             feature_names = optimization_data['feature_names']
             
             # Define weight grid
             weight_values = np.linspace(self.config.min_weight, self.config.max_weight, 11)  # 0.0 to 1.0 in steps of 0.1
+            
+            self.logger.info(f"Grid search setup: {len(feature_names)} features")
+            self.logger.info(f"Weight grid: {len(weight_values)} values from {self.config.min_weight} to {self.config.max_weight}")
             
             best_score = -np.inf
             best_weights = {}
@@ -251,6 +542,9 @@ class WeightOptimizationEngine:
             
             total_combinations = len(weight_values) ** len(feature_names)
             self.logger.info(f"Grid search: evaluating {total_combinations} weight combinations")
+            
+            if total_combinations > 10000:
+                self.logger.warning(f"⚠️ Large number of combinations ({total_combinations}), this may take a while")
             
             evaluated = 0
             for weights in weight_combinations:
@@ -266,10 +560,21 @@ class WeightOptimizationEngine:
                 if score > best_score:
                     best_score = score
                     best_weights = dict(zip(feature_names, weights))
+                    self.logger.debug(f"New best score: {best_score:.4f}")
                 
                 evaluated += 1
                 if evaluated % 1000 == 0:
-                    self.logger.info(f"Evaluated {evaluated}/{total_combinations} combinations")
+                    self.logger.info(f"Evaluated {evaluated}/{total_combinations} combinations (best score: {best_score:.4f})")
+            
+            self.logger.info(f"✅ Grid search optimization completed")
+            self.logger.info(f"Best score: {best_score:.4f}")
+            self.logger.info(f"Combinations evaluated: {evaluated}")
+            
+            # Log top weights
+            sorted_weights = sorted(best_weights.items(), key=lambda x: x[1], reverse=True)
+            self.logger.info("Top 5 optimized weights:")
+            for feature, weight in sorted_weights[:5]:
+                self.logger.info(f"  {feature}: {weight:.3f}")
             
             return {
                 'method': 'grid_search',
@@ -280,12 +585,16 @@ class WeightOptimizationEngine:
             }
             
         except Exception as e:
-            self.logger.error(f"Grid search optimization failed: {e}")
+            self.logger.error(f"❌ Grid search optimization failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return self._get_default_weights(optimization_data['feature_names'])
     
     def _optimize_with_genetic_algorithm(self, optimization_data: Dict[str, Any]) -> Dict[str, Any]:
         """Optimize weights using genetic algorithm (simplified implementation)."""
         try:
+            self.logger.info("🧬 Starting genetic algorithm optimization")
+            
             # This is a simplified genetic algorithm implementation
             # In practice, you might want to use DEAP or similar library
             
@@ -297,7 +606,10 @@ class WeightOptimizationEngine:
             population_size = 50
             generations = 20
             
+            self.logger.info(f"Genetic algorithm setup: {n_features} features, population_size={population_size}, generations={generations}")
+            
             # Initialize population
+            self.logger.info("Initializing population")
             population = []
             for _ in range(population_size):
                 weights = np.random.random(n_features)
@@ -309,6 +621,8 @@ class WeightOptimizationEngine:
             best_weights = {}
             
             for generation in range(generations):
+                self.logger.debug(f"Generation {generation + 1}/{generations}")
+                
                 # Evaluate population
                 scores = []
                 for weights in population:
@@ -318,11 +632,14 @@ class WeightOptimizationEngine:
                     if score > best_score:
                         best_score = score
                         best_weights = dict(zip(feature_names, weights))
+                        self.logger.debug(f"New best score in generation {generation + 1}: {best_score:.4f}")
                 
                 # Selection (keep top 50%)
                 sorted_indices = np.argsort(scores)[::-1]
                 elite_size = population_size // 2
                 elite = [population[i] for i in sorted_indices[:elite_size]]
+                
+                self.logger.debug(f"Generation {generation + 1}: best_score={best_score:.4f}, avg_score={np.mean(scores):.4f}")
                 
                 # Create new generation
                 new_population = elite.copy()
@@ -351,6 +668,16 @@ class WeightOptimizationEngine:
                 
                 self.logger.info(f"Generation {generation + 1}: Best score = {best_score:.4f}")
             
+            self.logger.info(f"✅ Genetic algorithm optimization completed")
+            self.logger.info(f"Best score: {best_score:.4f}")
+            self.logger.info(f"Generations: {generations}, Population size: {population_size}")
+            
+            # Log top weights
+            sorted_weights = sorted(best_weights.items(), key=lambda x: x[1], reverse=True)
+            self.logger.info("Top 5 optimized weights:")
+            for feature, weight in sorted_weights[:5]:
+                self.logger.info(f"  {feature}: {weight:.3f}")
+            
             return {
                 'method': 'genetic_algorithm',
                 'best_weights': best_weights,
@@ -361,13 +688,17 @@ class WeightOptimizationEngine:
             }
             
         except Exception as e:
-            self.logger.error(f"Genetic algorithm optimization failed: {e}")
+            self.logger.error(f"❌ Genetic algorithm optimization failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return self._get_default_weights(optimization_data['feature_names'])
     
     def _evaluate_weights(self, weights: np.ndarray, feature_data: Dict[str, np.ndarray], 
                          target_scores: np.ndarray, feature_names: List[str]) -> float:
         """Evaluate a set of weights using cross-validation."""
         try:
+            self.logger.debug(f"Evaluating weights: {dict(zip(feature_names, weights))}")
+            
             # Build weighted quality scores
             weighted_scores = np.zeros(len(target_scores))
             
@@ -378,22 +709,29 @@ class WeightOptimizationEngine:
             # Normalize to 0-1 range
             weighted_scores = np.clip(weighted_scores, 0.0, 1.0)
             
+            self.logger.debug(f"Weighted scores: mean={np.mean(weighted_scores):.3f}, std={np.std(weighted_scores):.3f}")
+            
             # Calculate performance metric
             if self.config.primary_objective == 'r2_score':
                 score = r2_score(target_scores, weighted_scores)
+                self.logger.debug(f"R² score: {score:.4f}")
             elif self.config.primary_objective == 'mse':
                 score = -mean_squared_error(target_scores, weighted_scores)  # Negative because we want to minimize MSE
+                self.logger.debug(f"MSE score: {score:.4f}")
             elif self.config.primary_objective == 'correlation':
                 correlation = np.corrcoef(target_scores, weighted_scores)[0, 1]
                 score = correlation if not np.isnan(correlation) else 0.0
+                self.logger.debug(f"Correlation score: {score:.4f}")
             else:
                 score = r2_score(target_scores, weighted_scores)  # Default to R²
+                self.logger.debug(f"Default R² score: {score:.4f}")
             
             # Add stability penalty if requested
             if self.config.secondary_objective == 'stability':
                 # Penalize extreme weights
                 weight_penalty = -np.sum(np.abs(weights - np.mean(weights))) * 0.1
                 score += weight_penalty
+                self.logger.debug(f"Stability penalty: {weight_penalty:.4f}, Final score: {score:.4f}")
             
             return score
             
@@ -405,6 +743,9 @@ class WeightOptimizationEngine:
         """Get default weights when optimization fails."""
         n_features = len(feature_names)
         default_weights = {feature: 1.0 / n_features for feature in feature_names}
+        
+        self.logger.warning(f"Using default equal weights for {n_features} features")
+        self.logger.info(f"Default weights: {default_weights}")
         
         return {
             'method': 'default',

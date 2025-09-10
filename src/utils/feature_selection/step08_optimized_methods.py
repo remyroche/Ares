@@ -21,6 +21,10 @@ from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 from sklearn.preprocessing import StandardScaler
+import logging
+
+# Initialize logger
+logger = logging.getLogger('OptimizedStep08Methods')
 
 # Try to import optional dependencies
 try:
@@ -62,35 +66,54 @@ class OptimizedStep08Methods:
     def _sparse_correlation_matrix_optimized(self, X: np.ndarray, threshold: float = 0.1, 
                                            method: str = 'pearson') -> csr_matrix:
         """Optimized sparse correlation matrix calculation."""
+        start_time = time.time()
         try:
-            self.logger.info(f'🔍 Computing sparse correlation matrix (threshold={threshold})...')
+            logger.info(f'🔍 Computing sparse correlation matrix (threshold={threshold}, method={method})...')
+            logger.info(f'Input data shape: {X.shape}, memory usage: {X.nbytes / 1024 / 1024:.2f} MB')
             
             # Use cached correlation if available
             data_hash = hash(X.tobytes())
             if self.enable_caching and data_hash in self.correlation_cache:
-                self.logger.info('📋 Using cached correlation matrix')
+                logger.info('📋 Using cached correlation matrix')
                 return self.correlation_cache[data_hash]
             
             # Compute correlation matrix with optimizations
+            corr_start = time.time()
             if NUMBA_AVAILABLE:
+                logger.info('Using Numba-accelerated correlation calculation')
                 corr_matrix = fast_correlation_matrix(X)
             else:
+                logger.info('Using standard NumPy correlation calculation')
                 corr_matrix = np.corrcoef(X.T)
             
+            corr_time = time.time() - corr_start
+            logger.info(f'Correlation matrix computed in {corr_time:.3f} seconds')
+            
             # Create sparse matrix by thresholding
+            sparse_start = time.time()
             sparse_corr = csr_matrix(corr_matrix)
+            original_nnz = sparse_corr.nnz
             sparse_corr.data[np.abs(sparse_corr.data) < threshold] = 0
             sparse_corr.eliminate_zeros()
+            final_nnz = sparse_corr.nnz
+            sparse_time = time.time() - sparse_start
+            
+            logger.info(f'Sparse matrix creation completed in {sparse_time:.3f} seconds')
+            logger.info(f'Non-zero elements: {original_nnz} -> {final_nnz} (reduction: {(1 - final_nnz/original_nnz)*100:.1f}%)')
             
             # Cache the result
             if self.enable_caching:
                 self.correlation_cache[data_hash] = sparse_corr
+                logger.info('Result cached for future use')
             
-            self.logger.info(f'✅ Sparse correlation matrix computed: {sparse_corr.nnz} non-zero elements')
+            total_time = time.time() - start_time
+            logger.info(f'✅ Sparse correlation matrix computed: {sparse_corr.nnz} non-zero elements in {total_time:.3f} seconds')
             return sparse_corr
             
         except Exception as e:
-            self.logger.warning(f'Sparse correlation matrix failed: {e}')
+            total_time = time.time() - start_time
+            logger.error(f'❌ Sparse correlation matrix failed after {total_time:.3f} seconds: {e}')
+            logger.error(f'Error type: {type(e).__name__}')
             return csr_matrix(np.eye(X.shape[1]))
 
     def _incremental_correlation_update(self, existing_corr: np.ndarray, new_data: np.ndarray, 
@@ -138,25 +161,39 @@ class OptimizedStep08Methods:
     def _mrmr_selection_optimized(self, X_values: np.ndarray, y_values: np.ndarray, 
                                  feature_names: List[str], n_features: int) -> List[str]:
         """Optimized mRMR selection with incremental updates and early stopping."""
+        start_time = time.time()
         try:
-            self.logger.info(f'🔍 Running optimized mRMR selection for {n_features} features...')
+            logger.info(f'🔍 Running optimized mRMR selection for {n_features} features...')
+            logger.info(f'Input data: {X_values.shape[0]} samples, {X_values.shape[1]} features')
+            logger.info(f'Target variable shape: {y_values.shape}')
             
             # Calculate relevance scores (mutual information) with caching
             relevance_cache_key = f"relevance_{hash(X_values.tobytes())}_{hash(y_values.tobytes())}"
             if self.enable_caching and relevance_cache_key in self.cache:
+                logger.info('📋 Using cached relevance scores')
                 relevance_scores = self.cache[relevance_cache_key]
             else:
+                logger.info('Computing relevance scores (mutual information)...')
+                relevance_start = time.time()
                 if NUMBA_AVAILABLE:
+                    logger.info('Using Numba-accelerated mutual information calculation')
                     relevance_scores = fast_mutual_info_discrete(X_values, y_values)
                 else:
+                    logger.info('Using standard sklearn mutual information calculation')
                     relevance_scores = mutual_info_classif(X_values, y_values, random_state=42)
+                
+                relevance_time = time.time() - relevance_start
+                logger.info(f'Relevance scores computed in {relevance_time:.3f} seconds')
                 
                 if self.enable_caching:
                     self.cache[relevance_cache_key] = relevance_scores
+                    logger.info('Relevance scores cached for future use')
             
             # Use sparse correlation matrix for efficiency
+            logger.info('Computing correlation matrix for redundancy calculation...')
             corr_matrix = self._sparse_correlation_matrix_optimized(X_values, threshold=0.1)
             corr_matrix_dense = corr_matrix.toarray()
+            logger.info(f'Correlation matrix converted to dense format: {corr_matrix_dense.shape}')
             
             # mRMR algorithm with optimizations
             selected_indices = []
@@ -166,12 +203,15 @@ class OptimizedStep08Methods:
             first_idx = np.argmax(relevance_scores)
             selected_indices.append(first_idx)
             remaining_indices.remove(first_idx)
+            logger.info(f'Initial feature selected: {feature_names[first_idx]} (relevance: {relevance_scores[first_idx]:.4f})')
             
             # Iteratively select features with early stopping
             iteration = 0
             max_iterations = min(n_features * 2, len(feature_names))  # Early stopping
+            logger.info(f'Starting mRMR iterations (max: {max_iterations}, target: {n_features} features)')
             
             while len(selected_indices) < n_features and remaining_indices and iteration < max_iterations:
+                iteration_start = time.time()
                 remaining_relevance = relevance_scores[remaining_indices]
                 
                 # Use sparse matrix operations for efficiency
@@ -189,23 +229,34 @@ class OptimizedStep08Methods:
                 if len(selected_indices) > 1:
                     best_score = np.max(mrmr_scores)
                     if best_score < 0.01:  # Threshold for early stopping
-                        self.logger.info(f'🛑 Early stopping at iteration {iteration} (score: {best_score:.4f})')
+                        logger.info(f'🛑 Early stopping at iteration {iteration} (score: {best_score:.4f})')
                         break
                 
                 best_idx_in_remaining = np.argmax(mrmr_scores)
                 best_idx = remaining_indices[best_idx_in_remaining]
+                best_score = mrmr_scores[best_idx_in_remaining]
                 
                 selected_indices.append(best_idx)
                 remaining_indices.remove(best_idx)
                 iteration += 1
+                
+                iteration_time = time.time() - iteration_start
+                logger.info(f'Iteration {iteration}: Selected {feature_names[best_idx]} (mRMR score: {best_score:.4f}, time: {iteration_time:.3f}s)')
+                
+                # Log progress every 10 iterations
+                if iteration % 10 == 0:
+                    logger.info(f'Progress: {len(selected_indices)}/{n_features} features selected')
             
             selected_features = [feature_names[idx] for idx in selected_indices]
-            self.logger.info(f'✅ Optimized mRMR selected {len(selected_features)} features in {iteration} iterations')
+            total_time = time.time() - start_time
+            logger.info(f'✅ Optimized mRMR selected {len(selected_features)} features in {iteration} iterations ({total_time:.3f}s total)')
             
             return selected_features
             
         except Exception as e:
-            self.logger.error(f'Optimized mRMR selection failed: {e}')
+            total_time = time.time() - start_time
+            logger.error(f'❌ Optimized mRMR selection failed after {total_time:.3f} seconds: {e}')
+            logger.error(f'Error type: {type(e).__name__}')
             return []
 
     # ============================================================================
@@ -215,21 +266,26 @@ class OptimizedStep08Methods:
     def _rf_selection_optimized(self, X_values: np.ndarray, y_values: np.ndarray, 
                                feature_names: List[str], n_features: int) -> List[str]:
         """Optimized Random Forest selection with caching and warm starts."""
+        start_time = time.time()
         try:
-            self.logger.info(f'🌳 Running optimized RF selection for {n_features} features...')
+            logger.info(f'🌳 Running optimized RF selection for {n_features} features...')
+            logger.info(f'Input data: {X_values.shape[0]} samples, {X_values.shape[1]} features')
+            logger.info(f'Target variable shape: {y_values.shape}')
             
             # Check cache for feature importance
             rf_cache_key = f"rf_importance_{hash(X_values.tobytes())}_{hash(y_values.tobytes())}"
             if self.enable_caching and rf_cache_key in self.feature_importance_cache:
-                self.logger.info('📋 Using cached RF feature importance')
+                logger.info('📋 Using cached RF feature importance')
                 feature_importances = self.feature_importance_cache[rf_cache_key]
             else:
                 # Use time series cross-validation with parallel processing
                 tscv = TimeSeriesSplit(n_splits=min(5, 3))
                 feature_importances = np.zeros(X_values.shape[1])
+                logger.info(f'Training Random Forest with {tscv.get_n_splits()} folds...')
                 
                 # Parallel processing for cross-validation
                 if self.enable_parallel_processing and JOBLIB_AVAILABLE:
+                    logger.info(f'Using parallel processing with {self.max_workers} workers')
                     def train_rf_fold(train_idx):
                         X_train, y_train = X_values[train_idx], y_values[train_idx]
                         rf = RandomForestClassifier(
@@ -243,17 +299,23 @@ class OptimizedStep08Methods:
                     
                     # Get train indices for each fold
                     train_indices = [train_idx for train_idx, _ in tscv.split(X_values)]
+                    logger.info(f'Training {len(train_indices)} folds in parallel...')
                     
                     # Parallel training
+                    parallel_start = time.time()
                     fold_importances = Parallel(n_jobs=self.max_workers)(
                         delayed(train_rf_fold)(train_idx) for train_idx in train_indices
                     )
+                    parallel_time = time.time() - parallel_start
+                    logger.info(f'Parallel training completed in {parallel_time:.3f} seconds')
                     
                     # Average importances
                     feature_importances = np.mean(fold_importances, axis=0)
                 else:
-                    # Sequential processing
-                    for train_idx, val_idx in tscv.split(X_values):
+                    logger.info('Using sequential processing for cross-validation')
+                    fold_start = time.time()
+                    for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X_values)):
+                        fold_iter_start = time.time()
                         X_train, y_train = X_values[train_idx], y_values[train_idx]
                         
                         rf = RandomForestClassifier(
@@ -264,22 +326,41 @@ class OptimizedStep08Methods:
                         )
                         rf.fit(X_train, y_train)
                         feature_importances += rf.feature_importances_
+                        
+                        fold_iter_time = time.time() - fold_iter_start
+                        logger.info(f'Fold {fold_idx + 1}/{tscv.get_n_splits()} completed in {fold_iter_time:.3f} seconds')
                     
                     feature_importances /= tscv.get_n_splits()
+                    fold_time = time.time() - fold_start
+                    logger.info(f'All folds completed in {fold_time:.3f} seconds')
                 
                 # Cache the result
                 if self.enable_caching:
                     self.feature_importance_cache[rf_cache_key] = feature_importances
+                    logger.info('Feature importance results cached for future use')
             
             # Select top features
+            logger.info(f'Selecting top {n_features} features based on importance scores...')
             top_indices = np.argsort(feature_importances)[-n_features:]
             selected_features = [feature_names[idx] for idx in top_indices]
             
-            self.logger.info(f'✅ Optimized RF selected {len(selected_features)} features')
+            # Log feature importance statistics
+            max_importance = np.max(feature_importances)
+            min_importance = np.min(feature_importances)
+            mean_importance = np.mean(feature_importances)
+            selected_importance = feature_importances[top_indices]
+            
+            logger.info(f'Feature importance stats - Max: {max_importance:.4f}, Min: {min_importance:.4f}, Mean: {mean_importance:.4f}')
+            logger.info(f'Selected features importance range: {np.min(selected_importance):.4f} - {np.max(selected_importance):.4f}')
+            
+            total_time = time.time() - start_time
+            logger.info(f'✅ Optimized RF selected {len(selected_features)} features in {total_time:.3f} seconds')
             return selected_features
             
         except Exception as e:
-            self.logger.error(f'Optimized RF selection failed: {e}')
+            total_time = time.time() - start_time
+            logger.error(f'❌ Optimized RF selection failed after {total_time:.3f} seconds: {e}')
+            logger.error(f'Error type: {type(e).__name__}')
             return []
 
     def _rf_warm_start_training(self, X_values: np.ndarray, y_values: np.ndarray, 
@@ -325,21 +406,28 @@ class OptimizedStep08Methods:
 
     def _oversample_minority_regimes_optimized(self, data: pd.DataFrame, regime_counts: Dict[int, int]) -> pd.DataFrame:
         """Optimized oversampling with in-place operations and memory efficiency."""
+        start_time = time.time()
         try:
-            self.logger.info('📈 Running optimized regime oversampling...')
+            logger.info('📈 Running optimized regime oversampling...')
+            logger.info(f'Input data shape: {data.shape}, memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB')
+            logger.info(f'Regime counts: {regime_counts}')
             
             # Find target sample size (median of regime counts)
             target_size = int(np.median(list(regime_counts.values())))
+            logger.info(f'Target sample size (median): {target_size}')
             
             # Use memory-efficient processing
             if self.memory_optimizer and self.memory_optimizer.should_chunk_data(
                 data.memory_usage(deep=True).sum() / (1024**2), "regime_rebalancing"
             ):
+                logger.info('Using chunked processing for memory efficiency')
                 return self._chunked_regime_rebalancing(data, regime_counts, target_size, 'oversample')
             
             # In-place operations where possible
             balanced_data = []
+            oversampling_start = time.time()
             for regime_id, count in regime_counts.items():
+                regime_start = time.time()
                 regime_data = data[data['composite_cluster_id'] == regime_id].copy()
                 
                 if count < target_size:
@@ -349,22 +437,37 @@ class OptimizedStep08Methods:
                     
                     # Use pd.concat with ignore_index for efficiency
                     balanced_data.append(pd.concat([regime_data, oversampled], ignore_index=True))
-                    self.logger.info(f'📈 Oversampled regime {regime_id}: {count} → {target_size}')
+                    regime_time = time.time() - regime_start
+                    logger.info(f'📈 Oversampled regime {regime_id}: {count} → {target_size} ({regime_time:.3f}s)')
                 else:
                     balanced_data.append(regime_data)
+                    regime_time = time.time() - regime_start
+                    logger.info(f'Regime {regime_id}: {count} samples (no oversampling needed, {regime_time:.3f}s)')
+            
+            oversampling_time = time.time() - oversampling_start
+            logger.info(f'Oversampling completed in {oversampling_time:.3f} seconds')
             
             # Efficient concatenation
+            concat_start = time.time()
             result = pd.concat(balanced_data, ignore_index=True)
+            concat_time = time.time() - concat_start
+            logger.info(f'Data concatenation completed in {concat_time:.3f} seconds')
             
             # Sort by timestamp if available
             if 'timestamp' in result.columns:
+                sort_start = time.time()
                 result = result.sort_values('timestamp').reset_index(drop=True)
+                sort_time = time.time() - sort_start
+                logger.info(f'Data sorting completed in {sort_time:.3f} seconds')
             
-            self.logger.info(f'✅ Optimized regime rebalancing completed: {len(data)} → {len(result)} samples')
+            total_time = time.time() - start_time
+            logger.info(f'✅ Optimized regime rebalancing completed: {len(data)} → {len(result)} samples ({total_time:.3f}s total)')
             return result
             
         except Exception as e:
-            self.logger.error(f'Optimized oversampling failed: {e}')
+            total_time = time.time() - start_time
+            logger.error(f'❌ Optimized oversampling failed after {total_time:.3f} seconds: {e}')
+            logger.error(f'Error type: {type(e).__name__}')
             return data
 
     def _chunked_regime_rebalancing(self, data: pd.DataFrame, regime_counts: Dict[int, int], 
@@ -434,33 +537,43 @@ class OptimizedStep08Methods:
 
     def _vectorized_feature_stability(self, features: List[str], data: pd.DataFrame) -> Dict[str, float]:
         """Vectorized feature stability calculation."""
+        start_time = time.time()
         try:
-            self.logger.info(f'🔍 Computing vectorized feature stability for {len(features)} features...')
+            logger.info(f'🔍 Computing vectorized feature stability for {len(features)} features...')
+            logger.info(f'Input data shape: {data.shape}, memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB')
             
             # Check cache
             stability_cache_key = f"stability_{hash(data.values.tobytes())}_{hash(tuple(features))}"
             if self.enable_caching and stability_cache_key in self.stability_cache:
-                self.logger.info('📋 Using cached feature stability scores')
+                logger.info('📋 Using cached feature stability scores')
                 return self.stability_cache[stability_cache_key]
             
             # Vectorized computation
             feature_data = data[features].values
             regime_data = data.get('composite_cluster_id', pd.Series()).values
+            logger.info(f'Feature data shape: {feature_data.shape}, regime data shape: {regime_data.shape}')
             
             # Temporal stability (vectorized)
+            temporal_start = time.time()
             if len(feature_data) > 1:
                 time_index = np.arange(len(feature_data))
                 temporal_correlations = np.abs(np.corrcoef(feature_data.T, time_index)[:-1, -1])
                 temporal_stability = 1 - temporal_correlations
+                logger.info(f'Temporal stability computed in {time.time() - temporal_start:.3f} seconds')
             else:
                 temporal_stability = np.ones(len(features))
+                logger.info('Skipping temporal stability (insufficient data)')
             
             # Regime stability (vectorized)
+            regime_start = time.time()
             regime_stability = np.ones(len(features))
-            if len(np.unique(regime_data)) > 1:
+            unique_regimes = np.unique(regime_data)
+            logger.info(f'Computing regime stability across {len(unique_regimes)} regimes...')
+            
+            if len(unique_regimes) > 1:
                 for i, feature in enumerate(features):
                     regime_means = []
-                    for regime in np.unique(regime_data):
+                    for regime in unique_regimes:
                         regime_mask = regime_data == regime
                         if np.sum(regime_mask) > 0:
                             regime_means.append(np.mean(feature_data[regime_mask, i]))
@@ -473,20 +586,36 @@ class OptimizedStep08Methods:
                         else:
                             regime_stability[i] = 1 - regime_std
                         regime_stability[i] = max(0, min(1, regime_stability[i]))
+                
+                regime_time = time.time() - regime_start
+                logger.info(f'Regime stability computed in {regime_time:.3f} seconds')
+            else:
+                logger.info('Skipping regime stability (insufficient regime diversity)')
             
             # Overall stability scores
             stability_scores = (temporal_stability + regime_stability) / 2
             stability_dict = dict(zip(features, stability_scores))
             
+            # Log stability statistics
+            mean_stability = np.mean(stability_scores)
+            std_stability = np.std(stability_scores)
+            min_stability = np.min(stability_scores)
+            max_stability = np.max(stability_scores)
+            logger.info(f'Stability stats - Mean: {mean_stability:.4f}, Std: {std_stability:.4f}, Range: {min_stability:.4f}-{max_stability:.4f}')
+            
             # Cache the result
             if self.enable_caching:
                 self.stability_cache[stability_cache_key] = stability_dict
+                logger.info('Stability scores cached for future use')
             
-            self.logger.info(f'✅ Vectorized feature stability computed for {len(features)} features')
+            total_time = time.time() - start_time
+            logger.info(f'✅ Vectorized feature stability computed for {len(features)} features in {total_time:.3f} seconds')
             return stability_dict
             
         except Exception as e:
-            self.logger.warning(f'Vectorized feature stability failed: {e}')
+            total_time = time.time() - start_time
+            logger.error(f'❌ Vectorized feature stability failed after {total_time:.3f} seconds: {e}')
+            logger.error(f'Error type: {type(e).__name__}')
             return {feature: 0.5 for feature in features}
 
     def _cached_feature_stability(self, feature: str, data: pd.DataFrame) -> float:

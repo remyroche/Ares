@@ -61,8 +61,12 @@ class MemoryEfficientTraining:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize memory-efficient training utilities with configuration."""
-        self.config = config or {}
         self.logger = logger.getChild('MemoryOptimization')
+        self.logger.info("🚀 Initializing MemoryEfficientTraining...")
+        start_time = time.time()
+        
+        self.config = config or {}
+        self.logger.info(f"📊 Configuration loaded with {len(self.config)} parameters")
 
         # Configuration defaults
         self.chunk_size_mb = self.config.get('chunk_size_mb', 500)
@@ -70,17 +74,42 @@ class MemoryEfficientTraining:
         self.enable_gpu_memory_pool = self.config.get('enable_gpu_memory_pool', True)
         self.gc_interval_seconds = self.config.get('gc_interval_seconds', 300)
         self.temp_dir = self.config.get('temp_dir', tempfile.gettempdir())
+        
+        self.logger.info(f"📊 Chunk size: {self.chunk_size_mb} MB")
+        self.logger.info(f"📊 Max memory usage: {self.max_memory_usage*100:.1f}%")
+        self.logger.info(f"📊 GPU memory pool: {self.enable_gpu_memory_pool}")
+        self.logger.info(f"📊 GC interval: {self.gc_interval_seconds}s")
 
         # Initialize utilities
+        self.logger.debug("🔧 Initializing GPU manager...")
         self.gpu_manager = M1GPUManager() if TORCH_AVAILABLE else None
+        if self.gpu_manager:
+            self.logger.debug("✅ GPU manager initialized")
+        else:
+            self.logger.debug("ℹ️ GPU manager not initialized (PyTorch not available)")
+            
+        self.logger.debug("🔧 Initializing memory optimizer...")
         self.memory_optimizer = M1MemoryOptimizer() if TORCH_AVAILABLE else None
+        if self.memory_optimizer:
+            self.logger.debug("✅ Memory optimizer initialized")
+        else:
+            self.logger.debug("ℹ️ Memory optimizer not initialized (PyTorch not available)")
 
         # Memory tracking
         self.memory_usage_history = []
         self.last_gc_time = datetime.now()
+        self.logger.debug("✅ Memory tracking initialized")
 
         # GPU memory pool (if available)
+        self.logger.debug("🔧 Initializing GPU memory pool...")
         self.gpu_memory_pool = self._initialize_gpu_memory_pool()
+        if self.gpu_memory_pool:
+            self.logger.debug("✅ GPU memory pool initialized")
+        else:
+            self.logger.debug("ℹ️ GPU memory pool not initialized")
+        
+        init_time = time.time() - start_time
+        self.logger.info(f"✅ MemoryEfficientTraining initialized in {init_time:.3f}s")
 
     def memory_checkpoint(self, checkpoint_name: str):
         """Create a memory checkpoint context manager for compatibility with M1 memory optimizer."""

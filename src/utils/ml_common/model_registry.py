@@ -25,13 +25,24 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 from datetime import datetime
 import logging
 import os
+import time
 
 from ..common_operations import safe_json_dump, safe_json_load
 from ..file_utils import ensure_directory
 from ..common_operations import safe_file_exists
 from ..common_operations import create_fallback_logger
 
-logger = logging.getLogger(__name__)
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.ModelRegistry")
+    print("✅ Custom logger available for MLCommon.ModelRegistry")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.ModelRegistry")
+    _LOGGER.setLevel(logging.INFO)
+
+logger = _LOGGER
 
 
 class ModelRegistry:
@@ -42,18 +53,29 @@ class ModelRegistry:
         self.registry_path = Path(registry_path)
         self.config = config or {}
         self.logger = logger.getChild('ModelRegistry')
+        
+        _LOGGER.info("🚀 Initializing ModelRegistry...")
+        _LOGGER.info(f"📁 Registry path: {self.registry_path}")
 
         # Configuration defaults
         self.enable_compression = self.config.get('enable_compression', True)
         self.max_versions_per_model = self.config.get('max_versions_per_model', 10)
         self.auto_cleanup = self.config.get('auto_cleanup', True)
 
+        _LOGGER.info(f"⚙️ Configuration - Compression: {self.enable_compression}")
+        _LOGGER.info(f"⚙️ Configuration - Max versions per model: {self.max_versions_per_model}")
+        _LOGGER.info(f"⚙️ Configuration - Auto cleanup: {self.auto_cleanup}")
+
         # Ensure registry directory exists
+        _LOGGER.debug("🔧 Ensuring registry directory exists...")
         ensure_directory(self.registry_path)
 
         # Initialize registry metadata
         self.metadata_file = self.registry_path / "registry_metadata.json"
+        _LOGGER.debug("🔧 Loading registry metadata...")
         self._load_registry_metadata()
+        
+        _LOGGER.info("✅ ModelRegistry initialized successfully")
 
     def save_model_with_metadata(self, model: Any, metadata: Dict[str, Any],
                                version_strategy: str = 'auto',
@@ -70,28 +92,41 @@ class ModelRegistry:
         Returns:
             Save result information
         """
+        start_time = time.time()
+        _LOGGER.info(f"💾 Starting model save with metadata...")
+        _LOGGER.info(f"📊 Parameters - Version strategy: {version_strategy}, Model name: {model_name or 'auto-generated'}")
+        _LOGGER.debug(f"📊 Metadata keys: {list(metadata.keys()) if metadata else 'None'}")
+        
         try:
             # Generate model name if not provided
             if model_name is None:
+                _LOGGER.debug("🔧 Generating model name...")
                 model_name = self._generate_model_name(model, metadata)
+                _LOGGER.info(f"📊 Generated model name: {model_name}")
 
             # Generate version
+            _LOGGER.debug("🔧 Generating version...")
             version = self._generate_version(model_name, version_strategy)
+            _LOGGER.info(f"📊 Generated version: {version}")
 
             # Create model directory
             model_dir = self.registry_path / model_name / version
+            _LOGGER.debug(f"🔧 Creating model directory: {model_dir}")
             ensure_directory(model_dir)
 
             # Save model
             model_path = model_dir / "model.pkl"
+            _LOGGER.debug("💾 Saving model pickle...")
             self._save_model_pickle(model, model_path)
 
             # Save metadata
             metadata_path = model_dir / "metadata.json"
+            _LOGGER.debug("💾 Enhancing and saving metadata...")
             enhanced_metadata = self._enhance_metadata(metadata, model_name, version, model)
             self._save_metadata(enhanced_metadata, metadata_path)
 
             # Update registry
+            _LOGGER.debug("🔧 Updating registry entry...")
             self._update_registry_entry(model_name, version, enhanced_metadata)
 
             result = {
@@ -102,11 +137,14 @@ class ModelRegistry:
                 'success': True
             }
 
-            self.logger.info(f"✅ Model saved: {model_name} v{version}")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Model saved successfully in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Model: {model_name} v{version}, Path: {model_path}")
             return result
 
         except Exception as e:
-            self.logger.error(f"❌ Model save failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Model save failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'success': False}
 
     def load_model_with_validation(self, model_id: str, version: str = 'latest') -> Dict[str, Any]:
@@ -120,18 +158,28 @@ class ModelRegistry:
         Returns:
             Loaded model and metadata
         """
+        start_time = time.time()
+        _LOGGER.info(f"📂 Starting model load with validation...")
+        _LOGGER.info(f"📊 Parameters - Model ID: {model_id}, Version: {version}")
+        
         try:
             # Resolve version
+            _LOGGER.debug("🔧 Resolving version...")
             actual_version = self._resolve_version(model_id, version)
 
             if not actual_version:
+                _LOGGER.error(f"❌ Version '{version}' not found for model '{model_id}'")
                 raise ValueError(f"Version '{version}' not found for model '{model_id}'")
+
+            _LOGGER.info(f"📊 Resolved version: {actual_version}")
 
             # Load model
             model_path = self.registry_path / model_id / actual_version / "model.pkl"
+            _LOGGER.debug(f"📂 Loading model from: {model_path}")
             model = self._load_model_pickle(model_path)
 
             # Load metadata
+            _LOGGER.debug("📂 Loading metadata...")
             metadata_path = self.registry_path / model_id / actual_version / "metadata.json"
             metadata = self._load_metadata(metadata_path)
 
@@ -147,11 +195,14 @@ class ModelRegistry:
                 'success': True
             }
 
-            self.logger.info(f"✅ Model loaded: {model_id} v{actual_version}")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Model loaded successfully in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Model: {model_id} v{actual_version}, Validation: {validation_result.get('status', 'unknown')}")
             return result
 
         except Exception as e:
-            self.logger.error(f"❌ Model load failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Model load failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'success': False}
 
     def model_performance_tracking(self, model_id: str, metrics: Dict[str, Any],

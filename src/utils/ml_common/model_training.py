@@ -32,7 +32,17 @@ from .model_explanations import explain_model_with_shap_lime
 from .hpo_utils import HPOptimizer
 from ..common_operations import create_fallback_logger
 
-logger = logging.getLogger(__name__)
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.ModelTraining")
+    print("✅ Custom logger available for MLCommon.ModelTraining")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.ModelTraining")
+    _LOGGER.setLevel(logging.INFO)
+
+logger = _LOGGER
 
 try:
     from sklearn.metrics import (
@@ -60,6 +70,8 @@ class EnhancedModelTrainer:
         self.config = config or {}
         self.logger = create_fallback_logger(__name__)
         
+        _LOGGER.info("🚀 Initializing EnhancedModelTrainer...")
+        
         # Initialize model evaluator
         self.evaluator = ModelEvaluator(self.config.get('evaluation', {}))
         
@@ -72,9 +84,20 @@ class EnhancedModelTrainer:
         self.enable_post_training_hpo = self.config.get('enable_post_training_hpo', True)
         self.cv_folds = self.config.get('cv_folds', 5)
         
+        _LOGGER.info(f"⚙️ Configuration - Confidence metrics: {self.enable_confidence_metrics}")
+        _LOGGER.info(f"⚙️ Configuration - Calibration assessment: {self.enable_calibration_assessment}")
+        _LOGGER.info(f"⚙️ Configuration - Feature importance: {self.enable_feature_importance}")
+        _LOGGER.info(f"⚙️ Configuration - Cross validation: {self.enable_cross_validation}")
+        _LOGGER.info(f"⚙️ Configuration - Model explanations: {self.enable_model_explanations}")
+        _LOGGER.info(f"⚙️ Configuration - Post-training HPO: {self.enable_post_training_hpo}")
+        _LOGGER.info(f"⚙️ Configuration - CV folds: {self.cv_folds}")
+        
         # Initialize HPO optimizer for post-training optimization
         if self.enable_post_training_hpo:
+            _LOGGER.debug("🔧 Initializing HPO optimizer for post-training optimization...")
             self.hpo_optimizer = HPOptimizer(self.config.get('hpo', {}))
+        
+        _LOGGER.info("✅ EnhancedModelTrainer initialized successfully")
         
     def train_and_evaluate_model(self, model: Any, model_name: str,
                                 X_train: np.ndarray, y_train: np.ndarray,
@@ -99,54 +122,78 @@ class EnhancedModelTrainer:
         Returns:
             Comprehensive training and evaluation results
         """
+        start_time = time.time()
+        _LOGGER.info(f'🏃 Starting training for {model_name}...')
+        _LOGGER.info(f'📊 Data shapes - Train: {X_train.shape}, Test: {X_test.shape}')
+        _LOGGER.info(f'📊 Target shapes - Train: {y_train.shape}, Test: {y_test.shape}')
+        _LOGGER.info(f'📊 Features: {len(feature_names) if feature_names else "Unknown"}')
+        
         try:
-            start_time = time.time()
-            self.logger.info(f'🏃 Training {model_name}...')
-            
             # Apply class weights if enabled
             sample_weight_train = None
             if enable_class_weights and hasattr(model, 'fit'):
+                _LOGGER.debug(f'⚖️ Computing class weights using {class_weight_config} strategy...')
                 try:
                     from sklearn.utils.class_weight import compute_sample_weight
                     sample_weight_train = compute_sample_weight(class_weight_config, y_train)
+                    _LOGGER.info(f'✅ Class weights computed for {len(sample_weight_train)} samples')
                 except Exception as e:
-                    self.logger.warning(f'Class weight computation failed: {e}')
+                    _LOGGER.warning(f'⚠️ Class weight computation failed: {e}')
             
             # Train the model
+            _LOGGER.info(f'🔄 Training {model_name}...')
+            training_start = time.time()
+            
             if sample_weight_train is not None:
                 model.fit(X_train, y_train, sample_weight=sample_weight_train)
             else:
                 model.fit(X_train, y_train)
             
-            training_time = time.time() - start_time
+            training_time = time.time() - training_start
+            _LOGGER.info(f'✅ Model training completed in {training_time:.3f}s')
             
             # Make predictions
+            _LOGGER.info(f'🔮 Making predictions with {model_name}...')
+            prediction_start = time.time()
+            
             y_pred = model.predict(X_test)
             y_pred_proba = None
             if hasattr(model, 'predict_proba'):
                 y_pred_proba = model.predict_proba(X_test)
+                _LOGGER.debug(f'📊 Prediction probabilities shape: {y_pred_proba.shape}')
+            
+            prediction_time = time.time() - prediction_start
+            _LOGGER.info(f'✅ Predictions completed in {prediction_time:.3f}s')
             
             # Calculate basic metrics
+            _LOGGER.debug('📊 Calculating basic metrics...')
             basic_metrics = self._calculate_basic_metrics(y_test, y_pred, y_pred_proba)
             
             # Calculate confidence metrics if enabled
             confidence_metrics = {}
             if self.enable_confidence_metrics and y_pred_proba is not None:
+                _LOGGER.debug('🎯 Calculating confidence metrics...')
                 confidence_metrics = calculate_confidence_metrics(y_test, y_pred_proba)
+            elif self.enable_confidence_metrics:
+                _LOGGER.warning('⚠️ Confidence metrics requested but model does not support predict_proba')
             
             # Calculate feature importance if enabled
             feature_importance = None
             if self.enable_feature_importance:
+                _LOGGER.debug('🔍 Extracting feature importance...')
                 feature_importance = self._extract_feature_importance(model, feature_names)
             
             # Generate model explanations if enabled
             model_explanations = {}
             if self.enable_model_explanations:
+                _LOGGER.debug('🧠 Generating model explanations...')
                 try:
                     # Use smaller samples for explanations to avoid memory issues
                     sample_size = min(50, len(X_test))
                     test_indices = np.random.choice(len(X_test), sample_size, replace=False)
                     X_test_sample = X_test[test_indices]
+                    
+                    _LOGGER.debug(f'📊 Using sample size {sample_size} for explanations')
                     
                     model_explanations = explain_model_with_shap_lime(
                         model=model,
@@ -161,16 +208,21 @@ class EnhancedModelTrainer:
                             'lime_sample_size': 5
                         }
                     )
+                    _LOGGER.info('✅ Model explanations generated successfully')
                 except Exception as e:
-                    self.logger.warning(f'Model explanations failed for {model_name}: {e}')
+                    _LOGGER.warning(f'⚠️ Model explanations failed for {model_name}: {e}')
                     model_explanations = {'error': str(e)}
             
             # Perform cross-validation if enabled
             cv_results = {}
             if self.enable_cross_validation and SKLEARN_AVAILABLE:
+                _LOGGER.debug(f'🔄 Performing cross-validation with {self.cv_folds} folds...')
                 cv_results = self._perform_cross_validation(model, X_train, y_train)
+            elif self.enable_cross_validation and not SKLEARN_AVAILABLE:
+                _LOGGER.warning('⚠️ Cross-validation requested but scikit-learn not available')
             
             # Comprehensive evaluation using ModelEvaluator
+            _LOGGER.debug('📊 Performing comprehensive evaluation...')
             evaluation_results = self.evaluator.comprehensive_evaluation(
                 y_test, y_pred, y_pred_proba, task_type='classification'
             )
@@ -181,12 +233,12 @@ class EnhancedModelTrainer:
                 hasattr(self, 'hpo_optimizer') and 
                 basic_metrics.get('accuracy', 0) > 0.6):  # Only optimize if model is decent
                 try:
-                    self.logger.info(f'🔧 Running post-training HPO for {model_name}...')
+                    _LOGGER.info(f'🔧 Running post-training HPO for {model_name}...')
                     post_training_hpo_results = self._perform_post_training_hpo(
                         model, model_name, X_train, y_train, X_test, y_test, feature_names
                     )
                 except Exception as e:
-                    self.logger.warning(f'Post-training HPO failed for {model_name}: {e}')
+                    _LOGGER.warning(f'⚠️ Post-training HPO failed for {model_name}: {e}')
                     post_training_hpo_results = {'error': str(e)}
             
             # Compile comprehensive results
@@ -209,10 +261,14 @@ class EnhancedModelTrainer:
             # Log comprehensive results
             self._log_training_results(results, model_name)
             
+            total_time = time.time() - start_time
+            _LOGGER.info(f'✅ Complete training and evaluation for {model_name} finished in {total_time:.3f}s')
+            
             return results
             
         except Exception as e:
-            self.logger.error(f'❌ Model training failed for {model_name}: {e}')
+            total_time = time.time() - start_time
+            _LOGGER.error(f'❌ Model training failed for {model_name} after {total_time:.3f}s: {e}')
             return {
                 'model_name': model_name,
                 'error': str(e),

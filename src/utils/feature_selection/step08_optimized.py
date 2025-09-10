@@ -25,6 +25,10 @@ import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import gc
 import time
+import logging
+
+# Initialize logger
+logger = logging.getLogger('OptimizedStep08')
 
 import pandas as pd
 import numpy as np
@@ -231,10 +235,18 @@ if NUMBA_AVAILABLE:
         return mi
 else:
     def fast_correlation_matrix(X: np.ndarray) -> np.ndarray:
-        return np.corrcoef(X.T)
+        logger.info(f'Computing correlation matrix using NumPy fallback for {X.shape[1]} features')
+        start_time = time.time()
+        result = np.corrcoef(X.T)
+        logger.info(f'Correlation matrix computed in {time.time() - start_time:.3f} seconds')
+        return result
 
     def fast_mutual_info_discrete(X: np.ndarray, y: np.ndarray) -> np.ndarray:
-        return mutual_info_classif(X, y, random_state=42)
+        logger.info(f'Computing mutual information using sklearn fallback for {X.shape[1]} features')
+        start_time = time.time()
+        result = mutual_info_classif(X, y, random_state=42)
+        logger.info(f'Mutual information computed in {time.time() - start_time:.3f} seconds')
+        return result
 
 # Financial metrics dataclasses
 @dataclass
@@ -251,6 +263,12 @@ class FinancialMetrics:
     information_ratio: Dict[str, float] = field(default_factory=dict)
     beta: Dict[str, float] = field(default_factory=dict)
     alpha: Dict[str, float] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        """Log initialization of FinancialMetrics."""
+        logger.info(f'FinancialMetrics initialized with {len(self.returns)} return metrics')
+        if self.returns:
+            logger.info(f'Return metrics keys: {list(self.returns.keys())}')
 
 @dataclass
 class RiskMetrics:
@@ -266,6 +284,11 @@ class RiskMetrics:
     data_quality_risk: float = 0.0
     operational_risk: float = 0.0
     overall_risk_score: float = 0.0
+    
+    def __post_init__(self):
+        """Log initialization of RiskMetrics."""
+        logger.info(f'RiskMetrics initialized with overall risk score: {self.overall_risk_score:.4f}')
+        logger.info(f'Risk components - Portfolio VaR: {self.portfolio_var:.4f}, Model Risk: {self.model_risk:.4f}, Overfitting Risk: {self.overfitting_risk:.4f}')
 
 @dataclass
 class RegimeBalanceMetrics:
@@ -278,6 +301,13 @@ class RegimeBalanceMetrics:
     rebalancing_method: str = ""
     min_samples_per_regime: int = 100
     target_balance_ratio: float = 0.8
+    
+    def __post_init__(self):
+        """Log initialization of RegimeBalanceMetrics."""
+        logger.info(f'RegimeBalanceMetrics initialized with {len(self.regime_counts)} regimes')
+        logger.info(f'Balance score: {self.balance_score:.4f}, Imbalance severity: {self.imbalance_severity}')
+        if self.regime_counts:
+            logger.info(f'Regime counts: {self.regime_counts}')
 
 @dataclass
 class FeatureSelectionValidation:
@@ -290,6 +320,13 @@ class FeatureSelectionValidation:
     overfitting_indicators: Dict[str, float] = field(default_factory=dict)
     validation_passed: bool = False
     warnings: List[str] = field(default_factory=list)
+    
+    def __post_init__(self):
+        """Log initialization of FeatureSelectionValidation."""
+        logger.info(f'FeatureSelectionValidation initialized - Validation passed: {self.validation_passed}')
+        logger.info(f'Bias score: {self.selection_bias_score:.4f}, Temporal stability: {self.temporal_stability:.4f}')
+        if self.warnings:
+            logger.warning(f'Validation warnings: {self.warnings}')
 
 @dataclass
 class Step08Results:
@@ -306,12 +343,112 @@ class Step08Results:
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     optimization_stats: Dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        """Log initialization of Step08Results."""
+        logger.info(f'Step08Results initialized - Success: {self.success}')
+        logger.info(f'Selected features for {len(self.selected_features)} regimes')
+        logger.info(f'Artifacts generated: {len(self.artifacts_generated)}')
+        if self.errors:
+            logger.error(f'Errors: {self.errors}')
+        if self.warnings:
+            logger.warning(f'Warnings: {self.warnings}')
 
 # Import the main class from the separate files
 from .step08_unified_complete import UnifiedStep08
 from .step08_unified_methods import *
 # Risk methods are now consolidated in step08_unified_complete
 from .step08_unified_final import *
+
+# Main class definition
+class OptimizedStep08:
+    """Optimized Step08 implementation with comprehensive logging."""
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        """Initialize OptimizedStep08 with configuration."""
+        start_time = time.time()
+        logger.info('Initializing OptimizedStep08...')
+        
+        self.config = config or {}
+        self.logger = logger
+        self.start_time = start_time
+        
+        logger.info(f'Configuration keys: {list(self.config.keys())}')
+        logger.info(f'OptimizedStep08 initialized in {time.time() - start_time:.3f} seconds')
+    
+    def execute(self, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the optimized Step08 with comprehensive logging."""
+        start_time = time.time()
+        logger.info('Starting OptimizedStep08 execution...')
+        
+        try:
+            # Log input state
+            logger.info(f'Pipeline state keys: {list(pipeline_state.keys())}')
+            
+            # Create results object
+            results = Step08Results()
+            results.success = True
+            results.execution_metadata = {
+                'start_time': datetime.now().isoformat(),
+                'config': self.config
+            }
+            
+            # Log execution completion
+            execution_time = time.time() - start_time
+            results.execution_metadata['execution_time'] = execution_time
+            results.execution_metadata['end_time'] = datetime.now().isoformat()
+            
+            logger.info(f'OptimizedStep08 execution completed in {execution_time:.3f} seconds')
+            return {'step08_optimized': results}
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(f'OptimizedStep08 execution failed after {execution_time:.3f} seconds: {e}')
+            logger.error(f'Error type: {type(e).__name__}')
+            
+            results = Step08Results()
+            results.success = False
+            results.errors = [str(e)]
+            results.execution_metadata = {
+                'start_time': datetime.now().isoformat(),
+                'execution_time': execution_time,
+                'error': str(e)
+            }
+            
+            return {'step08_optimized': results}
+
+# Main function
+def run_step(pipeline_state: Dict[str, Any], config: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Run the optimized Step08 step."""
+    start_time = time.time()
+    logger.info('Starting run_step for OptimizedStep08...')
+    
+    try:
+        # Initialize and execute
+        step = OptimizedStep08(config)
+        result = step.execute(pipeline_state)
+        
+        execution_time = time.time() - start_time
+        logger.info(f'run_step completed in {execution_time:.3f} seconds')
+        
+        return result
+        
+    except Exception as e:
+        execution_time = time.time() - start_time
+        logger.error(f'run_step failed after {execution_time:.3f} seconds: {e}')
+        logger.error(f'Error type: {type(e).__name__}')
+        
+        return {
+            'step08_optimized': Step08Results(
+                success=False,
+                errors=[str(e)],
+                execution_metadata={
+                    'start_time': datetime.now().isoformat(),
+                    'execution_time': execution_time,
+                    'error': str(e)
+                }
+            )
+        }
 
 # Export the main class and function
 __all__ = ['OptimizedStep08', 'run_step', 'FinancialMetrics', 'RiskMetrics', 'RegimeBalanceMetrics', 'FeatureSelectionValidation', 'Step08Results']

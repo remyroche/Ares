@@ -2,6 +2,34 @@
 # src/utils/__init__.py
 # This file makes the 'utils' directory a Python package.
 
+# Import core utilities
+try:
+    from .core import *
+    CORE_AVAILABLE = True
+except ImportError:
+    CORE_AVAILABLE = False
+
+# Import data utilities
+try:
+    from .data import *
+    DATA_AVAILABLE = True
+except ImportError:
+    DATA_AVAILABLE = False
+
+# Import config utilities
+try:
+    from .config import *
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+
+# Import hardware utilities
+try:
+    from .hardware import *
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    HARDWARE_AVAILABLE = False
+
 # Import monitoring systems
 try:
     from .function_call_monitor import (
@@ -150,6 +178,18 @@ except ImportError:
 
 # Build __all__ list dynamically based on available modules
 __all__ = []
+
+# Add core utilities if available
+if CORE_AVAILABLE:
+    __all__.extend([
+        'CommonOperations', 'get_common_operations',
+        'safe_json_load', 'safe_json_dump', 'safe_read_parquet', 'ensure_directory',
+        'safe_dataframe_operation', 'safe_get', 'safe_set', 'safe_list_get', 'safe_list_append',
+        'merge_dicts', 'flatten_list', 'validate_type', 'safe_convert', 'create_fallback_logger'
+    ])
+
+# Note: Data, config, and hardware utilities need to be imported explicitly
+# from their specific modules due to file consolidation
 
 # Add function call monitoring if available
 if FUNCTION_CALL_MONITOR_AVAILABLE:

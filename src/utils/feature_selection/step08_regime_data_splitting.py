@@ -108,9 +108,17 @@ class RegimeDataSplittingStep:
     @log_important_calls
 
     def __init__(self, config: dict[str, Any]) -> None:
+        start_time = time.time()
+        self.logger.info('Initializing RegimeDataSplittingStep...')
+        
         self.config = config
         self.logger = system_logger.getChild('Step8.RegimeSplit')
         self.standards = PipelineStandards(self.logger)
+        
+        self.logger.info(f'Configuration keys: {list(self.config.keys())}')
+        self.logger.info(f'Symbol: {self.config.get("symbol", "ETHUSDT")}')
+        self.logger.info(f'Exchange: {self.config.get("exchange", "BINANCE")}')
+        self.logger.info(f'Timeframe: {self.config.get("timeframe", "1m")}')
 
         # Initialize enhanced reporting system
         if ENHANCED_REPORTING_AVAILABLE and Step08EnhancedReporter is not None:
@@ -135,50 +143,86 @@ class RegimeDataSplittingStep:
                 self.financial_logger = None
 
         self._validate_environment()
+        
+        init_time = time.time() - start_time
+        self.logger.info(f'RegimeDataSplittingStep initialized in {init_time:.3f} seconds')
     @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
+        start_time = time.time()
         self.logger.info('🔍 Validating environment dependencies...')
+        
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f'⚠️ Missing optional modules: {missing_modules}')
             self.logger.info('📝 Pipeline will continue with fallback implementations')
         else:
             self.logger.info('✅ All required dependencies available')
+        
+        validation_time = time.time() - start_time
+        self.logger.info(f'Environment validation completed in {validation_time:.3f} seconds')
 
     @with_tracing_span('step08_regime_splitting.initialize', log_args = False)
     @handle_errors(exceptions=(Exception,), default_return = None, context='step08_initialization')
     async def initialize(self) -> None:
+        start_time = time.time()
         self.logger.info('📋 Step 8 Configuration:')
         self.logger.info(f'   - Unified dataset approach: Enabled')
         self.logger.info(f'   - Regime labels: composite_cluster_id')
         self.logger.info(f'   - Maintains temporal continuity: Yes')
-        self.logger.info('✅ Unified HMM Composite Regime Data Creation initialized successfully')
+        
+        init_time = time.time() - start_time
+        self.logger.info(f'✅ Unified HMM Composite Regime Data Creation initialized successfully in {init_time:.3f} seconds')
 
     @with_enhanced_mlflow_logging('step8')
     @with_tracing_span('step08_regime_splitting.execute', log_args = False)
     @handle_errors(exceptions=(Exception,), default_return={'success': False, 'error': 'Execution failed'}, context='step08_execution')
     async def execute(self, training_input: dict[str, Any]=None, pipeline_state: dict[str, Any]=None) -> dict[str, Any]:
         """Execute the regime data splitting step with validation."""
+        start_time = time.time()
         try:
             self.logger.info('🔄 Loading unified data for HMM composite regime data creation...')
+            self.logger.info(f'Pipeline state keys: {list(pipeline_state.keys()) if pipeline_state else "None"}')
+            
             if pipeline_state and 'dataframe' in pipeline_state:
                 data = pipeline_state['dataframe']
                 if isinstance(data, pd.DataFrame):
+                    self.logger.info(f'Validating input dataframe with {len(data)} rows')
                     data = self._validate_and_fix_input_data(data)
                     pipeline_state['dataframe'] = data
+                    self.logger.info('Input dataframe validation completed')
+            
+            data_loader_start = time.time()
             data_loader = get_unified_data_loader(self.config)
+            data_loader_time = time.time() - data_loader_start
+            self.logger.info(f'Data loader initialization completed in {data_loader_time:.3f} seconds')
+            
             if data_loader is None:
                 self.logger.error('🚨 Unified data loader is not available')
                 self.logger.error('   This indicates a critical configuration issue')
                 return {'success': False, 'error': 'Unified data loader not available'}
+            
             from src.config.constants import BLANK_TRAINING_LOOKBACK_DAYS
             config_lookback = self.config.get('lookback_days', BLANK_TRAINING_LOOKBACK_DAYS)
+            self.logger.info(f'Lookback days: {config_lookback}')
+            
             if not hasattr(data_loader, 'load_unified_data'):
                 self.logger.error('🚨 Data loader missing load_unified_data method')
                 return {'success': False, 'error': 'Data loader missing required method'}
-            unified_data = await data_loader.load_unified_data(symbol = self.config.get('symbol', 'ETHUSDT'), exchange = self.config.get('exchange', 'BINANCE'), timeframe = self.config.get('timeframe', '1m'), data_dir = self.config.get('data_dir', 'data_cache'))
+            
+            # Load unified data
+            symbol = self.config.get('symbol', 'ETHUSDT')
+            exchange = self.config.get('exchange', 'BINANCE')
+            timeframe = self.config.get('timeframe', '1m')
+            data_dir = self.config.get('data_dir', 'data_cache')
+            
+            self.logger.info(f'Loading unified data for {symbol} on {exchange} ({timeframe}) from {data_dir}')
+            data_load_start = time.time()
+            unified_data = await data_loader.load_unified_data(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)
+            data_load_time = time.time() - data_load_start
+            self.logger.info(f'Data loading completed in {data_load_time:.3f} seconds')
+            
             if unified_data is None:
                 self.logger.error('🚨 Unified data loader returned None')
                 return {'success': False, 'error': 'Unified data loader returned None'}
@@ -188,30 +232,53 @@ class RegimeDataSplittingStep:
             if not hasattr(unified_data, 'columns'):
                 self.logger.error('🚨 Unified data is not a DataFrame')
                 return {'success': False, 'error': 'Unified data is not a DataFrame'}
+            
             self.logger.info(f'✅ Loaded unified data: {len(unified_data)} rows')
             self.logger.info(f'   Columns: {list(unified_data.columns)}')
             self.logger.info(f'   Date range: {unified_data.index.min()} to {unified_data.index.max()}')
             self.logger.info('🎯 Using HMM composite clusters for regime labeling (PARAMOUNT)')
+            
             if 'composite_cluster_id' not in unified_data.columns:
                 self.logger.error('🚨 HMM composite_cluster_id column is missing from unified data')
                 self.logger.error('   This is a critical failure - HMM composite clusters are paramount')
                 self.logger.error('   Please ensure step03_hmm_regime_discovery completed successfully')
                 return {'success': False, 'error': 'Missing HMM composite_cluster_id - paramount requirement'}
+            # Process composite clusters
+            cluster_start = time.time()
             composite_clusters = unified_data['composite_cluster_id'].dropna()
             if composite_clusters.empty:
                 self.logger.error('🚨 HMM composite_cluster_id column contains only null values')
                 self.logger.error('   This indicates step03_hmm_regime_discovery failed to generate valid clusters')
                 return {'success': False, 'error': 'HMM composite_cluster_id contains only null values'}
+            
             unique_clusters = composite_clusters.unique()
+            cluster_time = time.time() - cluster_start
             self.logger.info(f'📊 Found {len(unique_clusters)} unique HMM composite clusters: {sorted(unique_clusters)}')
+            self.logger.info(f'Cluster processing completed in {cluster_time:.3f} seconds')
+            
+            # Sort data and create unified dataset
+            sort_start = time.time()
             unified_data = unified_data.sort_index()
+            sort_time = time.time() - sort_start
+            self.logger.info(f'Data sorting completed in {sort_time:.3f} seconds')
+            
             self.logger.info('🔀 Creating unified dataset with regime labels...')
+            save_start = time.time()
             success = self._save_unified_regime_dataset(unified_data, unique_clusters)
+            save_time = time.time() - save_start
+            self.logger.info(f'Dataset saving completed in {save_time:.3f} seconds')
+            
             if not success:
                 self.logger.error('🚨 Failed to save unified regime dataset')
                 return {'success': False, 'error': 'Failed to save unified regime dataset'}
+            
             self.logger.info(f'✅ Successfully created unified dataset with {len(unique_clusters)} HMM composite regime labels')
+            
+            # Create regime summary
+            summary_start = time.time()
             summary = self._create_regime_summary(unified_data, unique_clusters)
+            summary_time = time.time() - summary_start
+            self.logger.info(f'Regime summary creation completed in {summary_time:.3f} seconds')
 
             # Enhanced reporting system
             if self.enhanced_reporter is not None:
@@ -389,10 +456,13 @@ class RegimeDataSplittingStep:
                         timeframe = self.config.get('timeframe', '1m')
                         self.financial_logger.log_step_end('step08_regime_data_splitting', symbol, exchange, timeframe, success=False, error_message=str(e))
 
-            self.logger.info('✅ Unified HMM composite regime data creation completed successfully')
+            total_time = time.time() - start_time
+            self.logger.info(f'✅ Unified HMM composite regime data creation completed successfully in {total_time:.3f} seconds')
             return {'success': True, 'regime_summary': summary}
         except Exception as e:
-            self.logger.exception(f'❌ Unified HMM composite regime data creation failed: {e}')
+            total_time = time.time() - start_time
+            self.logger.exception(f'❌ Unified HMM composite regime data creation failed after {total_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             
             # Log step end with error if financial logger is available
             if self.financial_logger is not None:
@@ -417,36 +487,72 @@ class RegimeDataSplittingStep:
         Returns:
             Validated and fixed DataFrame
         """
+        start_time = time.time()
         self.logger.info('🔍 Validating input data for regime data splitting...')
+        self.logger.info(f'Input data shape: {data.shape}, memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB')
+        
+        validation_start = time.time()
         validation_result = self.standards.validate_data_quality(data, 'unified')
+        validation_time = time.time() - validation_start
+        self.logger.info(f'Initial validation completed in {validation_time:.3f} seconds')
+        
         if not validation_result.passed:
             self.logger.warning(f'⚠️ Data quality issues detected: {validation_result.quality_score:.2f}')
             for issue in validation_result.issues:
                 self.logger.warning(f'   - {issue.message}')
+        
         fixed_data = data.copy()
+        
+        # Handle duplicate timestamps
         if 'timestamp' in fixed_data.columns:
+            duplicate_start = time.time()
             duplicate_count = fixed_data['timestamp'].duplicated().sum()
             if duplicate_count > 0:
                 self.logger.info(f'🗑️ Removing {duplicate_count} duplicate timestamps')
                 fixed_data = fixed_data.drop_duplicates(subset=['timestamp'], keep='last')
+                duplicate_time = time.time() - duplicate_start
+                self.logger.info(f'Duplicate removal completed in {duplicate_time:.3f} seconds')
+        
+        # Sort data by timestamp
         if 'timestamp' in fixed_data.columns:
+            sort_start = time.time()
             if not fixed_data['timestamp'].is_monotonic_increasing:
                 self.logger.info('📈 Sorting data by timestamp')
                 fixed_data = fixed_data.sort_values('timestamp').reset_index(drop = True)
+            sort_time = time.time() - sort_start
+            self.logger.info(f'Data sorting completed in {sort_time:.3f} seconds')
+        
+        # Apply schema enforcement
+        schema_start = time.time()
         try:
             fixed_data = self.standards.enforce_schema(fixed_data, 'unified')
-            self.logger.info('✅ Applied schema enforcement')
+            schema_time = time.time() - schema_start
+            self.logger.info(f'✅ Applied schema enforcement in {schema_time:.3f} seconds')
         except Exception as e:
-            self.logger.warning(f'⚠️ Schema enforcement failed: {e}')
+            schema_time = time.time() - schema_start
+            self.logger.warning(f'⚠️ Schema enforcement failed after {schema_time:.3f} seconds: {e}')
+        
+        # Set datetime index
         if 'timestamp' in fixed_data.columns and (not isinstance(fixed_data.index, pd.DatetimeIndex)):
+            index_start = time.time()
             try:
                 fixed_data['timestamp'] = pd.to_datetime(fixed_data['timestamp'])
                 fixed_data = fixed_data.set_index('timestamp')
-                self.logger.info('📅 Set datetime index')
+                index_time = time.time() - index_start
+                self.logger.info(f'📅 Set datetime index in {index_time:.3f} seconds')
             except Exception as e:
-                self.logger.warning(f'⚠️ Could not set datetime index: {e}')
+                index_time = time.time() - index_start
+                self.logger.warning(f'⚠️ Could not set datetime index after {index_time:.3f} seconds: {e}')
+        
+        # Final validation
+        final_validation_start = time.time()
         final_validation = self.standards.validate_data_quality(fixed_data, 'unified')
+        final_validation_time = time.time() - final_validation_start
+        self.logger.info(f'Final validation completed in {final_validation_time:.3f} seconds')
         self.logger.info(f'✅ Final data quality score: {final_validation.quality_score:.2f}')
+        
+        total_time = time.time() - start_time
+        self.logger.info(f'Data validation and fixing completed in {total_time:.3f} seconds')
         return fixed_data
 
     async def _log_basic_step8_artifacts_and_report(self, unified_data: Any, summary: Any) -> None:

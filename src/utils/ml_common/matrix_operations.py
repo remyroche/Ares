@@ -33,12 +33,22 @@ from contextlib import contextmanager
 import logging
 import time
 import gc
+import warnings
+
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.MatrixOperations")
+    print("✅ Custom logger available for MLCommon.MatrixOperations")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.MatrixOperations")
+    _LOGGER.setLevel(logging.INFO)
 
 # Import M1 optimization utilities
 try:
-    from ..m1_gpu_utils import get_m1_gpu_manager, M1GPUManager, m1_tensor_multiply, m1_batch_process as m1_batch_process_gpu
-    from ..m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-    from ..m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer, parallel_map
+    from ..hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
+    from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
     from ..vectorized_processing_core import get_vectorized_processing_core, VectorizedProcessingCore
     M1_UTILS_AVAILABLE = True
 except ImportError as e:
@@ -47,13 +57,16 @@ except ImportError as e:
 
 # Import enhanced matrix operations as base
 try:
-    from ..feature_engineering.enhanced_matrix_operations import *  # type: ignore  # noqa: F401,F403
+    from ...feature_engineering.enhanced_matrix_operations import (
+        with_error_handling, with_gpu_fallback, with_memory_optimization,
+        get_enhanced_matrix_operations, EnhancedMatrixOperations
+    )
 except Exception as exc:  # pragma: no cover – must never fail silently
     raise ImportError(
         "Unable to import 'enhanced_matrix_operations' – ensure utilities package is intact"
     ) from exc
 
-warn(
+warnings.warn(
     "`src.utils.ml_common.matrix_operations` is the new canonical import path for the"
     " enhanced matrix-operation helpers (formerly Step07).  Please update your imports.",
     category=DeprecationWarning,
@@ -84,6 +97,10 @@ class M1EnhancedMatrixOperations:
             enable_dynamic_batch: Whether to use dynamic batch optimization
             enable_performance_monitoring: Whether to enable performance monitoring
         """
+        _LOGGER.info("🚀 Initializing M1EnhancedMatrixOperations...")
+        _LOGGER.info(f"📊 Configuration - GPU: {use_gpu}, Memory efficient: {memory_efficient}, Parallel: {enable_parallel_processing}")
+        _LOGGER.info(f"📊 Configuration - Chunk size: {chunk_size}, Dtype: {dtype}, Dynamic batch: {enable_dynamic_batch}")
+        
         self.use_gpu = use_gpu
         self.memory_efficient = memory_efficient
         self.enable_parallel_processing = enable_parallel_processing
@@ -93,12 +110,13 @@ class M1EnhancedMatrixOperations:
         self.enable_performance_monitoring = enable_performance_monitoring
 
         # Initialize M1 optimization components
+        _LOGGER.info("🔧 Initializing M1 optimization components...")
         self._init_m1_components()
         
         # Initialize base operations if available
-        if BASE_OPERATIONS_AVAILABLE:
-            self.base_ops = get_base_enhanced_ops()
-        else:
+        try:
+            self.base_ops = get_enhanced_matrix_operations()
+        except ImportError:
             self.base_ops = None
 
         # Performance tracking
@@ -112,6 +130,7 @@ class M1EnhancedMatrixOperations:
         }
 
         self.logger = logger.getChild('M1EnhancedMatrixOperations')
+        _LOGGER.info("✅ M1EnhancedMatrixOperations initialized successfully")
         self.logger.info(f"🔧 M1 Enhanced Matrix Operations initialized (GPU: {self.use_gpu}, Parallel: {self.enable_parallel_processing})")
 
     def _init_m1_components(self):
@@ -127,8 +146,8 @@ class M1EnhancedMatrixOperations:
         try:
             # Initialize M1 GPU manager
             if self.use_gpu:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.logger.info(f"🎯 M1 GPU Manager initialized: {self.gpu_manager.device}")
+                self.gpu_manager = get_m1_memory_optimizer()
+                self.logger.info(f"🎯 M1 Memory Optimizer initialized")
             else:
                 self.gpu_manager = None
 
@@ -139,8 +158,8 @@ class M1EnhancedMatrixOperations:
 
             # Initialize M1 CPU optimizer
             if self.enable_parallel_processing:
-                self.cpu_optimizer = get_m1_cpu_optimizer()
-                self.logger.info(f"⚡ M1 CPU Optimizer initialized: {self.cpu_optimizer.max_workers} workers")
+                self.cpu_optimizer = get_memory_manager()
+                self.logger.info(f"⚡ Memory Manager initialized for parallel processing")
 
             # Initialize vectorized processing core
             self.vectorized_core = get_vectorized_processing_core()
@@ -203,7 +222,12 @@ class M1EnhancedMatrixOperations:
                        b: Union[np.ndarray, torch.Tensor],
                        use_gpu: Optional[bool] = None) -> Union[np.ndarray, torch.Tensor]:
         """M1-optimized matrix multiplication with intelligent device selection."""
+        start_time = time.time()
         use_gpu = use_gpu if use_gpu is not None else self.use_gpu
+        
+        _LOGGER.info(f"🔄 Starting matrix multiplication...")
+        _LOGGER.info(f"📊 Input shapes - A: {a.shape if hasattr(a, 'shape') else 'unknown'}, B: {b.shape if hasattr(b, 'shape') else 'unknown'}")
+        _LOGGER.info(f"📊 GPU enabled: {use_gpu}")
 
         with self.operation_context("matrix_multiply"):
             # Convert to tensors if needed
@@ -232,16 +256,25 @@ class M1EnhancedMatrixOperations:
                     
                     # Convert back to CPU if input was numpy
                     if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
-                        return result.cpu().numpy()
+                        result = result.cpu().numpy()
+                    
+                    execution_time = time.time() - start_time
+                    _LOGGER.info(f"✅ GPU matrix multiplication completed in {execution_time:.3f}s")
+                    _LOGGER.info(f"📊 Result shape: {result.shape if hasattr(result, 'shape') else 'unknown'}")
                     return result
 
             # CPU fallback
+            _LOGGER.info("🔄 Using CPU fallback for matrix multiplication")
             result = torch.matmul(a, b)
             self.performance_stats['cpu_operations'] += 1
 
             # Convert back to numpy if input was numpy
             if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
-                return result.numpy()
+                result = result.numpy()
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Matrix multiplication completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Result shape: {result.shape if hasattr(result, 'shape') else 'unknown'}")
             return result
 
     @with_error_handling("m1_batch_matrix_multiply")
@@ -249,8 +282,13 @@ class M1EnhancedMatrixOperations:
                             matrices_b: List[np.ndarray],
                             batch_size: Optional[int] = None) -> List[np.ndarray]:
         """M1-optimized batch matrix multiplication with parallel processing."""
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting batch matrix multiplication...")
+        _LOGGER.info(f"📊 Batch size: {len(matrices_a)} matrices")
+        
         with self.operation_context("batch_matrix_multiply"):
             if not matrices_a or not matrices_b:
+                _LOGGER.warning("⚠️ Empty matrices list provided")
                 return []
 
             # Determine optimal batch size
@@ -273,8 +311,8 @@ class M1EnhancedMatrixOperations:
                     a_batch = torch.stack(a_tensors)
                     b_batch = torch.stack(b_tensors)
                     
-                    # Use M1 batch processing
-                    results = m1_batch_process_gpu(
+                    # Use batch processing
+                    results = self._batch_process_matrices(
                         a_batch,
                         batch_size=batch_size,
                         op=lambda x: torch.bmm(x, b_batch[:x.shape[0]]),
@@ -301,6 +339,9 @@ class M1EnhancedMatrixOperations:
                 
                 results.extend(batch_results)
 
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Batch matrix multiplication completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Processed {len(results)} matrices")
             return results
 
     @with_error_handling("m1_correlation_matrix")
@@ -507,7 +548,8 @@ def m1_batch_process(data: Union[np.ndarray, torch.Tensor],
     """M1-optimized batch processing."""
     ops = get_enhanced_matrix_operations()
     if hasattr(ops, 'gpu_manager') and ops.gpu_manager:
-        return m1_batch_process_gpu(data, batch_size=batch_size, operation_type=operation_type)
+        # Use enhanced matrix operations for batch processing
+        return ops.batch_process(data, batch_size=batch_size, operation_type=operation_type)
     else:
         # CPU fallback
         if isinstance(data, torch.Tensor):
@@ -547,14 +589,16 @@ def get_m1_performance_stats() -> Dict[str, Any]:
     return ops.get_performance_stats()
 
 # Backward compatibility - re-export from base operations if available
-if BASE_OPERATIONS_AVAILABLE:
+try:
     # Re-export commonly used functions from base operations
-    from ..enhanced_matrix_operations import (
+    from ...feature_engineering.enhanced_matrix_operations import (
         gpu_matrix_multiply, correlation_matrix_gpu, eigendecomposition_gpu, svd_gpu,
         optimize_batch_size, record_batch_performance, get_batch_optimization_stats,
         sparse_matrix_multiply, sparse_svd, sparse_eigen, create_sparse_matrix, sparse_solve,
         register_custom_matrix_operation, execute_custom_matrix_operation, list_custom_matrix_operations
     )
+except ImportError:
+    pass
 
 # Export all public functions and classes
 __all__ = [
@@ -573,10 +617,12 @@ __all__ = [
 ]
 
 # Add base operation exports if available
-if BASE_OPERATIONS_AVAILABLE:
+try:
     __all__.extend([
         'gpu_matrix_multiply', 'correlation_matrix_gpu', 'eigendecomposition_gpu', 'svd_gpu',
         'optimize_batch_size', 'record_batch_performance', 'get_batch_optimization_stats',
         'sparse_matrix_multiply', 'sparse_svd', 'sparse_eigen', 'create_sparse_matrix', 'sparse_solve',
         'register_custom_matrix_operation', 'execute_custom_matrix_operation', 'list_custom_matrix_operations'
     ])
+except NameError:
+    pass

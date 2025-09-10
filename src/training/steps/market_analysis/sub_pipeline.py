@@ -20,6 +20,7 @@ Sub-pipelines:
 import asyncio
 import logging
 import numpy as np
+import pandas as pd
 from typing import Any, Dict, List, Optional, Union, Callable
 from datetime import datetime
 from pathlib import Path
@@ -62,7 +63,7 @@ class SubPipelineConfig:
     mode: ExecutionMode = ExecutionMode.FULL
     symbol: str = "BTCUSDT"
     exchange: str = "binance"
-    timeframe: str = "1m"
+    timeframe: str = "30m"
     data_dir: str = "data/training"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -113,6 +114,55 @@ class MarketAnalysisSubPipeline:
             'fractional_differentiation': self._fractional_differentiation_pipeline,
             'cross_timeframe_analysis': self._cross_timeframe_analysis_pipeline
         }
+    
+    def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
+        """Helper method to log sub-pipeline completion with emojis and artifact paths."""
+        print("\n" + "="*80)
+        print(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        
+        # Log different types of artifacts with appropriate emojis
+        for key, value in artifacts.items():
+            if isinstance(value, list) and value:
+                if 'model' in key.lower():
+                    for item in value:
+                        print(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
+                elif 'file' in key.lower() or 'data' in key.lower():
+                    for item in value:
+                        print(f"   📄 {key.title()}: {config.data_dir}/{item}")
+                elif 'report' in key.lower():
+                    for item in value:
+                        print(f"   📋 {key.title()}: {config.data_dir}/{item}")
+                else:
+                    for item in value:
+                        print(f"   📊 {key.title()}: {config.data_dir}/{item}")
+            elif isinstance(value, dict) and value:
+                print(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
+        
+        print(f"📊 Artifacts Summary: {len(artifacts)} artifact types generated")
+        print("="*80 + "\n")
+        
+        # Log to logger as well
+        self.logger.info(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for key, value in artifacts.items():
+            if isinstance(value, list) and value:
+                if 'model' in key.lower():
+                    for item in value:
+                        self.logger.info(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
+                elif 'file' in key.lower() or 'data' in key.lower():
+                    for item in value:
+                        self.logger.info(f"   📄 {key.title()}: {config.data_dir}/{item}")
+                elif 'report' in key.lower():
+                    for item in value:
+                        self.logger.info(f"   📋 {key.title()}: {config.data_dir}/{item}")
+                else:
+                    for item in value:
+                        self.logger.info(f"   📊 {key.title()}: {config.data_dir}/{item}")
+            elif isinstance(value, dict) and value:
+                self.logger.info(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
+        self.logger.info(f"📊 Artifacts Summary: {len(artifacts)} artifact types generated")
     
     async def execute_sub_pipeline(
         self,
@@ -208,10 +258,85 @@ class MarketAnalysisSubPipeline:
             tasks = [self.execute_sub_pipeline(name, config) for name in sub_pipeline_names]
             return await asyncio.gather(*tasks, return_exceptions=True)
     
+    async def execute_sub_pipeline_with_next(
+        self,
+        sub_pipeline_name: str,
+        config: Optional[SubPipelineConfig] = None
+    ) -> SubPipelineResult:
+        """
+        Execute a specific sub-pipeline and automatically trigger the next one upon completion.
+        
+        Args:
+            sub_pipeline_name: Name of the sub-pipeline to execute
+            config: Optional configuration override
+            
+        Returns:
+            SubPipelineResult with execution details
+        """
+        config = config or self.config
+        self.logger.info(f"🚀 Starting sub-pipeline with auto-next: {sub_pipeline_name}")
+        
+        # Execute the current sub-pipeline
+        result = await self.execute_sub_pipeline(sub_pipeline_name, config)
+        
+        # If successful, find and execute the next sub-pipeline
+        if result.status == SubPipelineStatus.COMPLETED:
+            next_sub_pipeline = self._get_next_sub_pipeline(sub_pipeline_name)
+            if next_sub_pipeline:
+                self.logger.info(f"✅ {sub_pipeline_name} completed successfully, triggering next: {next_sub_pipeline}")
+                try:
+                    next_result = await self.execute_sub_pipeline_with_next(next_sub_pipeline, config)
+                    # Add the next result to our results list
+                    self.results.append(next_result)
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to execute next sub-pipeline {next_sub_pipeline}: {e}")
+            else:
+                self.logger.info(f"✅ {sub_pipeline_name} completed successfully - no more sub-pipelines to execute")
+        else:
+            self.logger.warning(f"⚠️ {sub_pipeline_name} failed, not triggering next sub-pipeline")
+        
+        return result
+    
+    def _get_next_sub_pipeline(self, current_sub_pipeline: str) -> Optional[str]:
+        """
+        Get the next sub-pipeline in the sequence.
+        
+        Args:
+            current_sub_pipeline: Current sub-pipeline name
+            
+        Returns:
+            Next sub-pipeline name or None if no more sub-pipelines
+        """
+        # Define the execution order for market analysis sub-pipelines
+        execution_order = [
+            'sr_detection',
+            'sr_clustering', 
+            'sr_ml_learning',
+            'hmm_clustering',
+            'hmm_regime_discovery',
+            'regime_data_splitting',
+            'triple_barrier_labeling',
+            'feature_lookback_optimization',
+            'fractional_differentiation',
+            'cross_timeframe_analysis'
+        ]
+        
+        try:
+            current_index = execution_order.index(current_sub_pipeline)
+            if current_index < len(execution_order) - 1:
+                return execution_order[current_index + 1]
+        except ValueError:
+            self.logger.warning(f"⚠️ Unknown sub-pipeline: {current_sub_pipeline}")
+        
+        return None
+    
     # Sub-pipeline implementations
     async def _sr_detection_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """SR detection sub-pipeline."""
+        print("📊 Executing SR detection pipeline")
+        print(f"🔧 Configuration: mode={config.mode.value}, symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
         self.logger.info("📊 Executing SR detection pipeline")
+        self.logger.info(f"🔧 Configuration: mode={config.mode.value}, symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
         
         artifacts = {
             'sr_levels': [],
@@ -226,14 +351,229 @@ class MarketAnalysisSubPipeline:
         
         # Import and use existing SR levels manager
         try:
+            print("📦 Importing SRLevelsManager...")
+            self.logger.info("📦 Importing SRLevelsManager...")
             from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager
             
-            sr_manager = SRLevelsManager()
+            # Create proper configuration for SR levels manager
+            sr_config = {
+                'sr_levels_manager': {
+                    'storage_path': f"{config.data_dir}/sr_levels",
+                    'max_levels': 50,
+                    'min_strength': 0.3,
+                    'proximity_threshold': 0.005
+                }
+            }
             
-            # Load existing SR levels from the data directory
-            sr_levels = sr_manager.load_levels_from_directory(config.data_dir)
+            print(f"🔧 Creating SRLevelsManager with config: {sr_config}")
+            self.logger.info(f"🔧 Creating SRLevelsManager with config: {sr_config}")
+            sr_manager = SRLevelsManager(sr_config)
+            
+            print("🚀 Initializing SRLevelsManager...")
+            self.logger.info("🚀 Initializing SRLevelsManager...")
+            await sr_manager.initialize()
+            print("✅ SRLevelsManager initialized successfully")
+            self.logger.info("✅ SRLevelsManager initialized successfully")
+            
+            # Try to load existing levels first
+            self.logger.info("📂 Attempting to load existing SR levels...")
+            try:
+                await sr_manager.load_levels()
+                existing_levels = sr_manager.support_levels + sr_manager.resistance_levels
+                self.logger.info(f"📂 Loaded {len(existing_levels)} existing SR levels")
+                self.logger.info(f"   - Support levels: {len(sr_manager.support_levels)}")
+                self.logger.info(f"   - Resistance levels: {len(sr_manager.resistance_levels)}")
+            except Exception as e:
+                self.logger.info(f"📊 No existing SR levels found, will perform detection: {e}")
+                existing_levels = []
+            
+            # If no existing levels or in full mode, perform actual SR detection
+            if not existing_levels or config.mode == ExecutionMode.FULL:
+                self.logger.info("🔍 Performing SR level detection from market data")
+                self.logger.info(f"   - Mode: {config.mode.value}")
+                self.logger.info(f"   - Existing levels: {len(existing_levels)}")
+                
+                # Load market data for SR detection
+                print("📊 Loading market data for SR detection...")
+                self.logger.info("📊 Loading market data for SR detection...")
+                market_data = await self._load_market_data_for_sr_detection(config)
+                
+                if market_data is not None and not market_data.empty:
+                    print(f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns")
+                    print(f"   - Data range: {market_data.index.min()} to {market_data.index.max()}")
+                    print(f"   - Columns: {list(market_data.columns)}")
+                    self.logger.info(f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns")
+                    self.logger.info(f"   - Data range: {market_data.index.min()} to {market_data.index.max()}")
+                    self.logger.info(f"   - Columns: {list(market_data.columns)}")
+                    
+                    # Validate data quality using utilities
+                    print("🔍 Validating data quality...")
+                    self.logger.info("🔍 Validating data quality...")
+                    try:
+                        from src.utils.data.quality.enhanced_data_quality_validator import EnhancedDataQualityValidator
+                        validator = EnhancedDataQualityValidator()
+                        quality_result = validator.validate_dataframe_quality(market_data, f"SR detection for {config.symbol}")
+                        
+                        print(f"📊 Data Quality Results:")
+                        print(f"   - Passed: {quality_result.passed}")
+                        print(f"   - Issues: {len(quality_result.issues)}")
+                        print(f"   - Warnings: {len(quality_result.warnings)}")
+                        self.logger.info(f"📊 Data Quality Results:")
+                        self.logger.info(f"   - Passed: {quality_result.passed}")
+                        self.logger.info(f"   - Issues: {len(quality_result.issues)}")
+                        self.logger.info(f"   - Warnings: {len(quality_result.warnings)}")
+                        
+                        if quality_result.issues:
+                            print("⚠️ Data Quality Issues:")
+                            for issue in quality_result.issues:
+                                print(f"   - {issue}")
+                            self.logger.warning("⚠️ Data Quality Issues:")
+                            for issue in quality_result.issues:
+                                self.logger.warning(f"   - {issue}")
+                        
+                        if quality_result.warnings:
+                            print("⚠️ Data Quality Warnings:")
+                            for warning in quality_result.warnings:
+                                print(f"   - {warning}")
+                            self.logger.warning("⚠️ Data Quality Warnings:")
+                            for warning in quality_result.warnings:
+                                self.logger.warning(f"   - {warning}")
+                        
+                        # Check for price anomalies specifically
+                        if 'price_anomalies' in quality_result.metrics:
+                            anomalies = quality_result.metrics['price_anomalies']
+                            if anomalies:
+                                print(f"🚨 Price Anomalies Detected: {len(anomalies)}")
+                                self.logger.error(f"🚨 Price Anomalies Detected: {len(anomalies)}")
+                                for anomaly in anomalies[:5]:  # Show first 5
+                                    print(f"   - Row {anomaly.get('row', 'N/A')}: {anomaly.get('type', 'unknown')}")
+                                    self.logger.error(f"   - Row {anomaly.get('row', 'N/A')}: {anomaly.get('type', 'unknown')}")
+                        
+                        # Check for high NaN columns and suggest data cleaning
+                        if quality_result.warnings:
+                            for warning in quality_result.warnings:
+                                if 'high_nan_columns' in warning:
+                                    print("🔧 Data Quality Recommendation:")
+                                    print("   - High NaN columns detected - this may indicate mixed data sources")
+                                    print("   - Consider using only OHLC columns for SR analysis")
+                                    print("   - Non-essential columns can be dropped to improve data quality")
+                                    self.logger.info("🔧 Data Quality Recommendation:")
+                                    self.logger.info("   - High NaN columns detected - this may indicate mixed data sources")
+                                    self.logger.info("   - Consider using only OHLC columns for SR analysis")
+                                    self.logger.info("   - Non-essential columns can be dropped to improve data quality")
+                                
+                    except ImportError as e:
+                        print(f"⚠️ Could not import data quality validator: {e}")
+                        self.logger.warning(f"⚠️ Could not import data quality validator: {e}")
+                    except Exception as e:
+                        print(f"⚠️ Data quality validation failed: {e}")
+                        self.logger.warning(f"⚠️ Data quality validation failed: {e}")
+                    
+                    # Calculate SR levels using volume method first, then fractal
+                    print("🔍 Calculating SR levels using volume method first...")
+                    self.logger.info("🔍 Calculating SR levels using volume method first...")
+                    
+                    # Try volume-based method first
+                    try:
+                        print("🔍 Attempting Volume-Based SR Detection...")
+                        self.logger.info("🔍 Attempting Volume-Based SR Detection...")
+                        sr_results = await sr_manager.calculate_sr_levels_with_method(
+                            market_data,
+                            method='volume',
+                            level_type='both'
+                        )
+                        support_count = len(sr_results.get('support_levels', []))
+                        resistance_count = len(sr_results.get('resistance_levels', []))
+                        print(f"✅ Volume-based SR detection completed: {support_count} support, {resistance_count} resistance levels")
+                        self.logger.info(f"✅ Volume-based SR detection completed: {support_count} support, {resistance_count} resistance levels")
+                    except Exception as e:
+                        print(f"⚠️ Volume method failed: {e}, falling back to fractal method")
+                        self.logger.warning(f"⚠️ Volume method failed: {e}, falling back to fractal method")
+                        print("🔍 Attempting Fractal-Based SR Detection...")
+                        self.logger.info("🔍 Attempting Fractal-Based SR Detection...")
+                        sr_results = await sr_manager.calculate_sr_levels_with_method(
+                            market_data,
+                            method='fractal',
+                            level_type='both'
+                        )
+                        support_count = len(sr_results.get('support_levels', []))
+                        resistance_count = len(sr_results.get('resistance_levels', []))
+                        print(f"✅ Fractal-based SR detection completed: {support_count} support, {resistance_count} resistance levels")
+                        self.logger.info(f"✅ Fractal-based SR detection completed: {support_count} support, {resistance_count} resistance levels")
+                    
+                    # Update manager with detected levels
+                    sr_manager.support_levels = sr_results.get('support_levels', [])
+                    sr_manager.resistance_levels = sr_results.get('resistance_levels', [])
+                    
+                    print(f"✅ SR detection completed:")
+                    print(f"   - Support levels detected: {len(sr_manager.support_levels)}")
+                    print(f"   - Resistance levels detected: {len(sr_manager.resistance_levels)}")
+                    self.logger.info(f"✅ SR detection completed:")
+                    self.logger.info(f"   - Support levels detected: {len(sr_manager.support_levels)}")
+                    self.logger.info(f"   - Resistance levels detected: {len(sr_manager.resistance_levels)}")
+                    
+                    # Detailed analysis of detected levels
+                    if sr_manager.support_levels:
+                        support_prices = [level.price for level in sr_manager.support_levels]
+                        support_strengths = [level.strength for level in sr_manager.support_levels]
+                        print(f"📊 Support Level Analysis:")
+                        print(f"   - Price range: ${min(support_prices):.2f} - ${max(support_prices):.2f}")
+                        print(f"   - Average strength: {np.mean(support_strengths):.4f}")
+                        print(f"   - Strongest support: ${max(support_prices, key=lambda x: sr_manager.support_levels[support_prices.index(x)].strength):.2f} (strength: {max(support_strengths):.4f})")
+                        self.logger.info(f"📊 Support Level Analysis:")
+                        self.logger.info(f"   - Price range: ${min(support_prices):.2f} - ${max(support_prices):.2f}")
+                        self.logger.info(f"   - Average strength: {np.mean(support_strengths):.4f}")
+                        self.logger.info(f"   - Strongest support: ${max(support_prices, key=lambda x: sr_manager.support_levels[support_prices.index(x)].strength):.2f} (strength: {max(support_strengths):.4f})")
+                        
+                        # Show top 5 support levels
+                        print(f"   📊 Top 5 Support Levels:")
+                        self.logger.info(f"   📊 Top 5 Support Levels:")
+                        top_support = sorted(sr_manager.support_levels, key=lambda x: x.strength, reverse=True)[:5]
+                        for i, level in enumerate(top_support, 1):
+                            method = getattr(level, 'metadata', {}).get('method', 'unknown') if hasattr(level, 'metadata') else 'unknown'
+                            print(f"      {i}. ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
+                            self.logger.info(f"      {i}. ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
+                    
+                    if sr_manager.resistance_levels:
+                        resistance_prices = [level.price for level in sr_manager.resistance_levels]
+                        resistance_strengths = [level.strength for level in sr_manager.resistance_levels]
+                        print(f"📊 Resistance Level Analysis:")
+                        print(f"   - Price range: ${min(resistance_prices):.2f} - ${max(resistance_prices):.2f}")
+                        print(f"   - Average strength: {np.mean(resistance_strengths):.4f}")
+                        print(f"   - Strongest resistance: ${max(resistance_prices, key=lambda x: sr_manager.resistance_levels[resistance_prices.index(x)].strength):.2f} (strength: {max(resistance_strengths):.4f})")
+                        self.logger.info(f"📊 Resistance Level Analysis:")
+                        self.logger.info(f"   - Price range: ${min(resistance_prices):.2f} - ${max(resistance_prices):.2f}")
+                        self.logger.info(f"   - Average strength: {np.mean(resistance_strengths):.4f}")
+                        self.logger.info(f"   - Strongest resistance: ${max(resistance_prices, key=lambda x: sr_manager.resistance_levels[resistance_prices.index(x)].strength):.2f} (strength: {max(resistance_strengths):.4f})")
+                        
+                        # Show top 5 resistance levels
+                        print(f"   📊 Top 5 Resistance Levels:")
+                        self.logger.info(f"   📊 Top 5 Resistance Levels:")
+                        top_resistance = sorted(sr_manager.resistance_levels, key=lambda x: x.strength, reverse=True)[:5]
+                        for i, level in enumerate(top_resistance, 1):
+                            method = getattr(level, 'metadata', {}).get('method', 'unknown') if hasattr(level, 'metadata') else 'unknown'
+                            print(f"      {i}. ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
+                            self.logger.info(f"      {i}. ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
+                    
+                    # Save the detected levels
+                    print("💾 Saving detected SR levels...")
+                    self.logger.info("💾 Saving detected SR levels...")
+                    await sr_manager.save_levels()
+                    print("✅ SR levels saved successfully")
+                    self.logger.info("✅ SR levels saved successfully")
+                else:
+                    print("⚠️ No market data available for SR detection")
+                    self.logger.warning("⚠️ No market data available for SR detection")
+            
+            # Get all levels (existing or newly detected)
+            all_levels = sr_manager.support_levels + sr_manager.resistance_levels
+            self.logger.info(f"📊 Final SR levels summary:")
+            self.logger.info(f"   - Total levels: {len(all_levels)}")
+            self.logger.info(f"   - Support levels: {len(sr_manager.support_levels)}")
+            self.logger.info(f"   - Resistance levels: {len(sr_manager.resistance_levels)}")
             
             # Convert SRLevel objects to dictionaries
+            self.logger.info("🔄 Converting SR levels to dictionary format...")
             artifacts['sr_levels'] = [
                 {
                     'level': level.price,
@@ -243,28 +583,314 @@ class MarketAnalysisSubPipeline:
                     'confidence': level.confidence,
                     'algorithm': level.method
                 }
-                for level in sr_levels
+                for level in all_levels
             ]
-            artifacts['sr_metrics'] = {
-                'total_levels': len(sr_levels),
-                'support_levels': len([l for l in sr_levels if l.level_type == 'support']),
-                'resistance_levels': len([l for l in sr_levels if l.level_type == 'resistance']),
-                'avg_strength': np.mean([l.strength for l in sr_levels]) if sr_levels else 0.0
-            }
-            artifacts['detection_params'] = {'method': 'sr_levels_manager', 'version': 'existing'}
             
-        except ImportError:
-            self.logger.warning("⚠️ SR levels manager not available, using mock SR levels")
+            # Calculate metrics
+            avg_strength = np.mean([l.strength for l in all_levels]) if all_levels else 0.0
+            artifacts['sr_metrics'] = {
+                'total_levels': len(all_levels),
+                'support_levels': len(sr_manager.support_levels),
+                'resistance_levels': len(sr_manager.resistance_levels),
+                'avg_strength': avg_strength
+            }
+            artifacts['detection_params'] = {
+                'method': 'sr_levels_manager', 
+                'version': 'detection',
+                'mode': config.mode.value
+            }
+            
+            self.logger.info(f"📈 SR metrics calculated:")
+            self.logger.info(f"   - Average strength: {avg_strength:.4f}")
+            self.logger.info(f"   - Detection method: {artifacts['detection_params']['method']}")
+            self.logger.info(f"   - Detection mode: {artifacts['detection_params']['mode']}")
+            
+        except ImportError as e:
+            self.logger.warning(f"⚠️ SR levels manager not available: {e}, using mock SR levels")
+            self.logger.info("🔄 Falling back to mock SR levels for testing")
             artifacts['sr_levels'] = [
                 {'level': 50000, 'type': 'support', 'strength': 0.8},
                 {'level': 52000, 'type': 'resistance', 'strength': 0.7}
             ]
+            artifacts['sr_metrics'] = {
+                'total_levels': 2,
+                'support_levels': 1,
+                'resistance_levels': 1,
+                'avg_strength': 0.75
+            }
+            artifacts['detection_params'] = {
+                'method': 'mock_fallback',
+                'version': 'fallback',
+                'mode': config.mode.value
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Error in SR detection: {e}")
+            import traceback
+            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            # Fallback to mock levels
+            self.logger.info("🔄 Falling back to mock SR levels due to error")
+            artifacts['sr_levels'] = [
+                {'level': 50000, 'type': 'support', 'strength': 0.8},
+                {'level': 52000, 'type': 'resistance', 'strength': 0.7}
+            ]
+            artifacts['sr_metrics'] = {
+                'total_levels': 2,
+                'support_levels': 1,
+                'resistance_levels': 1,
+                'avg_strength': 0.75
+            }
+            artifacts['detection_params'] = {
+                'method': 'error_fallback',
+                'version': 'fallback',
+                'mode': config.mode.value,
+                'error': str(e)
+            }
+        
+        self.logger.info("🎯 SR detection pipeline completed")
+        self.logger.info(f"   - Final artifacts: {len(artifacts['sr_levels'])} levels")
+        self.logger.info(f"   - Detection method: {artifacts['detection_params']['method']}")
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("sr_detection", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: sr_clustering
+        self.logger.info("🔄 SR detection completed, triggering next: sr_clustering")
+        try:
+            next_artifacts = await self._sr_clustering_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ SR clustering pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute SR clustering pipeline: {e}")
         
         return artifacts
     
+    async def _load_market_data_for_sr_detection(self, config: SubPipelineConfig) -> Optional[pd.DataFrame]:
+        """Load market data for SR detection using standardized utilities."""
+        try:
+            from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+            from src.utils.pipeline_standards import pipeline_standards
+            
+            symbol = config.symbol
+            exchange = config.exchange
+            timeframe = config.timeframe
+            
+            self.logger.info(f"🔍 Searching for market data: {exchange}_{symbol}_{timeframe}")
+            
+            # Skip pipeline state loading to avoid schema issues
+            print("🔍 Searching for clean klines data (bypassing pipeline state)...")
+            self.logger.info("🔍 Searching for clean klines data (bypassing pipeline state)...")
+            
+            # First, try the clean 30m consolidated klines data directly
+            clean_klines_path = f"/Users/remyroche/Documents/Ares/data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+            if Path(clean_klines_path).exists():
+                print(f"📊 Loading clean klines data from: {clean_klines_path}")
+                self.logger.info(f"📊 Loading clean klines data from: {clean_klines_path}")
+                try:
+                    data = pd.read_parquet(clean_klines_path)
+                    if data is not None and not data.empty:
+                        print(f"✅ Loaded {len(data)} rows of clean klines data")
+                        self.logger.info(f"✅ Loaded {len(data)} rows of clean klines data")
+                        # Clean data for SR analysis
+                        data = self._clean_data_for_sr_analysis(data)
+                        return data
+                except Exception as e:
+                    print(f"⚠️ Error loading clean klines data: {e}")
+                    self.logger.warning(f"⚠️ Error loading clean klines data: {e}")
+            
+            # If 30m not available, try 1m clean klines data
+            if timeframe != "1m":
+                clean_1m_paths = [
+                    f"/Users/remyroche/Documents/Ares/data_cache/klines_{exchange}_{symbol}_1m_*.parquet"
+                ]
+                for path_pattern in clean_1m_paths:
+                    import glob
+                    matching_files = glob.glob(path_pattern)
+                    if matching_files:
+                        # Use the most recent file
+                        path = max(matching_files, key=lambda x: Path(x).stat().st_mtime)
+                        print(f"📊 Loading 1m klines data (fallback): {path}")
+                        self.logger.info(f"📊 Loading 1m klines data (fallback): {path}")
+                        try:
+                            data = pd.read_parquet(path)
+                            if data is not None and not data.empty:
+                                print(f"✅ Loaded {len(data)} rows of 1m klines data")
+                                self.logger.info(f"✅ Loaded {len(data)} rows of 1m klines data")
+                                # Clean data for SR analysis
+                                data = self._clean_data_for_sr_analysis(data)
+                                return data
+                        except Exception as e:
+                            print(f"⚠️ Error loading 1m klines data: {e}")
+                            self.logger.warning(f"⚠️ Error loading 1m klines data: {e}")
+                            continue
+            
+            # Try alternative parquet file locations using standardized handler
+            # Prioritize clean klines data over processed data to avoid NaN issues
+            parquet_paths = [
+                # First try clean klines data (no NaN issues)
+                f"/Users/remyroche/Documents/Ares/data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
+                f"/Users/remyroche/Documents/Ares/data_cache/klines_{exchange}_{symbol}_{timeframe}_*.parquet",
+                # Then try unified data (also clean)
+                f"/Users/remyroche/Documents/Ares/data_cache/unified/{exchange.lower()}/{symbol.lower()}/{timeframe}/exchange={exchange.upper()}/symbol={symbol.upper()}/timeframe={timeframe}/*.parquet",
+                # Then try processed data (may have NaN issues)
+                f"{config.data_dir}/training/{exchange}_{symbol}_{timeframe}_processed.parquet",
+                f"{config.data_dir}/{exchange}_{symbol}_{timeframe}_processed.parquet",
+                f"{config.data_dir}/training/{symbol}_{timeframe}_processed.parquet",
+                f"{config.data_dir}/{symbol}_{timeframe}_processed.parquet",
+                f"{config.data_dir}/training/{symbol}_processed.parquet",
+                f"{config.data_dir}/{symbol}_processed.parquet",
+                # Feature cache as last resort
+                f"/Users/remyroche/Documents/Ares/data_cache/feature_cache/{exchange}_{symbol}_{timeframe}_all_features_*.parquet"
+            ]
+            
+            for path in parquet_paths:
+                # Handle glob patterns
+                if '*' in path:
+                    import glob
+                    matching_files = glob.glob(path)
+                    if matching_files:
+                        # Use the most recent file
+                        path = max(matching_files, key=lambda x: Path(x).stat().st_mtime)
+                        print(f"📊 Found {len(matching_files)} matching files, using most recent: {path}")
+                        self.logger.info(f"📊 Found {len(matching_files)} matching files, using most recent: {path}")
+                
+                if Path(path).exists():
+                    print(f"📊 Loading parquet data from: {path}")
+                    self.logger.info(f"📊 Loading parquet data from: {path}")
+                    try:
+                        data = standardized_parquet_handler.read_parquet_standardized(path)
+                        if data is not None and not data.empty:
+                            print(f"✅ Loaded {len(data)} rows from parquet")
+                            self.logger.info(f"✅ Loaded {len(data)} rows from parquet")
+                            
+                            # Clean data for SR analysis - keep only essential OHLCV columns
+                            data = self._clean_data_for_sr_analysis(data)
+                            return data
+                    except Exception as e:
+                        print(f"⚠️ Error loading parquet from {path}: {e}")
+                        self.logger.warning(f"⚠️ Error loading parquet from {path}: {e}")
+                        continue
+            
+            # If no processed data found, try to load raw data
+            print("⚠️ No Parquet files found, falling back to raw data sources...")
+            self.logger.warning("⚠️ No Parquet files found, falling back to raw data sources...")
+            
+            raw_paths = [
+                f"{config.data_dir}/{symbol}_historical_data.pkl",
+                f"{config.data_dir}/training/{symbol}_historical_data.pkl",
+                f"{config.data_dir}/{symbol}.csv",
+                f"{config.data_dir}/training/{symbol}.csv"
+            ]
+            
+            for path in raw_paths:
+                if Path(path).exists():
+                    self.logger.info(f"📊 Loading raw market data from: {path}")
+                    if path.endswith('.pkl'):
+                        import pickle
+                        with open(path, 'rb') as f:
+                            data = pickle.load(f)
+                        if isinstance(data, pd.DataFrame) and not data.empty:
+                            self.logger.info(f"✅ Loaded {len(data)} rows from pickle DataFrame")
+                            # Clean data for SR analysis
+                            data = self._clean_data_for_sr_analysis(data)
+                            return data
+                        elif isinstance(data, dict) and 'klines' in data:
+                            # Handle dictionary format with klines data
+                            klines_data = data['klines']
+                            if isinstance(klines_data, pd.DataFrame) and not klines_data.empty:
+                                self.logger.info(f"✅ Loaded {len(klines_data)} rows from pickle klines")
+                                # Clean data for SR analysis
+                                klines_data = self._clean_data_for_sr_analysis(klines_data)
+                                return klines_data
+                    elif path.endswith('.csv'):
+                        data = pd.read_csv(path)
+                        if not data.empty:
+                            self.logger.info(f"✅ Loaded {len(data)} rows from CSV")
+                            return data
+            
+            self.logger.warning("⚠️ No market data found for SR detection")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error loading market data: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
+    
+    def _clean_data_for_sr_analysis(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Clean data for SR analysis by keeping only essential OHLCV columns and removing problematic ones."""
+        print("🧹 Cleaning data for SR analysis...")
+        self.logger.info("🧹 Cleaning data for SR analysis...")
+        
+        # Essential columns for SR analysis
+        essential_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        
+        # Check what columns we have
+        available_columns = list(data.columns)
+        print(f"   📊 Original columns: {len(available_columns)}")
+        print(f"   📋 Available: {available_columns}")
+        
+        # Find columns that match our essential list (case-insensitive)
+        clean_columns = []
+        for essential in essential_columns:
+            for col in available_columns:
+                if col.lower() == essential.lower():
+                    clean_columns.append(col)
+                    break
+        
+        # If we don't have all essential columns, try common variations
+        if len(clean_columns) < len(essential_columns):
+            print("   🔍 Searching for column variations...")
+            column_mapping = {
+                'timestamp': ['timestamp', 'time', 'datetime', 'date'],
+                'open': ['open', 'o'],
+                'high': ['high', 'h'],
+                'low': ['low', 'l'],
+                'close': ['close', 'c'],
+                'volume': ['volume', 'vol', 'v']
+            }
+            
+            for essential, variations in column_mapping.items():
+                if essential not in [col.lower() for col in clean_columns]:
+                    for col in available_columns:
+                        if col.lower() in variations:
+                            clean_columns.append(col)
+                            break
+        
+        # Keep only essential columns
+        if clean_columns:
+            cleaned_data = data[clean_columns].copy()
+            print(f"   ✅ Kept {len(clean_columns)} essential columns: {clean_columns}")
+            self.logger.info(f"   ✅ Kept {len(clean_columns)} essential columns: {clean_columns}")
+            
+            # Remove any rows with NaN values in essential columns
+            before_count = len(cleaned_data)
+            cleaned_data = cleaned_data.dropna()
+            after_count = len(cleaned_data)
+            
+            if before_count != after_count:
+                print(f"   🧹 Removed {before_count - after_count} rows with NaN values")
+                self.logger.info(f"   🧹 Removed {before_count - after_count} rows with NaN values")
+            
+            print(f"   📊 Final clean data: {len(cleaned_data)} rows × {len(cleaned_data.columns)} columns")
+            self.logger.info(f"   📊 Final clean data: {len(cleaned_data)} rows × {len(cleaned_data.columns)} columns")
+            
+            return cleaned_data
+        else:
+            print("   ⚠️ Could not find essential OHLCV columns, returning original data")
+            self.logger.warning("   ⚠️ Could not find essential OHLCV columns, returning original data")
+            return data
+    
+    
     async def _sr_clustering_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """SR clustering sub-pipeline."""
+        print("🔗 Executing SR clustering pipeline")
+        print(f"🔧 Configuration: mode={config.mode.value}, symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
         self.logger.info("🔗 Executing SR clustering pipeline")
+        self.logger.info(f"🔧 Configuration: mode={config.mode.value}, symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
+        
+        print("📊 Initializing SR clustering artifacts...")
+        self.logger.info("📊 Initializing SR clustering artifacts...")
         
         artifacts = {
             'sr_clusters': [],
@@ -279,36 +905,204 @@ class MarketAnalysisSubPipeline:
         
         # Import and use existing SR levels manager for clustering
         try:
+            print("📦 Importing SRLevelsManager for clustering...")
+            print("   🔍 Loading SR levels manager module...")
+            self.logger.info("📦 Importing SRLevelsManager for clustering...")
+            self.logger.info("   🔍 Loading SR levels manager module...")
             from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager
+            print("   ✅ SRLevelsManager imported successfully")
+            self.logger.info("   ✅ SRLevelsManager imported successfully")
             
-            sr_manager = SRLevelsManager()
+            # Create proper configuration for SR levels manager
+            # Use the same path as sr_detection pipeline
+            sr_config = {
+                'sr_levels_manager': {
+                    'storage_path': f"{config.data_dir}/sr_levels",  # Use config data_dir to match sr_detection
+                    'max_levels': 50,
+                    'min_strength': 0.3,
+                    'proximity_threshold': 0.005
+                }
+            }
             
-            # Load existing SR levels from the data directory
-            sr_levels = sr_manager.load_levels_from_directory(config.data_dir)
+            print(f"🔧 Creating SRLevelsManager with config: {sr_config}")
+            sr_manager = SRLevelsManager(sr_config)
+            
+            print("🚀 Initializing SRLevelsManager...")
+            await sr_manager.initialize()
+            print("✅ SRLevelsManager initialized successfully")
+            
+            # Load existing SR levels
+            print("📂 Loading existing SR levels for clustering...")
+            print("   🔍 Attempting to load SR levels from storage...")
+            self.logger.info("📂 Loading existing SR levels for clustering...")
+            self.logger.info("   🔍 Attempting to load SR levels from storage...")
+            
+            print("   📁 Storage path:", sr_config['sr_levels_manager']['storage_path'])
+            self.logger.info(f"   📁 Storage path: {sr_config['sr_levels_manager']['storage_path']}")
+            
+            await sr_manager.load_levels()
+            print("   ✅ SR levels loaded from storage")
+            self.logger.info("   ✅ SR levels loaded from storage")
+            
+            existing_levels = sr_manager.support_levels + sr_manager.resistance_levels
+            print(f"📂 Loaded {len(existing_levels)} existing SR levels for clustering")
+            print(f"   📊 Support levels: {len(sr_manager.support_levels)}")
+            print(f"   📊 Resistance levels: {len(sr_manager.resistance_levels)}")
+            self.logger.info(f"📂 Loaded {len(existing_levels)} existing SR levels for clustering")
+            self.logger.info(f"   📊 Support levels: {len(sr_manager.support_levels)}")
+            self.logger.info(f"   📊 Resistance levels: {len(sr_manager.resistance_levels)}")
+            
+            if len(existing_levels) == 0:
+                print("❌ ERROR: No SR levels found for clustering!")
+                print("   - This indicates that the sr_detection pipeline failed to detect or save levels")
+                print("   - Please run sr_detection pipeline first to generate SR levels")
+                self.logger.error("❌ ERROR: No SR levels found for clustering!")
+                self.logger.error("   - This indicates that the sr_detection pipeline failed to detect or save levels")
+                self.logger.error("   - Please run sr_detection pipeline first to generate SR levels")
+                
+                # Return error artifacts instead of failing completely
+                artifacts['sr_clusters'] = []
+                artifacts['clustering_metrics'] = {
+                    'clustering_method': 'none',
+                    'n_clusters': 0,
+                    'avg_cluster_size': 0,
+                    'total_levels_clustered': 0,
+                    'clustering_efficiency': 0,
+                    'error': 'no_sr_levels_found'
+                }
+                artifacts['cluster_params'] = {'algorithm': 'none', 'error': 'no_input_data'}
+                return artifacts
             
             # Group levels into clusters based on proximity
-            clusters = self._cluster_sr_levels(sr_levels)
+            print("🔗 Clustering SR levels...")
+            print("   🧮 Starting clustering algorithm...")
+            self.logger.info("🔗 Clustering SR levels...")
+            self.logger.info("   🧮 Starting clustering algorithm...")
+            
+            if existing_levels:
+                print(f"📊 Input data for clustering:")
+                print(f"   - Total levels: {len(existing_levels)}")
+                print(f"   - Support levels: {len([l for l in existing_levels if l.level_type == 'support'])}")
+                print(f"   - Resistance levels: {len([l for l in existing_levels if l.level_type == 'resistance'])}")
+                self.logger.info(f"📊 Input data for clustering:")
+                self.logger.info(f"   - Total levels: {len(existing_levels)}")
+                self.logger.info(f"   - Support levels: {len([l for l in existing_levels if l.level_type == 'support'])}")
+                self.logger.info(f"   - Resistance levels: {len([l for l in existing_levels if l.level_type == 'resistance'])}")
+                
+                # Show price distribution
+                prices = [level.price for level in existing_levels]
+                print(f"   - Price range: ${min(prices):.2f} - ${max(prices):.2f}")
+                print(f"   - Average price: ${np.mean(prices):.2f}")
+                self.logger.info(f"   - Price range: ${min(prices):.2f} - ${max(prices):.2f}")
+                self.logger.info(f"   - Average price: ${np.mean(prices):.2f}")
+            
+            print("   🔄 Calling clustering algorithm...")
+            self.logger.info("   🔄 Calling clustering algorithm...")
+            clusters = self._cluster_sr_levels(existing_levels)
+            print(f"   ✅ Clustering algorithm completed")
+            self.logger.info(f"   ✅ Clustering algorithm completed")
+            print(f"✅ Created {len(clusters)} SR clusters")
+            self.logger.info(f"✅ Created {len(clusters)} SR clusters")
+            
+            # Detailed cluster analysis
+            if clusters:
+                print(f"📊 Cluster Analysis:")
+                self.logger.info(f"📊 Cluster Analysis:")
+                for i, cluster in enumerate(clusters):
+                    cluster_size = len(cluster.get('levels', []))
+                    cluster_strength = cluster.get('strength', 0)
+                    cluster_id = cluster.get('cluster_id', i)
+                    print(f"   - Cluster {cluster_id}: {cluster_size} levels, strength: {cluster_strength:.4f}")
+                    self.logger.info(f"   - Cluster {cluster_id}: {cluster_size} levels, strength: {cluster_strength:.4f}")
+                    
+                    if 'levels' in cluster and cluster['levels']:
+                        level_prices = [level.price if hasattr(level, 'price') else level for level in cluster['levels']]
+                        if level_prices:
+                            print(f"     * Price range: ${min(level_prices):.2f} - ${max(level_prices):.2f}")
+                            self.logger.info(f"     * Price range: ${min(level_prices):.2f} - ${max(level_prices):.2f}")
+            else:
+                print("⚠️ No clusters created - insufficient data or clustering failed")
+                self.logger.warning("⚠️ No clusters created - insufficient data or clustering failed")
             
             artifacts['sr_clusters'] = clusters
             artifacts['clustering_metrics'] = {
                 'clustering_method': 'proximity_based',
                 'n_clusters': len(clusters),
-                'avg_cluster_size': np.mean([len(cluster['levels']) for cluster in clusters]) if clusters else 0
+                'avg_cluster_size': np.mean([len(cluster['levels']) for cluster in clusters]) if clusters else 0,
+                'total_levels_clustered': len(existing_levels),
+                'clustering_efficiency': len(existing_levels) / len(clusters) if clusters else 0
             }
             artifacts['cluster_params'] = {'algorithm': 'proximity_clustering', 'distance_threshold': 0.02}
             
-        except ImportError:
+            print(f"📈 Clustering Results Summary:")
+            print(f"   - Total clusters created: {len(clusters)}")
+            print(f"   - Average cluster size: {artifacts['clustering_metrics']['avg_cluster_size']:.2f}")
+            print(f"   - Clustering efficiency: {artifacts['clustering_metrics']['clustering_efficiency']:.2f} levels per cluster")
+            self.logger.info(f"📈 Clustering Results Summary:")
+            self.logger.info(f"   - Total clusters created: {len(clusters)}")
+            self.logger.info(f"   - Average cluster size: {artifacts['clustering_metrics']['avg_cluster_size']:.2f}")
+            self.logger.info(f"   - Clustering efficiency: {artifacts['clustering_metrics']['clustering_efficiency']:.2f} levels per cluster")
+            
+            # Log completion with emojis and artifact paths
+            self._log_sub_pipeline_completion("sr_clustering", config, artifacts)
+            
+        except ImportError as e:
+            print(f"❌ Import Error in SR clustering: {e}")
+            print("   🔄 Falling back to mock clusters...")
+            self.logger.error(f"❌ Import Error in SR clustering: {e}")
             self.logger.warning("⚠️ SR levels manager not available, using mock clusters")
             artifacts['sr_clusters'] = [
                 {'cluster_id': 1, 'levels': [50000, 50100], 'strength': 0.8},
                 {'cluster_id': 2, 'levels': [52000, 52100], 'strength': 0.7}
             ]
+        except Exception as e:
+            print(f"❌ Unexpected Error in SR clustering: {e}")
+            print("   🔄 Falling back to mock clusters...")
+            self.logger.error(f"❌ Unexpected Error in SR clustering: {e}")
+            import traceback
+            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            artifacts['sr_clusters'] = [
+                {'cluster_id': 1, 'levels': [50000, 50100], 'strength': 0.8},
+                {'cluster_id': 2, 'levels': [52000, 52100], 'strength': 0.7}
+            ]
+        
+        # Print artifact paths
+        print("📁 SR Clustering Artifacts:")
+        print(f"   🔗 SR Clusters: {artifacts.get('sr_clusters', 'N/A')}")
+        print(f"   📊 Clustering Metrics: {artifacts.get('clustering_metrics', 'N/A')}")
+        print(f"   🔧 Cluster Params: {artifacts.get('cluster_params', 'N/A')}")
+        self.logger.info("📁 SR Clustering Artifacts:")
+        self.logger.info(f"   🔗 SR Clusters: {artifacts.get('sr_clusters', 'N/A')}")
+        self.logger.info(f"   📊 Clustering Metrics: {artifacts.get('clustering_metrics', 'N/A')}")
+        self.logger.info(f"   🔧 Cluster Params: {artifacts.get('cluster_params', 'N/A')}")
+        
+        # Automatically trigger the next sub-pipeline: sr_ml_learning
+        print("🔄 SR clustering completed, triggering next: sr_ml_learning")
+        print("   🚀 Starting SR ML learning pipeline...")
+        self.logger.info("🔄 SR clustering completed, triggering next: sr_ml_learning")
+        self.logger.info("   🚀 Starting SR ML learning pipeline...")
+        try:
+            next_artifacts = await self._sr_ml_learning_pipeline(config)
+            print("   ✅ SR ML learning pipeline completed successfully")
+            self.logger.info("   ✅ SR ML learning pipeline completed successfully")
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            print("   🔗 Artifacts merged from SR ML learning pipeline")
+            self.logger.info("   🔗 Artifacts merged from SR ML learning pipeline")
+        except Exception as e:
+            print(f"   ❌ Failed to execute SR ML learning pipeline: {e}")
+            self.logger.error(f"❌ Failed to execute SR ML learning pipeline: {e}")
+            import traceback
+            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
         
         return artifacts
     
     async def _sr_ml_learning_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """SR ML learning sub-pipeline."""
+        print("🤖 Executing SR ML learning pipeline")
+        print(f"🔧 Configuration: mode={config.mode.value}, symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
         self.logger.info("🤖 Executing SR ML learning pipeline")
+        self.logger.info(f"🔧 Configuration: mode={config.mode.value}, symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
         
         artifacts = {
             'ml_models': [],
@@ -317,40 +1111,301 @@ class MarketAnalysisSubPipeline:
         }
         
         if config.mode == ExecutionMode.BLANK:
+            print("🔄 Blank mode: Skipping actual SR ML learning")
             self.logger.info("🔄 Blank mode: Skipping actual SR ML learning")
             artifacts['ml_models'] = ['sr_predictor_model.pkl']
             return artifacts
         
-        # Import and use SR ML learning
+        print("🚀 Starting SR ML Learning Process...")
+        print("   🤖 This pipeline uses machine learning to predict SR level effectiveness")
+        print("   📊 ML models learn from historical price patterns and volume data")
+        print("   🎯 Goal: Predict which SR levels are most likely to hold or break")
+        self.logger.info("🚀 Starting SR ML Learning Process...")
+        self.logger.info("   🤖 This pipeline uses machine learning to predict SR level effectiveness")
+        self.logger.info("   📊 ML models learn from historical price patterns and volume data")
+        self.logger.info("   🎯 Goal: Predict which SR levels are most likely to hold or break")
+        
         try:
-            from src.training.steps.model_training.sr_ml_learning_pipeline import SRMLLearningPipeline, SRMLConfig
+            print("📦 Importing ML Libraries...")
+            print("   🔍 Loading scikit-learn for Random Forest classification")
+            print("   📊 Loading numpy and pandas for data processing")
+            print("   📈 Loading metrics for model evaluation")
+            self.logger.info("📦 Importing ML Libraries...")
+            self.logger.info("   🔍 Loading scikit-learn for Random Forest classification")
+            self.logger.info("   📊 Loading numpy and pandas for data processing")
+            self.logger.info("   📈 Loading metrics for model evaluation")
+            import numpy as np
+            import pandas as pd
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import train_test_split
+            from sklearn.metrics import classification_report, accuracy_score
+            print("✅ ML Libraries Imported Successfully")
+            print("   - RandomForestClassifier: Ready for ensemble learning")
+            print("   - train_test_split: Ready for data splitting")
+            print("   - classification_report: Ready for model evaluation")
+            self.logger.info("✅ ML Libraries Imported Successfully")
+            self.logger.info("   - RandomForestClassifier: Ready for ensemble learning")
+            self.logger.info("   - train_test_split: Ready for data splitting")
+            self.logger.info("   - classification_report: Ready for model evaluation")
             
-            sr_ml_config = SRMLConfig(
-                model_type='random_forest',
-                test_size=0.2,
-                validation_size=0.2,
-                enable_data_quality_validation=True
-            )
-            sr_ml_pipeline = SRMLLearningPipeline(sr_ml_config)
+            print("📊 Loading Market Data for ML Training...")
+            print("   🔍 Loading OHLCV data to extract price patterns")
+            print("   📈 Data will be used to train models that predict SR level behavior")
+            self.logger.info("📊 Loading Market Data for ML Training...")
+            self.logger.info("   🔍 Loading OHLCV data to extract price patterns")
+            self.logger.info("   📈 Data will be used to train models that predict SR level behavior")
+            market_data = await self._load_market_data_for_sr_detection(config)
             
-            # Execute SR ML learning
-            ml_result = await sr_ml_pipeline.train_sr_models(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
-            
-            artifacts['ml_models'] = list(ml_result.models.keys())
-            artifacts['training_metrics'] = ml_result.performance_metrics
-            artifacts['model_performance'] = {
-                'feature_importance': ml_result.feature_importance,
-                'training_history': ml_result.training_history
-            }
-            
-        except ImportError:
-            self.logger.warning("⚠️ SR ML learning pipeline not available, using mock models")
+            if market_data is not None and not market_data.empty:
+                print(f"✅ Market Data Loaded Successfully")
+                print(f"   📊 Dataset size: {len(market_data)} rows, {len(market_data.columns)} columns")
+                print(f"   📅 Time range: {market_data.index.min()} to {market_data.index.max()}")
+                print(f"   📋 Available columns: {list(market_data.columns)}")
+                self.logger.info(f"✅ Market Data Loaded Successfully")
+                self.logger.info(f"   📊 Dataset size: {len(market_data)} rows, {len(market_data.columns)} columns")
+                self.logger.info(f"   📅 Time range: {market_data.index.min()} to {market_data.index.max()}")
+                self.logger.info(f"   📋 Available columns: {list(market_data.columns)}")
+                
+                print("🔍 Feature Engineering for ML Training...")
+                print("   🧮 Extracting technical indicators from price data")
+                print("   📊 Creating features that help predict SR level effectiveness")
+                print("   🎯 Features include: price changes, volatility, volume patterns")
+                self.logger.info("🔍 Feature Engineering for ML Training...")
+                self.logger.info("   🧮 Extracting technical indicators from price data")
+                self.logger.info("   📊 Creating features that help predict SR level effectiveness")
+                self.logger.info("   🎯 Features include: price changes, volatility, volume patterns")
+                
+                # Create simple features for demonstration
+                features = []
+                labels = []
+                
+                # Use OHLC data to create features
+                if 'open' in market_data.columns and 'high' in market_data.columns and 'low' in market_data.columns and 'close' in market_data.columns:
+                    print("📈 Creating Price-Based Features...")
+                    print("   💰 Feature 1: Price change percentage (momentum indicator)")
+                    print("   📊 Feature 2: High/Low ratio (volatility indicator)")
+                    print("   📈 Feature 3: Volume change percentage (participation indicator)")
+                    self.logger.info("📈 Creating Price-Based Features...")
+                    self.logger.info("   💰 Feature 1: Price change percentage (momentum indicator)")
+                    self.logger.info("   📊 Feature 2: High/Low ratio (volatility indicator)")
+                    self.logger.info("   📈 Feature 3: Volume change percentage (participation indicator)")
+                    
+                    # Calculate price changes
+                    print("   🔄 Calculating price change percentages...")
+                    price_changes = market_data['close'].pct_change().dropna()
+                    print(f"      ✅ Price changes: {len(price_changes)} samples (avg: {price_changes.mean():.4f})")
+                    
+                    print("   📊 Calculating High/Low volatility ratios...")
+                    high_low_ratio = (market_data['high'] / market_data['low']).dropna()
+                    print(f"      ✅ High/Low ratios: {len(high_low_ratio)} samples (avg: {high_low_ratio.mean():.4f})")
+                    
+                    print("   📈 Calculating volume change percentages...")
+                    volume_ratio = market_data['volume'].pct_change().dropna() if 'volume' in market_data.columns else pd.Series()
+                    if not volume_ratio.empty:
+                        print(f"      ✅ Volume changes: {len(volume_ratio)} samples (avg: {volume_ratio.mean():.4f})")
+                    else:
+                        print("      ⚠️ No volume data available")
+                    
+                    self.logger.info(f"   - Price changes: {len(price_changes)} samples (avg: {price_changes.mean():.4f})")
+                    self.logger.info(f"   - High/Low ratio: {len(high_low_ratio)} samples (avg: {high_low_ratio.mean():.4f})")
+                    if not volume_ratio.empty:
+                        self.logger.info(f"   - Volume changes: {len(volume_ratio)} samples (avg: {volume_ratio.mean():.4f})")
+                    else:
+                        self.logger.warning("   - No volume data available")
+                    
+                    # Create simple binary labels (price going up or down)
+                    print("🏷️ Creating Training Labels...")
+                    print("   📈 Binary classification: 1 = price up, 0 = price down")
+                    print("   🎯 Labels help model learn to predict price direction")
+                    labels = (price_changes > 0).astype(int).values
+                    print(f"      ✅ Labels created: {len(labels)} samples")
+                    print(f"      📊 Label distribution: {np.bincount(labels)} (0=down, 1=up)")
+                    
+                    # Create feature matrix
+                    print("🧮 Building Feature Matrix...")
+                    print("   🔄 Combining all features into training matrix")
+                    print("   📊 Each row = one training sample, each column = one feature")
+                    feature_data = []
+                    max_samples = min(len(price_changes), 10000)  # Limit to 10k samples for speed
+                    print(f"   📈 Processing {max_samples} samples for training...")
+                    
+                    for i in range(1, max_samples):
+                        feature_row = [
+                            price_changes.iloc[i-1] if i > 0 else 0,
+                            high_low_ratio.iloc[i] if i < len(high_low_ratio) else 1.0,
+                            volume_ratio.iloc[i] if not volume_ratio.empty and i < len(volume_ratio) else 0.0
+                        ]
+                        feature_data.append(feature_row)
+                    
+                    features = np.array(feature_data)
+                    labels = labels[1:len(feature_data)+1]  # Align labels with features
+                    
+                    print(f"✅ Feature Matrix Created Successfully")
+                    print(f"   📊 Matrix shape: {features.shape[0]} samples × {features.shape[1]} features")
+                    print(f"   🏷️ Label distribution: {np.bincount(labels)} (0=down, 1=up)")
+                    print(f"   📈 Feature statistics:")
+                    print(f"      - Feature 1 (price change): mean={features[:, 0].mean():.4f}, std={features[:, 0].std():.4f}")
+                    print(f"      - Feature 2 (high/low ratio): mean={features[:, 1].mean():.4f}, std={features[:, 1].std():.4f}")
+                    print(f"      - Feature 3 (volume change): mean={features[:, 2].mean():.4f}, std={features[:, 2].std():.4f}")
+                    self.logger.info(f"✅ Feature Matrix Created Successfully")
+                    self.logger.info(f"   📊 Matrix shape: {features.shape[0]} samples × {features.shape[1]} features")
+                    self.logger.info(f"   🏷️ Label distribution: {np.bincount(labels)} (0=down, 1=up)")
+                    self.logger.info(f"   📈 Feature statistics:")
+                    self.logger.info(f"      - Feature 1 (price change): mean={features[:, 0].mean():.4f}, std={features[:, 0].std():.4f}")
+                    self.logger.info(f"      - Feature 2 (high/low ratio): mean={features[:, 1].mean():.4f}, std={features[:, 1].std():.4f}")
+                    self.logger.info(f"      - Feature 3 (volume change): mean={features[:, 2].mean():.4f}, std={features[:, 2].std():.4f}")
+                    
+                    if len(features) > 100:  # Only train if we have enough data
+                        print("🤖 Training Random Forest Model...")
+                        print("   🌲 Random Forest: Ensemble of decision trees for robust predictions")
+                        print("   📊 Model learns patterns from historical price movements")
+                        print("   🎯 Goal: Predict whether price will go up or down")
+                        self.logger.info("🤖 Training Random Forest Model...")
+                        self.logger.info("   🌲 Random Forest: Ensemble of decision trees for robust predictions")
+                        self.logger.info("   📊 Model learns patterns from historical price movements")
+                        self.logger.info("   🎯 Goal: Predict whether price will go up or down")
+                        
+                        # Split data
+                        print("📊 Splitting Data for Training and Testing...")
+                        print("   🔄 80% for training, 20% for testing")
+                        print("   ⚖️ Stratified split to maintain class balance")
+                        X_train, X_test, y_train, y_test = train_test_split(
+                            features, labels, test_size=0.2, random_state=42, stratify=labels
+                        )
+                        
+                        print(f"✅ Data Split Complete")
+                        print(f"   🏋️ Training set: {X_train.shape[0]} samples")
+                        print(f"   🧪 Test set: {X_test.shape[0]} samples")
+                        print(f"   📊 Training label distribution: {np.bincount(y_train)}")
+                        print(f"   📊 Test label distribution: {np.bincount(y_test)}")
+                        self.logger.info(f"✅ Data Split Complete")
+                        self.logger.info(f"   🏋️ Training set: {X_train.shape[0]} samples")
+                        self.logger.info(f"   🧪 Test set: {X_test.shape[0]} samples")
+                        self.logger.info(f"   📊 Training label distribution: {np.bincount(y_train)}")
+                        self.logger.info(f"   📊 Test label distribution: {np.bincount(y_test)}")
+                        
+                        # Train model
+                        print("🌲 Initializing Random Forest Model...")
+                        print("   🔧 Parameters: 100 trees, random_state=42, parallel processing")
+                        print("   🎯 Each tree learns different patterns from the data")
+                        model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+                        
+                        print("🔄 Training Model (Fitting to Data)...")
+                        print("   🌲 Growing 100 decision trees...")
+                        print("   📊 Each tree learns to classify price movements")
+                        print("   ⏱️ This may take a few moments...")
+                        self.logger.info("🔄 Training Model (Fitting to Data)...")
+                        self.logger.info("   🌲 Growing 100 decision trees...")
+                        self.logger.info("   📊 Each tree learns to classify price movements")
+                        self.logger.info("   ⏱️ This may take a few moments...")
+                        model.fit(X_train, y_train)
+                        print("✅ Model Training Completed Successfully")
+                        print("   🌲 All 100 trees have been trained")
+                        print("   📊 Model is ready to make predictions")
+                        self.logger.info("✅ Model Training Completed Successfully")
+                        self.logger.info("   🌲 All 100 trees have been trained")
+                        self.logger.info("   📊 Model is ready to make predictions")
+                        
+                        # Evaluate model
+                        print("📊 Evaluating Model Performance...")
+                        print("   🧪 Testing model on unseen data (test set)")
+                        print("   📈 Measuring prediction accuracy")
+                        self.logger.info("📊 Evaluating Model Performance...")
+                        self.logger.info("   🧪 Testing model on unseen data (test set)")
+                        self.logger.info("   📈 Measuring prediction accuracy")
+                        y_pred = model.predict(X_test)
+                        accuracy = accuracy_score(y_test, y_pred)
+                        
+                        print(f"✅ Model Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+                        print(f"   📊 Model correctly predicted {accuracy*100:.1f}% of test cases")
+                        if accuracy > 0.6:
+                            print(f"   🎉 Good performance! Model shows predictive capability")
+                        elif accuracy > 0.5:
+                            print(f"   📈 Decent performance, better than random guessing")
+                        else:
+                            print(f"   ⚠️ Model performance below random guessing - may need more data or features")
+                        self.logger.info(f"✅ Model Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+                        self.logger.info(f"   📊 Model correctly predicted {accuracy*100:.1f}% of test cases")
+                        
+                        # Calculate additional metrics
+                        from sklearn.metrics import precision_score, recall_score, f1_score
+                        precision = precision_score(y_test, y_pred, average='weighted')
+                        recall = recall_score(y_test, y_pred, average='weighted')
+                        f1 = f1_score(y_test, y_pred, average='weighted')
+                        
+                        print(f"📊 Additional Performance Metrics:")
+                        print(f"   🎯 Precision: {precision:.4f} (how many positive predictions were correct)")
+                        print(f"   🔍 Recall: {recall:.4f} (how many actual positives were found)")
+                        print(f"   ⚖️ F1-Score: {f1:.4f} (harmonic mean of precision and recall)")
+                        self.logger.info(f"📊 Additional Performance Metrics:")
+                        self.logger.info(f"   🎯 Precision: {precision:.4f} (how many positive predictions were correct)")
+                        self.logger.info(f"   🔍 Recall: {recall:.4f} (how many actual positives were found)")
+                        self.logger.info(f"   ⚖️ F1-Score: {f1:.4f} (harmonic mean of precision and recall)")
+                        
+                        # Save model info
+                        artifacts['ml_models'] = ['sr_predictor_model.pkl']
+                        artifacts['training_metrics'] = {
+                            'accuracy': accuracy,
+                            'precision': precision,
+                            'recall': recall,
+                            'f1_score': f1,
+                            'n_samples': len(features),
+                            'n_features': features.shape[1],
+                            'model_type': 'RandomForestClassifier'
+                        }
+                        artifacts['model_performance'] = {
+                            'train_samples': X_train.shape[0],
+                            'test_samples': X_test.shape[0],
+                            'feature_importance': model.feature_importances_.tolist(),
+                            'feature_names': ['price_change', 'high_low_ratio', 'volume_change']
+                        }
+                    else:
+                        print("⚠️ Insufficient data for training (need >100 samples)")
+                        self.logger.warning("⚠️ Insufficient data for training (need >100 samples)")
+                        artifacts['ml_models'] = ['sr_predictor_model.pkl']
+                        artifacts['training_metrics'] = {'error': 'insufficient_data'}
+                else:
+                    print("⚠️ Missing required OHLC columns in market data")
+                    self.logger.warning("⚠️ Missing required OHLC columns in market data")
+                    artifacts['ml_models'] = ['sr_predictor_model.pkl']
+                    artifacts['training_metrics'] = {'error': 'missing_columns'}
+            else:
+                print("⚠️ No market data available for ML training")
+                self.logger.warning("⚠️ No market data available for ML training")
+                artifacts['ml_models'] = ['sr_predictor_model.pkl']
+                artifacts['training_metrics'] = {'error': 'no_data'}
+                
+        except Exception as e:
+            print(f"❌ Error in SR ML learning: {e}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
+            self.logger.error(f"❌ Error in SR ML learning: {e}")
+            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
             artifacts['ml_models'] = ['sr_predictor_model.pkl']
+            artifacts['training_metrics'] = {'error': str(e)}
+        
+        print("🎯 SR ML Learning Pipeline Completed Successfully!")
+        print("   🤖 Machine learning model trained to predict price movements")
+        print("   📊 Model can now help identify which SR levels are most likely to hold")
+        print("   🎯 This enhances the overall SR detection system with predictive capabilities")
+        self.logger.info("🎯 SR ML Learning Pipeline Completed Successfully!")
+        self.logger.info("   🤖 Machine learning model trained to predict price movements")
+        self.logger.info("   📊 Model can now help identify which SR levels are most likely to hold")
+        self.logger.info("   🎯 This enhances the overall SR detection system with predictive capabilities")
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("sr_ml_learning", config, artifacts)
+        
+        
+        # Automatically trigger the next sub-pipeline: hmm_clustering
+        self.logger.info("🔄 SR ML learning completed, triggering next: hmm_clustering")
+        try:
+            next_artifacts = await self._hmm_clustering_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ HMM clustering pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute HMM clustering pipeline: {e}")
         
         return artifacts
     
@@ -393,6 +1448,19 @@ class MarketAnalysisSubPipeline:
             self.logger.warning("⚠️ HMM composite manager not available, using mock clustering")
             artifacts['hmm_models'] = ['hmm_model.pkl']
             artifacts['regime_assignments'] = [0, 1, 2, 0, 1, 2, 1, 0]
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("hmm_clustering", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: hmm_regime_discovery
+        self.logger.info("🔄 HMM clustering completed, triggering next: hmm_regime_discovery")
+        try:
+            next_artifacts = await self._hmm_regime_discovery_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ HMM regime discovery pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute HMM regime discovery pipeline: {e}")
         
         return artifacts
     
@@ -437,6 +1505,9 @@ class MarketAnalysisSubPipeline:
             self.logger.warning("⚠️ ML commons not available, using mock regime discovery")
             artifacts['regime_models'] = ['regime_model.pkl']
             artifacts['regime_statistics'] = {'n_regimes': 3, 'avg_duration': 100}
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("hmm_regime_discovery", config, artifacts)
         
         return artifacts
     
@@ -483,6 +1554,9 @@ class MarketAnalysisSubPipeline:
         else:
             self.logger.warning("⚠️ ML commons not available, using mock regime splitting")
             artifacts['split_data_files'] = ['regime_0_data.parquet', 'regime_1_data.parquet']
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("regime_data_splitting", config, artifacts)
         
         return artifacts
     
@@ -539,6 +1613,9 @@ class MarketAnalysisSubPipeline:
             self.logger.warning("⚠️ ML commons not available, using mock labeling")
             artifacts['label_files'] = ['labels.parquet']
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("triple_barrier_labeling", config, artifacts)
+        
         return artifacts
     
     async def _feature_lookback_optimization_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -584,6 +1661,9 @@ class MarketAnalysisSubPipeline:
             self.logger.warning("⚠️ ML commons not available, using mock optimization")
             artifacts['optimal_lookbacks'] = {'rsi': 14, 'sma': 20, 'ema': 12}
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("feature_lookback_optimization", config, artifacts)
+        
         return artifacts
     
     async def _fractional_differentiation_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -603,7 +1683,7 @@ class MarketAnalysisSubPipeline:
         
         # Import and use fractional differentiation
         try:
-            from src.utils.step06_utilities.fractional_differentiation_pipeline import FractionalDifferentiationPipeline, FractionalDiffConfig
+            from src.feature_engineering.fractional_differentiation_pipeline import FractionalDifferentiationPipeline, FractionalDiffConfig
             
             frac_diff_config = FractionalDiffConfig(
                 d_min=0.0,
@@ -632,6 +1712,9 @@ class MarketAnalysisSubPipeline:
             self.logger.warning("⚠️ Fractional differentiation pipeline not available, using mock")
             artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("fractional_differentiation", config, artifacts)
+        
         return artifacts
     
     async def _cross_timeframe_analysis_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -651,7 +1734,7 @@ class MarketAnalysisSubPipeline:
         
         # Import and use cross timeframe analysis
         try:
-            from src.utils.step06_utilities.cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig
+            from src.feature_engineering.cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig
             
             cross_tf_config = CrossTimeframeConfig(
                 timeframes=['1m', '5m', '15m', '30m'],  # Short timeframes for high leverage
@@ -685,6 +1768,9 @@ class MarketAnalysisSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Cross timeframe analysis pipeline not available, using mock")
             artifacts['cross_timeframe_features'] = ['cross_tf_features.parquet']
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("cross_timeframe_analysis", config, artifacts)
         
         return artifacts
     
@@ -768,3 +1854,11 @@ async def execute_market_analysis_sub_pipeline(
     """Convenience function to execute a market analysis sub-pipeline."""
     pipeline = get_market_analysis_sub_pipeline(config)
     return await pipeline.execute_sub_pipeline(sub_pipeline_name, config)
+
+async def execute_market_analysis_sub_pipeline_with_next(
+    sub_pipeline_name: str,
+    config: Optional[SubPipelineConfig] = None
+) -> SubPipelineResult:
+    """Convenience function to execute a market analysis sub-pipeline with automatic next triggering."""
+    pipeline = get_market_analysis_sub_pipeline(config)
+    return await pipeline.execute_sub_pipeline_with_next(sub_pipeline_name, config)

@@ -1168,6 +1168,15 @@ class EnhancedSRBreakoutPredictor:
         try:
             self.logger.info(f'🔍 Starting volume-based {level_type} level detection on {len(market_data)} points')
             
+            # Add timeout protection for large datasets
+            if len(market_data) > 100000:  # If more than 100k rows
+                self.logger.warning(f'⚠️ Large dataset detected ({len(market_data)} rows). Volume detection may take time...')
+                # For very large datasets, sample the data to prevent hanging
+                if len(market_data) > 500000:  # If more than 500k rows, sample it
+                    sample_size = 100000
+                    market_data = market_data.sample(n=sample_size, random_state=42)
+                    self.logger.info(f'📊 Sampled dataset to {len(market_data)} rows for performance')
+            
             # Enhanced volume analysis with HVN (High Volume Nodes)
             # Use multiple volume thresholds for better level detection
             volume_90th = market_data['volume'].quantile(0.9)
@@ -1180,15 +1189,28 @@ class EnhancedSRBreakoutPredictor:
             
             # Calculate volume at each price level
             volume_profile = {}
+            total_rows = len(market_data)
+            self.logger.info(f'📊 Processing {total_rows} rows for volume profile calculation...')
+            
             for idx, row in market_data.iterrows():
+                if idx % 5000 == 0:  # Log progress every 5k rows for more frequent updates
+                    self.logger.info(f'📊 Volume profile progress: {idx}/{total_rows} ({idx/total_rows*100:.1f}%)')
+                
                 price_bin = round(row['low'] / bin_size) * bin_size
                 if price_bin not in volume_profile:
                     volume_profile[price_bin] = 0
                 volume_profile[price_bin] += row['volume']
             
+            self.logger.info(f'✅ Volume profile calculation completed: {len(volume_profile)} price bins')
+            
             # Find HVN (High Volume Nodes) - price levels with highest volume
             sorted_volume_profile = sorted(volume_profile.items(), key=lambda x: x[1], reverse=True)
             hvn_levels = [price for price, volume in sorted_volume_profile[:20]]  # Top 20 HVN levels
+            
+            # Calculate volume statistics for dynamic strength calculation
+            all_volumes = [volume for _, volume in volume_profile.items()]
+            volume_mean = np.mean(all_volumes) if all_volumes else 1.0
+            volume_std = np.std(all_volumes) if all_volumes else 1.0
             
             # Also get traditional high volume points
             high_volume_mask = market_data['volume'] > volume_80th
@@ -1199,14 +1221,40 @@ class EnhancedSRBreakoutPredictor:
             levels = []
             
             # Add HVN levels first (these are the most important)
-            for hvn_price in hvn_levels:
+            self.logger.info(f'📊 Processing {len(hvn_levels)} HVN levels for touch count calculation...')
+            for i, hvn_price in enumerate(hvn_levels):
+                if i % 5 == 0:  # Log progress every 5 HVN levels
+                    self.logger.info(f'📊 HVN processing progress: {i}/{len(hvn_levels)} ({i/len(hvn_levels)*100:.1f}%)')
+                
+                hvn_volume = volume_profile.get(hvn_price, 0)
+                
+                # Calculate dynamic strength based on volume characteristics
+                volume_ratio = hvn_volume / volume_mean if volume_mean > 0 else 1.0
+                volume_z_score = (hvn_volume - volume_mean) / volume_std if volume_std > 0 else 0.0
+                
+                # Calculate touch count for this price level
+                touch_count = 0
+                for idx, row in market_data.iterrows():
+                    price_bin = round(row['low'] / bin_size) * bin_size
+                    if abs(price_bin - hvn_price) < bin_size * 0.1:  # Within 10% of bin size
+                        touch_count += 1
+                
+                # Dynamic strength calculation: 60% volume ratio + 30% z-score + 10% touch count
+                touch_score = min(touch_count / 10.0, 1.0)  # Normalize touch count
+                strength = min(volume_ratio * 0.6 + max(0, volume_z_score * 0.3) + touch_score * 0.1, 0.95)
+                
+                # Ensure minimum strength for HVN levels
+                strength = max(strength, 0.3)
+                
                 levels.append({
                     'price': float(hvn_price),
-                    'strength': 0.9,  # High strength for HVN
+                    'strength': round(strength, 3),  # Dynamic strength calculation
                     'type': level_type,
                     'method': 'hvn',
-                    'touch_count': 1,
-                    'volume': float(volume_profile.get(hvn_price, 0)),
+                    'touch_count': touch_count,
+                    'volume': float(hvn_volume),
+                    'volume_ratio': round(volume_ratio, 3),
+                    'volume_z_score': round(volume_z_score, 3),
                     'timestamp': datetime.now().isoformat()
                 })
             

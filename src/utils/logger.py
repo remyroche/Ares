@@ -13,9 +13,10 @@ import time
 import concurrent.futures
 from contextlib import contextmanager
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Any
+import builtins
 
 # Optional imports
 try:
@@ -39,14 +40,23 @@ try:
 except ImportError:
     PipelineStandards = None
 REQUIRED_MODULES = ['structured_logging', 'warning_symbols']
-if PipelineStandards is not None:
-    dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
-    structured_logging = PipelineStandards.safe_import('structured_logging', None)
-    warning_symbols = PipelineStandards.safe_import('warning_symbols', None)
-else:
-    dependency_status = {module: False for module in REQUIRED_MODULES}
-    structured_logging = None
-    warning_symbols = None
+# Lazy initialization to avoid hanging during import
+dependency_status = None
+structured_logging = None
+warning_symbols = None
+
+def _lazy_initialize_dependencies():
+    """Initialize dependencies only when needed to avoid import-time hanging."""
+    global dependency_status, structured_logging, warning_symbols
+    if dependency_status is None:
+        if PipelineStandards is not None:
+            dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+            structured_logging = PipelineStandards.safe_import('structured_logging', None)
+            warning_symbols = PipelineStandards.safe_import('warning_symbols', None)
+        else:
+            dependency_status = {module: False for module in REQUIRED_MODULES}
+            structured_logging = None
+            warning_symbols = None
 
 def create_fallback_correlation_filter() -> Any:
 
@@ -61,33 +71,242 @@ def create_fallback_json_formatter() -> Any:
     def formatter(record: Any) -> None:
         return f'{record.levelname}: {record.getMessage()}'
     return formatter
-if structured_logging is None:
-    CorrelationIdFilter = create_fallback_correlation_filter
-    get_json_formatter = create_fallback_json_formatter
-else:
-    CorrelationIdFilter = structured_logging.CorrelationIdFilter
-    get_json_formatter = structured_logging.get_json_formatter
-if warning_symbols is None:
 
-    def critical(msg: Any) -> None:
-        return print(f'CRITICAL: {msg}')
+class HumanReadableFormatter(logging.Formatter):
+    """
+    Custom formatter that provides more human-readable timestamps with relative time information.
+    """
+    
+    def __init__(self, fmt=None, datefmt=None, include_relative=True):
+        super().__init__(fmt, datefmt)
+        self.include_relative = include_relative
+        self.start_time = datetime.now()
+    
+    def formatTime(self, record, datefmt=None):
+        """
+        Format the timestamp with human-readable format and optional relative time.
+        """
+        try:
+            # Get the timestamp from the record
+            ct = datetime.fromtimestamp(record.created)
+            
+            # Format the main timestamp
+            if datefmt:
+                timestamp = ct.strftime(datefmt)
+            else:
+                timestamp = ct.strftime('%b %d, %Y %H:%M:%S')
+            
+            # Add relative time if enabled
+            if self.include_relative:
+                now = datetime.now()
+                diff = now - ct
+                
+                if diff.total_seconds() < 1:
+                    relative = "just now"
+                elif diff.total_seconds() < 60:
+                    relative = f"{int(diff.total_seconds())}s ago"
+                elif diff.total_seconds() < 3600:
+                    relative = f"{int(diff.total_seconds() // 60)}m ago"
+                elif diff.total_seconds() < 86400:
+                    relative = f"{int(diff.total_seconds() // 3600)}h ago"
+                else:
+                    relative = f"{int(diff.total_seconds() // 86400)}d ago"
+                
+                # Add session duration
+                session_duration = now - self.start_time
+                if session_duration.total_seconds() > 0:
+                    session_str = f" (session: {self._format_duration(session_duration)})"
+                else:
+                    session_str = ""
+                
+                return f"{timestamp} ({relative}){session_str}"
+            else:
+                return timestamp
+                
+        except Exception:
+            # Fallback to default formatting
+            return super().formatTime(record, datefmt)
+    
+    def _format_duration(self, duration: timedelta) -> str:
+        """Format a duration in a human-readable way."""
+        total_seconds = int(duration.total_seconds())
+        
+        if total_seconds < 60:
+            return f"{total_seconds}s"
+        elif total_seconds < 3600:
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            return f"{minutes}m{seconds}s" if seconds > 0 else f"{minutes}m"
+        else:
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            return f"{hours}h{minutes}m" if minutes > 0 else f"{hours}h"
 
-    def error(msg: Any) -> None:
-        return print(f'ERROR: {msg}')
+def create_timestamped_print(include_relative=True, include_session=True):
+    """
+    Create a timestamped print function that adds human-readable timestamps to all print statements.
+    
+    Args:
+        include_relative: Whether to include relative time (e.g., "2m ago")
+        include_session: Whether to include session duration
+    
+    Returns:
+        Function that behaves like print but with timestamps
+    """
+    start_time = datetime.now()
+    
+    def timestamped_print(*args, **kwargs):
+        """Print function with human-readable timestamps."""
+        try:
+            # Get current time
+            now = datetime.now()
+            
+            # Format timestamp
+            timestamp = now.strftime('%b %d, %Y %H:%M:%S')
+            
+            # Add relative time if enabled
+            if include_relative:
+                # Calculate relative time (this is approximate since we don't have the original time)
+                # For print statements, we'll just show "now" or use a simple approach
+                relative = "now"
+            else:
+                relative = ""
+            
+            # Add session duration if enabled
+            if include_session:
+                session_duration = now - start_time
+                if session_duration.total_seconds() > 0:
+                    session_str = f" (session: {_format_duration(session_duration)})"
+                else:
+                    session_str = ""
+            else:
+                session_str = ""
+            
+            # Create timestamp prefix
+            if relative:
+                timestamp_prefix = f"[{timestamp} ({relative}){session_str}] "
+            else:
+                timestamp_prefix = f"[{timestamp}{session_str}] "
+            
+            # Convert all arguments to strings and add timestamp
+            if args:
+                # Add timestamp to the first argument
+                first_arg = str(args[0])
+                if first_arg.startswith('[') and ']' in first_arg:
+                    # If already has a timestamp-like prefix, don't add another
+                    timestamped_args = args
+                else:
+                    timestamped_args = (timestamp_prefix + first_arg,) + args[1:]
+            else:
+                timestamped_args = (timestamp_prefix,)
+            
+            # Call the original print function
+            return builtins.print(*timestamped_args, **kwargs)
+            
+        except Exception:
+            # Fallback to original print if anything goes wrong
+            return builtins.print(*args, **kwargs)
+    
+    return timestamped_print
 
-    def info(msg: Any) -> None:
-        return print(f'INFO: {msg}')
+def _format_duration(duration: timedelta) -> str:
+    """Format a duration in a human-readable way."""
+    total_seconds = int(duration.total_seconds())
+    
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    elif total_seconds < 3600:
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}m{seconds}s" if seconds > 0 else f"{minutes}m"
+    else:
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        return f"{hours}h{minutes}m" if minutes > 0 else f"{hours}h"
 
-    def failed(msg: Any) -> None:
-        return print(f'FAILED: {msg}')
+def enable_timestamped_prints(include_relative=True, include_session=True):
+    """
+    Enable timestamped prints globally by replacing the built-in print function.
+    
+    Args:
+        include_relative: Whether to include relative time
+        include_session: Whether to include session duration
+    """
+    try:
+        # Store the original print function
+        if not hasattr(builtins, '_original_print'):
+            builtins._original_print = builtins.print
+        
+        # Replace print with timestamped version
+        builtins.print = create_timestamped_print(include_relative, include_session)
+        return True
+    except Exception as e:
+        print(f"Failed to enable timestamped prints: {e}")
+        return False
 
-    def warning(msg: Any) -> None:
-        return print(f'WARNING: {msg}')
-else:
-    critical = warning_symbols.critical
-    error = warning_symbols.error
-    failed = warning_symbols.failed
-    warning = warning_symbols.warning
+def disable_timestamped_prints():
+    """Disable timestamped prints and restore the original print function."""
+    try:
+        if hasattr(builtins, '_original_print'):
+            builtins.print = builtins._original_print
+            delattr(builtins, '_original_print')
+            return True
+    except Exception as e:
+        print(f"Failed to disable timestamped prints: {e}")
+    return False
+def _get_correlation_filter():
+    """Get the correlation filter, initializing dependencies if needed."""
+    _lazy_initialize_dependencies()
+    if structured_logging is None:
+        return create_fallback_correlation_filter
+    else:
+        return structured_logging.CorrelationIdFilter
+
+def _get_json_formatter():
+    """Get the JSON formatter, initializing dependencies if needed."""
+    _lazy_initialize_dependencies()
+    if structured_logging is None:
+        return create_fallback_json_formatter
+    else:
+        return structured_logging.get_json_formatter
+
+def _get_warning_symbols():
+    """Get warning symbols, initializing dependencies if needed."""
+    _lazy_initialize_dependencies()
+    if warning_symbols is None:
+        def critical(msg: Any) -> None:
+            return print(f'CRITICAL: {msg}')
+
+        def error(msg: Any) -> None:
+            return print(f'ERROR: {msg}')
+
+        def info(msg: Any) -> None:
+            return print(f'INFO: {msg}')
+
+        def failed(msg: Any) -> None:
+            return print(f'FAILED: {msg}')
+
+        def warning(msg: Any) -> None:
+            return print(f'WARNING: {msg}')
+        
+        return type('WarningSymbols', (), {
+            'critical': critical,
+            'error': error,
+            'info': info,
+            'failed': failed,
+            'warning': warning
+        })()
+    else:
+        return warning_symbols
+
+# Create instances for backward compatibility
+CorrelationIdFilter = _get_correlation_filter()
+get_json_formatter = _get_json_formatter()
+warning_symbols_instance = _get_warning_symbols()
+critical = warning_symbols_instance.critical
+error = warning_symbols_instance.error
+failed = warning_symbols_instance.failed
+warning = warning_symbols_instance.warning
 
 class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
     """Filter to suppress noisy TensorFlow TPU client fallback warning."
@@ -150,14 +369,16 @@ class EnhancedLogger:
         self.log_config: dict[str, Any] = self.config.get('logging', {})
         self.log_level: str = self.log_config.get('level', 'INFO')
         self.log_format: str = self.log_config.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        self.date_format: str = self.log_config.get('date_format', '%Y-%m-%d %H:%M:%S')
         self.log_file: str | None = self.log_config.get('file', None)
         self.max_file_size: int = self.log_config.get('max_file_size', 10 * 1024 * 1024)
         self.backup_count: int = self.log_config.get('backup_count', 5)
         self.enable_json: bool = bool(self.log_config.get('json', True))
         self.enable_correlation: bool = bool(self.log_config.get('correlation', True))
         self.enable_warning_symbols: bool = bool(self.log_config.get('warning_symbols', True))
+        self.enable_human_readable: bool = bool(self.log_config.get('human_readable', True))
 
-    async def initialize(self) -> bool:
+    def initialize(self) -> bool:
         """
         Initialize enhanced logger with enhanced error handling.
 
@@ -165,24 +386,25 @@ class EnhancedLogger:
             bool: True if initialization successful, False otherwise
         """
         try:
-            await self._load_logger_configuration()
+            self._load_logger_configuration()
             if not self._validate_configuration():
                 print('Invalid configuration for logger')
                 return False
-            if not await self._setup_logger():
+            if not self._setup_logger():
                 print('Failed to setup logger')
                 return False
             self.logger.info('✅ Enhanced Logger initialization completed successfully')
             return True
-        except Exception:
-            print(failed('Enhanced Logger initialization failed: {e}'))
+        except Exception as e:
+            print(failed(f'Enhanced Logger initialization failed: {e}'))
             return False
 
-    async def _load_logger_configuration(self) -> None:
+    def _load_logger_configuration(self) -> None:
         """Load logger configuration."""
         try:
             self.log_config.setdefault('level', 'INFO')
             self.log_config.setdefault('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            self.log_config.setdefault('date_format', '%Y-%m-%d %H:%M:%S')
             self.log_config.setdefault('file', None)
             self.log_config.setdefault('max_file_size', 10 * 1024 * 1024)
             self.log_config.setdefault('backup_count', 5)
@@ -230,7 +452,7 @@ class EnhancedLogger:
             print(f'Error validating configuration: {e}')
             return False
 
-    async def _setup_logger(self) -> bool:
+    def _setup_logger(self) -> bool:
         """
         Setup logger with file and console handlers.
 
@@ -244,7 +466,7 @@ class EnhancedLogger:
             if self.enable_json:
                 formatter = get_json_formatter()
             else:
-                formatter = logging.Formatter(self.log_format)
+                formatter = logging.Formatter(self.log_format, datefmt=self.date_format)
             if self.log_config.get('console_output', True):
 
                 class _SafeStreamHandler(logging.StreamHandler):
@@ -315,6 +537,7 @@ class EnhancedLogger:
             return logging.getLogger(name)
         base_logger = self.logger.getChild(name)
         if self.enable_warning_symbols:
+            _lazy_initialize_dependencies()  # Ensure dependencies are loaded
             return self._create_enhanced_logger(base_logger)
         return base_logger
 
@@ -459,48 +682,98 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
             log_dir.mkdir(exist_ok = True)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             log_file = log_dir / f'ares_{timestamp}.log'
-            config = {'logging': {'level': 'INFO', 'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s', 'file': str(log_file), 'console_output': True, 'file_output': True, 'max_file_size': 10 * 1024 * 1024, 'backup_count': 5, 'json': True, 'correlation': True, 'warning_symbols': True}}
+            config = {'logging': {'level': 'INFO', 'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s', 'date_format': '%b %d, %Y %H:%M:%S', 'file': str(log_file), 'console_output': True, 'file_output': True, 'max_file_size': 10 * 1024 * 1024, 'backup_count': 5, 'json': True, 'correlation': True, 'warning_symbols': True}}
         enhanced_logger = EnhancedLogger(config)
-        import asyncio
-        try:
-            try:
-                loop = asyncio.get_running_loop()
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, enhanced_logger.initialize())
-                    success = future.result()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    success = loop.run_until_complete(enhanced_logger.initialize())
-                finally:
-                    loop.close()
-            if success:
-                system_logger = enhanced_logger.get_logger('System')
-                _configure_tensorflow_logging_suppression(system_logger)
-                return system_logger
+        # Now initialize synchronously since we made it synchronous
+        success = enhanced_logger.initialize()
+        if success:
+            system_logger = enhanced_logger.get_logger('System')
+            _configure_tensorflow_logging_suppression(system_logger)
+            # Enable timestamped prints globally - DISABLED during import to avoid conflicts
+            # enable_timestamped_prints(include_relative=True, include_session=True)
+            return system_logger
+        else:
             system_logger = logging.getLogger('System')
             system_logger.setLevel(logging.INFO)
             console_handler = logging.StreamHandler(sys.stdout)
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s', datefmt='%b %d, %Y %H:%M:%S')
             console_handler.setFormatter(formatter)
             system_logger.addHandler(console_handler)
             _configure_tensorflow_logging_suppression(system_logger)
+            # Enable timestamped prints globally (delayed to avoid numba conflicts)
+            # enable_timestamped_prints(include_relative=True, include_session=True)
             return system_logger
-        except Exception as e:
-            print(f'Error in logger initialization: {e}')
-            system_logger = logging.getLogger('System')
-            system_logger.setLevel(logging.INFO)
-            _configure_tensorflow_logging_suppression(system_logger)
-            return system_logger
+    except Exception as e:
+        print(f'Error in logger initialization: {e}')
+        system_logger = logging.getLogger('System')
+        system_logger.setLevel(logging.INFO)
+        _configure_tensorflow_logging_suppression(system_logger)
+        # Enable timestamped prints globally (delayed to avoid numba conflicts)
+        # enable_timestamped_prints(include_relative=True, include_session=True)
+        return system_logger
     except Exception as e:
         print(f'Error setting up logging: {e}')
         system_logger = logging.getLogger('System')
         system_logger.setLevel(logging.INFO)
         _configure_tensorflow_logging_suppression(system_logger)
+        # Enable timestamped prints globally - DISABLED during import to avoid conflicts
+        # enable_timestamped_prints(include_relative=True, include_session=True)
         return system_logger
 if system_logger is None:
     system_logger = setup_logging()
+
+# Import numba-friendly timestamp utilities (temporarily disabled to fix circular import)
+# try:
+#     from .numba_timestamps import (
+#         numba_print_with_timestamp,
+#         numba_print_detailed,
+#         numba_print_simple,
+#         numba_print_progress,
+#         numba_print_performance,
+#         numba_print_error as numba_print_error_func,
+#         numba_print_warning as numba_print_warning_func,
+#         numba_print_info as numba_print_info_func,
+#         numba_print_debug as numba_print_debug_func,
+#         get_numba_timestamp,
+#         get_detailed_timestamp,
+#         get_simple_timestamp,
+#         NUMBA_AVAILABLE
+#     )
+#     NUMBA_TIMESTAMPS_AVAILABLE = True
+# except ImportError:
+NUMBA_TIMESTAMPS_AVAILABLE = False
+NUMBA_AVAILABLE = False
+
+# Create a simple timestamped print function that doesn't interfere with numba
+def timestamped_print(*args, **kwargs):
+    """Simple timestamped print function that doesn't interfere with numba."""
+    try:
+        # Get current time
+        now = datetime.now()
+        timestamp = now.strftime("%H:%M:%S")
+        
+        # Format the message with timestamp
+        if args:
+            message = ' '.join(str(arg) for arg in args)
+            print(f"[{timestamp}] {message}", **kwargs)
+        else:
+            print(**kwargs)
+    except Exception:
+        # Fallback to regular print
+        print(*args, **kwargs)
+
+# Make it available as a module function
+import sys
+current_module = sys.modules[__name__]
+current_module.timestamped_print = timestamped_print
+
+def enable_timestamped_prints_after_numba():
+    """Enable timestamped prints after numba is loaded to avoid conflicts."""
+    try:
+        enable_timestamped_prints(include_relative=True, include_session=True)
+        print("✅ Timestamped prints enabled after numba loading")
+    except Exception as e:
+        print(f"⚠️ Failed to enable timestamped prints: {e}")
 
 def ensure_logging_setup() -> logging.Logger | None:
     """
@@ -972,5 +1245,30 @@ __all__ = [
     'log_dataframe_overview',
     'heartbeat',
     'log_validation_result',
-    'log_data_quality_check'
+    'log_data_quality_check',
+    'enable_timestamped_prints',
+    'disable_timestamped_prints',
+    'enable_timestamped_prints_after_numba',
+    'create_timestamped_print',
+    'timestamped_print',
+    'HumanReadableFormatter'
 ]
+
+# Add numba-friendly functions to exports if available
+if NUMBA_TIMESTAMPS_AVAILABLE:
+    __all__.extend([
+        'numba_print_with_timestamp',
+        'numba_print_detailed',
+        'numba_print_simple',
+        'numba_print_progress',
+        'numba_print_performance',
+        'numba_print_error_func',
+        'numba_print_warning_func',
+        'numba_print_info_func',
+        'numba_print_debug_func',
+        'get_numba_timestamp',
+        'get_detailed_timestamp',
+        'get_simple_timestamp',
+        'NUMBA_AVAILABLE',
+        'NUMBA_TIMESTAMPS_AVAILABLE'
+    ])

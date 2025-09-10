@@ -73,9 +73,24 @@ class ParetoFront:
     """Enhanced Pareto front utilities with M1 optimization."""
 
     def __init__(self):
-        self.gpu_manager = M1GPUManager() if GPU_AVAILABLE else None
-        self.cpu_optimizer = get_m1_cpu_optimizer() if CPU_OPTIMIZER_AVAILABLE else None
         self.logger = _LOGGER
+        self.logger.info("🚀 Initializing ParetoFront...")
+        start_time = time.time()
+        
+        self.gpu_manager = M1GPUManager() if GPU_AVAILABLE else None
+        if self.gpu_manager:
+            self.logger.debug("✅ GPU manager initialized")
+        else:
+            self.logger.debug("ℹ️ GPU manager not initialized (GPU not available)")
+            
+        self.cpu_optimizer = get_m1_cpu_optimizer() if CPU_OPTIMIZER_AVAILABLE else None
+        if self.cpu_optimizer:
+            self.logger.debug("✅ CPU optimizer initialized")
+        else:
+            self.logger.debug("ℹ️ CPU optimizer not initialized (CPU optimizer not available)")
+        
+        init_time = time.time() - start_time
+        self.logger.info(f"✅ ParetoFront initialized in {init_time:.3f}s")
 
     @auto_memory_skim_decorator("pareto_front_construction")
     def compute_pareto_front_gpu(

@@ -305,43 +305,84 @@ class UnifiedQualityOrchestrator:
 
     def _validate_nan_values(self, df: pd.DataFrame, result: QualityResult):
         """Validate NaN values in DataFrame."""
-        nan_counts = df.isnull().sum()
-        total_cells = len(df) * len(df.columns)
-        nan_ratio = nan_counts.sum() / total_cells
+        try:
+            nan_counts = df.isnull().sum()
+            total_cells = len(df) * len(df.columns)
+            nan_ratio = nan_counts.sum() / total_cells
 
-        result.add_metric("nan_ratio", nan_ratio)
-        result.add_metric("nan_counts", nan_counts.to_dict())
+            result.add_metric("nan_ratio", nan_ratio)
+            result.add_metric("nan_counts", nan_counts.to_dict())
 
-        if nan_ratio > self.thresholds.max_nan_ratio:
-            result.add_issue("high_nan_ratio", f"NaN ratio {nan_ratio:.2%} exceeds threshold {self.thresholds.max_nan_ratio:.2%}")
+            if nan_ratio > self.thresholds.max_nan_ratio:
+                problematic_columns = nan_counts[nan_counts > 0].to_dict()
+                result.add_issue("high_nan_ratio", 
+                    f"NaN ratio {nan_ratio:.2%} exceeds threshold {self.thresholds.max_nan_ratio:.2%}. "
+                    f"Problematic columns: {problematic_columns}")
 
-        # Check for columns with high NaN ratios
-        high_nan_cols = nan_counts[nan_counts > len(df) * 0.5]
-        if not high_nan_cols.empty:
-            result.add_warning("high_nan_columns", f"Columns with >50% NaN: {list(high_nan_cols.index)}")
+            # Check for columns with high NaN ratios
+            high_nan_cols = nan_counts[nan_counts > len(df) * 0.5]
+            if not high_nan_cols.empty:
+                result.add_warning("high_nan_columns", 
+                    f"Columns with >50% NaN values: {list(high_nan_cols.index)}. "
+                    f"These columns may need data cleaning or removal.")
+        except Exception as e:
+            result.add_issue("nan_validation_error", f"Failed to validate NaN values: {str(e)}")
 
     def _validate_infinite_values(self, df: pd.DataFrame, result: QualityResult):
         """Validate infinite values in DataFrame."""
-        inf_counts = np.isinf(df.select_dtypes(include=[np.number])).sum()
-        total_inf = inf_counts.sum()
+        try:
+            numeric_cols = df.select_dtypes(include=[np.number])
+            if numeric_cols.empty:
+                result.add_metric("infinite_count", 0)
+                result.add_metric("infinite_counts", {})
+                return
+                
+            inf_counts = np.isinf(numeric_cols).sum()
+            total_inf = inf_counts.sum()
 
-        result.add_metric("infinite_count", total_inf)
-        result.add_metric("infinite_counts", inf_counts.to_dict())
+            result.add_metric("infinite_count", total_inf)
+            result.add_metric("infinite_counts", inf_counts.to_dict())
 
-        if total_inf > self.thresholds.max_infinite_count:
-            result.add_issue("infinite_values", f"Found {total_inf} infinite values")
+            if total_inf > self.thresholds.max_infinite_count:
+                problematic_columns = inf_counts[inf_counts > 0].to_dict()
+                result.add_issue("infinite_values", 
+                    f"Found {total_inf} infinite values exceeding threshold {self.thresholds.max_infinite_count}. "
+                    f"Problematic columns: {problematic_columns}. "
+                    f"Check for division by zero or mathematical operations that produce infinity.")
+        except Exception as e:
+            result.add_issue("infinite_validation_error", f"Failed to validate infinite values: {str(e)}")
 
     def _validate_constant_columns(self, df: pd.DataFrame, result: QualityResult):
         """Validate constant columns in DataFrame."""
-        constant_cols = []
-        for col in df.columns:
-            if df[col].nunique() == 1:
-                constant_cols.append(col)
+        try:
+            constant_cols = []
+            near_constant_cols = []
+            
+            for col in df.columns:
+                unique_count = df[col].nunique()
+                if unique_count == 1:
+                    constant_cols.append(col)
+                elif unique_count == 2 and len(df) > 10:
+                    # Check if one value dominates (>95% of data)
+                    value_counts = df[col].value_counts()
+                    max_ratio = value_counts.iloc[0] / len(df)
+                    if max_ratio > 0.95:
+                        near_constant_cols.append((col, max_ratio))
 
-        result.add_metric("constant_columns", constant_cols)
+            result.add_metric("constant_columns", constant_cols)
+            result.add_metric("near_constant_columns", near_constant_cols)
 
-        if constant_cols:
-            result.add_warning("constant_columns", f"Constant columns: {constant_cols}")
+            if constant_cols:
+                result.add_warning("constant_columns", 
+                    f"🚨 Constant columns found: {constant_cols}. "
+                    f"These columns provide no information and should be removed.")
+            
+            if near_constant_cols:
+                result.add_warning("near_constant_columns", 
+                    f"⚠️ Near-constant columns found: {near_constant_cols}. "
+                    f"These columns have very little variation and may not be useful for analysis.")
+        except Exception as e:
+            result.add_issue("constant_validation_error", f"Failed to validate constant columns: {str(e)}")
 
     def _validate_duplicates(self, df: pd.DataFrame, result: QualityResult):
         """Validate duplicate rows in DataFrame."""
@@ -407,72 +448,142 @@ class UnifiedQualityOrchestrator:
 
         self.logger.info("🔍 Analyzing multicollinearity...")
 
-        # Remove non-numeric columns
-        numeric_data = data.select_dtypes(include=[np.number])
+        try:
+            # Remove non-numeric columns
+            numeric_data = data.select_dtypes(include=[np.number])
+            
+            if numeric_data.empty:
+                self.logger.warning("⚠️ No numeric columns found for multicollinearity analysis")
+                return {
+                    "error": "No numeric columns found",
+                    "analysis_timestamp": datetime.now().isoformat(),
+                }
 
-        # Remove potential label columns
-        potential_label_columns = [
-            "label", "target", "y", "class", "Label", "Target", "Y", "Class",
-        ]
-        actual_label_columns = [
-            col for col in numeric_data.columns if col in potential_label_columns
-        ]
+            if len(numeric_data.columns) < 2:
+                self.logger.warning("⚠️ Need at least 2 numeric columns for multicollinearity analysis")
+                return {
+                    "error": "Need at least 2 numeric columns",
+                    "analysis_timestamp": datetime.now().isoformat(),
+                }
 
-        if actual_label_columns:
-            self.logger.warning(
-                f"⚠️ Removing label columns from multicollinearity analysis: {actual_label_columns}",
+            # Remove potential label columns
+            potential_label_columns = [
+                "label", "target", "y", "class", "Label", "Target", "Y", "Class",
+            ]
+            actual_label_columns = [
+                col for col in numeric_data.columns if col in potential_label_columns
+            ]
+
+            if actual_label_columns:
+                self.logger.warning(
+                    f"⚠️ Removing label columns from multicollinearity analysis: {actual_label_columns}",
+                )
+                numeric_data = numeric_data.drop(columns=actual_label_columns)
+
+            # Check for constant columns that would cause VIF calculation issues
+            constant_cols = [col for col in numeric_data.columns if numeric_data[col].nunique() <= 1]
+            if constant_cols:
+                self.logger.warning(f"⚠️ Removing constant columns for VIF analysis: {constant_cols}")
+                numeric_data = numeric_data.drop(columns=constant_cols)
+
+            if len(numeric_data.columns) < 2:
+                return {
+                    "error": "Not enough non-constant numeric columns for VIF analysis",
+                    "constant_columns_removed": constant_cols,
+                    "analysis_timestamp": datetime.now().isoformat(),
+                }
+
+            # Handle NaN values
+            nan_counts = numeric_data.isnull().sum()
+            if nan_counts.sum() > 0:
+                self.logger.warning(f"⚠️ Found NaN values in numeric data, imputing with median. NaN counts: {nan_counts[nan_counts > 0].to_dict()}")
+            
+            imputer = SimpleImputer(strategy="median")
+            data_imputed = pd.DataFrame(
+                imputer.fit_transform(numeric_data),
+                columns=numeric_data.columns,
+                index=numeric_data.index,
             )
-            numeric_data = numeric_data.drop(columns=actual_label_columns)
 
-        # Handle NaN values
-        imputer = SimpleImputer(strategy="median")
-        data_imputed = pd.DataFrame(
-            imputer.fit_transform(numeric_data),
-            columns=numeric_data.columns,
-            index=numeric_data.index,
-        )
+            # Calculate VIF scores
+            vif_scores = {}
+            high_vif_features = []
+            vif_errors = []
 
-        # Calculate VIF scores
-        vif_scores = {}
-        high_vif_features = []
+            for col in data_imputed.columns:
+                other_cols = [c for c in data_imputed.columns if c != col]
+                if len(other_cols) > 0:
+                    try:
+                        X = data_imputed[other_cols]
+                        y = data_imputed[col]
 
-        for col in data_imputed.columns:
-            other_cols = [c for c in data_imputed.columns if c != col]
-            if len(other_cols) > 0:
-                X = data_imputed[other_cols]
-                y = data_imputed[col]
+                        # Check for perfect correlation (would cause division by zero)
+                        if X.corrwith(y).abs().max() >= 0.999:
+                            vif_scores[col] = float('inf')
+                            high_vif_features.append(col)
+                            vif_errors.append(f"Perfect correlation detected for {col}")
+                            continue
 
-                reg = LinearRegression()
-                reg.fit(X, y)
+                        reg = LinearRegression()
+                        reg.fit(X, y)
+                        r_squared = reg.score(X, y)
 
-                # Calculate VIF
-                vif = 1 / (1 - reg.score(X, y))
-                vif_scores[col] = vif
+                        # Calculate VIF
+                        if r_squared >= 0.999:
+                            vif_scores[col] = float('inf')
+                            high_vif_features.append(col)
+                        else:
+                            vif = 1 / (1 - r_squared)
+                            vif_scores[col] = vif
 
-                if vif > vif_threshold:
-                    high_vif_features.append(col)
+                            if vif > vif_threshold:
+                                high_vif_features.append(col)
+                    except Exception as e:
+                        vif_errors.append(f"Error calculating VIF for {col}: {str(e)}")
+                        vif_scores[col] = None
 
-        # Calculate correlation matrix
-        correlation_matrix = data_imputed.corr()
-        high_corr_pairs = []
+            # Calculate correlation matrix
+            try:
+                correlation_matrix = data_imputed.corr()
+                high_corr_pairs = []
 
-        for i in range(len(correlation_matrix.columns)):
-            for j in range(i + 1, len(correlation_matrix.columns)):
-                corr_val = abs(correlation_matrix.iloc[i, j])
-                if corr_val > self.thresholds.max_correlation_threshold:
-                    col1 = correlation_matrix.columns[i]
-                    col2 = correlation_matrix.columns[j]
-                    high_corr_pairs.append((col1, col2, corr_val))
+                for i in range(len(correlation_matrix.columns)):
+                    for j in range(i + 1, len(correlation_matrix.columns)):
+                        corr_val = abs(correlation_matrix.iloc[i, j])
+                        if corr_val > self.thresholds.max_correlation_threshold:
+                            col1 = correlation_matrix.columns[i]
+                            col2 = correlation_matrix.columns[j]
+                            high_corr_pairs.append((col1, col2, corr_val))
+            except Exception as e:
+                self.logger.error(f"❌ Error calculating correlation matrix: {str(e)}")
+                correlation_matrix = None
+                high_corr_pairs = []
 
-        return {
-            "vif_scores": vif_scores,
-            "high_vif_features": high_vif_features,
-            "correlation_matrix": correlation_matrix.to_dict(),
-            "high_correlation_pairs": high_corr_pairs,
-            "vif_threshold": vif_threshold,
-            "correlation_threshold": self.thresholds.max_correlation_threshold,
-            "analysis_timestamp": datetime.now().isoformat(),
-        }
+            result = {
+                "vif_scores": vif_scores,
+                "high_vif_features": high_vif_features,
+                "correlation_matrix": correlation_matrix.to_dict() if correlation_matrix is not None else None,
+                "high_correlation_pairs": high_corr_pairs,
+                "vif_threshold": vif_threshold,
+                "correlation_threshold": self.thresholds.max_correlation_threshold,
+                "analysis_timestamp": datetime.now().isoformat(),
+            }
+
+            if vif_errors:
+                result["vif_errors"] = vif_errors
+                self.logger.warning(f"⚠️ VIF calculation errors: {vif_errors}")
+
+            if high_vif_features:
+                self.logger.warning(f"🚨 High VIF features detected: {high_vif_features}")
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ Multicollinearity analysis failed: {str(e)}")
+            return {
+                "error": f"Multicollinearity analysis failed: {str(e)}",
+                "analysis_timestamp": datetime.now().isoformat(),
+            }
 
     def analyze_label_imbalance(self, labels: pd.Series) -> dict[str, Any]:
         """
@@ -892,18 +1003,55 @@ class UnifiedQualityOrchestrator:
         }
 
     def _load_data_file(self, file_path: Path) -> pd.DataFrame | None:
-        """Load a single data file."""
+        """Load a single data file with detailed error reporting."""
         try:
             if file_path.suffix.lower() == ".csv":
-                return pd.read_csv(file_path)
-            if file_path.suffix.lower() == ".parquet":
-                return pd.read_parquet(file_path)
-            if file_path.suffix.lower() == ".json":
-                return pd.read_json(file_path)
-            self.logger.warning(f"Unsupported file format: {file_path.suffix}")
+                try:
+                    return pd.read_csv(file_path)
+                except pd.errors.EmptyDataError:
+                    self.logger.error(f"❌ CSV file is empty: {file_path.name}")
+                    return None
+                except pd.errors.ParserError as e:
+                    self.logger.error(f"❌ CSV parsing error in {file_path.name}: {str(e)}. Check for malformed CSV data, incorrect delimiters, or encoding issues.")
+                    return None
+                except UnicodeDecodeError as e:
+                    self.logger.error(f"❌ Encoding error in CSV file {file_path.name}: {str(e)}. Try specifying encoding (e.g., encoding='utf-8' or encoding='latin-1').")
+                    return None
+            elif file_path.suffix.lower() == ".parquet":
+                try:
+                    return pd.read_parquet(file_path)
+                except Exception as e:
+                    if "not a parquet file" in str(e).lower():
+                        self.logger.error(f"❌ File {file_path.name} is not a valid Parquet file. Check if the file is corrupted or in a different format.")
+                    else:
+                        self.logger.error(f"❌ Parquet reading error in {file_path.name}: {str(e)}. Check if the file is corrupted or requires specific engine.")
+                    return None
+            elif file_path.suffix.lower() == ".json":
+                try:
+                    return pd.read_json(file_path)
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"❌ JSON parsing error in {file_path.name}: {str(e)}. Check for malformed JSON syntax, missing brackets, or invalid characters.")
+                    return None
+                except ValueError as e:
+                    if "arrays must all be same length" in str(e).lower():
+                        self.logger.error(f"❌ JSON structure error in {file_path.name}: Arrays have different lengths. Check JSON data consistency.")
+                    else:
+                        self.logger.error(f"❌ JSON value error in {file_path.name}: {str(e)}. Check JSON data types and structure.")
+                    return None
+            else:
+                self.logger.warning(f"⚠️ Unsupported file format: {file_path.suffix} for file {file_path.name}. Supported formats: .csv, .parquet, .json")
+                return None
+        except FileNotFoundError:
+            self.logger.error(f"❌ File not found: {file_path.name}. Check if the file exists and the path is correct.")
+            return None
+        except PermissionError:
+            self.logger.error(f"❌ Permission denied accessing {file_path.name}. Check file permissions.")
+            return None
+        except MemoryError:
+            self.logger.error(f"❌ Memory error loading {file_path.name}. File may be too large for available memory.")
             return None
         except Exception as e:
-            self.logger.exception(f"Failed to load {file_path.name}: {e}")
+            self.logger.exception(f"❌ Unexpected error loading {file_path.name}: {str(e)}. Check file integrity and format.")
             return None
 
     def _generate_directory_summary(self, summary_stats: dict[str, Any], results: dict[str, Any]) -> dict[str, Any]:

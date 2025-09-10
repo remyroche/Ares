@@ -71,25 +71,36 @@ class SharedMLCache:
     _lock = threading.Lock()
 
     def __init__(self, cache_dir: Optional[str] = None, max_memory_mb: int = 1024):
+        print("🚀 Initializing SharedMLCache...")
+        start_time = time.time()
+        
         self._cache_dir = cache_dir or _default_cache_dir()
         self._memory = Memory(self._cache_dir, verbose=0) if JOBLIB_AVAILABLE else None
         self._max_memory_mb = max_memory_mb
         self._memory_threshold = 0.8  # Cleanup when 80% of max memory used
+        
+        print(f"📊 Cache directory: {self._cache_dir}")
+        print(f"📊 Max memory: {self._max_memory_mb}MB")
+        print(f"📊 Memory threshold: {self._memory_threshold*100:.1f}%")
+        print(f"📊 Joblib available: {JOBLIB_AVAILABLE}")
         
         # Process-local dictionaries with weak references for automatic cleanup
         self.cv_splits: Dict[str, List[Tuple[np.ndarray, np.ndarray]]] = {}
         self.mi_scores: Dict[str, Dict[str, float]] = {}
         self.corr_matrices: Dict[str, np.ndarray] = {}
         self.rf_importances: Dict[str, Dict[str, float]] = {}
+        print("✅ Cache dictionaries initialized")
         
         # Memory tracking
         self._cache_sizes: Dict[str, int] = {}
         self._access_counts: Dict[str, int] = {}
         self._last_access: Dict[str, float] = {}
+        print("✅ Memory tracking initialized")
         
         # Memory monitoring
         self._initial_memory = self._get_memory_usage()
-        print(f"🧠 SharedMLCache initialized with {self._max_memory_mb}MB limit")
+        init_time = time.time() - start_time
+        print(f"✅ SharedMLCache initialized in {init_time:.3f}s with {self._max_memory_mb}MB limit")
 
     @classmethod
     def get(cls) -> "SharedMLCache":

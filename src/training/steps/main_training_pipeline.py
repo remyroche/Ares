@@ -23,7 +23,11 @@ from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, field
 
-from src.utils.logger import system_logger
+# Lazy imports to avoid circular dependency
+def get_system_logger():
+    from src.utils.logger import system_logger
+    return system_logger
+
 from src.core.decorators import handles_errors, traced, log_execution_time
 
 # Import sub-pipelines with optional imports
@@ -32,6 +36,8 @@ try:
         DataCollectionSubPipeline, SubPipelineConfig as DataCollectionConfig,
         SubPipelineResult as DataCollectionResult, ExecutionMode, SubPipelineStatus
     )
+    # Import base classes for general use
+    from .data_collection.sub_pipeline import SubPipelineResult, SubPipelineConfig
     DATA_COLLECTION_AVAILABLE = True
 except ImportError:
     DATA_COLLECTION_AVAILABLE = False
@@ -40,6 +46,8 @@ except ImportError:
     DataCollectionResult = None
     ExecutionMode = None
     SubPipelineStatus = None
+    SubPipelineResult = None
+    SubPipelineConfig = None
 
 try:
     from .market_analysis.sub_pipeline import (
@@ -77,7 +85,7 @@ except ImportError:
     BacktestingConfig = None
     BacktestingResult = None
 
-logger = system_logger.getChild('MainTrainingPipeline')
+logger = get_system_logger().getChild('MainTrainingPipeline')
 
 class PipelineStage(Enum):
     """Pipeline execution stages."""
@@ -264,6 +272,39 @@ class MainTrainingPipeline:
         self.pipeline_results.append(result)
         return result
     
+    async def execute_sub_pipeline_with_chain(
+        self,
+        stage: PipelineStage,
+        starting_sub_pipeline: str,
+        config: Optional[MainPipelineConfig] = None
+    ) -> SubPipelineResult:
+        """
+        Execute a specific sub-pipeline and let it automatically trigger the next ones in sequence.
+        
+        Args:
+            stage: Pipeline stage containing the sub-pipeline
+            starting_sub_pipeline: Sub-pipeline to start from
+            config: Optional configuration override
+            
+        Returns:
+            SubPipelineResult of the starting sub-pipeline (which will have triggered the chain)
+        """
+        config = config or self.config
+        self.logger.info(f"🚀 Starting sub-pipeline chain: {stage.value} -> {starting_sub_pipeline}")
+        
+        # Create stage-specific configuration
+        stage_config = self._create_stage_config(stage, config)
+        
+        # Execute the sub-pipeline with automatic next triggering
+        if stage == PipelineStage.MARKET_ANALYSIS:
+            if not MARKET_ANALYSIS_AVAILABLE:
+                self.logger.warning("⚠️ Market analysis sub-pipeline not available")
+                return None
+            return await self.market_analysis_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
+        else:
+            self.logger.warning(f"⚠️ Auto-chaining not implemented for stage: {stage.value}")
+            return None
+    
     async def _execute_stage(
         self,
         stage: PipelineStage,
@@ -375,6 +416,83 @@ class MainTrainingPipeline:
             results = await self.data_collection_pipeline.execute_multiple_sub_pipelines(
                 sub_pipeline_names, config, sequential=True
             )
+        
+        return results
+    
+    async def _execute_stage_from_sub_pipeline(
+        self,
+        stage: PipelineStage,
+        sub_pipeline_names: List[str],
+        config: MainPipelineConfig
+    ) -> List[Any]:
+        """
+        Execute a stage starting from a specific sub-pipeline, running subsequent
+        sub-pipelines sequentially.
+        
+        Args:
+            stage: Pipeline stage to execute
+            sub_pipeline_names: List of sub-pipelines to execute (starting from the specified one)
+            config: Pipeline configuration
+            
+        Returns:
+            List of sub-pipeline results for the stage
+        """
+        self.logger.info(f"🎯 Executing stage from sub-pipeline: {stage.value} with {len(sub_pipeline_names)} sub-pipelines")
+        
+        # Create stage-specific configuration
+        stage_config = self._create_stage_config(stage, config)
+        
+        # Execute sub-pipelines sequentially (not in parallel) to ensure proper order
+        results = []
+        for i, sub_pipeline_name in enumerate(sub_pipeline_names):
+            self.logger.info(f"🔄 Executing sub-pipeline {i+1}/{len(sub_pipeline_names)}: {sub_pipeline_name}")
+            
+            try:
+                if stage == PipelineStage.DATA_COLLECTION:
+                    if not DATA_COLLECTION_AVAILABLE:
+                        self.logger.warning("⚠️ Data collection sub-pipeline not available")
+                        continue
+                    result = await self.data_collection_pipeline.execute_sub_pipeline(sub_pipeline_name, stage_config)
+                elif stage == PipelineStage.MARKET_ANALYSIS:
+                    if not MARKET_ANALYSIS_AVAILABLE:
+                        self.logger.warning("⚠️ Market analysis sub-pipeline not available")
+                        continue
+                    result = await self.market_analysis_pipeline.execute_sub_pipeline(sub_pipeline_name, stage_config)
+                elif stage == PipelineStage.MODEL_TRAINING:
+                    if not MODEL_TRAINING_AVAILABLE:
+                        self.logger.warning("⚠️ Model training sub-pipeline not available")
+                        continue
+                    result = await self.model_training_pipeline.execute_sub_pipeline(sub_pipeline_name, stage_config)
+                elif stage == PipelineStage.BACKTESTING:
+                    if not BACKTESTING_AVAILABLE:
+                        self.logger.warning("⚠️ Backtesting sub-pipeline not available")
+                        continue
+                    result = await self.backtesting_pipeline.execute_sub_pipeline(sub_pipeline_name, stage_config)
+                else:
+                    raise ValueError(f"Unknown pipeline stage: {stage}")
+                
+                results.append(result)
+                
+                # Check if this sub-pipeline failed
+                if result.status == SubPipelineStatus.FAILED:
+                    self.logger.error(f"❌ Sub-pipeline {sub_pipeline_name} failed, stopping sequential execution")
+                    break
+                else:
+                    self.logger.info(f"✅ Sub-pipeline {sub_pipeline_name} completed successfully")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Error executing sub-pipeline {sub_pipeline_name}: {e}")
+                # Create a failed result
+                from datetime import datetime
+                failed_result = type(results[0] if results else SubPipelineResult)(
+                    sub_pipeline_name=sub_pipeline_name,
+                    status=SubPipelineStatus.FAILED,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    error_message=str(e)
+                )
+                results.append(failed_result)
+                break
         
         return results
     

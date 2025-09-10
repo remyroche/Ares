@@ -27,12 +27,23 @@ from datetime import datetime
 import logging
 from collections import defaultdict
 import warnings
+import time
 
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 from ..m1_gpu_utils import M1GPUManager
 
-logger = logging.getLogger(__name__)
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.ModelEvaluation")
+    print("✅ Custom logger available for MLCommon.ModelEvaluation")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.ModelEvaluation")
+    _LOGGER.setLevel(logging.INFO)
+
+logger = _LOGGER
 
 try:
     from sklearn.metrics import (
@@ -56,6 +67,8 @@ class ModelEvaluationUtilities:
         """Initialize model evaluation utilities with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('ModelEvaluation')
+        
+        _LOGGER.info("🚀 Initializing ModelEvaluationUtilities...")
 
         # Configuration defaults
         self.enable_gpu = self.config.get('enable_gpu', True)
@@ -64,8 +77,16 @@ class ModelEvaluationUtilities:
         self.performance_stability_window = self.config.get('performance_stability_window', 30)
         self.fairness_attributes = self.config.get('fairness_attributes', [])
 
+        _LOGGER.info(f"⚙️ Configuration - GPU enabled: {self.enable_gpu}")
+        _LOGGER.info(f"⚙️ Configuration - Detailed metrics: {self.enable_detailed_metrics}")
+        _LOGGER.info(f"⚙️ Configuration - Confidence thresholds: {self.confidence_thresholds}")
+        _LOGGER.info(f"⚙️ Configuration - Stability window: {self.performance_stability_window}")
+        _LOGGER.info(f"⚙️ Configuration - Fairness attributes: {len(self.fairness_attributes)}")
+
         # Initialize utilities
         self.gpu_manager = M1GPUManager() if self.enable_gpu else None
+        
+        _LOGGER.info("✅ ModelEvaluationUtilities initialized successfully")
 
     def multi_metric_evaluation(self, y_true: np.ndarray, y_pred: np.ndarray,
                               y_prob: Optional[np.ndarray] = None,
@@ -84,9 +105,13 @@ class ModelEvaluationUtilities:
         Returns:
             Dictionary with comprehensive evaluation metrics
         """
+        start_time = time.time()
+        _LOGGER.info(f"📊 Starting comprehensive evaluation for {task_type} task...")
+        _LOGGER.info(f"📊 Data shapes - y_true: {y_true.shape}, y_pred: {y_pred.shape}")
+        if y_prob is not None:
+            _LOGGER.info(f"📊 Probability shape: {y_prob.shape}")
+        
         try:
-            self.logger.info(f"📊 Starting comprehensive evaluation for {task_type} task")
-
             evaluation_results = {
                 'task_type': task_type,
                 'basic_metrics': {},
@@ -123,15 +148,27 @@ class ModelEvaluationUtilities:
                 )
 
             # Stability metrics
+            _LOGGER.debug('📊 Calculating stability metrics...')
             evaluation_results['stability_metrics'] = self._calculate_stability_metrics(
                 y_true, y_pred
             )
 
-            self.logger.info(f"✅ Comprehensive evaluation completed for {len(y_true)} samples")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Comprehensive evaluation completed in {execution_time:.3f}s for {len(y_true)} samples")
+            
+            # Log key metrics summary
+            if 'basic_metrics' in evaluation_results:
+                basic_metrics = evaluation_results['basic_metrics']
+                if task_type == 'classification' and 'accuracy' in basic_metrics:
+                    _LOGGER.info(f"📊 Key metrics - Accuracy: {basic_metrics['accuracy']:.4f}")
+                elif task_type == 'regression' and 'mse' in basic_metrics:
+                    _LOGGER.info(f"📊 Key metrics - MSE: {basic_metrics['mse']:.4f}")
+            
             return evaluation_results
 
         except Exception as e:
-            self.logger.error(f"❌ Multi-metric evaluation failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Multi-metric evaluation failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'task_type': task_type}
 
     def class_imbalance_aware_metrics(self, y_true: np.ndarray, y_pred: np.ndarray,
@@ -147,9 +184,11 @@ class ModelEvaluationUtilities:
         Returns:
             Class imbalance aware evaluation results
         """
+        start_time = time.time()
+        _LOGGER.info("⚖️ Starting class imbalance aware metrics calculation...")
+        _LOGGER.debug(f"📊 Parameters - Threshold: {imbalance_threshold}, Samples: {len(y_true)}")
+        
         try:
-            self.logger.info("⚖️ Calculating class imbalance aware metrics")
-
             imbalance_results = {
                 'imbalance_analysis': {},
                 'balanced_metrics': {},
@@ -170,6 +209,15 @@ class ModelEvaluationUtilities:
                 'min_class_ratio': float(np.min(class_ratios)),
                 'is_extreme_imbalance': np.max(class_ratios) >= imbalance_threshold
             }
+            
+            _LOGGER.info(f"📊 Class distribution - Classes: {len(unique_classes)}, "
+                        f"Max ratio: {np.max(class_ratios):.3f}, "
+                        f"Min ratio: {np.min(class_ratios):.3f}")
+            
+            if np.max(class_ratios) >= imbalance_threshold:
+                _LOGGER.warning(f"⚠️ Extreme class imbalance detected (max ratio: {np.max(class_ratios):.3f})")
+            else:
+                _LOGGER.info("✅ Class distribution appears balanced")
 
             # Calculate balanced metrics
             if SKLEARN_AVAILABLE:
@@ -205,13 +253,16 @@ class ModelEvaluationUtilities:
                     "Use balanced accuracy or F1-macro for model evaluation",
                     "Consider class-weighted loss functions during training"
                 ])
+                _LOGGER.warning("⚠️ Recommendations added for extreme class imbalance")
 
-            self.logger.info(f"✅ Class imbalance analysis completed - "
-                           f"{len(unique_classes)} classes detected")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Class imbalance analysis completed in {execution_time:.3f}s - "
+                        f"{len(unique_classes)} classes detected")
             return imbalance_results
 
         except Exception as e:
-            self.logger.error(f"❌ Class imbalance aware metrics failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Class imbalance aware metrics failed after {execution_time:.3f}s: {e}")
             return {'error': str(e)}
 
     def temporal_performance_stability(self, predictions_over_time: List[Dict[str, Any]],

@@ -16,6 +16,7 @@ Key Features:
 import json
 import os
 import pickle
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union, Tuple
 import optuna
@@ -55,6 +56,11 @@ class FinalParametersOptimizer:
         self.study_name = config.get('study_name', 'final_parameters_optimization')
         
         self.logger.info("🚀 Final Parameters Optimizer initialized")
+        self.logger.info(f"📊 Optimization categories: {len(self.categories)}")
+        self.logger.info(f"🔧 Number of trials: {self.n_trials}")
+        self.logger.info(f"⏱️ Timeout: {self.timeout}s")
+        self.logger.info(f"📝 Study name: {self.study_name}")
+        self.logger.info(f"🎯 Categories to optimize: {', '.join(self.categories)}")
     
     def _get_default_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Get default search spaces for parameter categories."""
@@ -152,21 +158,39 @@ class FinalParametersOptimizer:
         """
         try:
             self.logger.info("🔧 Starting final parameters optimization...")
-            optimization_results = {}
+            self.logger.info(f"📊 Calibration results available: {len(calibration_results)} keys")
+            self.logger.info(f"🔄 Previous results available: {previous_results is not None}")
             
-            for category in self.categories:
-                self.logger.info(f"Optimizing {category} parameters...")
+            optimization_results = {}
+            start_time = time.time()
+            
+            for i, category in enumerate(self.categories, 1):
+                self.logger.info(f"🔄 Optimizing {category} parameters ({i}/{len(self.categories)})...")
+                category_start = time.time()
+                
                 category_results = await self._optimize_category(
                     category, calibration_results, 
                     previous_results.get(category) if previous_results else None
                 )
+                
+                category_duration = time.time() - category_start
                 optimization_results[category] = category_results
+                
+                if category_results and 'best_value' in category_results:
+                    self.logger.info(f"✅ {category} optimization completed in {category_duration:.2f}s - Best value: {category_results['best_value']:.4f}")
+                else:
+                    self.logger.warning(f"⚠️ {category} optimization completed in {category_duration:.2f}s - No results obtained")
             
+            total_duration = time.time() - start_time
             self.logger.info("✅ Final parameters optimization completed")
+            self.logger.info(f"⏱️ Total optimization time: {total_duration:.2f}s")
+            self.logger.info(f"📊 Categories optimized: {len(optimization_results)}")
+            
             return optimization_results
             
         except Exception as e:
-            self.logger.exception(f"Error in final parameters optimization: {e}")
+            self.logger.error(f"❌ Error in final parameters optimization: {e}")
+            self.logger.exception("Full traceback:")
             raise
     
     async def _optimize_category(self, category: str, calibration_results: Dict[str, Any], 
@@ -183,18 +207,27 @@ class FinalParametersOptimizer:
             Dict containing optimization results for the category
         """
         try:
+            self.logger.info(f"🔍 Analyzing search space for category: {category}")
             search_space = self.default_search_spaces.get(category, {})
             if not search_space:
-                self.logger.warning(f"No search space found for category: {category}")
+                self.logger.warning(f"⚠️ No search space found for category: {category}")
                 return {}
             
+            self.logger.info(f"📊 Search space parameters: {len(search_space)}")
+            for param_name, param_config in search_space.items():
+                self.logger.debug(f"   • {param_name}: {param_config['type']} [{param_config.get('min', 'N/A')}-{param_config.get('max', 'N/A')}]")
+            
             study_name = f'{self.study_name}_{category}'
+            self.logger.info(f"📝 Creating Optuna study: {study_name}")
+            
             study = optuna.create_study(
                 study_name=study_name,
                 direction='maximize',
                 storage='sqlite:///optuna_studies.db',
                 load_if_exists=True
             )
+            
+            self.logger.info(f"🎯 Starting optimization with {self.n_trials} trials (timeout: {self.timeout}s)")
             
             def objective(trial):
                 return self._objective_function(trial, category, search_space, calibration_results)
@@ -204,6 +237,11 @@ class FinalParametersOptimizer:
             best_params = study.best_params
             best_value = study.best_value
             
+            self.logger.info(f"🏆 Best parameters for {category}:")
+            for param, value in best_params.items():
+                self.logger.info(f"   • {param}: {value}")
+            self.logger.info(f"📈 Best objective value: {best_value:.4f}")
+            
             return {
                 'best_params': best_params,
                 'best_value': best_value,
@@ -212,7 +250,8 @@ class FinalParametersOptimizer:
             }
             
         except Exception as e:
-            self.logger.error(f"Error optimizing category {category}: {e}")
+            self.logger.error(f"❌ Error optimizing category {category}: {e}")
+            self.logger.exception("Full traceback:")
             return {}
     
     def _objective_function(self, trial: optuna.Trial, category: str, 
@@ -652,36 +691,67 @@ class FinalParametersOptimizer:
                                       symbol: str, exchange: str, data_dir: str) -> None:
         """Save optimization results."""
         try:
+            self.logger.info(f"💾 Saving optimization results for {exchange}_{symbol}")
             optimization_dir = f'{data_dir}/optimization_results'
             os.makedirs(optimization_dir, exist_ok=True)
+            self.logger.info(f"📁 Optimization directory: {optimization_dir}")
             
             results_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl'
+            self.logger.info(f"🔄 Saving pickle file: {results_file}")
             with open(results_file, 'wb') as f:
                 pickle.dump(optimization_results, f)
             
             json_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters.json'
+            self.logger.info(f"🔄 Saving JSON file: {json_file}")
             with open(json_file, 'w') as f:
                 json.dump(optimization_results, f, indent=2, default=str)
             
-            self.logger.info(f'Optimization results saved to {results_file}')
+            # Log file sizes
+            pickle_size = os.path.getsize(results_file) / 1024  # KB
+            json_size = os.path.getsize(json_file) / 1024  # KB
+            
+            self.logger.info(f'✅ Optimization results saved successfully')
+            self.logger.info(f'📊 Pickle file size: {pickle_size:.1f} KB')
+            self.logger.info(f'📊 JSON file size: {json_size:.1f} KB')
+            self.logger.info(f'📁 Files saved to: {optimization_dir}')
             
         except Exception as e:
-            self.logger.error(f'Error saving optimization results: {e}')
+            self.logger.error(f'❌ Error saving optimization results: {e}')
+            self.logger.exception("Full traceback:")
     
     async def load_optimization_results(self, symbol: str, exchange: str, 
                                       data_dir: str) -> Optional[Dict[str, Any]]:
         """Load previous optimization results."""
         try:
+            self.logger.info(f"📂 Loading previous optimization results for {exchange}_{symbol}")
             optimization_dir = f'{data_dir}/optimization_results'
             previous_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl'
             
+            self.logger.info(f"🔍 Checking for previous results: {previous_file}")
+            
             if os.path.exists(previous_file):
+                file_size = os.path.getsize(previous_file) / 1024  # KB
+                self.logger.info(f"📁 Previous results found - File size: {file_size:.1f} KB")
+                
                 with open(previous_file, 'rb') as f:
-                    return pickle.load(f)
-            return None
+                    results = pickle.load(f)
+                
+                if results:
+                    self.logger.info(f"✅ Successfully loaded previous optimization results")
+                    self.logger.info(f"📊 Categories in previous results: {len(results)}")
+                    for category in results.keys():
+                        self.logger.debug(f"   • {category}")
+                else:
+                    self.logger.warning(f"⚠️ Previous results file is empty")
+                
+                return results
+            else:
+                self.logger.info(f"ℹ️ No previous optimization results found")
+                return None
             
         except Exception as e:
-            self.logger.error(f'Error loading optimization results: {e}')
+            self.logger.error(f'❌ Error loading optimization results: {e}')
+            self.logger.exception("Full traceback:")
             return None
     
     async def validate_optimization_results(self, optimization_results: Dict[str, Any]) -> bool:

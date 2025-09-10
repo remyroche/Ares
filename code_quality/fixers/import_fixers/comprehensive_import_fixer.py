@@ -321,7 +321,7 @@ class ComprehensiveImportFixer:
             (r'from utils\.enhanced_mlflow_integration import', 'from src.utils.enhanced_mlflow_integration import'),
             (r'from utils\.regime_data_access import', 'from src.utils.regime_data_access import'),
             (r'from utils\.error_handler import', 'from src.utils.error_handler import'),
-            (r'from utils\.data_quality_framework import', 'from src.utils.data_quality_framework import'),
+            (r'from utils\.data_quality_framework import', 'from src.utils.data_quality.data_quality_framework import'),
             (r'from utils\.report_manager import', 'from src.utils.report_manager import'),
             (r'from utils\.report_collector import', 'from src.utils.report_collector import'),
             (r'from utils\.validator_orchestrator import', 'from src.utils.validator_orchestrator import'),

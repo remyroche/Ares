@@ -134,18 +134,29 @@ class EnhancedHMMRegimeDetector:
     """Enhanced HMM regime detector with comprehensive functionality."""
     
     def __init__(self, config: Optional[HMMRegimeConfig] = None):
-        self.config = config or HMMRegimeConfig()
         self.logger = create_fallback_logger("EnhancedHMMRegimeDetector")
+        self.logger.info("🚀 Initializing EnhancedHMMRegimeDetector...")
+        start_time = time.time()
+        
+        self.config = config or HMMRegimeConfig()
+        self.logger.info(f"📊 Configuration loaded: {self.config.method.value}")
+        self.logger.info(f"📊 HMM components: {self.config.n_components}")
+        self.logger.info(f"📊 Covariance type: {self.config.covariance_type}")
         
         # Initialize utility managers
+        self.logger.debug("🔧 Initializing utility managers...")
         self._initialize_utilities()
         
         # Initialize HMM composite manager
+        self.logger.debug("🔧 Initializing HMM composite manager...")
         self.hmm_manager = EnhancedHMMCompositeManager()
+        self.logger.debug("✅ HMM composite manager initialized")
         
         # Initialize specialized configurations
+        self.logger.debug("🔧 Initializing specialized configurations...")
         self.multi_timeframe_config = MultiTimeframeConfig()
         self.streaming_config = StreamingConfig()
+        self.logger.debug("✅ Specialized configurations initialized")
         
         # Performance tracking
         self.performance_stats = {
@@ -154,6 +165,12 @@ class EnhancedHMMRegimeDetector:
             'memory_usage': 0.0,
             'accuracy_scores': []
         }
+        
+        init_time = time.time() - start_time
+        self.logger.info(f"✅ EnhancedHMMRegimeDetector initialized in {init_time:.3f}s")
+        self.logger.info(f"📊 Min regime samples: {self.config.min_regime_samples}")
+        self.logger.info(f"📊 Max regime imbalance: {self.config.max_regime_imbalance}")
+        self.logger.info(f"📊 Economic significance threshold: {self.config.economic_significance_threshold}")
         
         # Streaming state
         self.streaming_state = {

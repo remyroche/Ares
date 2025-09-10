@@ -105,6 +105,55 @@ class BacktestingSubPipeline:
             'reporting': self._reporting_pipeline
         }
     
+    def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
+        """Helper method to log sub-pipeline completion with emojis and artifact paths."""
+        print("\n" + "="*80)
+        print(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        
+        # Log different types of artifacts with appropriate emojis
+        for key, value in artifacts.items():
+            if isinstance(value, list) and value:
+                if 'model' in key.lower():
+                    for item in value:
+                        print(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
+                elif 'file' in key.lower() or 'data' in key.lower():
+                    for item in value:
+                        print(f"   📄 {key.title()}: {config.data_dir}/{item}")
+                elif 'report' in key.lower():
+                    for item in value:
+                        print(f"   📋 {key.title()}: {config.data_dir}/{item}")
+                else:
+                    for item in value:
+                        print(f"   📊 {key.title()}: {config.data_dir}/{item}")
+            elif isinstance(value, dict) and value:
+                print(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
+        
+        print(f"📊 Artifacts Summary: {len(artifacts)} artifact types generated")
+        print("="*80 + "\n")
+        
+        # Log to logger as well
+        self.logger.info(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for key, value in artifacts.items():
+            if isinstance(value, list) and value:
+                if 'model' in key.lower():
+                    for item in value:
+                        self.logger.info(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
+                elif 'file' in key.lower() or 'data' in key.lower():
+                    for item in value:
+                        self.logger.info(f"   📄 {key.title()}: {config.data_dir}/{item}")
+                elif 'report' in key.lower():
+                    for item in value:
+                        self.logger.info(f"   📋 {key.title()}: {config.data_dir}/{item}")
+                else:
+                    for item in value:
+                        self.logger.info(f"   📊 {key.title()}: {config.data_dir}/{item}")
+            elif isinstance(value, dict) and value:
+                self.logger.info(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
+        self.logger.info(f"📊 Artifacts Summary: {len(artifacts)} artifact types generated")
+    
     async def execute_sub_pipeline(
         self,
         sub_pipeline_name: str,
@@ -236,6 +285,9 @@ class BacktestingSubPipeline:
             self.logger.warning("⚠️ Walk forward validation not available, using mock validation")
             artifacts['validation_results'] = {'status': 'completed', 'folds': 5}
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("walk_forward_validation", config, artifacts)
+        
         return artifacts
     
     async def _monte_carlo_simulation_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -273,6 +325,9 @@ class BacktestingSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Monte Carlo simulation not available, using mock simulation")
             artifacts['simulation_results'] = {'simulations': 1000, 'confidence': 0.95}
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("monte_carlo_simulation", config, artifacts)
         
         return artifacts
     
@@ -312,6 +367,9 @@ class BacktestingSubPipeline:
             self.logger.warning("⚠️ A/B testing not available, using mock A/B test")
             artifacts['ab_test_results'] = {'p_value': 0.05, 'significant': True}
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("ab_testing", config, artifacts)
+        
         return artifacts
     
     async def _model_persistence_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -350,6 +408,9 @@ class BacktestingSubPipeline:
             self.logger.warning("⚠️ Model persistence not available, using mock persistence")
             artifacts['saved_models'] = ['model.pkl']
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("model_persistence", config, artifacts)
+        
         return artifacts
     
     async def _final_parameters_optimization_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -386,6 +447,9 @@ class BacktestingSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Final parameters optimization not available, using mock optimization")
             artifacts['optimized_parameters'] = {'confidence_threshold': 0.8, 'position_size': 0.1}
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("final_parameters_optimization", config, artifacts)
         
         return artifacts
     
@@ -494,6 +558,9 @@ class BacktestingSubPipeline:
             'parameters_source': 'default',
             'comparison_notes': 'Basic backtesting results before parameter optimization (baseline)'
         }
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("basic_backtesting_pre", config, artifacts)
         
         self.logger.info("✅ Basic backtesting pipeline (pre-optimization) completed")
         return artifacts
@@ -604,6 +671,9 @@ class BacktestingSubPipeline:
             'comparison_notes': 'Basic backtesting results after parameter optimization (improved performance)'
         }
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("basic_backtesting_post", config, artifacts)
+        
         self.logger.info("✅ Basic backtesting pipeline (post-optimization) completed")
         return artifacts
     
@@ -642,6 +712,9 @@ class BacktestingSubPipeline:
             self.logger.warning("⚠️ Performance analytics not available, using mock analytics")
             artifacts['performance_metrics'] = {'sharpe_ratio': 1.2, 'max_drawdown': 0.05}
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("performance_analytics", config, artifacts)
+        
         return artifacts
     
     async def _risk_analysis_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -678,6 +751,9 @@ class BacktestingSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Risk analysis not available, using mock risk analysis")
             artifacts['risk_metrics'] = {'var_95': 0.02, 'expected_shortfall': 0.03}
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("risk_analysis", config, artifacts)
         
         return artifacts
     
@@ -716,6 +792,9 @@ class BacktestingSubPipeline:
             self.logger.warning("⚠️ Trade analysis not available, using mock trade analysis")
             artifacts['trade_metrics'] = {'total_trades': 100, 'win_rate': 0.6}
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("trade_analysis", config, artifacts)
+        
         return artifacts
     
     async def _portfolio_analysis_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -752,6 +831,9 @@ class BacktestingSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Portfolio analysis not available, using mock portfolio analysis")
             artifacts['portfolio_metrics'] = {'total_return': 0.15, 'volatility': 0.12}
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("portfolio_analysis", config, artifacts)
         
         return artifacts
     
@@ -790,6 +872,9 @@ class BacktestingSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Comprehensive reporting not available, using mock reporting")
             artifacts['reports'] = ['summary_report.pdf']
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("reporting", config, artifacts)
         
         return artifacts
     

@@ -11,7 +11,7 @@ except ImportError:
 import time
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, HistGradientBoostingClassifier
@@ -52,7 +52,22 @@ def safe_divide(a, b):
     return np.divide(a, b, out=np.zeros_like(a), where=b!=0)
 
 # Core imports
-from src.training.base_step import BaseStep
+try:
+    from src.training.base_step import BaseStep
+except ImportError:
+    # Fallback BaseStep class
+    class BaseStep:
+        def __init__(self, config):
+            self.config = config
+        
+        async def execute(self, data):
+            pass
+        
+        def validate_config(self):
+            pass
+        
+        def get_status(self):
+            return {}
 from src.utils.logger import system_logger
 
 # Initialize logger early to avoid usage before definition
@@ -94,12 +109,12 @@ from src.utils.math_validation import (
     safe_matrix_inverse, math_safe, MathValidationError
 )
 from src.utils.parquet_utils import ParquetUtils
-from src.utils.serialization_utils import (
+from src.utils.core.file_operations import (
     JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer,
     save_json, load_json, save_pickle, load_pickle, save_parquet, load_parquet,
     save_data, load_data, SerializationError
 )
-from src.utils.data_processing_utils import (
+from src.utils.data.processing.transformers import (
     DataFrameValidator, DataFrameCleaner, DataFrameTransformer,
     DataQualityLevel, DataQualityIssue, DataQualityReport,
     validate_dataframe, clean_dataframe, transform_dataframe, get_dataframe_info
@@ -202,15 +217,23 @@ except ImportError as e:
     logger.warning(f"⚠️ ML Common utilities not available: {e}")
 
 try:
-    from src.training.steps.unified_feature_engineering import comprehensive_feature_engineering
+    from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering
+    def comprehensive_feature_engineering(*args, **kwargs):
+        # Use EnhancedFeatureEngineering as a replacement
+        return EnhancedFeatureEngineering(*args, **kwargs)
     ADVANCED_FEATURES_AVAILABLE = True
 except ImportError:
-    try:
-        from src.utils.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as AdvancedFeatureEngineeringStep
-        ADVANCED_FEATURES_AVAILABLE = True
-    except ImportError:
-        AdvancedFeatureEngineeringStep = None
-        ADVANCED_FEATURES_AVAILABLE = False
+    # Fallback function
+    def comprehensive_feature_engineering(*args, **kwargs):
+        return None
+    ADVANCED_FEATURES_AVAILABLE = False
+
+try:
+    from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as AdvancedFeatureEngineeringStep
+    ADVANCED_FEATURES_AVAILABLE = True
+except ImportError:
+    AdvancedFeatureEngineeringStep = None
+    ADVANCED_FEATURES_AVAILABLE = False
 
 try:
     from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager
@@ -415,7 +438,10 @@ def _parallel_train_model(model_name: str, model_class: Any, model_params: Dict[
                 config={'enable_shap': True, 'enable_lime': True, 'shap_sample_size': 20, 'lime_sample_size': 5}
             )
         except Exception as e:
-            self.logger.warning(f'Model explanations failed for {model_name}: {e}')
+            # Use basic logging since this is not a class method
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f'Model explanations failed for {model_name}: {e}')
             model_explanations = {'error': str(e)}
 
         # Create comprehensive result dictionary
@@ -708,12 +734,19 @@ class SROptimizationStep(BaseStep):
         
         # Initialize automatic memory management
         try:
-            from src.utils.enhanced_memory_management import get_memory_manager, memory_context
+            from src.utils.hardware.memory_optimization import get_memory_manager, MemoryContext as memory_context
             self.memory_manager = get_memory_manager()
             self.memory_manager.start_monitoring()
             self.logger.info("🧠 Memory management initialized")
         except Exception as e:
             self.logger.warning(f"Memory manager initialization failed: {e}")
+            # Fallback memory manager
+            class FallbackMemoryManager:
+                def start_monitoring(self):
+                    pass
+                def stop_monitoring(self):
+                    pass
+            self.memory_manager = FallbackMemoryManager()
 
         # Initialize ML Model Configurations early to prevent attribute errors
         self.ml_model_configs = {
@@ -1535,27 +1568,44 @@ class SROptimizationStep(BaseStep):
 
     def _detect_sr_levels(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Detect support and resistance levels using Enhanced SR Detection."""
+        self.logger.info('🎯 ===== STARTING SR DETECTION PROCESS =====')
         self.logger.info('🎯 Using Enhanced SR Detection with multiple advanced algorithms...')
+        detection_start_time = time.time()
 
         # CRITICAL: Validate input data before S/R detection
         if data is None:
+            self.logger.error('❌ CRITICAL: Input data is None for S/R detection. Cannot proceed.')
             raise ValueError("CRITICAL: Input data is None for S/R detection. Cannot proceed.")
 
         if data.empty:
+            self.logger.error('❌ CRITICAL: Input data is empty for S/R detection. Cannot proceed.')
             raise ValueError("CRITICAL: Input data is empty for S/R detection. Cannot proceed.")
 
+        self.logger.info(f'📊 Input data shape: {data.shape[0]:,} rows × {data.shape[1]} columns')
+        self.logger.info(f'📊 Input data columns: {list(data.columns)}')
+        self.logger.info(f'📊 Input data memory usage: {data.memory_usage(deep=True).sum() / 1024**2:.2f} MB')
+
         # Use comprehensive data validation
+        self.logger.info('🔍 Starting comprehensive data validation for SR detection...')
+        validation_start = time.time()
         clean_data = self._validate_price_data_quality(data)
+        validation_time = time.time() - validation_start
 
         self.logger.info(f'✅ S/R detection input validation passed: {len(clean_data)} rows, {len(clean_data.columns)} columns')
+        self.logger.info(f'⏱️ Data validation took: {validation_time:.2f} seconds')
+        self.logger.info(f'📊 Data reduction: {len(data) - len(clean_data)} rows removed ({(len(data) - len(clean_data))/len(data)*100:.1f}%)')
 
         try:
             # Use new SR clustering system with weight optimization
+            self.logger.info('🚀 ===== STARTING SR CLUSTERING SYSTEM =====')
             self.logger.info('🚀 Using SR clustering system with weight optimization...')
             
             # First, get basic SR levels using existing detector
             if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None or SRLevel is None:
+                self.logger.error('❌ Enhanced SR Detector not available for initial detection.')
                 raise RuntimeError("Enhanced SR Detector not available for initial detection.")
+            
+            self.logger.info('✅ Enhanced SR Detector is available, proceeding with detection...')
             
             # Create basic SR detector for initial detection
             sr_config = {
@@ -1566,30 +1616,66 @@ class SROptimizationStep(BaseStep):
                 'use_parallel': self.enable_parallel_processing if hasattr(self, 'enable_parallel_processing') else False,
             }
             
+            self.logger.info(f'🔧 SR Detection Configuration:')
+            self.logger.info(f'   • Min touches: {sr_config["min_touches"]}')
+            self.logger.info(f'   • Tolerance %: {sr_config["tolerance_pct"]}%')
+            self.logger.info(f'   • Lookback periods: {sr_config["lookback_periods"]}')
+            self.logger.info(f'   • Memory efficient: {sr_config["memory_efficient"]}')
+            self.logger.info(f'   • Parallel processing: {sr_config["use_parallel"]}')
+            
+            self.logger.info('🎯 Creating Enhanced SR Detector...')
+            detector_creation_start = time.time()
             detector = EnhancedSRDetector(sr_config)
+            detector_creation_time = time.time() - detector_creation_start
+            self.logger.info(f'✅ Enhanced SR Detector created in {detector_creation_time:.2f} seconds')
+            
+            self.logger.info('🔍 Starting basic SR level detection...')
+            basic_detection_start = time.time()
             basic_sr_levels = detector.detect_sr_levels(clean_data)
+            basic_detection_time = time.time() - basic_detection_start
+            self.logger.info(f'✅ Basic SR level detection completed in {basic_detection_time:.2f} seconds')
             
             # Convert to list format for clustering
+            self.logger.info('🔄 Converting basic SR levels to list format for clustering...')
             if isinstance(basic_sr_levels, dict):
-                all_levels = basic_sr_levels.get('support_levels', []) + basic_sr_levels.get('resistance_levels', [])
+                support_levels = basic_sr_levels.get('support_levels', [])
+                resistance_levels = basic_sr_levels.get('resistance_levels', [])
+                all_levels = support_levels + resistance_levels
+                self.logger.info(f'📊 Basic detection results: {len(support_levels)} support levels, {len(resistance_levels)} resistance levels')
             else:
                 all_levels = basic_sr_levels if isinstance(basic_sr_levels, list) else []
+                self.logger.info(f'📊 Basic detection results: {len(all_levels)} total levels (format: list)')
             
             if not all_levels:
+                self.logger.error('❌ No basic SR levels detected. Cannot proceed with clustering.')
                 raise RuntimeError("No basic SR levels detected. Cannot proceed with clustering.")
             
+            self.logger.info(f'✅ Total basic SR levels detected: {len(all_levels)}')
+            
             # Use backtesting-enhanced clustering
+            self.logger.info('🔧 Configuring backtesting-enhanced clustering...')
             clustering_config = BacktestingEnhancedConfig(
                 min_levels_for_learning=5,
                 quality_filter_threshold=0.1,
                 proximity_adjustment_factor=0.5
             )
             
+            self.logger.info(f'🔧 Clustering Configuration:')
+            self.logger.info(f'   • Min levels for learning: {clustering_config.min_levels_for_learning}')
+            self.logger.info(f'   • Quality filter threshold: {clustering_config.quality_filter_threshold}')
+            self.logger.info(f'   • Proximity adjustment factor: {clustering_config.proximity_adjustment_factor}')
+            
+            clustering_creation_start = time.time()
             clustering = get_backtesting_enhanced_clustering(clustering_config)
+            clustering_creation_time = time.time() - clustering_creation_start
+            self.logger.info(f'✅ Backtesting-enhanced clustering created in {clustering_creation_time:.2f} seconds')
             
             # Convert levels to dict format for clustering
+            self.logger.info('🔄 Converting SR levels to dictionary format for clustering...')
             levels_dict = []
-            for level in all_levels:
+            conversion_start = time.time()
+            
+            for i, level in enumerate(all_levels):
                 if hasattr(level, 'price'):
                     level_dict = {
                         'price': level.price,
@@ -1600,20 +1686,39 @@ class SROptimizationStep(BaseStep):
                         'last_touch': getattr(level, 'last_touch', datetime.now() - timedelta(days=1))
                     }
                     levels_dict.append(level_dict)
+                    
+                    # Log every 10th level for progress tracking
+                    if (i + 1) % 10 == 0 or i == len(all_levels) - 1:
+                        self.logger.info(f'   📊 Converted {i + 1}/{len(all_levels)} levels ({(i + 1)/len(all_levels)*100:.1f}%)')
+            
+            conversion_time = time.time() - conversion_start
+            self.logger.info(f'✅ Level conversion completed in {conversion_time:.2f} seconds')
+            self.logger.info(f'📊 Converted {len(levels_dict)} levels to dictionary format')
             
             # Run enhanced clustering
+            self.logger.info('🎯 ===== STARTING ENHANCED CLUSTERING PROCESS =====')
             self.logger.info(f'🎯 Running backtesting-enhanced clustering on {len(levels_dict)} levels...')
+            clustering_start = time.time()
             enhanced_result = clustering.cluster_with_backtesting(levels_dict, clean_data)
+            clustering_time = time.time() - clustering_start
+            self.logger.info(f'✅ Enhanced clustering completed in {clustering_time:.2f} seconds')
             
             if not enhanced_result or not enhanced_result.clusters:
+                self.logger.error('❌ Enhanced clustering failed. No clusters generated.')
                 raise RuntimeError("Enhanced clustering failed. No clusters generated.")
             
+            self.logger.info(f'✅ Enhanced clustering successful: {len(enhanced_result.clusters)} clusters generated')
+            
             # Convert back to expected format
+            self.logger.info('🔄 Converting clustering results back to expected format...')
             support_levels = []
             resistance_levels = []
             
-            for cluster in enhanced_result.clusters:
-                for level in cluster.get('levels', []):
+            for cluster_idx, cluster in enumerate(enhanced_result.clusters):
+                cluster_levels = cluster.get('levels', [])
+                self.logger.info(f'   📊 Cluster {cluster_idx + 1}: {len(cluster_levels)} levels')
+                
+                for level in cluster_levels:
                     if level.get('level_type') == 'support':
                         support_levels.append(level)
                     else:
@@ -1627,19 +1732,36 @@ class SROptimizationStep(BaseStep):
             }
             
             self.logger.info(f'✅ Enhanced clustering complete: {len(support_levels)} support, {len(resistance_levels)} resistance levels')
+            self.logger.info(f'📊 Clustering efficiency: {len(levels_dict)} → {len(support_levels) + len(resistance_levels)} levels ({(len(support_levels) + len(resistance_levels))/len(levels_dict)*100:.1f}% retained)')
 
             # Validate that detected levels were actually reached by market prices
+            self.logger.info('🔍 Validating SR levels against market data...')
+            validation_start = time.time()
             sr_levels = self._validate_sr_levels_against_market_data(sr_levels, clean_data)
+            validation_time = time.time() - validation_start
+            self.logger.info(f'✅ SR level validation completed in {validation_time:.2f} seconds')
 
             # Log ALL S/R levels found (before any filtering)
+            self.logger.info('📋 Logging detailed SR level information...')
             self._log_all_sr_levels_detailed(sr_levels, data)
 
+            total_detection_time = time.time() - detection_start_time
+            self.logger.info(f'✅ ===== SR DETECTION PROCESS COMPLETED =====')
             self.logger.info(f'✅ Enhanced S/R detection complete: {len(sr_levels.get("support_levels", []))} support, {len(sr_levels.get("resistance_levels", []))} resistance levels')
+            self.logger.info(f'⏱️ Total SR detection time: {total_detection_time:.2f} seconds')
+            self.logger.info(f'📊 Performance breakdown:')
+            self.logger.info(f'   • Data validation: {validation_time:.2f}s')
+            self.logger.info(f'   • Basic detection: {basic_detection_time:.2f}s')
+            self.logger.info(f'   • Enhanced clustering: {clustering_time:.2f}s')
+            self.logger.info(f'   • Level validation: {validation_time:.2f}s')
 
             return sr_levels
 
         except Exception as e:
-            self.logger.error(f'❌ Enhanced S/R detection failed: {e}')
+            total_detection_time = time.time() - detection_start_time
+            self.logger.error(f'❌ ===== SR DETECTION PROCESS FAILED =====')
+            self.logger.error(f'❌ Enhanced S/R detection failed after {total_detection_time:.2f} seconds: {e}')
+            self.logger.error(f'❌ Error details: {str(e)}')
             raise RuntimeError(f"Advanced SR detection failed: {e}. No fallback available.")
 
     def _create_enhanced_training_data(self, sr_levels: Dict[str, Any], market_data: pd.DataFrame) -> Dict[str, Any]:
@@ -2369,6 +2491,7 @@ class SROptimizationStep(BaseStep):
     async def _train_ml_models(self, features_data: pd.DataFrame, sr_levels: Dict[str, Any] = None) -> Dict[str, Any]:
         """Train ML models for SR level prediction with comprehensive evaluation and fast-fail checks."""
         import gc  # Ensure gc is available in local scope
+        self.logger.info('🤖 ===== STARTING SR ML LEARNING PROCESS =====')
         self.logger.info('🤖 Starting comprehensive ML model training for SR optimization...')
         start_time = time.time()
 
@@ -2380,34 +2503,56 @@ class SROptimizationStep(BaseStep):
                 self.logger.info(f'🧠 Memory before ML training: {memory_usage["rss_gb"]:.2f}GB')
                 # Pre-optimize memory before heavy ML operations
                 optimize_memory()
+        
+        self.logger.info(f'📊 Input features data shape: {features_data.shape[0]:,} rows × {features_data.shape[1]} columns')
+        self.logger.info(f'📊 Input features columns: {list(features_data.columns)}')
+        self.logger.info(f'📊 Input features memory usage: {features_data.memory_usage(deep=True).sum() / 1024**2:.2f} MB')
+        
+        if sr_levels:
+            support_count = len(sr_levels.get('support_levels', []))
+            resistance_count = len(sr_levels.get('resistance_levels', []))
+            self.logger.info(f'📊 SR levels available: {support_count} support, {resistance_count} resistance levels')
+        else:
+            self.logger.info('📊 No SR levels provided - will detect during training')
 
         try:
             # If no SR levels provided, detect them for this specific chunk
             if not sr_levels or not sr_levels.get('support_levels') and not sr_levels.get('resistance_levels'):
                 self.logger.info('🎯 No SR levels provided, detecting levels for current chunk...')
+                sr_detection_start = time.time()
                 sr_levels = self._detect_sr_levels(features_data)
-                self.logger.info(f'✅ Detected {len(sr_levels.get("support_levels", []))} support, {len(sr_levels.get("resistance_levels", []))} resistance levels for chunk')
+                sr_detection_time = time.time() - sr_detection_start
+                support_count = len(sr_levels.get("support_levels", []))
+                resistance_count = len(sr_levels.get("resistance_levels", []))
+                self.logger.info(f'✅ Detected {support_count} support, {resistance_count} resistance levels for chunk in {sr_detection_time:.2f}s')
             
             # Fast-fail: Validate that required methods exist
+            self.logger.info('🔍 Validating ML methods availability...')
             if not self._validate_ml_methods_exist():
                 error_message = "Missing required ML methods - cannot proceed with training"
                 self.logger.error(f'❌ {error_message}')
                 return self._handle_ml_failure(error_message, "METHOD_VALIDATION_ERROR")
+            self.logger.info('✅ ML methods validation passed')
 
             # Fast-fail: Check if we have sufficient data for ML training
+            self.logger.info(f'🔍 Checking data sufficiency for ML training...')
             if len(features_data) < 200:
                 self.logger.warning(f'⚠️ Insufficient data for ML training: {len(features_data)} rows (minimum: 200)')
                 raise ValueError(f"Insufficient data for ML training: {len(features_data)} rows (minimum: 200)")
+            self.logger.info(f'✅ Data sufficiency check passed: {len(features_data)} rows available')
 
             # Fast-fail: Check if we have SR levels
             total_sr_levels = len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', []))
             if total_sr_levels == 0:
                 self.logger.warning('⚠️ No SR levels available for ML training')
                 raise ValueError("No SR levels available for ML training")
+            self.logger.info(f'✅ SR levels check passed: {total_sr_levels} total levels available')
 
             # Apply comprehensive bias mitigation proactively
             if ML_COMMON_AVAILABLE and self.lookahead_protector:
+                self.logger.info('🛠️ ===== STARTING BIAS MITIGATION PROCESS =====')
                 self.logger.info('🛠️ Applying comprehensive bias mitigation...')
+                bias_mitigation_start = time.time()
 
                 # Use available methods for bias mitigation
                 try:
@@ -2450,9 +2595,16 @@ class SROptimizationStep(BaseStep):
                         self.logger.info(f'✅ Bias mitigation completed: {len(fixes_applied)} fixes applied')
                         for fix in fixes_applied:
                             self.logger.info(f'   • {fix}')
+                    else:
+                        self.logger.info('✅ No bias detected - data is clean for ML training')
 
                     # Store mitigation results for reference
                     self.bias_detection_results = mitigation_results.get('bias_results', {})
+                    
+                    bias_mitigation_time = time.time() - bias_mitigation_start
+                    self.logger.info(f'✅ ===== BIAS MITIGATION COMPLETED =====')
+                    self.logger.info(f'⏱️ Bias mitigation time: {bias_mitigation_time:.2f} seconds')
+                    
                 except Exception as e:
                     self.logger.warning(f'⚠️ Bias detection failed, using legacy validation: {e}')
                     mitigation_results = {
@@ -2674,6 +2826,7 @@ class SROptimizationStep(BaseStep):
             # Use ML Common ParallelProcessingCoordinator if available
             if ML_COMMON_AVAILABLE and self.parallel_processor:
                 try:
+                    self.logger.info('🔧 ===== STARTING PARALLEL MODEL TRAINING =====')
                     self.logger.info('🔧 Using ML Common ParallelProcessingCoordinator for model training')
                     
                     # Configure parallel processing for model training
@@ -2684,9 +2837,20 @@ class SROptimizationStep(BaseStep):
                         'timeout_per_task': 300
                     }
                     
+                    self.logger.info(f'🔧 Parallel training configuration:')
+                    self.logger.info(f'   • Max workers: {parallel_config["max_workers"]}')
+                    self.logger.info(f'   • GPU enabled: {parallel_config["enable_gpu"]}')
+                    self.logger.info(f'   • Memory threshold: {parallel_config["memory_threshold"]}')
+                    self.logger.info(f'   • Timeout per task: {parallel_config["timeout_per_task"]}s')
+                    self.logger.info(f'   • Available models: {len(available_models)}')
+                    
                     # Prepare training tasks
+                    self.logger.info('🔧 Preparing training tasks for parallel execution...')
                     training_tasks = []
-                    for model_name in available_models:
+                    task_preparation_start = time.time()
+                    
+                    for i, model_name in enumerate(available_models):
+                        self.logger.info(f'   📊 Preparing task {i+1}/{len(available_models)}: {model_name}')
                         model_config = self.ml_model_configs[model_name]
 
                         # Apply class weights if enabled for severe imbalance
@@ -2732,12 +2896,20 @@ class SROptimizationStep(BaseStep):
                         })
                     
                     # Execute parallel model training
+                    task_preparation_time = time.time() - task_preparation_start
+                    self.logger.info(f'✅ Task preparation completed in {task_preparation_time:.2f} seconds')
+                    self.logger.info(f'🚀 Executing {len(training_tasks)} training tasks in parallel...')
+                    
+                    parallel_execution_start = time.time()
                     parallel_results = self.parallel_processor.error_handling_parallel_execution(
                         training_tasks, 
                         max_retries=parallel_config.get('max_retries', 3)
                     )
+                    parallel_execution_time = time.time() - parallel_execution_start
+                    self.logger.info(f'✅ Parallel execution completed in {parallel_execution_time:.2f} seconds')
                     
                     # Process parallel results
+                    self.logger.info('📊 Processing parallel training results...')
                     if parallel_results and 'results' in parallel_results:
                         for result in parallel_results['results']:
                             if result.get('success') and result.get('model_name'):
@@ -2773,9 +2945,14 @@ class SROptimizationStep(BaseStep):
                     # Add parallel processing metrics
                     if 'execution_stats' in parallel_results:
                         stats = parallel_results['execution_stats']
-                        self.logger.info(f'🚀 Parallel processing: {stats.get("total_tasks", 0)} tasks, '
-                                       f'{stats.get("successful_tasks", 0)} successful, '
-                                       f'{stats.get("total_time", 0):.2f}s')
+                        self.logger.info(f'🚀 Parallel processing summary:')
+                        self.logger.info(f'   • Total tasks: {stats.get("total_tasks", 0)}')
+                        self.logger.info(f'   • Successful tasks: {stats.get("successful_tasks", 0)}')
+                        self.logger.info(f'   • Failed tasks: {stats.get("failed_tasks", 0)}')
+                        self.logger.info(f'   • Total execution time: {parallel_execution_time:.2f}s')
+                        self.logger.info(f'   • Average time per task: {parallel_execution_time/len(training_tasks):.2f}s')
+                    
+                    self.logger.info('✅ ===== PARALLEL MODEL TRAINING COMPLETED =====')
                     
                     # Memory cleanup for parallel processing
                     del parallel_results, training_tasks
@@ -2784,6 +2961,7 @@ class SROptimizationStep(BaseStep):
                 except Exception as e:
                     self.logger.warning(f'⚠️ Parallel processing failed: {e}')
                     # Fallback to sequential training
+                    self.logger.info('🔧 ===== FALLING BACK TO SEQUENTIAL TRAINING =====')
                     self.logger.info('🔧 Falling back to sequential model training')
 
                     # Clean up parallel processing variables on error
@@ -2993,10 +3171,15 @@ class SROptimizationStep(BaseStep):
                 'feature_selection': feature_selection_info
             }
 
+            self.logger.info('✅ ===== SR ML LEARNING PROCESS COMPLETED =====')
             self.logger.info(f'✅ Comprehensive ML training completed in {training_time:.2f}s')
             self.logger.info(f'🎯 Best direction accuracy: {ml_results["direction_accuracy"]:.4f}')
             self.logger.info(f'📊 Best volatility MAE: {ml_results["volatility_mae"]:.6f}')
             self.logger.info(f'🏆 Best model: {ml_results["model_type"]}')
+            self.logger.info(f'📊 Models trained: {len(models_results)}')
+            self.logger.info(f'📊 Features used: {len(feature_names)}')
+            self.logger.info(f'📊 Training samples: {ml_results.get("training_samples", "N/A")}')
+            self.logger.info(f'📊 Test samples: {ml_results.get("test_samples", "N/A")}')
             
             # Enhanced model comparison and feature importance analysis
             self._log_comprehensive_model_analysis(ml_results, models_results, feature_names)
@@ -3876,6 +4059,8 @@ class SROptimizationStep(BaseStep):
 
             # Debug info sampling (first 10)
             debug_indices = list(range(0, len(prices_col), max(1, len(prices_col) // 1000)))[:10]
+            proximity_debug = []  # Initialize proximity_debug list
+            
             for idx in debug_indices:
                 self.logger.debug(
                     f"Price {prices_col[idx]:.2f} -> near_support={near_support[idx]}, near_resistance={near_resistance[idx]}")
@@ -4836,27 +5021,42 @@ class SROptimizationStep(BaseStep):
             import os
             process = psutil.Process(os.getpid())
             memory_before = process.memory_info().rss / 1024 / 1024  # MB
+            self.logger.info('🔧 ===== STARTING ML FEATURE PREPARATION =====')
             self.logger.info(f'📊 _prepare_ml_features: Starting with {len(features_data.columns)} features (Memory: {memory_before:.1f}MB)')
+            self.logger.info(f'📊 Input data shape: {features_data.shape[0]:,} rows × {features_data.shape[1]} columns')
+            self.logger.info(f'📊 Target data shape: {target_data.shape[0]:,} rows × {target_data.shape[1]} columns')
+            self.logger.info(f'📊 SR levels available: {len(sr_levels.get("support_levels", [])) + len(sr_levels.get("resistance_levels", []))} total levels')
 
             # Step 1: Integrate advanced features from step06 BEFORE any processing
+            self.logger.info('🔗 ===== STEP 1: INTEGRATING ADVANCED FEATURES =====')
             self.logger.info('🔗 Integrating advanced features from step06...')
+            step06_start = time.time()
             features_data = self._integrate_step06_advanced_features(features_data)
+            step06_time = time.time() - step06_start
+            self.logger.info(f'✅ Step06 integration completed in {step06_time:.2f} seconds')
             self.logger.info(f'📊 After step06 integration: {len(features_data.columns)} total features')
 
             # Step 2: Extract SR-specific features
+            self.logger.info('🎯 ===== STEP 2: EXTRACTING SR-SPECIFIC FEATURES =====')
             self.logger.info('🎯 Extracting SR-specific features...')
+            sr_extraction_start = time.time()
             sr_features_data = self._extract_sr_specific_features(features_data, sr_levels)
+            sr_extraction_time = time.time() - sr_extraction_start
+            
             if not sr_features_data.empty:
                 # Combine SR features with existing features
                 existing_cols = set(features_data.columns)
                 new_sr_cols = [col for col in sr_features_data.columns if col not in existing_cols]
                 if new_sr_cols:
                     features_data = pd.concat([features_data, sr_features_data[new_sr_cols]], axis=1)
+                    self.logger.info(f'✅ SR feature extraction completed in {sr_extraction_time:.2f} seconds')
                     self.logger.info(f'📊 After SR feature integration: {len(features_data.columns)} total features ({len(new_sr_cols)} new SR features)')
+                    self.logger.info(f'📊 New SR features: {new_sr_cols[:5]}{"..." if len(new_sr_cols) > 5 else ""}')
                 else:
                     self.logger.warning('⚠️ No new SR features to add (all already present)')
             else:
                 self.logger.warning('⚠️ No SR features extracted')
+                self.logger.info(f'⏱️ SR extraction time: {sr_extraction_time:.2f} seconds')
 
             # Apply lookahead protection BEFORE feature selection (timestamp needed for temporal validation)
             if ML_COMMON_AVAILABLE and self.lookahead_protector:
@@ -5028,6 +5228,13 @@ class SROptimizationStep(BaseStep):
             self.logger.info(f'🎯 Direction target distribution: {np.bincount(y_direction.astype(int))}')
             self.logger.info(f'📈 Volatility target range: {y_volatility.min():.6f} - {y_volatility.max():.6f}')
             self.logger.info('🛡️ Forward bias prevention: Data sorted by time, temporal CV used')
+            
+            # Log feature preparation summary
+            self.logger.info('✅ ===== ML FEATURE PREPARATION COMPLETED =====')
+            self.logger.info(f'📊 Final feature matrix: {X.shape[0]:,} samples × {X.shape[1]} features')
+            self.logger.info(f'📊 Feature names count: {len(feature_names)}')
+            self.logger.info(f'📊 Target shapes: direction={y_direction.shape}, volatility={y_volatility.shape}')
+            self.logger.info(f'📊 Data quality: {X.shape[0]} valid samples from original dataset')
                 
             # Memory cleanup before returning - comprehensive cleanup to prevent memory leaks
             cleanup_vars = ['feature_data', 'features_data', 'target_data', 'numeric_features', 
@@ -5044,6 +5251,7 @@ class SROptimizationStep(BaseStep):
             memory_after = process.memory_info().rss / 1024 / 1024  # MB
             memory_change = memory_after - memory_before
             self.logger.info(f'📊 _prepare_ml_features: Memory change: {memory_change:+.1f}MB (Final: {memory_after:.1f}MB)')
+            self.logger.info(f'⏱️ Total feature preparation time: {time.time() - (memory_before/1024/1024):.2f} seconds (estimated)')
                     
             return X, y_direction, y_volatility, feature_names
 

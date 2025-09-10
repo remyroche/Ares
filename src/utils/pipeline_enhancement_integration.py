@@ -7,7 +7,7 @@ from .logger import system_logger
 from src.utils.enhanced_step_wrapper import enhanced_pipeline_manager
 from src.utils.data_streaming_manager import data_streaming_manager
 from src.utils.cross_step_validator import cross_step_validator
-from src.utils.advanced_quality_metrics import advanced_quality_metrics
+from src.utils.data_quality.advanced_quality_metrics import advanced_quality_metrics
 from typing import Dict, List, Optional, Union, Any, Tuple
 
 from .logger import system_logger

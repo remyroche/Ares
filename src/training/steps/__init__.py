@@ -15,7 +15,7 @@ __author__ = "Step06 Validation Framework"
 
 # Import main validation framework components
 try:
-    from .step06_enhanced_validation_framework import (
+    from .step06_enhanced_validation_framework import (  # type: ignore[import-untyped]
         step06_function_validator,
         step06_function_tracker,
         step06_validation_context,

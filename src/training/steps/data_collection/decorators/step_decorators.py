@@ -146,13 +146,28 @@ def data_operation_protection(
             start_time = time.time()
             operation_name = f"{func.__name__}_{operation_type.value.lower()}"
             
+            # Setup logging
+            logger = logging.getLogger(f'secure_data_operation.{func.__name__}')
+            logger.info(f'🔒 Starting secure data operation: {operation_name}')
+            logger.info(f'📊 Operation type: {operation_type.value}')
+            logger.info(f'🔐 Security level: {security_level.value}')
+            logger.info(f'📋 Input validation: {validate_inputs}')
+            logger.info(f'📋 Output validation: {validate_outputs}')
+            logger.info(f'📋 Audit logging: {audit}')
+            logger.info(f'⏱️ Timeout: {timeout_seconds}s' if timeout_seconds else '⏱️ No timeout')
+            logger.info(f'🔄 Retry attempts: {retry_attempts}')
+            
             try:
                 # Input validation
                 if validate_inputs:
+                    logger.info('🔍 Validating operation inputs...')
                     await _validate_operation_inputs(func, args, kwargs, validation_kwargs)
+                    logger.info('✅ Input validation passed')
                 
                 # Execute operation with timeout if specified
+                logger.info('🚀 Executing operation...')
                 if timeout_seconds:
+                    logger.info(f'⏱️ Using timeout: {timeout_seconds}s')
                     result = await asyncio.wait_for(
                         func(*args, **kwargs),
                         timeout = timeout_seconds
@@ -160,14 +175,21 @@ def data_operation_protection(
                 else:
                     result = await func(*args, **kwargs)
                 
+                logger.info('✅ Operation execution completed')
+                logger.info(f'📊 Result type: {type(result).__name__}')
+                
                 # Output validation
                 if validate_outputs:
+                    logger.info('🔍 Validating operation outputs...')
                     await _validate_operation_outputs(result, validation_kwargs)
+                    logger.info('✅ Output validation passed')
                 
                 execution_time = time.time() - start_time
+                logger.info(f'⏱️ Total execution time: {execution_time:.2f}s')
                 
                 # Log successful operation
                 if audit:
+                    logger.info('📝 Logging operation to audit trail...')
                     operation_logger.log_operation(
                         context = context,
                         operation = operation_name,
@@ -175,14 +197,20 @@ def data_operation_protection(
                         success = True,
                         execution_time = execution_time
                     )
+                    logger.info('✅ Operation logged to audit trail')
                 
+                logger.info('✅ Secure data operation completed successfully')
                 return result
                 
             except Exception as e:
                 execution_time = time.time() - start_time
+                logger.error(f'❌ Secure data operation failed: {e}')
+                logger.error(f'📊 Error type: {type(e).__name__}')
+                logger.error(f'⏱️ Execution time before failure: {execution_time:.2f}s')
                 
                 # Log failed operation
                 if audit:
+                    logger.info('📝 Logging failed operation to audit trail...')
                     operation_logger.log_operation(
                         context = context,
                         operation = operation_name,
@@ -190,12 +218,16 @@ def data_operation_protection(
                         success = False,
                         execution_time = execution_time
                     )
+                    logger.info('✅ Failed operation logged to audit trail')
                 
                 # Retry logic
                 if retry_attempts > 0:
+                    logger.info(f'🔄 Attempting retry with {retry_attempts} attempts remaining...')
                     return await _retry_operation(
                         func, args, kwargs, retry_attempts, context, operation_name
                     )
+                else:
+                    logger.error('❌ No retry attempts remaining, raising exception')
                 
                 raise
         

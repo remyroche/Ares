@@ -707,11 +707,20 @@ class SRBacktestingEngine:
         """
         Build a Ridge Regression model for predicting quality scores.
         
+        MODEL: Ridge Regression with Cross-Validation (RidgeCV)
+        
         We use Ridge Regression because:
         1. It handles multicollinearity well (SR features are often correlated)
         2. It provides stable, interpretable coefficients
         3. It prevents overfitting with L2 regularization
         4. It's computationally efficient for real-time prediction
+        5. Cross-validation automatically selects optimal regularization parameter
+        
+        This is NOT a simple linear regression - it's Ridge Regression with:
+        - Automatic alpha selection via RidgeCV
+        - 5-fold cross-validation for robust performance estimation
+        - Feature standardization for stable coefficients
+        - L2 regularization to prevent overfitting
         """
         if not results:
             return {}

@@ -237,16 +237,30 @@ class PredictiveSREngine:
     
     def _extract_market_context_features(self, result: BacktestResult, 
                                        historical_data: pd.DataFrame) -> Dict[str, float]:
-        """Extract market context features."""
+        """Extract market context features using existing step06 features."""
         try:
-            # Calculate market regime features
+            # Use existing step06 features if available
+            if 'step06_features' in historical_data.columns:
+                # Extract step06 features from the data
+                step06_features = historical_data['step06_features'].iloc[-1] if len(historical_data) > 0 else {}
+                
+                if isinstance(step06_features, dict):
+                    return {
+                        'market_regime': step06_features.get('Market_Regime', 0.0),
+                        'volatility_regime': step06_features.get('ATR_14', 0.0),
+                        'trend_strength': step06_features.get('SMA_5', 0.0) / step06_features.get('SMA_100', 1.0) - 1.0 if step06_features.get('SMA_100', 0) > 0 else 0.0,
+                        'volume_regime': step06_features.get('Volume_Ratio', 0.0),
+                        'time_of_day_effect': step06_features.get('Time_of_Day', 0.0)
+                    }
+            
+            # Fallback: Calculate basic features if step06 features not available
             if len(historical_data) > 0:
-                # Volatility regime
+                # Volatility regime (using ATR-like calculation)
                 returns = historical_data['close'].pct_change().dropna()
                 volatility = returns.rolling(20).std()
                 volatility_regime = np.mean(volatility) if len(volatility) > 0 else 0.0
                 
-                # Trend strength
+                # Trend strength (using SMA-like calculation)
                 sma_short = historical_data['close'].rolling(10).mean()
                 sma_long = historical_data['close'].rolling(50).mean()
                 trend_strength = abs(np.mean((sma_short - sma_long) / sma_long)) if len(sma_short) > 0 else 0.0
@@ -259,17 +273,19 @@ class PredictiveSREngine:
                 momentum = (historical_data['close'].iloc[-1] / historical_data['close'].iloc[0] - 1) if len(historical_data) > 0 else 0.0
                 
                 return {
+                    'market_regime': 0.0,  # Default neutral
                     'volatility_regime': volatility_regime,
                     'trend_strength': trend_strength,
                     'volume_regime': volume_regime,
-                    'market_momentum': momentum
+                    'time_of_day_effect': 0.0  # Default neutral
                 }
             else:
                 return {
+                    'market_regime': 0.0,
                     'volatility_regime': 0.0,
                     'trend_strength': 0.0,
                     'volume_regime': 0.0,
-                    'market_momentum': 0.0
+                    'time_of_day_effect': 0.0
                 }
                 
         except Exception as e:

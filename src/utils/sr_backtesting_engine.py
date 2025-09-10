@@ -141,32 +141,42 @@ class SRBacktestingEngine:
         return results
     
     def learn_quality_rules(self, results: List[BacktestResult]) -> Dict[str, Any]:
-        """Learn quality rules from backtesting results."""
+        """Learn quality rules from backtesting results using continuous strength scoring."""
         try:
             if not results:
                 return {}
             
-            # Separate high-quality and low-quality levels
+            # Use continuous quality scoring instead of binary categories
             quality_scores = [r.quality_score for r in results]
-            quality_threshold = np.percentile(quality_scores, 75)  # Top 25% as high-quality
             
-            high_quality = [r for r in results if r.quality_score >= quality_threshold]
-            low_quality = [r for r in results if r.quality_score < quality_threshold]
+            # Calculate quality distribution statistics
+            quality_stats = {
+                'mean': np.mean(quality_scores),
+                'std': np.std(quality_scores),
+                'min': np.min(quality_scores),
+                'max': np.max(quality_scores),
+                'percentiles': {
+                    '25th': np.percentile(quality_scores, 25),
+                    '50th': np.percentile(quality_scores, 50),
+                    '75th': np.percentile(quality_scores, 75),
+                    '90th': np.percentile(quality_scores, 90)
+                }
+            }
             
-            self.logger.info(f"Learning rules from {len(high_quality)} high-quality and {len(low_quality)} low-quality levels")
+            self.logger.info(f"Learning rules from {len(results)} levels with quality scores: mean={quality_stats['mean']:.3f}, std={quality_stats['std']:.3f}")
             
-            # Analyze characteristics of high-quality levels
+            # Analyze quality-based feature relationships
             rules = {
-                'quality_threshold': quality_threshold,
-                'high_quality_characteristics': self._analyze_level_characteristics(high_quality),
-                'low_quality_characteristics': self._analyze_level_characteristics(low_quality),
-                'discriminative_features': self._find_discriminative_features(high_quality, low_quality),
+                'quality_distribution': quality_stats,
+                'feature_quality_correlations': self._calculate_feature_quality_correlations(results),
+                'quality_predictors': self._identify_quality_predictors(results),
                 'learned_weights': self._learn_feature_weights(results),
-                'performance_thresholds': self._calculate_performance_thresholds(high_quality)
+                'quality_thresholds': self._calculate_quality_thresholds(quality_stats),
+                'strength_scoring_model': self._build_strength_scoring_model(results)
             }
             
             self.learned_rules = rules
-            self.logger.info(f"Learned quality rules with {len(rules['discriminative_features'])} key features")
+            self.logger.info(f"Learned quality rules with {len(rules['quality_predictors'])} key predictors")
             
             return rules
             
@@ -411,38 +421,96 @@ class SRBacktestingEngine:
             }
         }
     
-    def _find_discriminative_features(self, high_quality: List[BacktestResult], 
-                                    low_quality: List[BacktestResult]) -> Dict[str, Any]:
-        """Find features that best discriminate between high and low quality levels."""
-        if not high_quality or not low_quality:
+    def _calculate_feature_quality_correlations(self, results: List[BacktestResult]) -> Dict[str, float]:
+        """Calculate correlations between features and quality scores."""
+        if not results:
             return {}
         
-        # Calculate feature differences
-        features = ['success_rate', 'avg_bounce_strength', 'total_volume_at_level', 'total_touches']
-        discriminative_features = {}
+        features = ['success_rate', 'avg_bounce_strength', 'total_volume_at_level', 'total_touches', 'time_persistence']
+        correlations = {}
+        
+        quality_scores = [r.quality_score for r in results]
         
         for feature in features:
-            high_values = [getattr(r, feature) for r in high_quality]
-            low_values = [getattr(r, feature) for r in low_quality]
-            
-            high_mean = np.mean(high_values)
-            low_mean = np.mean(low_values)
-            
-            # Calculate discriminative power (difference normalized by variance)
-            high_var = np.var(high_values)
-            low_var = np.var(low_values)
-            combined_var = (high_var + low_var) / 2
-            
-            if combined_var > 0:
-                discriminative_power = abs(high_mean - low_mean) / np.sqrt(combined_var)
-                discriminative_features[feature] = {
-                    'high_mean': high_mean,
-                    'low_mean': low_mean,
-                    'discriminative_power': discriminative_power,
-                    'threshold': (high_mean + low_mean) / 2
-                }
+            feature_values = [getattr(r, feature) for r in results]
+            correlation = np.corrcoef(feature_values, quality_scores)[0, 1]
+            correlations[feature] = correlation if not np.isnan(correlation) else 0.0
         
-        return discriminative_features
+        return correlations
+    
+    def _identify_quality_predictors(self, results: List[BacktestResult]) -> Dict[str, Any]:
+        """Identify the best predictors of quality using continuous scoring."""
+        if not results:
+            return {}
+        
+        correlations = self._calculate_feature_quality_correlations(results)
+        
+        # Sort features by correlation strength
+        sorted_features = sorted(correlations.items(), key=lambda x: abs(x[1]), reverse=True)
+        
+        predictors = {}
+        for feature, correlation in sorted_features:
+            predictors[feature] = {
+                'correlation': correlation,
+                'strength': abs(correlation),
+                'direction': 'positive' if correlation > 0 else 'negative'
+            }
+        
+        return predictors
+    
+    def _calculate_quality_thresholds(self, quality_stats: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate quality thresholds for different use cases."""
+        return {
+            'excellent': quality_stats['percentiles']['90th'],
+            'good': quality_stats['percentiles']['75th'],
+            'average': quality_stats['percentiles']['50th'],
+            'poor': quality_stats['percentiles']['25th'],
+            'minimum_acceptable': quality_stats['mean'] - quality_stats['std']
+        }
+    
+    def _build_strength_scoring_model(self, results: List[BacktestResult]) -> Dict[str, Any]:
+        """Build a model for predicting quality scores."""
+        if not results:
+            return {}
+        
+        # Extract features and target
+        features = ['success_rate', 'avg_bounce_strength', 'total_volume_at_level', 'total_touches', 'time_persistence']
+        X = np.array([[getattr(r, feature) for feature in features] for r in results])
+        y = np.array([r.quality_score for r in results])
+        
+        # Simple linear regression model (can be enhanced with ML)
+        try:
+            # Calculate feature weights using correlation
+            correlations = self._calculate_feature_quality_correlations(results)
+            weights = np.array([correlations.get(feature, 0.0) for feature in features])
+            
+            # Normalize weights
+            if np.sum(np.abs(weights)) > 0:
+                weights = weights / np.sum(np.abs(weights))
+            
+            model = {
+                'feature_names': features,
+                'weights': weights.tolist(),
+                'intercept': np.mean(y) - np.dot(weights, np.mean(X, axis=0)),
+                'r_squared': self._calculate_r_squared(X, y, weights),
+                'feature_importance': dict(zip(features, np.abs(weights)))
+            }
+            
+            return model
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to build strength scoring model: {e}")
+            return {}
+    
+    def _calculate_r_squared(self, X: np.ndarray, y: np.ndarray, weights: np.ndarray) -> float:
+        """Calculate R-squared for the model."""
+        try:
+            y_pred = np.dot(X, weights) + np.mean(y) - np.dot(weights, np.mean(X, axis=0))
+            ss_res = np.sum((y - y_pred) ** 2)
+            ss_tot = np.sum((y - np.mean(y)) ** 2)
+            return 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+        except Exception:
+            return 0.0
     
     def _learn_feature_weights(self, results: List[BacktestResult]) -> Dict[str, float]:
         """Learn optimal feature weights from backtesting results."""
@@ -480,26 +548,59 @@ class SRBacktestingEngine:
         }
     
     def _apply_learned_rules(self, features: Dict[str, float]) -> float:
-        """Apply learned rules to predict quality."""
+        """Apply learned rules to predict quality using continuous scoring model."""
         if not self.learned_rules:
             return features.get('strength', 0.5)
         
-        # Simple rule application - in practice, this would be more sophisticated
-        quality_score = 0.0
+        # Use the strength scoring model if available
+        model = self.learned_rules.get('strength_scoring_model', {})
+        if model and 'weights' in model:
+            try:
+                # Extract features in the same order as the model
+                feature_values = []
+                for feature_name in model['feature_names']:
+                    feature_values.append(features.get(feature_name, 0.0))
+                
+                # Apply the model
+                weights = np.array(model['weights'])
+                intercept = model.get('intercept', 0.0)
+                
+                quality_score = np.dot(feature_values, weights) + intercept
+                
+                # Ensure score is within valid range
+                return min(max(quality_score, 0.0), 1.0)
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to apply strength scoring model: {e}")
         
-        # Apply discriminative features
-        for feature, info in self.learned_rules.get('discriminative_features', {}).items():
-            if feature in features:
-                if features[feature] >= info['threshold']:
-                    quality_score += info['discriminative_power'] * 0.2
+        # Fallback to correlation-based prediction
+        predictors = self.learned_rules.get('quality_predictors', {})
+        if predictors:
+            quality_score = 0.0
+            total_weight = 0.0
+            
+            for feature, info in predictors.items():
+                if feature in features:
+                    weight = info['strength']
+                    correlation = info['correlation']
+                    
+                    # Normalize feature value (assuming 0-1 range)
+                    normalized_value = min(max(features[feature], 0.0), 1.0)
+                    
+                    # Apply correlation direction
+                    if correlation > 0:
+                        quality_score += normalized_value * weight
+                    else:
+                        quality_score += (1.0 - normalized_value) * weight
+                    
+                    total_weight += weight
+            
+            if total_weight > 0:
+                quality_score = quality_score / total_weight
+                return min(max(quality_score, 0.0), 1.0)
         
-        # Apply performance thresholds
-        thresholds = self.learned_rules.get('performance_thresholds', {})
-        for threshold_name, threshold_value in thresholds.items():
-            # This would check if the level meets the threshold
-            pass
-        
-        return min(max(quality_score, 0.0), 1.0)
+        # Final fallback
+        return features.get('strength', 0.5)
     
     def get_quality_rules_summary(self) -> Dict[str, Any]:
         """Get a summary of learned quality rules."""

@@ -783,8 +783,17 @@ class FeatureSelectionFramework:
 
             if method == 'mutual_info':
                 if SKLEARN_AVAILABLE:
-                    mi_scores = mutual_info_classif(X, y, random_state=self.random_state)
-                    scores = dict(zip(feature_names, mi_scores))
+                    # Choose appropriate mutual information function based on target type
+                    try:
+                        if len(np.unique(y)) <= 10 and not np.issubdtype(np.asarray(y).dtype, np.floating):
+                            mi_scores = mutual_info_classif(X, y, random_state=self.random_state)
+                        else:
+                            mi_scores = mutual_info_regression(X, y, random_state=self.random_state)
+                        scores = dict(zip(feature_names, mi_scores))
+                    except Exception:
+                        # Fallback to correlation if MI fails
+                        for idx, feature_name in enumerate(feature_names):
+                            scores[feature_name] = abs(np.corrcoef(X[:, idx], y)[0, 1])
                 else:
                     # Fallback: use correlation for regression-like relevance
                     for idx, feature_name in enumerate(feature_names):

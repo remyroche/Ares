@@ -848,8 +848,9 @@ class ParallelProcessingCoordinator:
                 'search_strategy': search_strategy
             }
 
-            self.logger.info(f"✅ Parallel hyperparameter search completed: "
-                           f"Best score: {results['best_score']:.4f}")
+            best = results.get('best_score')
+            best_str = f"{best:.4f}" if isinstance(best, (int, float, np.floating)) else str(best)
+            self.logger.info(f"✅ Parallel hyperparameter search completed: Best score: {best_str}")
             return results
 
         except Exception as e:

@@ -7,6 +7,7 @@ ensuring proper initialization, configuration, and lifecycle management of utili
 
 import logging
 from typing import Any, Dict, List, Optional, Type, TypeVar, Callable, Union
+from functools import wraps
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 import asyncio
@@ -606,6 +607,7 @@ async def get_m1_cpu_svc() -> M1CPUService:
 def inject_utilities(*service_names: str):
     """Decorator to inject utility services into functions."""
     def decorator(func):
+        @wraps(func)
         async def wrapper(*args, **kwargs):
             container = await get_utility_container()
             injected_services = {}

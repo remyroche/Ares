@@ -666,9 +666,24 @@ class SRBacktestingEngine:
             'trend_strength',         # From step06: Trend strength
             'volume_regime',          # From step06: Volume regime
             'time_of_day_effect',     # From step06: Time of day effects
-            'vwap_momentum',          # From step06: VWAP momentum
-            'price_momentum',         # From step06: Price momentum
-            'momentum_volume_interaction'  # From step06: Momentum-volume interaction
+            # Actual step06 momentum features
+            'rsi_momentum',           # From step06: RSI momentum
+            'macd_momentum',          # From step06: MACD momentum
+            'roc_momentum',           # From step06: Rate of Change momentum
+            'stochastic_momentum',    # From step06: Stochastic momentum
+            'cci_momentum',           # From step06: Commodity Channel Index momentum
+            'momentum_acceleration',  # From step06: Momentum acceleration (ROC difference)
+            'momentum_volume_interaction',  # From step06: Momentum-volume interaction
+            # Additional step06 features
+            'bb_squeeze',             # From step06: Bollinger Band squeeze
+            'bb_position',            # From step06: Bollinger Band position
+            'obv_normalized',         # From step06: Normalized OBV
+            'mfi_momentum',           # From step06: Money Flow Index momentum
+            'williams_momentum',      # From step06: Williams %R momentum
+            'adx_trend',              # From step06: Average Directional Index
+            'cross_timeframe_momentum',  # From step06: Cross-timeframe momentum
+            'macd_signal_strength',   # From step06: MACD signal strength
+            'macd_histogram'          # From step06: MACD histogram
         ]
         
         all_features = primary_features + penetration_pattern_features + step06_features
@@ -929,7 +944,7 @@ class SRBacktestingEngine:
                     penetration_features.append((feature, importance))
                 elif any(x in feature.lower() for x in ['pattern', 'order_flow', 'absorption', 'structure']):
                     pattern_features.append((feature, importance))
-                elif any(x in feature.lower() for x in ['market', 'volatility', 'trend', 'vwap', 'momentum']):
+                elif any(x in feature.lower() for x in ['market', 'volatility', 'trend', 'rsi', 'macd', 'roc', 'stochastic', 'cci', 'momentum', 'bb', 'obv', 'mfi', 'williams', 'adx', 'cross_timeframe']):
                     step06_features.append((feature, importance))
             
             self.logger.info("📈 FEATURE CATEGORY ANALYSIS:")

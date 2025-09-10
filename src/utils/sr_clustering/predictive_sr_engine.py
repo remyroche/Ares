@@ -245,22 +245,41 @@ class PredictiveSREngine:
                 step06_features = historical_data['step06_features'].iloc[-1] if len(historical_data) > 0 else {}
                 
                 if isinstance(step06_features, dict):
-                    # Calculate VWAP momentum if available
+                    # Calculate VWAP momentum if available (using actual step06 features)
                     vwap_momentum = 0.0
                     if 'VWAP' in step06_features and 'close' in historical_data.columns:
                         current_price = historical_data['close'].iloc[-1] if len(historical_data) > 0 else 0.0
                         vwap_value = step06_features.get('VWAP', current_price)
                         vwap_momentum = (current_price - vwap_value) / vwap_value if vwap_value > 0 else 0.0
                     
+                    # Use actual step06 features
                     return {
                         'market_regime': step06_features.get('Market_Regime', 0.0),
                         'volatility_regime': step06_features.get('ATR_14', 0.0),
                         'trend_strength': step06_features.get('SMA_5', 0.0) / step06_features.get('SMA_100', 1.0) - 1.0 if step06_features.get('SMA_100', 0) > 0 else 0.0,
                         'volume_regime': step06_features.get('Volume_Ratio', 0.0),
                         'time_of_day_effect': step06_features.get('Time_of_Day', 0.0),
-                        'vwap_momentum': vwap_momentum,
-                        'price_momentum': step06_features.get('Price_Momentum', 0.0),
-                        'momentum_volume_interaction': step06_features.get('Price_Momentum', 0.0) * step06_features.get('Volume_Ratio', 0.0)
+                        # Actual step06 momentum features
+                        'rsi_momentum': step06_features.get('RSI_7', 0.0),  # RSI momentum from step06
+                        'macd_momentum': step06_features.get('MACD_12_26', 0.0),  # MACD momentum from step06
+                        'roc_momentum': step06_features.get('ROC_14', 0.0),  # Rate of Change momentum from step06
+                        'stochastic_momentum': step06_features.get('Stochastic_14', 0.0),  # Stochastic momentum from step06
+                        'cci_momentum': step06_features.get('CCI_20', 0.0),  # Commodity Channel Index momentum from step06
+                        # Momentum acceleration (using ROC of ROC)
+                        'momentum_acceleration': step06_features.get('ROC_7', 0.0) - step06_features.get('ROC_14', 0.0),  # Acceleration as ROC difference
+                        # Actual momentum-volume interaction from step06
+                        'momentum_volume_interaction': step06_features.get('momentum_volume_interaction', 0.0),  # From step06 pattern interactions
+                        # Additional step06 features
+                        'bb_squeeze': step06_features.get('BB_Squeeze_20', 0.0),  # Bollinger Band squeeze
+                        'bb_position': step06_features.get('BB_Position_20', 0.0),  # Bollinger Band position
+                        'obv_normalized': step06_features.get('OBV_Normalized', 0.0),  # Normalized OBV
+                        'mfi_momentum': step06_features.get('MFI_14', 0.0),  # Money Flow Index momentum
+                        'williams_momentum': step06_features.get('Williams_R_14', 0.0),  # Williams %R momentum
+                        'adx_trend': step06_features.get('ADX_14', 0.0),  # Average Directional Index
+                        # Cross-timeframe momentum
+                        'cross_timeframe_momentum': step06_features.get('RSI_7', 0.0) - step06_features.get('RSI_21', 0.0),  # Short vs medium RSI
+                        'macd_signal_strength': step06_features.get('MACD_Signal_12_26', 0.0),  # MACD signal strength
+                        'macd_histogram': step06_features.get('MACD_Hist_12_26', 0.0),  # MACD histogram
                     }
             
             # Fallback: Calculate basic features if step06 features not available
@@ -297,9 +316,23 @@ class PredictiveSREngine:
                     'trend_strength': trend_strength,
                     'volume_regime': volume_regime,
                     'time_of_day_effect': 0.0,  # Default neutral
-                    'vwap_momentum': vwap_momentum,
-                    'price_momentum': momentum,
-                    'momentum_volume_interaction': momentum * volume_regime
+                    # Basic momentum features (fallback)
+                    'rsi_momentum': 0.0,
+                    'macd_momentum': 0.0,
+                    'roc_momentum': 0.0,
+                    'stochastic_momentum': 0.0,
+                    'cci_momentum': 0.0,
+                    'momentum_acceleration': 0.0,
+                    'momentum_volume_interaction': momentum * volume_regime,
+                    'bb_squeeze': 0.0,
+                    'bb_position': 0.0,
+                    'obv_normalized': 0.0,
+                    'mfi_momentum': 0.0,
+                    'williams_momentum': 0.0,
+                    'adx_trend': 0.0,
+                    'cross_timeframe_momentum': 0.0,
+                    'macd_signal_strength': 0.0,
+                    'macd_histogram': 0.0
                 }
             else:
                 return {
@@ -308,9 +341,22 @@ class PredictiveSREngine:
                     'trend_strength': 0.0,
                     'volume_regime': 0.0,
                     'time_of_day_effect': 0.0,
-                    'vwap_momentum': 0.0,
-                    'price_momentum': 0.0,
-                    'momentum_volume_interaction': 0.0
+                    'rsi_momentum': 0.0,
+                    'macd_momentum': 0.0,
+                    'roc_momentum': 0.0,
+                    'stochastic_momentum': 0.0,
+                    'cci_momentum': 0.0,
+                    'momentum_acceleration': 0.0,
+                    'momentum_volume_interaction': 0.0,
+                    'bb_squeeze': 0.0,
+                    'bb_position': 0.0,
+                    'obv_normalized': 0.0,
+                    'mfi_momentum': 0.0,
+                    'williams_momentum': 0.0,
+                    'adx_trend': 0.0,
+                    'cross_timeframe_momentum': 0.0,
+                    'macd_signal_strength': 0.0,
+                    'macd_histogram': 0.0
                 }
                 
         except Exception as e:

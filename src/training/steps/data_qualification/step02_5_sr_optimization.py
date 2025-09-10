@@ -2287,11 +2287,7 @@ class SROptimizationStep(BaseStep):
                     else:
                         self.logger.info(f'      - Last Touch: {last_touch}')
                     
-                    if age_bars != "N/A":
-                        age_readable = self._format_age_human_readable(age_bars, first_touch, last_touch)
-                        self.logger.info(f'      - Age: {age_readable}')
-                    else:
-                        self.logger.info(f'      - Age: {age_bars}')
+                    self.logger.info(f'      - Age (bars): {age_bars}')
                     
                     self.logger.info(f'      - Validation Status: {level_details.get("validation_status", "N/A")}')
                     self.logger.info(f'      - Cluster ID: {level_details.get("cluster_id", "N/A")}')
@@ -2422,49 +2418,6 @@ class SROptimizationStep(BaseStep):
                 
         except Exception as e:
             return f"Invalid timestamp: {str(timestamp)}"
-
-    def _format_age_human_readable(self, age_bars: Any, first_touch: Any, last_touch: Any) -> str:
-        """Format age in human-readable format with context."""
-        try:
-            if age_bars is None or age_bars == "N/A":
-                return "N/A"
-            
-            age_bars = int(age_bars)
-            
-            # Calculate time span if we have timestamps
-            time_span = ""
-            if first_touch != "N/A" and last_touch != "N/A":
-                try:
-                    if isinstance(first_touch, str):
-                        first_dt = pd.to_datetime(first_touch)
-                    else:
-                        first_dt = first_touch
-                    
-                    if isinstance(last_touch, str):
-                        last_dt = pd.to_datetime(last_touch)
-                    else:
-                        last_dt = last_touch
-                    
-                    span = last_dt - first_dt
-                    if span.days > 0:
-                        time_span = f" (span: {span.days} days)"
-                    elif span.seconds > 3600:
-                        time_span = f" (span: {span.seconds // 3600} hours)"
-                    elif span.seconds > 60:
-                        time_span = f" (span: {span.seconds // 60} minutes)"
-                except:
-                    pass
-            
-            # Format age based on magnitude
-            if age_bars > 10000:
-                return f"{age_bars:,} bars ({age_bars // 1000}k bars){time_span}"
-            elif age_bars > 1000:
-                return f"{age_bars:,} bars ({age_bars / 1000:.1f}k bars){time_span}"
-            else:
-                return f"{age_bars} bars{time_span}"
-                
-        except Exception as e:
-            return f"{age_bars} bars (format error)"
 
     def _log_clustering_configuration(self, clustering_config: Any, config_type: str) -> None:
         """Log clustering configuration parameters."""

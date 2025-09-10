@@ -18,6 +18,8 @@ if str(parent_dir) not in sys.path:
 
 from pipelines.base_pipeline import BasePipeline, PipelineConfig
 from analyzers.import_verifier_analyzer import ImportVerifierAnalyzer
+from visualizers.dependency_graph import DependencyGraphVisualizer
+from visualizers.interaction_network import InteractionNetworkVisualizer
 
 
 class ImportVerifierPipeline(BasePipeline):
@@ -33,11 +35,16 @@ class ImportVerifierPipeline(BasePipeline):
         # Initialize the analyzer
         self.analyzer = ImportVerifierAnalyzer(self.config.__dict__)
         
+        # Initialize visualizers for enhanced analysis
+        self.dependency_visualizer = DependencyGraphVisualizer(str(self.reports_dir / "dependency_graphs"))
+        self.interaction_visualizer = InteractionNetworkVisualizer(str(self.reports_dir / "interaction_networks"))
+        
         self.logger.info(f"Initialized ImportVerifierPipeline for project: {self.project_root}")
     
     def run(self, target_directory: Optional[str] = None, 
             save_report: bool = True, 
-            print_report: bool = True) -> Dict[str, Any]:
+            print_report: bool = True,
+            create_visualizations: bool = False) -> Dict[str, Any]:
         """
         Run the import verification analysis.
         
@@ -45,6 +52,7 @@ class ImportVerifierPipeline(BasePipeline):
             target_directory: Directory to analyze (defaults to project root)
             save_report: Whether to save the report to file
             print_report: Whether to print the report to console
+            create_visualizations: Whether to create enhanced visualizations
             
         Returns:
             Dict containing analysis results
@@ -66,6 +74,13 @@ class ImportVerifierPipeline(BasePipeline):
                 "analysis_directory": analysis_dir,
                 "analyzer_used": "ImportVerifierAnalyzer"
             }
+            
+            # Create enhanced visualizations if requested
+            visualizations = {}
+            if create_visualizations:
+                self.logger.info("Creating enhanced visualizations...")
+                visualizations = self._create_enhanced_visualizations(results)
+                results["visualizations"] = visualizations
             
             # Print report if requested
             if print_report:
@@ -247,6 +262,93 @@ class ImportVerifierPipeline(BasePipeline):
         ])
         
         return "\n".join(report_lines)
+    
+    def _create_enhanced_visualizations(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create enhanced visualizations using import verification data.
+        
+        Args:
+            results: Results from import verification analysis
+            
+        Returns:
+            Dictionary of created visualizations
+        """
+        visualizations = {}
+        
+        try:
+            # Extract import relationships for dependency graph
+            import_status = results.get("import_status", {})
+            dependencies = {}
+            
+            # Build dependency relationships from import data
+            for file_path, status in import_status.items():
+                imported_by = status.get("imported_by", [])
+                if imported_by:
+                    dependencies[file_path] = imported_by
+            
+            # Create enhanced dependency graph
+            if dependencies:
+                self.logger.info("Creating enhanced dependency graph...")
+                try:
+                    fig, metadata = self.dependency_visualizer.create_enhanced_dependency_graph_with_imports(
+                        dependencies, results, "Enhanced Import Dependency Graph"
+                    )
+                    if fig:
+                        saved_files = self.dependency_visualizer.save_figure(fig, "enhanced_dependency_graph")
+                        visualizations["enhanced_dependency_graph"] = {
+                            "files": saved_files,
+                            "metadata": metadata
+                        }
+                except Exception as e:
+                    self.logger.warning(f"Could not create enhanced dependency graph: {e}")
+            
+            # Create enhanced interaction network
+            self.logger.info("Creating enhanced interaction network...")
+            try:
+                # Use import relationships as interactions
+                interactions = {}
+                for file_path, status in import_status.items():
+                    imported_by = status.get("imported_by", [])
+                    if imported_by:
+                        interactions[file_path] = imported_by
+                
+                if interactions:
+                    fig, metadata = self.interaction_visualizer.create_enhanced_interaction_network_with_imports(
+                        interactions, results, "Enhanced Import Interaction Network"
+                    )
+                    if fig:
+                        saved_files = self.interaction_visualizer.save_figure(fig, "enhanced_interaction_network")
+                        visualizations["enhanced_interaction_network"] = {
+                            "files": saved_files,
+                            "metadata": metadata
+                        }
+            except Exception as e:
+                self.logger.warning(f"Could not create enhanced interaction network: {e}")
+            
+            # Create circular dependency visualization
+            advanced_analysis = results.get("advanced_analysis", {})
+            circular_imports = advanced_analysis.get("circular_imports", [])
+            
+            if circular_imports:
+                self.logger.info("Creating circular dependency visualization...")
+                try:
+                    fig = self.dependency_visualizer.create_circular_dependency_visualization(
+                        circular_imports, "Import Circular Dependencies"
+                    )
+                    if fig:
+                        saved_files = self.dependency_visualizer.save_figure(fig, "circular_dependencies")
+                        visualizations["circular_dependencies"] = {
+                            "files": saved_files,
+                            "type": "circular_dependency_analysis"
+                        }
+                except Exception as e:
+                    self.logger.warning(f"Could not create circular dependency visualization: {e}")
+            
+        except Exception as e:
+            self.logger.error(f"Error creating enhanced visualizations: {e}")
+            visualizations["error"] = str(e)
+        
+        return visualizations
 
 
 def main():
@@ -258,6 +360,7 @@ def main():
     parser.add_argument("--target-dir", type=str, help="Target directory to analyze")
     parser.add_argument("--no-print", action="store_true", help="Don't print report to console")
     parser.add_argument("--no-save", action="store_true", help="Don't save report to file")
+    parser.add_argument("--create-visualizations", action="store_true", help="Create enhanced visualizations")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     
     args = parser.parse_args()
@@ -275,7 +378,8 @@ def main():
     results = pipeline.run(
         target_directory=args.target_dir,
         save_report=not args.no_save,
-        print_report=not args.no_print
+        print_report=not args.no_print,
+        create_visualizations=args.create_visualizations
     )
     
     # Print summary if not printing full report

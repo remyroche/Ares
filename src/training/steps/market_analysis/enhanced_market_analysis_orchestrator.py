@@ -39,10 +39,10 @@ from .step05_labeling import LabelingStep
 try:
     from .step06_feature_engineering import FeatureEngineeringStep
 except ImportError:
-    from src.utils.step06_utilities import EnhancedFeatureEngineeringStep as FeatureEngineeringStep
+    from src.utils.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as FeatureEngineeringStep
 
 try:
-    from .step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
+    from src.utils.feature_engineering.enhanced_matrix_operations import EnhancedMatrixOperations
 except ImportError:
     from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
     class EnhancedMatrixOperationsStep:
@@ -50,7 +50,7 @@ except ImportError:
             self.matrix_ops = get_enhanced_matrix_operations()
 
 try:
-    from .step08_advanced_feature_selection import AdvancedFeatureSelectionStep
+    from src.utils.feature_selection.step08_advanced_feature_selection_wrapper import AdvancedFeatureSelectionWrapper as AdvancedFeatureSelectionStep
 except ImportError:
     from src.utils.ml_common.feature_selection import UnifiedFeatureSelectionManager
     class AdvancedFeatureSelectionStep:

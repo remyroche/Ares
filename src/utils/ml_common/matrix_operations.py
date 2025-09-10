@@ -25,7 +25,7 @@ from warnings import warn
 # NOTE: The original file lives at ``src/utils/enhanced_matrix_operations.py``.
 
 try:
-    from ..enhanced_matrix_operations import *  # type: ignore  # noqa: F401,F403
+    from ..feature_engineering.enhanced_matrix_operations import *  # type: ignore  # noqa: F401,F403
 except Exception as exc:  # pragma: no cover – must never fail silently
     raise ImportError(
         "Unable to import 'enhanced_matrix_operations' – ensure utilities package is intact"

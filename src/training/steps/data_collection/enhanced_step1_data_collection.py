@@ -48,7 +48,8 @@ class EnhancedStep1DataCollection:
         self.config = config or Step1Config()
         self.logger = system_logger.getChild('EnhancedStep1')
         self.memory_monitor = MemoryMonitor(MemoryConfig(max_memory_mb = self.config.max_memory_mb))
-        self.quality_validator = EnhancedDataQualityValidator(QualityThresholds(max_nan_ratio = self.config.max_nan_ratio, max_infinite_count = self.config.max_infinite_count, min_unique_values = self.config.min_unique_values, price_tolerance = self.config.price_tolerance, volume_tolerance = self.config.volume_tolerance))
+        from src.utils.feature_output_validator import FeatureOutputValidator
+        self.quality_validator = FeatureOutputValidator()
         config_issues = self.config.validate()
         if config_issues:
             raise ValueError(f'Configuration validation failed: {config_issues}')

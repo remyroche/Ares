@@ -88,8 +88,8 @@ class BaseValidator:
         self.step_name = step_name
         self.config = config
         try:
-            from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator  # type: ignore
-            self._dq_validator = EnhancedDataQualityValidator()
+            from src.utils.feature_output_validator import FeatureOutputValidator  # type: ignore
+            self._dq_validator = FeatureOutputValidator()
         except Exception:
             self._dq_validator = None
 

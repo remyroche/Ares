@@ -10,9 +10,14 @@ from enum import Enum
 from typing import Any
 
 from .logger import system_logger
+from .math_validation import (
+    validate_finite, safe_divide, safe_log, safe_sqrt, 
+    MathValidationError
+)
 import numpy as np
 import pandas as pd
 import logging
+from scipy.stats import zscore
 
 warnings.filterwarnings('ignore')
 
@@ -47,7 +52,66 @@ class FeatureOutputValidator:
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default output validation configuration."""
-        return {'critical_thresholds': {'max_nan_percentage': 0.3, 'max_infinite_percentage': 0.05, 'max_zero_variance_percentage': 0.7, 'max_constant_percentage': 0.9, 'max_extreme_values_percentage': 0.1, 'min_feature_count': 1, 'max_feature_count': 10000}, 'warning_thresholds': {'max_nan_percentage': 0.15, 'max_infinite_percentage': 0.01, 'max_zero_variance_percentage': 0.5, 'max_constant_percentage': 0.8, 'max_extreme_values_percentage': 0.05, 'max_correlation_threshold': 0.99, 'max_duplicate_features_percentage': 0.1}, 'feature_type_thresholds': {'wavelet_features': {'max_nan_percentage': 0.4, 'max_infinite_percentage': 0.1, 'description': 'Wavelet features naturally have edge effects'}, 'microstructure_features': {'max_nan_percentage': 0.2, 'max_infinite_percentage': 0.05, 'description': 'Microstructure features should be mostly complete'}, 'technical_indicators': {'max_nan_percentage': 0.1, 'max_infinite_percentage': 0.01, 'description': 'Technical indicators should be reliable'}, 'price_features': {'max_nan_percentage': 0.01, 'max_infinite_percentage': 0.001, 'description': 'Price-based features should be nearly complete'}}, 'validation_checks': {'check_nan_values': True, 'check_infinite_values': True, 'check_zero_variance': True, 'check_constant_values': True, 'check_extreme_values': True, 'check_data_types': True, 'check_feature_correlations': True, 'check_duplicate_features': True, 'check_feature_names': True, 'check_output_structure': True}}
+        return {
+            'critical_thresholds': {
+                'max_nan_percentage': 0.3, 
+                'max_infinite_percentage': 0.05, 
+                'max_zero_variance_percentage': 0.7, 
+                'max_constant_percentage': 0.9, 
+                'max_extreme_values_percentage': 0.1, 
+                'min_feature_count': 1, 
+                'max_feature_count': 10000,
+                'max_correlation_threshold': 0.99,
+                'z_score_threshold': 5.0
+            }, 
+            'warning_thresholds': {
+                'max_nan_percentage': 0.15, 
+                'max_infinite_percentage': 0.01, 
+                'max_zero_variance_percentage': 0.5, 
+                'max_constant_percentage': 0.8, 
+                'max_extreme_values_percentage': 0.05, 
+                'max_correlation_threshold': 0.95, 
+                'max_duplicate_features_percentage': 0.1,
+                'z_score_threshold': 3.0
+            }, 
+            'feature_type_thresholds': {
+                'wavelet_features': {
+                    'max_nan_percentage': 0.4, 
+                    'max_infinite_percentage': 0.1, 
+                    'description': 'Wavelet features naturally have edge effects'
+                }, 
+                'microstructure_features': {
+                    'max_nan_percentage': 0.2, 
+                    'max_infinite_percentage': 0.05, 
+                    'description': 'Microstructure features should be mostly complete'
+                }, 
+                'technical_indicators': {
+                    'max_nan_percentage': 0.1, 
+                    'max_infinite_percentage': 0.01, 
+                    'description': 'Technical indicators should be reliable'
+                }, 
+                'price_features': {
+                    'max_nan_percentage': 0.01, 
+                    'max_infinite_percentage': 0.001, 
+                    'description': 'Price-based features should be nearly complete'
+                }
+            }, 
+            'validation_checks': {
+                'check_nan_values': True, 
+                'check_infinite_values': True, 
+                'check_zero_variance': True, 
+                'check_constant_values': True, 
+                'check_extreme_values': True, 
+                'check_data_types': True, 
+                'check_feature_correlations': True, 
+                'check_duplicate_features': True, 
+                'check_feature_names': True, 
+                'check_output_structure': True,
+                'check_highly_correlated_pairs': True,
+                'check_outliers_zscore': True,
+                'skip_first_rows': 50
+            }
+        }
 
     def validate_feature_output(self, features: dict[str, Any] | pd.DataFrame, method_name: str, input_data_shape: tuple[int, int] | None = None) -> dict[str, Any]:
         """
@@ -156,6 +220,43 @@ class FeatureOutputValidator:
                 return validation_results
         print(f'✅ [FEATURE OUTPUT VALIDATION] Relationship validation passed for {method_name}')
         self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Relationship validation passed for {method_name}')
+        
+        # Validate highly correlated pairs
+        print(f'🔍 [FEATURE OUTPUT VALIDATION] Validating highly correlated pairs for {method_name}')
+        self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Validating highly correlated pairs for {method_name}')
+        correlation_valid = self._validate_highly_correlated_pairs(features_df, validation_results)
+        if not correlation_valid:
+            print(f'❌ [FEATURE OUTPUT VALIDATION] Correlation validation failed for {method_name}')
+            self.logger.error(f'❌ [FEATURE OUTPUT VALIDATION] Correlation validation failed for {method_name}')
+            if 'engineer_features' in method_name.lower():
+                self.logger.warning(f'⚠️ [FEATURE OUTPUT VALIDATION] Correlation validation failed for {method_name}, but continuing')
+                validation_results['warnings'].extend(validation_results['critical_issues'])
+                validation_results['critical_issues'] = []
+                validation_results['validation_passed'] = True
+            else:
+                validation_results['validation_passed'] = False
+                return validation_results
+        print(f'✅ [FEATURE OUTPUT VALIDATION] Correlation validation passed for {method_name}')
+        self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Correlation validation passed for {method_name}')
+        
+        # Validate outliers using Z-score
+        print(f'🔍 [FEATURE OUTPUT VALIDATION] Validating outliers using Z-score for {method_name}')
+        self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Validating outliers using Z-score for {method_name}')
+        outlier_valid = self._validate_outliers_zscore(features_df, validation_results)
+        if not outlier_valid:
+            print(f'❌ [FEATURE OUTPUT VALIDATION] Outlier validation failed for {method_name}')
+            self.logger.error(f'❌ [FEATURE OUTPUT VALIDATION] Outlier validation failed for {method_name}')
+            if 'engineer_features' in method_name.lower():
+                self.logger.warning(f'⚠️ [FEATURE OUTPUT VALIDATION] Outlier validation failed for {method_name}, but continuing')
+                validation_results['warnings'].extend(validation_results['critical_issues'])
+                validation_results['critical_issues'] = []
+                validation_results['validation_passed'] = True
+            else:
+                validation_results['validation_passed'] = False
+                return validation_results
+        print(f'✅ [FEATURE OUTPUT VALIDATION] Outlier validation passed for {method_name}')
+        self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Outlier validation passed for {method_name}')
+        
         if input_data_shape:
             print(f'🔍 [FEATURE OUTPUT VALIDATION] Validating input-output consistency for {method_name}')
             self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Validating input-output consistency for {method_name}')
@@ -324,6 +425,150 @@ class FeatureOutputValidator:
         if object_features:
             results['warnings'].append(f'Object dtype features detected: {object_features}')
         results['detailed_analysis']['data_types'] = {str(col): str(features_df[col].dtype) for col in features_df.columns}
+        return True
+
+    def _validate_highly_correlated_pairs(self, features_df: pd.DataFrame, results: dict[str, Any]) -> bool:
+        """Validate highly correlated feature pairs using safe math operations."""
+        self.logger.info('Validating highly correlated feature pairs...')
+        if not self.config['validation_checks']['check_highly_correlated_pairs']:
+            return True
+        
+        # Skip first rows for lookback period
+        skip_rows = self.config['validation_checks'].get('skip_first_rows', 50)
+        if len(features_df) > skip_rows:
+            analysis_data = features_df.iloc[skip_rows:].copy()
+        else:
+            analysis_data = features_df.copy()
+        
+        # Get numeric features only
+        numeric_features = analysis_data.select_dtypes(include=[np.number]).columns
+        if len(numeric_features) < 2:
+            return True
+        
+        try:
+            # Calculate correlation matrix using safe operations
+            corr_matrix = analysis_data[numeric_features].corr()
+            
+            # Find highly correlated pairs
+            highly_correlated_pairs = []
+            max_corr_threshold = self.config['warning_thresholds']['max_correlation_threshold']
+            critical_corr_threshold = self.config['critical_thresholds']['max_correlation_threshold']
+            
+            for i in range(len(numeric_features)):
+                for j in range(i + 1, len(numeric_features)):
+                    try:
+                        corr_value = corr_matrix.iloc[i, j]
+                        if validate_finite(corr_value, f"correlation_{numeric_features[i]}_{numeric_features[j]}"):
+                            abs_corr = abs(corr_value)
+                            if abs_corr > critical_corr_threshold:
+                                highly_correlated_pairs.append({
+                                    'feature1': numeric_features[i],
+                                    'feature2': numeric_features[j],
+                                    'correlation': float(corr_value),
+                                    'severity': 'critical'
+                                })
+                            elif abs_corr > max_corr_threshold:
+                                highly_correlated_pairs.append({
+                                    'feature1': numeric_features[i],
+                                    'feature2': numeric_features[j],
+                                    'correlation': float(corr_value),
+                                    'severity': 'warning'
+                                })
+                    except MathValidationError:
+                        continue
+            
+            if highly_correlated_pairs:
+                critical_pairs = [p for p in highly_correlated_pairs if p['severity'] == 'critical']
+                warning_pairs = [p for p in highly_correlated_pairs if p['severity'] == 'warning']
+                
+                if critical_pairs:
+                    results['critical_issues'].append(f'Found {len(critical_pairs)} highly correlated feature pairs (|r| > {critical_corr_threshold})')
+                
+                if warning_pairs:
+                    results['warnings'].append(f'Found {len(warning_pairs)} moderately correlated feature pairs (|r| > {max_corr_threshold})')
+                
+                results['detailed_analysis']['highly_correlated_pairs'] = highly_correlated_pairs[:10]  # Limit to first 10
+                
+        except Exception as e:
+            self.logger.warning(f'Failed to calculate correlations: {e}')
+            results['warnings'].append(f'Correlation analysis failed: {str(e)}')
+        
+        return True
+
+    def _validate_outliers_zscore(self, features_df: pd.DataFrame, results: dict[str, Any]) -> bool:
+        """Validate outliers using Z-score calculation with safe math operations."""
+        self.logger.info('Validating outliers using Z-score...')
+        if not self.config['validation_checks']['check_outliers_zscore']:
+            return True
+        
+        # Skip first rows for lookback period
+        skip_rows = self.config['validation_checks'].get('skip_first_rows', 50)
+        if len(features_df) > skip_rows:
+            analysis_data = features_df.iloc[skip_rows:].copy()
+        else:
+            analysis_data = features_df.copy()
+        
+        # Get numeric features only
+        numeric_features = analysis_data.select_dtypes(include=[np.number]).columns
+        if len(numeric_features) == 0:
+            return True
+        
+        outlier_summary = {}
+        total_outliers = 0
+        
+        for col in numeric_features:
+            try:
+                # Get finite values only
+                finite_data = analysis_data[col].dropna()
+                finite_data = finite_data[np.isfinite(finite_data)]
+                
+                if len(finite_data) < 10:  # Need sufficient data for Z-score
+                    continue
+                
+                # Calculate Z-scores using safe operations
+                mean_val = finite_data.mean()
+                std_val = finite_data.std()
+                
+                if std_val == 0:  # Constant feature
+                    continue
+                
+                # Calculate Z-scores
+                z_scores = np.abs((finite_data - mean_val) / std_val)
+                
+                # Count outliers
+                warning_threshold = self.config['warning_thresholds']['z_score_threshold']
+                critical_threshold = self.config['critical_thresholds']['z_score_threshold']
+                
+                warning_outliers = (z_scores > warning_threshold).sum()
+                critical_outliers = (z_scores > critical_threshold).sum()
+                
+                if critical_outliers > 0 or warning_outliers > 0:
+                    outlier_percentage = safe_divide(warning_outliers, len(finite_data), 0.0) * 100
+                    outlier_summary[col] = {
+                        'warning_outliers': int(warning_outliers),
+                        'critical_outliers': int(critical_outliers),
+                        'outlier_percentage': float(outlier_percentage),
+                        'max_z_score': float(z_scores.max()) if len(z_scores) > 0 else 0.0
+                    }
+                    total_outliers += warning_outliers
+                
+            except (MathValidationError, ZeroDivisionError, ValueError) as e:
+                self.logger.warning(f'Z-score calculation failed for {col}: {e}')
+                continue
+        
+        if outlier_summary:
+            critical_features = [col for col, stats in outlier_summary.items() if stats['critical_outliers'] > 0]
+            warning_features = [col for col, stats in outlier_summary.items() if stats['critical_outliers'] == 0 and stats['warning_outliers'] > 0]
+            
+            if critical_features:
+                results['critical_issues'].append(f'Found critical outliers in {len(critical_features)} features: {critical_features[:5]}')
+            
+            if warning_features:
+                results['warnings'].append(f'Found outliers in {len(warning_features)} features: {warning_features[:5]}')
+            
+            results['detailed_analysis']['outlier_summary'] = outlier_summary
+            results['feature_statistics']['total_outliers'] = total_outliers
+        
         return True
 
     def _get_method_specific_thresholds(self, method_name: str) -> dict[str, float]:

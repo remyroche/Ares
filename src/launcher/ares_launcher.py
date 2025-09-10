@@ -148,7 +148,9 @@ class AresLauncher:
                 'symbol': config.symbol,
                 'exchange': config.exchange,
                 'timeframe': config.timeframe,
-                'mode': config.mode.value
+                'mode': config.mode.value,
+                'intensity_percentage': config.intensity_percentage,
+                'training_mode_config': config.training_mode_config
             },
             'next_stage_requirements': self._get_next_stage_requirements(stage, sub_pipeline)
         }
@@ -341,6 +343,16 @@ class AresLauncher:
         available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
         config.enabled_sub_pipelines[stage] = available_sub_pipelines
         
+        # Add intensity parameters to stage configuration
+        if config.training_mode_config:
+            config.stage_params[stage] = {
+                'intensity_percentage': config.intensity_percentage,
+                'training_mode_config': config.training_mode_config,
+                'model_training': config.training_mode_config.get('model_training', {}),
+                'validation': config.training_mode_config.get('validation', {}),
+                'optimization': config.training_mode_config.get('optimization', {})
+            }
+        
         return config
     
     def _create_sub_pipeline_config(self, sub_pipeline: str, base_config: Dict[str, Any], execution_mode: ExecutionModeType) -> MainPipelineConfig:
@@ -372,6 +384,16 @@ class AresLauncher:
         # Enable only the target stage and sub-pipeline
         config.enabled_stages = [target_stage]
         config.enabled_sub_pipelines[target_stage] = [sub_pipeline]
+        
+        # Add intensity parameters to stage configuration
+        if config.training_mode_config:
+            config.stage_params[target_stage] = {
+                'intensity_percentage': config.intensity_percentage,
+                'training_mode_config': config.training_mode_config,
+                'model_training': config.training_mode_config.get('model_training', {}),
+                'validation': config.training_mode_config.get('validation', {}),
+                'optimization': config.training_mode_config.get('optimization', {})
+            }
         
         return config
     
@@ -870,25 +892,25 @@ def create_cli_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Full pipeline execution (730 days of data)
+  # Full pipeline execution (730 days, 100% intensity)
   python ares_launcher.py --mode full --symbol ETHUSDT --exchange binance
 
-  # Light pipeline execution (10 days of data)
+  # Light pipeline execution (10 days, 5% intensity)
   python ares_launcher.py --mode light --symbol ETHUSDT
 
-  # Execute specific stage with full execution mode (730 days)
+  # Execute specific stage with full execution mode (730 days, 100% intensity)
   python ares_launcher.py --mode stage --stage data_collection --execution-mode full --symbol ETHUSDT
 
-  # Execute specific stage with light execution mode (10 days)
+  # Execute specific stage with light execution mode (10 days, 5% intensity)
   python ares_launcher.py --mode stage --stage market_analysis --execution-mode light --symbol ETHUSDT
 
-  # Execute specific sub-pipeline with blank execution mode (180 days)
+  # Execute specific sub-pipeline with blank execution mode (180 days, 10% intensity)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --execution-mode blank --symbol ETHUSDT
 
-  # Execute specific sub-pipeline with full execution mode (730 days)
+  # Execute specific sub-pipeline with full execution mode (730 days, 100% intensity)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline hmm_regime_discovery --execution-mode full --symbol ETHUSDT
 
-  # Blank mode for testing (180 days)
+  # Blank mode for testing (180 days, 10% intensity)
   python ares_launcher.py --mode blank --symbol ETHUSDT
         """
     )

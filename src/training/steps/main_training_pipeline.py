@@ -106,6 +106,10 @@ class MainPipelineConfig:
     
     # Custom parameters for each stage
     stage_params: Dict[PipelineStage, Dict[str, Any]] = field(default_factory=dict)
+    
+    # Intensity parameters for ML training
+    intensity_percentage: float = 1.0  # Default to 100% intensity
+    training_mode_config: Optional[Dict[str, Any]] = None
 
 @dataclass
 class MainPipelineResult:
@@ -486,10 +490,15 @@ def get_full_pipeline_config(
 ) -> MainPipelineConfig:
     """Get a full pipeline configuration with all stages and sub-pipelines enabled."""
     from datetime import datetime, timedelta
+    from src.config.training_modes import get_training_mode_config, get_intensity_percentage
+    
+    # Get training mode configuration
+    mode_config = get_training_mode_config("full")
+    intensity_pct = get_intensity_percentage("full")
     
     # Full mode: 730 days of data
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=730)
+    start_date = end_date - timedelta(days=mode_config.lookback_days)
     
     return MainPipelineConfig(
         mode=ExecutionMode.FULL,
@@ -499,6 +508,8 @@ def get_full_pipeline_config(
         data_dir=data_dir,
         start_date=start_date.strftime('%Y-%m-%d'),
         end_date=end_date.strftime('%Y-%m-%d'),
+        intensity_percentage=intensity_pct,
+        training_mode_config=mode_config.__dict__,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -536,10 +547,15 @@ def get_light_pipeline_config(
 ) -> MainPipelineConfig:
     """Get a light pipeline configuration with essential sub-pipelines only."""
     from datetime import datetime, timedelta
+    from src.config.training_modes import get_training_mode_config, get_intensity_percentage
+    
+    # Get training mode configuration
+    mode_config = get_training_mode_config("light")
+    intensity_pct = get_intensity_percentage("light")
     
     # Light mode: 10 days of data
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=10)
+    start_date = end_date - timedelta(days=mode_config.lookback_days)
     
     return MainPipelineConfig(
         mode=ExecutionMode.LIGHT,
@@ -549,6 +565,8 @@ def get_light_pipeline_config(
         data_dir=data_dir,
         start_date=start_date.strftime('%Y-%m-%d'),
         end_date=end_date.strftime('%Y-%m-%d'),
+        intensity_percentage=intensity_pct,
+        training_mode_config=mode_config.__dict__,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -579,10 +597,15 @@ def get_blank_pipeline_config(
 ) -> MainPipelineConfig:
     """Get a blank pipeline configuration for testing/validation."""
     from datetime import datetime, timedelta
+    from src.config.training_modes import get_training_mode_config, get_intensity_percentage
+    
+    # Get training mode configuration
+    mode_config = get_training_mode_config("blank")
+    intensity_pct = get_intensity_percentage("blank")
     
     # Blank mode: 180 days of data
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=180)
+    start_date = end_date - timedelta(days=mode_config.lookback_days)
     
     return MainPipelineConfig(
         mode=ExecutionMode.BLANK,
@@ -592,6 +615,8 @@ def get_blank_pipeline_config(
         data_dir=data_dir,
         start_date=start_date.strftime('%Y-%m-%d'),
         end_date=end_date.strftime('%Y-%m-%d'),
+        intensity_percentage=intensity_pct,
+        training_mode_config=mode_config.__dict__,
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,

@@ -129,26 +129,36 @@ class BacktestingEnhancedClustering:
             self.logger.warning(f"Failed to update quality rules: {e}")
     
     def _filter_by_quality(self, levels: List[Dict], backtest_results: List[Any]) -> List[Dict]:
-        """Filter levels based on quality assessment."""
+        """Filter levels based on quality assessment - only filter out VERY low quality levels."""
         try:
             # Create quality mapping
             quality_map = {r.level.price: r.quality_score for r in backtest_results}
             
-            # Filter levels
+            # Calculate quality statistics to determine very low threshold
+            quality_scores = list(quality_map.values())
+            if quality_scores:
+                quality_mean = np.mean(quality_scores)
+                quality_std = np.std(quality_scores)
+                # Only filter out levels that are significantly below average (more than 2 standard deviations)
+                very_low_threshold = max(0.1, quality_mean - 2 * quality_std)
+            else:
+                very_low_threshold = 0.1  # Very conservative threshold
+            
+            # Filter levels - only remove very low quality
             filtered_levels = []
             for level in levels:
                 quality_score = quality_map.get(level['price'], 0.0)
                 
-                # Apply quality filter
-                if quality_score >= self.config.min_quality_score:
+                # Only filter out VERY low quality levels
+                if quality_score >= very_low_threshold:
                     # Add quality score to level data
                     level['backtest_quality'] = quality_score
                     level['quality_metrics'] = self._extract_quality_metrics(quality_score, backtest_results)
                     filtered_levels.append(level)
                 else:
-                    self.logger.debug(f"Filtered out level ${level['price']:.2f} (quality: {quality_score:.3f})")
+                    self.logger.debug(f"Filtered out very low quality level ${level['price']:.2f} (quality: {quality_score:.3f}, threshold: {very_low_threshold:.3f})")
             
-            self.logger.info(f"Quality filtering: {len(levels)} -> {len(filtered_levels)} levels")
+            self.logger.info(f"Quality filtering (very low only): {len(levels)} -> {len(filtered_levels)} levels (threshold: {very_low_threshold:.3f})")
             return filtered_levels
             
         except Exception as e:

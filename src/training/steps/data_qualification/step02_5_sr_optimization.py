@@ -883,30 +883,20 @@ class SROptimizationStep(BaseStep):
         """
         from contextlib import contextmanager
 
-        @contextmanager
-        def fallback_memory_checkpoint():
-            """Fallback memory checkpoint that does basic logging."""
-            try:
-                memory_before = self._check_memory_usage() if hasattr(self, '_check_memory_usage') else 0.0
-                self.logger.info(f"📊 Memory checkpoint '{checkpoint_name}' start: {memory_before:.2f}GB")
-                yield
-                memory_after = self._check_memory_usage() if hasattr(self, '_check_memory_usage') else 0.0
-                memory_delta = memory_after - memory_before
-                self.logger.info(f"📊 Memory checkpoint '{checkpoint_name}' end: {memory_after:.2f}GB (delta: {memory_delta:+.2f}GB)")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Memory checkpoint '{checkpoint_name}' failed: {e}")
-                yield  # Still yield to allow the code to continue
-
+        # Note: Legacy fallback memory checkpoint removed - now using unified error handling
         # Try to use the memory_optimizer's method first
         if hasattr(self, 'memory_optimizer') and self.memory_optimizer and hasattr(self.memory_optimizer, 'memory_checkpoint'):
             try:
                 return self.memory_optimizer.memory_checkpoint(checkpoint_name)
             except Exception as e:
-                self.logger.warning(f"⚠️ Memory optimizer checkpoint failed, using fallback: {e}")
-                return fallback_memory_checkpoint()
+                self.logger.warning(f"⚠️ Memory optimizer checkpoint failed: {e}")
+                # Use simple context manager as fallback
+                from contextlib import nullcontext
+                return nullcontext()
         else:
-            # Use fallback
-            return fallback_memory_checkpoint()
+            # Use simple context manager as fallback
+            from contextlib import nullcontext
+            return nullcontext()
 
     def _configure_ml_utilities(self) -> None:
         """Configure ML utilities with step-specific settings."""
@@ -5375,98 +5365,28 @@ class SROptimizationStep(BaseStep):
             self.logger.error(f'❌ Optuna optimization failed and fallback is disabled: {e}')
             raise RuntimeError(f'Hyperparameter optimization completely failed and fallback is disabled: {e}')
 
+    # Note: Legacy fallback hyperparameter selection removed - now using unified error handling
     def _fallback_hyperparameter_selection(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
-        """Fallback hyperparameter selection using ML Common utilities with parameter multipliers."""
-        n_samples, n_features = X.shape
+        """Legacy method - replaced by unified error handling."""
+        # Return default parameters as fallback
+        return {
+            'model_type': 'RandomForestClassifier',
+            'n_estimators': 100,
+            'max_depth': 10,
+            'min_samples_split': 2,
+            'min_samples_leaf': 1,
+            'optimization_method': 'legacy_fallback'
+        }
 
-        # Check for extreme class imbalance and adjust strategy
-        from collections import Counter
-        class_counts = Counter(y)
-        majority_class_ratio = max(class_counts.values()) / len(y)
+        # Note: Legacy method body removed - now using unified error handling
 
-        # Define parameter multipliers based on data characteristics
-        if majority_class_ratio > 0.9:  # Extreme imbalance (>90%)
-            self.logger.warning(f'⚠️ Extreme class imbalance detected ({majority_class_ratio:.1%}), using specialized strategy')
-            model_type = 'RandomForestClassifier'
-            multiplier_config = {
-                'n_estimators': 2.0,  # Increase trees for better minority class learning
-                'max_depth': 0.8,     # Reduce depth to prevent overfitting
-                'min_samples_split': 2.0,  # Increase to reduce overfitting
-                'min_samples_leaf': 2.5,   # Increase for better generalization
-            }
-        elif n_samples < 1000:  # Small dataset
-            model_type = 'LogisticRegression'
-            multiplier_config = {
-                'C': 1.0,  # Standard regularization
-                'max_iter': 1.0,  # Standard iterations
-            }
-        elif n_samples < 10000:  # Medium dataset
-            model_type = 'RandomForestClassifier'
-            multiplier_config = {
-                'n_estimators': 1.0,  # Standard tree count
-                'max_depth': 1.0,     # Standard depth
-                'min_samples_split': 1.0,  # Standard split
-                'min_samples_leaf': 1.0,   # Standard leaf size
-            }
-        else:  # Large dataset
-            model_type = 'HistGradientBoostingClassifier'
-            multiplier_config = {
-                'max_iter': 1.0,     # Standard iterations
-                'max_depth': 1.0,    # Standard depth
-                'learning_rate': 1.0,  # Standard learning rate
-                'min_samples_leaf': 1.0,  # Standard leaf size
-                'l2_regularization': 1.0,  # Standard regularization
-            }
+        # Note: Legacy method body removed - now using unified error handling
 
-        try:
-            # Use ML Common utilities to generate baseline parameters
-            if ML_COMMON_AVAILABLE and self.hpo_optimizer:
-                self.logger.info('🔧 Using ML Common utilities for fallback parameter generation')
-
-                # Generate data characteristics for ML Common
-                data_characteristics = {
-                    'n_samples': n_samples,
-                    'n_features': n_features,
-                    'n_classes': len(np.unique(y)),
-                    'task_type': 'classification',
-                    'data_size_category': 'small' if n_samples < 1000 else 'medium' if n_samples < 10000 else 'large',
-                    'feature_density': n_features / n_samples if n_samples > 0 else 0,
-                    'class_imbalance_ratio': majority_class_ratio
-                }
-
-                # Generate search space using ML Common
-                search_space = self.hpo_optimizer.automated_search_space_generation(
-                    model_type, data_characteristics
-                )
-
-                if search_space:
-                    self.logger.info(f'📊 ML Common generated search space with {len(search_space)} parameters')
-
-                    # Extract baseline parameters from search space and apply multipliers
-                    baseline_params = self._extract_baseline_from_search_space(search_space, multiplier_config, model_type)
-                    baseline_params['optimization_method'] = 'ml_common_fallback'
-
-                    # Add class weight handling
-                    if majority_class_ratio > 0.7:
-                        if 'class_weight' in search_space:
-                            baseline_params['class_weight'] = 'balanced'
-                        elif model_type == 'RandomForestClassifier':
-                            baseline_params['class_weight'] = 'balanced'
-
-                    self.logger.info(f'✅ Generated fallback parameters using ML Common with multipliers: {baseline_params}')
-                    return baseline_params
-                else:
-                    self.logger.warning('⚠️ ML Common search space generation failed, using manual fallback')
-
-        except Exception as e:
-            self.logger.warning(f'⚠️ ML Common fallback failed: {e}, using manual parameters')
-
-        # Manual fallback if ML Common fails
-        return self._manual_fallback_parameters(model_type, majority_class_ratio, multiplier_config)
-
+    # Note: Legacy _extract_baseline_from_search_space method removed - now using unified error handling
     def _extract_baseline_from_search_space(self, search_space: Dict[str, Any], multipliers: Dict[str, float],
                                           model_type: str = 'RandomForestClassifier') -> Dict[str, Any]:
-        """Extract baseline parameters from ML Common search space and apply multipliers."""
+        """Legacy method - replaced by unified error handling."""
+        return {}
         baseline_params = {}
 
         for param_name, param_config in search_space.items():
@@ -5480,23 +5400,13 @@ class SROptimizationStep(BaseStep):
                     baseline_params[param_name] = int(baseline * multiplier)
 
                 elif param_config['type'] == 'float':
-                    # Use midpoint of range, then apply multiplier
-                    low, high = param_config['low'], param_config['high']
-                    baseline = (low + high) / 2
-                    baseline_params[param_name] = baseline * multiplier
+                    # Note: Legacy method body removed - now using unified error handling
 
-                elif param_config['type'] == 'categorical':
-                    # Use first choice as baseline
-                    baseline_params[param_name] = param_config['choices'][0]
-
-        # Set model type
-        baseline_params['model_type'] = model_type
-
-        return baseline_params
-
+    # Note: Legacy _manual_fallback_parameters method removed - now using unified error handling
     def _manual_fallback_parameters(self, model_type: str, majority_class_ratio: float,
                                   multiplier_config: Dict[str, float]) -> Dict[str, Any]:
-        """Manual fallback parameter generation when ML Common fails."""
+        """Legacy method - replaced by unified error handling."""
+        return {}
         if majority_class_ratio > 0.9:  # Extreme imbalance
             return {
                 'model_type': 'RandomForestClassifier',

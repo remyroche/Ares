@@ -15,12 +15,25 @@ This package contains all the components for model training:
 - Tactician labeling and specialist training
 - Model persistence and validation components
 """
-from .step09_hmm_based_training import HMMBasedTrainingStep
-from .step10_unified_regime_intelligence import UnifiedRegimeIntelligenceStep
-from .step11_analyst_creation import AnalystCreationStep
-from .step12_analyst_enhancement import AnalystEnhancementStep
-from .step13_analyst_ensemble_creation import AnalystEnsembleCreationStep
-from .step15_tactician_specialist_training import TacticianSpecialistTrainingStep
+# Import from simplified model training structure
+try:
+    from .simplified.general_model_training import GeneralModelTrainer
+    from .simplified.analyst_model_training import AnalystModelTrainer
+    from .simplified.tactician_model_training import TacticianModelTrainer
+    SIMPLIFIED_TRAINING_AVAILABLE = True
+except ImportError:
+    SIMPLIFIED_TRAINING_AVAILABLE = False
+    GeneralModelTrainer = None
+    AnalystModelTrainer = None
+    TacticianModelTrainer = None
+
+# Legacy compatibility aliases
+HMMBasedTrainingStep = GeneralModelTrainer
+UnifiedRegimeIntelligenceStep = GeneralModelTrainer
+AnalystCreationStep = AnalystModelTrainer
+AnalystEnhancementStep = AnalystModelTrainer
+AnalystEnsembleCreationStep = AnalystModelTrainer
+TacticianSpecialistTrainingStep = TacticianModelTrainer
 from pathlib import Path
 
 async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any, data_dir: Any, **config) -> Any:
@@ -767,7 +780,23 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         post_data_memory = await _monitor_memory_usage()
         print('🚀 STEP 4/6: Executing training steps...')
         logger.info('🚀 STEP 4/6: Executing training steps...')
-        training_steps = [('HMM-based Training', HMMBasedTrainingStep, config.get('hmm_training', True)), ('Unified Regime Intelligence', UnifiedRegimeIntelligenceStep, config.get('regime_intelligence', True)), ('Analyst Creation', AnalystCreationStep, config.get('analyst_creation', True)), ('Analyst Enhancement', AnalystEnhancementStep, config.get('analyst_enhancement', True)), ('Ensemble Creation', AnalystEnsembleCreationStep, config.get('ensemble_creation', True)), ('Tactician Training', TacticianSpecialistTrainingStep, config.get('tactician_training', True))]
+        # Use simplified training steps if available
+        if SIMPLIFIED_TRAINING_AVAILABLE:
+            training_steps = [
+                ('General Model Training', GeneralModelTrainer, config.get('general_training', True)),
+                ('Analyst Model Training', AnalystModelTrainer, config.get('analyst_training', True)),
+                ('Tactician Model Training', TacticianModelTrainer, config.get('tactician_training', True))
+            ]
+        else:
+            # Fallback to legacy steps (should not happen after cleanup)
+            training_steps = [
+                ('HMM-based Training', HMMBasedTrainingStep, config.get('hmm_training', True)),
+                ('Unified Regime Intelligence', UnifiedRegimeIntelligenceStep, config.get('regime_intelligence', True)),
+                ('Analyst Creation', AnalystCreationStep, config.get('analyst_creation', True)),
+                ('Analyst Enhancement', AnalystEnhancementStep, config.get('analyst_enhancement', True)),
+                ('Ensemble Creation', AnalystEnsembleCreationStep, config.get('ensemble_creation', True)),
+                ('Tactician Training', TacticianSpecialistTrainingStep, config.get('tactician_training', True))
+            ]
         enabled_steps = [(name, cls, enabled) for name, cls, enabled in training_steps if enabled]
         total_steps = len(enabled_steps)
         print(f'📊 Total training steps to execute: {total_steps}')
@@ -855,4 +884,12 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         logger.error(f'📋 Exception type: {type(e).__name__}')
         logger.error(f'📋 Exception details: {str(e)}')
         return False
-__all__ = ['HMMBasedTrainingStep', 'PerRegimeHMMTrainingStep', 'HMMTrainingValidator', 'HMMLMGeneralistTrainingStep', 'HMMLMGeneralistTrainingValidator', 'MultiTimeframeHMMEnsembleStep', 'MultiTimeframeHMMEnsembleValidator', 'MultiTimeframeHMMEnsemble', 'SROutcomeModelTrainer', 'UnifiedRegimeIntelligenceStep', 'PerRegimeUnifiedIntelligenceStep', 'UnifiedRegimeIntelligenceValidator', 'AnalystCreationStep', 'PerRegimeAnalystCreationStep', 'AnalystCreationValidator', 'AnalystEnhancementStep', 'PerRegimeAnalystEnhancementStep', 'AnalystEnhancementValidator', 'AnalystEnsembleCreationStep', 'PerRegimeAnalystEnsembleCreationStep', 'AnalystEnsembleCreationValidator', 'TacticianLabelingStep', 'PerRegimeTacticianLabelingStep', 'TacticianLabelingValidator', 'TacticianSpecialistTrainingStep', 'PerRegimeTacticianSpecialistTrainingStep', 'TacticianSpecialistTrainingValidator', 'TestRefactoredComponents', 'UpdateStepsForUnifiedData', 'PerRegimePipelineConfig', 'PerRegimePipelineIntegration', 'PerRegimePipelineOrchestrator', 'run_model_training_pipeline']
+__all__ = [
+    # Simplified training components
+    'GeneralModelTrainer', 'AnalystModelTrainer', 'TacticianModelTrainer',
+    # Legacy compatibility aliases
+    'HMMBasedTrainingStep', 'UnifiedRegimeIntelligenceStep', 'AnalystCreationStep', 
+    'AnalystEnhancementStep', 'AnalystEnsembleCreationStep', 'TacticianSpecialistTrainingStep',
+    # Pipeline function
+    'run_model_training_pipeline'
+]

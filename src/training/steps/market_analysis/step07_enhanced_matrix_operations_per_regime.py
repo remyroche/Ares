@@ -14,7 +14,15 @@ from pathlib import Path
 import json
 from typing import Dict, Any, Optional, List
 
-from .training.steps.step07_enhanced_matrix_operations import Step7EnhancedMatrixOperations
+try:
+    from .step07_enhanced_matrix_operations import Step7EnhancedMatrixOperations
+except ImportError:
+    from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+    
+    class Step7EnhancedMatrixOperations:
+        def __init__(self, config):
+            self.config = config
+            self.matrix_ops = get_enhanced_matrix_operations()
 from .training.steps.regime_processing_utils import (
 
     per_regime_processing,

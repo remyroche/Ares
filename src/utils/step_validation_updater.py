@@ -140,7 +140,28 @@ class StepValidationUpdater:
 
     def _import_step_class(self, step_name: str) -> Optional[Type]:
         """Import step class dynamically."""
-        step_imports = {'step06_advanced_feature_engineering': ('src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'FeatureEngineeringStep'), 'step08_advanced_feature_selection': ('src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection', 'FeatureSelectionStep'), 'step09_hmm_based_training': ('src.training.steps.model_training.step09_hmm_based_training', 'HMMTrainingStep'), 'step10_unified_regime_intelligence': ('src.training.steps.model_training.step10_unified_regime_intelligence', 'RegimeIntelligenceStep'), 'step11_analyst_creation': ('src.training.steps.model_training.step11_analyst_creation', 'AnalystCreationStep'), 'step12_analyst_enhancement': ('src.training.steps.model_training.step12_analyst_enhancement', 'AnalystEnhancementStep'), 'step13_analyst_ensemble_creation': ('src.training.steps.model_training.step13_analyst_ensemble_creation', 'AnalystEnsembleStep'), 'step14_tactician_labeling': ('src.training.steps.model_training.step14_tactician_labeling', 'TacticianLabelingStep'), 'step15_tactician_specialist_training': ('src.training.steps.model_training.step15_tactician_specialist_training', 'TacticianTrainingStep'), 'step16_confidence_calibration': ('src.training.steps.model_training.validation.step16_confidence_calibration', 'ConfidenceCalibrationStep'), 'step17_parameter_optimization': ('src.training.steps.optimisation.step17_final_parameters_optimization', 'ParameterOptimizationStep'), 'step18_walk_forward_validation': ('src.training.steps.model_training.validation.step18_walk_forward_validation', 'WalkForwardValidationStep'), 'step19_monte_carlo_validation': ('src.training.steps.model_training.validation.step19_monte_carlo_validation', 'MonteCarloValidationStep'), 'step20_ab_testing': ('src.training.steps.model_training.validation.step20_ab_testing', 'ABTestingStep'), 'step21_model_persistence': ('src.training.steps.backtesting.step21_saving', 'ModelPersistenceStep')}
+        step_imports = {
+            'step06_advanced_feature_engineering': ('src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'FeatureEngineeringStep'),
+            'step08_advanced_feature_selection': ('src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection', 'FeatureSelectionStep'),
+            # Simplified model training steps
+            'general_model_training': ('src.training.steps.model_training.simplified.general_model_training', 'GeneralModelTrainer'),
+            'analyst_model_training': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
+            'tactician_model_training': ('src.training.steps.model_training.simplified.tactician_model_training', 'TacticianModelTrainer'),
+            # Legacy step names for backward compatibility
+            'step09_hmm_based_training': ('src.training.steps.model_training.simplified.general_model_training', 'GeneralModelTrainer'),
+            'step10_unified_regime_intelligence': ('src.training.steps.model_training.simplified.general_model_training', 'GeneralModelTrainer'),
+            'step11_analyst_creation': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
+            'step12_analyst_enhancement': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
+            'step13_analyst_ensemble_creation': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
+            'step14_tactician_labeling': ('src.training.steps.model_training.simplified.tactician_model_training', 'TacticianModelTrainer'),
+            'step15_tactician_specialist_training': ('src.training.steps.model_training.simplified.tactician_model_training', 'TacticianModelTrainer'),
+            # Consolidated backtesting step
+            'consolidated_backtesting': ('src.training.steps.backtesting.consolidated_backtesting_step', 'ConsolidatedBacktestingStep'),
+            'step18_walk_forward_validation': ('src.training.steps.backtesting.consolidated_backtesting_step', 'ConsolidatedBacktestingStep'),
+            'step19_monte_carlo_validation': ('src.training.steps.backtesting.consolidated_backtesting_step', 'ConsolidatedBacktestingStep'),
+            'step20_ab_testing': ('src.training.steps.backtesting.consolidated_backtesting_step', 'ConsolidatedBacktestingStep'),
+            'step21_model_persistence': ('src.training.steps.backtesting.consolidated_backtesting_step', 'ConsolidatedBacktestingStep')
+        }
         if step_name not in step_imports:
             return None
         module_path, class_name = step_imports[step_name]

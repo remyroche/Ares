@@ -36,9 +36,26 @@ from .step07_enhanced_matrix_operations_validator import Step7EnhancedMatrixOper
 
 # Import step classes
 from .step05_labeling import LabelingStep
-from .step06_feature_engineering import FeatureEngineeringStep
-from .step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
-from .step08_advanced_feature_selection import AdvancedFeatureSelectionStep
+try:
+    from .step06_feature_engineering import FeatureEngineeringStep
+except ImportError:
+    from src.utils.step06_utilities import EnhancedFeatureEngineeringStep as FeatureEngineeringStep
+
+try:
+    from .step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
+except ImportError:
+    from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+    class EnhancedMatrixOperationsStep:
+        def __init__(self, config):
+            self.matrix_ops = get_enhanced_matrix_operations()
+
+try:
+    from .step08_advanced_feature_selection import AdvancedFeatureSelectionStep
+except ImportError:
+    from src.utils.ml_common.feature_selection import UnifiedFeatureSelectionManager
+    class AdvancedFeatureSelectionStep:
+        def __init__(self, config):
+            self.feature_selector = UnifiedFeatureSelectionManager(config)
 from .hmm_clustering.step03_enhanced_hmm_regime_discovery import run_enhanced_step
 import json
 import logging

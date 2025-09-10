@@ -43,7 +43,6 @@ class StepOrchestrator:
             "step03_hmm_regime_discovery",
             "step04_regime_data_splitting",
             "step05_labeling",
-            "step06_advanced_feature_engineering",
             "step07_enhanced_matrix_operations",
             "step08_advanced_feature_selection",
             "step09_hmm_based_training",

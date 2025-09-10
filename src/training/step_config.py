@@ -121,17 +121,6 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         required_files=["data/training/*_triple_barrier_*.parquet"]
     ),
     
-    "06": StepConfig(
-        step_number="06",
-        step_name="advanced_feature_engineering",
-        description="Generate advanced features",
-        module_path="src.training.steps.feature_engineering.step06_advanced_features",
-        class_name="AdvancedFeatureEngineeringStep",
-        dependencies=["05"],
-        required_inputs=["labeled_data"],
-        produced_outputs=["engineered_data", "feature_statistics", "selected_features", "feature_reports"],
-        required_files=["data/training/*_features_train.parquet", "data/training/*_features_val.parquet"]
-    ),
     
     "07": StepConfig(
         step_number="07",
@@ -139,8 +128,8 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         description="Matrix operations and initial feature filtering",
         module_path="src.training.steps.model_training.step07_enhanced_matrix_operations",
         class_name="EnhancedMatrixOperationsStep",
-        dependencies=["06"],
-        required_inputs=["engineered_data"],
+        dependencies=["05"],
+        required_inputs=["labeled_data"],
         produced_outputs=["matrix_results", "feature_importance", "optimization_insights", "matrix_reports"],
         required_files=["data/matrix_operations/*_matrix_operations_*.json", "data/training/*_features_filtered_*.parquet"]
     ),
@@ -152,7 +141,7 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         module_path="src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection_wrapper",
         class_name="AdvancedFeatureSelectionStep",
         dependencies=["07"],
-        required_inputs=["engineered_data"],
+        required_inputs=["matrix_results"],
         produced_outputs=["step08_advanced_feature_selection"],
         required_files=["data/selected_features/*_top*.parquet", "data/selected_features/*_interpretability_report.json"]
     ),
@@ -164,7 +153,7 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         module_path="src.training.steps.model_training.step09_hmm_based_training",
         class_name="HmmBasedTrainingStep",
         dependencies=["07", "08", "05"],
-        required_inputs=["engineered_data", "step08_advanced_feature_selection"],
+        required_inputs=["matrix_results", "step08_advanced_feature_selection"],
         produced_outputs=["trained_models", "model_performance", "feature_importance", "best_models", "training_reports"],
         required_files=["data/training/*_hmm_models.pkl"]
     ),

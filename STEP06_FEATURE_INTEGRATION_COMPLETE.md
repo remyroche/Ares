@@ -29,42 +29,41 @@
 
 ## 🔧 **Technical Implementation Details**
 
-### **Actual Step06 Features Integrated (20 Total)**
+### **Actual Step06 Features Integrated (19 Total)**
 
-#### **Core Market Context (5)**
-1. `market_regime` - Market regime context
-2. `volatility_regime` - Volatility regime (ATR_14)
-3. `trend_strength` - Trend strength (SMA_5/SMA_100)
-4. `volume_regime` - Volume regime (Volume_Ratio)
-5. `time_of_day_effect` - Time of day effects
+#### **Core Market Context (4)**
+1. `volatility_regime` - Volatility regime (ATR_14)
+2. `trend_strength` - Trend strength (SMA_5/SMA_100)
+3. `volume_regime` - Volume regime (Volume_Ratio)
+4. `time_of_day_effect` - Time of day effects
 
 #### **Momentum Features (6)**
-6. `rsi_momentum` - RSI momentum (RSI_7)
-7. `macd_momentum` - MACD momentum (MACD_12_26)
-8. `roc_momentum` - Rate of Change momentum (ROC_14)
-9. `stochastic_momentum` - Stochastic momentum (Stochastic_14)
-10. `cci_momentum` - Commodity Channel Index momentum (CCI_20)
-11. `momentum_acceleration` - Momentum acceleration (ROC_7 - ROC_14)
+5. `rsi_momentum` - RSI momentum (RSI_7)
+6. `macd_momentum` - MACD momentum (MACD_12_26)
+7. `roc_momentum` - Rate of Change momentum (ROC_14)
+8. `stochastic_momentum` - Stochastic momentum (Stochastic_14)
+9. `cci_momentum` - Commodity Channel Index momentum (CCI_20)
+10. `momentum_acceleration` - Momentum acceleration (ROC_7 - ROC_14)
 
 #### **Interaction Features (1)**
-12. `momentum_volume_interaction` - Momentum-volume interaction from step06
+11. `momentum_volume_interaction` - Momentum-volume interaction from step06
 
 #### **Additional Technical Features (8)**
-13. `bb_squeeze` - Bollinger Band squeeze (BB_Squeeze_20)
-14. `bb_position` - Bollinger Band position (BB_Position_20)
-15. `obv_normalized` - Normalized OBV (OBV_Normalized)
-16. `mfi_momentum` - Money Flow Index momentum (MFI_14)
-17. `williams_momentum` - Williams %R momentum (Williams_R_14)
-18. `adx_trend` - Average Directional Index (ADX_14)
-19. `cross_timeframe_momentum` - Cross-timeframe momentum (RSI_7 - RSI_21)
-20. `macd_signal_strength` - MACD signal strength (MACD_Signal_12_26)
-21. `macd_histogram` - MACD histogram (MACD_Hist_12_26)
+12. `bb_squeeze` - Bollinger Band squeeze (BB_Squeeze_20)
+13. `bb_position` - Bollinger Band position (BB_Position_20)
+14. `obv_normalized` - Normalized OBV (OBV_Normalized)
+15. `mfi_momentum` - Money Flow Index momentum (MFI_14)
+16. `williams_momentum` - Williams %R momentum (Williams_R_14)
+17. `adx_trend` - Average Directional Index (ADX_14)
+18. `cross_timeframe_momentum` - Cross-timeframe momentum (RSI_7 - RSI_21)
+19. `macd_signal_strength` - MACD signal strength (MACD_Signal_12_26)
+20. `macd_histogram` - MACD histogram (MACD_Hist_12_26)
 
-### **Feature Categories (35 Total)**
+### **Feature Categories (33 Total)**
 1. **Primary SR Features (7)**: success_rate, bounce_strength, volume_confirmation, etc.
 2. **Penetration Features (2)**: penetration_depth, penetration_frequency
 3. **Pattern Features (5)**: pattern_consistency, pattern_strength, etc.
-4. **Step06 Features (21)**: All actual step06 features including momentum, acceleration, and interactions
+4. **Step06 Features (19)**: All actual step06 features including momentum, acceleration, and interactions
 
 ## 🎯 **Key Benefits Achieved**
 
@@ -85,7 +84,7 @@
 - **MACD components** (signal, histogram)
 
 ### **4. Comprehensive Market Context**
-- **21 step06 features** providing rich market context
+- **19 step06 features** providing rich market context
 - **Multiple momentum perspectives** for better SR quality assessment
 - **Technical indicator coverage** for comprehensive analysis
 
@@ -94,8 +93,8 @@
 ### **Step06 Feature Categories**
 ```
 📈 STEP06 FEATURE CATEGORY ANALYSIS:
-   Core Market Context: 5 features, avg importance: 0.0876
-   Top Core: market_regime (0.1234)
+   Core Market Context: 4 features, avg importance: 0.0876
+   Top Core: volatility_regime (0.1234)
    Momentum Features: 6 features, avg importance: 0.1456
    Top Momentum: rsi_momentum (0.1987)
    Interaction Features: 1 features, avg importance: 0.1123
@@ -126,9 +125,9 @@
 5. **Comprehensive Technical Features**: Full step06 feature coverage
 
 ### **📊 Performance Expectations**
-- **Feature Count**: 35 total features (21 step06 + 14 SR features)
+- **Feature Count**: 33 total features (19 step06 + 14 SR features)
 - **Momentum Analysis**: 6 momentum features + acceleration
-- **Market Context**: 21 step06 features for comprehensive analysis
+- **Market Context**: 19 step06 features for comprehensive analysis
 - **Technical Coverage**: Full step06 technical indicator coverage
 
 ## 🎉 **Final Summary**
@@ -138,10 +137,10 @@
 1. ✅ **VWAP Momentum**: Using actual step06 VWAP features
 2. ✅ **Momentum-Volume Interaction**: Using actual step06 interaction patterns
 3. ✅ **Momentum Acceleration**: Using ROC difference from step06
-4. ✅ **Additional Step06 Features**: 21 total step06 features integrated
+4. ✅ **Additional Step06 Features**: 19 total step06 features integrated
 
 The system now provides **comprehensive market context** with:
-- **35 total features** (21 step06 + 14 SR features)
+- **33 total features** (19 step06 + 14 SR features)
 - **6 momentum features** including acceleration
 - **Full technical indicator coverage** from step06
 - **Proper feature integration** with actual step06 names

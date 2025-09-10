@@ -3178,6 +3178,7 @@ class SROptimizationStep(BaseStep):
 
             # Optimize hyperparameters
             self.logger.info('🔧 Optimizing hyperparameters...')
+            hyperparameter_results = None  # Initialize to ensure it's always defined
             try:
                 hyperparameter_results = self._optimize_hyperparameters(X, y_direction, feature_names)
                 # Memory cleanup after optimization
@@ -3187,7 +3188,7 @@ class SROptimizationStep(BaseStep):
                 hyperparameter_results = None
                 # Still cleanup memory on error
                 self._cleanup_memory()
-
+                
             # Feature selection
             self.logger.info('🎯 Performing feature selection...')
             try:

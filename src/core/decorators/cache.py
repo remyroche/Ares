@@ -12,7 +12,13 @@ from typing import Any, Callable
 from .compose import P, R, uniform_wrapper
 from .logging import get_correlation_id
 import collections
-import numpy as np
+# Optional imports
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
 
 request_cache_var: ContextVar[dict[str, Any] | None] = ContextVar('request_cache', default = None)
 

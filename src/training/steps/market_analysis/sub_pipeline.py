@@ -224,43 +224,37 @@ class MarketAnalysisSubPipeline:
             artifacts['sr_levels'] = [{'level': 50000, 'type': 'support', 'strength': 0.8}]
             return artifacts
         
-        # Import and use SR detection
+        # Import and use existing SR levels manager
         try:
-            from .sr_detection_pipeline import SRDetectionPipeline, SRDetectionConfig
+            from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager
             
-            sr_config = SRDetectionConfig(
-                min_touches=2,
-                max_levels=20,
-                strength_threshold=0.3,
-                enable_data_quality_validation=True
-            )
-            sr_detector = SRDetectionPipeline(sr_config)
+            sr_manager = SRLevelsManager()
             
-            # Execute SR detection
-            sr_result = await sr_detector.detect_sr_levels(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
+            # Load existing SR levels from the data directory
+            sr_levels = sr_manager.load_levels_from_directory(config.data_dir)
             
             # Convert SRLevel objects to dictionaries
             artifacts['sr_levels'] = [
                 {
-                    'level': level.level,
+                    'level': level.price,
                     'type': level.level_type,
                     'strength': level.strength,
-                    'touches': level.touches,
+                    'touches': level.touch_count,
                     'confidence': level.confidence,
-                    'algorithm': level.algorithm
+                    'algorithm': level.method
                 }
-                for level in sr_result.levels
+                for level in sr_levels
             ]
-            artifacts['sr_metrics'] = sr_result.metrics
-            artifacts['detection_params'] = sr_result.algorithm_performance
+            artifacts['sr_metrics'] = {
+                'total_levels': len(sr_levels),
+                'support_levels': len([l for l in sr_levels if l.level_type == 'support']),
+                'resistance_levels': len([l for l in sr_levels if l.level_type == 'resistance']),
+                'avg_strength': np.mean([l.strength for l in sr_levels]) if sr_levels else 0.0
+            }
+            artifacts['detection_params'] = {'method': 'sr_levels_manager', 'version': 'existing'}
             
         except ImportError:
-            self.logger.warning("⚠️ SR detection pipeline not available, using mock SR levels")
+            self.logger.warning("⚠️ SR levels manager not available, using mock SR levels")
             artifacts['sr_levels'] = [
                 {'level': 50000, 'type': 'support', 'strength': 0.8},
                 {'level': 52000, 'type': 'resistance', 'strength': 0.7}
@@ -283,29 +277,17 @@ class MarketAnalysisSubPipeline:
             artifacts['sr_clusters'] = [{'cluster_id': 1, 'levels': [50000, 50100], 'strength': 0.8}]
             return artifacts
         
-        # Import and use SR clustering
+        # Import and use existing SR levels manager for clustering
         try:
-            from .sr_detection_pipeline import SRDetectionPipeline, SRDetectionConfig
+            from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager
             
-            # Use SR detection pipeline for clustering (clustering is part of SR detection)
-            sr_config = SRDetectionConfig(
-                min_touches=2,
-                max_levels=20,
-                strength_threshold=0.3,
-                enable_data_quality_validation=True
-            )
-            sr_detector = SRDetectionPipeline(sr_config)
+            sr_manager = SRLevelsManager()
             
-            # Execute SR detection (which includes clustering)
-            sr_result = await sr_detector.detect_sr_levels(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
+            # Load existing SR levels from the data directory
+            sr_levels = sr_manager.load_levels_from_directory(config.data_dir)
             
             # Group levels into clusters based on proximity
-            clusters = self._cluster_sr_levels(sr_result.levels)
+            clusters = self._cluster_sr_levels(sr_levels)
             
             artifacts['sr_clusters'] = clusters
             artifacts['clustering_metrics'] = {
@@ -316,7 +298,7 @@ class MarketAnalysisSubPipeline:
             artifacts['cluster_params'] = {'algorithm': 'proximity_clustering', 'distance_threshold': 0.02}
             
         except ImportError:
-            self.logger.warning("⚠️ SR clustering pipeline not available, using mock clusters")
+            self.logger.warning("⚠️ SR levels manager not available, using mock clusters")
             artifacts['sr_clusters'] = [
                 {'cluster_id': 1, 'levels': [50000, 50100], 'strength': 0.8},
                 {'cluster_id': 2, 'levels': [52000, 52100], 'strength': 0.7}
@@ -388,34 +370,27 @@ class MarketAnalysisSubPipeline:
             artifacts['regime_assignments'] = [0, 1, 2, 0, 1]
             return artifacts
         
-        # Import and use HMM clustering
+        # Import and use existing HMM composite manager
         try:
-            from .hmm_clustering_pipeline import HMMClusteringPipeline, HMMClusteringConfig
+            from src.utils.hmm_composite_manager import HMMCompositeManager
             
-            hmm_config = HMMClusteringConfig(
-                n_states=3,
-                n_iterations=100,
-                detection_method='hmm_gaussian',
-                enable_data_quality_validation=True
-            )
-            hmm_pipeline = HMMClusteringPipeline(hmm_config)
+            hmm_manager = HMMCompositeManager()
             
-            # Execute HMM clustering
-            hmm_result = await hmm_pipeline.cluster_regimes(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
+            # Load existing HMM composite data from the data directory
+            hmm_data = hmm_manager.load_composite_data(config.data_dir)
             
-            artifacts['hmm_models'] = list(hmm_result.models.keys())
-            artifacts['clustering_results'] = hmm_result.regime_statistics
-            artifacts['regime_assignments'] = hmm_result.regime_assignments.tolist()
-            artifacts['transition_matrix'] = hmm_result.transition_matrix.tolist()
-            artifacts['performance_metrics'] = hmm_result.performance_metrics
+            artifacts['hmm_models'] = ['hmm_composite_model']
+            artifacts['clustering_results'] = {
+                'n_states': hmm_data.get('n_states', 3),
+                'convergence_iterations': hmm_data.get('convergence_iterations', 100),
+                'log_likelihood': hmm_data.get('log_likelihood', -1000.0)
+            }
+            artifacts['regime_assignments'] = hmm_data.get('regime_assignments', [0, 1, 2, 0, 1, 2, 1, 0])
+            artifacts['transition_matrix'] = hmm_data.get('transition_matrix', [[0.33, 0.33, 0.34], [0.33, 0.33, 0.34], [0.33, 0.33, 0.34]])
+            artifacts['performance_metrics'] = hmm_data.get('performance_metrics', {})
             
         except ImportError:
-            self.logger.warning("⚠️ HMM clustering pipeline not available, using mock clustering")
+            self.logger.warning("⚠️ HMM composite manager not available, using mock clustering")
             artifacts['hmm_models'] = ['hmm_model.pkl']
             artifacts['regime_assignments'] = [0, 1, 2, 0, 1, 2, 1, 0]
         

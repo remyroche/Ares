@@ -84,7 +84,7 @@ class CrossTimeframeFeatureGenerator:
         # Initialize the comprehensive cross timeframe analysis pipeline
         self.cross_timeframe_pipeline = None
         try:
-            from .cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig as PipelineConfig
+            from ...training.steps.market_analysis.cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig as PipelineConfig
             
             # Configure for high leverage trading with short timeframes
             pipeline_config = PipelineConfig(

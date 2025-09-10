@@ -47,16 +47,18 @@ except ImportError as e:
 
 # Import enhanced matrix operations as base
 try:
-    from ..enhanced_matrix_operations import (
-        EnhancedMatrixOperations, get_enhanced_matrix_operations as get_base_enhanced_ops,
-        with_error_handling, with_gpu_fallback, with_memory_optimization,
-        DynamicBatchOptimizer, BatchOptimizationStrategy, OperationComplexity,
-        ErrorHandler, OptimizationError, GPUError, MemoryError, MatrixOperationError
-    )
-    BASE_OPERATIONS_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"Base enhanced matrix operations not available: {e}")
-    BASE_OPERATIONS_AVAILABLE = False
+    from ..feature_engineering.enhanced_matrix_operations import *  # type: ignore  # noqa: F401,F403
+except Exception as exc:  # pragma: no cover – must never fail silently
+    raise ImportError(
+        "Unable to import 'enhanced_matrix_operations' – ensure utilities package is intact"
+    ) from exc
+
+warn(
+    "`src.utils.ml_common.matrix_operations` is the new canonical import path for the"
+    " enhanced matrix-operation helpers (formerly Step07).  Please update your imports.",
+    category=DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 

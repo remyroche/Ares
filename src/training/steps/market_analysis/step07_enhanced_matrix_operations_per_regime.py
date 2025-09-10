@@ -15,7 +15,7 @@ import json
 from typing import Dict, Any, Optional, List
 
 try:
-    from .step07_enhanced_matrix_operations import Step7EnhancedMatrixOperations
+    from src.utils.feature_engineering.enhanced_matrix_operations import EnhancedMatrixOperations
 except ImportError:
     from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
     

@@ -72,6 +72,14 @@ from src.utils.common_operations import (
     timed_operation, format_bytes, chunked_iterable, parallel_map,
     safe_log_metric, safe_log_params, safe_log_artifact, get_common_operations_health_status
 )
+
+# SR Clustering System Integration - Required
+from src.utils.sr_clustering import (
+    get_backtesting_enhanced_clustering, BacktestingEnhancedConfig,
+    get_predictive_sr_engine, PredictiveConfig,
+    get_trading_ml_integration, TradingMLConfig
+)
+logger.info('✅ SR clustering system loaded')
 from src.utils.common_utilities import (
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
     calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
@@ -1389,6 +1397,10 @@ class SROptimizationStep(BaseStep):
             # Log detailed S/R level information
             self._log_detailed_sr_levels(sr_levels, features_data)
 
+            # Create enhanced training data with SR quality features
+            self.logger.info('🧠 Creating enhanced training data with SR quality features...')
+            enhanced_training_data = self._create_enhanced_training_data(sr_levels, features_data)
+
             # Train ML models for SR optimization
             self.logger.info('🤖 Training ML models for SR optimization...')
             ml_results = await self._train_ml_models_with_memory_management(features_data, sr_levels)
@@ -1400,9 +1412,11 @@ class SROptimizationStep(BaseStep):
                 'sr_levels': sr_levels,
                 'ml_results': ml_results,
                 'features_data': features_data,
+                'enhanced_training_data': enhanced_training_data,
                 'execution_time': execution_time,
                 'data_shape': data.shape,
-                'sr_levels_count': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', []))
+                'sr_levels_count': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])),
+                'sr_clustering_enabled': True
             }
 
             self.logger.info(f'✅ SR optimization completed in {execution_time:.2f} seconds')
@@ -1531,76 +1545,84 @@ class SROptimizationStep(BaseStep):
 
         self.logger.info(f'✅ S/R detection input validation passed: {len(clean_data)} rows, {len(clean_data.columns)} columns')
 
-        # Check if enhanced detector is available
-        if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None or SRLevel is None:
-            raise RuntimeError("Enhanced SR Detector or SRLevel not available. Cannot proceed with SR detection.")
-
         try:
-            # Create enhanced SR detector with configuration - balanced for more levels
+            # Use new SR clustering system with weight optimization
+            self.logger.info('🚀 Using SR clustering system with weight optimization...')
+            
+            # First, get basic SR levels using existing detector
+            if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None or SRLevel is None:
+                raise RuntimeError("Enhanced SR Detector not available for initial detection.")
+            
+            # Create basic SR detector for initial detection
             sr_config = {
-                'min_touches': getattr(self, 'min_touches', 2),  # Back to 2 for more levels
-                'tolerance_pct': getattr(self, 'tolerance_pct', 0.5),  # More permissive: 0.5% for more levels
+                'min_touches': getattr(self, 'min_touches', 2),
+                'tolerance_pct': getattr(self, 'tolerance_pct', 0.5),
                 'lookback_periods': getattr(self, 'lookback_periods', 100),
                 'memory_efficient': True,
                 'use_parallel': self.enable_parallel_processing if hasattr(self, 'enable_parallel_processing') else False,
-                'disable_dbscan_clustering': False,  # Keep clustering but with distance constraints
-                'max_cluster_distance_pct': 0.3,  # Less restrictive: merge levels within 0.3% (was 0.2%)
-                'touch_proximity_threshold': 0.002,  # Less conservative: merge levels within 0.2% (was 0.1%)
-                'max_volume_levels': 50,  # Increased back to 50 for more levels
-                'max_fibonacci_levels': 30,  # Increased back to 30 for more levels
-                'use_prominence_filtering': True,  # Enable prominence calculation (used in unified strength×prominence filtering)
-                'outlier_threshold_std': 3.0,  # Less conservative: 3.0 std instead of 2.5
-                'min_strength': 0.2,  # Lower minimum strength threshold for more levels
-                'enable_price_range_validation': True,  # Enable price range validation
-                'max_price_range_ratio': 20.0,  # More permissive: 20x ratio instead of 10x
-                'enable_consolidation_detection': True,  # Enable consolidation zone detection
-                # DBSCAN parameter adjustment settings
-                'max_relaxation_attempts': 6,  # Fewer attempts for faster convergence
-                'eps_strictness_factor': 2.5,  # More aggressive eps reduction
-                'min_samples_reduction_factor': 0.5,  # More aggressive min_samples reduction
-                'min_levels_threshold': 90,  # Minimum levels to maintain after clustering
-                'min_levels_ratio': 0.2  # Minimum ratio of original levels to maintain (20%)
             }
-
-            # Initialize detector
+            
             detector = EnhancedSRDetector(sr_config)
-
-            # Detect levels using cleaned data
-            self.logger.info(f'🎯 Detecting SR levels on {len(clean_data)} validated rows...')
-            sr_levels = detector.detect_sr_levels(clean_data)
-
-            # Handle the case where detector returns a list instead of dict
-            if isinstance(sr_levels, list):
-                # Convert list format to expected dict format
-                support_levels = []
-                resistance_levels = []
-
-                for level in sr_levels:
-                    if hasattr(level, 'type'):
-                        level_type = level.type
-                    elif hasattr(level, 'get') and callable(getattr(level, 'get')):
-                        level_type = level.get('type')
-                    else:
-                        # Try to access as attribute or skip
-                        level_type = getattr(level, 'type', None)
-
-                    if level_type == 'support':
-                        support_levels.append(level)
-                    elif level_type == 'resistance':
-                        resistance_levels.append(level)
-
-                sr_levels = {
-                    'support_levels': support_levels,
-                    'resistance_levels': resistance_levels
-                }
+            basic_sr_levels = detector.detect_sr_levels(clean_data)
+            
+            # Convert to list format for clustering
+            if isinstance(basic_sr_levels, dict):
+                all_levels = basic_sr_levels.get('support_levels', []) + basic_sr_levels.get('resistance_levels', [])
             else:
-                # Detector already returned dict format, ensure it has required keys
-                if not isinstance(sr_levels, dict):
-                    sr_levels = {'support_levels': [], 'resistance_levels': []}
-                elif 'support_levels' not in sr_levels:
-                    sr_levels['support_levels'] = []
-                elif 'resistance_levels' not in sr_levels:
-                    sr_levels['resistance_levels'] = []
+                all_levels = basic_sr_levels if isinstance(basic_sr_levels, list) else []
+            
+            if not all_levels:
+                raise RuntimeError("No basic SR levels detected. Cannot proceed with clustering.")
+            
+            # Use backtesting-enhanced clustering
+            clustering_config = BacktestingEnhancedConfig(
+                min_levels_for_learning=5,
+                quality_filter_threshold=0.1,
+                proximity_adjustment_factor=0.5
+            )
+            
+            clustering = get_backtesting_enhanced_clustering(clustering_config)
+            
+            # Convert levels to dict format for clustering
+            levels_dict = []
+            for level in all_levels:
+                if hasattr(level, 'price'):
+                    level_dict = {
+                        'price': level.price,
+                        'strength': getattr(level, 'strength', 0.5),
+                        'level_type': getattr(level, 'type', 'support'),
+                        'touch_count': getattr(level, 'touch_count', 2),
+                        'first_touch': getattr(level, 'first_touch', datetime.now() - timedelta(days=30)),
+                        'last_touch': getattr(level, 'last_touch', datetime.now() - timedelta(days=1))
+                    }
+                    levels_dict.append(level_dict)
+            
+            # Run enhanced clustering
+            self.logger.info(f'🎯 Running backtesting-enhanced clustering on {len(levels_dict)} levels...')
+            enhanced_result = clustering.cluster_with_backtesting(levels_dict, clean_data)
+            
+            if not enhanced_result or not enhanced_result.clusters:
+                raise RuntimeError("Enhanced clustering failed. No clusters generated.")
+            
+            # Convert back to expected format
+            support_levels = []
+            resistance_levels = []
+            
+            for cluster in enhanced_result.clusters:
+                for level in cluster.get('levels', []):
+                    if level.get('level_type') == 'support':
+                        support_levels.append(level)
+                    else:
+                        resistance_levels.append(level)
+            
+            sr_levels = {
+                'support_levels': support_levels,
+                'resistance_levels': resistance_levels,
+                'enhanced_clustering': True,
+                'clustering_result': enhanced_result
+            }
+            
+            self.logger.info(f'✅ Enhanced clustering complete: {len(support_levels)} support, {len(resistance_levels)} resistance levels')
 
             # Validate that detected levels were actually reached by market prices
             sr_levels = self._validate_sr_levels_against_market_data(sr_levels, clean_data)
@@ -1615,6 +1637,95 @@ class SROptimizationStep(BaseStep):
         except Exception as e:
             self.logger.error(f'❌ Enhanced S/R detection failed: {e}')
             raise RuntimeError(f"Advanced SR detection failed: {e}. No fallback available.")
+
+    def _create_enhanced_training_data(self, sr_levels: Dict[str, Any], market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Create enhanced training data with SR quality features for existing ML models."""
+        try:
+            self.logger.info('🧠 Creating enhanced training data with SR quality features...')
+            
+            # Extract all levels
+            all_levels = sr_levels.get('support_levels', []) + sr_levels.get('resistance_levels', [])
+            
+            if not all_levels:
+                self.logger.warning('No SR levels available for enhanced training data creation')
+                return {}
+            
+            # Convert to SRLevel format for predictive engine
+            from src.utils.sr_clustering import SRLevel
+            sr_level_objects = []
+            
+            for level in all_levels:
+                if isinstance(level, dict):
+                    sr_level = SRLevel(
+                        price=level.get('price', 0.0),
+                        level_type=level.get('level_type', 'support'),
+                        strength=level.get('strength', 0.5),
+                        first_touch=level.get('first_touch', datetime.now() - timedelta(days=30)),
+                        last_touch=level.get('last_touch', datetime.now() - timedelta(days=1)),
+                        touch_count=level.get('touch_count', 2),
+                        timeframe='1D',
+                        symbol='TEST',
+                        source='step02_5'
+                    )
+                    sr_level_objects.append(sr_level)
+            
+            if not sr_level_objects:
+                self.logger.warning('No valid SR level objects created')
+                return {}
+            
+            # Initialize predictive engine
+            predictive_config = PredictiveConfig(
+                model_type='ensemble',
+                include_market_context=True,
+                include_volatility_features=True,
+                include_volume_features=True,
+                prediction_horizon_days=30
+            )
+            
+            predictive_engine = get_predictive_sr_engine(predictive_config)
+            
+            # Train predictive model
+            training_result = predictive_engine.train_predictive_model(
+                market_data, sr_level_objects, optimize_weights=True
+            )
+            
+            if training_result.get('status') == 'success':
+                self.logger.info('✅ Enhanced training data created successfully')
+                
+                # Get SR quality predictions for each level
+                sr_quality_predictions = []
+                for sr_level in sr_level_objects:
+                    try:
+                        prediction = predictive_engine.predict_sr_quality(
+                            sr_level, market_data, 30
+                        )
+                        sr_quality_predictions.append({
+                            'price': sr_level.price,
+                            'level_type': sr_level.level_type,
+                            'sr_quality': prediction.predicted_quality,
+                            'sr_confidence': prediction.confidence,
+                            'key_factors': prediction.key_factors,
+                            'market_context': prediction.market_context
+                        })
+                    except Exception as e:
+                        self.logger.warning(f'Failed to predict quality for level at {sr_level.price}: {e}')
+                        continue
+                
+                return {
+                    'enhanced_training_data': True,
+                    'sr_quality_predictions': sr_quality_predictions,
+                    'training_result': training_result,
+                    'optimized_weights': training_result.get('optimized_weights', {}),
+                    'feature_importance': training_result.get('feature_importance', {}),
+                    'model_performance': training_result.get('model_performance', {})
+                }
+            else:
+                self.logger.warning(f'Predictive model training failed: {training_result.get("error", "Unknown error")}')
+                return {}
+                
+        except Exception as e:
+            self.logger.error(f'Enhanced training data creation failed: {e}')
+            return {}
 
     def _log_all_sr_levels_detailed(self, sr_levels: Dict[str, Any], data: pd.DataFrame) -> None:
         """Log ALL S/R levels found with comprehensive details."""
@@ -1819,7 +1930,7 @@ class SROptimizationStep(BaseStep):
                             distance_from_max = abs(level_price - chunk_max)
                             closest_distance = min(distance_from_min, distance_from_max)
                             type_display = level_type.capitalize() if isinstance(level_type, str) else str(level_type)
-                            self.logger.info('.2f')
+                            self.logger.info(f'   - Price range: {chunk_min:.2f} - {chunk_max:.2f}')
                         except Exception as e:
                             self.logger.debug(f'Error logging individual level {i+1}: {e}')
                             continue
@@ -1871,7 +1982,7 @@ class SROptimizationStep(BaseStep):
                     if level_price >= market_min:
                         validated_support.append(level)
                     else:
-                        self.logger.debug('.2f')
+                        self.logger.debug(f'   - Market price range: {market_min:.2f} - {market_max:.2f}')
 
             # Validate resistance levels
             original_resistance_count = len(sr_levels.get('resistance_levels', []))
@@ -1884,7 +1995,7 @@ class SROptimizationStep(BaseStep):
                     if level_price <= market_max:
                         validated_resistance.append(level)
                     else:
-                        self.logger.warning('.2f')
+                        self.logger.warning(f'   - Filtered resistance level: {level_price:.2f} (above market max: {market_max:.2f})')
 
             # Update SR levels with validated results
             validated_sr_levels = {

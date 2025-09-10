@@ -49,8 +49,19 @@ import time
 
 if NUMBA_AVAILABLE:
 
-    @jit(nopython = True, parallel = True)
     def fast_correlation_matrix(X: np.ndarray) -> np.ndarray:
+        """Compute correlation matrix using enhanced matrix operations with Numba fallback."""
+        # Use enhanced matrix operations for correlation computation if available
+        try:
+            from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+            enhanced_ops = get_enhanced_matrix_operations()
+            return enhanced_ops.correlation_matrix(X)
+        except ImportError:
+            # Fallback to Numba implementation
+            return _numba_correlation_matrix(X)
+    
+    @jit(nopython = True, parallel = True)
+    def _numba_correlation_matrix(X: np.ndarray) -> np.ndarray:
         """Compute correlation matrix using Numba for speed."""
         n_features = X.shape[1]
         corr_matrix = np.zeros((n_features, n_features))
@@ -102,8 +113,14 @@ if NUMBA_AVAILABLE:
 else:
 
     def fast_correlation_matrix(X: np.ndarray) -> np.ndarray:
-        """Standard correlation matrix computation."""
-        return np.corrcoef(X.T)
+        """Standard correlation matrix computation with enhanced matrix operations."""
+        # Use enhanced matrix operations for correlation computation if available
+        try:
+            from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+            enhanced_ops = get_enhanced_matrix_operations()
+            return enhanced_ops.correlation_matrix(X)
+        except ImportError:
+            return np.corrcoef(X.T)
 
     def fast_mutual_information(X: np.ndarray, y: np.ndarray, n_bins: int = 10) -> np.ndarray:
         """Standard mutual information using sklearn."""

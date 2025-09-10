@@ -3914,7 +3914,7 @@ class EnhancedSRDetector:
             
             # Final validation: ensure eps is within reasonable bounds
             min_eps = avg_price * 0.001  # 0.1% minimum
-            max_eps = avg_price * 0.1    # 10% maximum
+            max_eps = avg_price * 0.005  # 0.5% maximum
             eps = np.clip(eps, min_eps, max_eps)
             
             self.logger.info(f'✅ Validated DBSCAN params - eps: {eps:.2f}, min_samples: {min_samples}, '

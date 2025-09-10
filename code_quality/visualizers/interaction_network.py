@@ -2,6 +2,7 @@
 Interaction Network Visualizer
 
 Creates network visualizations of code interactions and relationships.
+Enhanced with import verification data for more accurate interaction analysis.
 """
 
 from typing import Optional, Dict, List, Any, Tuple
@@ -13,10 +14,11 @@ from .code_visualizer import CodeVisualizer
 
 
 class InteractionNetworkVisualizer(CodeVisualizer):
-    """Visualizes code interactions as interactive networks."""
+    """Visualizes code interactions as interactive networks with import verification enhancement."""
     
     def __init__(self, output_dir: Optional[str] = None):
         super().__init__(output_dir)
+        self.import_verification_data = None
         
     def create_function_call_network(self, call_graph: Dict[str, List[str]], 
                                    title: str = "Function Call Network") -> Tuple[Any, Dict[str, Any]]:
@@ -128,6 +130,87 @@ class InteractionNetworkVisualizer(CodeVisualizer):
             'isolated_functions': list(nx.isolates(G)),
             'strongly_connected': [list(c) for c in nx.strongly_connected_components(G) if len(c) > 1]
         }
+        
+        return fig, metadata
+    
+    def create_enhanced_interaction_network_with_imports(self, interactions: Dict[str, List[str]], 
+                                                       import_verification_data: Dict[str, Any],
+                                                       title: str = "Enhanced Interaction Network") -> Tuple[Any, Dict[str, Any]]:
+        """
+        Create an enhanced interaction network using import verification data.
+        
+        Args:
+            interactions: Dict mapping nodes to their connections
+            import_verification_data: Results from ImportVerifierAnalyzer
+            title: Network title
+            
+        Returns:
+            Tuple of (figure, metadata)
+        """
+        # Store import verification data
+        self.import_verification_data = import_verification_data
+        
+        # Build the enhanced graph
+        G = nx.DiGraph()
+        import_status = import_verification_data.get("import_status", {})
+        
+        # Add nodes with import verification metadata
+        for node, connections in interactions.items():
+            if not G.has_node(node):
+                # Get import verification data for this node
+                node_import_data = import_status.get(node, {})
+                G.add_node(node,
+                          is_imported=node_import_data.get("is_imported", False),
+                          import_count=node_import_data.get("import_count", 0),
+                          only_non_production=node_import_data.get("only_imported_by_non_production", False),
+                          imported_by=node_import_data.get("imported_by", []))
+            
+            for conn in connections:
+                if not G.has_node(conn):
+                    conn_import_data = import_status.get(conn, {})
+                    G.add_node(conn,
+                              is_imported=conn_import_data.get("is_imported", False),
+                              import_count=conn_import_data.get("import_count", 0),
+                              only_non_production=conn_import_data.get("only_imported_by_non_production", False),
+                              imported_by=conn_import_data.get("imported_by", []))
+                G.add_edge(node, conn)
+        
+        # Calculate enhanced node metrics
+        pagerank = nx.pagerank(G)
+        betweenness = nx.betweenness_centrality(G)
+        in_degree = dict(G.in_degree())
+        out_degree = dict(G.out_degree())
+        
+        # Identify enhanced node types using import data
+        entry_points = [n for n in G.nodes() if in_degree.get(n, 0) == 0]
+        exit_points = [n for n in G.nodes() if out_degree.get(n, 0) == 0]
+        hub_nodes = [n for n in G.nodes() if betweenness.get(n, 0) > 0.1]
+        
+        # Enhanced node classification using import data
+        critical_nodes = [n for n in G.nodes() if G.nodes[n].get("import_count", 0) > 5]
+        unused_nodes = [n for n in G.nodes() if not G.nodes[n].get("is_imported", False)]
+        non_prod_nodes = [n for n in G.nodes() if G.nodes[n].get("only_non_production", False)]
+        
+        # Create enhanced figure
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(24, 16))
+        fig.suptitle(title, fontsize=20, fontweight='bold')
+        
+        # 1. Main enhanced interaction network
+        self._plot_enhanced_interaction_network(ax1, G, import_status, pagerank, betweenness)
+        
+        # 2. Import-based node classification
+        self._plot_import_based_classification(ax2, G, import_status)
+        
+        # 3. Critical interaction analysis
+        self._plot_critical_interactions(ax3, G, import_status, pagerank)
+        
+        # 4. Interaction patterns analysis
+        self._plot_interaction_patterns(ax4, G, import_status, interactions)
+        
+        plt.tight_layout()
+        
+        # Prepare enhanced metadata
+        metadata = self._generate_enhanced_interaction_metadata(import_verification_data, interactions, G)
         
         return fig, metadata
     
@@ -484,3 +567,242 @@ class InteractionNetworkVisualizer(CodeVisualizer):
             ax.text(0.5, 0.5, 'Clustering analysis not available', 
                    ha='center', va='center', fontsize=14)
             ax.axis('off')
+    
+    def _plot_enhanced_interaction_network(self, ax, G: nx.DiGraph, import_status: Dict[str, Any], 
+                                         pagerank: Dict, betweenness: Dict) -> None:
+        """Plot the main enhanced interaction network with import verification data."""
+        if not G.nodes():
+            ax.text(0.5, 0.5, 'No interaction data available', ha='center', va='center')
+            ax.axis('off')
+            return
+        
+        # Calculate layout
+        pos = self._calculate_hierarchical_layout(G, [])
+        
+        # Enhanced node styling based on import verification data
+        node_colors = []
+        node_sizes = []
+        
+        for node in G.nodes():
+            node_data = G.nodes[node]
+            is_imported = node_data.get("is_imported", False)
+            import_count = node_data.get("import_count", 0)
+            only_non_prod = node_data.get("only_non_production", False)
+            
+            # Color coding based on import status
+            if only_non_prod:
+                node_colors.append('orange')  # Only imported by non-production
+            elif is_imported:
+                node_colors.append('green')   # Imported by production code
+            else:
+                node_colors.append('red')     # Not imported
+            
+            # Size based on PageRank and import count
+            pagerank_score = pagerank.get(node, 0)
+            size = max(100, min(1000, 100 + pagerank_score * 1000 + import_count * 50))
+            node_sizes.append(size)
+        
+        # Draw network
+        nx.draw_networkx_nodes(G, pos, ax=ax,
+                             node_color=node_colors,
+                             node_size=node_sizes,
+                             alpha=0.8,
+                             edgecolors='black',
+                             linewidths=1)
+        
+        # Draw edges with varying styles based on importance
+        edge_widths = []
+        for u, v in G.edges():
+            # Thicker lines for more important connections
+            importance = pagerank.get(v, 0) * 10
+            edge_widths.append(max(0.5, min(3, importance)))
+        
+        nx.draw_networkx_edges(G, pos, ax=ax,
+                             edge_color='gray',
+                             width=edge_widths,
+                             alpha=0.5,
+                             arrows=True,
+                             arrowsize=10,
+                             arrowstyle='->')
+        
+        # Draw labels
+        labels = {n: self.format_label(n, 15) for n in G.nodes()}
+        nx.draw_networkx_labels(G, pos, labels, ax=ax, font_size=8)
+        
+        ax.set_title("Enhanced Interaction Network", fontsize=14)
+        ax.axis('off')
+        
+        # Add enhanced legend
+        legend_elements = [
+            plt.scatter([], [], c='green', s=100, edgecolors='black', label='Imported by production'),
+            plt.scatter([], [], c='orange', s=100, edgecolors='black', label='Only non-production'),
+            plt.scatter([], [], c='red', s=100, edgecolors='black', label='Not imported')
+        ]
+        ax.legend(handles=legend_elements, loc='upper left')
+    
+    def _plot_import_based_classification(self, ax, G: nx.DiGraph, import_status: Dict[str, Any]) -> None:
+        """Plot import-based node classification."""
+        if not G.nodes():
+            ax.text(0.5, 0.5, 'No data available', ha='center', va='center')
+            ax.axis('off')
+            return
+        
+        # Classify nodes based on import data
+        imported_nodes = [n for n in G.nodes() if G.nodes[n].get("is_imported", False)]
+        unimported_nodes = [n for n in G.nodes() if not G.nodes[n].get("is_imported", False)]
+        non_prod_nodes = [n for n in G.nodes() if G.nodes[n].get("only_non_production", False)]
+        critical_nodes = [n for n in G.nodes() if G.nodes[n].get("import_count", 0) > 5]
+        
+        # Create classification chart
+        categories = ['Imported', 'Unimported', 'Non-Production Only', 'Critical (>5 imports)']
+        counts = [len(imported_nodes), len(unimported_nodes), len(non_prod_nodes), len(critical_nodes)]
+        colors = ['green', 'red', 'orange', 'purple']
+        
+        # Remove zero counts
+        non_zero_data = [(cat, count, color) for cat, count, color in zip(categories, counts, colors) if count > 0]
+        if non_zero_data:
+            categories, counts, colors = zip(*non_zero_data)
+            
+            wedges, texts, autotexts = ax.pie(counts, labels=categories, colors=colors, autopct='%1.1f%%',
+                                            startangle=90, alpha=0.8)
+            ax.set_title('Node Classification by Import Status', fontsize=14)
+        else:
+            ax.text(0.5, 0.5, 'No classification data', ha='center', va='center')
+            ax.axis('off')
+    
+    def _plot_critical_interactions(self, ax, G: nx.DiGraph, import_status: Dict[str, Any], pagerank: Dict) -> None:
+        """Plot critical interactions analysis."""
+        if not G.nodes():
+            ax.text(0.5, 0.5, 'No data available', ha='center', va='center')
+            ax.axis('off')
+            return
+        
+        # Find critical interactions (high PageRank + high import count)
+        critical_interactions = []
+        for node in G.nodes():
+            node_data = G.nodes[node]
+            pagerank_score = pagerank.get(node, 0)
+            import_count = node_data.get("import_count", 0)
+            
+            # Critical if high PageRank and high import count
+            if pagerank_score > 0.01 and import_count > 2:
+                critical_interactions.append((node, pagerank_score, import_count))
+        
+        # Sort by combined score
+        critical_interactions.sort(key=lambda x: x[1] * x[2], reverse=True)
+        top_critical = critical_interactions[:10]  # Top 10
+        
+        if top_critical:
+            nodes, pageranks, import_counts = zip(*top_critical)
+            node_labels = [self.format_label(Path(n).name, 20) for n in nodes]
+            
+            # Create scatter plot
+            scatter = ax.scatter(pageranks, import_counts, s=100, alpha=0.7, c=range(len(nodes)), cmap='viridis')
+            
+            # Add labels
+            for i, (node, pr, ic) in enumerate(top_critical):
+                ax.annotate(node_labels[i], (pr, ic), xytext=(5, 5), textcoords='offset points', fontsize=8)
+            
+            ax.set_xlabel('PageRank Score')
+            ax.set_ylabel('Import Count')
+            ax.set_title('Critical Interactions (PageRank vs Import Count)', fontsize=14)
+            ax.grid(True, alpha=0.3)
+        else:
+            ax.text(0.5, 0.5, 'No critical interactions found', ha='center', va='center')
+            ax.axis('off')
+    
+    def _plot_interaction_patterns(self, ax, G: nx.DiGraph, import_status: Dict[str, Any], interactions: Dict[str, List[str]]) -> None:
+        """Plot interaction patterns analysis."""
+        if not G.nodes():
+            ax.text(0.5, 0.5, 'No data available', ha='center', va='center')
+            ax.axis('off')
+            return
+        
+        # Analyze interaction patterns
+        pattern_stats = {
+            'high_interaction_high_import': 0,  # Many interactions, many imports
+            'high_interaction_low_import': 0,   # Many interactions, few imports
+            'low_interaction_high_import': 0,   # Few interactions, many imports
+            'low_interaction_low_import': 0     # Few interactions, few imports
+        }
+        
+        for node in G.nodes():
+            node_data = G.nodes[node]
+            interaction_count = len(interactions.get(node, []))
+            import_count = node_data.get("import_count", 0)
+            
+            # Classify pattern
+            if interaction_count > 3 and import_count > 3:
+                pattern_stats['high_interaction_high_import'] += 1
+            elif interaction_count > 3 and import_count <= 3:
+                pattern_stats['high_interaction_low_import'] += 1
+            elif interaction_count <= 3 and import_count > 3:
+                pattern_stats['low_interaction_high_import'] += 1
+            else:
+                pattern_stats['low_interaction_low_import'] += 1
+        
+        # Create bar chart
+        patterns = list(pattern_stats.keys())
+        counts = list(pattern_stats.values())
+        colors = ['darkgreen', 'orange', 'blue', 'gray']
+        
+        bars = ax.bar(range(len(patterns)), counts, color=colors, alpha=0.8)
+        ax.set_xticks(range(len(patterns)))
+        ax.set_xticklabels([p.replace('_', '\n') for p in patterns], rotation=45, ha='right')
+        ax.set_ylabel('Number of Nodes')
+        ax.set_title('Interaction Patterns Analysis', fontsize=14)
+        ax.grid(True, alpha=0.3)
+        
+        # Add value labels on bars
+        for bar, count in zip(bars, counts):
+            if count > 0:
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1, 
+                       str(count), ha='center', va='bottom')
+    
+    def _generate_enhanced_interaction_metadata(self, import_verification_data: Dict[str, Any], 
+                                              interactions: Dict[str, List[str]], G: nx.DiGraph) -> Dict[str, Any]:
+        """Generate enhanced metadata for interaction network with import verification data."""
+        import_status = import_verification_data.get("import_status", {})
+        summary = import_verification_data.get("summary", {})
+        advanced_analysis = import_verification_data.get("advanced_analysis", {})
+        
+        # Calculate enhanced metrics
+        total_nodes = len(G.nodes())
+        total_edges = len(G.edges())
+        
+        # Import verification metrics
+        imported_nodes = sum(1 for node in G.nodes() if G.nodes[node].get("is_imported", False))
+        unimported_nodes = total_nodes - imported_nodes
+        critical_nodes = sum(1 for node in G.nodes() if G.nodes[node].get("import_count", 0) > 5)
+        
+        return {
+            'total_nodes': total_nodes,
+            'total_edges': total_edges,
+            'import_verification_metrics': {
+                'total_files_analyzed': summary.get("total_files", 0),
+                'imported_nodes': imported_nodes,
+                'unimported_nodes': unimported_nodes,
+                'critical_nodes': critical_nodes,
+                'import_percentage': summary.get("import_percentage", 0)
+            },
+            'enhanced_analysis': {
+                'interaction_patterns': {
+                    'high_interaction_high_import': sum(1 for node in G.nodes() 
+                                                      if len(interactions.get(node, [])) > 3 and 
+                                                         G.nodes[node].get("import_count", 0) > 3),
+                    'high_interaction_low_import': sum(1 for node in G.nodes() 
+                                                      if len(interactions.get(node, [])) > 3 and 
+                                                         G.nodes[node].get("import_count", 0) <= 3),
+                    'low_interaction_high_import': sum(1 for node in G.nodes() 
+                                                      if len(interactions.get(node, [])) <= 3 and 
+                                                         G.nodes[node].get("import_count", 0) > 3),
+                    'low_interaction_low_import': sum(1 for node in G.nodes() 
+                                                     if len(interactions.get(node, [])) <= 3 and 
+                                                        G.nodes[node].get("import_count", 0) <= 3)
+                },
+                'circular_dependencies': advanced_analysis.get("circular_imports", []),
+                'critical_paths': advanced_analysis.get("critical_paths", {})
+            },
+            'visualization_type': 'enhanced_interaction_network_with_imports',
+            'enhancement_version': '1.0.0'
+        }

@@ -217,7 +217,7 @@ class ImportVerifierPipeline(BasePipeline):
                 ""
             ])
         
-        # Add top 5 most imported files
+        # Add top 5 most imported files with details
         top_files = self.get_most_imported_files(results, 5)
         if top_files:
             report_lines.extend([
@@ -226,7 +226,19 @@ class ImportVerifierPipeline(BasePipeline):
             ])
             for i, file_info in enumerate(top_files, 1):
                 report_lines.append(f"  {i}. {file_info['file_path']} ({file_info['import_count']} imports)")
-            report_lines.append("")
+                # Show which files import this one
+                imported_by = file_info.get('imported_by', [])
+                if imported_by:
+                    report_lines.append(f"     Imported by:")
+                    for importer in sorted(imported_by)[:5]:  # Show first 5 importers
+                        try:
+                            rel_importer = Path(importer).relative_to(Path.cwd())
+                            report_lines.append(f"       • {rel_importer}")
+                        except ValueError:
+                            report_lines.append(f"       • {importer}")
+                    if len(imported_by) > 5:
+                        report_lines.append(f"       ... and {len(imported_by) - 5} more")
+                report_lines.append("")
         
         report_lines.extend([
             "="*80,

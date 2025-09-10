@@ -2,14 +2,14 @@
 Unified Feature Selection Infrastructure
 
 This module provides unified feature selection across all training steps using
-Step08AdvancedFeatureSelection from step08_utilities, replacing custom feature 
-selection logic.
+Step08AdvancedFeatureSelection from step08_utilities, replacing multiple feature 
+selection implementations.
 
 Key Features:
 - Unified feature selection using Step08AdvancedFeatureSelection
-- Reduces feature selection code by ~70%
+- Consolidates multiple feature selection files into utility-based steps
 - Standardized feature selection approaches across all steps
-- Automatic feature selection validation and quality checks
+- Automatic feature validation and quality checks
 - Integration with ML Common utilities
 - Comprehensive error handling and logging
 """
@@ -43,8 +43,7 @@ from .unified_data_quality import (
 # Import step08 utilities for feature selection
 from src.utils.step08_utilities import (
     Step08AdvancedFeatureSelection,
-    Step08AdvancedFeatureSelectionPerRegime,
-    AdvancedFeatureSelectionStep,
+    Step08UtilityContainer,
     get_utility_container
 )
 
@@ -65,8 +64,8 @@ class UnifiedFeatureSelectionManager:
     """
     Unified feature selection manager for all training steps.
     
-    This replaces custom feature selection logic with a unified approach
-    using Step08AdvancedFeatureSelection from step08_utilities.
+    This replaces multiple feature selection implementations with a unified
+    approach using Step08AdvancedFeatureSelection from step08_utilities.
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -81,59 +80,43 @@ class UnifiedFeatureSelectionManager:
         # Initialize utility container for dependency injection
         self.utility_container = get_utility_container(config)
         
+        # Initialize advanced feature selection
+        self.feature_selector = Step08AdvancedFeatureSelection(config)
+        
         # Feature selection configuration
         self.selection_config = self.config.get('feature_selection_config', {})
         
         # Standard feature selection settings
         self.standard_settings = {
-            'selection_method': 'mrmr',
+            'enable_mrmr_selection': True,
+            'enable_importance_selection': True,
+            'enable_rfe_selection': True,
+            'enable_correlation_selection': True,
+            'enable_mutual_info_selection': True,
+            'enable_regime_specific_selection': True,
+            'enable_stability_analysis': True,
+            'enable_feature_interaction_analysis': True,
             'n_features': 50,
+            'selection_threshold': 0.01,
             'stability_threshold': 0.6,
             'correlation_threshold': 0.95,
-            'variance_threshold': 1e-10,
-            'enable_regime_specific': False,
-            'enable_parallel_processing': True,
-            'enable_gpu_acceleration': True,
-            'max_workers': 4,
-            'timeout_seconds': 3600,
-            'random_state': 42
+            'mutual_info_threshold': 0.01,
+            'max_features': 200,
+            'min_features': 10
         }
         
         # Update with user configuration
         self.standard_settings.update(self.selection_config)
         
-        # Initialize feature selection based on method
-        self._initialize_feature_selector()
-        
         self.logger.info("🚀 Unified Feature Selection Manager initialized")
     
-    def _initialize_feature_selector(self):
-        """Initialize the appropriate feature selector based on configuration."""
-        try:
-            selection_method = self.standard_settings.get('selection_method', 'mrmr')
-            enable_regime_specific = self.standard_settings.get('enable_regime_specific', False)
-            
-            if enable_regime_specific:
-                # Use regime-specific feature selection
-                self.feature_selector = Step08AdvancedFeatureSelectionPerRegime(self.config)
-                self.logger.info("Using regime-specific feature selection")
-            else:
-                # Use standard feature selection
-                self.feature_selector = Step08AdvancedFeatureSelection(self.config)
-                self.logger.info(f"Using standard feature selection with method: {selection_method}")
-            
-        except Exception as e:
-            self.logger.warning(f"Error initializing feature selector: {e}")
-            # Fallback to basic feature selection
-            self.feature_selector = None
-    
     async def select_features(self, features: pd.DataFrame, targets: pd.Series, 
-                            selection_type: str = 'comprehensive') -> Dict[str, Any]:
+                             selection_type: str = 'comprehensive') -> Dict[str, Any]:
         """
         Select features using unified approach.
         
         Args:
-            features: Feature matrix
+            features: Input features
             targets: Target values
             selection_type: Type of selection ('basic', 'standard', 'comprehensive')
             
@@ -141,7 +124,7 @@ class UnifiedFeatureSelectionManager:
             Feature selection result
         """
         try:
-            self.logger.info(f"🎯 Starting {selection_type} feature selection...")
+            self.logger.info(f"🎯 Selecting features using {selection_type} approach...")
             
             # Validate input data
             features_validation = validate_data_quality(features, 'features', 'comprehensive')
@@ -153,36 +136,31 @@ class UnifiedFeatureSelectionManager:
             if not targets_validation['passed']:
                 self.logger.warning(f"Targets validation issues: {targets_validation['errors']}")
             
-            # Perform feature selection based on type
+            # Select features based on type
             if selection_type == 'basic':
-                selection_result = await self._perform_basic_selection(features, targets)
+                selected_features = await self._select_basic_features(features, targets)
             elif selection_type == 'standard':
-                selection_result = await self._perform_standard_selection(features, targets)
+                selected_features = await self._select_standard_features(features, targets)
             elif selection_type == 'comprehensive':
-                selection_result = await self._perform_comprehensive_selection(features, targets)
+                selected_features = await self._select_comprehensive_features(features, targets)
             else:
                 raise ValueError(f"Unknown selection type: {selection_type}")
             
             # Validate selected features
-            selected_features_validation = validate_data_quality(
-                selection_result['selected_features'], 'features', 'standard'
-            )
+            selected_validation = validate_data_quality(selected_features, 'features', 'comprehensive')
             
             # Generate selection metadata
-            selection_metadata = self._generate_selection_metadata(
-                features, targets, selection_result, selection_type
-            )
+            selection_metadata = self._generate_selection_metadata(features, selected_features, selection_type)
             
             # Generate quality report
-            quality_report = generate_quality_report(selection_result['selected_features'], 'selected_features')
+            quality_report = generate_quality_report(selected_features, 'selected_features')
             
             return {
-                'selected_features': selection_result['selected_features'],
-                'feature_importance': selection_result.get('feature_importance', {}),
+                'selected_features': selected_features,
                 'selection_metadata': selection_metadata,
+                'selected_validation': selected_validation,
                 'features_validation': features_validation,
                 'targets_validation': targets_validation,
-                'selected_features_validation': selected_features_validation,
                 'quality_report': quality_report,
                 'selection_type': selection_type
             }
@@ -191,148 +169,140 @@ class UnifiedFeatureSelectionManager:
             self.logger.exception(f"Error selecting features: {e}")
             raise
     
-    async def _perform_basic_selection(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, Any]:
-        """Perform basic feature selection (variance + correlation filtering)."""
+    async def _select_basic_features(self, features: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
+        """Select features using basic approach (correlation-based only)."""
         try:
-            self.logger.info("Performing basic feature selection...")
+            self.logger.info("Selecting features using basic approach...")
             
-            # Start with all features
-            selected_features = features.copy()
+            # Use correlation-based selection
+            selected_features = self.feature_selector.select_features_by_correlation(
+                features=features,
+                targets=targets,
+                threshold=self.standard_settings.get('correlation_threshold', 0.95)
+            )
             
-            # Remove low variance features
-            variance_threshold = self.standard_settings.get('variance_threshold', 1e-10)
-            feature_variances = selected_features.var()
-            high_variance_features = feature_variances[feature_variances > variance_threshold].index
-            selected_features = selected_features[high_variance_features]
-            
-            self.logger.info(f"After variance filtering: {len(selected_features.columns)} features")
-            
-            # Remove highly correlated features
-            correlation_threshold = self.standard_settings.get('correlation_threshold', 0.95)
-            correlation_matrix = selected_features.corr().abs()
-            
-            # Find highly correlated pairs
-            high_corr_pairs = []
-            for i in range(len(correlation_matrix.columns)):
-                for j in range(i+1, len(correlation_matrix.columns)):
-                    if correlation_matrix.iloc[i, j] > correlation_threshold:
-                        high_corr_pairs.append((correlation_matrix.columns[i], correlation_matrix.columns[j]))
-            
-            # Remove one feature from each highly correlated pair
-            features_to_remove = set()
-            for feat1, feat2 in high_corr_pairs:
-                if feat1 not in features_to_remove:
-                    features_to_remove.add(feat2)
-            
-            selected_features = selected_features.drop(columns=list(features_to_remove))
-            
-            self.logger.info(f"After correlation filtering: {len(selected_features.columns)} features")
-            
-            return {
-                'selected_features': selected_features,
-                'feature_importance': {},
-                'selection_method': 'basic_variance_correlation'
-            }
+            return selected_features
             
         except Exception as e:
             self.logger.exception(f"Error in basic feature selection: {e}")
             raise
     
-    async def _perform_standard_selection(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, Any]:
-        """Perform standard feature selection using ML Common utilities."""
+    async def _select_standard_features(self, features: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
+        """Select features using standard approach (correlation + importance)."""
         try:
-            self.logger.info("Performing standard feature selection...")
+            self.logger.info("Selecting features using standard approach...")
             
-            # Use ML Common FeatureSelectionFramework
-            feature_selector = FeatureSelectionFramework(self.config.get('feature_selection_config', {}))
+            # Start with basic selection
+            basic_features = await self._select_basic_features(features, targets)
             
-            # Perform mRMR selection
-            n_features = self.standard_settings.get('n_features', 50)
-            selection_result = feature_selector.mrmr_selection(
-                X=features.values,
-                y=targets.values,
-                feature_names=list(features.columns),
-                n_features=min(n_features, len(features.columns))
-            )
+            # Add importance-based selection
+            if self.standard_settings.get('enable_importance_selection', True):
+                importance_features = self.feature_selector.select_features_by_importance(
+                    features=features,
+                    targets=targets,
+                    n_features=self.standard_settings.get('n_features', 50)
+                )
+                
+                # Combine selections
+                combined_features = pd.concat([basic_features, importance_features], axis=1)
+                # Remove duplicates
+                selected_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
+            else:
+                selected_features = basic_features
             
-            # Get selected feature names
-            selected_feature_names = selection_result['selected_features']
-            selected_features = features[selected_feature_names]
-            
-            return {
-                'selected_features': selected_features,
-                'feature_importance': selection_result.get('feature_scores', {}),
-                'selection_method': 'mrmr',
-                'selection_details': selection_result
-            }
+            return selected_features
             
         except Exception as e:
             self.logger.exception(f"Error in standard feature selection: {e}")
             raise
     
-    async def _perform_comprehensive_selection(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, Any]:
-        """Perform comprehensive feature selection using Step08 utilities."""
+    async def _select_comprehensive_features(self, features: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
+        """Select features using comprehensive approach (all methods)."""
         try:
-            self.logger.info("Performing comprehensive feature selection...")
+            self.logger.info("Selecting features using comprehensive approach...")
             
-            if self.feature_selector is None:
-                self.logger.warning("Feature selector not available, falling back to standard selection")
-                return await self._perform_standard_selection(features, targets)
+            # Start with standard selection
+            standard_features = await self._select_standard_features(features, targets)
             
-            # Use Step08AdvancedFeatureSelection
-            selection_result = self.feature_selector.select_features(
-                features=features,
-                targets=targets,
-                method=self.standard_settings.get('selection_method', 'mrmr'),
-                n_features=self.standard_settings.get('n_features', 50),
-                stability_threshold=self.standard_settings.get('stability_threshold', 0.6)
-            )
+            # Add MRMR selection
+            if self.standard_settings.get('enable_mrmr_selection', True):
+                mrmr_features = self.feature_selector.select_features_by_mrmr(
+                    features=features,
+                    targets=targets,
+                    n_features=self.standard_settings.get('n_features', 50)
+                )
+                
+                # Combine with standard features
+                combined_features = pd.concat([standard_features, mrmr_features], axis=1)
+                # Remove duplicates
+                selected_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
+            else:
+                selected_features = standard_features
             
-            return {
-                'selected_features': selection_result.get('selected_features', features),
-                'feature_importance': selection_result.get('feature_importance', {}),
-                'selection_method': self.standard_settings.get('selection_method', 'mrmr'),
-                'selection_details': selection_result
-            }
+            # Add RFE selection
+            if self.standard_settings.get('enable_rfe_selection', True):
+                rfe_features = self.feature_selector.select_features_by_rfe(
+                    features=features,
+                    targets=targets,
+                    n_features=self.standard_settings.get('n_features', 50)
+                )
+                
+                # Combine with selected features
+                combined_features = pd.concat([selected_features, rfe_features], axis=1)
+                # Remove duplicates
+                selected_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
+            
+            # Add mutual information selection
+            if self.standard_settings.get('enable_mutual_info_selection', True):
+                mi_features = self.feature_selector.select_features_by_mutual_info(
+                    features=features,
+                    targets=targets,
+                    threshold=self.standard_settings.get('mutual_info_threshold', 0.01)
+                )
+                
+                # Combine with selected features
+                combined_features = pd.concat([selected_features, mi_features], axis=1)
+                # Remove duplicates
+                selected_features = combined_features.loc[:, ~combined_features.columns.duplicated()]
+            
+            # Limit features if specified
+            max_features = self.standard_settings.get('max_features', 200)
+            if len(selected_features.columns) > max_features:
+                self.logger.warning(f"Limiting features from {len(selected_features.columns)} to {max_features}")
+                # Select top features by variance
+                feature_variances = selected_features.var().sort_values(ascending=False)
+                top_features = feature_variances.head(max_features).index
+                selected_features = selected_features[top_features]
+            
+            return selected_features
             
         except Exception as e:
             self.logger.exception(f"Error in comprehensive feature selection: {e}")
             raise
     
-    def _generate_selection_metadata(self, original_features: pd.DataFrame, targets: pd.Series, 
-                                   selection_result: Dict[str, Any], selection_type: str) -> Dict[str, Any]:
+    def _generate_selection_metadata(self, original_features: pd.DataFrame, selected_features: pd.DataFrame, 
+                                   selection_type: str) -> Dict[str, Any]:
         """Generate metadata about feature selection."""
         try:
-            selected_features = selection_result['selected_features']
-            
             metadata = {
                 'selection_type': selection_type,
                 'original_features': len(original_features.columns),
                 'selected_features': len(selected_features.columns),
-                'reduction_ratio': len(selected_features.columns) / len(original_features.columns),
-                'selection_method': selection_result.get('selection_method', 'unknown'),
+                'feature_reduction_ratio': len(selected_features.columns) / len(original_features.columns),
                 'selected_feature_names': list(selected_features.columns),
+                'data_shape': selected_features.shape,
                 'created_at': datetime.now().isoformat(),
                 'settings_used': self.standard_settings
             }
             
-            # Add feature importance information
-            if 'feature_importance' in selection_result and selection_result['feature_importance']:
-                importance_dict = selection_result['feature_importance']
-                if isinstance(importance_dict, dict):
-                    metadata['top_features'] = sorted(
-                        importance_dict.items(), 
-                        key=lambda x: x[1], 
-                        reverse=True
-                    )[:10]
-            
-            # Add selection statistics
+            # Add feature statistics
             if len(selected_features) > 0:
-                metadata['selection_statistics'] = {
-                    'mean_importance': np.mean(list(selection_result.get('feature_importance', {}).values())) if selection_result.get('feature_importance') else 0,
-                    'std_importance': np.std(list(selection_result.get('feature_importance', {}).values())) if selection_result.get('feature_importance') else 0,
-                    'min_importance': min(selection_result.get('feature_importance', {}).values()) if selection_result.get('feature_importance') else 0,
-                    'max_importance': max(selection_result.get('feature_importance', {}).values()) if selection_result.get('feature_importance') else 0
+                metadata['feature_statistics'] = {
+                    'mean_values': selected_features.mean().to_dict(),
+                    'std_values': selected_features.std().to_dict(),
+                    'min_values': selected_features.min().to_dict(),
+                    'max_values': selected_features.max().to_dict(),
+                    'missing_values': selected_features.isnull().sum().to_dict()
                 }
             
             return metadata
@@ -347,16 +317,14 @@ class UnifiedFeatureSelectionManager:
             'config': self.config,
             'standard_settings': self.standard_settings,
             'feature_selector_info': {
-                'selector_type': type(self.feature_selector).__name__ if self.feature_selector else 'None',
+                'selector_type': 'Step08AdvancedFeatureSelection',
                 'available_methods': [
-                    'basic_variance_correlation',
-                    'mrmr',
-                    'importance',
-                    'rfe',
-                    'correlation',
-                    'mutual_info'
-                ],
-                'regime_specific_enabled': self.standard_settings.get('enable_regime_specific', False)
+                    'select_features_by_correlation',
+                    'select_features_by_importance',
+                    'select_features_by_mrmr',
+                    'select_features_by_rfe',
+                    'select_features_by_mutual_info'
+                ]
             },
             'timestamp': datetime.now().isoformat()
         }
@@ -379,7 +347,7 @@ async def unified_feature_selection_logic(config: Dict[str, Any], pipeline_state
     try:
         # Get features and targets from pipeline state
         features = pipeline_state.get('features')
-        targets = pipeline_state.get('labels') or pipeline_state.get('targets')
+        targets = pipeline_state.get('targets') or pipeline_state.get('labels')
         
         if features is None or targets is None:
             raise ValueError("Missing features or targets in pipeline state for feature selection")
@@ -401,13 +369,13 @@ async def unified_feature_selection_logic(config: Dict[str, Any], pipeline_state
 
 
 async def basic_feature_selection_logic(config: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Basic feature selection logic (variance + correlation filtering)."""
+    """Basic feature selection logic (correlation-based only)."""
     logger.info("🎯 Starting basic feature selection...")
     
     try:
         # Get features and targets from pipeline state
         features = pipeline_state.get('features')
-        targets = pipeline_state.get('labels') or pipeline_state.get('targets')
+        targets = pipeline_state.get('targets') or pipeline_state.get('labels')
         
         if features is None or targets is None:
             raise ValueError("Missing features or targets in pipeline state for feature selection")
@@ -415,7 +383,7 @@ async def basic_feature_selection_logic(config: Dict[str, Any], pipeline_state: 
         # Initialize unified feature selection manager
         selection_manager = UnifiedFeatureSelectionManager(config)
         
-        # Select features
+        # Select features using basic approach
         result = await selection_manager.select_features(features, targets, 'basic')
         
         return result
@@ -426,13 +394,13 @@ async def basic_feature_selection_logic(config: Dict[str, Any], pipeline_state: 
 
 
 async def standard_feature_selection_logic(config: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Standard feature selection logic (mRMR selection)."""
+    """Standard feature selection logic (correlation + importance)."""
     logger.info("🎯 Starting standard feature selection...")
     
     try:
         # Get features and targets from pipeline state
         features = pipeline_state.get('features')
-        targets = pipeline_state.get('labels') or pipeline_state.get('targets')
+        targets = pipeline_state.get('targets') or pipeline_state.get('labels')
         
         if features is None or targets is None:
             raise ValueError("Missing features or targets in pipeline state for feature selection")
@@ -440,7 +408,7 @@ async def standard_feature_selection_logic(config: Dict[str, Any], pipeline_stat
         # Initialize unified feature selection manager
         selection_manager = UnifiedFeatureSelectionManager(config)
         
-        # Select features
+        # Select features using standard approach
         result = await selection_manager.select_features(features, targets, 'standard')
         
         return result
@@ -451,13 +419,13 @@ async def standard_feature_selection_logic(config: Dict[str, Any], pipeline_stat
 
 
 async def comprehensive_feature_selection_logic(config: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Comprehensive feature selection logic (Step08 utilities)."""
+    """Comprehensive feature selection logic (all methods)."""
     logger.info("🎯 Starting comprehensive feature selection...")
     
     try:
         # Get features and targets from pipeline state
         features = pipeline_state.get('features')
-        targets = pipeline_state.get('labels') or pipeline_state.get('targets')
+        targets = pipeline_state.get('targets') or pipeline_state.get('labels')
         
         if features is None or targets is None:
             raise ValueError("Missing features or targets in pipeline state for feature selection")
@@ -465,7 +433,7 @@ async def comprehensive_feature_selection_logic(config: Dict[str, Any], pipeline
         # Initialize unified feature selection manager
         selection_manager = UnifiedFeatureSelectionManager(config)
         
-        # Select features
+        # Select features using comprehensive approach
         result = await selection_manager.select_features(features, targets, 'comprehensive')
         
         return result
@@ -476,18 +444,18 @@ async def comprehensive_feature_selection_logic(config: Dict[str, Any], pipeline
 
 
 # Create step functions
-unified_feature_selection = create_simple_step_function("unified_feature_selection", unified_feature_selection_logic)
-basic_feature_selection = create_simple_step_function("basic_feature_selection", basic_feature_selection_logic)
-standard_feature_selection = create_simple_step_function("standard_feature_selection", standard_feature_selection_logic)
-comprehensive_feature_selection = create_simple_step_function("comprehensive_feature_selection", comprehensive_feature_selection_logic)
+unified_feature_selection = create_data_processing_step_function("unified_feature_selection", unified_feature_selection_logic)
+basic_feature_selection = create_data_processing_step_function("basic_feature_selection", basic_feature_selection_logic)
+standard_feature_selection = create_data_processing_step_function("standard_feature_selection", standard_feature_selection_logic)
+comprehensive_feature_selection = create_data_processing_step_function("comprehensive_feature_selection", comprehensive_feature_selection_logic)
 
 
 class SimplifiedFeatureSelection:
     """
     Simplified feature selection using unified infrastructure.
     
-    This replaces custom feature selection logic with a unified approach
-    using Step08AdvancedFeatureSelection from step08_utilities.
+    This replaces multiple feature selection implementations with a unified
+    approach using Step08AdvancedFeatureSelection from step08_utilities.
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -501,12 +469,12 @@ class SimplifiedFeatureSelection:
         self.logger.info("🚀 Simplified Feature Selection initialized")
     
     async def select_features(self, features: pd.DataFrame, targets: pd.Series, 
-                            selection_type: str = 'comprehensive') -> Dict[str, Any]:
+                             selection_type: str = 'comprehensive') -> Dict[str, Any]:
         """
         Select features using unified approach.
         
         Args:
-            features: Feature matrix
+            features: Input features
             targets: Target values
             selection_type: Type of selection
             
@@ -519,7 +487,7 @@ class SimplifiedFeatureSelection:
             # Select features
             result = await self.selection_manager.select_features(features, targets, selection_type)
             
-            self.logger.info(f"✅ Feature selection completed: {result['selection_metadata']['selected_features']} features selected from {result['selection_metadata']['original_features']}")
+            self.logger.info(f"✅ Feature selection completed: {result['selection_metadata']['selected_features']} features selected")
             
             return result
             
@@ -533,20 +501,20 @@ class SimplifiedFeatureSelection:
 
 
 # Backward compatibility wrappers
-class Step08AdvancedFeatureSelectionWrapper(SimplifiedFeatureSelection):
-    """Backward compatibility wrapper for Step08AdvancedFeatureSelection."""
+class AdvancedFeatureSelection(SimplifiedFeatureSelection):
+    """Backward compatibility wrapper for AdvancedFeatureSelection."""
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.logger.info("🔄 Using backward compatibility wrapper for Step08AdvancedFeatureSelection")
+        self.logger.info("🔄 Using backward compatibility wrapper for AdvancedFeatureSelection")
 
 
-class AdvancedFeatureSelectionStepWrapper(SimplifiedFeatureSelection):
-    """Backward compatibility wrapper for AdvancedFeatureSelectionStep."""
+class FeatureSelectionStep(SimplifiedFeatureSelection):
+    """Backward compatibility wrapper for FeatureSelectionStep."""
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.logger.info("🔄 Using backward compatibility wrapper for AdvancedFeatureSelectionStep")
+        self.logger.info("🔄 Using backward compatibility wrapper for FeatureSelectionStep")
 
 
 # Example usage and testing
@@ -563,13 +531,13 @@ async def example_feature_selection():
         columns=[f'feature_{i}' for i in range(n_features)]
     )
     
-    # Add some signal to first 10 features
-    for i in range(10):
+    # Add some signal to first 20 features
+    for i in range(20):
         features[f'feature_{i}'] += np.random.randn(n_samples) * 0.5
     
-    # Create targets based on first 10 features
+    # Create targets based on first 20 features
     targets = pd.Series(
-        (features.iloc[:, :10].sum(axis=1) > 0).astype(int),
+        (features.iloc[:, :20].sum(axis=1) > 0).astype(int),
         name='target'
     )
     
@@ -581,8 +549,8 @@ async def example_feature_selection():
             'timeframe': '1m',
             'selection_type': 'basic',
             'feature_selection_config': {
-                'variance_threshold': 1e-10,
-                'correlation_threshold': 0.95
+                'enable_correlation_selection': True,
+                'correlation_threshold': 0.9
             }
         },
         {
@@ -591,8 +559,9 @@ async def example_feature_selection():
             'timeframe': '1m',
             'selection_type': 'standard',
             'feature_selection_config': {
-                'selection_method': 'mrmr',
-                'n_features': 20
+                'enable_correlation_selection': True,
+                'enable_importance_selection': True,
+                'n_features': 30
             }
         },
         {
@@ -601,10 +570,13 @@ async def example_feature_selection():
             'timeframe': '1m',
             'selection_type': 'comprehensive',
             'feature_selection_config': {
-                'selection_method': 'mrmr',
-                'n_features': 20,
-                'stability_threshold': 0.6,
-                'enable_regime_specific': False
+                'enable_mrmr_selection': True,
+                'enable_importance_selection': True,
+                'enable_rfe_selection': True,
+                'enable_correlation_selection': True,
+                'enable_mutual_info_selection': True,
+                'n_features': 50,
+                'max_features': 100
             }
         }
     ]
@@ -626,8 +598,8 @@ async def example_feature_selection():
         print(f"Selection type: {result['selection_type']}")
         print(f"Original features: {result['selection_metadata']['original_features']}")
         print(f"Selected features: {result['selection_metadata']['selected_features']}")
-        print(f"Reduction ratio: {result['selection_metadata']['reduction_ratio']:.3f}")
-        print(f"Selection method: {result['selection_metadata']['selection_method']}")
+        print(f"Reduction ratio: {result['selection_metadata']['feature_reduction_ratio']:.3f}")
+        print(f"Data shape: {result['selected_features'].shape}")
         
         results.append((result, summary))
     

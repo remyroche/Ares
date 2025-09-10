@@ -556,20 +556,11 @@ class HMMBasedTraining(SimplifiedModelTraining):
         self.logger.info("🔄 Using backward compatibility wrapper for HMMBasedTraining")
 
 
-class AnalystEnhancement(SimplifiedModelTraining):
-    """Backward compatibility wrapper for AnalystEnhancement."""
-    
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
-        self.logger.info("🔄 Using backward compatibility wrapper for AnalystEnhancement")
-
-
-class TacticianSpecialistTraining(SimplifiedModelTraining):
-    """Backward compatibility wrapper for TacticianSpecialistTraining."""
-    
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
-        self.logger.info("🔄 Using backward compatibility wrapper for TacticianSpecialistTraining")
+# Import from consolidated analyst and tactician training
+from .consolidated_analyst_tactician_training import (
+    AnalystEnhancement,
+    TacticianSpecialistTraining
+)
 
 
 # Example usage and testing

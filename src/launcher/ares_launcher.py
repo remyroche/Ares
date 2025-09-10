@@ -40,9 +40,14 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 print("✅ [IMPORTS] Additional paths configured")
 
-print("🔧 [IMPORTS] Importing simple_logger...")
-from simple_logger import system_logger
-print("✅ [IMPORTS] Simple logger imported")
+print("🔧 [IMPORTS] Importing enhanced simple logger...")
+try:
+    from src.utils.enhanced_simple_logger import enhanced_system_logger as system_logger
+    print("✅ [IMPORTS] Enhanced simple logger imported")
+except ImportError:
+    print("⚠️ [IMPORTS] Enhanced logger not available, falling back to simple logger...")
+    from simple_logger import system_logger
+    print("✅ [IMPORTS] Simple logger imported")
 
 print("🔧 [IMPORTS] Importing core decorators...")
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -186,17 +191,26 @@ class AresLauncher:
     
     async def _create_outcome_file(self, stage: str, sub_pipeline: str, result: Any, config: MainPipelineConfig) -> str:
         """Create outcome file for stage/sub-pipeline completion."""
+        from src.utils.artifact_naming import get_artifact_naming_manager
+        
         outcome_dir = Path("outcomes")
         outcome_dir.mkdir(exist_ok=True)
         
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{stage}_{sub_pipeline}_outcome_{timestamp}.json"
+        # Get bot version from config
+        bot_version = getattr(config, 'bot_version', 'aresv1')
+        if hasattr(config, 'custom_params') and config.custom_params:
+            bot_version = config.custom_params.get('bot_version', bot_version)
+        
+        # Use artifact naming manager
+        naming_manager = get_artifact_naming_manager({"bot_version": bot_version})
+        filename = naming_manager.create_artifact_name(stage, sub_pipeline, "outcome", "json")
         outcome_file = outcome_dir / filename
         
         outcome_data = {
             'stage': stage,
             'sub_pipeline': sub_pipeline,
             'timestamp': datetime.now().isoformat(),
+            'bot_version': bot_version,
             'status': result.status.value if hasattr(result, 'status') else 'completed',
             'output_files': result.output_files if hasattr(result, 'output_files') else [],
             'metadata': result.metadata if hasattr(result, 'metadata') else {},
@@ -207,7 +221,8 @@ class AresLauncher:
                 'timeframe': config.timeframe,
                 'mode': config.mode.value,
                 'intensity_percentage': config.intensity_percentage,
-                'training_mode_config': config.training_mode_config
+                'training_mode_config': config.training_mode_config,
+                'bot_version': bot_version
             },
             'next_stage_requirements': self._get_next_stage_requirements(stage, sub_pipeline)
         }
@@ -741,7 +756,8 @@ class AresLauncher:
         }
         
         # Save artifacts
-        await self._save_artifacts(artifacts, 'full_pipeline_artifacts.json')
+        bot_version = getattr(config, 'bot_version', 'aresv1')
+        await self._save_artifacts(artifacts, 'full_pipeline_artifacts.json', bot_version)
         
         return artifacts
     
@@ -770,7 +786,8 @@ class AresLauncher:
         }
         
         # Save artifacts
-        await self._save_artifacts(artifacts, f'{stage.value}_artifacts.json')
+        bot_version = getattr(config, 'bot_version', 'aresv1')
+        await self._save_artifacts(artifacts, f'{stage.value}_artifacts.json', bot_version)
         
         return artifacts
     
@@ -807,14 +824,33 @@ class AresLauncher:
         }
         
         # Save artifacts
-        await self._save_artifacts(artifacts, f'{sub_pipeline}_artifacts.json')
+        bot_version = getattr(config, 'bot_version', 'aresv1')
+        await self._save_artifacts(artifacts, f'{sub_pipeline}_artifacts.json', bot_version)
         
         return artifacts
     
-    async def _save_artifacts(self, artifacts: Dict[str, Any], filename: str):
-        """Save artifacts to file."""
+    async def _save_artifacts(self, artifacts: Dict[str, Any], filename: str, bot_version: str = "aresv1"):
+        """Save artifacts to file with proper versioning."""
+        from src.utils.artifact_naming import get_artifact_naming_manager
+        
         artifacts_dir = Path("artifacts")
         artifacts_dir.mkdir(exist_ok=True)
+        
+        # Add bot version to artifacts metadata
+        artifacts['bot_version'] = bot_version
+        artifacts['created_at'] = datetime.now().isoformat()
+        
+        # Use artifact naming manager for consistent naming
+        naming_manager = get_artifact_naming_manager({"bot_version": bot_version})
+        
+        # Extract stage and sub_pipeline from filename if possible
+        if '_' in filename:
+            parts = filename.replace('.json', '').split('_')
+            if len(parts) >= 2:
+                stage = parts[0]
+                sub_pipeline = parts[1]
+                artifact_type = parts[2] if len(parts) > 2 else "artifacts"
+                filename = naming_manager.create_artifact_name(stage, sub_pipeline, artifact_type, "json")
         
         artifacts_file = artifacts_dir / filename
         with open(artifacts_file, 'w') as f:

@@ -42,6 +42,10 @@ from src.core.decorators import (
     timeout, error_boundary, compose, validate_data_quality, 
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
+from src.utils.intensity_scaler import (
+    get_intensity_from_environment, get_scaled_hpo_trials, 
+    get_scaled_hpo_timeout, log_intensity_info
+)
 from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     MathValidationError, TimeoutError
@@ -91,6 +95,15 @@ class ModelTrainingConfig:
     hpo_timeout: int = 3600  # 1 hour
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
+    
+    def __post_init__(self):
+        """Apply intensity scaling after initialization."""
+        intensity_pct = get_intensity_from_environment()
+        if intensity_pct < 1.0:
+            self.hpo_trials = get_scaled_hpo_trials(self.hpo_trials, intensity_pct)
+            self.hpo_timeout = get_scaled_hpo_timeout(self.hpo_timeout, intensity_pct)
+            self.early_stopping_patience = max(1, int(self.early_stopping_patience * intensity_pct))
+            logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%): HPO trials={self.hpo_trials}, timeout={self.hpo_timeout}s")
     
     # Model-specific configuration
     model_params: Dict[str, Any] = field(default_factory=dict)
@@ -177,6 +190,9 @@ class GeneralModelTrainer:
         
         # Initialize utilities
         self.parquet_utils = get_parquet_utils()
+        
+        # Log intensity information
+        log_intensity_info()
         
         # Initialize model factory
         self.model_factory = ModelFactory()

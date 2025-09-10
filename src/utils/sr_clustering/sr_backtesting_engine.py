@@ -194,13 +194,20 @@ class SRBacktestingEngine:
                     self.logger.warning(f"Weight optimization failed: {e}")
             
             # Analyze quality-based feature relationships
+            # Build strength scoring model
+            strength_model = self._build_strength_scoring_model(results)
+            
+            # Log comprehensive feature analysis
+            if strength_model:
+                self._log_comprehensive_feature_analysis(results, strength_model)
+            
             rules = {
                 'quality_distribution': quality_stats,
                 'feature_quality_correlations': self._calculate_feature_quality_correlations(results),
                 'quality_predictors': self._identify_quality_predictors(results),
                 'learned_weights': self._learn_feature_weights(results),
                 'quality_thresholds': self._calculate_quality_thresholds(quality_stats),
-                'strength_scoring_model': self._build_strength_scoring_model(results),
+                'strength_scoring_model': strength_model,
                 'optimized_weights': optimized_weights,
                 'weight_optimization_enabled': optimize_weights
             }
@@ -658,7 +665,10 @@ class SRBacktestingEngine:
             'volatility_regime',      # From step06: Volatility regime
             'trend_strength',         # From step06: Trend strength
             'volume_regime',          # From step06: Volume regime
-            'time_of_day_effect'      # From step06: Time of day effects
+            'time_of_day_effect',     # From step06: Time of day effects
+            'vwap_momentum',          # From step06: VWAP momentum
+            'price_momentum',         # From step06: Price momentum
+            'momentum_volume_interaction'  # From step06: Momentum-volume interaction
         ]
         
         all_features = primary_features + penetration_pattern_features + step06_features
@@ -758,7 +768,8 @@ class SRBacktestingEngine:
             # Use Ridge Regression with cross-validation for optimal alpha
             from sklearn.linear_model import RidgeCV
             from sklearn.preprocessing import StandardScaler
-            from sklearn.model_selection import cross_val_score
+            from sklearn.model_selection import cross_val_score, validation_curve
+            from sklearn.metrics import mean_squared_error, mean_absolute_error
             
             # Standardize features
             scaler = StandardScaler()
@@ -776,29 +787,74 @@ class SRBacktestingEngine:
             # Calculate model performance
             y_pred = ridge_model.predict(X_scaled)
             r_squared = ridge_model.score(X_scaled, y)
+            mse = mean_squared_error(y, y_pred)
+            mae = mean_absolute_error(y, y_pred)
             
-            # Cross-validation score
+            # Cross-validation scores for robustness
             cv_scores = cross_val_score(ridge_model, X_scaled, y, cv=5, scoring='r2')
+            cv_mse_scores = -cross_val_score(ridge_model, X_scaled, y, cv=5, scoring='neg_mean_squared_error')
             cv_mean = np.mean(cv_scores)
             cv_std = np.std(cv_scores)
+            cv_mse_mean = np.mean(cv_mse_scores)
+            cv_mse_std = np.std(cv_mse_scores)
+            
+            # Overfitting detection
+            overfitting_detected = False
+            overfitting_warnings = []
+            
+            # Check 1: High variance in CV scores
+            if cv_std > 0.1:
+                overfitting_detected = True
+                overfitting_warnings.append(f"High CV score variance: {cv_std:.3f}")
+            
+            # Check 2: Large gap between training and CV performance
+            performance_gap = r_squared - cv_mean
+            if performance_gap > 0.1:
+                overfitting_detected = True
+                overfitting_warnings.append(f"Large performance gap: {performance_gap:.3f}")
+            
+            # Check 3: Very high R² with small dataset
+            if r_squared > 0.95 and len(y) < 100:
+                overfitting_detected = True
+                overfitting_warnings.append(f"Suspiciously high R² ({r_squared:.3f}) with small dataset ({len(y)} samples)")
+            
+            # Check 4: Low optimal alpha (high regularization needed)
+            if ridge_model.alpha_ < 0.01:
+                overfitting_warnings.append(f"Low optimal alpha ({ridge_model.alpha_:.4f}) suggests high regularization needed")
             
             model = {
-                'model_type': 'Ridge Regression',
+                'model_type': 'Ridge Regression with Overfitting Protection',
                 'feature_names': valid_features,
                 'coefficients': ridge_model.coef_.tolist(),
-                'intercept': ridge_model.alpha_,
+                'intercept': ridge_model.intercept_,
                 'optimal_alpha': ridge_model.alpha_,
                 'r_squared': r_squared,
+                'mse': mse,
+                'mae': mae,
                 'cv_r_squared_mean': cv_mean,
                 'cv_r_squared_std': cv_std,
+                'cv_mse_mean': cv_mse_mean,
+                'cv_mse_std': cv_mse_std,
                 'feature_importance': dict(zip(valid_features, feature_importance_normalized)),
+                'overfitting_detected': overfitting_detected,
+                'overfitting_warnings': overfitting_warnings,
+                'performance_gap': performance_gap,
                 'scaler_mean': scaler.mean_.tolist(),
                 'scaler_scale': scaler.scale_.tolist(),
                 'model_object': ridge_model,
                 'scaler_object': scaler
             }
             
+            # Enhanced logging with overfitting information
             self.logger.info(f"Built Ridge Regression model with R²={r_squared:.3f}, CV R²={cv_mean:.3f}±{cv_std:.3f}")
+            self.logger.info(f"Model performance: MSE={mse:.4f}, MAE={mae:.4f}")
+            self.logger.info(f"Optimal alpha: {ridge_model.alpha_:.4f}")
+            
+            if overfitting_detected:
+                self.logger.warning(f"⚠️ Overfitting detected: {'; '.join(overfitting_warnings)}")
+            else:
+                self.logger.info("✅ No overfitting detected")
+            
             self.logger.info(f"Top 5 features: {sorted(model['feature_importance'].items(), key=lambda x: x[1], reverse=True)[:5]}")
             
             return model
@@ -807,6 +863,164 @@ class SRBacktestingEngine:
             self.logger.warning(f"Failed to build Ridge Regression model: {e}")
             # Fallback to simple correlation-based model
             return self._build_simple_correlation_model(results, valid_features)
+    
+    def _log_comprehensive_feature_analysis(self, results: List[BacktestResult], 
+                                          model_result: Dict[str, Any]) -> None:
+        """Log comprehensive feature importance and correlation analysis."""
+        try:
+            self.logger.info("📊 COMPREHENSIVE FEATURE ANALYSIS REPORT")
+            self.logger.info("=" * 60)
+            
+            # Model Performance Summary
+            self.logger.info("🎯 MODEL PERFORMANCE SUMMARY:")
+            self.logger.info(f"   Model Type: {model_result.get('model_type', 'Unknown')}")
+            self.logger.info(f"   R² Score: {model_result.get('r_squared', 0.0):.4f}")
+            self.logger.info(f"   CV R² Mean: {model_result.get('cv_r_squared_mean', 0.0):.4f} ± {model_result.get('cv_r_squared_std', 0.0):.4f}")
+            self.logger.info(f"   MSE: {model_result.get('mse', 0.0):.4f}")
+            self.logger.info(f"   MAE: {model_result.get('mae', 0.0):.4f}")
+            self.logger.info(f"   Optimal Alpha: {model_result.get('optimal_alpha', 0.0):.4f}")
+            
+            # Overfitting Analysis
+            if model_result.get('overfitting_detected', False):
+                self.logger.warning("⚠️ OVERFITTING DETECTED:")
+                for warning in model_result.get('overfitting_warnings', []):
+                    self.logger.warning(f"   - {warning}")
+            else:
+                self.logger.info("✅ NO OVERFITTING DETECTED")
+            
+            # Feature Importance Analysis
+            feature_importance = model_result.get('feature_importance', {})
+            if feature_importance:
+                self.logger.info("🔍 FEATURE IMPORTANCE RANKING:")
+                sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+                
+                # Top 10 most important features
+                self.logger.info("   Top 10 Most Important Features:")
+                for i, (feature, importance) in enumerate(sorted_features[:10], 1):
+                    self.logger.info(f"   {i:2d}. {feature:<30} {importance:.4f}")
+                
+                # Feature categories analysis
+                self._log_feature_category_analysis(sorted_features)
+            
+            # Correlation Analysis
+            self._log_correlation_analysis(results, model_result)
+            
+            # Model Coefficients Analysis
+            self._log_coefficients_analysis(model_result)
+            
+            self.logger.info("=" * 60)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to log comprehensive feature analysis: {e}")
+    
+    def _log_feature_category_analysis(self, sorted_features: List[tuple]) -> None:
+        """Log analysis by feature categories."""
+        try:
+            # Categorize features
+            primary_features = []
+            penetration_features = []
+            pattern_features = []
+            step06_features = []
+            
+            for feature, importance in sorted_features:
+                if any(x in feature.lower() for x in ['success', 'bounce', 'volume', 'touch', 'time', 'hold']):
+                    primary_features.append((feature, importance))
+                elif any(x in feature.lower() for x in ['penetration']):
+                    penetration_features.append((feature, importance))
+                elif any(x in feature.lower() for x in ['pattern', 'order_flow', 'absorption', 'structure']):
+                    pattern_features.append((feature, importance))
+                elif any(x in feature.lower() for x in ['market', 'volatility', 'trend', 'vwap', 'momentum']):
+                    step06_features.append((feature, importance))
+            
+            self.logger.info("📈 FEATURE CATEGORY ANALYSIS:")
+            
+            if primary_features:
+                avg_importance = np.mean([imp for _, imp in primary_features])
+                self.logger.info(f"   Primary SR Features: {len(primary_features)} features, avg importance: {avg_importance:.4f}")
+                self.logger.info(f"   Top Primary: {primary_features[0][0]} ({primary_features[0][1]:.4f})")
+            
+            if penetration_features:
+                avg_importance = np.mean([imp for _, imp in penetration_features])
+                self.logger.info(f"   Penetration Features: {len(penetration_features)} features, avg importance: {avg_importance:.4f}")
+                self.logger.info(f"   Top Penetration: {penetration_features[0][0]} ({penetration_features[0][1]:.4f})")
+            
+            if pattern_features:
+                avg_importance = np.mean([imp for _, imp in pattern_features])
+                self.logger.info(f"   Pattern Features: {len(pattern_features)} features, avg importance: {avg_importance:.4f}")
+                self.logger.info(f"   Top Pattern: {pattern_features[0][0]} ({pattern_features[0][1]:.4f})")
+            
+            if step06_features:
+                avg_importance = np.mean([imp for _, imp in step06_features])
+                self.logger.info(f"   Step06 Features: {len(step06_features)} features, avg importance: {avg_importance:.4f}")
+                self.logger.info(f"   Top Step06: {step06_features[0][0]} ({step06_features[0][1]:.4f})")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to log feature category analysis: {e}")
+    
+    def _log_correlation_analysis(self, results: List[BacktestResult], model_result: Dict[str, Any]) -> None:
+        """Log correlation analysis between features and quality scores."""
+        try:
+            self.logger.info("🔗 CORRELATION ANALYSIS:")
+            
+            # Calculate correlations for key features
+            quality_scores = [r.quality_score for r in results]
+            key_features = ['success_rate', 'avg_bounce_strength', 'total_volume_at_level', 
+                          'time_persistence', 'total_touches', 'penetration_depth', 'pattern_consistency']
+            
+            correlations = {}
+            for feature in key_features:
+                feature_values = [getattr(r, feature, 0.0) for r in results]
+                if len(feature_values) > 1:
+                    corr = np.corrcoef(feature_values, quality_scores)[0, 1]
+                    correlations[feature] = corr
+            
+            # Sort by absolute correlation
+            sorted_correlations = sorted(correlations.items(), key=lambda x: abs(x[1]), reverse=True)
+            
+            self.logger.info("   Feature-Quality Score Correlations:")
+            for feature, corr in sorted_correlations:
+                direction = "📈" if corr > 0 else "📉"
+                strength = "Strong" if abs(corr) > 0.5 else "Moderate" if abs(corr) > 0.3 else "Weak"
+                self.logger.info(f"   {direction} {feature:<25} {corr:+.3f} ({strength})")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to log correlation analysis: {e}")
+    
+    def _log_coefficients_analysis(self, model_result: Dict[str, Any]) -> None:
+        """Log analysis of model coefficients."""
+        try:
+            coefficients = model_result.get('coefficients', [])
+            feature_names = model_result.get('feature_names', [])
+            
+            if not coefficients or not feature_names:
+                return
+            
+            self.logger.info("📊 MODEL COEFFICIENTS ANALYSIS:")
+            
+            # Sort by absolute coefficient value
+            coef_data = list(zip(feature_names, coefficients))
+            sorted_coefs = sorted(coef_data, key=lambda x: abs(x[1]), reverse=True)
+            
+            # Positive and negative coefficients
+            positive_coefs = [(name, coef) for name, coef in sorted_coefs if coef > 0]
+            negative_coefs = [(name, coef) for name, coef in sorted_coefs if coef < 0]
+            
+            self.logger.info(f"   Total Features: {len(feature_names)}")
+            self.logger.info(f"   Positive Impact: {len(positive_coefs)} features")
+            self.logger.info(f"   Negative Impact: {len(negative_coefs)} features")
+            
+            if positive_coefs:
+                self.logger.info("   Top Positive Contributors:")
+                for name, coef in positive_coefs[:5]:
+                    self.logger.info(f"     + {name:<25} {coef:+.4f}")
+            
+            if negative_coefs:
+                self.logger.info("   Top Negative Contributors:")
+                for name, coef in negative_coefs[:5]:
+                    self.logger.info(f"     - {name:<25} {coef:+.4f}")
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to log coefficients analysis: {e}")
     
     def _calculate_r_squared(self, X: np.ndarray, y: np.ndarray, weights: np.ndarray) -> float:
         """Calculate R-squared for the model."""

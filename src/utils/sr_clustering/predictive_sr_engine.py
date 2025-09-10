@@ -245,12 +245,22 @@ class PredictiveSREngine:
                 step06_features = historical_data['step06_features'].iloc[-1] if len(historical_data) > 0 else {}
                 
                 if isinstance(step06_features, dict):
+                    # Calculate VWAP momentum if available
+                    vwap_momentum = 0.0
+                    if 'VWAP' in step06_features and 'close' in historical_data.columns:
+                        current_price = historical_data['close'].iloc[-1] if len(historical_data) > 0 else 0.0
+                        vwap_value = step06_features.get('VWAP', current_price)
+                        vwap_momentum = (current_price - vwap_value) / vwap_value if vwap_value > 0 else 0.0
+                    
                     return {
                         'market_regime': step06_features.get('Market_Regime', 0.0),
                         'volatility_regime': step06_features.get('ATR_14', 0.0),
                         'trend_strength': step06_features.get('SMA_5', 0.0) / step06_features.get('SMA_100', 1.0) - 1.0 if step06_features.get('SMA_100', 0) > 0 else 0.0,
                         'volume_regime': step06_features.get('Volume_Ratio', 0.0),
-                        'time_of_day_effect': step06_features.get('Time_of_Day', 0.0)
+                        'time_of_day_effect': step06_features.get('Time_of_Day', 0.0),
+                        'vwap_momentum': vwap_momentum,
+                        'price_momentum': step06_features.get('Price_Momentum', 0.0),
+                        'momentum_volume_interaction': step06_features.get('Price_Momentum', 0.0) * step06_features.get('Volume_Ratio', 0.0)
                     }
             
             # Fallback: Calculate basic features if step06 features not available
@@ -272,12 +282,24 @@ class PredictiveSREngine:
                 # Market momentum
                 momentum = (historical_data['close'].iloc[-1] / historical_data['close'].iloc[0] - 1) if len(historical_data) > 0 else 0.0
                 
+                # Calculate VWAP momentum from price data
+                vwap_momentum = 0.0
+                if len(historical_data) > 20:  # Need enough data for VWAP calculation
+                    # Simple VWAP calculation
+                    vwap = (historical_data['close'] * historical_data['volume']).rolling(20).sum() / historical_data['volume'].rolling(20).sum()
+                    current_price = historical_data['close'].iloc[-1]
+                    current_vwap = vwap.iloc[-1]
+                    vwap_momentum = (current_price - current_vwap) / current_vwap if current_vwap > 0 else 0.0
+                
                 return {
                     'market_regime': 0.0,  # Default neutral
                     'volatility_regime': volatility_regime,
                     'trend_strength': trend_strength,
                     'volume_regime': volume_regime,
-                    'time_of_day_effect': 0.0  # Default neutral
+                    'time_of_day_effect': 0.0,  # Default neutral
+                    'vwap_momentum': vwap_momentum,
+                    'price_momentum': momentum,
+                    'momentum_volume_interaction': momentum * volume_regime
                 }
             else:
                 return {
@@ -285,7 +307,10 @@ class PredictiveSREngine:
                     'volatility_regime': 0.0,
                     'trend_strength': 0.0,
                     'volume_regime': 0.0,
-                    'time_of_day_effect': 0.0
+                    'time_of_day_effect': 0.0,
+                    'vwap_momentum': 0.0,
+                    'price_momentum': 0.0,
+                    'momentum_volume_interaction': 0.0
                 }
                 
         except Exception as e:

@@ -73,18 +73,13 @@ from src.utils.common_operations import (
     safe_log_metric, safe_log_params, safe_log_artifact, get_common_operations_health_status
 )
 
-# SR Clustering System Integration
-try:
-    from src.utils.sr_clustering import (
-        get_backtesting_enhanced_clustering, BacktestingEnhancedConfig,
-        get_predictive_sr_engine, PredictiveConfig,
-        get_trading_ml_integration, TradingMLConfig
-    )
-    SR_CLUSTERING_AVAILABLE = True
-    logger.info('✅ SR clustering system available')
-except ImportError as e:
-    SR_CLUSTERING_AVAILABLE = False
-    logger.warning(f'⚠️ SR clustering system not available: {e}')
+# SR Clustering System Integration - Required
+from src.utils.sr_clustering import (
+    get_backtesting_enhanced_clustering, BacktestingEnhancedConfig,
+    get_predictive_sr_engine, PredictiveConfig,
+    get_trading_ml_integration, TradingMLConfig
+)
+logger.info('✅ SR clustering system loaded')
 from src.utils.common_utilities import (
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
     calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
@@ -1421,7 +1416,7 @@ class SROptimizationStep(BaseStep):
                 'execution_time': execution_time,
                 'data_shape': data.shape,
                 'sr_levels_count': len(sr_levels.get('support_levels', [])) + len(sr_levels.get('resistance_levels', [])),
-                'sr_clustering_enabled': SR_CLUSTERING_AVAILABLE
+                'sr_clustering_enabled': True
             }
 
             self.logger.info(f'✅ SR optimization completed in {execution_time:.2f} seconds')
@@ -1550,154 +1545,83 @@ class SROptimizationStep(BaseStep):
 
         self.logger.info(f'✅ S/R detection input validation passed: {len(clean_data)} rows, {len(clean_data.columns)} columns')
 
-        # Use new SR clustering system if available, otherwise fall back to existing detector
-        if SR_CLUSTERING_AVAILABLE:
-            self.logger.info('🚀 Using new SR clustering system with weight optimization...')
-            
-            try:
-                # First, get basic SR levels using existing detector
-                if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None or SRLevel is None:
-                    raise RuntimeError("Enhanced SR Detector not available for initial detection.")
-                
-                # Create basic SR detector for initial detection
-                sr_config = {
-                    'min_touches': getattr(self, 'min_touches', 2),
-                    'tolerance_pct': getattr(self, 'tolerance_pct', 0.5),
-                    'lookback_periods': getattr(self, 'lookback_periods', 100),
-                    'memory_efficient': True,
-                    'use_parallel': self.enable_parallel_processing if hasattr(self, 'enable_parallel_processing') else False,
-                }
-                
-                detector = EnhancedSRDetector(sr_config)
-                basic_sr_levels = detector.detect_sr_levels(clean_data)
-                
-                # Convert to list format for clustering
-                if isinstance(basic_sr_levels, dict):
-                    all_levels = basic_sr_levels.get('support_levels', []) + basic_sr_levels.get('resistance_levels', [])
-                else:
-                    all_levels = basic_sr_levels if isinstance(basic_sr_levels, list) else []
-                
-                if not all_levels:
-                    self.logger.warning('No basic SR levels detected, falling back to existing system')
-                    sr_levels = basic_sr_levels
-                else:
-                    # Use backtesting-enhanced clustering
-                    clustering_config = BacktestingEnhancedConfig(
-                        min_levels_for_learning=5,
-                        quality_filter_threshold=0.1,
-                        proximity_adjustment_factor=0.5
-                    )
-                    
-                    clustering = get_backtesting_enhanced_clustering(clustering_config)
-                    
-                    # Convert levels to dict format for clustering
-                    levels_dict = []
-                    for level in all_levels:
-                        if hasattr(level, 'price'):
-                            level_dict = {
-                                'price': level.price,
-                                'strength': getattr(level, 'strength', 0.5),
-                                'level_type': getattr(level, 'type', 'support'),
-                                'touch_count': getattr(level, 'touch_count', 2),
-                                'first_touch': getattr(level, 'first_touch', datetime.now() - timedelta(days=30)),
-                                'last_touch': getattr(level, 'last_touch', datetime.now() - timedelta(days=1))
-                            }
-                            levels_dict.append(level_dict)
-                    
-                    # Run enhanced clustering
-                    self.logger.info(f'🎯 Running backtesting-enhanced clustering on {len(levels_dict)} levels...')
-                    enhanced_result = clustering.cluster_with_backtesting(levels_dict, clean_data)
-                    
-                    if enhanced_result and enhanced_result.clusters:
-                        # Convert back to expected format
-                        support_levels = []
-                        resistance_levels = []
-                        
-                        for cluster in enhanced_result.clusters:
-                            for level in cluster.get('levels', []):
-                                if level.get('level_type') == 'support':
-                                    support_levels.append(level)
-                                else:
-                                    resistance_levels.append(level)
-                        
-                        sr_levels = {
-                            'support_levels': support_levels,
-                            'resistance_levels': resistance_levels,
-                            'enhanced_clustering': True,
-                            'clustering_result': enhanced_result
-                        }
-                        
-                        self.logger.info(f'✅ Enhanced clustering complete: {len(support_levels)} support, {len(resistance_levels)} resistance levels')
-                    else:
-                        self.logger.warning('Enhanced clustering failed, using basic levels')
-                        sr_levels = basic_sr_levels
-                        
-            except Exception as e:
-                self.logger.warning(f'Enhanced clustering failed: {e}, falling back to basic detection')
-                # Fall back to existing system
-                if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None or SRLevel is None:
-                    raise RuntimeError("Enhanced SR Detector not available. Cannot proceed with SR detection.")
-                
-                sr_config = {
-                    'min_touches': getattr(self, 'min_touches', 2),
-                    'tolerance_pct': getattr(self, 'tolerance_pct', 0.5),
-                    'lookback_periods': getattr(self, 'lookback_periods', 100),
-                    'memory_efficient': True,
-                    'use_parallel': self.enable_parallel_processing if hasattr(self, 'enable_parallel_processing') else False,
-                }
-                
-                detector = EnhancedSRDetector(sr_config)
-                sr_levels = detector.detect_sr_levels(clean_data)
+        # Use new SR clustering system with weight optimization
+        self.logger.info('🚀 Using SR clustering system with weight optimization...')
+        
+        # First, get basic SR levels using existing detector
+        if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None or SRLevel is None:
+            raise RuntimeError("Enhanced SR Detector not available for initial detection.")
+        
+        # Create basic SR detector for initial detection
+        sr_config = {
+            'min_touches': getattr(self, 'min_touches', 2),
+            'tolerance_pct': getattr(self, 'tolerance_pct', 0.5),
+            'lookback_periods': getattr(self, 'lookback_periods', 100),
+            'memory_efficient': True,
+            'use_parallel': self.enable_parallel_processing if hasattr(self, 'enable_parallel_processing') else False,
+        }
+        
+        detector = EnhancedSRDetector(sr_config)
+        basic_sr_levels = detector.detect_sr_levels(clean_data)
+        
+        # Convert to list format for clustering
+        if isinstance(basic_sr_levels, dict):
+            all_levels = basic_sr_levels.get('support_levels', []) + basic_sr_levels.get('resistance_levels', [])
         else:
-            # Use existing system
-            self.logger.info('⚠️ Using existing SR detection system (SR clustering not available)')
-            
-            if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None or SRLevel is None:
-                raise RuntimeError("Enhanced SR Detector not available. Cannot proceed with SR detection.")
-            
-            sr_config = {
-                'min_touches': getattr(self, 'min_touches', 2),
-                'tolerance_pct': getattr(self, 'tolerance_pct', 0.5),
-                'lookback_periods': getattr(self, 'lookback_periods', 100),
-                'memory_efficient': True,
-                'use_parallel': self.enable_parallel_processing if hasattr(self, 'enable_parallel_processing') else False,
-            }
-            
-            detector = EnhancedSRDetector(sr_config)
-            sr_levels = detector.detect_sr_levels(clean_data)
-
-            # Handle the case where detector returns a list instead of dict
-            if isinstance(sr_levels, list):
-                # Convert list format to expected dict format
-                support_levels = []
-                resistance_levels = []
-
-                for level in sr_levels:
-                    if hasattr(level, 'type'):
-                        level_type = level.type
-                    elif hasattr(level, 'get') and callable(getattr(level, 'get')):
-                        level_type = level.get('type')
-                    else:
-                        # Try to access as attribute or skip
-                        level_type = getattr(level, 'type', None)
-
-                    if level_type == 'support':
-                        support_levels.append(level)
-                    elif level_type == 'resistance':
-                        resistance_levels.append(level)
-
-                sr_levels = {
-                    'support_levels': support_levels,
-                    'resistance_levels': resistance_levels
+            all_levels = basic_sr_levels if isinstance(basic_sr_levels, list) else []
+        
+        if not all_levels:
+            raise RuntimeError("No basic SR levels detected. Cannot proceed with clustering.")
+        
+        # Use backtesting-enhanced clustering
+        clustering_config = BacktestingEnhancedConfig(
+            min_levels_for_learning=5,
+            quality_filter_threshold=0.1,
+            proximity_adjustment_factor=0.5
+        )
+        
+        clustering = get_backtesting_enhanced_clustering(clustering_config)
+        
+        # Convert levels to dict format for clustering
+        levels_dict = []
+        for level in all_levels:
+            if hasattr(level, 'price'):
+                level_dict = {
+                    'price': level.price,
+                    'strength': getattr(level, 'strength', 0.5),
+                    'level_type': getattr(level, 'type', 'support'),
+                    'touch_count': getattr(level, 'touch_count', 2),
+                    'first_touch': getattr(level, 'first_touch', datetime.now() - timedelta(days=30)),
+                    'last_touch': getattr(level, 'last_touch', datetime.now() - timedelta(days=1))
                 }
-            else:
-                # Detector already returned dict format, ensure it has required keys
-                if not isinstance(sr_levels, dict):
-                    sr_levels = {'support_levels': [], 'resistance_levels': []}
-                elif 'support_levels' not in sr_levels:
-                    sr_levels['support_levels'] = []
-                elif 'resistance_levels' not in sr_levels:
-                    sr_levels['resistance_levels'] = []
+                levels_dict.append(level_dict)
+        
+        # Run enhanced clustering
+        self.logger.info(f'🎯 Running backtesting-enhanced clustering on {len(levels_dict)} levels...')
+        enhanced_result = clustering.cluster_with_backtesting(levels_dict, clean_data)
+        
+        if not enhanced_result or not enhanced_result.clusters:
+            raise RuntimeError("Enhanced clustering failed. No clusters generated.")
+        
+        # Convert back to expected format
+        support_levels = []
+        resistance_levels = []
+        
+        for cluster in enhanced_result.clusters:
+            for level in cluster.get('levels', []):
+                if level.get('level_type') == 'support':
+                    support_levels.append(level)
+                else:
+                    resistance_levels.append(level)
+        
+        sr_levels = {
+            'support_levels': support_levels,
+            'resistance_levels': resistance_levels,
+            'enhanced_clustering': True,
+            'clustering_result': enhanced_result
+        }
+        
+        self.logger.info(f'✅ Enhanced clustering complete: {len(support_levels)} support, {len(resistance_levels)} resistance levels')
 
             # Validate that detected levels were actually reached by market prices
             sr_levels = self._validate_sr_levels_against_market_data(sr_levels, clean_data)
@@ -1716,10 +1640,6 @@ class SROptimizationStep(BaseStep):
     def _create_enhanced_training_data(self, sr_levels: Dict[str, Any], market_data: pd.DataFrame) -> Dict[str, Any]:
         """Create enhanced training data with SR quality features for existing ML models."""
         try:
-            if not SR_CLUSTERING_AVAILABLE:
-                self.logger.info('⚠️ SR clustering not available, skipping enhanced training data creation')
-                return {}
-            
             self.logger.info('🧠 Creating enhanced training data with SR quality features...')
             
             # Extract all levels

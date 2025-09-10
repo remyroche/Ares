@@ -847,31 +847,31 @@ class PerformanceMonitor:
 
 # Import optimized components
 try:
-    from .step03_enhanced_bayesian_optimization import EnhancedBayesianOptimizer, ParallelBayesianOptimizer
+    from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
     OPTIMIZED_BAYESIAN_AVAILABLE = True
 except ImportError:
     OPTIMIZED_BAYESIAN_AVAILABLE = False
 
 try:
-    from .step03_memory_manager import EnhancedMemoryManager, get_memory_manager
+    from src.utils.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
     OPTIMIZED_MEMORY_AVAILABLE = True
 except ImportError:
     OPTIMIZED_MEMORY_AVAILABLE = False
 
 try:
-    from .step03_advanced_ensemble_clustering import AdvancedEnsembleClustering, ParallelClusteringProcessor
+    # Advanced ensemble clustering functionality consolidated into hmm_composite_manager
     OPTIMIZED_CLUSTERING_AVAILABLE = True
 except ImportError:
     OPTIMIZED_CLUSTERING_AVAILABLE = False
 
 try:
-    from .step03_vectorized_operations import get_vectorized_operations_manager, create_vectorized_config
+    from src.utils.vectorized_processing_core import OptimizedPipelineExecutor
     OPTIMIZED_VECTORIZED_AVAILABLE = True
 except ImportError:
     OPTIMIZED_VECTORIZED_AVAILABLE = False
 
 try:
-    from .step03_pipeline_orchestrator import get_step03_pipeline_orchestrator, create_step03_pipeline_config
+    # Pipeline orchestrator functionality consolidated into hmm_composite_manager
     OPTIMIZED_ORCHESTRATOR_AVAILABLE = True
 except ImportError:
     OPTIMIZED_ORCHESTRATOR_AVAILABLE = False

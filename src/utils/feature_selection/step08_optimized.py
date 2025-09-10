@@ -308,9 +308,9 @@ class Step08Results:
     optimization_stats: Dict[str, Any] = field(default_factory=dict)
 
 # Import the main class from the separate files
-from .step08_unified_class import UnifiedStep08
+from .step08_unified_complete import UnifiedStep08
 from .step08_unified_methods import *
-from .step08_unified_risk import *
+# Risk methods are now consolidated in step08_unified_complete
 from .step08_unified_final import *
 
 # Export the main class and function

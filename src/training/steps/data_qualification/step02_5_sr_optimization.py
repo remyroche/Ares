@@ -206,7 +206,7 @@ try:
     ADVANCED_FEATURES_AVAILABLE = True
 except ImportError:
     try:
-        from src.utils.step06_utilities import AdvancedFeatureEngineeringStep
+        from src.utils.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as AdvancedFeatureEngineeringStep
         ADVANCED_FEATURES_AVAILABLE = True
     except ImportError:
         AdvancedFeatureEngineeringStep = None

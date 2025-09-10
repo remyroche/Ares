@@ -44,7 +44,6 @@ class StepOrchestrator:
             "step04_regime_data_splitting",
             "step05_labeling",
             "step07_enhanced_matrix_operations",
-            "step08_advanced_feature_selection",
             "step09_hmm_based_training",
             "step10_unified_regime_intelligence",
             "step11_analyst_creation",

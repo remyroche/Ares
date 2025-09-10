@@ -134,17 +134,6 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         required_files=["data/matrix_operations/*_matrix_operations_*.json", "data/training/*_features_filtered_*.parquet"]
     ),
     
-    "08": StepConfig(
-        step_number="08",
-        step_name="advanced_feature_selection",
-        description="Advanced two-phase feature selection with redundancy reduction",
-        module_path="src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection_wrapper",
-        class_name="AdvancedFeatureSelectionStep",
-        dependencies=["07"],
-        required_inputs=["matrix_results"],
-        produced_outputs=["step08_advanced_feature_selection"],
-        required_files=["data/selected_features/*_top*.parquet", "data/selected_features/*_interpretability_report.json"]
-    ),
     
     "09": StepConfig(
         step_number="09",
@@ -152,8 +141,8 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         description="Train HMM-enhanced models",
         module_path="src.training.steps.model_training.step09_hmm_based_training",
         class_name="HmmBasedTrainingStep",
-        dependencies=["07", "08", "05"],
-        required_inputs=["matrix_results", "step08_advanced_feature_selection"],
+        dependencies=["07", "05"],
+        required_inputs=["matrix_results"],
         produced_outputs=["trained_models", "model_performance", "feature_importance", "best_models", "training_reports"],
         required_files=["data/training/*_hmm_models.pkl"]
     ),

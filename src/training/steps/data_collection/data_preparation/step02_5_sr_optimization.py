@@ -202,7 +202,7 @@ except ImportError as e:
     logger.warning(f"⚠️ ML Common utilities not available: {e}")
 
 try:
-    from src.training.steps.feature_engineering.step06_advanced_features import AdvancedFeatureEngineeringStep
+    from src.training.steps.unified_feature_engineering import comprehensive_feature_engineering
     ADVANCED_FEATURES_AVAILABLE = True
 except ImportError:
     AdvancedFeatureEngineeringStep = None

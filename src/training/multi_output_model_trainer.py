@@ -389,7 +389,7 @@ class MultiOutputModelTrainer:
             try:
                 self.logger.info('🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...')
                 step6_config = {'symbol': 'default', 'exchange': 'default', 'data_dir': 'temp'}
-                step6_instance = Step6HMMBasedTraining(step6_config)
+                step6_instance = Step6ConsolidatedHMMBasedTraining(step6_config)
                 selected_features = await step6_instance._pre_filter_features(X = data_with_sr_features, feature_columns=[col for col in data_with_sr_features.columns if col not in [direction_column, profit_column]])
                 selected_features.extend([direction_column, profit_column])
                 selected_features = [col for col in selected_features if col in data_with_sr_features.columns]

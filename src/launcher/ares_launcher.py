@@ -171,23 +171,35 @@ class AresLauncher:
         stage_requirements = {
             'data_collection': {
                 'next_stage': 'market_analysis',
-                'required_files': ['processed_data.parquet', 'data_quality_report.json'],
-                'required_artifacts': ['data_metadata', 'quality_metrics']
+                'required_files': ['processed_data.parquet', 'data_quality_report.json', 'exported_data.parquet'],
+                'required_artifacts': ['data_metadata', 'quality_metrics', 'integration_results'],
+                'sub_pipelines': ['data_download', 'data_conversion', 'data_validation', 'data_preparation', 
+                                'feature_engineering', 'data_quality_check', 'data_storage', 'data_monitoring',
+                                'data_integration', 'data_export']
             },
             'market_analysis': {
                 'next_stage': 'model_training',
-                'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet'],
-                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata']
+                'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
+                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata', 'cross_timeframe_features'],
+                'sub_pipelines': ['sr_detection', 'sr_clustering', 'sr_ml_learning', 'hmm_clustering',
+                                'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
+                                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis']
             },
             'model_training': {
                 'next_stage': 'backtesting',
-                'required_files': ['trained_models.pkl', 'validation_results.json'],
-                'required_artifacts': ['model_metadata', 'performance_metrics']
+                'required_files': ['trained_models.pkl', 'validation_results.json', 'evaluation_results.json'],
+                'required_artifacts': ['model_metadata', 'performance_metrics', 'ensemble_models'],
+                'sub_pipelines': ['general_model_training', 'analyst_model_training', 'tactician_model_training',
+                                'hmm_training', 'ensemble_training', 'multi_timeframe_training',
+                                'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation']
             },
             'backtesting': {
                 'next_stage': 'reporting',
-                'required_files': ['backtest_results.json', 'performance_report.json'],
-                'required_artifacts': ['trade_analysis', 'risk_metrics']
+                'required_files': ['backtest_results.json', 'performance_report.json', 'final_report.pdf'],
+                'required_artifacts': ['trade_analysis', 'risk_metrics', 'portfolio_analysis'],
+                'sub_pipelines': ['walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+                                'model_persistence', 'final_parameters_optimization', 'performance_analytics',
+                                'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting']
             }
         }
         
@@ -225,7 +237,7 @@ class AresLauncher:
     async def execute_pipeline(
         self,
         mode: LauncherMode = LauncherMode.FULL,
-        symbol: str = "BTCUSDT",
+        symbol: str = "ETHUSDT",
         exchange: str = "binance",
         timeframe: str = "1m",
         data_dir: str = "data/training",
@@ -653,7 +665,7 @@ class AresLauncher:
     def _get_sub_pipeline_description(self, sub_pipeline: str) -> str:
         """Get description for a sub-pipeline."""
         descriptions = {
-            # Data Collection
+            # Data Collection (10 sub-pipelines)
             'data_download': "Download raw data from exchanges",
             'data_conversion': "Convert data formats and standardize",
             'data_validation': "Validate data quality and integrity",
@@ -665,7 +677,7 @@ class AresLauncher:
             'data_integration': "Integrate multiple data sources",
             'data_export': "Export data in various formats",
             
-            # Market Analysis
+            # Market Analysis (10 sub-pipelines)
             'sr_detection': "Detect Support/Resistance levels",
             'sr_clustering': "Generate SR clusters",
             'sr_ml_learning': "ML-based learning for SR clusters",
@@ -677,7 +689,7 @@ class AresLauncher:
             'fractional_differentiation': "Apply fractional differentiation",
             'cross_timeframe_analysis': "Cross timeframe interaction features",
             
-            # Model Training
+            # Model Training (10 sub-pipelines)
             'general_model_training': "Train general ML models",
             'analyst_model_training': "Train analyst-specific models",
             'tactician_model_training': "Train tactician-specific models",
@@ -689,11 +701,10 @@ class AresLauncher:
             'model_persistence': "Save and load models",
             'model_evaluation': "Comprehensive model evaluation",
             
-            # Backtesting
+            # Backtesting (10 sub-pipelines)
             'walk_forward_validation': "Walk-forward backtesting",
             'monte_carlo_simulation': "Monte Carlo backtesting",
             'ab_testing': "A/B testing for strategies",
-            'model_persistence': "Save and load models",
             'final_parameters_optimization': "System-wide parameter optimization",
             'performance_analytics': "Performance analysis and reporting",
             'risk_analysis': "Risk metrics and analysis",
@@ -706,48 +717,99 @@ class AresLauncher:
     def _get_sub_pipeline_dependencies(self, sub_pipeline: str) -> List[str]:
         """Get dependencies for a sub-pipeline."""
         dependencies = {
+            # Data Collection dependencies
             'data_conversion': ['data_download'],
             'data_validation': ['data_download', 'data_conversion'],
             'data_preparation': ['data_validation'],
             'feature_engineering': ['data_preparation'],
             'data_quality_check': ['feature_engineering'],
+            'data_storage': ['data_quality_check'],
+            'data_monitoring': ['data_storage'],
+            'data_integration': ['data_monitoring'],
+            'data_export': ['data_integration'],
+            
+            # Market Analysis dependencies
             'sr_clustering': ['sr_detection'],
             'sr_ml_learning': ['sr_clustering'],
+            'hmm_clustering': ['sr_ml_learning'],
             'hmm_regime_discovery': ['hmm_clustering'],
             'regime_data_splitting': ['hmm_regime_discovery'],
             'triple_barrier_labeling': ['regime_data_splitting'],
             'feature_lookback_optimization': ['triple_barrier_labeling'],
-            'model_validation': ['general_model_training', 'analyst_model_training', 'tactician_model_training'],
+            'fractional_differentiation': ['feature_lookback_optimization'],
+            'cross_timeframe_analysis': ['fractional_differentiation'],
+            
+            # Model Training dependencies
+            'analyst_model_training': ['general_model_training'],
+            'tactician_model_training': ['analyst_model_training'],
+            'hmm_training': ['tactician_model_training'],
+            'ensemble_training': ['hmm_training'],
+            'multi_timeframe_training': ['ensemble_training'],
+            'regime_specific_training': ['multi_timeframe_training'],
+            'model_validation': ['regime_specific_training'],
             'model_persistence': ['model_validation'],
-            'walk_forward_validation': ['model_persistence'],
+            'model_evaluation': ['model_persistence'],
+            
+            # Backtesting dependencies
             'monte_carlo_simulation': ['walk_forward_validation'],
-            'final_parameters_optimization': ['monte_carlo_simulation'],
+            'ab_testing': ['monte_carlo_simulation'],
+            'final_parameters_optimization': ['ab_testing'],
             'performance_analytics': ['final_parameters_optimization'],
-            'reporting': ['performance_analytics']
+            'risk_analysis': ['performance_analytics'],
+            'trade_analysis': ['risk_analysis'],
+            'portfolio_analysis': ['trade_analysis'],
+            'reporting': ['portfolio_analysis']
         }
         return dependencies.get(sub_pipeline, [])
     
     def _get_sub_pipeline_outputs(self, sub_pipeline: str) -> List[str]:
         """Get expected outputs for a sub-pipeline."""
         outputs = {
+            # Data Collection outputs
             'data_download': ['raw_data.parquet'],
             'data_conversion': ['converted_data.parquet'],
             'data_validation': ['validation_report.json'],
             'data_preparation': ['prepared_data.parquet'],
             'feature_engineering': ['features.parquet'],
             'data_quality_check': ['quality_report.json'],
+            'data_storage': ['stored_data.parquet'],
+            'data_monitoring': ['monitoring_report.json'],
+            'data_integration': ['integrated_data.parquet'],
+            'data_export': ['exported_data.parquet'],
+            
+            # Market Analysis outputs
             'sr_detection': ['sr_levels.json'],
             'sr_clustering': ['sr_clusters.json'],
+            'sr_ml_learning': ['sr_ml_model.pkl'],
+            'hmm_clustering': ['hmm_clusters.json'],
             'hmm_regime_discovery': ['regime_assignments.parquet'],
+            'regime_data_splitting': ['regime_splits.parquet'],
             'triple_barrier_labeling': ['labels.parquet'],
+            'feature_lookback_optimization': ['optimized_features.parquet'],
+            'fractional_differentiation': ['fractional_features.parquet'],
+            'cross_timeframe_analysis': ['cross_tf_features.parquet'],
+            
+            # Model Training outputs
             'general_model_training': ['general_model.pkl'],
             'analyst_model_training': ['analyst_model.pkl'],
             'tactician_model_training': ['tactician_model.pkl'],
+            'hmm_training': ['hmm_model.pkl'],
+            'ensemble_training': ['ensemble_model.pkl'],
+            'multi_timeframe_training': ['multi_tf_model.pkl'],
+            'regime_specific_training': ['regime_models.pkl'],
             'model_validation': ['validation_results.json'],
+            'model_persistence': ['persisted_models.pkl'],
+            'model_evaluation': ['evaluation_results.json'],
+            
+            # Backtesting outputs
             'walk_forward_validation': ['backtest_results.json'],
             'monte_carlo_simulation': ['mc_results.json'],
+            'ab_testing': ['ab_test_results.json'],
             'final_parameters_optimization': ['optimized_parameters.json'],
             'performance_analytics': ['performance_report.json'],
+            'risk_analysis': ['risk_report.json'],
+            'trade_analysis': ['trade_analysis.json'],
+            'portfolio_analysis': ['portfolio_analysis.json'],
             'reporting': ['comprehensive_report.pdf']
         }
         return outputs.get(sub_pipeline, [])
@@ -808,26 +870,26 @@ def create_cli_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Full pipeline execution
-  python ares_launcher.py --mode full --symbol BTCUSDT --exchange binance
+  # Full pipeline execution (730 days of data)
+  python ares_launcher.py --mode full --symbol ETHUSDT --exchange binance
 
-  # Light pipeline execution
+  # Light pipeline execution (10 days of data)
   python ares_launcher.py --mode light --symbol ETHUSDT
 
-  # Execute specific stage with full execution mode
-  python ares_launcher.py --mode stage --stage data_collection --execution-mode full --symbol BTCUSDT
+  # Execute specific stage with full execution mode (730 days)
+  python ares_launcher.py --mode stage --stage data_collection --execution-mode full --symbol ETHUSDT
 
-  # Execute specific stage with light execution mode
-  python ares_launcher.py --mode stage --stage market_analysis --execution-mode light --symbol BTCUSDT
+  # Execute specific stage with light execution mode (10 days)
+  python ares_launcher.py --mode stage --stage market_analysis --execution-mode light --symbol ETHUSDT
 
-  # Execute specific sub-pipeline with blank execution mode
-  python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --execution-mode blank --symbol BTCUSDT
+  # Execute specific sub-pipeline with blank execution mode (180 days)
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --execution-mode blank --symbol ETHUSDT
 
-  # Execute specific sub-pipeline with full execution mode
-  python ares_launcher.py --mode sub_pipeline --sub_pipeline hmm_regime_discovery --execution-mode full --symbol BTCUSDT
+  # Execute specific sub-pipeline with full execution mode (730 days)
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline hmm_regime_discovery --execution-mode full --symbol ETHUSDT
 
-  # Blank mode for testing
-  python ares_launcher.py --mode blank --symbol BTCUSDT
+  # Blank mode for testing (180 days)
+  python ares_launcher.py --mode blank --symbol ETHUSDT
         """
     )
     
@@ -847,8 +909,8 @@ Examples:
     
     parser.add_argument(
         '--symbol',
-        default='BTCUSDT',
-        help='Trading symbol (default: BTCUSDT)'
+        default='ETHUSDT',
+        help='Trading symbol (default: ETHUSDT)'
     )
     
     parser.add_argument(

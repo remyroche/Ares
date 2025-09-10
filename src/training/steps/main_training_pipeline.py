@@ -84,19 +84,23 @@ class MainPipelineConfig:
     enabled_sub_pipelines: Dict[PipelineStage, List[str]] = field(default_factory=lambda: {
         PipelineStage.DATA_COLLECTION: [
             'data_download', 'data_conversion', 'data_validation', 'data_preparation',
-            'feature_engineering', 'data_quality_check', 'data_storage'
+            'feature_engineering', 'data_quality_check', 'data_storage', 'data_monitoring',
+            'data_integration', 'data_export'
         ],
         PipelineStage.MARKET_ANALYSIS: [
-            'sr_detection', 'sr_clustering', 'hmm_regime_discovery', 'regime_data_splitting',
-            'triple_barrier_labeling', 'feature_lookback_optimization'
+            'sr_detection', 'sr_clustering', 'sr_ml_learning', 'hmm_clustering',
+            'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
+            'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis'
         ],
         PipelineStage.MODEL_TRAINING: [
             'general_model_training', 'analyst_model_training', 'tactician_model_training',
-            'model_validation', 'model_persistence'
+            'hmm_training', 'ensemble_training', 'multi_timeframe_training',
+            'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation'
         ],
         PipelineStage.BACKTESTING: [
-            'walk_forward_validation', 'monte_carlo_simulation', 'final_parameters_optimization',
-            'performance_analytics', 'reporting'
+            'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+            'model_persistence', 'final_parameters_optimization', 'performance_analytics',
+            'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting'
         ]
     })
     
@@ -475,18 +479,26 @@ async def execute_main_training_pipeline(
 
 # Predefined pipeline configurations
 def get_full_pipeline_config(
-    symbol: str = "BTCUSDT",
+    symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
     data_dir: str = "data/training"
 ) -> MainPipelineConfig:
     """Get a full pipeline configuration with all stages and sub-pipelines enabled."""
+    from datetime import datetime, timedelta
+    
+    # Full mode: 730 days of data
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=730)
+    
     return MainPipelineConfig(
         mode=ExecutionMode.FULL,
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
         data_dir=data_dir,
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d'),
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -517,18 +529,26 @@ def get_full_pipeline_config(
     )
 
 def get_light_pipeline_config(
-    symbol: str = "BTCUSDT",
+    symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
     data_dir: str = "data/training"
 ) -> MainPipelineConfig:
     """Get a light pipeline configuration with essential sub-pipelines only."""
+    from datetime import datetime, timedelta
+    
+    # Light mode: 10 days of data
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=10)
+    
     return MainPipelineConfig(
         mode=ExecutionMode.LIGHT,
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
         data_dir=data_dir,
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d'),
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -552,18 +572,26 @@ def get_light_pipeline_config(
     )
 
 def get_blank_pipeline_config(
-    symbol: str = "BTCUSDT",
+    symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
     data_dir: str = "data/training"
 ) -> MainPipelineConfig:
     """Get a blank pipeline configuration for testing/validation."""
+    from datetime import datetime, timedelta
+    
+    # Blank mode: 180 days of data
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=180)
+    
     return MainPipelineConfig(
         mode=ExecutionMode.BLANK,
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
         data_dir=data_dir,
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d'),
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,

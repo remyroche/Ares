@@ -397,7 +397,7 @@ class EnhancedMLModelTrainingStep:
         """Perform the actual ML model training."""
         try:
             # Import and run ML model training
-            from .model_training.step09_hmm_based_training import HMMBasedTrainingStep
+            from .model_training.simplified.general_model_training import GeneralModelTrainer
             
             config = {
                 'symbol': symbol,

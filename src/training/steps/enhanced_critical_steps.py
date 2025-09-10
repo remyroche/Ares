@@ -194,7 +194,13 @@ class EnhancedFeatureGenerationStep:
         """Perform the actual feature generation."""
         try:
             # Import and run feature generation
-            from .market_analysis.step06_feature_engineering import FeatureInteractionEngine
+            try:
+                from .market_analysis.step06_feature_engineering import FeatureInteractionEngine
+            except ImportError:
+                from src.utils.step06_utilities import EnhancedFeatureEngineeringStep
+                class FeatureInteractionEngine:
+                    def __init__(self, config):
+                        self.engine = EnhancedFeatureEngineeringStep(config)
             
             config = {
                 'symbol': symbol,
@@ -292,7 +298,13 @@ class EnhancedMatrixOperationsStep:
         """Perform the actual matrix operations."""
         try:
             # Import and run matrix operations
-            from .market_analysis.step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
+            try:
+                from .market_analysis.step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
+            except ImportError:
+                from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+                class EnhancedMatrixOperationsStep:
+                    def __init__(self, config):
+                        self.matrix_ops = get_enhanced_matrix_operations()
             
             config = {
                 'symbol': symbol,

@@ -16,8 +16,21 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Any
-import numpy as np
-import pandas as pd
+
+# Optional imports
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 try:
     from ..utils.pipeline_standards import PipelineStandards

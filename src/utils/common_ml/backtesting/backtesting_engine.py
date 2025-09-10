@@ -7,15 +7,35 @@ utilizing M1 GPU, memory, and CPU optimizations for maximum performance.
 
 import asyncio
 import logging
-import numpy as np
-import pandas as pd
+
+# Optional imports
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import time
 import gc
-import psutil
+
+# Optional imports
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 
 # M1 Optimization imports
 from src.utils.m1_gpu_utils import get_m1_gpu_manager, m1_backtesting_simulate

@@ -98,7 +98,7 @@ class MainPipelineConfig:
             'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation'
         ],
         PipelineStage.BACKTESTING: [
-            'final_parameters_optimization', 'basic_backtesting', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+            'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
             'model_persistence', 'performance_analytics',
             'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting'
         ]
@@ -532,7 +532,7 @@ def get_full_pipeline_config(
                 'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation'
             ],
             PipelineStage.BACKTESTING: [
-                'final_parameters_optimization', 'basic_backtesting', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+                'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
                 'model_persistence', 'performance_analytics',
                 'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting'
             ]

@@ -13,13 +13,16 @@ Available utilities:
 - step06_enhanced_feature_engineering_step: Feature engineering step utilities
 - step06_labeling_components: Triple barrier labeling utilities
 - cross_timeframe_interaction_features: Cross timeframe feature generation utilities
+- cross_timeframe_analysis_pipeline: Comprehensive cross timeframe analysis
+- fractional_differentiation_pipeline: Fractional differentiation for stationarity
 
 Usage:
     from src.utils.step06_utilities import (
         Step06UtilityContainer,
         EnhancedFeatureEngineering,
         OptimizedTripleBarrierLabeling,
-        CrossTimeframeFeatureGenerator
+        CrossTimeframeFeatureGenerator,
+        FractionalDifferentiationPipeline
     )
 """
 
@@ -62,6 +65,16 @@ from .cross_timeframe_interaction_features import (
     InteractionConfig
 )
 
+from .cross_timeframe_analysis_pipeline import (
+    CrossTimeframeAnalysisPipeline,
+    CrossTimeframeConfig as AnalysisConfig
+)
+
+from .fractional_differentiation_pipeline import (
+    FractionalDifferentiationPipeline,
+    FractionalDiffConfig
+)
+
 __all__ = [
     'Step06UtilityContainer',
     'UtilityConfig',
@@ -76,7 +89,11 @@ __all__ = [
     'RegimeSpecificTripleBarrierOptimizer',
     'CrossTimeframeFeatureGenerator',
     'CrossTimeframeConfig',
-    'InteractionConfig'
+    'InteractionConfig',
+    'CrossTimeframeAnalysisPipeline',
+    'AnalysisConfig',
+    'FractionalDifferentiationPipeline',
+    'FractionalDiffConfig'
 ]
 
 __version__ = "1.0.0"

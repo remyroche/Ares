@@ -323,7 +323,7 @@ class MarketAnalysisSubPipeline:
         
         # Import and use SR ML learning
         try:
-            from .sr_ml_learning_pipeline import SRMLLearningPipeline, SRMLConfig
+            from src.training.steps.model_training.sr_ml_learning_pipeline import SRMLLearningPipeline, SRMLConfig
             
             sr_ml_config = SRMLConfig(
                 model_type='random_forest',
@@ -603,7 +603,7 @@ class MarketAnalysisSubPipeline:
         
         # Import and use fractional differentiation
         try:
-            from .fractional_differentiation_pipeline import FractionalDifferentiationPipeline, FractionalDiffConfig
+            from src.utils.step06_utilities.fractional_differentiation_pipeline import FractionalDifferentiationPipeline, FractionalDiffConfig
             
             frac_diff_config = FractionalDiffConfig(
                 d_min=0.0,
@@ -651,7 +651,7 @@ class MarketAnalysisSubPipeline:
         
         # Import and use cross timeframe analysis
         try:
-            from .cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig
+            from src.utils.step06_utilities.cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig
             
             cross_tf_config = CrossTimeframeConfig(
                 timeframes=['1m', '5m', '15m', '30m'],  # Short timeframes for high leverage

@@ -997,7 +997,7 @@ async def run_optimized_step12(
         data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
     
     # Initialize optimized step
-    step = OptimizedStep12AnalystEnhancement(config)
+    step = OptimizedStep12ConsolidatedAnalystEnhancement(config)
     
     # Prepare training input
     training_input = {

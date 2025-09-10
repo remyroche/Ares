@@ -21,6 +21,13 @@ Key Features:
 - Automatic confidence metrics and calibration assessment
 - Feature importance analysis and model explanations
 - Comprehensive error handling and logging
+
+Core Principles Preserved:
+- per-HMM regime training: Models are trained specifically for different HMM-identified market regimes
+- Analyst/Tactician separation: Distinct roles and models for Analyst and Tactician components
+- Tactician creation: ConsolidatedTacticianSpecialistTraining handles tactician model creation
+- General model (Step 10): ConsolidatedUnifiedRegimeIntelligence handles the unified regime intelligence model
+- Tactician labels based on Analyst predictions: Logic preserved in unified training and labeling
 """
 
 import asyncio

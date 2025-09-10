@@ -25,7 +25,7 @@ import typing
 
 logger = get_logger('Step11AnalystCreationPerRegime')
 
-class PerRegimeAnalystCreationStep(Step11AnalystCreation):
+class PerRegimeConsolidatedConsolidatedAnalystEnhancement(Step11AnalystCreation):
     """Analyst creation step that processes each regime separately."""
     @log_important_calls
     
@@ -869,7 +869,7 @@ async def run_per_regime_step(
     config['per_regime_analyst_creation'] = True
     
     # Initialize and run the per-regime analyst creation step
-    step = PerRegimeAnalystCreationStep(config)
+    step = PerRegimeConsolidatedConsolidatedAnalystEnhancement(config)
     
     success = await step.execute_per_regime_analyst_creation(
         symbol = symbol,

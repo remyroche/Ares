@@ -11,7 +11,7 @@ import joblib
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from src.training.steps.model_training.step12_analyst_enhancement import AnalystEnhancementStep, AnalystEnhancer, FeatureAugmenter, ModelOptimizer, PerformanceAnalyzer
+from src.training.steps.consolidated_model_training import ConsolidatedAnalystEnhancementStep, AnalystEnhancer, FeatureAugmenter, ModelOptimizer, PerformanceAnalyzer
 from copy import copy
 import asyncio
 

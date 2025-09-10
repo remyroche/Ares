@@ -199,8 +199,8 @@ class AresLauncher:
                 'next_stage': 'reporting',
                 'required_files': ['backtest_results.json', 'performance_report.json', 'final_report.pdf'],
                 'required_artifacts': ['trade_analysis', 'risk_metrics', 'portfolio_analysis'],
-                'sub_pipelines': ['walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
-                                'model_persistence', 'final_parameters_optimization', 'performance_analytics',
+                'sub_pipelines': ['final_parameters_optimization', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+                                'model_persistence', 'performance_analytics',
                                 'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting']
             }
         }
@@ -773,10 +773,11 @@ class AresLauncher:
             'model_evaluation': ['model_persistence'],
             
             # Backtesting dependencies
+            'final_parameters_optimization': [],
+            'walk_forward_validation': ['final_parameters_optimization'],
             'monte_carlo_simulation': ['walk_forward_validation'],
             'ab_testing': ['monte_carlo_simulation'],
-            'final_parameters_optimization': ['ab_testing'],
-            'performance_analytics': ['final_parameters_optimization'],
+            'performance_analytics': ['ab_testing'],
             'risk_analysis': ['performance_analytics'],
             'trade_analysis': ['risk_analysis'],
             'portfolio_analysis': ['trade_analysis'],

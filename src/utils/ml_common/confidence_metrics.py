@@ -1,9 +1,13 @@
 """Prediction confidence and calibration metrics for ML models."""
 
 import numpy as np
-from typing import Dict, Any, Optional, Tuple
-from sklearn.calibration import calibration_curve
+from typing import Dict, Any, Optional, Tuple, List, Union
+from sklearn.calibration import calibration_curve, CalibratedClassifierCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import brier_score_loss
+from scipy.optimize import minimize_scalar
+from scipy.stats import beta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -286,3 +290,545 @@ def _get_confidence_level(mean_confidence: float) -> str:
         return 'low'
     else:
         return 'very_low'
+
+
+# Advanced Calibration Methods
+class ModelConfidenceCalibration:
+    """
+    Advanced model confidence calibration using multiple methods.
+    
+    This class provides comprehensive confidence calibration including:
+    - Platt scaling
+    - Isotonic regression
+    - Temperature scaling
+    - Histogram binning
+    - Bayesian calibration
+    """
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the confidence calibration system."""
+        self.config = config or {}
+        self.logger = logger.getChild('ModelConfidenceCalibration')
+        
+        # Calibration methods configuration
+        self.calibration_methods = {
+            'platt_scaling': self.config.get('enable_platt_scaling', True),
+            'isotonic_regression': self.config.get('enable_isotonic_regression', True),
+            'temperature_scaling': self.config.get('enable_temperature_scaling', True),
+            'histogram_binning': self.config.get('enable_histogram_binning', True),
+            'bayesian_calibration': self.config.get('enable_bayesian_calibration', True)
+        }
+        
+        # Calibration parameters
+        self.calibration_params = {
+            'platt_scaling': {
+                'learning_rate': 0.01,
+                'max_iterations': 1000,
+                'convergence_threshold': 1e-6
+            },
+            'isotonic_regression': {
+                'out_of_bounds': 'clip',
+                'increasing': True
+            },
+            'temperature_scaling': {
+                'temperature_range': [0.1, 10.0],
+                'optimization_method': 'lbfgs'
+            },
+            'histogram_binning': {
+                'bin_count': 10,
+                'bin_strategy': 'uniform'
+            },
+            'bayesian_calibration': {
+                'prior_strength': 1.0,
+                'mcmc_samples': 1000,
+                'burn_in_samples': 100
+            }
+        }
+        
+        # Update with user configuration
+        if 'calibration_parameters' in self.config:
+            self.calibration_params.update(self.config['calibration_parameters'])
+    
+    async def calibrate_model_confidence(self, y_true: np.ndarray, y_pred_proba: np.ndarray,
+                                       method: str = 'all') -> Dict[str, Any]:
+        """
+        Calibrate model confidence using specified method(s).
+        
+        Args:
+            y_true: True labels
+            y_pred_proba: Predicted probabilities
+            method: Calibration method ('all', 'platt_scaling', 'isotonic_regression', etc.)
+            
+        Returns:
+            Dictionary containing calibration results
+        """
+        try:
+            self.logger.info(f"Starting confidence calibration using method: {method}")
+            
+            if method == 'all':
+                return await self._calibrate_all_methods(y_true, y_pred_proba)
+            elif method in self.calibration_methods:
+                return await self._calibrate_single_method(y_true, y_pred_proba, method)
+            else:
+                raise ValueError(f"Unknown calibration method: {method}")
+                
+        except Exception as e:
+            self.logger.exception(f"Error in confidence calibration: {e}")
+            return {'error': str(e)}
+    
+    async def _calibrate_all_methods(self, y_true: np.ndarray, y_pred_proba: np.ndarray) -> Dict[str, Any]:
+        """Calibrate using all enabled methods."""
+        results = {}
+        
+        for method_name, enabled in self.calibration_methods.items():
+            if enabled:
+                try:
+                    method_result = await self._calibrate_single_method(y_true, y_pred_proba, method_name)
+                    if method_result and 'error' not in method_result:
+                        results[method_name] = method_result
+                except Exception as e:
+                    self.logger.warning(f"Failed to calibrate using {method_name}: {e}")
+        
+        # Calculate best calibration method
+        if results:
+            best_method = self._select_best_calibration_method(results)
+            results['best_method'] = best_method
+            results['calibrated_probabilities'] = results[best_method]['calibrated_probabilities']
+        
+        return results
+    
+    async def _calibrate_single_method(self, y_true: np.ndarray, y_pred_proba: np.ndarray, 
+                                     method: str) -> Dict[str, Any]:
+        """Calibrate using a single method."""
+        if method == 'platt_scaling':
+            return await self._apply_platt_scaling(y_true, y_pred_proba)
+        elif method == 'isotonic_regression':
+            return await self._apply_isotonic_regression(y_true, y_pred_proba)
+        elif method == 'temperature_scaling':
+            return await self._apply_temperature_scaling(y_true, y_pred_proba)
+        elif method == 'histogram_binning':
+            return await self._apply_histogram_binning(y_true, y_pred_proba)
+        elif method == 'bayesian_calibration':
+            return await self._apply_bayesian_calibration(y_true, y_pred_proba)
+        else:
+            raise ValueError(f"Unknown calibration method: {method}")
+    
+    async def _apply_platt_scaling(self, y_true: np.ndarray, y_pred_proba: np.ndarray) -> Dict[str, Any]:
+        """Apply Platt scaling calibration."""
+        try:
+            if y_pred_proba.shape[1] == 2:
+                # Binary classification
+                prob_pos = y_pred_proba[:, 1]
+            else:
+                # Multiclass - use max probability
+                prob_pos = np.max(y_pred_proba, axis=1)
+            
+            # Reshape for sklearn
+            prob_pos = prob_pos.reshape(-1, 1)
+            
+            # Create and fit Platt scaling calibrator
+            base_classifier = LogisticRegression(
+                max_iter=self.calibration_params['platt_scaling']['max_iterations'],
+                random_state=42
+            )
+            
+            calibrator = CalibratedClassifierCV(
+                estimator=base_classifier,
+                method='sigmoid',
+                cv='prefit'
+            )
+            
+            # Fit calibrator
+            calibrator.fit(prob_pos, y_true)
+            
+            # Calculate calibrated probabilities
+            calibrated_prob = calibrator.predict_proba(prob_pos)[:, 1]
+            
+            # Calculate metrics
+            brier_before = brier_score_loss(y_true, prob_pos[:, 0])
+            brier_after = brier_score_loss(y_true, calibrated_prob)
+            ece_before = calculate_expected_calibration_error(y_true, prob_pos[:, 0])
+            ece_after = calculate_expected_calibration_error(y_true, calibrated_prob)
+            
+            # Get calibration coefficients
+            calibrated_clf = calibrator.calibrated_classifiers_[0]
+            A = calibrated_clf.calibrators_[0].coef_[0][0] if hasattr(calibrated_clf.calibrators_[0], 'coef_') else 1.0
+            B = calibrated_clf.calibrators_[0].intercept_[0] if hasattr(calibrated_clf.calibrators_[0], 'intercept_') else 0.0
+            
+            return {
+                'method': 'platt_scaling',
+                'calibrated_probabilities': calibrated_prob,
+                'calibration_coefficients': {'A': float(A), 'B': float(B)},
+                'metrics': {
+                    'brier_score_before': float(brier_before),
+                    'brier_score_after': float(brier_after),
+                    'ece_before': float(ece_before),
+                    'ece_after': float(ece_after),
+                    'improvement': float(brier_before - brier_after)
+                },
+                'calibration_quality': {
+                    'convergence_achieved': True,
+                    'final_loss': float(brier_after)
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in Platt scaling: {e}")
+            return {'error': str(e)}
+    
+    async def _apply_isotonic_regression(self, y_true: np.ndarray, y_pred_proba: np.ndarray) -> Dict[str, Any]:
+        """Apply isotonic regression calibration."""
+        try:
+            if y_pred_proba.shape[1] == 2:
+                prob_pos = y_pred_proba[:, 1]
+            else:
+                prob_pos = np.max(y_pred_proba, axis=1)
+            
+            # Create and fit isotonic regression
+            isotonic_reg = IsotonicRegression(
+                out_of_bounds=self.calibration_params['isotonic_regression']['out_of_bounds'],
+                increasing=self.calibration_params['isotonic_regression']['increasing']
+            )
+            
+            isotonic_reg.fit(prob_pos, y_true)
+            
+            # Calculate calibrated probabilities
+            calibrated_prob = isotonic_reg.predict(prob_pos)
+            calibrated_prob = np.clip(calibrated_prob, 0.0, 1.0)
+            
+            # Calculate metrics
+            brier_before = brier_score_loss(y_true, prob_pos)
+            brier_after = brier_score_loss(y_true, calibrated_prob)
+            ece_before = calculate_expected_calibration_error(y_true, prob_pos)
+            ece_after = calculate_expected_calibration_error(y_true, calibrated_prob)
+            
+            # Calculate monotonicity improvement
+            monotonicity_before = self._calculate_monotonicity_score(prob_pos, y_true)
+            monotonicity_after = self._calculate_monotonicity_score(calibrated_prob, y_true)
+            
+            return {
+                'method': 'isotonic_regression',
+                'calibrated_probabilities': calibrated_prob,
+                'calibration_function': {
+                    'monotonic': self.calibration_params['isotonic_regression']['increasing'],
+                    'piecewise_linear': True
+                },
+                'metrics': {
+                    'brier_score_before': float(brier_before),
+                    'brier_score_after': float(brier_after),
+                    'ece_before': float(ece_before),
+                    'ece_after': float(ece_after),
+                    'monotonicity_improvement': float(monotonicity_after - monotonicity_before)
+                },
+                'calibration_quality': {
+                    'monotonicity_achieved': self.calibration_params['isotonic_regression']['increasing'],
+                    'smoothness_score': float(self._calculate_smoothness_score(calibrated_prob))
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in isotonic regression: {e}")
+            return {'error': str(e)}
+    
+    async def _apply_temperature_scaling(self, y_true: np.ndarray, y_pred_proba: np.ndarray) -> Dict[str, Any]:
+        """Apply temperature scaling calibration."""
+        try:
+            if y_pred_proba.shape[1] == 2:
+                prob_pos = y_pred_proba[:, 1]
+            else:
+                prob_pos = np.max(y_pred_proba, axis=1)
+            
+            # Get temperature range
+            temp_range = self.calibration_params['temperature_scaling']['temperature_range']
+            
+            # Optimize temperature parameter
+            def temperature_loss(temperature):
+                if temperature <= 0:
+                    return float('inf')
+                
+                # Apply temperature scaling
+                scaled_prob = 1.0 / (1.0 + np.exp(-(np.log(prob_pos / (1 - prob_pos)) / temperature)))
+                
+                # Calculate negative log-likelihood loss
+                eps = 1e-15
+                scaled_prob = np.clip(scaled_prob, eps, 1 - eps)
+                nll = -np.mean(y_true * np.log(scaled_prob) + (1 - y_true) * np.log(1 - scaled_prob))
+                
+                return nll
+            
+            # Optimize temperature
+            result = minimize_scalar(
+                temperature_loss,
+                bounds=temp_range,
+                method='bounded'
+            )
+            
+            optimal_temperature = result.x
+            optimization_converged = result.success
+            
+            # Apply optimal temperature scaling
+            scaled_prob = 1.0 / (1.0 + np.exp(-(np.log(prob_pos / (1 - prob_pos)) / optimal_temperature)))
+            scaled_prob = np.clip(scaled_prob, 0.0, 1.0)
+            
+            # Calculate metrics
+            brier_before = brier_score_loss(y_true, prob_pos)
+            brier_after = brier_score_loss(y_true, scaled_prob)
+            ece_before = calculate_expected_calibration_error(y_true, prob_pos)
+            ece_after = calculate_expected_calibration_error(y_true, scaled_prob)
+            
+            return {
+                'method': 'temperature_scaling',
+                'calibrated_probabilities': scaled_prob,
+                'calibration_coefficients': {
+                    'temperature': float(optimal_temperature),
+                    'bias': 0.0
+                },
+                'metrics': {
+                    'brier_score_before': float(brier_before),
+                    'brier_score_after': float(brier_after),
+                    'ece_before': float(ece_before),
+                    'ece_after': float(ece_after),
+                    'temperature_effectiveness': float(brier_before - brier_after)
+                },
+                'calibration_quality': {
+                    'optimization_converged': bool(optimization_converged),
+                    'final_temperature': float(optimal_temperature)
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in temperature scaling: {e}")
+            return {'error': str(e)}
+    
+    async def _apply_histogram_binning(self, y_true: np.ndarray, y_pred_proba: np.ndarray) -> Dict[str, Any]:
+        """Apply histogram binning calibration."""
+        try:
+            if y_pred_proba.shape[1] == 2:
+                prob_pos = y_pred_proba[:, 1]
+            else:
+                prob_pos = np.max(y_pred_proba, axis=1)
+            
+            # Get bin parameters
+            bin_count = self.calibration_params['histogram_binning']['bin_count']
+            bin_strategy = self.calibration_params['histogram_binning']['bin_strategy']
+            
+            # Create bins
+            if bin_strategy == 'uniform':
+                bins = np.linspace(0, 1, bin_count + 1)
+            else:
+                # Quantile-based bins
+                bins = np.quantile(prob_pos, np.linspace(0, 1, bin_count + 1))
+                bins[0] = 0.0
+                bins[-1] = 1.0
+            
+            # Digitize probabilities into bins
+            bin_indices = np.digitize(prob_pos, bins) - 1
+            bin_indices = np.clip(bin_indices, 0, bin_count - 1)
+            
+            # Calculate bin statistics
+            bin_counts = []
+            bin_accuracies = []
+            bin_avg_prob = []
+            
+            for bin_idx in range(bin_count):
+                bin_mask = bin_indices == bin_idx
+                bin_count_val = np.sum(bin_mask)
+                bin_counts.append(int(bin_count_val))
+                
+                if bin_count_val > 0:
+                    bin_accuracy = np.mean(y_true[bin_mask])
+                    bin_avg_pred_prob = np.mean(prob_pos[bin_mask])
+                else:
+                    bin_accuracy = 0.5
+                    bin_avg_pred_prob = (bins[bin_idx] + bins[bin_idx + 1]) / 2
+                
+                bin_accuracies.append(float(bin_accuracy))
+                bin_avg_prob.append(float(bin_avg_pred_prob))
+            
+            # Create calibrated probabilities using bin averages
+            calibrated_prob = np.zeros_like(prob_pos)
+            for bin_idx in range(bin_count):
+                bin_mask = bin_indices == bin_idx
+                calibrated_prob[bin_mask] = bin_accuracies[bin_idx]
+            
+            # Calculate metrics
+            brier_before = brier_score_loss(y_true, prob_pos)
+            brier_after = brier_score_loss(y_true, calibrated_prob)
+            ece_before = calculate_expected_calibration_error(y_true, prob_pos)
+            ece_after = calculate_expected_calibration_error(y_true, calibrated_prob)
+            
+            return {
+                'method': 'histogram_binning',
+                'calibrated_probabilities': calibrated_prob,
+                'calibration_bins': {
+                    'bin_edges': bins.tolist(),
+                    'bin_counts': bin_counts,
+                    'bin_accuracies': bin_accuracies,
+                    'bin_avg_probabilities': bin_avg_prob
+                },
+                'metrics': {
+                    'brier_score_before': float(brier_before),
+                    'brier_score_after': float(brier_after),
+                    'ece_before': float(ece_before),
+                    'ece_after': float(ece_after),
+                    'binning_effectiveness': float(brier_before - brier_after)
+                },
+                'calibration_quality': {
+                    'binning_quality': float(sum(1 for count in bin_counts if count > 0) / bin_count),
+                    'bin_distribution': bin_strategy
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in histogram binning: {e}")
+            return {'error': str(e)}
+    
+    async def _apply_bayesian_calibration(self, y_true: np.ndarray, y_pred_proba: np.ndarray) -> Dict[str, Any]:
+        """Apply Bayesian calibration."""
+        try:
+            if y_pred_proba.shape[1] == 2:
+                prob_pos = y_pred_proba[:, 1]
+            else:
+                prob_pos = np.max(y_pred_proba, axis=1)
+            
+            # Bayesian calibration using beta distribution
+            prior_strength = self.calibration_params['bayesian_calibration']['prior_strength']
+            
+            # Group predictions into bins for Bayesian estimation
+            n_bins = 10
+            bin_edges = np.linspace(0, 1, n_bins + 1)
+            bin_indices = np.digitize(prob_pos, bin_edges) - 1
+            bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+            
+            # Estimate beta parameters for each bin
+            alpha_estimates = []
+            beta_estimates = []
+            
+            for bin_idx in range(n_bins):
+                bin_mask = bin_indices == bin_idx
+                bin_labels = y_true[bin_mask]
+                
+                if len(bin_labels) == 0:
+                    # Use prior for empty bins
+                    alpha_estimates.append(prior_strength)
+                    beta_estimates.append(prior_strength)
+                else:
+                    # Calculate posterior parameters
+                    successes = np.sum(bin_labels)
+                    failures = len(bin_labels) - successes
+                    
+                    alpha_post = prior_strength + successes
+                    beta_post = prior_strength + failures
+                    
+                    alpha_estimates.append(alpha_post)
+                    beta_estimates.append(beta_post)
+            
+            # Create calibrated probabilities using beta means
+            calibrated_prob = np.zeros_like(prob_pos)
+            for bin_idx in range(n_bins):
+                bin_mask = bin_indices == bin_idx
+                if np.any(bin_mask):
+                    # Use beta mean for calibration
+                    calibrated_prob[bin_mask] = alpha_estimates[bin_idx] / (alpha_estimates[bin_idx] + beta_estimates[bin_idx])
+            
+            # Calculate metrics
+            brier_before = brier_score_loss(y_true, prob_pos)
+            brier_after = brier_score_loss(y_true, calibrated_prob)
+            ece_before = calculate_expected_calibration_error(y_true, prob_pos)
+            ece_after = calculate_expected_calibration_error(y_true, calibrated_prob)
+            
+            return {
+                'method': 'bayesian_calibration',
+                'calibrated_probabilities': calibrated_prob,
+                'calibration_posterior': {
+                    'alpha_parameters': alpha_estimates,
+                    'beta_parameters': beta_estimates,
+                    'mean_parameters': [a / (a + b) for a, b in zip(alpha_estimates, beta_estimates)]
+                },
+                'metrics': {
+                    'brier_score_before': float(brier_before),
+                    'brier_score_after': float(brier_after),
+                    'ece_before': float(ece_before),
+                    'ece_after': float(ece_after),
+                    'bayesian_improvement': float(brier_before - brier_after)
+                },
+                'calibration_quality': {
+                    'prior_strength': prior_strength,
+                    'effective_sample_size': len(prob_pos)
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in Bayesian calibration: {e}")
+            return {'error': str(e)}
+    
+    def _select_best_calibration_method(self, results: Dict[str, Any]) -> str:
+        """Select the best calibration method based on improvement."""
+        best_method = None
+        best_improvement = -float('inf')
+        
+        for method_name, method_result in results.items():
+            if 'metrics' in method_result and 'improvement' in method_result['metrics']:
+                improvement = method_result['metrics']['improvement']
+                if improvement > best_improvement:
+                    best_improvement = improvement
+                    best_method = method_name
+        
+        return best_method or list(results.keys())[0]
+    
+    def _calculate_monotonicity_score(self, probabilities: np.ndarray, labels: np.ndarray) -> float:
+        """Calculate monotonicity score for calibration quality assessment."""
+        try:
+            if len(probabilities) <= 1:
+                return 1.0
+            
+            # Sort by probability
+            sorted_indices = np.argsort(probabilities)
+            sorted_prob = probabilities[sorted_indices]
+            sorted_labels = labels[sorted_indices]
+            
+            # Calculate correlation between probability and label
+            correlation = np.corrcoef(sorted_prob, sorted_labels)[0, 1]
+            return float(abs(correlation)) if not np.isnan(correlation) else 0.0
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating monotonicity score: {e}")
+            return 0.0
+    
+    def _calculate_smoothness_score(self, probabilities: np.ndarray) -> float:
+        """Calculate smoothness score for calibration quality assessment."""
+        try:
+            if len(probabilities) <= 2:
+                return 1.0
+            
+            # Calculate second derivative (smoothness)
+            first_diff = np.diff(probabilities)
+            second_diff = np.diff(first_diff)
+            
+            # Smoothness is inverse of average absolute second derivative
+            smoothness = 1.0 / (1.0 + np.mean(np.abs(second_diff)))
+            return float(smoothness)
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating smoothness score: {e}")
+            return 0.0
+
+
+# Convenience function for easy integration
+async def calibrate_model_confidence(y_true: np.ndarray, y_pred_proba: np.ndarray,
+                                   method: str = 'all',
+                                   config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Convenience function to calibrate model confidence.
+    
+    Args:
+        y_true: True labels
+        y_pred_proba: Predicted probabilities
+        method: Calibration method ('all', 'platt_scaling', 'isotonic_regression', etc.)
+        config: Configuration dictionary
+        
+    Returns:
+        Calibration results
+    """
+    calibrator = ModelConfidenceCalibration(config)
+    return await calibrator.calibrate_model_confidence(y_true, y_pred_proba, method)

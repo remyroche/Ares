@@ -28,6 +28,9 @@ from .cv_utils import *
 from .lookahead_protection import *
 from .feature_selection import *
 from .feature_generation_optimization import *
+from .data_labeling import *
+from .hmm_regime_detection import *
+from .regime_data_processing import *
 from .model_evaluation import *
 from .hpo_utils import *
 from .memory_optimization import *
@@ -67,6 +70,34 @@ __all__ = [
     'OptimizationMethod',
     'get_feature_optimizer',
     'optimize_feature_lookback',
+
+    # Data labeling utilities
+    'DataLabelingUtilities',
+    'TripleBarrierConfig',
+    'LabelingResult',
+    'LabelingMethod',
+    'get_data_labeler',
+    'label_triple_barrier',
+    'label_regime_aware',
+
+    # HMM regime detection
+    'HMMRegimeDetector',
+    'HMMRegimeConfig',
+    'RegimeDetectionResult',
+    'RegimeDetectionMethod',
+    'get_hmm_regime_detector',
+    'detect_regimes',
+    'detect_ensemble_regimes',
+
+    # Regime data processing
+    'RegimeDataProcessor',
+    'RegimeProcessingConfig',
+    'RegimeProcessingResult',
+    'ProcessingMode',
+    'get_regime_processor',
+    'process_regime_data',
+    'validate_regime_continuity',
+    'analyze_regime_transitions',
 
     # Model evaluation utilities
     'ModelEvaluationUtilities',

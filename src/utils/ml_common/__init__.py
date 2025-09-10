@@ -36,6 +36,18 @@ from .model_registry import *
 from .data_quality import *
 from .pipeline_orchestrator import *
 
+# Trading-specific meta-learning HPO
+from .trading_meta_features import TradingMetaFeaturesExtractor
+from .meta_learning_trading_hpo import MetaLearningTradingHPO, TradingOptimizationHistoryDB
+from .trading_optimization_strategies import (
+    TradingOptimizationOrchestrator, 
+    TradingOptimizationStrategy,
+    RegimeAwareOptimization,
+    RiskConstrainedOptimization,
+    LeverageAdaptiveOptimization
+)
+from .trading_hpo_examples import TradingHPOExamples, run_all_trading_examples
+
 __version__ = "1.0.0"
 __all__ = [
     # Base safeguards
@@ -84,4 +96,16 @@ __all__ = [
     # Pipeline orchestration
     'MLPipelineOrchestrator',
     '_to_jsonable',
+
+    # Trading-specific meta-learning HPO
+    'TradingMetaFeaturesExtractor',
+    'MetaLearningTradingHPO',
+    'TradingOptimizationHistoryDB',
+    'TradingOptimizationOrchestrator',
+    'TradingOptimizationStrategy',
+    'RegimeAwareOptimization',
+    'RiskConstrainedOptimization',
+    'LeverageAdaptiveOptimization',
+    'TradingHPOExamples',
+    'run_all_trading_examples',
 ]

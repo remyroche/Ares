@@ -1,0 +1,720 @@
+
+import pandas as pd
+import numpy as np
+from src.utils.logger import system_logger
+from ...core.decorators import handles_errors
+from ..enhanced_error_handling import (
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+    enhanced_async_error_handler,
+    critical_async_process,
+    CriticalProcessError,
+    ErrorSeverity,
+    ErrorCategory
+)
+from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
+from ..enhanced_monitoring_system import monitor_critical_process
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.intensity_scaler import (
+    get_intensity_from_environment, get_scaled_hpo_trials, 
+    get_scaled_hpo_timeout, log_intensity_info, apply_intensity_scaling
+)
+
+'S/R Outcome Model Trainer."\n\nTrains ML models to predict S/R outcomes (breakout/rebounce/consolidation)\nusing LightGBM + XGBoost ensemble with comprehensive feature engineering and time-series validation.\n'
+import json
+import os
+import pickle
+import warnings
+from datetime import datetime
+from typing import Any
+import optuna
+from sklearn.ensemble import VotingClassifier
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.utils.class_weight import compute_class_weight
+from .tactician.sr_breakout_predictor import SRBreakoutPredictor
+from src.utils.logger import system_logger
+
+import time
+
+warnings.filterwarnings('ignore')
+
+class SROutcomeModelTrainer:
+    """Trainer for S/R outcome prediction models using LightGBM + XGBoost ensemble."""
+    @log_important_calls
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild('SROutcomeModelTrainer')
+        self.model_config = config.get('sr_outcome_model', {})
+        self.model_type = self.model_config.get('model_type', 'ensemble')
+        self.feature_config = self.model_config.get('features', {})
+        self.training_config = self.model_config.get('training', {})
+        self.validation_months = self.training_config.get('validation_months', 1)
+        self.training_months = self.training_config.get('training_months', 3)
+        
+        # Apply intensity scaling to training config
+        intensity_pct = get_intensity_from_environment()
+        if intensity_pct < 1.0:
+            self.training_config = apply_intensity_scaling(self.training_config, intensity_pct)
+            self.logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%) to SR outcome training config")
+        self.min_samples_per_class = self.training_config.get('min_samples_per_class', 1000)
+        self.ensemble_config = self.model_config.get('ensemble', {})
+        self.use_ensemble = self.ensemble_config.get('use_ensemble', True)
+        self.ensemble_weights = self.ensemble_config.get('weights', [0.6, 0.4])
+        self.voting_method = self.ensemble_config.get('voting', 'soft')
+        self.use_temporal_features = self.feature_config.get('use_temporal_features', True)
+        self.use_volatility_regime = self.feature_config.get('use_volatility_regime', True)
+        self.use_order_flow = self.feature_config.get('use_order_flow', False)
+        self.artifacts_dir = self.model_config.get('artifacts_dir', 'models/sr_outcome')
+        os.makedirs(self.artifacts_dir, exist_ok = True)
+        sr_config = config.copy()
+        sr_config['sr_breakout_predictor'] = sr_config.get('sr_breakout_predictor', {})
+        sr_config['sr_breakout_predictor']['use_optimized_params'] = True
+        self.sr_predictor = SRBreakoutPredictor(sr_config)
+        self.scaler = StandardScaler()
+        self.label_encoder = LabelEncoder()
+        self.models = {}
+        self.ensemble_model = None
+        self.feature_names = []
+        self.validator = EnhancedValidator()
+
+    @handles_errors(exceptions=(Exception,), default_return = False, context='S/R outcome model initialization')
+    async def initialize(self) -> bool:
+        """Initialize the S/R outcome model trainer."""
+        try:
+            self.logger.info('Initializing S/R Outcome Model Trainer...')
+            sr_init_success = await self.sr_predictor.initialize()
+            if not sr_init_success:
+                self.logger.warning('Failed to initialize SRBreakoutPredictor')
+            self.label_encoder.fit(['breakout', 'rebounce', 'consolidation'])
+            self.logger.info('✅ S/R Outcome Model Trainer initialized successfully')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Failed to initialize S/R Outcome Model Trainer: {e}')
+            return False
+
+    @critical_async_process('sr_detection')
+    @monitor_critical_process('sr_detection')
+    @enhanced_async_error_handler(
+        error_severity=ErrorSeverity.CRITICAL,
+        error_category=ErrorCategory.BUSINESS_LOGIC,
+        should_fail_fast=True,
+        step_name='sr_detection'
+    )
+    async def train_model(self, training_data: dict[str, pd.DataFrame]) -> bool:
+        """Train the S/R outcome prediction model ensemble."""
+        try:
+            # Validate inputs
+            if not training_data:
+                raise ValueError("Training data is required")
+            
+            # Validate training data quality
+            for key, data in training_data.items():
+                if data is None or data.empty:
+                    raise ValueError(f"Training data for {key} is empty")
+                
+                validation_result = await self.validator.validate_data_quality(
+                    data, ValidationLevel.CRITICAL, "sr_detection"
+                )
+                
+                if not validation_result.passed:
+                    raise ValueError(f"Training data quality validation failed for {key}: {validation_result.message}")
+            
+            self.logger.info('🔄 Starting S/R outcome model training...')
+            prepared_data = await self._prepare_training_data(training_data)
+            
+            if prepared_data is None:
+                raise ValueError("Failed to prepare training data")
+            
+            X, y = await self._engineer_features(prepared_data)
+            
+            if X is None or y is None:
+                raise ValueError("Failed to engineer features")
+            
+            if X.empty or len(y) == 0:
+                raise ValueError("Engineered features are empty")
+            if self.use_ensemble:
+                training_result = await self._train_ensemble_models(X, y)
+            elif self.model_type == 'lightgbm':
+                training_result = await self._train_lightgbm_model(X, y)
+            elif self.model_type == 'xgboost':
+                training_result = await self._train_xgboost_model(X, y)
+            elif self.model_type == 'logistic':
+                training_result = await self._train_logistic_model(X, y)
+            else:
+                raise ValueError(f'Unknown model_type: {self.model_type}')
+            
+            if not training_result:
+                raise RuntimeError("Model training failed - no results produced")
+            
+            # Validate expected outputs were created
+            expected_outputs = [
+                'sr_outcome_model.pkl',
+                'sr_outcome_metrics.json',
+                'sr_outcome_feature_importance.json'
+            ]
+            
+            validation_result = await self.validator.validate_process_completion(
+                'sr_detection', expected_outputs, self.artifacts_dir, ValidationLevel.CRITICAL
+            )
+            
+            if not validation_result.passed:
+                raise CriticalProcessError(
+                    f"SR detection model training completed but validation failed: {validation_result.message}",
+                    ErrorRecord(
+                        error_id=f"sr_detection_validation_failure_{int(time.time())}",
+                        error_type="ValidationError",
+                        error_message=validation_result.message,
+                        severity=ErrorSeverity.CRITICAL,
+                        category=ErrorCategory.VALIDATION,
+                        context=ErrorContext(
+                            function_name="train_model",
+                            step_name="sr_detection"
+                        ),
+                        stack_trace="",
+                        should_fail_fast=True
+                    )
+                )
+            
+            self.logger.info("✅ SR detection model training completed successfully")
+            return True
+            
+        except CriticalProcessError as e:
+            self.logger.critical(f'🚨 CRITICAL PROCESS ERROR in SR Detection: {e}')
+            # Re-raise to trigger fail-fast behavior
+            raise
+        except Exception as e:
+            self.logger.critical(f'🚨 CRITICAL ERROR in SR Detection: {e}')
+            
+            # Convert to CriticalProcessError for fail-fast behavior
+            raise CriticalProcessError(
+                f"SR detection model training failed with critical error: {e}",
+                ErrorRecord(
+                    error_id=f"sr_detection_critical_error_{int(time.time())}",
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    severity=ErrorSeverity.CRITICAL,
+                    category=ErrorCategory.BUSINESS_LOGIC,
+                    context=ErrorContext(
+                        function_name="train_model",
+                        step_name="sr_detection"
+                    ),
+                    stack_trace="",
+                    should_fail_fast=True
+                )
+            )
+
+    async def _prepare_training_data(self, training_data: dict[str, pd.DataFrame]) -> pd.DataFrame | None:
+        """Prepare training data with S/R context and outcome labeling."""
+        try:
+            self.logger.info('🔄 Preparing training data...')
+            combined_data = pd.DataFrame()
+            for timeframe, data in training_data.items():
+                if data.empty:
+                    continue
+                self.logger.info(f'Processing {timeframe} data: {len(data)} samples')
+                data_copy = data.copy()
+                data_copy['timeframe'] = timeframe
+                labeled_data = await self._label_sr_outcomes(data_copy, timeframe)
+                if labeled_data is not None:
+                    combined_data = pd.concat([combined_data, labeled_data], ignore_index = True)
+            if combined_data.empty:
+                self.logger.error('No valid training data found')
+                return None
+            self.logger.info(f'✅ Prepared training data: {len(combined_data)} samples')
+            return combined_data
+        except Exception as e:
+            self.logger.exception(f'Error preparing training data: {e}')
+            return None
+
+    async def _label_sr_outcomes(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame | None:
+        """Label S/R outcomes for training data."""
+        try:
+            if data.empty:
+                return None
+            sample_interval = max(1, len(data) // 5000)
+            sample_data = data.iloc[::sample_interval].copy()
+            labeled_samples: list[dict[str, Any]] = []
+            for idx, row in sample_data.iterrows():
+                try:
+                    current_price = row['close']
+                    market_slice = data.loc[:idx].tail(100)
+                    if len(market_slice) < 20:
+                        continue
+                    sr_context = await self.sr_predictor.get_sr_context(market_data = market_slice, current_price = current_price)
+                    sr_outcome = await self.sr_predictor.predict_sr_outcome(market_data = market_slice, current_price = current_price, sr_context = sr_context)
+                    is_near_sr = sr_outcome.get('is_near_sr_level', False)
+                    if is_near_sr:
+                        sample = {'timestamp': row.get('timestamp', idx), 'timeframe': timeframe, 'price': current_price, 'outcome': sr_outcome.get('outcome', 'consolidation'), 'confidence': sr_outcome.get('confidence', 0.5), 'sr_context': sr_context, 'market_data': market_slice.tail(20).to_dict('records'), 'features': await self._extract_features(market_data = market_slice, current_price = current_price, sr_context = sr_context)}
+                        labeled_samples.append(sample)
+                except Exception as e:
+                    self.logger.debug(f'Error labeling sample {idx}: {e}')
+                    continue
+            if not labeled_samples:
+                return None
+            labeled_df = pd.DataFrame(labeled_samples)
+            balanced_df = self._balance_classes(labeled_df)
+            self.logger.info(f'✅ Labeled {len(balanced_df)} samples for {timeframe}')
+            return balanced_df
+        except Exception as e:
+            self.logger.exception(f'Error labeling S/R outcomes: {e}')
+            return None
+
+    async def _extract_features(self, market_data: pd.DataFrame, current_price: float, sr_context: dict) -> dict[str, float]:
+        """Extract comprehensive features for S/R outcome prediction."""
+        try:
+            features: dict[str, float] = {}
+            features['price_change_1m'] = market_data['close'].pct_change().iloc[-1] if len(market_data) > 1 else 0
+            features['price_change_5m'] = market_data['close'].pct_change(5).iloc[-1] if len(market_data) > 5 else 0
+            features['price_change_15m'] = market_data['close'].pct_change(15).iloc[-1] if len(market_data) > 15 else 0
+            features['price_volatility'] = market_data['close'].rolling(20).std().iloc[-1] if len(market_data) >= 20 else 0
+            features['volume_ratio'] = market_data['volume'].iloc[-1] / market_data['volume'].rolling(20).mean().iloc[-1] if len(market_data) >= 20 else 1.0
+            features['volume_momentum'] = market_data['volume'].pct_change().iloc[-1] if len(market_data) > 1 else 0
+            features['volume_volatility'] = market_data['volume'].rolling(10).std().iloc[-1] if len(market_data) >= 10 else 0
+            features['rsi'] = self._calculate_rsi(market_data['close']).iloc[-1] if len(market_data) >= 14 else 50
+            features['macd'] = self._calculate_macd(market_data['close']).iloc[-1] if len(market_data) >= 26 else 0
+            features['bb_position'] = self._calculate_bb_position(market_data['close']).iloc[-1] if len(market_data) >= 20 else 0.5
+            if sr_context:
+                nearest_support = sr_context.get('nearest_support', current_price)
+                nearest_resistance = sr_context.get('nearest_resistance', current_price)
+                features['distance_to_support'] = (current_price - nearest_support) / current_price
+                features['distance_to_resistance'] = (nearest_resistance - current_price) / current_price
+                features['support_strength'] = sr_context.get('support_strength', 0.5)
+                features['resistance_strength'] = sr_context.get('resistance_strength', 0.5)
+                pivot_levels = sr_context.get('pivot_levels', {})
+                if pivot_levels:
+                    features['nearest_pivot_strength'] = pivot_levels.get('nearest_strength', 0.5)
+                    features['pivot_touches'] = pivot_levels.get('nearest_touches', 0)
+                else:
+                    features['nearest_pivot_strength'] = 0.5
+                    features['pivot_touches'] = 0
+            features['market_trend'] = self._calculate_market_trend(market_data)
+            features['momentum_strength'] = self._calculate_momentum_strength(market_data)
+            if self.use_temporal_features:
+                features['time_since_sr_touch'] = self._calculate_time_since_sr_touch(market_data = market_data, sr_context = sr_context)
+                features['sr_touch_frequency'] = self._calculate_sr_touch_frequency(market_data = market_data, sr_context = sr_context)
+            if self.use_volatility_regime:
+                features['volatility_regime'] = self._classify_volatility_regime(market_data)
+                features['atr_ratio'] = self._calculate_atr_ratio(market_data)
+            return features
+        except Exception as e:
+            self.logger.exception(f'Error extracting features: {e}')
+            return {}
+    @log_all_calls
+
+    def _balance_classes(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Balance classes to handle imbalanced S/R outcomes."""
+        try:
+            class_counts = data['outcome'].value_counts()
+            min_count = min(class_counts.min(), self.min_samples_per_class)
+            balanced_samples = []
+            for outcome in ['breakout', 'rebounce', 'consolidation']:
+                outcome_data = data[data['outcome'] == outcome]
+                if len(outcome_data) > min_count:
+                    balanced_samples.append(outcome_data.sample(n = min_count, random_state = 42))
+                else:
+                    balanced_samples.append(outcome_data)
+            balanced_df = pd.concat(balanced_samples, ignore_index = True)
+            self.logger.info(f"Balanced classes: {balanced_df['outcome'].value_counts().to_dict()}")
+            return balanced_df
+        except Exception as e:
+            self.logger.exception(f'Error balancing classes: {e}')
+            return data
+
+    @validates()
+    async def _engineer_features(self, data: pd.DataFrame) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Engineer features for model training."""
+        try:
+            self.logger.info('🔄 Engineering features...')
+            feature_vectors: list[list[float]] = []
+            labels: list[str] = []
+            for _, row in data.iterrows():
+                features = row.get('features', {})
+                if features:
+                    feature_vector = self._create_feature_vector(features)
+                    if feature_vector is not None:
+                        feature_vectors.append(feature_vector)
+                        labels.append(row['outcome'])
+            if not feature_vectors:
+                self.logger.error('No valid feature vectors found')
+                return (None, None)
+            X = np.array(feature_vectors)
+            y = np.array(labels)
+            y_encoded = self.label_encoder.transform(y)
+            X_scaled = self.scaler.fit_transform(X)
+            self.feature_names = self._get_feature_names()
+            self.logger.info(f'✅ Engineered features: {X_scaled.shape}')
+            return (X_scaled, y_encoded)
+        except Exception as e:
+            self.logger.exception(f'Error engineering features: {e}')
+            return (None, None)
+    @log_all_calls
+
+    def _create_feature_vector(self, features: dict) -> list[float] | None:
+        """Create feature vector from features dictionary."""
+        try:
+            feature_names = self._get_feature_names()
+            feature_vector = []
+            for feature_name in feature_names:
+                feature_vector.append(features.get(feature_name, 0.0))
+            return feature_vector
+        except Exception as e:
+            self.logger.exception(f'Error creating feature vector: {e}')
+            return None
+    @log_all_calls
+
+    def _get_feature_names(self) -> list[str]:
+        """Get list of feature names in order."""
+        base_features = ['price_change_1m', 'price_change_5m', 'price_change_15m', 'price_volatility', 'volume_ratio', 'volume_momentum', 'volume_volatility', 'rsi', 'macd', 'bb_position', 'distance_to_support', 'distance_to_resistance', 'support_strength', 'resistance_strength', 'nearest_pivot_strength', 'pivot_touches', 'market_trend', 'momentum_strength']
+        if self.use_temporal_features:
+            base_features.extend(['time_since_sr_touch', 'sr_touch_frequency'])
+        if self.use_volatility_regime:
+            base_features.extend(['volatility_regime', 'atr_ratio'])
+        return base_features
+
+    async def _train_lightgbm_model(self, X: np.ndarray, y: np.ndarray) -> bool:
+        """Train LightGBM model with hyperparameter optimization."""
+        try:
+            self.logger.info('🔄 Training LightGBM model...')
+            class_weights = compute_class_weight('balanced', classes = np.unique(y), y = y)
+            weight_dict = dict(zip(np.unique(y), class_weights, strict = False))
+            sample_weights = np.array([weight_dict[label] for label in y])
+            tscv = TimeSeriesSplit(n_splits = 5)
+            best_params = await self._optimize_lightgbm_hyperparameters(X, y, sample_weights, tscv)
+            final_model = lgb.LGBMClassifier(**best_params, random_state = 42)
+            final_model.fit(X, y, sample_weight = sample_weights)
+            self.models['lgb'] = final_model
+            if not self.use_ensemble:
+                self.ensemble_model = final_model
+            await self._evaluate_model(X, y, model_name='LightGBM')
+            self.logger.info('✅ LightGBM model training completed')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Error training LightGBM model: {e}')
+            return False
+
+    async def _train_xgboost_model(self, X: np.ndarray, y: np.ndarray) -> bool:
+        """Train XGBoost model with hyperparameter optimization."""
+        try:
+            self.logger.info('🔄 Training XGBoost model...')
+            class_weights = compute_class_weight('balanced', classes = np.unique(y), y = y)
+            weight_dict = dict(zip(np.unique(y), class_weights, strict = False))
+            sample_weights = np.array([weight_dict[label] for label in y])
+            tscv = TimeSeriesSplit(n_splits = 5)
+            best_params = await self._optimize_xgboost_hyperparameters(X, y, sample_weights, tscv)
+            final_model = xgb.XGBClassifier(**best_params, random_state = 42)
+            final_model.fit(X, y, sample_weight = sample_weights)
+            self.models['xgb'] = final_model
+            if not self.use_ensemble:
+                self.ensemble_model = final_model
+            await self._evaluate_model(X, y, model_name='XGBoost')
+            self.logger.info('✅ XGBoost model training completed')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Error training XGBoost model: {e}')
+            return False
+
+    async def _train_ensemble_models(self, X: np.ndarray, y: np.ndarray) -> bool:
+        """Train LightGBM and XGBoost models and create an ensemble."""
+        try:
+            self.logger.info('🔄 Training LightGBM and XGBoost ensemble...')
+            lgb_model_success = await self._train_lightgbm_model(X, y)
+            if not lgb_model_success:
+                self.logger.error('Failed to train LightGBM model for ensemble')
+                return False
+            xgb_model_success = await self._train_xgboost_model(X, y)
+            if not xgb_model_success:
+                self.logger.error('Failed to train XGBoost model for ensemble')
+                return False
+            self.ensemble_model = VotingClassifier(estimators=[('lgb', self.models['lgb']), ('xgb', self.models['xgb'])], voting = self.voting_method, weights = self.ensemble_weights)
+            self.ensemble_model.fit(X, y)
+            await self._evaluate_model(X, y, model_name='Ensemble')
+            self.logger.info('✅ Ensemble training completed')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Error training ensemble models: {e}')
+            return False
+
+    async def _optimize_lightgbm_hyperparameters(self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit) -> dict:
+        """Optimize LightGBM hyperparameters using Optuna."""
+        try:
+
+            def objective(trial: Any) -> None:
+                params = {'objective': 'multiclass', 'num_class': 3, 'boosting_type': 'gbdt', 'metric': 'multi_logloss', 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1, log = True), 'num_leaves': trial.suggest_int('num_leaves', 15, 63), 'max_depth': trial.suggest_int('max_depth', 4, 12), 'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 10, 50), 'feature_fraction': trial.suggest_float('feature_fraction', 0.6, 0.9), 'bagging_fraction': trial.suggest_float('bagging_fraction', 0.6, 0.9), 'bagging_freq': trial.suggest_int('bagging_freq', 1, 10), 'reg_alpha': trial.suggest_float('reg_alpha', 0.01, 0.3, log = True), 'reg_lambda': trial.suggest_float('reg_lambda', 0.01, 0.3, log = True), 'random_state': 42}
+                scores: list[float] = []
+                for train_idx, val_idx in tscv.split(X):
+                    X_train = X[train_idx]
+                    y_train = y[train_idx]
+                    w_train = sample_weights[train_idx]
+                    X_val = X[val_idx]
+                    y_val = y[val_idx]
+                    sample_weights[val_idx]
+                    model = lgb.LGBMClassifier(**params, random_state = 42)
+                    model.fit(X_train, y_train, sample_weight = w_train)
+                    y_pred_proba = model.predict_proba(X_val)
+                    score = roc_auc_score(y_val, y_pred_proba, multi_class='ovr')
+                    scores.append(score)
+                return float(np.mean(scores))
+            sr_lightgbm_trials = getattr(self, 'training_input', {}).get('sr_lightgbm_trials', 30)
+            # Apply intensity scaling to trials
+            intensity_pct = get_intensity_from_environment()
+            sr_lightgbm_trials = get_scaled_hpo_trials(sr_lightgbm_trials, intensity_pct)
+            study = optuna.create_study(direction='maximize')
+            study.optimize(objective, n_trials = sr_lightgbm_trials)
+            best_params = study.best_params
+            best_params.update({'objective': 'multiclass', 'num_class': 3, 'boosting_type': 'gbdt', 'metric': 'multi_logloss', 'random_state': 42})
+            self.logger.info(f'Best LightGBM hyperparameters: {best_params}')
+            return best_params
+        except Exception as e:
+            self.logger.exception(f'Error optimizing LightGBM hyperparameters: {e}')
+            return {'objective': 'multiclass', 'num_class': 3, 'boosting_type': 'gbdt', 'metric': 'multi_logloss', 'learning_rate': 0.05, 'num_leaves': 31, 'max_depth': 8, 'min_data_in_leaf': 20, 'feature_fraction': 0.8, 'bagging_fraction': 0.8, 'bagging_freq': 5, 'reg_alpha': 0.1, 'reg_lambda': 0.1, 'random_state': 42}
+
+    async def _optimize_xgboost_hyperparameters(self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit) -> dict:
+        """Optimize XGBoost hyperparameters using Optuna."""
+        try:
+
+            def objective(trial: Any) -> None:
+                params = {'objective': 'multi:softprob', 'num_class': 3, 'eval_metric': 'mlogloss', 'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1, log = True), 'max_depth': trial.suggest_int('max_depth', 3, 10), 'min_child_weight': trial.suggest_int('min_child_weight', 1, 10), 'subsample': trial.suggest_float('subsample', 0.6, 0.9), 'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 0.9), 'gamma': trial.suggest_float('gamma', 0, 0.5), 'reg_alpha': trial.suggest_float('reg_alpha', 0.01, 0.3, log = True), 'reg_lambda': trial.suggest_float('reg_lambda', 0.01, 0.3, log = True), 'random_state': 42}
+                scores: list[float] = []
+                for train_idx, val_idx in tscv.split(X):
+                    X_train = X[train_idx]
+                    y_train = y[train_idx]
+                    w_train = sample_weights[train_idx]
+                    X_val = X[val_idx]
+                    y_val = y[val_idx]
+                    sample_weights[val_idx]
+                    model = xgb.XGBClassifier(**params, random_state = 42)
+                    model.fit(X_train, y_train, sample_weight = w_train)
+                    y_pred_proba = model.predict_proba(X_val)
+                    score = roc_auc_score(y_val, y_pred_proba, multi_class='ovr')
+                    scores.append(score)
+                return float(np.mean(scores))
+            sr_xgboost_trials = getattr(self, 'training_input', {}).get('sr_xgboost_trials', 30)
+            # Apply intensity scaling to trials
+            intensity_pct = get_intensity_from_environment()
+            sr_xgboost_trials = get_scaled_hpo_trials(sr_xgboost_trials, intensity_pct)
+            study = optuna.create_study(direction='maximize')
+            study.optimize(objective, n_trials = sr_xgboost_trials)
+            best_params = study.best_params
+            best_params.update({'objective': 'multi:softprob', 'num_class': 3, 'eval_metric': 'mlogloss', 'random_state': 42})
+            self.logger.info(f'Best XGBoost hyperparameters: {best_params}')
+            return best_params
+        except Exception as e:
+            self.logger.exception(f'Error optimizing XGBoost hyperparameters: {e}')
+            return {'objective': 'multi:softprob', 'num_class': 3, 'eval_metric': 'mlogloss', 'learning_rate': 0.05, 'max_depth': 6, 'min_child_weight': 1, 'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'reg_alpha': 0.1, 'reg_lambda': 0.1, 'random_state': 42}
+
+    async def _evaluate_model(self, X: np.ndarray, y: np.ndarray, model_name: str='Model') -> None:
+        """Evaluate the trained model."""
+        try:
+            if model_name == 'Ensemble' and self.ensemble_model is not None:
+                model_to_evaluate = self.ensemble_model
+            elif model_name == 'LightGBM' and 'lgb' in self.models:
+                model_to_evaluate = self.models['lgb']
+            elif model_name == 'XGBoost' and 'xgb' in self.models:
+                model_to_evaluate = self.models['xgb']
+            else:
+                model_to_evaluate = self.ensemble_model
+            if model_to_evaluate is None:
+                self.logger.warning(f'No model available for evaluation: {model_name}')
+                return
+            y_pred = model_to_evaluate.predict(X)
+            y_pred_proba = model_to_evaluate.predict_proba(X)
+            report = classification_report(y, y_pred, target_names = self.label_encoder.classes_)
+            conf_matrix = confusion_matrix(y, y_pred)
+            auc_score = roc_auc_score(y, y_pred_proba, multi_class='ovr')
+            feature_importance = None
+            if hasattr(model_to_evaluate, 'feature_importances_'):
+                feature_importance = pd.DataFrame({'feature': self.feature_names, 'importance': model_to_evaluate.feature_importances_}).sort_values('importance', ascending = False)
+            elif model_name == 'Ensemble':
+                lgb_importance = self.models['lgb'].feature_importances_ if 'lgb' in self.models else None
+                xgb_importance = self.models['xgb'].feature_importances_ if 'xgb' in self.models else None
+                if lgb_importance is not None and xgb_importance is not None:
+                    weighted_importance = lgb_importance * self.ensemble_weights[0] + xgb_importance * self.ensemble_weights[1]
+                    feature_importance = pd.DataFrame({'feature': self.feature_names, 'importance': weighted_importance}).sort_values('importance', ascending = False)
+            self.logger.info(f'Model Evaluation Results for {model_name}:')
+            self.logger.info(f'AUC Score: {auc_score:.4f}')
+            self.logger.info(f'Classification Report:\n{report}')
+            if feature_importance is not None:
+                self.logger.info(f'Top 10 Features:\n{feature_importance.head(10)}')
+            evaluation_results = {'model_name': model_name, 'auc_score': float(auc_score), 'classification_report': report, 'confusion_matrix': conf_matrix.tolist(), 'feature_importance': feature_importance.to_dict('records') if feature_importance is not None else None, 'timestamp': datetime.now().isoformat()}
+
+            # Save evaluation results using centralized reporting system
+            from src.training.reports import save_training_report
+
+            # Get symbol and timeframe from config or use defaults
+            symbol = getattr(self, 'symbol', 'UNKNOWN')
+            timeframe = getattr(self, 'timeframe', '1m')
+
+            report_path = save_training_report(
+                data=evaluation_results,
+                step_name='sr_outcome_model_trainer',
+                report_type=f'{model_name.lower()}_evaluation_results',
+                symbol=symbol,
+                timeframe=timeframe,
+                file_format='json'
+            )
+
+            self.logger.info(f'💾 {model_name} evaluation results saved to: {report_path}')
+        except Exception as e:
+            self.logger.exception(f'Error evaluating model: {e}')
+
+    async def _save_model_artifacts(self) -> None:
+        """Save model artifacts and metadata."""
+        try:
+            if 'lgb' in self.models:
+                lgb_path = os.path.join(self.artifacts_dir, 'lightgbm_model.pkl')
+                with open(lgb_path, 'wb') as f:
+                    pickle.dump(self.models['lgb'], f)
+            if 'xgb' in self.models:
+                xgb_path = os.path.join(self.artifacts_dir, 'xgboost_model.pkl')
+                with open(xgb_path, 'wb') as f:
+                    pickle.dump(self.models['xgb'], f)
+            if self.ensemble_model is not None:
+                ensemble_path = os.path.join(self.artifacts_dir, 'ensemble_model.pkl')
+                with open(ensemble_path, 'wb') as f:
+                    pickle.dump(self.ensemble_model, f)
+            scaler_path = os.path.join(self.artifacts_dir, 'sr_outcome_scaler.pkl')
+            with open(scaler_path, 'wb') as f:
+                pickle.dump(self.scaler, f)
+            encoder_path = os.path.join(self.artifacts_dir, 'sr_outcome_encoder.pkl')
+            with open(encoder_path, 'wb') as f:
+                pickle.dump(self.label_encoder, f)
+            feature_names_path = os.path.join(self.artifacts_dir, 'feature_names.json')
+            with open(feature_names_path, 'w') as f:
+                json.dump(self.feature_names, f)
+            config_save = {'model_config': self.model_config, 'ensemble_config': self.ensemble_config, 'feature_names': self.feature_names, 'training_timestamp': datetime.now().isoformat(), 'model_type': self.model_type, 'use_ensemble': self.use_ensemble, 'ensemble_weights': self.ensemble_weights, 'voting_method': self.voting_method}
+            config_path = os.path.join(self.artifacts_dir, 'model_config.json')
+            with open(config_path, 'w') as f:
+                json.dump(config_save, f, indent = 2)
+            self.logger.info(f'✅ Model artifacts saved to {self.artifacts_dir}')
+        except Exception as e:
+            self.logger.exception(f'Error saving model artifacts: {e}')
+    @log_step_functions
+
+    def predict(self, features: dict[str, float]) -> dict[str, Any]:
+        """Make prediction using the trained ensemble or individual model."""
+        try:
+            if self.ensemble_model is None:
+                return {'probabilities': {'breakout': 0.33, 'rebounce': 0.33, 'consolidation': 0.34}, 'confidence': 0.5, 'outcome': 'consolidation', 'model_type': 'none'}
+            feature_vector = self._create_feature_vector(features)
+            if feature_vector is None:
+                return {'probabilities': {'breakout': 0.33, 'rebounce': 0.33, 'consolidation': 0.34}, 'confidence': 0.5, 'outcome': 'consolidation', 'model_type': 'error'}
+            feature_vector_scaled = self.scaler.transform([feature_vector])
+            if self.use_ensemble and self.ensemble_model is not None:
+                y_pred_proba = self.ensemble_model.predict_proba(feature_vector_scaled)[0]
+                y_pred = self.ensemble_model.predict(feature_vector_scaled)[0]
+                model_type = 'ensemble'
+            else:
+                y_pred_proba = self.ensemble_model.predict_proba(feature_vector_scaled)[0]
+                y_pred = self.ensemble_model.predict(feature_vector_scaled)[0]
+                model_type = self.model_type
+            outcome_mapping = {0: 'breakout', 1: 'rebounce', 2: 'consolidation'}
+            outcome = outcome_mapping.get(int(y_pred), 'consolidation')
+            prob_dict = {'breakout': float(y_pred_proba[0]), 'rebounce': float(y_pred_proba[1]), 'consolidation': float(y_pred_proba[2])}
+            confidence = float(max(y_pred_proba))
+            return {'probabilities': prob_dict, 'confidence': confidence, 'outcome': outcome, 'model_type': model_type}
+        except Exception as e:
+            self.logger.exception(f'Error making prediction: {e}')
+            return {'probabilities': {'breakout': 0.33, 'rebounce': 0.33, 'consolidation': 0.34}, 'confidence': 0.5, 'outcome': 'consolidation', 'model_type': 'error'}
+    @log_all_calls
+
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI indicator."""
+        delta = prices.diff()
+        gain = delta.where(delta > 0, 0).rolling(window = period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window = period).mean()
+        rs = gain / loss
+        return 100 - 100 / (1 + rs)
+    @log_all_calls
+
+    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
+        """Calculate MACD indicator."""
+        ema_fast = prices.ewm(span = fast).mean()
+        ema_slow = prices.ewm(span = slow).mean()
+        return ema_fast - ema_slow
+    @log_all_calls
+
+    def _calculate_bb_position(self, prices: pd.Series, period: int = 20, std: int = 2) -> pd.Series:
+        """Calculate Bollinger Band position."""
+        sma = prices.rolling(window = period).mean()
+        std_dev = prices.rolling(window = period).std()
+        upper_band = sma + std_dev * std
+        lower_band = sma - std_dev * std
+        bb_position = (prices - lower_band) / (upper_band - lower_band)
+        return bb_position.clip(0, 1)
+    @log_all_calls
+
+    def _calculate_market_trend(self, market_data: pd.DataFrame) -> float:
+        """Calculate market trend strength."""
+        try:
+            if len(market_data) < 20:
+                return 0.0
+            prices = market_data['close'].values
+            x = np.arange(len(prices))
+            slope = np.polyfit(x, prices, 1)[0]
+            avg_price = np.mean(prices)
+            normalized_slope = slope / avg_price if avg_price > 0 else 0
+            return float(np.clip(normalized_slope * 100, -1, 1))
+        except Exception as e:
+            self.logger.exception(f'Error calculating market trend: {e}')
+            return 0.0
+    @log_all_calls
+
+    def _calculate_momentum_strength(self, market_data: pd.DataFrame) -> float:
+        """Calculate momentum strength."""
+        try:
+            if len(market_data) < 10:
+                return 0.0
+            short_momentum = market_data['close'].pct_change(5).iloc[-1] if len(market_data) > 5 else 0
+            long_momentum = market_data['close'].pct_change(20).iloc[-1] if len(market_data) > 20 else 0
+            momentum = short_momentum * 0.7 + long_momentum * 0.3
+            return float(np.clip(momentum * 100, -1, 1))
+        except Exception as e:
+            self.logger.exception(f'Error calculating momentum strength: {e}')
+            return 0.0
+    @log_all_calls
+
+    def _calculate_time_since_sr_touch(self, market_data: pd.DataFrame, sr_context: dict) -> float:
+        """Calculate time since last S/R level touch."""
+        return 0.5
+    @log_all_calls
+
+    def _calculate_sr_touch_frequency(self, market_data: pd.DataFrame, sr_context: dict) -> float:
+        """Calculate S/R level touch frequency."""
+        return 0.5
+    @log_all_calls
+
+    def _classify_volatility_regime(self, market_data: pd.DataFrame) -> float:
+        """Classify volatility regime."""
+        try:
+            if len(market_data) < 20:
+                return 0.5
+            high_low = market_data['high'] - market_data['low']
+            high_close = np.abs(market_data['high'] - market_data['close'].shift())
+            low_close = np.abs(market_data['low'] - market_data['close'].shift())
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            atr = true_range.rolling(14).mean().iloc[-1]
+            avg_price = market_data['close'].mean()
+            normalized_atr = atr / avg_price if avg_price > 0 else 0
+            return float(min(1.0, normalized_atr * 100))
+        except Exception as e:
+            self.logger.exception(f'Error classifying volatility regime: {e}')
+            return 0.5
+    @log_all_calls
+
+    def _calculate_atr_ratio(self, market_data: pd.DataFrame) -> float:
+        """Calculate ATR ratio for volatility analysis."""
+        try:
+            if len(market_data) < 20:
+                return 1.0
+            high_low = market_data['high'] - market_data['low']
+            high_close = np.abs(market_data['high'] - market_data['close'].shift())
+            low_close = np.abs(market_data['low'] - market_data['close'].shift())
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            current_atr = true_range.rolling(14).mean().iloc[-1]
+            historical_atr = true_range.rolling(50).mean().iloc[-1]
+            return float(current_atr / historical_atr) if historical_atr > 0 else 1.0
+        except Exception as e:
+            self.logger.exception(f'Error calculating ATR ratio: {e}')
+            return 1.0

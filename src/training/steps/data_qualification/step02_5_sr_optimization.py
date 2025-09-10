@@ -87,11 +87,12 @@ from src.utils.sr_clustering import (
 logger.info('✅ SR clustering system loaded')
 from src.utils.common_utilities import (
     safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
-    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
+    safe_merge_dataframes, safe_groupby_operation,
     safe_apply_function, create_summary_statistics, safe_drop_columns,
     safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
-    get_dataframe_info, safe_filter_dataframe, create_data_quality_report
+    get_dataframe_info, safe_filter_dataframe
 )
+from src.utils.feature_output_validator import FeatureOutputValidator, validate_feature_output
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, safe_kelly_calculation,
     safe_weighted_average, safe_percentage_change, validate_finite,
@@ -187,7 +188,7 @@ except ImportError:
 try:
     from src.utils.ml_common import (
         FeatureSelectionFramework, LookaheadProtection, CrossValidationUtilities,
-        ModelEvaluationUtilities, DataQualityUtilities, MemoryEfficientTraining,
+        ModelEvaluationUtilities, MemoryEfficientTraining,
         ParallelProcessingCoordinator, HyperparameterOptimization, ModelRegistry,
         MLPipelineOrchestrator
     )
@@ -841,7 +842,7 @@ class SROptimizationStep(BaseStep):
                 self.current_timestamp = datetime.now()  # Initialize current timestamp for lookahead protection
                 self.cv_utils = CrossValidationUtilities()
                 self.model_evaluator = ModelEvaluationUtilities()
-                self.data_quality_utils = DataQualityUtilities()
+                self.feature_validator = FeatureOutputValidator()
                 self.memory_optimizer = MemoryEfficientTraining()
                 self.parallel_processor = ParallelProcessingCoordinator()
                 
@@ -932,13 +933,26 @@ class SROptimizationStep(BaseStep):
                     'default_timeout': 300
                 })
 
-            # Configure data quality utilities
-            if self.data_quality_utils:
-                self.data_quality_utils.config.update({
-                    'enable_gpu': self.enable_m1_optimizations,
-                    'enable_memory_optimization': self.enable_memory_optimization,
-                    'drift_threshold': 0.1,
-                    'missing_threshold': 0.5
+            # Configure feature validator
+            if self.feature_validator:
+                self.feature_validator.config.update({
+                    'critical_thresholds': {
+                        'max_nan_percentage': 0.1,
+                        'max_infinite_percentage': 0.01,
+                        'max_correlation_threshold': 0.99,
+                        'z_score_threshold': 5.0
+                    },
+                    'warning_thresholds': {
+                        'max_nan_percentage': 0.05,
+                        'max_infinite_percentage': 0.005,
+                        'max_correlation_threshold': 0.95,
+                        'z_score_threshold': 3.0
+                    },
+                    'validation_checks': {
+                        'check_highly_correlated_pairs': True,
+                        'check_outliers_zscore': True,
+                        'skip_first_rows': 50
+                    }
                 })
 
             # Configure memory optimization
@@ -967,7 +981,7 @@ class SROptimizationStep(BaseStep):
         self.current_timestamp = datetime.now()  # Initialize current timestamp even when ML Common is unavailable
         self.cv_utils = None
         self.model_evaluator = None
-        self.data_quality_utils = None
+        self.feature_validator = FeatureOutputValidator()  # Always available
         self.memory_optimizer = None
         self.parallel_processor = None
         self.hpo_optimizer = None
@@ -1458,7 +1472,7 @@ class SROptimizationStep(BaseStep):
             }
 
     def _validate_price_data_quality(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Validate and clean price data for SR detection."""
+        """Validate and clean price data for SR detection using enhanced feature validator."""
         self.logger.info('🔍 Validating price data quality for SR detection...')
         
         original_rows = len(data)
@@ -1469,6 +1483,54 @@ class SROptimizationStep(BaseStep):
         missing_columns = [col for col in required_columns if col not in clean_data.columns]
         if missing_columns:
             raise ValueError(f"CRITICAL: Missing required columns for S/R detection: {missing_columns}. Available columns: {list(clean_data.columns)}")
+        
+        # 2. Use enhanced feature validator for comprehensive data quality checks
+        if self.feature_validator:
+            try:
+                validation_result = self.feature_validator.validate_feature_output(
+                    clean_data, "sr_price_data_validation", input_data_shape=clean_data.shape
+                )
+                
+                self.logger.info(f'📊 Enhanced feature validation completed:')
+                self.logger.info(f'   Quality score: {validation_result.get("output_quality_score", 0.0):.3f}')
+                self.logger.info(f'   Critical issues: {len(validation_result.get("critical_issues", []))}')
+                self.logger.info(f'   Warnings: {len(validation_result.get("warnings", []))}')
+                
+                # Log detailed analysis if available
+                if 'detailed_analysis' in validation_result:
+                    analysis = validation_result['detailed_analysis']
+                    if 'highly_correlated_pairs' in analysis:
+                        corr_pairs = analysis['highly_correlated_pairs']
+                        if corr_pairs:
+                            self.logger.warning(f'⚠️ Found {len(corr_pairs)} highly correlated feature pairs')
+                    
+                    if 'outlier_summary' in analysis:
+                        outlier_summary = analysis['outlier_summary']
+                        if outlier_summary:
+                            total_outliers = sum(stats['warning_outliers'] + stats['critical_outliers'] 
+                                               for stats in outlier_summary.values())
+                            self.logger.warning(f'⚠️ Found {total_outliers} outliers across {len(outlier_summary)} features')
+                
+                # Apply enhanced data cleaning based on validation results
+                if validation_result.get('critical_issues'):
+                    self.logger.warning('⚠️ Critical data quality issues found, applying enhanced cleaning...')
+                    # Remove rows with NaN values in critical columns
+                    for col in required_columns:
+                        if col in clean_data.columns:
+                            nan_count = clean_data[col].isna().sum()
+                            if nan_count > 0:
+                                self.logger.warning(f'⚠️ Found {nan_count} NaN values in {col} column, removing these rows')
+                                clean_data = clean_data.dropna(subset=[col])
+                    
+                    # Remove infinite values
+                    for col in clean_data.select_dtypes(include=[np.number]).columns:
+                        inf_count = np.isinf(clean_data[col]).sum()
+                        if inf_count > 0:
+                            self.logger.warning(f'⚠️ Found {inf_count} infinite values in {col} column, removing these rows')
+                            clean_data = clean_data[np.isfinite(clean_data[col])]
+                
+            except Exception as e:
+                self.logger.warning(f'⚠️ Enhanced feature validation failed: {e}, falling back to basic validation')
         
         # 2. Remove rows with NaN values in essential columns
         for col in required_columns:
@@ -4402,7 +4464,23 @@ class SROptimizationStep(BaseStep):
             # Memory checkpoint before processing
             memory_checkpoint("SR_feature_extraction_start")
             
-            # Validate input data
+            # Validate input data using enhanced feature validator
+            if self.feature_validator:
+                try:
+                    validation_result = self.feature_validator.validate_feature_output(
+                        features_data, "sr_feature_extraction_input", input_data_shape=features_data.shape
+                    )
+                    
+                    if not validation_result.get('validation_passed', True):
+                        self.logger.warning(f'⚠️ Input data validation failed: {validation_result.get("critical_issues", [])}')
+                        # Continue with warnings but log the issues
+                    
+                    self.logger.info(f'📊 Input feature validation: Quality score {validation_result.get("output_quality_score", 0.0):.3f}')
+                    
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Feature validation failed: {e}, using basic validation')
+            
+            # Basic validation fallback
             if not validate_dataframe(features_data):
                 self.logger.error('❌ Invalid features_data DataFrame provided')
                 return pd.DataFrame(index=features_data.index)
@@ -4441,6 +4519,36 @@ class SROptimizationStep(BaseStep):
             if sr_features:
                 sr_features_df = self._create_optimized_sr_features_df(sr_features, features_data.index)
                 self.logger.info(f'📊 Generated {len(sr_features_df.columns)} vectorized SR features')
+                
+                # Validate extracted features using enhanced feature validator
+                if self.feature_validator:
+                    try:
+                        validation_result = self.feature_validator.validate_feature_output(
+                            sr_features_df, "sr_feature_extraction_output", input_data_shape=sr_features_df.shape
+                        )
+                        
+                        self.logger.info(f'📊 Extracted feature validation:')
+                        self.logger.info(f'   Quality score: {validation_result.get("output_quality_score", 0.0):.3f}')
+                        self.logger.info(f'   Critical issues: {len(validation_result.get("critical_issues", []))}')
+                        self.logger.info(f'   Warnings: {len(validation_result.get("warnings", []))}')
+                        
+                        # Log detailed analysis if available
+                        if 'detailed_analysis' in validation_result:
+                            analysis = validation_result['detailed_analysis']
+                            if 'highly_correlated_pairs' in analysis:
+                                corr_pairs = analysis['highly_correlated_pairs']
+                                if corr_pairs:
+                                    self.logger.warning(f'⚠️ Found {len(corr_pairs)} highly correlated SR feature pairs')
+                            
+                            if 'outlier_summary' in analysis:
+                                outlier_summary = analysis['outlier_summary']
+                                if outlier_summary:
+                                    total_outliers = sum(stats['warning_outliers'] + stats['critical_outliers'] 
+                                                       for stats in outlier_summary.values())
+                                    self.logger.warning(f'⚠️ Found {total_outliers} outliers in SR features across {len(outlier_summary)} features')
+                        
+                    except Exception as e:
+                        self.logger.warning(f'⚠️ Feature validation failed: {e}')
                 
                 # Memory cleanup
                 del sr_features

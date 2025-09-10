@@ -18,7 +18,8 @@ from datetime import datetime
 from typing import Any, Dict
 
 import torch
-from sklearn.preprocessing import LabelEncoder
+# Use ml_common utilities instead of direct sklearn imports
+from src.utils.ml_common.data_quality import DataQualityUtilities
 
 from src.utils.logger import system_logger
 from src.utils.common_operations import ensure_directory, safe_json_dump
@@ -414,7 +415,8 @@ class UnifiedRegimeIntelligenceValidator:
     				try:
     					with open(encoder_path, "rb") as f:
     						encoder = pickle.load(f)
-    					if isinstance(encoder, LabelEncoder):
+    					# Check if encoder is from ml_common data quality utilities
+    					if hasattr(encoder, 'fit_transform') and hasattr(encoder, 'transform'):
     						encoders_found += 1
     				except Exception:
     					pass

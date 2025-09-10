@@ -88,6 +88,11 @@ class OverallPipeline:
                 "script": "pipeline_unified_enhanced.py",
                 "default_args": [],
                 "description": "Comprehensive analysis with imports"
+            },
+            "enhanced_import_analysis": {
+                "script": "enhanced_import_analysis_pipeline.py",
+                "default_args": [],
+                "description": "Enhanced import analysis with advanced code detection and visualizations"
             }
         }
     

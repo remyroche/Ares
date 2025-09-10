@@ -61,21 +61,46 @@ class MatrixOperations:
         
         results = {}
         self.logger.info('📊 Performing correlation analysis...')
-        correlation_matrix = numeric_df.corr()
+        # Use enhanced matrix operations for correlation if available
+        try:
+            from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+            enhanced_ops = get_enhanced_matrix_operations()
+            correlation_matrix = enhanced_ops.correlation_matrix(numeric_df)
+            correlation_df = pd.DataFrame(correlation_matrix, 
+                                        index=numeric_df.columns, 
+                                        columns=numeric_df.columns)
+        except ImportError:
+            correlation_matrix = numeric_df.corr()
+            correlation_df = correlation_matrix
+        
         results['correlation_analysis'] = {
-            'correlation_matrix': correlation_matrix.to_dict(),
-            'high_correlations': self._find_high_correlations(correlation_matrix, config['correlation_threshold'])
+            'correlation_matrix': correlation_df.to_dict(),
+            'high_correlations': self._find_high_correlations(correlation_df, config['correlation_threshold'])
         }
         
         self.logger.info('🔍 Checking condition number...')
-        condition_number = np.linalg.cond(numeric_df.values)
+        # Use enhanced matrix operations for condition number if available
+        try:
+            from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+            enhanced_ops = get_enhanced_matrix_operations()
+            condition_number = enhanced_ops.condition_number(numeric_df.values, use_gpu=False)
+        except ImportError:
+            condition_number = np.linalg.cond(numeric_df.values)
+        
         results['condition_number_check'] = {
             'condition_number': float(condition_number),
             'is_well_conditioned': condition_number < config['condition_number_threshold']
         }
         
         self.logger.info('📈 Performing eigenvalue analysis...')
-        eigenvalues = np.linalg.eigvals(numeric_df.values)
+        # Use enhanced matrix operations for eigenvalue analysis if available
+        try:
+            from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+            enhanced_ops = get_enhanced_matrix_operations()
+            eigenvalues, _ = enhanced_ops.eigendecomposition(numeric_df.values, use_gpu=False)
+        except ImportError:
+            eigenvalues = np.linalg.eigvals(numeric_df.values)
+        
         results['eigenvalue_analysis'] = {
             'eigenvalues': eigenvalues.tolist(),
             'min_eigenvalue': float(np.min(eigenvalues)),
@@ -86,7 +111,14 @@ class MatrixOperations:
         
         self.logger.info('🔧 Performing SVD analysis...')
         try:
-            U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices = False)
+            # Use enhanced matrix operations for SVD if available
+            try:
+                from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+                enhanced_ops = get_enhanced_matrix_operations()
+                U, s, Vt = enhanced_ops.svd_decomposition(numeric_df.values, use_gpu=False)
+            except ImportError:
+                U, s, Vt = np.linalg.svd(numeric_df.values, full_matrices = False)
+            
             results['singular_value_decomposition'] = {
                 'singular_values': s.tolist(),
                 'rank': int(np.sum(s > config['min_eigenvalue_threshold'])),

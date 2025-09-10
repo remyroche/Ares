@@ -342,21 +342,34 @@ class FeatureSelectionFramework:
                 }
             }
 
-            # Calculate correlation matrix
-            if method == 'pearson':
-                corr_matrix = np.corrcoef(X.T)
-            elif method == 'spearman':
-                from scipy.stats import spearmanr
-                corr_matrix = np.zeros((X.shape[1], X.shape[1]))
-                for i in range(X.shape[1]):
-                    for j in range(X.shape[1]):
-                        if i != j:
-                            corr, _ = spearmanr(X[:, i], X[:, j])
-                            corr_matrix[i, j] = corr
-                        else:
-                            corr_matrix[i, j] = 1.0
-            else:
-                raise ValueError(f"Unsupported correlation method: {method}")
+            # Calculate correlation matrix using enhanced matrix operations
+            try:
+                from .matrix_operations import get_enhanced_matrix_operations
+                enhanced_ops = get_enhanced_matrix_operations()
+                
+                if method == 'pearson':
+                    corr_matrix = enhanced_ops.correlation_matrix(X, method='pearson')
+                elif method == 'spearman':
+                    corr_matrix = enhanced_ops.correlation_matrix(X, method='spearman')
+                else:
+                    raise ValueError(f"Unsupported correlation method: {method}")
+                    
+            except ImportError:
+                # Fallback to standard operations
+                if method == 'pearson':
+                    corr_matrix = np.corrcoef(X.T)
+                elif method == 'spearman':
+                    from scipy.stats import spearmanr
+                    corr_matrix = np.zeros((X.shape[1], X.shape[1]))
+                    for i in range(X.shape[1]):
+                        for j in range(X.shape[1]):
+                            if i != j:
+                                corr, _ = spearmanr(X[:, i], X[:, j])
+                                corr_matrix[i, j] = corr
+                            else:
+                                corr_matrix[i, j] = 1.0
+                else:
+                    raise ValueError(f"Unsupported correlation method: {method}")
 
             # Store correlation matrix
             for i, feature_i in enumerate(feature_names):
@@ -793,12 +806,27 @@ class FeatureSelectionFramework:
                     except Exception:
                         # Fallback to correlation if MI fails
                         for idx, feature_name in enumerate(feature_names):
-                            scores[feature_name] = abs(np.corrcoef(X[:, idx], y)[0, 1])
+                            # Use enhanced matrix operations for correlation if available
+                            try:
+                                from .matrix_operations import get_enhanced_matrix_operations
+                                enhanced_ops = get_enhanced_matrix_operations()
+                                combined_data = np.column_stack([X[:, idx], y])
+                                corr_matrix = enhanced_ops.correlation_matrix(combined_data)
+                                scores[feature_name] = abs(corr_matrix[0, 1])
+                            except ImportError:
+                                scores[feature_name] = abs(np.corrcoef(X[:, idx], y)[0, 1])
                 else:
                     # Fallback: use correlation for regression-like relevance
                     for idx, feature_name in enumerate(feature_names):
                         try:
-                            corr_matrix = np.corrcoef(X[:, idx], y)
+                            # Use enhanced matrix operations for correlation if available
+                            try:
+                                from .matrix_operations import get_enhanced_matrix_operations
+                                enhanced_ops = get_enhanced_matrix_operations()
+                                combined_data = np.column_stack([X[:, idx], y])
+                                corr_matrix = enhanced_ops.correlation_matrix(combined_data)
+                            except ImportError:
+                                corr_matrix = np.corrcoef(X[:, idx], y)
                             if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
                                 corr_value = corr_matrix[0, 1]
                             else:

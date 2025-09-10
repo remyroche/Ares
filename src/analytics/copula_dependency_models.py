@@ -184,7 +184,13 @@ class CopulaDependencyModels:
                 mu, sigma = norm.fit(target_data)
                 marginal_params.append({'mu': mu, 'sigma': sigma})
                 uniform_data[:, i] = norm.cdf(target_data, mu, sigma)
-            correlation_matrix = np.corrcoef(uniform_data.T)
+            # Use enhanced matrix operations for correlation computation if available
+            try:
+                from ..utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+                enhanced_ops = get_enhanced_matrix_operations()
+                correlation_matrix = enhanced_ops.correlation_matrix(uniform_data)
+            except ImportError:
+                correlation_matrix = np.corrcoef(uniform_data.T)
             copula_model = CopulaModel(regime = regime, copula_type='gaussian', correlation_matrix = correlation_matrix, marginal_parameters = marginal_params, model_parameters={'correlation_matrix': correlation_matrix, 'uniform_data': uniform_data}, fit_timestamp = datetime.now(), sample_size = len(data))
             return copula_model
         except Exception as e:

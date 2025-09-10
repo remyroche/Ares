@@ -615,7 +615,13 @@ class EnhancedStep08AdvancedFeatureSelection:
                 corr_matrix = self.matrix_operations.calculate_correlation_matrix_optimized(X_values)
             else:
                 X_values = X.values
-                corr_matrix = np.corrcoef(X_values.T)
+                # Use enhanced matrix operations for correlation computation if available
+                try:
+                    from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+                    enhanced_ops = get_enhanced_matrix_operations()
+                    corr_matrix = enhanced_ops.correlation_matrix(X_values)
+                except ImportError:
+                    corr_matrix = np.corrcoef(X_values.T)
 
             # Calculate relevance scores in parallel
             relevance_scores = self.m1_cpu_optimizer.parallel_process(
@@ -1001,7 +1007,13 @@ if NUMBA_AVAILABLE:
 else:
 
     def fast_correlation_matrix(X: np.ndarray) -> np.ndarray:
-        return np.corrcoef(X.T)
+        # Use enhanced matrix operations for correlation computation if available
+        try:
+            from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+            enhanced_ops = get_enhanced_matrix_operations()
+            return enhanced_ops.correlation_matrix(X)
+        except ImportError:
+            return np.corrcoef(X.T)
 
     def fast_mutual_info_discrete(X: np.ndarray, y: np.ndarray) -> np.ndarray:
         return mutual_info_classif(X, y, random_state = 42)

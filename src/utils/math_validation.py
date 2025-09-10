@@ -337,7 +337,14 @@ def validate_correlation_matrix(matrix: np.ndarray, name: str = "correlation_mat
         raise MathValidationError(f"{name} must be symmetric")
     
     # Check eigenvalues are non-negative (positive semi-definite)
-    eigenvalues = np.linalg.eigvals(matrix)
+    # Use enhanced matrix operations if available
+    try:
+        from .ml_common.matrix_operations import get_enhanced_matrix_operations
+        enhanced_ops = get_enhanced_matrix_operations()
+        eigenvalues, _ = enhanced_ops.eigendecomposition(matrix, use_gpu=False)
+    except ImportError:
+        eigenvalues = np.linalg.eigvals(matrix)
+    
     if np.any(eigenvalues < -1e-10):  # Small tolerance for numerical errors
         raise MathValidationError(f"{name} is not positive semi-definite")
     
@@ -365,16 +372,33 @@ def safe_matrix_inverse(matrix: np.ndarray, default: Optional[np.ndarray] = None
         if not np.all(np.isfinite(matrix)):
             raise MathValidationError("Matrix contains non-finite values")
         
-        # Check condition number
-        cond_num = np.linalg.cond(matrix)
-        if cond_num > 1e12:  # Very ill-conditioned
-            logger.warning(f"Matrix is ill-conditioned (condition number: {cond_num})")
-            if default is not None:
-                return default
-            else:
-                raise MathValidationError("Matrix is too ill-conditioned to invert safely")
-        
-        inverse = np.linalg.inv(matrix)
+        # Use enhanced matrix operations if available
+        try:
+            from .ml_common.matrix_operations import get_enhanced_matrix_operations
+            enhanced_ops = get_enhanced_matrix_operations()
+            
+            # Check condition number using enhanced operations
+            cond_num = enhanced_ops.condition_number(matrix, use_gpu=False)
+            if cond_num > 1e12:  # Very ill-conditioned
+                logger.warning(f"Matrix is ill-conditioned (condition number: {cond_num})")
+                if default is not None:
+                    return default
+                else:
+                    raise MathValidationError("Matrix is too ill-conditioned to invert safely")
+            
+            inverse = enhanced_ops.matrix_inverse(matrix, use_gpu=False)
+            
+        except ImportError:
+            # Fallback to standard numpy operations
+            cond_num = np.linalg.cond(matrix)
+            if cond_num > 1e12:  # Very ill-conditioned
+                logger.warning(f"Matrix is ill-conditioned (condition number: {cond_num})")
+                if default is not None:
+                    return default
+                else:
+                    raise MathValidationError("Matrix is too ill-conditioned to invert safely")
+            
+            inverse = np.linalg.inv(matrix)
         
         if not np.all(np.isfinite(inverse)):
             logger.warning("Matrix inverse contains non-finite values")

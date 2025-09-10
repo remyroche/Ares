@@ -172,13 +172,27 @@ class RiskMetricsCalculator(PnLLossFunctionsBase):
             if len(portfolio_weights) == 0 or asset_covariances.shape[0] == 0:
                 return {"risk_contributions": [], "total_risk": 0.0}
 
-            # Calculate portfolio variance
-            portfolio_variance = np.dot(portfolio_weights.T, 
-                                    np.dot(asset_covariances, portfolio_weights))
-            portfolio_risk = np.sqrt(portfolio_variance)
+            # Use enhanced matrix operations for portfolio risk calculations if available
+            try:
+                from ...utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+                enhanced_ops = get_enhanced_matrix_operations()
+                
+                # Calculate portfolio variance using enhanced matrix multiplication
+                temp_result = enhanced_ops.matrix_multiply(asset_covariances, portfolio_weights, use_gpu=False)
+                portfolio_variance = enhanced_ops.matrix_multiply(portfolio_weights.T, temp_result, use_gpu=False)
+                portfolio_risk = np.sqrt(portfolio_variance)
 
-            # Calculate marginal risk contributions
-            marginal_contributions = np.dot(asset_covariances, portfolio_weights) / portfolio_risk
+                # Calculate marginal risk contributions
+                marginal_contributions = enhanced_ops.matrix_multiply(asset_covariances, portfolio_weights, use_gpu=False) / portfolio_risk
+                
+            except ImportError:
+                # Fallback to standard numpy operations
+                portfolio_variance = np.dot(portfolio_weights.T, 
+                                        np.dot(asset_covariances, portfolio_weights))
+                portfolio_risk = np.sqrt(portfolio_variance)
+
+                # Calculate marginal risk contributions
+                marginal_contributions = np.dot(asset_covariances, portfolio_weights) / portfolio_risk
 
             # Calculate risk contributions
             risk_contributions = portfolio_weights * marginal_contributions

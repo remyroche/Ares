@@ -647,7 +647,16 @@ class VectorizedProcessingCore:
                     lagged_std = np.std(lagged_data)
 
                     if window_std > 0 and lagged_std > 0:
-                        corr = np.corrcoef(window_data, lagged_data)[0, 1]
+                        # Use enhanced matrix operations for correlation if available
+                        try:
+                            from .ml_common.matrix_operations import get_enhanced_matrix_operations
+                            enhanced_ops = get_enhanced_matrix_operations()
+                            # Create a 2D array for correlation computation
+                            combined_data = np.column_stack([window_data, lagged_data])
+                            corr_matrix = enhanced_ops.correlation_matrix(combined_data)
+                            corr = corr_matrix[0, 1]
+                        except ImportError:
+                            corr = np.corrcoef(window_data, lagged_data)[0, 1]
                         result[i] = corr
                     else:
                         result[i] = 0.0
@@ -911,20 +920,42 @@ class VectorizedProcessingCore:
     def _cpu_matrix_ops(self, matrix_a: np.ndarray,
                        matrix_b: Optional[np.ndarray],
                        operation: str) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
-        """CPU fallback for matrix operations."""
+        """CPU fallback for matrix operations with enhanced matrix operations integration."""
+        # Import enhanced matrix operations
+        try:
+            from .ml_common.matrix_operations import get_enhanced_matrix_operations
+            enhanced_ops = get_enhanced_matrix_operations()
+            use_enhanced = True
+        except ImportError:
+            use_enhanced = False
+        
         if operation == "multiply":
-            if matrix_b is not None:
-                return np.dot(matrix_a, matrix_b)
+            if use_enhanced:
+                if matrix_b is not None:
+                    return enhanced_ops.matrix_multiply(matrix_a, matrix_b, use_gpu=False)
+                else:
+                    return enhanced_ops.matrix_multiply(matrix_a, matrix_a, use_gpu=False)
             else:
-                return np.dot(matrix_a, matrix_a)
+                if matrix_b is not None:
+                    return np.dot(matrix_a, matrix_b)
+                else:
+                    return np.dot(matrix_a, matrix_a)
         elif operation == "add":
             return matrix_a + matrix_b
         elif operation == "subtract":
             return matrix_a - matrix_b
         elif operation == "eigen":
-            return np.linalg.eigvals(matrix_a)
+            if use_enhanced:
+                eigenvalues, _ = enhanced_ops.eigendecomposition(matrix_a, use_gpu=False)
+                return eigenvalues
+            else:
+                return np.linalg.eigvals(matrix_a)
         elif operation == "svd":
-            return np.linalg.svd(matrix_a)
+            if use_enhanced:
+                U, S, V = enhanced_ops.svd_decomposition(matrix_a, use_gpu=False)
+                return U, S, V
+            else:
+                return np.linalg.svd(matrix_a)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 

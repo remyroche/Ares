@@ -915,6 +915,9 @@ class MatrixOptimizer:
         self.logger = system_logger.getChild('MatrixOptimizer')
         self.params = self._get_optimization_params(optimization_level)
 
+        # Initialize enhanced matrix operations integration
+        self._init_enhanced_matrix_operations()
+
         # Initialize async processor
         self.async_processor = AsyncMatrixProcessor(
             max_workers=min(8, (os.cpu_count() or 1)),
@@ -929,6 +932,59 @@ class MatrixOptimizer:
             self.logger.info("🚀 Numba JIT compilation available for matrix optimizations")
         if self.psutil_available:
             self.logger.info("📊 Advanced memory monitoring available")
+
+    @log_all_calls
+    def _init_enhanced_matrix_operations(self) -> None:
+        """Initialize enhanced matrix operations integration."""
+        try:
+            from ....utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+            self.enhanced_ops = get_enhanced_matrix_operations()
+            self.enhanced_ops_available = True
+            self.logger.info("✅ Enhanced matrix operations integration available")
+        except ImportError:
+            self.enhanced_ops = None
+            self.enhanced_ops_available = False
+            self.logger.info("⚠️ Enhanced matrix operations not available, using fallback methods")
+
+    @log_all_calls
+    def _is_enhanced_ops_compatible(self, matrix_func: callable, args: tuple) -> bool:
+        """Check if the matrix function is compatible with enhanced matrix operations."""
+        if not self.enhanced_ops_available:
+            return False
+        
+        # Check if it's a numpy function that has enhanced equivalents
+        func_name = getattr(matrix_func, '__name__', str(matrix_func))
+        enhanced_compatible_funcs = ['dot', 'matmul', 'eigvals', 'eigh', 'svd', 'qr', 'cholesky', 'inv', 'pinv']
+        
+        return any(enhanced_func in func_name for enhanced_func in enhanced_compatible_funcs)
+
+    @log_all_calls
+    def _execute_with_enhanced_ops(self, matrix_func: callable, *args, **kwargs) -> Any:
+        """Execute matrix function using enhanced matrix operations."""
+        func_name = getattr(matrix_func, '__name__', str(matrix_func))
+        
+        if 'dot' in func_name or 'matmul' in func_name:
+            if len(args) >= 2:
+                return self.enhanced_ops.matrix_multiply(args[0], args[1], use_gpu=False)
+        elif 'eigvals' in func_name or 'eigh' in func_name:
+            if len(args) >= 1:
+                eigenvalues, _ = self.enhanced_ops.eigendecomposition(args[0], use_gpu=False)
+                return eigenvalues
+        elif 'svd' in func_name:
+            if len(args) >= 1:
+                return self.enhanced_ops.svd_decomposition(args[0], use_gpu=False)
+        elif 'inv' in func_name:
+            if len(args) >= 1:
+                return self.enhanced_ops.matrix_inverse(args[0], use_gpu=False)
+        elif 'qr' in func_name:
+            if len(args) >= 1:
+                return self.enhanced_ops.qr_decomposition(args[0], use_gpu=False)
+        elif 'cholesky' in func_name:
+            if len(args) >= 1:
+                return self.enhanced_ops.cholesky_decomposition(args[0], use_gpu=False)
+        
+        # Fallback to original function if no enhanced equivalent
+        return matrix_func(*args, **kwargs)
 
     @log_all_calls
 
@@ -962,8 +1018,12 @@ class MatrixOptimizer:
             start_memory = psutil.Process().memory_info().rss / 1024 / 1024
 
         try:
-            # Try to use Numba-optimized version if available
-            optimized_func = self._get_numba_optimized_func(matrix_func)
+            # Try to use enhanced matrix operations if available and applicable
+            if self.enhanced_ops_available and self._is_enhanced_ops_compatible(matrix_func, args):
+                result = self._execute_with_enhanced_ops(matrix_func, *args, **kwargs)
+            else:
+                # Try to use Numba-optimized version if available
+                optimized_func = self._get_numba_optimized_func(matrix_func)
 
             if self.params['chunk_processing']:
                 result = self._chunk_processing(optimized_func, *args, **kwargs)

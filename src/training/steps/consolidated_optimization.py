@@ -34,8 +34,8 @@ import psutil
 import gc
 import time
 
-# Import unified infrastructure
-from .simplified_pipeline_infrastructure import (
+# Import pipeline infrastructure utilities
+from src.utils.ml_common.pipeline_infrastructure import (
     SimplifiedPipelineManager,
     create_simple_step_function,
     create_data_processing_step_function
@@ -50,8 +50,8 @@ from .unified_optimization import (
     comprehensive_optimization
 )
 
-# Import standardized validation
-from .standardized_config_validation import (
+# Import configuration management utilities
+from src.utils.ml_common.configuration_management import (
     validate_config,
     validate_and_fix_config
 )

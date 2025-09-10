@@ -20,20 +20,20 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
-# Import new simplified infrastructure
-from .simplified_pipeline_infrastructure import (
+# Import pipeline infrastructure utilities
+from src.utils.ml_common.pipeline_infrastructure import (
     create_simple_step_function,
     create_data_processing_step_function
 )
 
-# Import standardized validation
-from .standardized_config_validation import (
+# Import configuration management utilities
+from src.utils.ml_common.configuration_management import (
     validate_config,
     validate_and_fix_config
 )
 
-# Import unified data quality
-from .unified_data_quality import (
+# Import data quality utilities
+from src.utils.ml_common.data_quality_utilities import (
     validate_data_quality,
     clean_data,
     generate_quality_report

@@ -205,8 +205,12 @@ try:
     from src.training.steps.unified_feature_engineering import comprehensive_feature_engineering
     ADVANCED_FEATURES_AVAILABLE = True
 except ImportError:
-    AdvancedFeatureEngineeringStep = None
-    ADVANCED_FEATURES_AVAILABLE = False
+    try:
+        from src.utils.step06_utilities import AdvancedFeatureEngineeringStep
+        ADVANCED_FEATURES_AVAILABLE = True
+    except ImportError:
+        AdvancedFeatureEngineeringStep = None
+        ADVANCED_FEATURES_AVAILABLE = False
 
 try:
     from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager

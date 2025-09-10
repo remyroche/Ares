@@ -492,7 +492,13 @@ class EnhancedPipelineOrchestrator:
     async def _run_matrix_operations(self, **kwargs) -> bool:
         """Run matrix operations pipeline."""
         try:
-            from .market_analysis.step07_enhanced_matrix_operations import run_step
+            try:
+                from .market_analysis.step07_enhanced_matrix_operations import run_step
+            except ImportError:
+                from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+                def run_step(data, config=None, **kwargs):
+                    matrix_ops = get_enhanced_matrix_operations()
+                    return matrix_ops.execute(data, config=config, **kwargs)
             return await run_step(**kwargs)
         except Exception as e:
             self.logger.exception(f'Matrix operations failed: {e}')

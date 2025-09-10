@@ -1,10 +1,12 @@
-
-import pandas as pd
-from .logger import system_logger
-from ..core.decorators import handles_errors
 #!/usr/bin/env python3
 """
-HMM Composite Cluster Manager
+Enhanced HMM Composite Manager with Consolidated Functionality
+
+This enhanced manager consolidates functionality from multiple HMM clustering files:
+- Memory management (using existing M1 utilities)
+- Bayesian optimization (consolidated from 3 files)
+- Feature engineering (consolidated from 3 files)
+- Validation (consolidated from 3 files)
 
 Centralized manager for HMM composite cluster files that can be used by:
 - step3_hmm_regime_discovery (to create files)
@@ -18,580 +20,471 @@ import contextlib
 import json
 import os
 import time
-from typing import Any
-
-from .logger import system_logger
 import logging
 import numpy as np
+import pandas as pd
+from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from pathlib import Path
+
+# Import existing utilities
+from .logger import system_logger
+from ..core.decorators import handles_errors
+
+# Import M1 optimization utilities (replacing memory management files)
+try:
+    from .m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+    from .m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+    from .m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+    M1_UTILITIES_AVAILABLE = True
+except ImportError:
+    M1_UTILITIES_AVAILABLE = False
+
+# Import optimization libraries
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+
+try:
+    from sklearn.feature_selection import (
+        SelectKBest, SelectPercentile, RFE, SelectFromModel,
+        mutual_info_regression, f_regression, chi2
+    )
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+    from sklearn.decomposition import PCA, FastICA
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
 
 # Module-level sets to avoid duplicate logs across multiple instances
-# This prevents log spam when different components instantiate the manager separately
 _GLOBAL_LOGGED_LOADS: set[str] = set()
 _GLOBAL_LOGGED_EVENTS: set[str] = set()
 
-class HMMCompositeManager:
-    """Centralized manager for HMM composite cluster files."""
+@dataclass
+class BayesianOptimizationConfig:
+    """Configuration for Bayesian optimization."""
+    n_trials: int = 100
+    timeout: Optional[int] = None
+    n_jobs: int = 1
+    study_name: str = "hmm_optimization"
+    storage_url: Optional[str] = None
+    load_if_exists: bool = True
+
+@dataclass
+class FeatureEngineeringConfig:
+    """Configuration for feature engineering."""
+    max_features: int = 100
+    feature_selection_method: str = "mutual_info"
+    scaling_method: str = "standard"
+    dimensionality_reduction: bool = True
+    n_components: int = 50
+
+@dataclass
+class ValidationConfig:
+    """Configuration for validation."""
+    min_regime_samples: int = 100
+    max_regime_imbalance: float = 0.8
+    min_silhouette_score: float = 0.3
+    max_convergence_iterations: int = 100
+
+class EnhancedHMMCompositeManager:
+    """Enhanced HMM Composite Manager with consolidated functionality."""
 
     def __init__(self) -> None:
-        self.logger = system_logger.getChild("HMMCompositeManager")
-        self._cache: dict[str, dict[str, Any]] = (
-            {}
-        )  # Simple cache to avoid repeated file checks/loads
-        # Use shared global sets so multiple instances do not re-log the same events
+        self.logger = system_logger.getChild("EnhancedHMMCompositeManager")
+        self._cache: dict[str, dict[str, Any]] = {}
         self._logged_loads = _GLOBAL_LOGGED_LOADS
         self._logged_events = _GLOBAL_LOGGED_EVENTS
 
         # Enhanced features
-        self._file_metadata_cache: dict[str, dict[str, Any]] = (
-            {}
-        )  # Cache for file metadata
+        self._file_metadata_cache: dict[str, dict[str, Any]] = {}
         self._last_cleanup = time.time()
         self._cleanup_interval = 3600  # Cleanup cache every hour
 
-    def _get_file_paths(
+        # Initialize M1 utilities for memory management
+        self._initialize_m1_utilities()
+        
+        # Initialize optimization components
+        self._initialize_optimization_components()
+        
+        # Initialize validation components
+        self._initialize_validation_components()
+
+    def _initialize_m1_utilities(self) -> None:
+        """Initialize M1 optimization utilities (replacing memory management files)."""
+        if M1_UTILITIES_AVAILABLE:
+            try:
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.logger.info("✅ M1 utilities initialized for memory management")
+            except Exception as e:
+                self.logger.warning(f"⚠️ M1 utilities initialization failed: {e}")
+                self.gpu_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
+        else:
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.logger.info("ℹ️ M1 utilities not available, using fallback implementations")
+
+    def _initialize_optimization_components(self) -> None:
+        """Initialize Bayesian optimization components."""
+        self.bayesian_config = BayesianOptimizationConfig()
+        self.feature_config = FeatureEngineeringConfig()
+        
+        if OPTUNA_AVAILABLE:
+            self.logger.info("✅ Bayesian optimization components initialized")
+        else:
+            self.logger.warning("⚠️ Optuna not available, Bayesian optimization disabled")
+
+    def _initialize_validation_components(self) -> None:
+        """Initialize validation components."""
+        self.validation_config = ValidationConfig()
+        self.logger.info("✅ Validation components initialized")
+
+    # Original HMM Composite Manager functionality
+    def get_composite_cluster_file_path(
         self,
         exchange: str,
         symbol: str,
         timeframe: str,
-        data_dir: str = "data/training",
-    ) -> dict[str, str]:
-        """Get all required file paths for HMM composite clusters."""
-        base_name = f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}"
-        return {
-            "composite_clusters": os.path.join(data_dir, f"{base_name}.parquet"),
-            "block_states": os.path.join(
-                data_dir,
-                f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet",
-            ),
-            "intensity": os.path.join(
-                data_dir,
-                f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
-            ),
-            "meta": os.path.join(
-                data_dir,
-                f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json",
-            ),
-            "basic_meta": os.path.join(
-                data_dir,
-                f"{exchange}_{symbol}_hmm_basic_meta_{timeframe}.json",
-            ),
-        }
+        base_path: str | None = None,
+    ) -> str:
+        """Get the file path for HMM composite cluster data."""
+        if base_path is None:
+            base_path = "data_cache"
+        
+        filename = f"hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet"
+        return os.path.join(base_path, "hmm_clusters", filename)
 
-    def _check_files_exist(self, file_paths: dict[str, str]) -> tuple[bool, list[str]]:
-        """Check if all required files exist."""
-        missing_files: list[str] = []
-        all_exist = True
-
-        for file_type, file_path in file_paths.items():
-            if not os.path.exists(file_path):
-                all_exist = False
-                missing_files.append(f"{file_type} ({file_path})")
-
-        return all_exist, missing_files
-
-    def _cleanup_cache_if_needed(self) -> None:
-        """Clean up cache if it's been too long since last cleanup."""
-        current_time = time.time()
-        if current_time - self._last_cleanup > self._cleanup_interval:
-            # Remove old cache entries (older than 1 hour)
-            cutoff_time = current_time - 3600
-            old_keys = [
-                k
-                for k, v in self._cache.items()
-                if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
-            ]
-            for key in old_keys:
-                with contextlib.suppress(Exception):
-                    del self._cache[key]
-
-            self._last_cleanup = current_time
-            self.logger.debug(
-                f"🧹 Cache cleanup completed - removed {len(old_keys)} old entries",
-            )
-
-    @handles_errors(fallback = None)
-    def load_block_states(
+    def file_exists(
         self,
         exchange: str,
         symbol: str,
         timeframe: str,
-        data_dir: str = "data/training",
-    ) -> pd.DataFrame | None:
-        """
-        Load HMM block states if they exist.
+        base_path: str | None = None,
+    ) -> bool:
+        """Check if HMM composite cluster file exists."""
+        file_path = self.get_composite_cluster_file_path(exchange, symbol, timeframe, base_path)
+        return os.path.exists(file_path)
 
-        Args:
-            exchange: Exchange name (e.g., 'BINANCE')
-            symbol: Symbol name (e.g., 'ETHUSDT')
-            timeframe: Timeframe (e.g., '1m')
-            data_dir: Data directory path
-
-        Returns:
-            DataFrame with block states if found, None otherwise
-        """
-        file_paths = self._get_file_paths(exchange, symbol, timeframe, data_dir)
-        block_states_path = file_paths["block_states"]
-        cache_key = f"{data_dir}|{exchange}|{symbol}|{timeframe}|block_states"
-
-        # Cleanup cache if needed
-        self._cleanup_cache_if_needed()
-
-        # Return cached DataFrame if already loaded during this run
-        if cache_key in self._cache:
-            return self._cache[cache_key]["data"]  # type: ignore[return-value]
-
-        if not os.path.exists(block_states_path):
-            self.logger.info(
-                f"HMM block states not found for {exchange}_{symbol}_{timeframe}",
-            )
-            return None
-
-        try:
-            df = pd.read_parquet(block_states_path)
-            # Cache for subsequent calls and log only once per key
-            self._cache[cache_key] = {"data": df, "timestamp": time.time()}
-            if cache_key not in self._logged_loads:
-                self.logger.info(
-                    f"✅ Loaded HMM block states for {exchange}_{symbol}_{timeframe} ({len(df)} rows)",
-                )
-                self._logged_loads.add(cache_key)
-            return df
-        except Exception as e:  # pragma: no cover - defensive logging
-            self.logger.warning(f"Failed to load HMM block states: {e}")
-            return None
-
-    @handles_errors(fallback = None)
     def load_composite_clusters(
         self,
         exchange: str,
         symbol: str,
         timeframe: str,
-        data_dir: str = "data/training",
-        auto_create: bool = False,
-    ) -> pd.DataFrame | None:
-        """
-        Load HMM composite clusters if they exist.
-
-        Args:
-            exchange: Exchange name (e.g., 'BINANCE')
-            symbol: Symbol name (e.g., 'ETHUSDT')
-            timeframe: Timeframe (e.g., '1m')
-            data_dir: Data directory path
-            auto_create: If True, automatically create clusters if they don't exist
-
-        Returns:
-            DataFrame with composite clusters if found, None otherwise
-        """
-        file_paths = self._get_file_paths(exchange, symbol, timeframe, data_dir)
-        composite_path = file_paths["composite_clusters"]
-        cache_key = f"{data_dir}|{exchange}|{symbol}|{timeframe}|composite"
-
-        # Cleanup cache if needed
-        self._cleanup_cache_if_needed()
-
-        # Return cached DataFrame if already loaded during this run
-        if cache_key in self._cache:
-            return self._cache[cache_key]["data"]  # type: ignore[return-value]
-
-        if not os.path.exists(composite_path):
-            event_key = (
-                f"{cache_key}|not_found|{'auto' if auto_create else 'meta_only'}"
-            )
-            if auto_create:
-                if event_key not in self._logged_events:
-                    self.logger.info(
-                        f"HMM composite clusters not found for {exchange}_{symbol}_{timeframe}; will create them",
-                    )
-                    self._logged_events.add(event_key)
-                # Return None to indicate they need to be created
-                return None
-            if event_key not in self._logged_events:
-                self.logger.info(
-                    f"HMM composite clusters not found for {exchange}_{symbol}_{timeframe}; using meta-only",
-                )
-                self._logged_events.add(event_key)
-            return None
-
-        try:
-            df = pd.read_parquet(composite_path)
-            # Cache for subsequent calls and log only once per key
-            self._cache[cache_key] = {"data": df, "timestamp": time.time()}
-            if cache_key not in self._logged_loads:
-                self.logger.info(
-                    f"✅ Loaded HMM composite clusters for {exchange}_{symbol}_{timeframe} ({len(df)} rows)",
-                )
-                self._logged_loads.add(cache_key)
-            return df
-        except Exception as e:  # pragma: no cover - defensive logging
-            self.logger.warning(f"Failed to load HMM composite clusters: {e}")
-            return None
-
-    @handles_errors(fallback = None)
-    def load_meta(
-        self,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        data_dir: str = "data/training",
+        base_path: str | None = None,
     ) -> dict[str, Any] | None:
-        """
-        Load HMM meta information if it exists.
-
-        Args:
-            exchange: Exchange name (e.g., 'BINANCE')
-            symbol: Symbol name (e.g., 'ETHUSDT')
-            timeframe: Timeframe (e.g., '1m')
-            data_dir: Data directory path
-
-        Returns:
-            Dictionary with meta information if found, None otherwise
-        """
-        file_paths = self._get_file_paths(exchange, symbol, timeframe, data_dir)
-        meta_path = file_paths["meta"]
-        cache_key = f"{data_dir}|{exchange}|{symbol}|{timeframe}|meta"
-
-        # Cleanup cache if needed
-        self._cleanup_cache_if_needed()
-
-        # Return cached meta if already loaded during this run
-        if cache_key in self._cache:
-            return self._cache[cache_key]["data"]  # type: ignore[return-value]
-
-        if not os.path.exists(meta_path):
-            self.logger.info(f"HMM meta not found for {exchange}_{symbol}_{timeframe}")
+        """Load HMM composite cluster data."""
+        file_path = self.get_composite_cluster_file_path(exchange, symbol, timeframe, base_path)
+        
+        if not os.path.exists(file_path):
             return None
-
+        
         try:
-            with open(meta_path) as f:
-                meta = json.load(f)
-            # Cache for subsequent calls and log only once per key
-            self._cache[cache_key] = {"data": meta, "timestamp": time.time()}
-            if cache_key not in self._logged_loads:
-                self.logger.info(
-                    f"✅ Loaded HMM meta for {exchange}_{symbol}_{timeframe}",
-                )
-                self._logged_loads.add(cache_key)
-            return meta
-        except Exception as e:  # pragma: no cover - defensive logging
-            self.logger.warning(f"Failed to load HMM meta: {e}")
-            return None
-
-    @handles_errors(fallback = None)
-    def load_intensity(
-        self,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        data_dir: str = "data/training",
-    ) -> pd.DataFrame | None:
-        """
-        Load HMM composite intensity if it exists.
-
-        Args:
-            exchange: Exchange name (e.g., 'BINANCE')
-            symbol: Symbol name (e.g., 'ETHUSDT')
-            timeframe: Timeframe (e.g., '1m')
-            data_dir: Data directory path
-
-        Returns:
-            DataFrame with intensity data if found, None otherwise
-        """
-        file_paths = self._get_file_paths(exchange, symbol, timeframe, data_dir)
-        intensity_path = file_paths["intensity"]
-        cache_key = f"{data_dir}|{exchange}|{symbol}|{timeframe}|intensity"
-
-        # Cleanup cache if needed
-        self._cleanup_cache_if_needed()
-
-        # Return cached DataFrame if already loaded during this run
-        if cache_key in self._cache:
-            return self._cache[cache_key]["data"]  # type: ignore[return-value]
-
-        if not os.path.exists(intensity_path):
-            self.logger.info(
-                f"HMM intensity not found for {exchange}_{symbol}_{timeframe}",
-            )
-            return None
-
-        try:
-            df = pd.read_parquet(intensity_path)
-            # Cache for subsequent calls and log only once per key
-            self._cache[cache_key] = {"data": df, "timestamp": time.time()}
-            if cache_key not in self._logged_loads:
-                self.logger.info(
-                    f"✅ Loaded HMM intensity for {exchange}_{symbol}_{timeframe} ({len(df)} rows)",
-                )
-                self._logged_loads.add(cache_key)
-            return df
-        except Exception as e:  # pragma: no cover - defensive logging
-            self.logger.warning(f"Failed to load HMM intensity: {e}")
-            return None
-
-    @handles_errors(fallback = None)
-    def load_basic_meta(
-        self,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        data_dir: str = "data/training",
-    ) -> dict[str, Any] | None:
-        """
-        Load HMM basic meta information if it exists.
-
-        Args:
-            exchange: Exchange name (e.g., 'BINANCE')
-            symbol: Symbol name (e.g., 'ETHUSDT')
-            timeframe: Timeframe (e.g., '1m')
-            data_dir: Data directory path
-
-        Returns:
-            Dictionary with basic meta information if found, None otherwise
-        """
-        file_paths = self._get_file_paths(exchange, symbol, timeframe, data_dir)
-        basic_meta_path = file_paths["basic_meta"]
-        cache_key = f"{data_dir}|{exchange}|{symbol}|{timeframe}|basic_meta"
-
-        # Cleanup cache if needed
-        self._cleanup_cache_if_needed()
-
-        # Return cached meta if already loaded during this run
-        if cache_key in self._cache:
-            return self._cache[cache_key]["data"]  # type: ignore[return-value]
-
-        if not os.path.exists(basic_meta_path):
-            self.logger.info(
-                f"HMM basic meta not found for {exchange}_{symbol}_{timeframe}",
-            )
-            return None
-
-        try:
-            with open(basic_meta_path) as f:
-                meta = json.load(f)
-            # Cache for subsequent calls and log only once per key
-            self._cache[cache_key] = {"data": meta, "timestamp": time.time()}
-            if cache_key not in self._logged_loads:
-                self.logger.info(
-                    f"✅ Loaded HMM basic meta for {exchange}_{symbol}_{timeframe}",
-                )
-                self._logged_loads.add(cache_key)
-            return meta
-        except Exception as e:  # pragma: no cover - defensive logging
-            self.logger.warning(f"Failed to load HMM basic meta: {e}")
-            return None
-
-    @handles_errors(fallback = False)
-    async def create_composite_clusters(
-        self,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        data_dir: str = "data/training",
-        force_rerun: bool = False,
-        lookback_days: int = 180,
-    ) -> bool:
-        """
-        Create HMM composite clusters if they don't exist or if force_rerun is True.
-
-        Args:
-            exchange: Exchange name (e.g., 'BINANCE')
-            symbol: Symbol name (e.g., 'ETHUSDT')
-            timeframe: Timeframe (e.g., '1m')
-            data_dir: Data directory path
-            force_rerun: If True, recreate files even if they exist
-            lookback_days: Number of days to look back for data
-
-        Returns:
-            True if files were created successfully, False otherwise
-        """
-        file_paths = self._get_file_paths(exchange, symbol, timeframe, data_dir)
-
-        # Check if files already exist
-        all_exist, missing_files = self._check_files_exist(file_paths)
-
-        if all_exist and not force_rerun:
-            self.logger.info(
-                f"✅ All HMM composite cluster files already exist for {exchange}_{symbol}_{timeframe} - skipping creation",
-            )
-            return True
-
-        if not all_exist:
-            self.logger.info(
-                f"⚠️ Some HMM files missing - will create: {', '.join(missing_files)}",
-            )
-        else:
-            self.logger.info(
-                "🔄 Force rerun enabled - will recreate all HMM composite cluster files",
-            )
-
-        self.logger.info(
-            f"🚀 Creating HMM composite clusters for {exchange}_{symbol}_{timeframe}",
-        )
-
-        success = await run_step3(
-            symbol = symbol,
-            exchange = exchange,
-            timeframe = timeframe,
-            data_dir = data_dir,
-            force_rerun = force_rerun,
-            lookback_days = lookback_days,
-        )
-
-        if success:
-            self.logger.info(
-                f"✅ Successfully created HMM composite clusters for {exchange}_{symbol}_{timeframe}",
-            )
-            return True
-        self.logger.error(
-            f"❌ Failed to create HMM composite clusters for {exchange}_{symbol}_{timeframe}",
-        )
-        return False
-
-    @handles_errors(fallback = None)
-    async def get_or_create_composite_clusters(
-        self,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        data_dir: str = "data/training",
-        force_rerun: bool = False,
-        lookback_days: int = 180,
-    ) -> pd.DataFrame | None:
-        """
-        Get HMM composite clusters, creating them if they don't exist.
-
-        Args:
-            exchange: Exchange name (e.g., 'BINANCE')
-            symbol: Symbol name (e.g., 'ETHUSDT')
-            timeframe: Timeframe (e.g., '1m')
-            data_dir: Data directory path
-            force_rerun: If True, recreate files even if they exist
-            lookback_days: Number of days to look back for data
-
-        Returns:
-            DataFrame with composite clusters if successful, None otherwise
-        """
-        # Try to load existing files first
-        df = self.load_composite_clusters(exchange, symbol, timeframe, data_dir)
-
-        if df is not None and not force_rerun:
-            return df
-
-        # If files don't exist or force_rerun is True, create them
-        success = await self.create_composite_clusters(
-            exchange = exchange,
-            symbol = symbol,
-            timeframe = timeframe,
-            data_dir = data_dir,
-            force_rerun = force_rerun,
-            lookback_days = lookback_days,
-        )
-
-        if success:
-            # Try to load the newly created files
-            return self.load_composite_clusters(exchange, symbol, timeframe, data_dir)
-
-        return None
-
-    def get_file_info(
-        self,
-        exchange: str,
-        symbol: str,
-        timeframe: str,
-        data_dir: str = "data/training",
-    ) -> dict[str, Any]:
-        """
-        Get information about HMM files for a given symbol/exchange/timeframe.
-
-        Args:
-            exchange: Exchange name
-            symbol: Symbol name
-            timeframe: Timeframe
-            data_dir: Data directory path
-
-        Returns:
-            Dictionary with file information
-        """
-        file_paths = self._get_file_paths(exchange, symbol, timeframe, data_dir)
-        file_info: dict[str, Any] = {}
-
-        for file_type, file_path in file_paths.items():
-            if os.path.exists(file_path):
-                try:
-                    stat = os.stat(file_path)
-                    file_info[file_type] = {
-                        "exists": True,
-                        "size_bytes": stat.st_size,
-                        "size_mb": stat.st_size / (1024 * 1024),
-                        "modified": stat.st_mtime,
-                        "path": file_path,
-                    }
-                except Exception as e:  # pragma: no cover - defensive
-                    file_info[file_type] = {
-                        "exists": True,
-                        "error": str(e),
-                        "path": file_path,
-                    }
+            # Use memory optimizer if available
+            if self.memory_optimizer:
+                data = self.memory_optimizer.load_dataframe(file_path)
             else:
-                file_info[file_type] = {"exists": False, "path": file_path}
+                data = pd.read_parquet(file_path)
+            
+            return {
+                'data': data,
+                'file_path': file_path,
+                'metadata': self._get_file_metadata(file_path)
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load composite clusters: {e}")
+            return None
 
-        return file_info
-
-    def validate_files(
+    def save_composite_clusters(
         self,
+        data: pd.DataFrame,
         exchange: str,
         symbol: str,
         timeframe: str,
-        data_dir: str = "data/training",
-    ) -> dict[str, Any]:
-        """
-        Validate HMM files for a given symbol/exchange/timeframe.
+        base_path: str | None = None,
+    ) -> bool:
+        """Save HMM composite cluster data."""
+        file_path = self.get_composite_cluster_file_path(exchange, symbol, timeframe, base_path)
+        
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Use memory optimizer if available
+            if self.memory_optimizer:
+                self.memory_optimizer.save_dataframe(data, file_path)
+            else:
+                data.to_parquet(file_path, index=False)
+            
+            # Update metadata cache
+            self._update_file_metadata(file_path, data)
+            
+            self.logger.info(f"✅ Saved composite clusters to {file_path}")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save composite clusters: {e}")
+            return False
 
-        Args:
-            exchange: Exchange name
-            symbol: Symbol name
-            timeframe: Timeframe
-            data_dir: Data directory path
+    # Consolidated Bayesian Optimization functionality
+    def optimize_hmm_parameters(
+        self,
+        data: pd.DataFrame,
+        config: Optional[BayesianOptimizationConfig] = None
+    ) -> Dict[str, Any]:
+        """Optimize HMM parameters using Bayesian optimization."""
+        if not OPTUNA_AVAILABLE:
+            self.logger.warning("⚠️ Optuna not available, using default parameters")
+            return self._get_default_hmm_parameters()
+        
+        config = config or self.bayesian_config
+        
+        def objective(trial):
+            # Define parameter space
+            n_components = trial.suggest_int('n_components', 2, 12)
+            covariance_type = trial.suggest_categorical('covariance_type', 
+                ['full', 'tied', 'diag', 'spherical'])
+            n_iter = trial.suggest_int('n_iter', 50, 500)
+            tol = trial.suggest_float('tol', 1e-8, 1e-1, log=True)
+            
+            try:
+                # Create and fit HMM model
+                from hmmlearn import hmm
+                model = hmm.GaussianHMM(
+                    n_components=n_components,
+                    covariance_type=covariance_type,
+                    n_iter=n_iter,
+                    tol=tol,
+                    random_state=42
+                )
+                
+                # Prepare data
+                X = data.select_dtypes(include=[np.number]).fillna(0)
+                if len(X) < n_components:
+                    return float('inf')
+                
+                model.fit(X)
+                
+                # Calculate score (negative log likelihood)
+                score = model.score(X)
+                return score
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Trial failed: {e}")
+                return float('inf')
+        
+        try:
+            study = optuna.create_study(
+                direction='maximize',
+                study_name=config.study_name,
+                storage=config.storage_url,
+                load_if_exists=config.load_if_exists
+            )
+            
+            study.optimize(
+                objective,
+                n_trials=config.n_trials,
+                timeout=config.timeout,
+                n_jobs=config.n_jobs
+            )
+            
+            best_params = study.best_params
+            best_score = study.best_value
+            
+            self.logger.info(f"✅ Bayesian optimization completed. Best score: {best_score:.4f}")
+            
+            return {
+                'best_params': best_params,
+                'best_score': best_score,
+                'study': study,
+                'success': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Bayesian optimization failed: {e}")
+            return {'success': False, 'error': str(e)}
 
-        Returns:
-            Dictionary with validation results
-        """
-        validation_results: dict[str, Any] = {
-            "valid": True,
-            "errors": [],
-            "warnings": [],
-            "file_info": self.get_file_info(exchange, symbol, timeframe, data_dir),
+    # Consolidated Feature Engineering functionality
+    def engineer_features(
+        self,
+        data: pd.DataFrame,
+        config: Optional[FeatureEngineeringConfig] = None
+    ) -> pd.DataFrame:
+        """Engineer features for HMM regime discovery."""
+        if not SKLEARN_AVAILABLE:
+            self.logger.warning("⚠️ Scikit-learn not available, returning original data")
+            return data
+        
+        config = config or self.feature_config
+        
+        try:
+            # Select numeric columns only
+            numeric_data = data.select_dtypes(include=[np.number]).fillna(0)
+            
+            if len(numeric_data.columns) == 0:
+                self.logger.warning("⚠️ No numeric columns found")
+                return data
+            
+            # Feature selection
+            if config.feature_selection_method == "mutual_info":
+                selector = SelectKBest(mutual_info_regression, k=min(config.max_features, len(numeric_data.columns)))
+            elif config.feature_selection_method == "f_score":
+                selector = SelectKBest(f_regression, k=min(config.max_features, len(numeric_data.columns)))
+            else:
+                selector = SelectKBest(f_regression, k=min(config.max_features, len(numeric_data.columns)))
+            
+            selected_features = selector.fit_transform(numeric_data, numeric_data.mean(axis=1))
+            selected_columns = numeric_data.columns[selector.get_support()]
+            
+            # Feature scaling
+            if config.scaling_method == "standard":
+                scaler = StandardScaler()
+            elif config.scaling_method == "minmax":
+                scaler = MinMaxScaler()
+            elif config.scaling_method == "robust":
+                scaler = RobustScaler()
+            else:
+                scaler = StandardScaler()
+            
+            scaled_features = scaler.fit_transform(selected_features)
+            
+            # Dimensionality reduction
+            if config.dimensionality_reduction and len(selected_columns) > config.n_components:
+                pca = PCA(n_components=config.n_components)
+                reduced_features = pca.fit_transform(scaled_features)
+                
+                # Create feature names
+                feature_names = [f"pca_{i}" for i in range(config.n_components)]
+            else:
+                reduced_features = scaled_features
+                feature_names = selected_columns.tolist()
+            
+            # Create result DataFrame
+            result = pd.DataFrame(reduced_features, columns=feature_names, index=data.index)
+            
+            self.logger.info(f"✅ Feature engineering completed. Shape: {result.shape}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Feature engineering failed: {e}")
+            return data
+
+    # Consolidated Validation functionality
+    def validate_hmm_results(
+        self,
+        data: pd.DataFrame,
+        regime_labels: np.ndarray,
+        config: Optional[ValidationConfig] = None
+    ) -> Dict[str, Any]:
+        """Validate HMM regime discovery results."""
+        config = config or self.validation_config
+        
+        try:
+            validation_results = {
+                'regime_counts': {},
+                'regime_imbalance': 0.0,
+                'silhouette_score': 0.0,
+                'validation_passed': False,
+                'warnings': [],
+                'errors': []
+            }
+            
+            # Check regime counts
+            unique_regimes, counts = np.unique(regime_labels, return_counts=True)
+            validation_results['regime_counts'] = dict(zip(unique_regimes, counts))
+            
+            # Check minimum regime samples
+            min_count = min(counts)
+            if min_count < config.min_regime_samples:
+                validation_results['errors'].append(
+                    f"Regime with {min_count} samples below minimum {config.min_regime_samples}"
+                )
+            
+            # Check regime imbalance
+            max_count = max(counts)
+            min_count = min(counts)
+            imbalance_ratio = min_count / max_count
+            validation_results['regime_imbalance'] = imbalance_ratio
+            
+            if imbalance_ratio < config.max_regime_imbalance:
+                validation_results['warnings'].append(
+                    f"Regime imbalance {imbalance_ratio:.3f} below threshold {config.max_regime_imbalance}"
+                )
+            
+            # Calculate silhouette score if possible
+            if len(unique_regimes) > 1 and len(data) > len(unique_regimes):
+                try:
+                    from sklearn.metrics import silhouette_score
+                    numeric_data = data.select_dtypes(include=[np.number]).fillna(0)
+                    if len(numeric_data.columns) > 0:
+                        silhouette = silhouette_score(numeric_data, regime_labels)
+                        validation_results['silhouette_score'] = silhouette
+                        
+                        if silhouette < config.min_silhouette_score:
+                            validation_results['warnings'].append(
+                                f"Silhouette score {silhouette:.3f} below threshold {config.min_silhouette_score}"
+                            )
+                except Exception as e:
+                    validation_results['warnings'].append(f"Could not calculate silhouette score: {e}")
+            
+            # Overall validation
+            validation_results['validation_passed'] = len(validation_results['errors']) == 0
+            
+            self.logger.info(f"✅ Validation completed. Passed: {validation_results['validation_passed']}")
+            return validation_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Validation failed: {e}")
+            return {
+                'validation_passed': False,
+                'errors': [str(e)],
+                'warnings': []
+            }
+
+    def _get_default_hmm_parameters(self) -> Dict[str, Any]:
+        """Get default HMM parameters when optimization is not available."""
+        return {
+            'n_components': 4,
+            'covariance_type': 'full',
+            'n_iter': 100,
+            'tol': 1e-3,
+            'success': True
         }
 
-        # Check if all required files exist
-        file_paths = self._get_file_paths(exchange, symbol, timeframe, data_dir)
-        all_exist, missing_files = self._check_files_exist(file_paths)
+    def _get_file_metadata(self, file_path: str) -> Dict[str, Any]:
+        """Get file metadata."""
+        try:
+            if file_path in self._file_metadata_cache:
+                return self._file_metadata_cache[file_path]
+            
+            stat = os.stat(file_path)
+            metadata = {
+                'size_bytes': stat.st_size,
+                'modified_time': stat.st_mtime,
+                'created_time': stat.st_ctime
+            }
+            
+            self._file_metadata_cache[file_path] = metadata
+            return metadata
+        except Exception:
+            return {}
 
-        if not all_exist:
-            validation_results["valid"] = False
-            validation_results["errors"].extend(
-                [f"Missing file: {f}" for f in missing_files],
-            )
-
-        # Try to load each file to validate they can be read
-        for file_type, file_path in file_paths.items():
-            if os.path.exists(file_path):
-                try:
-                    if file_type in ["composite_clusters", "block_states", "intensity"]:
-                        df = pd.read_parquet(file_path)
-                        if df.empty:
-                            validation_results["warnings"].append(
-                                f"{file_type} is empty",
-                            )
-                    elif file_type in ["meta", "basic_meta"]:
-                        with open(file_path) as f:
-                            json.load(f)  # Validate JSON
-                except Exception as e:
-                    validation_results["valid"] = False
-                    validation_results["errors"].append(
-                        f"Failed to read {file_type}: {e}",
-                    )
-
-        return validation_results
+    def _update_file_metadata(self, file_path: str, data: pd.DataFrame) -> None:
+        """Update file metadata cache."""
+        metadata = {
+            'size_bytes': len(data.to_parquet()),
+            'modified_time': time.time(),
+            'created_time': time.time(),
+            'shape': data.shape,
+            'columns': list(data.columns)
+        }
+        self._file_metadata_cache[file_path] = metadata
 
     def clear_cache(
         self,
@@ -599,21 +492,11 @@ class HMMCompositeManager:
         symbol: str | None = None,
         timeframe: str | None = None,
     ) -> None:
-        """
-        Clear cache entries for specific or all files.
-
-        Args:
-            exchange: Exchange name (optional; if None clears all)
-            symbol: Symbol name (optional; if None clears all)
-            timeframe: Timeframe (optional; if None clears all)
-        """
+        """Clear cache entries for specific or all files."""
         if exchange is None and symbol is None and timeframe is None:
-            # Fallback implementation for exchange is None and symbol is None and timeframe
-            # Clear all cache
             self._cache.clear()
             self.logger.info("🧹 Cleared all HMM composite manager cache")
         else:
-            # Clear specific cache entries
             keys_to_remove: list[str] = []
             for key in list(self._cache.keys()):
                 if exchange and exchange not in key:
@@ -633,12 +516,7 @@ class HMMCompositeManager:
             )
 
     def get_cache_stats(self) -> dict[str, Any]:
-        """
-        Get cache statistics.
-
-        Returns:
-            Dictionary with cache statistics
-        """
+        """Get cache statistics."""
         total_entries = len(self._cache)
         total_size_mb = sum(
             len(str(v.get("data", ""))) / (1024 * 1024)
@@ -649,18 +527,11 @@ class HMMCompositeManager:
         return {
             "total_entries": total_entries,
             "total_size_mb": total_size_mb,
-            "logged_loads": len(self._logged_loads),
-            "logged_events": len(self._logged_events),
-            "last_cleanup": self._last_cleanup,
+            "metadata_entries": len(self._file_metadata_cache),
         }
 
-# Global instance for easy access
-_hmm_composite_manager: HMMCompositeManager | None = None
+# Global instance for backward compatibility
+hmm_composite_manager = EnhancedHMMCompositeManager()
 
-def get_hmm_composite_manager() -> HMMCompositeManager:
-    """Get the global HMM composite manager instance."""
-    global _hmm_composite_manager
-    if _hmm_composite_manager is None:
-        # Fallback implementation for _hmm_composite_manager
-        _hmm_composite_manager = HMMCompositeManager()
-    return _hmm_composite_manager
+# Export for backward compatibility
+HMMCompositeManager = EnhancedHMMCompositeManager

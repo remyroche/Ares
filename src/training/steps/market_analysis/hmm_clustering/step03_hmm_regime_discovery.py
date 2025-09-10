@@ -46,7 +46,7 @@ import os
 
 # Import optimized components
 try:
-    from .step03_enhanced_bayesian_optimization import EnhancedBayesianOptimizer, ParallelBayesianOptimizer
+    from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
     OPTIMIZED_BAYESIAN_AVAILABLE = True
 except ImportError:
     OPTIMIZED_BAYESIAN_AVAILABLE = False

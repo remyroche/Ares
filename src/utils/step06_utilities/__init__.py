@@ -12,12 +12,14 @@ Available utilities:
 - step06_comprehensive_implementation: Comprehensive implementation utilities
 - step06_enhanced_feature_engineering_step: Feature engineering step utilities
 - step06_labeling_components: Triple barrier labeling utilities
+- cross_timeframe_interaction_features: Cross timeframe feature generation utilities
 
 Usage:
     from src.utils.step06_utilities import (
         Step06UtilityContainer,
         EnhancedFeatureEngineering,
-        OptimizedTripleBarrierLabeling
+        OptimizedTripleBarrierLabeling,
+        CrossTimeframeFeatureGenerator
     )
 """
 
@@ -54,6 +56,12 @@ from .step06_labeling_components.regime_specific_triple_barrier_optimizer import
     RegimeSpecificTripleBarrierOptimizer
 )
 
+from .cross_timeframe_interaction_features import (
+    CrossTimeframeFeatureGenerator,
+    CrossTimeframeConfig,
+    InteractionConfig
+)
+
 __all__ = [
     'Step06UtilityContainer',
     'UtilityConfig',
@@ -65,7 +73,10 @@ __all__ = [
     'EnhancedFeatureEngineeringStep',
     'OptimizedTripleBarrierLabeling',
     'FractionalTripleBarrierLabeling',
-    'RegimeSpecificTripleBarrierOptimizer'
+    'RegimeSpecificTripleBarrierOptimizer',
+    'CrossTimeframeFeatureGenerator',
+    'CrossTimeframeConfig',
+    'InteractionConfig'
 ]
 
 __version__ = "1.0.0"

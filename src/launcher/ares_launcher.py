@@ -49,6 +49,12 @@ class LauncherMode(Enum):
     STAGE = "stage"        # Execute specific stage
     SUB_PIPELINE = "sub_pipeline"  # Execute specific sub-pipeline
 
+class ExecutionModeType(Enum):
+    """Execution mode types for stage/sub-pipeline specific execution."""
+    FULL = "full"          # Complete execution with all features
+    LIGHT = "light"        # Lightweight execution with essential features only
+    BLANK = "blank"        # Minimal execution for testing/validation
+
 class AresLauncher:
     """
     Ares Launcher with Granular Sub-Pipeline Control.
@@ -91,6 +97,131 @@ class AresLauncher:
         """Default progress callback for monitoring."""
         self.logger.info(f"📊 Progress: {progress_data.get('message', 'Unknown')}")
     
+    def _log_stage_transition(self, from_stage: Optional[str], to_stage: str, transition_type: str = "STAGE"):
+        """Log explicit stage/pipeline transitions."""
+        if from_stage:
+            self.logger.info("=" * 80)
+            self.logger.info(f"🔄 TRANSITION: {from_stage} → {to_stage}")
+            self.logger.info(f"📋 Transition Type: {transition_type}")
+            self.logger.info(f"⏰ Timestamp: {datetime.now().isoformat()}")
+            self.logger.info("=" * 80)
+        else:
+            self.logger.info("=" * 80)
+            self.logger.info(f"🚀 STARTING: {to_stage}")
+            self.logger.info(f"📋 Execution Type: {transition_type}")
+            self.logger.info(f"⏰ Timestamp: {datetime.now().isoformat()}")
+            self.logger.info("=" * 80)
+    
+    def _log_sub_pipeline_transition(self, from_sub_pipeline: Optional[str], to_sub_pipeline: str, stage: str):
+        """Log explicit sub-pipeline transitions."""
+        if from_sub_pipeline:
+            self.logger.info("=" * 60)
+            self.logger.info(f"🔄 SUB-PIPELINE TRANSITION: {from_sub_pipeline} → {to_sub_pipeline}")
+            self.logger.info(f"📋 Stage: {stage}")
+            self.logger.info(f"⏰ Timestamp: {datetime.now().isoformat()}")
+            self.logger.info("=" * 60)
+        else:
+            self.logger.info("=" * 60)
+            self.logger.info(f"🚀 STARTING SUB-PIPELINE: {to_sub_pipeline}")
+            self.logger.info(f"📋 Stage: {stage}")
+            self.logger.info(f"⏰ Timestamp: {datetime.now().isoformat()}")
+            self.logger.info("=" * 60)
+    
+    async def _create_outcome_file(self, stage: str, sub_pipeline: str, result: Any, config: MainPipelineConfig) -> str:
+        """Create outcome file for stage/sub-pipeline completion."""
+        outcome_dir = Path("outcomes")
+        outcome_dir.mkdir(exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{stage}_{sub_pipeline}_outcome_{timestamp}.json"
+        outcome_file = outcome_dir / filename
+        
+        outcome_data = {
+            'stage': stage,
+            'sub_pipeline': sub_pipeline,
+            'timestamp': datetime.now().isoformat(),
+            'status': result.status.value if hasattr(result, 'status') else 'completed',
+            'output_files': result.output_files if hasattr(result, 'output_files') else [],
+            'metadata': result.metadata if hasattr(result, 'metadata') else {},
+            'artifacts': result.artifacts if hasattr(result, 'artifacts') else {},
+            'config': {
+                'symbol': config.symbol,
+                'exchange': config.exchange,
+                'timeframe': config.timeframe,
+                'mode': config.mode.value
+            },
+            'next_stage_requirements': self._get_next_stage_requirements(stage, sub_pipeline)
+        }
+        
+        with open(outcome_file, 'w') as f:
+            json.dump(outcome_data, f, indent=2, default=str)
+        
+        self.logger.info(f"💾 Outcome file created: {outcome_file}")
+        return str(outcome_file)
+    
+    def _get_next_stage_requirements(self, current_stage: str, current_sub_pipeline: str) -> Dict[str, Any]:
+        """Get requirements for the next stage/sub-pipeline."""
+        requirements = {
+            'required_files': [],
+            'required_artifacts': [],
+            'data_dependencies': []
+        }
+        
+        # Define stage dependencies and requirements
+        stage_requirements = {
+            'data_collection': {
+                'next_stage': 'market_analysis',
+                'required_files': ['processed_data.parquet', 'data_quality_report.json'],
+                'required_artifacts': ['data_metadata', 'quality_metrics']
+            },
+            'market_analysis': {
+                'next_stage': 'model_training',
+                'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet'],
+                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata']
+            },
+            'model_training': {
+                'next_stage': 'backtesting',
+                'required_files': ['trained_models.pkl', 'validation_results.json'],
+                'required_artifacts': ['model_metadata', 'performance_metrics']
+            },
+            'backtesting': {
+                'next_stage': 'reporting',
+                'required_files': ['backtest_results.json', 'performance_report.json'],
+                'required_artifacts': ['trade_analysis', 'risk_metrics']
+            }
+        }
+        
+        if current_stage in stage_requirements:
+            requirements.update(stage_requirements[current_stage])
+        
+        return requirements
+    
+    async def _check_outcome_files(self, stage: str, sub_pipeline: str) -> Optional[Dict[str, Any]]:
+        """Check for existing outcome files from previous stages."""
+        outcome_dir = Path("outcomes")
+        if not outcome_dir.exists():
+            return None
+        
+        # Look for the most recent outcome file for this stage/sub-pipeline
+        pattern = f"{stage}_{sub_pipeline}_outcome_*.json"
+        outcome_files = list(outcome_dir.glob(pattern))
+        
+        if not outcome_files:
+            return None
+        
+        # Get the most recent file
+        latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
+        
+        try:
+            with open(latest_file, 'r') as f:
+                outcome_data = json.load(f)
+            
+            self.logger.info(f"📂 Found existing outcome file: {latest_file}")
+            return outcome_data
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not read outcome file {latest_file}: {e}")
+            return None
+    
     async def execute_pipeline(
         self,
         mode: LauncherMode = LauncherMode.FULL,
@@ -100,19 +231,21 @@ class AresLauncher:
         data_dir: str = "data/training",
         stage: Optional[PipelineStage] = None,
         sub_pipeline: Optional[str] = None,
+        execution_mode: ExecutionModeType = ExecutionModeType.FULL,
         custom_config: Optional[Dict[str, Any]] = None
     ) -> MainPipelineResult:
         """
         Execute the training pipeline with granular control.
         
         Args:
-            mode: Execution mode
+            mode: Launcher execution mode (full, light, blank, stage, sub_pipeline)
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Data timeframe
             data_dir: Data directory
             stage: Specific stage to execute (for STAGE mode)
             sub_pipeline: Specific sub-pipeline to execute (for SUB_PIPELINE mode)
+            execution_mode: Execution mode type (full, light, blank) for stage/sub-pipeline specific execution
             custom_config: Custom configuration parameters
             
         Returns:
@@ -123,7 +256,7 @@ class AresLauncher:
         # Create configuration based on mode
         config = self._create_config(
             mode, symbol, exchange, timeframe, data_dir, 
-            stage, sub_pipeline, custom_config
+            stage, sub_pipeline, execution_mode, custom_config
         )
         
         # Execute based on mode
@@ -143,6 +276,7 @@ class AresLauncher:
         data_dir: str,
         stage: Optional[PipelineStage],
         sub_pipeline: Optional[str],
+        execution_mode: ExecutionModeType,
         custom_config: Optional[Dict[str, Any]]
     ) -> MainPipelineConfig:
         """Create pipeline configuration based on mode and parameters."""
@@ -164,18 +298,29 @@ class AresLauncher:
         elif mode == LauncherMode.BLANK:
             config = get_blank_pipeline_config(**base_config)
         elif mode == LauncherMode.STAGE and stage:
-            config = self._create_stage_config(stage, base_config)
+            config = self._create_stage_config(stage, base_config, execution_mode)
         elif mode == LauncherMode.SUB_PIPELINE and sub_pipeline:
-            config = self._create_sub_pipeline_config(sub_pipeline, base_config)
+            config = self._create_sub_pipeline_config(sub_pipeline, base_config, execution_mode)
         else:
             # Default to full configuration
             config = get_full_pipeline_config(**base_config)
         
         return config
     
-    def _create_stage_config(self, stage: PipelineStage, base_config: Dict[str, Any]) -> MainPipelineConfig:
+    def _create_stage_config(self, stage: PipelineStage, base_config: Dict[str, Any], execution_mode: ExecutionModeType) -> MainPipelineConfig:
         """Create configuration for a specific stage."""
-        config = get_full_pipeline_config(**base_config)
+        # Set the execution mode in base config
+        base_config['mode'] = ExecutionMode(execution_mode.value)
+        
+        # Get configuration based on execution mode
+        if execution_mode == ExecutionModeType.FULL:
+            config = get_full_pipeline_config(**base_config)
+        elif execution_mode == ExecutionModeType.LIGHT:
+            config = get_light_pipeline_config(**base_config)
+        elif execution_mode == ExecutionModeType.BLANK:
+            config = get_blank_pipeline_config(**base_config)
+        else:
+            config = get_full_pipeline_config(**base_config)
         
         # Enable only the specified stage
         config.enabled_stages = [stage]
@@ -186,9 +331,20 @@ class AresLauncher:
         
         return config
     
-    def _create_sub_pipeline_config(self, sub_pipeline: str, base_config: Dict[str, Any]) -> MainPipelineConfig:
+    def _create_sub_pipeline_config(self, sub_pipeline: str, base_config: Dict[str, Any], execution_mode: ExecutionModeType) -> MainPipelineConfig:
         """Create configuration for a specific sub-pipeline."""
-        config = get_full_pipeline_config(**base_config)
+        # Set the execution mode in base config
+        base_config['mode'] = ExecutionMode(execution_mode.value)
+        
+        # Get configuration based on execution mode
+        if execution_mode == ExecutionModeType.FULL:
+            config = get_full_pipeline_config(**base_config)
+        elif execution_mode == ExecutionModeType.LIGHT:
+            config = get_light_pipeline_config(**base_config)
+        elif execution_mode == ExecutionModeType.BLANK:
+            config = get_blank_pipeline_config(**base_config)
+        else:
+            config = get_full_pipeline_config(**base_config)
         
         # Find which stage contains the sub-pipeline
         target_stage = None
@@ -209,13 +365,14 @@ class AresLauncher:
     
     async def _execute_full_pipeline(self, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute the full pipeline."""
-        self.logger.info("🎯 Executing full pipeline")
+        # Log full pipeline start
+        self._log_stage_transition(None, "FULL_PIPELINE", "FULL_PIPELINE_EXECUTION")
         
         # Create mid-function artifacts
         artifacts = await self._create_mid_function_artifacts(config)
         
-        # Execute pipeline
-        result = await self.pipeline.execute_pipeline(config)
+        # Execute pipeline with stage-by-stage transition logging
+        result = await self._execute_pipeline_with_transitions(config)
         
         # Store execution
         self.current_execution = result
@@ -226,15 +383,99 @@ class AresLauncher:
         
         return result
     
+    async def _execute_pipeline_with_transitions(self, config: MainPipelineConfig) -> MainPipelineResult:
+        """Execute pipeline with explicit stage transitions."""
+        pipeline_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        start_time = datetime.now()
+        
+        result = MainPipelineResult(
+            pipeline_id=pipeline_id,
+            status=SubPipelineStatus.RUNNING,
+            start_time=start_time
+        )
+        
+        try:
+            previous_stage = None
+            
+            # Execute each enabled stage with transitions
+            for stage in config.enabled_stages:
+                # Log stage transition
+                if previous_stage:
+                    self._log_stage_transition(previous_stage.value, stage.value, "STAGE_TRANSITION")
+                else:
+                    self._log_stage_transition(None, stage.value, "STAGE_START")
+                
+                # Check for existing outcome files
+                outcome_data = await self._check_outcome_files(stage.value, "stage")
+                if outcome_data:
+                    self.logger.info(f"📂 Resuming from previous outcome: {outcome_data['timestamp']}")
+                
+                # Execute stage
+                stage_result = await self.pipeline._execute_stage(stage, config)
+                result.stage_results[stage] = stage_result
+                
+                # Create outcome files for each sub-pipeline in the stage
+                for sub_result in stage_result:
+                    if hasattr(sub_result, 'sub_pipeline_name'):
+                        await self._create_outcome_file(stage.value, sub_result.sub_pipeline_name, sub_result, config)
+                
+                # Check if stage failed
+                failed_sub_pipelines = [r for r in stage_result if r.status == SubPipelineStatus.FAILED]
+                if failed_sub_pipelines and config.mode != ExecutionMode.BLANK:
+                    self.logger.warning(f"⚠️ Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
+                    result.failed_stages.append(stage)
+                
+                previous_stage = stage
+            
+            # Calculate overall metrics
+            self.pipeline._calculate_pipeline_metrics(result)
+            
+            # Update result status
+            end_time = datetime.now()
+            result.end_time = end_time
+            result.duration_seconds = (end_time - start_time).total_seconds()
+            
+            if result.failed_sub_pipelines == 0:
+                result.status = SubPipelineStatus.COMPLETED
+                self.logger.info(f"✅ Full pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = f"Pipeline failed with {result.failed_sub_pipelines} failed sub-pipelines"
+                self.logger.error(f"❌ Full pipeline {pipeline_id} failed: {result.error_message}")
+            
+        except Exception as e:
+            end_time = datetime.now()
+            result.status = SubPipelineStatus.FAILED
+            result.end_time = end_time
+            result.duration_seconds = (end_time - start_time).total_seconds()
+            result.error_message = str(e)
+            
+            self.logger.error(f"❌ Full pipeline {pipeline_id} failed with exception: {e}")
+        
+        return result
+    
     async def _execute_stage(self, stage: PipelineStage, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific stage."""
-        self.logger.info(f"🎯 Executing stage: {stage.value}")
+        # Log stage transition
+        self._log_stage_transition(None, stage.value, "STAGE_EXECUTION")
+        
+        # Check for existing outcome files
+        outcome_data = await self._check_outcome_files(stage.value, "stage")
+        if outcome_data:
+            self.logger.info(f"📂 Resuming from previous outcome: {outcome_data['timestamp']}")
         
         # Create mid-function artifacts for the stage
         artifacts = await self._create_stage_artifacts(stage, config)
         
         # Execute only the specified stage
         result = await self.pipeline.execute_pipeline(config)
+        
+        # Create outcome file for this stage
+        if result.stage_results and stage in result.stage_results:
+            stage_results = result.stage_results[stage]
+            for sub_result in stage_results:
+                if hasattr(sub_result, 'sub_pipeline_name'):
+                    await self._create_outcome_file(stage.value, sub_result.sub_pipeline_name, sub_result, config)
         
         # Store execution
         self.current_execution = result
@@ -247,13 +488,38 @@ class AresLauncher:
     
     async def _execute_sub_pipeline(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific sub-pipeline."""
-        self.logger.info(f"🎯 Executing sub-pipeline: {sub_pipeline}")
+        # Find the stage containing this sub-pipeline
+        target_stage = None
+        for stage in PipelineStage:
+            available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
+            if sub_pipeline in available_sub_pipelines:
+                target_stage = stage
+                break
+        
+        if not target_stage:
+            raise ValueError(f"Sub-pipeline '{sub_pipeline}' not found in any stage")
+        
+        # Log sub-pipeline transition
+        self._log_sub_pipeline_transition(None, sub_pipeline, target_stage.value)
+        
+        # Check for existing outcome files
+        outcome_data = await self._check_outcome_files(target_stage.value, sub_pipeline)
+        if outcome_data:
+            self.logger.info(f"📂 Resuming from previous outcome: {outcome_data['timestamp']}")
         
         # Create mid-function artifacts for the sub-pipeline
         artifacts = await self._create_sub_pipeline_artifacts(sub_pipeline, config)
         
         # Execute only the specified sub-pipeline
         result = await self.pipeline.execute_pipeline(config)
+        
+        # Create outcome file for this sub-pipeline
+        if result.stage_results and target_stage in result.stage_results:
+            stage_results = result.stage_results[target_stage]
+            for sub_result in stage_results:
+                if hasattr(sub_result, 'sub_pipeline_name') and sub_result.sub_pipeline_name == sub_pipeline:
+                    await self._create_outcome_file(target_stage.value, sub_pipeline, sub_result, config)
+                    break
         
         # Store execution
         self.current_execution = result
@@ -548,11 +814,17 @@ Examples:
   # Light pipeline execution
   python ares_launcher.py --mode light --symbol ETHUSDT
 
-  # Execute specific stage
-  python ares_launcher.py --mode stage --stage data_collection --symbol BTCUSDT
+  # Execute specific stage with full execution mode
+  python ares_launcher.py --mode stage --stage data_collection --execution-mode full --symbol BTCUSDT
 
-  # Execute specific sub-pipeline
-  python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --symbol BTCUSDT
+  # Execute specific stage with light execution mode
+  python ares_launcher.py --mode stage --stage market_analysis --execution-mode light --symbol BTCUSDT
+
+  # Execute specific sub-pipeline with blank execution mode
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --execution-mode blank --symbol BTCUSDT
+
+  # Execute specific sub-pipeline with full execution mode
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline hmm_regime_discovery --execution-mode full --symbol BTCUSDT
 
   # Blank mode for testing
   python ares_launcher.py --mode blank --symbol BTCUSDT
@@ -563,7 +835,14 @@ Examples:
         '--mode', 
         choices=['full', 'light', 'blank', 'stage', 'sub_pipeline'],
         default='full',
-        help='Execution mode (default: full)'
+        help='Launcher execution mode (default: full)'
+    )
+    
+    parser.add_argument(
+        '--execution-mode',
+        choices=['full', 'light', 'blank'],
+        default='full',
+        help='Execution mode type for stage/sub-pipeline specific execution (default: full)'
     )
     
     parser.add_argument(
@@ -660,6 +939,14 @@ async def main():
     }
     mode = mode_map[args.mode]
     
+    # Convert execution mode to enum
+    execution_mode_map = {
+        'full': ExecutionModeType.FULL,
+        'light': ExecutionModeType.LIGHT,
+        'blank': ExecutionModeType.BLANK
+    }
+    execution_mode = execution_mode_map[args.execution_mode]
+    
     # Convert string stage to enum if provided
     stage = None
     if args.stage:
@@ -681,6 +968,7 @@ async def main():
             data_dir=args.data_dir,
             stage=stage,
             sub_pipeline=args.sub_pipeline,
+            execution_mode=execution_mode,
             custom_config=custom_config
         )
         

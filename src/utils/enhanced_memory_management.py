@@ -117,6 +117,14 @@ class MemoryMonitor:
             self.logger.warning(f'⚠️ PRESSURE {status_msg}')
         else:
             self.logger.info(f'💾 {status_msg}')
+    
+    def start_monitoring(self) -> None:
+        """Start memory monitoring (placeholder for compatibility)."""
+        self.logger.info("🧠 Memory monitoring started")
+        
+    def stop_monitoring(self) -> None:
+        """Stop memory monitoring (placeholder for compatibility)."""
+        self.logger.info("🧠 Memory monitoring stopped")
 
 def memory_efficient(max_memory_mb: float = 1024.0, optimize_dtypes: bool = True) -> None:
     """Decorator for memory-efficient processing."""
@@ -255,3 +263,36 @@ def trigger_gc_if_needed(max_memory_mb: float = 1024.0) -> Dict[str, float]:
     config = MemoryConfig(max_memory_mb = max_memory_mb)
     monitor = MemoryMonitor(config)
     return monitor.trigger_gc()
+
+# Global memory manager instance
+_global_memory_manager = None
+
+def get_memory_manager(config: Optional[MemoryConfig] = None) -> MemoryMonitor:
+    """Get or create a global memory manager instance."""
+    global _global_memory_manager
+    if _global_memory_manager is None:
+        _global_memory_manager = MemoryMonitor(config)
+    return _global_memory_manager
+
+class MemoryContext:
+    """Context manager for memory monitoring."""
+    
+    def __init__(self, config: Optional[MemoryConfig] = None, context_name: str = "operation"):
+        self.config = config
+        self.context_name = context_name
+        self.monitor = None
+        
+    def __enter__(self):
+        self.monitor = MemoryMonitor(self.config)
+        self.monitor.log_memory_status(f"before {self.context_name}")
+        return self.monitor
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.monitor:
+            self.monitor.log_memory_status(f"after {self.context_name}")
+            if exc_type is not None:
+                self.monitor.logger.error(f"Exception in {self.context_name}: {exc_val}")
+
+def memory_context(context_name: str = "operation", config: Optional[MemoryConfig] = None):
+    """Create a memory context manager."""
+    return MemoryContext(config, context_name)

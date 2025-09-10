@@ -1296,7 +1296,7 @@ class EnhancedMatrixOperationsStep(BaseStep):
             Tuple of (is_valid, errors)
         """
         errors = []
-        # Check for data from step06 (advanced_features) or direct engineered_data
+        # Check for data from previous steps (advanced_features) or direct engineered_data
         has_data = ('engineered_data' in pipeline_state or
                    'advanced_features' in pipeline_state or
                    any(f'{split}_data' in pipeline_state for split in ['train', 'val', 'test']))
@@ -1543,11 +1543,11 @@ class EnhancedMatrixOperationsStep(BaseStep):
         if 'engineered_data' in pipeline_state:
             return pipeline_state['engineered_data']
 
-        # Check for advanced_features from step06
+        # Check for advanced_features from previous steps
         if 'advanced_features' in pipeline_state:
             advanced_features = pipeline_state['advanced_features']
             try:
-                # Load data from file paths saved by step06
+                # Load data from file paths saved by previous steps
                 if 'train' in advanced_features:
                     train_path = advanced_features['train']
                     if isinstance(train_path, str) and Path(train_path).exists():

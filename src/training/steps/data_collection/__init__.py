@@ -1,18 +1,13 @@
 """
-Data Collection Step06 Components
+Data Collection Components
 
-This package contains data collection components for step06 including:
-- Feature engineering step
+This package contains data collection components including:
 - Data preprocessing
 - Feature selection
 - Data validation
-"""
 
-try:
-    from .feature_engineering.step06_feature_engineering import FeatureEngineeringStep
-    FEATURE_ENGINEERING_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_ENGINEERING_STEP_AVAILABLE = False
+Note: Advanced feature engineering utilities are now available in src.utils.feature_engineering_utils
+"""
 
 # Import comprehensive monitoring modules
 from .step01_enhanced_with_monitoring import (

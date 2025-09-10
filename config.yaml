@@ -189,8 +189,8 @@ feature_engineering_parameters:
     momentum_crowding_window: 20
     sentiment_smoothing: 5
 
-  # Step06 Feature Interaction Engineering
-  step06_feature_engineering:
+  # Feature Interaction Engineering (Utilities)
+  feature_engineering_utilities:
     use_matrix_optimizer: true
     force_regime_specific_periods: false
     max_interactions: 150

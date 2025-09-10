@@ -1,14 +1,16 @@
 """
-Enhanced Step06 Feature Engineering with Advanced Optimizations and Utility Integration
+Feature Engineering Utilities
 
-This module implements comprehensive feature engineering with:
-- Vectorized batch processing for indicator extraction
-- Sophisticated feature interactions (polynomial, cross-timeframe, pattern recognition)
-- Strict temporal validation to prevent lookahead bias
-- Memory-efficient chunking for large datasets
-- Mathematical safety with validation utilities
-- Extensive utility integration with dependency injection
-- M1 optimization for performance
+This module provides comprehensive feature engineering utilities that were previously
+part of step06. These utilities can be used by any step in the pipeline that needs
+advanced feature engineering capabilities.
+
+Features include:
+- Technical indicator extraction
+- Feature interaction creation
+- Temporal validation
+- Memory-efficient processing
+- Mathematical safety utilities
 """
 
 import numpy as np
@@ -17,9 +19,6 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
 import time
 from pathlib import Path
-from contextlib import nullcontext
-import asyncio
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import warnings
 
 # Import validation and safety utilities
@@ -27,62 +26,6 @@ from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, 
     validate_positive, validate_range, MathValidationError
 )
-
-# Import utility integration
-from .step06_utility_container import (
-    Step06UtilityContainer, UtilityConfig, get_utility_container, 
-    utility_container_context, inject_utilities
-)
-from src.utils.comprehensive_function_logger import (
-    log_step_functions, log_important_calls, log_all_calls, 
-    log_internal_call, log_step_progress, log_data_operation
-)
-
-# Import lookahead bias detection
-try:
-    from src.utils.lookahead_bias_detector import (
-        get_global_detector, validate_no_future_data, LookaheadBiasError
-    )
-    BIAS_DETECTION_AVAILABLE = True
-except ImportError:
-    BIAS_DETECTION_AVAILABLE = False
-    def get_global_detector():
-        return None
-    def validate_no_future_data(data, timestamp_col, current_time):
-        return data
-
-# Import validation framework
-try:
-    from .step06_enhanced_validation_framework import (
-        step06_function_validator, step06_function_tracker, 
-        step06_validation_context, ValidationLevel, FunctionStatus
-    )
-    VALIDATION_AVAILABLE = True
-except ImportError:
-    VALIDATION_AVAILABLE = False
-    
-    def step06_function_validator(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    
-    def step06_function_tracker(func):
-        return func
-    
-    def step06_validation_context(*args, **kwargs):
-        return nullcontext()
-    
-    class ValidationLevel:
-        BASIC = 'basic'
-        DETAILED = 'detailed'
-        COMPREHENSIVE = 'comprehensive'
-    
-    class FunctionStatus:
-        PENDING = 'pending'
-        IN_PROGRESS = 'in_progress'
-        COMPLETED = 'completed'
-        FAILED = 'failed'
-        TIMEOUT = 'timeout'
 
 # Import technical analysis library
 try:
@@ -103,41 +46,22 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-class EnhancedFeatureEngineering:
+class FeatureEngineeringUtils:
     """
-    Enhanced feature engineering with advanced optimizations and safety measures.
+    Comprehensive feature engineering utilities extracted from step06.
     """
     
-    def __init__(self, config: Dict[str, Any], utility_config: Optional[UtilityConfig] = None):
-        """Initialize enhanced feature engineering with utility integration."""
-        self.config = config
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize feature engineering utilities."""
+        self.config = config or {}
         self.logger = logger
-        self.feature_config = config.get('step06_feature_engineering', {})
-        
-        # Initialize utility configuration
-        self.utility_config = utility_config or UtilityConfig(
-            enable_common_operations=True,
-            enable_data_processing=True,
-            enable_math_validation=True,
-            enable_parquet_utils=True,
-            enable_serialization=True,
-            enable_m1_gpu=True,
-            enable_m1_memory=True,
-            enable_m1_cpu=True,
-            data_processing_chunk_size=10000,
-            m1_memory_limit_gb=8.0,
-            m1_max_workers=8
-        )
-        
-        # Utility services will be initialized when needed
-        self.utility_container = None
         
         # Configuration parameters
-        self.chunk_size = self.feature_config.get('chunk_size', 10000)
-        self.max_features = self.feature_config.get('max_features', 500)
-        self.polynomial_degree = self.feature_config.get('polynomial_degree', 2)
-        self.correlation_threshold = self.feature_config.get('correlation_threshold', 0.95)
-        self.memory_limit_mb = self.feature_config.get('memory_limit_mb', 1000)
+        self.chunk_size = self.config.get('chunk_size', 10000)
+        self.max_features = self.config.get('max_features', 500)
+        self.polynomial_degree = self.config.get('polynomial_degree', 2)
+        self.correlation_threshold = self.config.get('correlation_threshold', 0.95)
+        self.memory_limit_mb = self.config.get('memory_limit_mb', 1000)
         
         # Initialize components
         self.scaler = StandardScaler() if SKLEARN_AVAILABLE else None
@@ -145,140 +69,22 @@ class EnhancedFeatureEngineering:
         self.feature_selector = None
         self.pca = None
         
-        # Enhanced performance tracking with utility metrics
+        # Performance tracking
         self.processing_stats = {
             'total_samples_processed': 0,
             'total_features_created': 0,
             'processing_time': 0.0,
-            'utility_initialization_time': 0.0,
-            'data_processing_time': 0.0,
-            'memory_usage_mb': 0.0,
-            'gpu_utilization': 0.0,
-            'cpu_utilization': 0.0,
             'chunks_processed': 0,
-            'utility_operations_count': 0,
-            'utility_errors': 0
+            'errors': 0
         }
         
-        self.logger.info("🚀 Enhanced Feature Engineering with Utility Integration initialized")
+        self.logger.info("🚀 Feature Engineering Utilities initialized")
         self.logger.info(f"   Chunk size: {self.chunk_size}")
         self.logger.info(f"   Max features: {self.max_features}")
         self.logger.info(f"   Polynomial degree: {self.polynomial_degree}")
-        self.logger.info(f"   Memory limit: {self.memory_limit_mb}MB")
-        self.logger.info("   ✅ Utility integration enabled")
-        self.logger.info("   ✅ M1 optimization enabled")
 
-    async def initialize_utilities(self) -> None:
-        """Initialize utility services for feature engineering."""
-        start_time = time.time()
-        
-        try:
-            self.logger.info("🔧 Initializing utility services for feature engineering...")
-            self.utility_container = await get_utility_container(self.utility_config)
-            
-            # Test utility services
-            if self.utility_config.enable_common_operations:
-                common_ops = self.utility_container.get_common_operations()
-                self.logger.debug("✅ Common operations service initialized")
-                
-            if self.utility_config.enable_data_processing:
-                data_proc = self.utility_container.get_data_processing()
-                self.logger.debug("✅ Data processing service initialized")
-                
-            if self.utility_config.enable_math_validation:
-                math_val = self.utility_container.get_math_validation()
-                self.logger.debug("✅ Math validation service initialized")
-                
-            if self.utility_config.enable_parquet_utils:
-                parquet = self.utility_container.get_parquet()
-                self.logger.debug("✅ Parquet utilities service initialized")
-                
-            if self.utility_config.enable_serialization:
-                serialization = self.utility_container.get_serialization()
-                self.logger.debug("✅ Serialization service initialized")
-                
-            if self.utility_config.enable_m1_gpu:
-                m1_gpu = self.utility_container.get_m1_gpu()
-                self.logger.debug("✅ M1 GPU service initialized")
-                
-            if self.utility_config.enable_m1_memory:
-                m1_memory = self.utility_container.get_m1_memory()
-                self.logger.debug("✅ M1 memory service initialized")
-                
-            if self.utility_config.enable_m1_cpu:
-                m1_cpu = self.utility_container.get_m1_cpu()
-                self.logger.debug("✅ M1 CPU service initialized")
-            
-            # Get health report
-            health_report = self.utility_container.get_health_report()
-            self.logger.info(f"🏥 Utility health status: {health_report['status']}")
-            self.logger.info(f"   Healthy services: {health_report['healthy_services']}/{health_report['total_services']}")
-            
-            self.processing_stats['utility_initialization_time'] = time.time() - start_time
-            self.logger.info(f"✅ Utility services initialized in {self.processing_stats['utility_initialization_time']:.2f}s")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize utility services: {e}")
-            self.processing_stats['utility_errors'] += 1
-            raise
-
-    def _validate_temporal_consistency(self, data: pd.DataFrame, current_idx: int) -> pd.DataFrame:
-        """
-        Strict temporal validation to prevent lookahead bias.
-        
-        Args:
-            data: Input data
-            current_idx: Current processing index (only use data up to this point)
-            
-        Returns:
-            Temporally validated data
-        """
-        if not BIAS_DETECTION_AVAILABLE:
-            self.logger.warning("⚠️ Lookahead bias detection not available")
-            return data
-        
-        try:
-            # Ensure we only use historical data
-            if current_idx is not None and current_idx < len(data):
-                historical_data = data.iloc[:current_idx].copy()
-            else:
-                historical_data = data.copy()
-            
-            # Remove any future-looking columns
-            future_columns = [col for col in historical_data.columns 
-                            if col.lower().startswith('future_') or 
-                               col.lower().endswith('_future') or
-                               'forward' in col.lower()]
-            
-            if future_columns:
-                self.logger.warning(f"⚠️ Removing future-looking columns: {future_columns}")
-                historical_data = historical_data.drop(columns=future_columns)
-            
-            # Validate temporal ordering
-            if isinstance(historical_data.index, pd.DatetimeIndex):
-                if not historical_data.index.is_monotonic_increasing:
-                    self.logger.warning("⚠️ Data not temporally ordered, sorting...")
-                    historical_data = historical_data.sort_index()
-            
-            # Set current timestamp for bias detection
-            if len(historical_data) > 0:
-                current_time = historical_data.index[-1]
-                bias_detector = get_global_detector()
-                if bias_detector:
-                    bias_detector.set_current_timestamp(current_time)
-                    historical_data = validate_no_future_data(
-                        historical_data, 'timestamp', current_time
-                    )
-            
-            return historical_data
-            
-        except Exception as e:
-            self.logger.error(f"❌ Temporal validation failed: {e}")
-            raise MathValidationError(f"Temporal validation error: {e}") from e
-
-    @step06_function_validator(function_type='feature_engineering', validation_level=ValidationLevel.COMPREHENSIVE)
-    def extract_indicators_batch(self, market_data: pd.DataFrame, 
-                                periods_config: Dict[str, List[int]]) -> pd.DataFrame:
+    def extract_technical_indicators(self, market_data: pd.DataFrame, 
+                                   periods_config: Dict[str, List[int]]) -> pd.DataFrame:
         """
         Extract technical indicators using vectorized batch processing.
         
@@ -289,10 +95,9 @@ class EnhancedFeatureEngineering:
         Returns:
             DataFrame with technical indicators
         """
-        with step06_validation_context('extract_indicators_batch', 'feature_engineering'):
-            self.logger.info(f'🔧 Starting batch indicator extraction')
-            self.logger.info(f'   Input shape: {market_data.shape}')
-            self.logger.info(f'   Indicators: {list(periods_config.keys())}')
+        self.logger.info(f'🔧 Starting technical indicator extraction')
+        self.logger.info(f'   Input shape: {market_data.shape}')
+        self.logger.info(f'   Indicators: {list(periods_config.keys())}')
         
         # Validate input data
         self._validate_market_data(market_data)
@@ -344,28 +149,147 @@ class EnhancedFeatureEngineering:
                 indicators.update(self._extract_mfi_batch(market_data, periods_config['MFI']))
             
         except Exception as e:
-            self.logger.error(f"❌ Batch indicator extraction failed: {e}")
+            self.logger.error(f"❌ Technical indicator extraction failed: {e}")
             raise MathValidationError(f"Indicator extraction error: {e}") from e
         
         # Convert to DataFrame
         indicators_df = pd.DataFrame(indicators, index=market_data.index)
         indicators_df = indicators_df.ffill().fillna(0)
         
-        self.logger.info(f'✅ Batch indicator extraction completed: {indicators_df.shape[1]} indicators')
+        self.logger.info(f'✅ Technical indicator extraction completed: {indicators_df.shape[1]} indicators')
         return indicators_df
 
-    def _extract_indicators_chunked(self, market_data: pd.DataFrame, 
-                                   periods_config: Dict[str, List[int]]) -> pd.DataFrame:
+    def create_feature_interactions(self, features: pd.DataFrame, 
+                                  current_idx: Optional[int] = None) -> pd.DataFrame:
         """
-        Extract indicators using memory-efficient chunking for large datasets.
+        Create sophisticated feature interactions with polynomial features and pattern recognition.
+        
+        Args:
+            features: Base features DataFrame
+            current_idx: Current processing index for temporal validation
+            
+        Returns:
+            DataFrame with sophisticated interaction features
+        """
+        self.logger.info(f'🔗 Starting feature interaction creation')
+        self.logger.info(f'   Input features: {features.shape}')
+        self.logger.info(f'   Current index: {current_idx}')
+        
+        # Apply temporal validation
+        validated_features = self._validate_temporal_consistency(features, current_idx)
+        
+        # Extract feature arrays
+        feature_arrays = []
+        feature_names = []
+        
+        for col in validated_features.columns:
+            if col.startswith(('RSI_', 'MACD_', 'SMA_', 'EMA_', 'BB_', 'ATR_')):
+                feature_arrays.append(validated_features[col].values)
+                feature_names.append(col)
+        
+        if not feature_arrays:
+            self.logger.warning("⚠️ No technical indicators found for interaction creation")
+            return validated_features
+        
+        features_matrix = np.column_stack(feature_arrays)
+        
+        # Create different types of interactions
+        interaction_features = {}
+        
+        # 1. Polynomial features
+        if SKLEARN_AVAILABLE:
+            poly_features = self._create_polynomial_features(features_matrix, feature_names)
+            interaction_features.update(poly_features)
+        
+        # 2. Cross-timeframe interactions
+        cross_timeframe_features = self._create_cross_timeframe_interactions(features_matrix, feature_names)
+        interaction_features.update(cross_timeframe_features)
+        
+        # 3. Advanced pattern recognition
+        pattern_features = self._create_pattern_recognition_features(features_matrix, feature_names)
+        interaction_features.update(pattern_features)
+        
+        # 4. Momentum and volatility interactions
+        momentum_vol_features = self._create_momentum_volatility_interactions(features_matrix, feature_names)
+        interaction_features.update(momentum_vol_features)
+        
+        # 5. Regime-dependent interactions
+        regime_features = self._create_regime_dependent_interactions(features_matrix, feature_names)
+        interaction_features.update(regime_features)
+        
+        # Combine all features
+        all_interaction_features = pd.DataFrame(interaction_features, index=validated_features.index)
+        
+        # Feature selection to prevent overfitting
+        if len(all_interaction_features.columns) > self.max_features:
+            all_interaction_features = self._select_optimal_features(
+                all_interaction_features, validated_features
+            )
+        
+        # Combine with original features
+        result = pd.concat([validated_features, all_interaction_features], axis=1)
+        
+        self.logger.info(f'✅ Feature interactions created: {len(interaction_features)} new features')
+        self.logger.info(f'   Total features: {result.shape[1]}')
+        
+        return result
+
+    def create_triple_barrier_labels(self, market_data: pd.DataFrame, 
+                                   profit_take_multiplier: float = 0.004,
+                                   stop_loss_multiplier: float = 0.003,
+                                   transaction_cost: float = 0.0008) -> pd.Series:
+        """
+        Create triple barrier labels for trading signals.
         
         Args:
             market_data: OHLCV market data
-            periods_config: Configuration for indicator periods
+            profit_take_multiplier: Profit take threshold
+            stop_loss_multiplier: Stop loss threshold
+            transaction_cost: Transaction cost
             
         Returns:
-            DataFrame with technical indicators
+            Series with trading labels
         """
+        self.logger.info("🏷️ Creating triple barrier labels...")
+        
+        try:
+            # Calculate returns
+            returns = market_data['close'].pct_change()
+            
+            # Create labels based on returns
+            labels = pd.Series(index=market_data.index, dtype='float64')
+            
+            # Apply thresholds
+            pos_mask = returns > profit_take_multiplier
+            neg_mask = returns < -stop_loss_multiplier
+            mid_mask = (~pos_mask & ~neg_mask) & returns.notna()
+            
+            labels[pos_mask] = 1.0  # Long signal
+            labels[neg_mask] = -1.0  # Short signal
+            labels[mid_mask] = 0.0   # No signal
+            
+            # Apply transaction cost adjustment
+            if transaction_cost > 0:
+                # Adjust labels based on transaction costs
+                net_returns = returns - transaction_cost
+                pos_mask_net = net_returns > profit_take_multiplier
+                neg_mask_net = net_returns < -stop_loss_multiplier
+                
+                # Update labels with transaction cost consideration
+                labels[pos_mask_net] = 1.0
+                labels[neg_mask_net] = -1.0
+                labels[~pos_mask_net & ~neg_mask_net] = 0.0
+            
+            self.logger.info(f"✅ Triple barrier labels created: {len(labels.dropna())} valid labels")
+            return labels
+            
+        except Exception as e:
+            self.logger.error(f"❌ Triple barrier labeling failed: {e}")
+            raise
+
+    def _extract_indicators_chunked(self, market_data: pd.DataFrame, 
+                                   periods_config: Dict[str, List[int]]) -> pd.DataFrame:
+        """Extract indicators using memory-efficient chunking for large datasets."""
         self.logger.info(f"📦 Processing {len(market_data)} rows in chunks of {self.chunk_size}")
         
         all_indicators = []
@@ -378,7 +302,7 @@ class EnhancedFeatureEngineering:
             self.logger.info(f"   Processing chunk {chunks_processed + 1}: rows {start_idx}-{end_idx}")
             
             # Extract indicators for this chunk
-            chunk_indicators = self.extract_indicators_batch(chunk, periods_config)
+            chunk_indicators = self.extract_technical_indicators(chunk, periods_config)
             all_indicators.append(chunk_indicators)
             
             chunks_processed += 1
@@ -584,83 +508,6 @@ class EnhancedFeatureEngineering:
                 self.logger.warning(f"⚠️ MFI calculation failed for period {period}: {e}")
         
         return indicators
-
-    @step06_function_validator(function_type='feature_engineering', validation_level=ValidationLevel.COMPREHENSIVE)
-    def create_sophisticated_interactions(self, features: pd.DataFrame, 
-                                        current_idx: Optional[int] = None) -> pd.DataFrame:
-        """
-        Create sophisticated feature interactions with polynomial features and pattern recognition.
-        
-        Args:
-            features: Base features DataFrame
-            current_idx: Current processing index for temporal validation
-            
-        Returns:
-            DataFrame with sophisticated interaction features
-        """
-        with step06_validation_context('create_sophisticated_interactions', 'feature_engineering'):
-            self.logger.info(f'🔗 Starting sophisticated interaction creation')
-            self.logger.info(f'   Input features: {features.shape}')
-            self.logger.info(f'   Current index: {current_idx}')
-        
-        # Apply temporal validation
-        validated_features = self._validate_temporal_consistency(features, current_idx)
-        
-        # Extract feature arrays
-        feature_arrays = []
-        feature_names = []
-        
-        for col in validated_features.columns:
-            if col.startswith(('RSI_', 'MACD_', 'SMA_', 'EMA_', 'BB_', 'ATR_')):
-                feature_arrays.append(validated_features[col].values)
-                feature_names.append(col)
-        
-        if not feature_arrays:
-            self.logger.warning("⚠️ No technical indicators found for interaction creation")
-            return validated_features
-        
-        features_matrix = np.column_stack(feature_arrays)
-        
-        # Create different types of interactions
-        interaction_features = {}
-        
-        # 1. Polynomial features
-        if SKLEARN_AVAILABLE:
-            poly_features = self._create_polynomial_features(features_matrix, feature_names)
-            interaction_features.update(poly_features)
-        
-        # 2. Cross-timeframe interactions
-        cross_timeframe_features = self._create_cross_timeframe_interactions(features_matrix, feature_names)
-        interaction_features.update(cross_timeframe_features)
-        
-        # 3. Advanced pattern recognition
-        pattern_features = self._create_pattern_recognition_features(features_matrix, feature_names)
-        interaction_features.update(pattern_features)
-        
-        # 4. Momentum and volatility interactions
-        momentum_vol_features = self._create_momentum_volatility_interactions(features_matrix, feature_names)
-        interaction_features.update(momentum_vol_features)
-        
-        # 5. Regime-dependent interactions
-        regime_features = self._create_regime_dependent_interactions(features_matrix, feature_names)
-        interaction_features.update(regime_features)
-        
-        # Combine all features
-        all_interaction_features = pd.DataFrame(interaction_features, index=validated_features.index)
-        
-        # Feature selection to prevent overfitting
-        if len(all_interaction_features.columns) > self.max_features:
-            all_interaction_features = self._select_optimal_features(
-                all_interaction_features, validated_features
-            )
-        
-        # Combine with original features
-        result = pd.concat([validated_features, all_interaction_features], axis=1)
-        
-        self.logger.info(f'✅ Sophisticated interactions created: {len(interaction_features)} new features')
-        self.logger.info(f'   Total features: {result.shape[1]}')
-        
-        return result
 
     def _create_polynomial_features(self, features_matrix: np.ndarray, 
                                    feature_names: List[str]) -> Dict[str, np.ndarray]:
@@ -899,6 +746,37 @@ class EnhancedFeatureEngineering:
         self.logger.info(f'📊 Correlation-based selection: kept {len(selected_features.columns)} features')
         return selected_features
 
+    def _validate_temporal_consistency(self, data: pd.DataFrame, current_idx: Optional[int]) -> pd.DataFrame:
+        """Validate temporal consistency to prevent lookahead bias."""
+        try:
+            # Ensure we only use historical data
+            if current_idx is not None and current_idx < len(data):
+                historical_data = data.iloc[:current_idx].copy()
+            else:
+                historical_data = data.copy()
+            
+            # Remove any future-looking columns
+            future_columns = [col for col in historical_data.columns 
+                            if col.lower().startswith('future_') or 
+                               col.lower().endswith('_future') or
+                               'forward' in col.lower()]
+            
+            if future_columns:
+                self.logger.warning(f"⚠️ Removing future-looking columns: {future_columns}")
+                historical_data = historical_data.drop(columns=future_columns)
+            
+            # Validate temporal ordering
+            if isinstance(historical_data.index, pd.DatetimeIndex):
+                if not historical_data.index.is_monotonic_increasing:
+                    self.logger.warning("⚠️ Data not temporally ordered, sorting...")
+                    historical_data = historical_data.sort_index()
+            
+            return historical_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Temporal validation failed: {e}")
+            raise MathValidationError(f"Temporal validation error: {e}") from e
+
     def _validate_market_data(self, data: pd.DataFrame) -> None:
         """Validate market data for feature engineering."""
         # Check required columns
@@ -926,138 +804,36 @@ class EnhancedFeatureEngineering:
             'total_samples_processed': 0,
             'total_features_created': 0,
             'processing_time': 0.0,
-            'utility_initialization_time': 0.0,
-            'data_processing_time': 0.0,
-            'memory_usage_mb': 0.0,
-            'gpu_utilization': 0.0,
-            'cpu_utilization': 0.0,
             'chunks_processed': 0,
-            'utility_operations_count': 0,
-            'utility_errors': 0
+            'errors': 0
         }
 
-    @inject_utilities('common_ops', 'data_proc', 'math_val', 'm1_memory', 'm1_cpu')
-    async def create_enhanced_features_with_utilities(self, market_data: pd.DataFrame,
-                                                    common_ops, data_proc, math_val, m1_memory, m1_cpu) -> pd.DataFrame:
-        """Create enhanced features using utility services."""
-        self.logger.info("🔧 Creating enhanced features with utility integration...")
-        
-        try:
-            # Use common operations for data validation
-            if common_ops:
-                validation_result = common_ops.get_operation('validation', 'validate_dataframe')(market_data, ['open', 'high', 'low', 'close'])
-                if not validation_result:
-                    raise ValueError("Data validation failed")
-            
-            # Use data processing utilities for feature creation
-            enhanced_features = market_data.copy()
-            
-            if data_proc and data_proc.validator:
-                # Validate data quality before feature engineering
-                quality_report = data_proc.validator.validate_dataframe(enhanced_features)
-                self.logger.info(f"Data quality score: {quality_report.summary.get('data_quality_score', 0)}")
-            
-            # Create features using math validation for safety
-            if math_val:
-                # Price-based features with safe mathematical operations
-                enhanced_features['price_range'] = enhanced_features['high'] - enhanced_features['low']
-                enhanced_features['price_range_pct'] = safe_divide(
-                    enhanced_features['price_range'], 
-                    enhanced_features['close'], 
-                    default=0.0
-                )
-                
-                # Volatility features
-                enhanced_features['volatility'] = enhanced_features['close'].rolling(20).std()
-                enhanced_features['volatility_pct'] = safe_divide(
-                    enhanced_features['volatility'],
-                    enhanced_features['close'],
-                    default=0.0
-                )
-                
-                # Momentum features
-                enhanced_features['momentum_5'] = enhanced_features['close'].pct_change(5)
-                enhanced_features['momentum_10'] = enhanced_features['close'].pct_change(10)
-                enhanced_features['momentum_20'] = enhanced_features['close'].pct_change(20)
-                
-                # Technical indicators with safe math
-                enhanced_features['rsi_14'] = self._calculate_rsi_safe(enhanced_features['close'], 14, math_val)
-                enhanced_features['sma_20'] = enhanced_features['close'].rolling(20).mean()
-                enhanced_features['ema_12'] = enhanced_features['close'].ewm(span=12).mean()
-            
-            # Use M1 memory optimizer for chunked processing if needed
-            if m1_memory and m1_memory.optimizer and len(enhanced_features) > self.chunk_size:
-                self.logger.info("Using M1 memory optimizer for chunked processing...")
-                chunk_size = self.utility_config.data_processing_chunk_size
-                
-                # Process features in chunks
-                feature_chunks = list(m1_memory.optimizer.chunked_dataframe_processor(enhanced_features, chunk_size))
-                self.logger.info(f"Features processed in {len(feature_chunks)} chunks")
-                
-                # Optimize memory usage
-                m1_memory.optimizer.optimize_memory()
-            
-            # Use M1 CPU optimizer for parallel processing
-            if m1_cpu and m1_cpu.optimizer:
-                self.logger.info("Using M1 CPU optimizer for parallel processing...")
-                # Calculate optimal workers
-                optimal_workers = m1_cpu.optimizer.calculate_optimal_workers()
-                self.logger.info(f"Optimal workers: {optimal_workers}")
-            
-            # Use data processing utilities for feature transformation
-            if data_proc and data_proc.transformer:
-                # Add more technical indicators
-                enhanced_features = data_proc.transformer.add_column(
-                    enhanced_features, 
-                    'bb_upper_20', 
-                    enhanced_features['close'].rolling(20).mean() + (enhanced_features['close'].rolling(20).std() * 2)
-                )
-                enhanced_features = data_proc.transformer.add_column(
-                    enhanced_features,
-                    'bb_lower_20',
-                    enhanced_features['close'].rolling(20).mean() - (enhanced_features['close'].rolling(20).std() * 2)
-                )
-                enhanced_features = data_proc.transformer.add_column(
-                    enhanced_features,
-                    'macd_line',
-                    enhanced_features['close'].ewm(span=12).mean() - enhanced_features['close'].ewm(span=26).mean()
-                )
-            
-            self.processing_stats['utility_operations_count'] += 1
-            self.processing_stats['total_features_created'] = len(enhanced_features.columns)
-            self.logger.info(f"✅ Enhanced features created with utilities: {len(enhanced_features.columns)} features")
-            
-            return enhanced_features
-            
-        except Exception as e:
-            self.logger.error(f"❌ Feature engineering with utilities failed: {e}")
-            self.processing_stats['utility_errors'] += 1
-            raise
 
-    def _calculate_rsi_safe(self, prices: pd.Series, period: int, math_val) -> pd.Series:
-        """Calculate RSI indicator with safe mathematical operations."""
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        
-        # Use safe division
-        rs = safe_divide(gain, loss, default=1.0)
-        rsi = 100 - safe_divide(100, 1 + rs, default=50.0)
-        
-        return rsi
+# Convenience functions for easy access
+def create_feature_engineering_utils(config: Optional[Dict[str, Any]] = None) -> FeatureEngineeringUtils:
+    """Create a new instance of FeatureEngineeringUtils."""
+    return FeatureEngineeringUtils(config)
 
-    async def cleanup(self) -> None:
-        """Clean up utility services and resources."""
-        self.logger.info("🧹 Cleaning up utility services...")
-        
-        try:
-            if self.utility_container:
-                await self.utility_container.cleanup()
-                self.utility_container = None
-                self.logger.info("✅ Utility services cleaned up")
-            
-            # Reset performance metrics
-            self.reset_stats()
-            
-        except Exception as e:
-            self.logger.error(f"❌ Cleanup failed: {e}")
+def extract_technical_indicators(market_data: pd.DataFrame, 
+                               periods_config: Dict[str, List[int]],
+                               config: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+    """Convenience function to extract technical indicators."""
+    utils = FeatureEngineeringUtils(config)
+    return utils.extract_technical_indicators(market_data, periods_config)
+
+def create_feature_interactions(features: pd.DataFrame, 
+                              current_idx: Optional[int] = None,
+                              config: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+    """Convenience function to create feature interactions."""
+    utils = FeatureEngineeringUtils(config)
+    return utils.create_feature_interactions(features, current_idx)
+
+def create_triple_barrier_labels(market_data: pd.DataFrame, 
+                               profit_take_multiplier: float = 0.004,
+                               stop_loss_multiplier: float = 0.003,
+                               transaction_cost: float = 0.0008) -> pd.Series:
+    """Convenience function to create triple barrier labels."""
+    utils = FeatureEngineeringUtils()
+    return utils.create_triple_barrier_labels(
+        market_data, profit_take_multiplier, stop_loss_multiplier, transaction_cost
+    )

@@ -1,21 +1,13 @@
 """
-Feature Engineering Step06 Components
+Feature Engineering Components
 
-This package contains feature engineering components for step06 including:
+This package contains feature engineering components including:
 - Feature engineering step implementation
 - Technical indicator extraction
 - Feature interaction creation
 - Feature selection and validation
+
+Note: Advanced feature engineering utilities are now available in src.utils.feature_engineering_utils
 """
 
-from .step06_feature_engineering import FeatureEngineeringStep
-
-try:
-    FEATURE_ENGINEERING_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_ENGINEERING_STEP_AVAILABLE = False
-
-__all__ = [
-    'FeatureEngineeringStep',
-    'FEATURE_ENGINEERING_STEP_AVAILABLE'
-]
+__all__ = []

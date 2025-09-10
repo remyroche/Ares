@@ -1,20 +1,13 @@
 """
-from .step06_feature_engineering import FeatureInteractionEngine
-Market Analysis Step06 Components
+Market Analysis Components
 
-This package contains market analysis components for step06 including:
+This package contains market analysis components including:
 - Feature interaction engineering
 - Technical indicator extraction
 - Correlation analysis
 - Regime-aware feature engineering
+
+Note: Advanced feature engineering utilities are now available in src.utils.feature_engineering_utils
 """
 
-try:
-    FEATURE_ENGINEERING_AVAILABLE = True
-except ImportError:
-    FEATURE_ENGINEERING_AVAILABLE = False
-
-__all__ = [
-    'FeatureInteractionEngine',
-    'FEATURE_ENGINEERING_AVAILABLE'
-]
+__all__ = []

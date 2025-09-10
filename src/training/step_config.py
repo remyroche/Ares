@@ -121,194 +121,183 @@ PIPELINE_STEPS: Dict[str, StepConfig] = {
         required_files=["data/training/*_triple_barrier_*.parquet"]
     ),
     
+    
     "06": StepConfig(
         step_number="06",
-        step_name="advanced_feature_engineering",
-        description="Generate advanced features",
-        module_path="src.training.steps.feature_engineering.step06_advanced_features",
-        class_name="AdvancedFeatureEngineeringStep",
-        dependencies=["05"],
-        required_inputs=["labeled_data"],
-        produced_outputs=["engineered_data", "feature_statistics", "selected_features", "feature_reports"],
-        required_files=["data/training/*_features_train.parquet", "data/training/*_features_val.parquet"]
-    ),
-    
-    "07": StepConfig(
-        step_number="07",
         step_name="enhanced_matrix_operations",
         description="Matrix operations and initial feature filtering",
         module_path="src.training.steps.model_training.step07_enhanced_matrix_operations",
         class_name="EnhancedMatrixOperationsStep",
-        dependencies=["06"],
-        required_inputs=["engineered_data"],
+        dependencies=["05"],
+        required_inputs=["labeled_data"],
         produced_outputs=["matrix_results", "feature_importance", "optimization_insights", "matrix_reports"],
         required_files=["data/matrix_operations/*_matrix_operations_*.json", "data/training/*_features_filtered_*.parquet"]
     ),
     
-    "08": StepConfig(
-        step_number="08",
+    "07": StepConfig(
+        step_number="07",
         step_name="advanced_feature_selection",
         description="Advanced two-phase feature selection with redundancy reduction",
         module_path="src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection_wrapper",
         class_name="AdvancedFeatureSelectionStep",
-        dependencies=["07"],
-        required_inputs=["engineered_data"],
-        produced_outputs=["step08_advanced_feature_selection"],
+        dependencies=["06"],
+        required_inputs=["matrix_results"],
+        produced_outputs=["step07_advanced_feature_selection"],
         required_files=["data/selected_features/*_top*.parquet", "data/selected_features/*_interpretability_report.json"]
     ),
     
-    "09": StepConfig(
-        step_number="09",
+    "08": StepConfig(
+        step_number="08",
         step_name="hmm_based_training",
         description="Train HMM-enhanced models",
         module_path="src.training.steps.model_training.step09_hmm_based_training",
         class_name="HmmBasedTrainingStep",
-        dependencies=["07", "08", "05"],
-        required_inputs=["engineered_data", "step08_advanced_feature_selection"],
+        dependencies=["06", "07", "05"],
+        required_inputs=["matrix_results", "step07_advanced_feature_selection"],
         produced_outputs=["trained_models", "model_performance", "feature_importance", "best_models", "training_reports"],
         required_files=["data/training/*_hmm_models.pkl"]
     ),
     
-    "10": StepConfig(
-        step_number="10",
+    "09": StepConfig(
+        step_number="09",
         step_name="unified_regime_intelligence",
         description="Create unified regime intelligence system",
         module_path="src.training.steps.model_training.step10_unified_regime_intelligence",
         class_name="UnifiedRegimeIntelligenceStep",
-        dependencies=["09"],
+        dependencies=["08"],
         required_inputs=["trained_models"],
         produced_outputs=["unified_system"],
         required_files=["data/training/*_unified_intelligence.pkl"]
     ),
     
-    "11": StepConfig(
-        step_number="11",
+    "10": StepConfig(
+        step_number="10",
         step_name="analyst_creation",
         description="Create analyst models",
         module_path="src.training.steps.model_training.step11_analyst_creation",
         class_name="AnalystCreationStep",
-        dependencies=["10"],
+        dependencies=["09"],
         required_inputs=["unified_system"],
         produced_outputs=["analyst_models"],
         required_files=["data/training/*_analyst_models.pkl"]
     ),
     
-    "12": StepConfig(
-        step_number="12",
+    "11": StepConfig(
+        step_number="11",
         step_name="analyst_enhancement",
         description="Enhance analyst models",
         module_path="src.training.steps.model_training.step12_analyst_enhancement",
         class_name="AnalystEnhancementStep",
-        dependencies=["11"],
+        dependencies=["10"],
         required_inputs=["analyst_models"],
         produced_outputs=["enhanced_analysts"],
         required_files=["data/training/*_enhanced_analyst_models.pkl"]
     ),
     
-    "13": StepConfig(
-        step_number="13",
+    "12": StepConfig(
+        step_number="12",
         step_name="analyst_ensemble_creation",
         description="Create analyst ensemble",
         module_path="src.training.steps.model_training.step13_analyst_ensemble_creation",
         class_name="AnalystEnsembleCreationStep",
-        dependencies=["12"],
+        dependencies=["11"],
         required_inputs=["enhanced_analysts"],
         produced_outputs=["analyst_ensemble"],
         required_files=["data/training/*_analyst_ensemble.pkl"]
     ),
     
-    "14": StepConfig(
-        step_number="14",
+    "13": StepConfig(
+        step_number="13",
         step_name="tactician_labeling",
         description="Generate tactical trading labels",
         module_path="src.training.steps.model_training.step14_tactician_labeling",
         class_name="TacticianLabelingStep",
-        dependencies=["13"],
+        dependencies=["12"],
         required_inputs=["analyst_ensemble"],
         produced_outputs=["tactician_labeled_data"],
         required_files=["data/training/*_tactician_labels.parquet"]
     ),
     
-    "15": StepConfig(
-        step_number="15",
+    "14": StepConfig(
+        step_number="14",
         step_name="tactician_specialist_training",
         description="Train tactical trading models",
         module_path="src.training.steps.tactician_specialist_components.tactician_specialist_training_step",
         class_name="TacticianSpecialistTrainingStep",
-        dependencies=["14"],
+        dependencies=["13"],
         required_inputs=["tactician_labeled_data"],
         produced_outputs=["tactician_specialist_models"],
         required_files=["data/training/*_tactician_models.pkl"]
     ),
     
-    "16": StepConfig(
-        step_number="16",
+    "15": StepConfig(
+        step_number="15",
         step_name="confidence_calibration",
         description="Calibrate model confidence scores",
         module_path="src.training.steps.validation_components.confidence_calibration_step",
         class_name="ConfidenceCalibrationStep",
-        dependencies=["15"],
+        dependencies=["14"],
         required_inputs=["tactician_specialist_models"],
         produced_outputs=["calibrated_models"],
         required_files=["data/training/*_calibrated_models.pkl"]
     ),
     
-    "17": StepConfig(
-        step_number="17",
+    "16": StepConfig(
+        step_number="16",
         step_name="parameter_optimization",
         description="Optimize final model parameters",
         module_path="src.training.steps.step17_parameter_optimization_wrapper",
         class_name="ParameterOptimizationStep",
-        dependencies=["16"],
+        dependencies=["15"],
         required_inputs=["calibrated_models"],
         produced_outputs=["optimized_models"],
         required_files=["data/training/*_optimized_models.pkl"]
     ),
     
-    "18": StepConfig(
-        step_number="18",
+    "17": StepConfig(
+        step_number="17",
         step_name="walk_forward_validation",
         description="Validate models using walk-forward analysis",
         module_path="src.training.steps.validation_components.walk_forward_validation_step",
         class_name="WalkForwardValidationStep",
-        dependencies=["17"],
+        dependencies=["16"],
         required_inputs=["optimized_models"],
-        produced_outputs=["step18_walk_forward_validation_results", "step18_walk_forward_validation_summary"],
+        produced_outputs=["step17_walk_forward_validation_results", "step17_walk_forward_validation_summary"],
         required_files=["data/training/*_walk_forward_results.json"]
     ),
     
-    "19": StepConfig(
-        step_number="19",
+    "18": StepConfig(
+        step_number="18",
         step_name="monte_carlo_validation",
         description="Validate models using Monte Carlo simulation",
         module_path="src.training.steps.model_training.validation.step19_monte_carlo_validation",
         class_name="MonteCarloValidationStep",
-        dependencies=["18"],
+        dependencies=["17"],
         required_inputs=["optimized_models"],
-        produced_outputs=["step19_monte_carlo_validation_results", "step19_monte_carlo_validation_summary"],
+        produced_outputs=["step18_monte_carlo_validation_results", "step18_monte_carlo_validation_summary"],
         required_files=["data/training/*_monte_carlo_results.json"]
     ),
     
-    "20": StepConfig(
-        step_number="20",
+    "19": StepConfig(
+        step_number="19",
         step_name="ab_testing",
         description="Compare model performance",
         module_path="src.training.steps.validation_components.ab_testing_step",
         class_name="ABTestingStep",
-        dependencies=["19"],
+        dependencies=["18"],
         required_inputs=["optimized_models"],
-        produced_outputs=["step20_ab_testing_results", "step20_ab_testing_summary"],
+        produced_outputs=["step19_ab_testing_results", "step19_ab_testing_summary"],
         required_files=["data/training/*_ab_test_results.json"],
         optional = True
     ),
     
-    "21": StepConfig(
-        step_number="21",
+    "20": StepConfig(
+        step_number="20",
         step_name="model_persistence",
         description="Save all trained models and configurations",
         module_path="src.training.steps.model_persistence_components.model_persistence_step",
         class_name="ModelPersistenceStep",
-        dependencies=["17"],  # Can run after optimization, doesn't need validation
+        dependencies=["16"],  # Can run after optimization, doesn't need validation
         required_inputs=["all_models", "all_results"],
         produced_outputs=["saved_models"],
         required_files=["models/*_final_models.pkl"]

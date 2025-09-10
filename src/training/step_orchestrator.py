@@ -43,22 +43,21 @@ class StepOrchestrator:
             "step03_hmm_regime_discovery",
             "step04_regime_data_splitting",
             "step05_labeling",
-            "step06_advanced_feature_engineering",
-            "step07_enhanced_matrix_operations",
-            "step08_advanced_feature_selection",
-            "step09_hmm_based_training",
-            "step10_unified_regime_intelligence",
-            "step11_analyst_creation",
-            "step12_analyst_enhancement",
-            "step13_analyst_ensemble_creation",
-            "step14_tactician_labeling",
-            "step15_tactician_specialist_training",
-            "step16_confidence_calibration",
-            "step17_parameter_optimization",
-            "step18_walk_forward_validation",
-            "step19_monte_carlo_validation",
-            "step20_ab_testing",
-            "step21_model_persistence",
+            "step06_enhanced_matrix_operations",
+            "step07_advanced_feature_selection",
+            "step08_hmm_based_training",
+            "step09_unified_regime_intelligence",
+            "step10_analyst_creation",
+            "step11_analyst_enhancement",
+            "step12_analyst_ensemble_creation",
+            "step13_tactician_labeling",
+            "step14_tactician_specialist_training",
+            "step15_confidence_calibration",
+            "step16_parameter_optimization",
+            "step17_walk_forward_validation",
+            "step18_monte_carlo_validation",
+            "step19_ab_testing",
+            "step20_model_persistence",
         ]
 
         # Enhanced training manager
@@ -351,10 +350,10 @@ class StepOrchestrator:
 
         if success:
             self.logger.info(
-                "✅ Enhanced 21-step training pipeline completed successfully",
+                "✅ Enhanced 20-step training pipeline completed successfully",
             )
             return True
-        self.print("❌ Enhanced 21-step training pipeline failed")
+        self.print("❌ Enhanced 20-step training pipeline failed")
         return False
 
     async def execute_all_steps(

@@ -33,19 +33,25 @@ logger = system_logger.getChild('CrossTimeframeAnalysisPipeline')
 
 @dataclass
 class CrossTimeframeConfig:
-    """Configuration for cross timeframe analysis."""
-    # Timeframe configuration
-    timeframes: List[str] = field(default_factory=lambda: ['1m', '5m', '15m', '1h', '4h'])
+    """Configuration for cross timeframe analysis optimized for high leverage trading."""
+    # Timeframe configuration - optimized for high leverage trading
+    timeframes: List[str] = field(default_factory=lambda: ['1m', '5m', '15m', '30m'])
     base_timeframe: str = '1m'
     
-    # Feature engineering
-    interaction_features: List[str] = field(default_factory=lambda: ['correlation', 'momentum', 'volatility', 'volume'])
-    lookback_periods: List[int] = field(default_factory=lambda: [5, 10, 20, 50])
+    # Feature engineering - optimized for short timeframes
+    interaction_features: List[str] = field(default_factory=lambda: ['correlation', 'momentum', 'volatility', 'volume', 'microstructure'])
+    lookback_periods: List[int] = field(default_factory=lambda: [3, 5, 10, 15, 20])  # Shorter periods for high leverage
     
-    # Analysis parameters
-    correlation_threshold: float = 0.7
-    min_observations: int = 100
-    max_correlations: int = 50
+    # Analysis parameters - adjusted for high leverage
+    correlation_threshold: float = 0.6  # Lower threshold for short timeframes
+    min_observations: int = 50  # Reduced for short timeframes
+    max_correlations: int = 30  # Reduced for performance
+    
+    # High leverage specific parameters
+    enable_microstructure_features: bool = True
+    enable_order_flow_features: bool = True
+    enable_momentum_divergence: bool = True
+    enable_volatility_spillover: bool = True
     
     # Data quality
     enable_data_quality_validation: bool = True
@@ -450,6 +456,19 @@ class CrossTimeframeAnalysisPipeline:
                 volume_ratio = data['volume'] / (volume_ma + 1e-10)
                 features[f'volume_profile_{timeframe}'] = volume_ratio
             
+            # High leverage specific features
+            if self.config.enable_microstructure_features:
+                features.update(self._generate_microstructure_features(aligned_data))
+            
+            if self.config.enable_order_flow_features:
+                features.update(self._generate_order_flow_features(aligned_data))
+            
+            if self.config.enable_momentum_divergence:
+                features.update(self._generate_momentum_divergence_features(aligned_data))
+            
+            if self.config.enable_volatility_spillover:
+                features.update(self._generate_volatility_spillover_features(aligned_data))
+            
             # Remove rows with NaN values
             features = features.dropna()
             
@@ -613,6 +632,121 @@ class CrossTimeframeAnalysisPipeline:
         except Exception as e:
             self.logger.error(f"❌ Feature importance calculation failed: {e}")
             return {}
+    
+    def _generate_microstructure_features(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
+        """Generate microstructure features for high leverage trading."""
+        features = {}
+        timeframes = list(aligned_data.keys())
+        
+        for timeframe in timeframes:
+            data = aligned_data[timeframe]
+            
+            # Bid-ask spread proxy (using high-low as proxy)
+            features[f'spread_proxy_{timeframe}'] = (data['high'] - data['low']) / data['close']
+            
+            # Price impact proxy (volume vs price movement)
+            price_change = data['close'].pct_change().abs()
+            volume_normalized = data['volume'] / data['volume'].rolling(20).mean()
+            features[f'price_impact_{timeframe}'] = price_change / (volume_normalized + 1e-10)
+            
+            # Tick-by-tick volatility (using high-low range)
+            features[f'tick_volatility_{timeframe}'] = (data['high'] - data['low']) / data['close']
+            
+            # Order flow imbalance proxy (close position within bar)
+            features[f'order_flow_imbalance_{timeframe}'] = (data['close'] - data['open']) / (data['high'] - data['low'] + 1e-10)
+        
+        return features
+    
+    def _generate_order_flow_features(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
+        """Generate order flow features for high leverage trading."""
+        features = {}
+        timeframes = list(aligned_data.keys())
+        
+        for timeframe in timeframes:
+            data = aligned_data[timeframe]
+            
+            # Volume-weighted average price (VWAP) deviation
+            vwap = (data['high'] + data['low'] + data['close']) / 3
+            vwap_volume = (vwap * data['volume']).rolling(20).sum() / data['volume'].rolling(20).sum()
+            features[f'vwap_deviation_{timeframe}'] = (data['close'] - vwap_volume) / vwap_volume
+            
+            # Volume momentum
+            volume_momentum = data['volume'].pct_change(5)
+            features[f'volume_momentum_{timeframe}'] = volume_momentum
+            
+            # Price-volume relationship
+            price_momentum = data['close'].pct_change(5)
+            features[f'price_volume_correlation_{timeframe}'] = price_momentum.rolling(10).corr(volume_momentum)
+        
+        return features
+    
+    def _generate_momentum_divergence_features(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
+        """Generate momentum divergence features between timeframes."""
+        features = {}
+        timeframes = list(aligned_data.keys())
+        
+        # Calculate momentum for each timeframe
+        momentum_data = {}
+        for timeframe in timeframes:
+            data = aligned_data[timeframe]
+            momentum_data[timeframe] = {
+                'momentum_5': data['close'].pct_change(5),
+                'momentum_10': data['close'].pct_change(10),
+                'momentum_20': data['close'].pct_change(20)
+            }
+        
+        # Calculate divergences between timeframes
+        for i, tf1 in enumerate(timeframes):
+            for j, tf2 in enumerate(timeframes[i+1:], i+1):
+                for period in [5, 10, 20]:
+                    mom1 = momentum_data[tf1][f'momentum_{period}']
+                    mom2 = momentum_data[tf2][f'momentum_{period}']
+                    
+                    # Momentum divergence
+                    features[f'momentum_divergence_{tf1}_{tf2}_{period}'] = mom1 - mom2
+                    
+                    # Momentum ratio
+                    features[f'momentum_ratio_{tf1}_{tf2}_{period}'] = mom1 / (mom2 + 1e-10)
+                    
+                    # Momentum correlation
+                    features[f'momentum_correlation_{tf1}_{tf2}_{period}'] = mom1.rolling(20).corr(mom2)
+        
+        return features
+    
+    def _generate_volatility_spillover_features(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
+        """Generate volatility spillover features between timeframes."""
+        features = {}
+        timeframes = list(aligned_data.keys())
+        
+        # Calculate volatility for each timeframe
+        volatility_data = {}
+        for timeframe in timeframes:
+            data = aligned_data[timeframe]
+            returns = data['close'].pct_change()
+            volatility_data[timeframe] = {
+                'volatility_5': returns.rolling(5).std(),
+                'volatility_10': returns.rolling(10).std(),
+                'volatility_20': returns.rolling(20).std()
+            }
+        
+        # Calculate volatility spillovers
+        for i, tf1 in enumerate(timeframes):
+            for j, tf2 in enumerate(timeframes[i+1:], i+1):
+                for period in [5, 10, 20]:
+                    vol1 = volatility_data[tf1][f'volatility_{period}']
+                    vol2 = volatility_data[tf2][f'volatility_{period}']
+                    
+                    # Volatility spillover (lagged correlation)
+                    vol1_lagged = vol1.shift(1)
+                    features[f'volatility_spillover_{tf1}_{tf2}_{period}'] = vol1_lagged.rolling(20).corr(vol2)
+                    
+                    # Volatility ratio
+                    features[f'volatility_ratio_{tf1}_{tf2}_{period}'] = vol1 / (vol2 + 1e-10)
+                    
+                    # Volatility difference
+                    features[f'volatility_diff_{tf1}_{tf2}_{period}'] = vol1 - vol2
+        
+        return features
 
 # Convenience function
 async def analyze_cross_timeframes(

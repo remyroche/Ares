@@ -679,9 +679,16 @@ class MarketAnalysisSubPipeline:
             from .cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig
             
             cross_tf_config = CrossTimeframeConfig(
-                timeframes=['1m', '5m', '15m', '1h'],
+                timeframes=['1m', '5m', '15m', '30m'],  # Short timeframes for high leverage
                 base_timeframe='1m',
-                interaction_features=['correlation', 'momentum', 'volatility', 'volume'],
+                interaction_features=['correlation', 'momentum', 'volatility', 'volume', 'microstructure'],
+                lookback_periods=[3, 5, 10, 15, 20],  # Shorter periods for high leverage
+                correlation_threshold=0.6,  # Lower threshold for short timeframes
+                min_observations=50,  # Reduced for short timeframes
+                enable_microstructure_features=True,
+                enable_order_flow_features=True,
+                enable_momentum_divergence=True,
+                enable_volatility_spillover=True,
                 enable_data_quality_validation=True
             )
             cross_tf_pipeline = CrossTimeframeAnalysisPipeline(cross_tf_config)
@@ -691,7 +698,7 @@ class MarketAnalysisSubPipeline:
                 data_dir=config.data_dir,
                 symbol=config.symbol,
                 exchange=config.exchange,
-                timeframes=['1m', '5m', '15m', '1h']
+                timeframes=['1m', '5m', '15m', '30m']  # Short timeframes for high leverage
             )
             
             artifacts['cross_timeframe_features'] = ['cross_tf_features.parquet']

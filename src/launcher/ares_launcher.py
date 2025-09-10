@@ -199,7 +199,7 @@ class AresLauncher:
                 'next_stage': 'reporting',
                 'required_files': ['backtest_results.json', 'performance_report.json', 'final_report.pdf'],
                 'required_artifacts': ['trade_analysis', 'risk_metrics', 'portfolio_analysis'],
-                'sub_pipelines': ['final_parameters_optimization', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+                'sub_pipelines': ['final_parameters_optimization', 'basic_backtesting', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
                                 'model_persistence', 'performance_analytics',
                                 'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting']
             }
@@ -728,6 +728,7 @@ class AresLauncher:
             'monte_carlo_simulation': "Monte Carlo backtesting",
             'ab_testing': "A/B testing for strategies",
             'final_parameters_optimization': "System-wide parameter optimization",
+            'basic_backtesting': "Basic historical backtesting for comparison",
             'performance_analytics': "Performance analysis and reporting",
             'risk_analysis': "Risk metrics and analysis",
             'trade_analysis': "Trade-level analysis",
@@ -774,7 +775,8 @@ class AresLauncher:
             
             # Backtesting dependencies
             'final_parameters_optimization': [],
-            'walk_forward_validation': ['final_parameters_optimization'],
+            'basic_backtesting': ['final_parameters_optimization'],
+            'walk_forward_validation': ['basic_backtesting'],
             'monte_carlo_simulation': ['walk_forward_validation'],
             'ab_testing': ['monte_carlo_simulation'],
             'performance_analytics': ['ab_testing'],
@@ -829,6 +831,7 @@ class AresLauncher:
             'monte_carlo_simulation': ['mc_results.json'],
             'ab_testing': ['ab_test_results.json'],
             'final_parameters_optimization': ['optimized_parameters.json'],
+            'basic_backtesting': ['basic_backtest_results.json'],
             'performance_analytics': ['performance_report.json'],
             'risk_analysis': ['risk_report.json'],
             'trade_analysis': ['trade_analysis.json'],

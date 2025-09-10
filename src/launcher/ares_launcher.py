@@ -914,6 +914,12 @@ Examples:
   # Execute specific sub-pipeline with full execution mode (730 days, 100% intensity)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline hmm_regime_discovery --execution-mode full --symbol ETHUSDT
 
+  # Execute basic backtesting for comparison (after parameter optimization)
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline basic_backtesting --execution-mode full --symbol ETHUSDT
+
+  # Execute walk-forward validation (after basic backtesting)
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline walk_forward_validation --execution-mode full --symbol ETHUSDT
+
   # Blank mode for testing (180 days, 10% intensity)
   python ares_launcher.py --mode blank --symbol ETHUSDT
         """
@@ -965,7 +971,7 @@ Examples:
     
     parser.add_argument(
         '--sub-pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode)'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, general_model_training, basic_backtesting, walk_forward_validation, etc.'
     )
     
     parser.add_argument(
@@ -981,7 +987,7 @@ Examples:
     
     parser.add_argument(
         '--list-sub-pipelines',
-        help='List available sub-pipelines for a stage'
+        help='List available sub-pipelines for a stage. Use with --stage to see sub-pipelines for that stage.'
     )
     
     return parser

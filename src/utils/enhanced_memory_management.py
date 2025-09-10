@@ -32,11 +32,12 @@ except ImportError:
 @dataclass
 class MemoryConfig:
     """Configuration for memory management."""
-    max_memory_mb: float = 1024.0
-    warning_threshold: float = 0.8
-    critical_threshold: float = 0.95
-    gc_threshold: float = 0.7
-    monitor_interval: float = 1.0
+    max_memory_mb: float = 2048.0  # Increased default memory limit
+    warning_threshold: float = 0.75  # Earlier warning
+    critical_threshold: float = 0.90  # Earlier critical threshold
+    gc_threshold: float = 0.65  # More aggressive GC
+    monitor_interval: float = 0.5  # More frequent monitoring
+    chunk_size_multiplier: float = 0.5  # Smaller chunks when memory pressure
 
 class MemoryMonitor:
     """Monitor memory usage during processing."""
@@ -117,6 +118,11 @@ class MemoryMonitor:
             self.logger.warning(f'⚠️ PRESSURE {status_msg}')
         else:
             self.logger.info(f'💾 {status_msg}')
+    
+    def start_monitoring(self) -> None:
+        """Start memory monitoring."""
+        self.logger.info("🧠 Memory monitoring started")
+        self.log_memory_status("initial")
 
 def memory_efficient(max_memory_mb: float = 1024.0, optimize_dtypes: bool = True) -> None:
     """Decorator for memory-efficient processing."""
@@ -146,22 +152,54 @@ def memory_efficient(max_memory_mb: float = 1024.0, optimize_dtypes: bool = True
     return decorator
 
 def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
-    """Optimize DataFrame data types for memory efficiency."""
+    """Optimize DataFrame data types for memory efficiency with enhanced optimization."""
     if not PANDAS_AVAILABLE or df is None or df.empty:
         return df
-    original_memory = df.memory_usage(deep = True).sum() / 1024 / 1024
-    for col in df.select_dtypes(include=['float64']).columns:
-        df[col] = pd.to_numeric(df[col], downcast='float')
-    for col in df.select_dtypes(include=['int64']).columns:
-        df[col] = pd.to_numeric(df[col], downcast='integer')
-    for col in df.select_dtypes(include=['object']).columns:
-        if df[col].nunique() / len(df[col]) < 0.5:
-            df[col] = df[col].astype('category')
-    optimized_memory = df.memory_usage(deep = True).sum() / 1024 / 1024
+    
+    original_memory = df.memory_usage(deep=True).sum() / 1024 / 1024
+    optimized_df = df.copy()
+    
+    # Optimize float columns
+    for col in optimized_df.select_dtypes(include=['float64']).columns:
+        try:
+            # Check if float32 is sufficient
+            col_min, col_max = optimized_df[col].min(), optimized_df[col].max()
+            if col_min >= -3.4e38 and col_max <= 3.4e38:
+                optimized_df[col] = pd.to_numeric(optimized_df[col], downcast='float')
+        except Exception:
+            pass
+    
+    # Optimize integer columns
+    for col in optimized_df.select_dtypes(include=['int64']).columns:
+        try:
+            optimized_df[col] = pd.to_numeric(optimized_df[col], downcast='integer')
+        except Exception:
+            pass
+    
+    # Optimize object columns to categories
+    for col in optimized_df.select_dtypes(include=['object']).columns:
+        try:
+            unique_ratio = optimized_df[col].nunique() / len(optimized_df[col])
+            if unique_ratio < 0.5:  # Less than 50% unique values
+                optimized_df[col] = optimized_df[col].astype('category')
+        except Exception:
+            pass
+    
+    # Optimize datetime columns
+    for col in optimized_df.select_dtypes(include=['datetime64[ns]']).columns:
+        try:
+            # Convert to datetime64[s] if precision allows
+            optimized_df[col] = optimized_df[col].astype('datetime64[s]')
+        except Exception:
+            pass
+    
+    optimized_memory = optimized_df.memory_usage(deep=True).sum() / 1024 / 1024
     savings = original_memory - optimized_memory
+    
     if savings > 0:
         logging.info(f'DataFrame optimization: {original_memory:.1f}MB -> {optimized_memory:.1f}MB (saved {savings:.1f}MB)')
-    return df
+    
+    return optimized_df
 
 def chunk_dataframe(df: pd.DataFrame, chunk_size: int, memory_monitor: Optional[MemoryMonitor]=None) -> List[pd.DataFrame]:
     """Split DataFrame into chunks based on memory constraints."""
@@ -188,20 +226,40 @@ class MemoryOptimizedProcessor:
         self.logger = system_logger.getChild('MemoryOptimizedProcessor')
 
     def process_in_chunks(self, df: pd.DataFrame, processor_func: Callable, chunk_size: int = 10000) -> pd.DataFrame:
-        """Process DataFrame in chunks to manage memory usage."""
+        """Process DataFrame in chunks to manage memory usage with adaptive chunk sizing."""
         if df is None or df.empty:
             return df
+        
+        # Adaptive chunk sizing based on memory pressure
+        if self.monitor.is_memory_pressure():
+            chunk_size = int(chunk_size * self.config.chunk_size_multiplier)
+            self.logger.info(f'Memory pressure detected, reducing chunk size to {chunk_size}')
+        
         self.logger.info(f'Processing DataFrame of shape {df.shape} in chunks of {chunk_size}')
         chunks = chunk_dataframe(df, chunk_size, self.monitor)
         processed_chunks = []
+        
         for i, chunk in enumerate(chunks):
             self.logger.debug(f'Processing chunk {i + 1}/{len(chunks)}')
+            
+            # Check memory before processing each chunk
+            if self.monitor.is_critical_memory():
+                self.logger.warning('Critical memory usage, triggering aggressive cleanup')
+                self.monitor.trigger_gc()
+                # Further reduce chunk size if still critical
+                if self.monitor.is_critical_memory():
+                    chunk_size = max(1000, int(chunk_size * 0.5))
+                    self.logger.warning(f'Further reducing chunk size to {chunk_size}')
+            
             processed_chunk = processor_func(chunk)
             processed_chunks.append(processed_chunk)
+            
+            # Adaptive memory management
             if self.monitor.is_memory_pressure():
                 self.monitor.trigger_gc()
             if (i + 1) % 10 == 0:
                 self.monitor.log_memory_status(f'chunk {i + 1}/{len(chunks)}')
+        
         if processed_chunks:
             result = pd.concat(processed_chunks, ignore_index = True)
             self.logger.info(f'Completed processing: {len(processed_chunks)} chunks -> {result.shape}')
@@ -255,3 +313,33 @@ def trigger_gc_if_needed(max_memory_mb: float = 1024.0) -> Dict[str, float]:
     config = MemoryConfig(max_memory_mb = max_memory_mb)
     monitor = MemoryMonitor(config)
     return monitor.trigger_gc()
+
+def get_memory_manager(config: Optional[MemoryConfig] = None) -> MemoryMonitor:
+    """Get a memory manager instance."""
+    return MemoryMonitor(config)
+
+class MemoryContext:
+    """Context manager for memory monitoring."""
+    
+    def __init__(self, config: Optional[MemoryConfig] = None, context_name: str = ""):
+        self.config = config or MemoryConfig()
+        self.monitor = MemoryMonitor(self.config)
+        self.context_name = context_name
+        self.initial_memory = 0.0
+        
+    def __enter__(self):
+        self.initial_memory = self.monitor.get_usage_mb()
+        self.monitor.log_memory_status(f"entering {self.context_name}")
+        return self.monitor
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        final_memory = self.monitor.get_usage_mb()
+        delta = final_memory - self.initial_memory
+        self.monitor.log_memory_status(f"exiting {self.context_name} (delta: {delta:+.1f}MB)")
+        if exc_type:
+            self.monitor.logger.error(f"Exception in {self.context_name}: {exc_val}")
+
+def memory_context(context_name: str = "", max_memory_mb: float = 1024.0):
+    """Create a memory context manager."""
+    config = MemoryConfig(max_memory_mb=max_memory_mb)
+    return MemoryContext(config, context_name)

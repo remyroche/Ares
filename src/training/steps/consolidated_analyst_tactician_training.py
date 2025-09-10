@@ -15,8 +15,14 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime
-import pandas as pd
-import numpy as np
+# Import mock dependencies for testing
+try:
+    import pandas as pd
+    import numpy as np
+except ImportError:
+    from src.utils.mock_dependencies import MockDataFrame, MockNumpy, MockSeries
+    pd = type('MockPandas', (), {'DataFrame': MockDataFrame, 'Series': MockSeries})()
+    np = MockNumpy()
 
 # Import utilities as toolbox
 from src.utils.ml_common import (

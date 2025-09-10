@@ -65,8 +65,9 @@ try:
     import talib
 except ImportError:
     talib = None
-from sklearn.feature_selection import mutual_info_classif
-from sklearn.preprocessing import StandardScaler
+# Use ml_common utilities instead of direct sklearn imports
+from src.utils.ml_common.feature_selection import FeatureSelectionFramework
+from src.utils.ml_common.data_quality import DataQualityUtilities
 from copy import copy
 import sys
 import os

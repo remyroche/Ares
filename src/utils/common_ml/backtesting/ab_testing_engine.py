@@ -254,42 +254,62 @@ class ABTestingEngine:
     ) -> None:
         """Validate input data and parameters."""
         
+        self.logger.info("🔍 Validating A/B test inputs...")
+        
         if control_data.empty:
+            self.logger.error("❌ Control group data is empty")
             raise ValidationError("Control group data is empty")
         
         if treatment_data.empty:
+            self.logger.error("❌ Treatment group data is empty")
             raise ValidationError("Treatment group data is empty")
         
         if not metric_columns:
+            self.logger.error("❌ No metric columns specified")
             raise ValidationError("No metric columns specified")
+        
+        self.logger.info(f"📊 Control group size: {len(control_data):,}")
+        self.logger.info(f"📊 Treatment group size: {len(treatment_data):,}")
+        self.logger.info(f"📊 Metric columns: {', '.join(metric_columns)}")
         
         # Check if metric columns exist in both datasets
         missing_control = [col for col in metric_columns if col not in control_data.columns]
         missing_treatment = [col for col in metric_columns if col not in treatment_data.columns]
         
         if missing_control:
+            self.logger.error(f"❌ Missing columns in control data: {missing_control}")
             raise ValidationError(f"Missing columns in control data: {missing_control}")
         
         if missing_treatment:
+            self.logger.error(f"❌ Missing columns in treatment data: {missing_treatment}")
             raise ValidationError(f"Missing columns in treatment data: {missing_treatment}")
         
         # Check sample sizes
         if len(control_data) < self.config.min_sample_size:
+            self.logger.error(f"❌ Control group too small: {len(control_data)} < {self.config.min_sample_size}")
             raise ValidationError(f"Control group too small: {len(control_data)} < {self.config.min_sample_size}")
         
         if len(treatment_data) < self.config.min_sample_size:
+            self.logger.error(f"❌ Treatment group too small: {len(treatment_data)} < {self.config.min_sample_size}")
             raise ValidationError(f"Treatment group too small: {len(treatment_data)} < {self.config.min_sample_size}")
         
         # Check for sufficient data
+        self.logger.info("🔍 Checking data quality for each metric...")
         for col in metric_columns:
             control_valid = control_data[col].notna().sum()
             treatment_valid = treatment_data[col].notna().sum()
             
+            self.logger.info(f"   • {col}: Control={control_valid:,}, Treatment={treatment_valid:,}")
+            
             if control_valid < 10:
+                self.logger.error(f"❌ Insufficient valid data in control group for {col}: {control_valid}")
                 raise ValidationError(f"Insufficient valid data in control group for {col}: {control_valid}")
             
             if treatment_valid < 10:
+                self.logger.error(f"❌ Insufficient valid data in treatment group for {col}: {treatment_valid}")
                 raise ValidationError(f"Insufficient valid data in treatment group for {col}: {treatment_valid}")
+        
+        self.logger.info("✅ Input validation completed successfully")
     
     async def _execute_ab_testing(
         self, 

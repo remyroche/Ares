@@ -248,6 +248,34 @@ class DataCollectionSubPipeline:
             self.logger.warning("⚠️ Enhanced data collector not available, using mock data")
             artifacts['downloaded_files'] = [f"{config.symbol}_{config.exchange}_{config.timeframe}.parquet"]
         
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 DATA DOWNLOAD SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        for file in artifacts.get('downloaded_files', []):
+            print(f"   📄 Downloaded File: {config.data_dir}/{file}")
+        print(f"📊 Download Stats: {artifacts.get('download_stats', {})}")
+        print(f"🏢 Exchange Info: {artifacts.get('exchange_info', {})}")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 DATA DOWNLOAD SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for file in artifacts.get('downloaded_files', []):
+            self.logger.info(f"   📄 Downloaded File: {config.data_dir}/{file}")
+        self.logger.info(f"📊 Download Stats: {artifacts.get('download_stats', {})}")
+        self.logger.info(f"🏢 Exchange Info: {artifacts.get('exchange_info', {})}")
+        
+        # Automatically trigger the next sub-pipeline: data_conversion
+        self.logger.info("🔄 Data download completed, triggering next: data_conversion")
+        try:
+            next_artifacts = await self._data_conversion_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Data conversion pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute data conversion pipeline: {e}")
+        
         return artifacts
     
     async def _data_conversion_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -284,6 +312,34 @@ class DataCollectionSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Enhanced data converter not available, using mock conversion")
             artifacts['converted_files'] = [f"converted_{config.symbol}_{config.exchange}_{config.timeframe}.parquet"]
+        
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 DATA CONVERSION SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        for file in artifacts.get('converted_files', []):
+            print(f"   🔄 Converted File: {config.data_dir}/{file}")
+        print(f"📊 Conversion Stats: {artifacts.get('conversion_stats', {})}")
+        print(f"📋 Format Info: {artifacts.get('format_info', {})}")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 DATA CONVERSION SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for file in artifacts.get('converted_files', []):
+            self.logger.info(f"   🔄 Converted File: {config.data_dir}/{file}")
+        self.logger.info(f"📊 Conversion Stats: {artifacts.get('conversion_stats', {})}")
+        self.logger.info(f"📋 Format Info: {artifacts.get('format_info', {})}")
+        
+        # Automatically trigger the next sub-pipeline: data_validation
+        self.logger.info("🔄 Data conversion completed, triggering next: data_validation")
+        try:
+            next_artifacts = await self._data_validation_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Data validation pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute data validation pipeline: {e}")
         
         return artifacts
     
@@ -322,6 +378,38 @@ class DataCollectionSubPipeline:
             self.logger.warning("⚠️ Enhanced data validator not available, using mock validation")
             artifacts['validation_results'] = {'status': 'passed', 'issues': []}
         
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 DATA VALIDATION SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        print(f"   ✅ Validation Results: {config.data_dir}/validation_results.json")
+        print(f"   📊 Quality Metrics: {config.data_dir}/quality_metrics.json")
+        for report in artifacts.get('validation_reports', []):
+            print(f"   📋 Validation Report: {config.data_dir}/{report}")
+        print(f"📊 Validation Results: {artifacts.get('validation_results', {})}")
+        print(f"📈 Quality Metrics: {artifacts.get('quality_metrics', {})}")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 DATA VALIDATION SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        self.logger.info(f"   ✅ Validation Results: {config.data_dir}/validation_results.json")
+        self.logger.info(f"   📊 Quality Metrics: {config.data_dir}/quality_metrics.json")
+        for report in artifacts.get('validation_reports', []):
+            self.logger.info(f"   📋 Validation Report: {config.data_dir}/{report}")
+        self.logger.info(f"📊 Validation Results: {artifacts.get('validation_results', {})}")
+        self.logger.info(f"📈 Quality Metrics: {artifacts.get('quality_metrics', {})}")
+        
+        # Automatically trigger the next sub-pipeline: data_preparation
+        self.logger.info("🔄 Data validation completed, triggering next: data_preparation")
+        try:
+            next_artifacts = await self._data_preparation_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Data preparation pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute data preparation pipeline: {e}")
+        
         return artifacts
     
     async def _data_preparation_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -357,6 +445,34 @@ class DataCollectionSubPipeline:
             self.logger.warning("⚠️ Data preparation pipeline not available, using mock preparation")
             artifacts['prepared_files'] = [f"prepared_{config.symbol}_{config.exchange}_{config.timeframe}.parquet"]
         
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 DATA PREPARATION SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        for file in artifacts.get('prepared_files', []):
+            print(f"   🔧 Prepared File: {config.data_dir}/{file}")
+        print(f"📊 Preparation Stats: {artifacts.get('preparation_stats', {})}")
+        print(f"📋 Data Info: {artifacts.get('data_info', {})}")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 DATA PREPARATION SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for file in artifacts.get('prepared_files', []):
+            self.logger.info(f"   🔧 Prepared File: {config.data_dir}/{file}")
+        self.logger.info(f"📊 Preparation Stats: {artifacts.get('preparation_stats', {})}")
+        self.logger.info(f"📋 Data Info: {artifacts.get('data_info', {})}")
+        
+        # Automatically trigger the next sub-pipeline: feature_engineering
+        self.logger.info("🔄 Data preparation completed, triggering next: feature_engineering")
+        try:
+            next_artifacts = await self._feature_engineering_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Feature engineering pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute feature engineering pipeline: {e}")
+        
         return artifacts
     
     async def _feature_engineering_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -391,6 +507,34 @@ class DataCollectionSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Feature engineering pipeline not available, using mock features")
             artifacts['feature_files'] = [f"features_{config.symbol}_{config.exchange}_{config.timeframe}.parquet"]
+        
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 FEATURE ENGINEERING SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        for file in artifacts.get('feature_files', []):
+            print(f"   ⚙️ Feature File: {config.data_dir}/{file}")
+        print(f"📊 Feature Stats: {artifacts.get('feature_stats', {})}")
+        print(f"📋 Feature Info: {artifacts.get('feature_info', {})}")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 FEATURE ENGINEERING SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for file in artifacts.get('feature_files', []):
+            self.logger.info(f"   ⚙️ Feature File: {config.data_dir}/{file}")
+        self.logger.info(f"📊 Feature Stats: {artifacts.get('feature_stats', {})}")
+        self.logger.info(f"📋 Feature Info: {artifacts.get('feature_info', {})}")
+        
+        # Automatically trigger the next sub-pipeline: data_quality_check
+        self.logger.info("🔄 Feature engineering completed, triggering next: data_quality_check")
+        try:
+            next_artifacts = await self._data_quality_check_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Data quality check pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute data quality check pipeline: {e}")
         
         return artifacts
     
@@ -431,6 +575,36 @@ class DataCollectionSubPipeline:
             self.logger.warning("⚠️ Quality checker not available, using mock quality check")
             artifacts['quality_metrics'] = {'overall_score': 0.95, 'issues_count': 0}
         
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 DATA QUALITY CHECK SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        for report in artifacts.get('quality_reports', []):
+            print(f"   🔍 Quality Report: {config.data_dir}/{report}")
+        print(f"   📊 Quality Metrics: {config.data_dir}/quality_metrics.json")
+        print(f"📊 Quality Metrics: {artifacts.get('quality_metrics', {})}")
+        print(f"⚠️ Quality Issues: {len(artifacts.get('quality_issues', []))} issues found")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 DATA QUALITY CHECK SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for report in artifacts.get('quality_reports', []):
+            self.logger.info(f"   🔍 Quality Report: {config.data_dir}/{report}")
+        self.logger.info(f"   📊 Quality Metrics: {config.data_dir}/quality_metrics.json")
+        self.logger.info(f"📊 Quality Metrics: {artifacts.get('quality_metrics', {})}")
+        self.logger.info(f"⚠️ Quality Issues: {len(artifacts.get('quality_issues', []))} issues found")
+        
+        # Automatically trigger the next sub-pipeline: data_storage
+        self.logger.info("🔄 Data quality check completed, triggering next: data_storage")
+        try:
+            next_artifacts = await self._data_storage_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Data storage pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute data storage pipeline: {e}")
+        
         return artifacts
     
     async def _data_storage_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -452,6 +626,34 @@ class DataCollectionSubPipeline:
         artifacts['stored_files'] = [f"stored_{config.symbol}_{config.exchange}_{config.timeframe}.parquet"]
         artifacts['storage_stats'] = {'files_stored': 1, 'total_size_mb': 10.5}
         
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 DATA STORAGE SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        for file in artifacts.get('stored_files', []):
+            print(f"   💾 Stored File: {config.data_dir}/{file}")
+        print(f"📊 Storage Stats: {artifacts.get('storage_stats', {})}")
+        print(f"📋 Storage Info: {artifacts.get('storage_info', {})}")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 DATA STORAGE SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for file in artifacts.get('stored_files', []):
+            self.logger.info(f"   💾 Stored File: {config.data_dir}/{file}")
+        self.logger.info(f"📊 Storage Stats: {artifacts.get('storage_stats', {})}")
+        self.logger.info(f"📋 Storage Info: {artifacts.get('storage_info', {})}")
+        
+        # Automatically trigger the next sub-pipeline: data_monitoring
+        self.logger.info("🔄 Data storage completed, triggering next: data_monitoring")
+        try:
+            next_artifacts = await self._data_monitoring_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Data monitoring pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute data monitoring pipeline: {e}")
+        
         return artifacts
     
     async def _data_monitoring_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -471,6 +673,36 @@ class DataCollectionSubPipeline:
         
         # Monitoring logic would go here
         artifacts['monitoring_metrics'] = {'status': 'healthy', 'uptime': '99.9%'}
+        
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 DATA MONITORING SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        for report in artifacts.get('monitoring_reports', []):
+            print(f"   📊 Monitoring Report: {config.data_dir}/{report}")
+        print(f"   📈 Monitoring Metrics: {config.data_dir}/monitoring_metrics.json")
+        print(f"📊 Monitoring Metrics: {artifacts.get('monitoring_metrics', {})}")
+        print(f"🚨 Alerts: {len(artifacts.get('alerts', []))} alerts generated")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 DATA MONITORING SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for report in artifacts.get('monitoring_reports', []):
+            self.logger.info(f"   📊 Monitoring Report: {config.data_dir}/{report}")
+        self.logger.info(f"   📈 Monitoring Metrics: {config.data_dir}/monitoring_metrics.json")
+        self.logger.info(f"📊 Monitoring Metrics: {artifacts.get('monitoring_metrics', {})}")
+        self.logger.info(f"🚨 Alerts: {len(artifacts.get('alerts', []))} alerts generated")
+        
+        # Automatically trigger the next sub-pipeline: data_integration
+        self.logger.info("🔄 Data monitoring completed, triggering next: data_integration")
+        try:
+            next_artifacts = await self._data_integration_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Data integration pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute data integration pipeline: {e}")
         
         return artifacts
     
@@ -492,6 +724,34 @@ class DataCollectionSubPipeline:
         # Integration logic would go here
         artifacts['integrated_files'] = [f"integrated_{config.symbol}_{config.exchange}_{config.timeframe}.parquet"]
         
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 DATA INTEGRATION SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        for file in artifacts.get('integrated_files', []):
+            print(f"   🔗 Integrated File: {config.data_dir}/{file}")
+        print(f"📊 Integration Stats: {artifacts.get('integration_stats', {})}")
+        print(f"📋 Integration Info: {artifacts.get('integration_info', {})}")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 DATA INTEGRATION SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for file in artifacts.get('integrated_files', []):
+            self.logger.info(f"   🔗 Integrated File: {config.data_dir}/{file}")
+        self.logger.info(f"📊 Integration Stats: {artifacts.get('integration_stats', {})}")
+        self.logger.info(f"📋 Integration Info: {artifacts.get('integration_info', {})}")
+        
+        # Automatically trigger the next sub-pipeline: data_export
+        self.logger.info("🔄 Data integration completed, triggering next: data_export")
+        try:
+            next_artifacts = await self._data_export_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Data export pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute data export pipeline: {e}")
+        
         return artifacts
     
     async def _data_export_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -512,6 +772,27 @@ class DataCollectionSubPipeline:
         # Export logic would go here
         artifacts['exported_files'] = [f"exported_{config.symbol}_{config.exchange}_{config.timeframe}.csv"]
         artifacts['export_formats'] = ['csv', 'parquet', 'json']
+        
+        # Log completion with emojis and artifact paths
+        print("\n" + "="*80)
+        print("🎉 DATA EXPORT SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        for file in artifacts.get('exported_files', []):
+            print(f"   📤 Exported File: {config.data_dir}/{file}")
+        print(f"📊 Export Stats: {artifacts.get('export_stats', {})}")
+        print(f"📋 Export Formats: {artifacts.get('export_formats', [])}")
+        print("="*80 + "\n")
+        
+        self.logger.info("🎉 DATA EXPORT SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for file in artifacts.get('exported_files', []):
+            self.logger.info(f"   📤 Exported File: {config.data_dir}/{file}")
+        self.logger.info(f"📊 Export Stats: {artifacts.get('export_stats', {})}")
+        self.logger.info(f"📋 Export Formats: {artifacts.get('export_formats', [])}")
+        
+        # This is the last sub-pipeline in the data collection chain
+        self.logger.info("🎉 Data export completed - end of data collection pipeline chain")
         
         return artifacts
     

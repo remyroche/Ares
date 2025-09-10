@@ -34,10 +34,20 @@ import time
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
 from ..parallel_processing_optimizer import ParallelProcessor
-from ..m1_cpu_optimizer import M1CPUOptimizer
+from ..hardware.memory_optimization import MemoryMonitor
 from ..common_utilities import safe_dataframe_operation
 
-logger = logging.getLogger(__name__)
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.ParallelProcessing")
+    print("✅ Custom logger available for MLCommon.ParallelProcessing")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.ParallelProcessing")
+    _LOGGER.setLevel(logging.INFO)
+
+logger = _LOGGER
 
 try:
     from joblib import Parallel, delayed
@@ -61,6 +71,8 @@ class ParallelProcessingCoordinator:
         """Initialize parallel processing coordinator with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('ParallelCoordinator')
+        
+        _LOGGER.info("🚀 Initializing ParallelProcessingCoordinator...")
 
         # Configuration defaults
         self.max_workers = self.config.get('max_workers', multiprocessing.cpu_count())
@@ -71,9 +83,19 @@ class ParallelProcessingCoordinator:
         self.task_timeout_seconds = self.config.get('task_timeout_seconds', 3600)
         self.prefer_process_pool = self.config.get('prefer_process_pool', False)
 
+        _LOGGER.info(f"⚙️ Configuration - Max workers: {self.max_workers}")
+        _LOGGER.info(f"⚙️ Configuration - Joblib enabled: {self.enable_joblib}")
+        _LOGGER.info(f"⚙️ Configuration - Ray enabled: {self.enable_ray}")
+        _LOGGER.info(f"⚙️ Configuration - Chunk size: {self.chunk_size}")
+        _LOGGER.info(f"⚙️ Configuration - Error retry limit: {self.error_retry_limit}")
+        _LOGGER.info(f"⚙️ Configuration - Task timeout: {self.task_timeout_seconds}s")
+        _LOGGER.info(f"⚙️ Configuration - Prefer process pool: {self.prefer_process_pool}")
+        _LOGGER.info(f"⚙️ Dependencies - Joblib available: {JOBLIB_AVAILABLE}, Ray available: {RAY_AVAILABLE}")
+
         # Initialize utilities
+        _LOGGER.debug("🔧 Initializing parallel processing utilities...")
         self.parallel_processor = ParallelProcessor()
-        self.cpu_optimizer = M1CPUOptimizer() if 'M1CPUOptimizer' in globals() else None
+        self.cpu_optimizer = MemoryMonitor() if 'MemoryMonitor' in globals() else None
 
         # Task management
         self.active_tasks = {}
@@ -85,7 +107,10 @@ class ParallelProcessingCoordinator:
 
         # Initialize distributed computing if available
         if self.enable_ray and RAY_AVAILABLE:
+            _LOGGER.debug("🔧 Initializing Ray for distributed computing...")
             self._initialize_ray()
+        
+        _LOGGER.info("✅ ParallelProcessingCoordinator initialized successfully")
 
     def parallel_feature_engineering(self, feature_functions: List[Callable],
                                    data_chunks: List[Any],
@@ -101,10 +126,12 @@ class ParallelProcessingCoordinator:
         Returns:
             List of results or combined result
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting parallel feature engineering...")
+        _LOGGER.info(f"📊 Parameters - Functions: {len(feature_functions)}, Chunks: {len(data_chunks)}")
+        _LOGGER.info(f"📊 Configuration - Combine results: {combine_results}, Max workers: {self.max_workers}")
+        
         try:
-            self.logger.info(f"🔄 Starting parallel feature engineering: "
-                           f"{len(feature_functions)} functions × {len(data_chunks)} chunks")
-
             # Create task combinations
             tasks = []
             for func in feature_functions:
@@ -116,6 +143,8 @@ class ParallelProcessingCoordinator:
                         'func_name': getattr(func, '__name__', f'func_{len(tasks)}')
                     }
                     tasks.append(task)
+            
+            _LOGGER.info(f"📊 Created {len(tasks)} tasks for parallel execution")
 
             # Execute tasks in parallel
             results = self._execute_parallel_tasks(
@@ -130,12 +159,19 @@ class ParallelProcessingCoordinator:
             if combine_results and len(data_chunks) > 1:
                 # Combine results across chunks
                 combined_results = self._combine_feature_results(organized_results)
+                execution_time = time.time() - start_time
+                _LOGGER.info(f"✅ Parallel feature engineering completed in {execution_time:.3f}s")
+                _LOGGER.info(f"📊 Results - Combined results generated for {len(feature_functions)} functions")
                 return combined_results
             else:
+                execution_time = time.time() - start_time
+                _LOGGER.info(f"✅ Parallel feature engineering completed in {execution_time:.3f}s")
+                _LOGGER.info(f"📊 Results - {len(organized_results)} function results returned")
                 return organized_results
 
         except Exception as e:
-            self.logger.error(f"❌ Parallel feature engineering failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Parallel feature engineering failed after {execution_time:.3f}s: {e}")
             return []
 
     def distributed_cross_validation(self, model_factory: Callable,
@@ -156,8 +192,12 @@ class ParallelProcessingCoordinator:
         Returns:
             Cross-validation results
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔀 Starting distributed cross-validation...")
+        _LOGGER.info(f"📊 Parameters - CV folds: {cv_folds}, Data shape: {X.shape}")
+        _LOGGER.info(f"📊 Scoring functions: {len(scoring_functions) if scoring_functions else 'default'}")
+        
         try:
-            self.logger.info(f"🔀 Starting distributed cross-validation: {cv_folds} folds")
 
             from sklearn.model_selection import TimeSeriesSplit
             if cv is None:
@@ -227,12 +267,14 @@ class ParallelProcessingCoordinator:
             # Aggregate CV results
             aggregated_results = self._aggregate_cv_results(cv_results)
 
-            self.logger.info(f"✅ Distributed cross-validation completed: "
-                           f"{len(cv_results)} folds processed")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Distributed cross-validation completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - {len(cv_results)}/{cv_folds} folds processed successfully")
             return aggregated_results
 
         except Exception as e:
-            self.logger.error(f"❌ Distributed cross-validation failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Distributed cross-validation failed after {execution_time:.3f}s: {e}")
             return {'error': str(e)}
 
     def gpu_accelerated_processing(self, tasks: List[Callable],
@@ -265,8 +307,8 @@ class ParallelProcessingCoordinator:
             # Initialize GPU manager if available
             gpu_manager = None
             try:
-                from ..m1_gpu_utils import M1GPUManager as _M1GPU
-                gpu_manager = _M1GPU(gpu_config)
+                from ..hardware.m1_optimizations import M1MemoryOptimizer as _M1GPU
+                gpu_manager = _M1GPU()
             except Exception:
                 gpu_manager = None
 

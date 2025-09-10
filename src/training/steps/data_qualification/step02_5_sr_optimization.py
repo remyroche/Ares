@@ -94,12 +94,12 @@ from src.utils.math_validation import (
     safe_matrix_inverse, math_safe, MathValidationError
 )
 from src.utils.parquet_utils import ParquetUtils
-from src.utils.serialization_utils import (
+from src.utils.core.file_operations import (
     JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer,
     save_json, load_json, save_pickle, load_pickle, save_parquet, load_parquet,
     save_data, load_data, SerializationError
 )
-from src.utils.data_processing_utils import (
+from src.utils.data.processing.transformers import (
     DataFrameValidator, DataFrameCleaner, DataFrameTransformer,
     DataQualityLevel, DataQualityIssue, DataQualityReport,
     validate_dataframe, clean_dataframe, transform_dataframe, get_dataframe_info
@@ -206,7 +206,7 @@ try:
     ADVANCED_FEATURES_AVAILABLE = True
 except ImportError:
     try:
-        from src.utils.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as AdvancedFeatureEngineeringStep
+        from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as AdvancedFeatureEngineeringStep
         ADVANCED_FEATURES_AVAILABLE = True
     except ImportError:
         AdvancedFeatureEngineeringStep = None

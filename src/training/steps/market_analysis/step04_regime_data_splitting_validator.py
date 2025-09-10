@@ -5,7 +5,7 @@ from src.utils.logger import system_logger
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 # Standardized imports from utils
-from src.utils.common_operations import (
+from src.utils.core.common import (
     safe_read_parquet,
     safe_file_exists,
     get_logger,
@@ -18,7 +18,7 @@ from src.utils.common_operations import (
     validate_dataframe_schema,
     validate_data_quality
 )
-from src.utils.math_validation import (
+from src.utils.core.math_utilities import (
     safe_divide,
     safe_log,
     safe_sqrt,
@@ -88,7 +88,7 @@ class BaseValidator:
         self.step_name = step_name
         self.config = config
         try:
-            from src.utils.enhanced_data_quality_validator import EnhancedDataQualityValidator  # type: ignore
+            from src.utils.data_quality.enhanced_data_quality_validator import EnhancedDataQualityValidator  # type: ignore
             self._dq_validator = EnhancedDataQualityValidator()
         except Exception:
             self._dq_validator = None

@@ -9,8 +9,20 @@ from sklearn.metrics import brier_score_loss
 from scipy.optimize import minimize_scalar
 from scipy.stats import beta
 import logging
+import time
+from datetime import datetime
 
-logger = logging.getLogger(__name__)
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.ConfidenceMetrics")
+    print("✅ Custom logger available for MLCommon.ConfidenceMetrics")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.ConfidenceMetrics")
+    _LOGGER.setLevel(logging.INFO)
+
+logger = _LOGGER
 
 
 def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) -> Dict[str, Any]:
@@ -24,10 +36,16 @@ def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) -
     Returns:
         Dictionary containing confidence and calibration metrics
     """
+    start_time = time.time()
+    _LOGGER.info("🎯 Starting confidence metrics calculation...")
+    
     if y_pred_proba is None or len(y_pred_proba) == 0:
+        _LOGGER.error("❌ No prediction probabilities available for confidence calculation")
         return {'error': 'No prediction probabilities available'}
     
     try:
+        _LOGGER.debug(f"📊 Processing {len(y_pred_proba)} samples with {y_pred_proba.shape[1]} classes")
+        
         # Calculate prediction confidence statistics
         max_probs = np.max(y_pred_proba, axis=1)
         
@@ -42,18 +60,30 @@ def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) -
             'medium_confidence_pct': float(np.mean((max_probs >= 0.6) & (max_probs <= 0.8)) * 100)
         }
         
+        _LOGGER.info(f"📈 Confidence stats - Mean: {confidence_metrics['mean_confidence']:.3f}, "
+                    f"Std: {confidence_metrics['std_confidence']:.3f}, "
+                    f"High conf: {confidence_metrics['high_confidence_pct']:.1f}%")
+        
         # Calculate calibration metrics
+        _LOGGER.debug("🔄 Calculating calibration metrics...")
         calibration_metrics = calculate_calibration_metrics(y_true, y_pred_proba)
         confidence_metrics.update(calibration_metrics)
         
         # Calculate prediction distribution statistics
+        _LOGGER.debug("📊 Calculating prediction distribution metrics...")
         distribution_metrics = calculate_prediction_distribution(y_pred_proba)
         confidence_metrics.update(distribution_metrics)
+        
+        execution_time = time.time() - start_time
+        _LOGGER.info(f"✅ Confidence metrics calculated successfully in {execution_time:.3f}s")
         
         return confidence_metrics
         
     except Exception as e:
-        logger.warning(f"Failed to calculate confidence metrics: {e}")
+        execution_time = time.time() - start_time
+        _LOGGER.error(f"❌ Failed to calculate confidence metrics after {execution_time:.3f}s: {e}")
+        _LOGGER.error(f"Input shapes - y_true: {y_true.shape if hasattr(y_true, 'shape') else 'unknown'}, "
+                     f"y_pred_proba: {y_pred_proba.shape if hasattr(y_pred_proba, 'shape') else 'unknown'}")
         return {'error': f'Confidence metrics calculation failed: {e}'}
 
 
@@ -68,9 +98,12 @@ def calculate_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) 
     Returns:
         Dictionary containing calibration metrics
     """
+    _LOGGER.debug("🔄 Starting calibration metrics calculation...")
+    
     try:
         if y_pred_proba.shape[1] == 2:
             # Binary classification
+            _LOGGER.debug("📊 Processing binary classification calibration...")
             brier_score = brier_score_loss(y_true, y_pred_proba[:, 1])
             
             # Calibration curve
@@ -81,6 +114,10 @@ def calculate_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) 
             # Calculate calibration error (ECE - Expected Calibration Error)
             ece = calculate_expected_calibration_error(y_true, y_pred_proba[:, 1], n_bins=10)
             
+            calibration_quality = _assess_calibration_quality(brier_score, ece)
+            
+            _LOGGER.info(f"📈 Binary calibration - Brier: {brier_score:.4f}, ECE: {ece:.4f}, Quality: {calibration_quality}")
+            
             return {
                 'brier_score': float(brier_score),
                 'expected_calibration_error': float(ece),
@@ -88,10 +125,11 @@ def calculate_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) 
                     'fraction_of_positives': fraction_of_positives.tolist(),
                     'mean_predicted_value': mean_predicted_value.tolist()
                 },
-                'calibration_quality': _assess_calibration_quality(brier_score, ece)
+                'calibration_quality': calibration_quality
             }
         else:
             # Multiclass classification - use macro average
+            _LOGGER.debug(f"📊 Processing multiclass calibration for {y_pred_proba.shape[1]} classes...")
             brier_scores = []
             for i in range(y_pred_proba.shape[1]):
                 class_mask = (y_true == i)
@@ -99,15 +137,18 @@ def calculate_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) 
                     brier_scores.append(brier_score_loss(class_mask, y_pred_proba[:, i]))
             
             mean_brier_score = np.mean(brier_scores) if brier_scores else 0.0
+            calibration_quality = _assess_calibration_quality(mean_brier_score, None)
+            
+            _LOGGER.info(f"📈 Multiclass calibration - Mean Brier: {mean_brier_score:.4f}, Quality: {calibration_quality}")
             
             return {
                 'brier_score': float(mean_brier_score),
                 'brier_scores_per_class': [float(score) for score in brier_scores],
-                'calibration_quality': _assess_calibration_quality(mean_brier_score, None)
+                'calibration_quality': calibration_quality
             }
             
     except Exception as e:
-        logger.warning(f"Failed to calculate calibration metrics: {e}")
+        _LOGGER.error(f"❌ Failed to calculate calibration metrics: {e}")
         return {
             'brier_score': None,
             'expected_calibration_error': None,
@@ -127,6 +168,8 @@ def calculate_expected_calibration_error(y_true: np.ndarray, y_pred_proba: np.nd
     Returns:
         Expected Calibration Error
     """
+    _LOGGER.debug(f"🔄 Calculating ECE with {n_bins} bins...")
+    
     try:
         bin_boundaries = np.linspace(0, 1, n_bins + 1)
         bin_lowers = bin_boundaries[:-1]
@@ -141,9 +184,11 @@ def calculate_expected_calibration_error(y_true: np.ndarray, y_pred_proba: np.nd
                 accuracy_in_bin = y_true[in_bin].mean()
                 avg_confidence_in_bin = y_pred_proba[in_bin].mean()
                 ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
-                
+        
+        _LOGGER.debug(f"📊 ECE calculated: {ece:.4f}")
         return float(ece)
-    except Exception:
+    except Exception as e:
+        _LOGGER.error(f"❌ Failed to calculate ECE: {e}")
         return 0.0
 
 
@@ -812,6 +857,58 @@ class ModelConfidenceCalibration:
         except Exception as e:
             self.logger.warning(f"Error calculating smoothness score: {e}")
             return 0.0
+
+
+def log_confidence_metrics(confidence_metrics: Dict[str, Any], model_name: str = "Model", logger_instance: Optional[logging.Logger] = None) -> None:
+    """
+    Log comprehensive confidence metrics in a structured format.
+    
+    Args:
+        confidence_metrics: Dictionary containing confidence metrics
+        model_name: Name of the model for logging context
+        logger_instance: Logger instance to use (defaults to module logger)
+    """
+    if logger_instance is None:
+        logger_instance = _LOGGER
+    
+    try:
+        if 'error' in confidence_metrics:
+            logger_instance.error(f"❌ {model_name} confidence metrics error: {confidence_metrics['error']}")
+            return
+        
+        # Log basic confidence statistics
+        if 'mean_confidence' in confidence_metrics:
+            logger_instance.info(f"🎯 {model_name} Confidence Stats:")
+            logger_instance.info(f"  📊 Mean: {confidence_metrics['mean_confidence']:.3f}")
+            logger_instance.info(f"  📊 Std: {confidence_metrics['std_confidence']:.3f}")
+            logger_instance.info(f"  📊 Range: [{confidence_metrics['min_confidence']:.3f}, {confidence_metrics['max_confidence']:.3f}]")
+            logger_instance.info(f"  📊 High conf (>0.8): {confidence_metrics['high_confidence_pct']:.1f}%")
+            logger_instance.info(f"  📊 Low conf (<0.6): {confidence_metrics['low_confidence_pct']:.1f}%")
+        
+        # Log calibration metrics
+        if 'brier_score' in confidence_metrics and confidence_metrics['brier_score'] is not None:
+            logger_instance.info(f"🎯 {model_name} Calibration:")
+            logger_instance.info(f"  📈 Brier Score: {confidence_metrics['brier_score']:.4f}")
+            if 'expected_calibration_error' in confidence_metrics and confidence_metrics['expected_calibration_error'] is not None:
+                logger_instance.info(f"  📈 ECE: {confidence_metrics['expected_calibration_error']:.4f}")
+            if 'calibration_quality' in confidence_metrics:
+                quality_emoji = "🟢" if confidence_metrics['calibration_quality'] == 'excellent' else "🟡" if confidence_metrics['calibration_quality'] == 'good' else "🔴"
+                logger_instance.info(f"  {quality_emoji} Quality: {confidence_metrics['calibration_quality']}")
+        
+        # Log distribution metrics
+        if 'mean_entropy' in confidence_metrics:
+            logger_instance.info(f"🎯 {model_name} Distribution:")
+            logger_instance.info(f"  📊 Mean Entropy: {confidence_metrics['mean_entropy']:.3f}")
+            logger_instance.info(f"  📊 Entropy Std: {confidence_metrics['std_entropy']:.3f}")
+            if 'uncertainty_pct' in confidence_metrics:
+                logger_instance.info(f"  📊 High Uncertainty: {confidence_metrics['uncertainty_pct']:.1f}%")
+        
+        # Log prediction diversity
+        if 'prediction_diversity' in confidence_metrics:
+            logger_instance.info(f"🎯 {model_name} Diversity: {confidence_metrics['prediction_diversity']:.3f}")
+        
+    except Exception as e:
+        logger_instance.error(f"❌ Failed to log confidence metrics for {model_name}: {e}")
 
 
 # Convenience function for easy integration

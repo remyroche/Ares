@@ -107,12 +107,44 @@ class SimpleQualityOrchestrator:
             }
 
         except json.JSONDecodeError as e:
+            error_details = self._analyze_json_error(e, file_path)
             return {
                 "file_path": str(file_path),
                 "file_name": file_path.name,
                 "context": context,
                 "analysis_timestamp": datetime.now().isoformat(),
                 "error": f"Invalid JSON: {str(e)}",
+                "error_details": error_details,
+                "quality_assessment": {"overall_quality": QualityLevel.CRITICAL},
+            }
+        except UnicodeDecodeError as e:
+            return {
+                "file_path": str(file_path),
+                "file_name": file_path.name,
+                "context": context,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "error": f"Encoding error: {str(e)}",
+                "error_details": f"File encoding issue. Try opening with different encoding (utf-8, latin-1, cp1252).",
+                "quality_assessment": {"overall_quality": QualityLevel.CRITICAL},
+            }
+        except PermissionError as e:
+            return {
+                "file_path": str(file_path),
+                "file_name": file_path.name,
+                "context": context,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "error": f"Permission denied: {str(e)}",
+                "error_details": "Check file permissions. File may be read-only or locked by another process.",
+                "quality_assessment": {"overall_quality": QualityLevel.CRITICAL},
+            }
+        except Exception as e:
+            return {
+                "file_path": str(file_path),
+                "file_name": file_path.name,
+                "context": context,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "error": f"Unexpected error: {str(e)}",
+                "error_details": "Unexpected error occurred while analyzing JSON file. Check file integrity.",
                 "quality_assessment": {"overall_quality": QualityLevel.CRITICAL},
             }
 
@@ -130,6 +162,7 @@ class SimpleQualityOrchestrator:
                     "context": context,
                     "analysis_timestamp": datetime.now().isoformat(),
                     "error": "Empty CSV file",
+                    "error_details": "CSV file contains no data rows. Check if the file is corrupted or was not properly saved.",
                     "quality_assessment": {"overall_quality": QualityLevel.CRITICAL},
                 }
 
@@ -159,6 +192,36 @@ class SimpleQualityOrchestrator:
                 "recommendations": self._generate_csv_recommendations(rows, structure_analysis),
             }
 
+        except UnicodeDecodeError as e:
+            return {
+                "file_path": str(file_path),
+                "file_name": file_path.name,
+                "context": context,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "error": f"Encoding error: {str(e)}",
+                "error_details": "CSV file encoding issue. Try opening with different encoding (utf-8, latin-1, cp1252).",
+                "quality_assessment": {"overall_quality": QualityLevel.CRITICAL},
+            }
+        except csv.Error as e:
+            return {
+                "file_path": str(file_path),
+                "file_name": file_path.name,
+                "context": context,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "error": f"CSV parsing error: {str(e)}",
+                "error_details": "CSV format error. Check for malformed CSV data, incorrect delimiters, or unescaped quotes.",
+                "quality_assessment": {"overall_quality": QualityLevel.CRITICAL},
+            }
+        except PermissionError as e:
+            return {
+                "file_path": str(file_path),
+                "file_name": file_path.name,
+                "context": context,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "error": f"Permission denied: {str(e)}",
+                "error_details": "Check file permissions. File may be read-only or locked by another process.",
+                "quality_assessment": {"overall_quality": QualityLevel.CRITICAL},
+            }
         except Exception as e:
             return {
                 "file_path": str(file_path),
@@ -166,6 +229,7 @@ class SimpleQualityOrchestrator:
                 "context": context,
                 "analysis_timestamp": datetime.now().isoformat(),
                 "error": f"CSV analysis failed: {str(e)}",
+                "error_details": "Unexpected error occurred while analyzing CSV file. Check file integrity and format.",
                 "quality_assessment": {"overall_quality": QualityLevel.CRITICAL},
             }
 
@@ -861,6 +925,58 @@ class SimpleQualityOrchestrator:
         lines.append("=" * 80)
 
         return "\n".join(lines)
+
+    def _analyze_json_error(self, error: json.JSONDecodeError, file_path: Path) -> str:
+        """Analyze JSON decode error and provide specific details."""
+        error_details = []
+        
+        # Basic error information
+        error_details.append(f"JSON parsing failed at line {error.lineno}, column {error.colno}")
+        
+        # Common JSON error patterns
+        error_msg = str(error.msg).lower()
+        
+        if "expecting" in error_msg:
+            if "value" in error_msg:
+                error_details.append("❌ Expected a JSON value (string, number, boolean, null, object, or array)")
+            elif "property name" in error_msg:
+                error_details.append("❌ Expected a property name in JSON object")
+            elif "colon" in error_msg:
+                error_details.append("❌ Expected a colon (:) after property name")
+            elif "comma" in error_msg:
+                error_details.append("❌ Expected a comma (,) to separate array elements or object properties")
+            elif "end of file" in error_msg:
+                error_details.append("❌ Unexpected end of file - JSON may be incomplete")
+        
+        if "unterminated" in error_msg:
+            if "string" in error_msg:
+                error_details.append("❌ Unterminated string - missing closing quote")
+            elif "comment" in error_msg:
+                error_details.append("❌ Unterminated comment - JSON doesn't support comments")
+        
+        if "invalid" in error_msg:
+            if "character" in error_msg:
+                error_details.append("❌ Invalid character in JSON - check for special characters or encoding issues")
+            elif "escape" in error_msg:
+                error_details.append("❌ Invalid escape sequence in string")
+        
+        if "trailing" in error_msg:
+            error_details.append("❌ Trailing comma found - JSON doesn't allow trailing commas")
+        
+        if "duplicate" in error_msg:
+            error_details.append("❌ Duplicate key found in JSON object")
+        
+        # Try to read the problematic line for context
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                if error.lineno <= len(lines):
+                    problem_line = lines[error.lineno - 1].strip()
+                    error_details.append(f"📄 Problematic line: {problem_line}")
+        except:
+            pass
+        
+        return " | ".join(error_details)
 
 
 def main():

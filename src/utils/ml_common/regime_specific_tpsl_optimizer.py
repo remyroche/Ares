@@ -51,8 +51,11 @@ class RegimeSpecificTPSLOptimizer:
             config: Configuration dictionary
 
         """
-        self.config = config
         self.logger = system_logger.getChild('RegimeSpecificTPSLOptimizer')
+        self.logger.info("🚀 Initializing RegimeSpecificTPSLOptimizer...")
+        start_time = time.time()
+        
+        self.config = config
         self.print = self.logger.info
         self.logger.info('ℹ️ Meta-labeling system removed - using only HMM market regimes for labeling')
         

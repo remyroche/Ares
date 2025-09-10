@@ -248,20 +248,34 @@ class MonteCarloEngine:
     
     def _validate_parameters(self, params: SimulationParameters) -> None:
         """Validate simulation parameters."""
+        self.logger.info("🔍 Validating simulation parameters...")
+        
         if params.n_simulations < self.config.min_simulations:
+            self.logger.error(f"❌ Too few simulations: {params.n_simulations}. Minimum: {self.config.min_simulations}")
             raise ValidationError(f"Too few simulations: {params.n_simulations}. Minimum: {self.config.min_simulations}")
         
         if params.n_simulations > self.config.max_simulations:
+            self.logger.error(f"❌ Too many simulations: {params.n_simulations}. Maximum: {self.config.max_simulations}")
             raise ValidationError(f"Too many simulations: {params.n_simulations}. Maximum: {self.config.max_simulations}")
         
         if params.n_periods <= 0:
+            self.logger.error(f"❌ Invalid number of periods: {params.n_periods}")
             raise ValidationError(f"Invalid number of periods: {params.n_periods}")
         
         if params.initial_value <= 0:
+            self.logger.error(f"❌ Invalid initial value: {params.initial_value}")
             raise ValidationError(f"Invalid initial value: {params.initial_value}")
         
         if params.volatility < 0:
+            self.logger.error(f"❌ Invalid volatility: {params.volatility}")
             raise ValidationError(f"Invalid volatility: {params.volatility}")
+        
+        self.logger.info("✅ Simulation parameters validated successfully")
+        self.logger.info(f"📊 Simulations: {params.n_simulations:,}")
+        self.logger.info(f"📅 Periods: {params.n_periods}")
+        self.logger.info(f"💰 Initial value: {params.initial_value}")
+        self.logger.info(f"📈 Volatility: {params.volatility:.2%}")
+        self.logger.info(f"📊 Drift: {params.drift:.2%}")
     
     async def _execute_simulation(
         self, 
@@ -335,7 +349,9 @@ class MonteCarloEngine:
         chunk_size = self.config.chunk_size
         n_chunks = (params.n_simulations + chunk_size - 1) // chunk_size
         
-        self.logger.info(f"📊 Splitting {params.n_simulations} simulations into {n_chunks} chunks")
+        self.logger.info(f"📊 Splitting {params.n_simulations:,} simulations into {n_chunks} chunks")
+        self.logger.info(f"🔧 Chunk size: {chunk_size:,} simulations per chunk")
+        self.logger.info(f"⚡ Using {self.m1_cpu.max_workers} parallel workers")
         
         # Create tasks for parallel execution
         tasks = []
@@ -344,21 +360,40 @@ class MonteCarloEngine:
             end_idx = min((i + 1) * chunk_size, params.n_simulations)
             chunk_simulations = end_idx - start_idx
             
+            self.logger.debug(f"🔄 Creating task for chunk {i+1}/{n_chunks}: {chunk_simulations:,} simulations")
+            
             task = self.m1_cpu.submit_task(
                 self._simulate_chunk,
                 chunk_simulations, params, historical_data, start_idx
             )
             tasks.append(task)
         
+        self.logger.info(f"🚀 Executing {len(tasks)} parallel simulation tasks...")
+        start_time = time.time()
+        
         # Execute all tasks
         chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
         
+        execution_time = time.time() - start_time
+        self.logger.info(f"⏱️ Parallel execution completed in {execution_time:.2f}s")
+        
         # Combine results
         valid_chunks = [chunk for chunk in chunk_results if not isinstance(chunk, Exception)]
+        failed_chunks = [chunk for chunk in chunk_results if isinstance(chunk, Exception)]
+        
+        if failed_chunks:
+            self.logger.warning(f"⚠️ {len(failed_chunks)} chunks failed out of {len(chunk_results)}")
+            for i, error in enumerate(failed_chunks):
+                self.logger.error(f"❌ Chunk {i} failed: {error}")
+        
         if not valid_chunks:
+            self.logger.error("❌ All simulation chunks failed")
             raise RuntimeError("All simulation chunks failed")
         
+        self.logger.info(f"✅ Successfully processed {len(valid_chunks)} chunks")
         simulated_paths = np.concatenate(valid_chunks, axis=0)
+        
+        self.logger.info(f"📊 Combined results: {simulated_paths.shape[0]:,} simulations, {simulated_paths.shape[1]} periods")
         
         return simulated_paths
     

@@ -22,24 +22,24 @@ import numpy as np
 from datetime import datetime
 
 # Import our new unified utilities
-from src.utils.data_qualification_base import (
-    DataQualificationStep, 
-    DataQualificationResult, 
+from src.utils.data_quality.data_qualification_base import (
+    DataQualificationStep,
+    DataQualificationResult,
     StepMetrics,
     create_step_result,
     validate_dataframe_input
 )
-from src.utils.data_qualification_config import (
+from src.utils.data_quality.data_qualification_config import (
     DataQualificationConfig,
     SROptimizationConfig,
     PerformanceConfig
 )
-from src.utils.data_qualification_error_handler import (
+from src.utils.data_quality.data_qualification_error_handler import (
     DataQualificationErrorHandler,
     handle_utility_failure,
     error_context
 )
-from src.utils.data_qualification_imports import (
+from src.utils.data_quality.data_qualification_imports import (
     DataQualificationImportManager,
     get_utility_suite
 )

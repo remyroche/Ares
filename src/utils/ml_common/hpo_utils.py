@@ -28,15 +28,26 @@ import logging
 from functools import partial
 from concurrent.futures import ThreadPoolExecutor
 import warnings
+import time
 
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
-from ..m1_gpu_utils import M1GPUManager
+from ..hardware.m1_optimizations import M1MemoryOptimizer
 from ..parallel_processing_optimizer import ParallelProcessor
 from .parallel_processing import ParallelProcessingCoordinator
 from .memory_optimization import MemoryEfficientTraining
 
-logger = logging.getLogger(__name__)
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.HPOUtils")
+    print("✅ Custom logger available for MLCommon.HPOUtils")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.HPOUtils")
+    _LOGGER.setLevel(logging.INFO)
+
+logger = _LOGGER
 
 try:
     import optuna
@@ -64,6 +75,8 @@ class HyperparameterOptimization:
         """Initialize hyperparameter optimization utilities with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('HPOUtils')
+        
+        _LOGGER.info("🚀 Initializing HyperparameterOptimization...")
 
         # Configuration defaults
         self.enable_gpu = self.config.get('enable_gpu', True)
@@ -73,8 +86,15 @@ class HyperparameterOptimization:
         self.default_timeout = self.config.get('default_timeout', 300)
         self.enable_pruning = self.config.get('enable_pruning', True)
 
+        _LOGGER.info(f"⚙️ Configuration - GPU enabled: {self.enable_gpu}")
+        _LOGGER.info(f"⚙️ Configuration - Parallel processing: {self.enable_parallel}")
+        _LOGGER.info(f"⚙️ Configuration - Max workers: {self.max_workers}")
+        _LOGGER.info(f"⚙️ Configuration - Default trials: {self.default_n_trials}")
+        _LOGGER.info(f"⚙️ Configuration - Default timeout: {self.default_timeout}s")
+        _LOGGER.info(f"⚙️ Configuration - Pruning enabled: {self.enable_pruning}")
+
         # Initialize utilities
-        self.gpu_manager = M1GPUManager() if self.enable_gpu else None
+        self.gpu_manager = M1MemoryOptimizer() if self.enable_gpu else None
         self.parallel_processor = ParallelProcessor() if self.enable_parallel else None
         self.parallel_coordinator = ParallelProcessingCoordinator(self.config) if self.enable_parallel else None
         self.memory_tools = MemoryEfficientTraining(self.config)
@@ -83,7 +103,10 @@ class HyperparameterOptimization:
         self.optimization_history = []
 
         # Default search spaces for common models
+        _LOGGER.debug("🔧 Initializing default search spaces...")
         self.default_search_spaces = self._initialize_default_search_spaces()
+        
+        _LOGGER.info("✅ HyperparameterOptimization initialized successfully")
 
     def automated_search_space_generation(self, model_type: str,
                                        data_characteristics: Dict[str, Any]) -> Dict[str, Any]:
@@ -97,6 +120,10 @@ class HyperparameterOptimization:
         Returns:
             Generated search space dictionary
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔧 Starting automated search space generation for {model_type}...")
+        _LOGGER.debug(f"📊 Data characteristics: {data_characteristics}")
+        
         try:
             self.logger.info(f"🔍 Generating automated search space for {model_type}")
 
@@ -128,11 +155,14 @@ class HyperparameterOptimization:
             # Add data-driven adjustments
             search_space = self._adjust_search_space_for_data(search_space, data_characteristics)
 
-            self.logger.info(f"✅ Generated search space with {len(search_space)} parameters for {model_type}")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Generated search space with {len(search_space)} parameters for {model_type} in {execution_time:.3f}s")
+            _LOGGER.debug(f"📊 Search space parameters: {list(search_space.keys())}")
             return search_space
 
         except Exception as e:
-            self.logger.error(f"❌ Automated search space generation failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Automated search space generation failed after {execution_time:.3f}s: {e}")
             return {}
 
     def multi_objective_optimization(self, model_factory: Callable,
@@ -154,10 +184,13 @@ class HyperparameterOptimization:
         Returns:
             Multi-objective optimization results
         """
+        start_time = time.time()
+        _LOGGER.info(f"🎯 Starting multi-objective optimization...")
+        _LOGGER.info(f"📊 Parameters - Objectives: {objectives}, Trials: {n_trials}, Data shape: {X.shape}")
+        
         try:
-            self.logger.info(f"🎯 Starting multi-objective optimization with {len(objectives)} objectives")
-
             if not OPTUNA_AVAILABLE:
+                _LOGGER.error("❌ Optuna required for multi-objective optimization")
                 raise ImportError("Optuna required for multi-objective optimization")
 
             def objective(trial):
@@ -215,11 +248,14 @@ class HyperparameterOptimization:
                 ]
             }
 
-            self.logger.info(f"✅ Multi-objective optimization completed - Best scores: {results['best_scores']}")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Multi-objective optimization completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Best scores: {results['best_scores']}, Trials: {len(study.trials)}")
             return results
 
         except Exception as e:
-            self.logger.error(f"❌ Multi-objective optimization failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Multi-objective optimization failed after {execution_time:.3f}s: {e}")
             return {'error': str(e)}
 
     def early_stopping_optimization(self, model_factory: Callable,

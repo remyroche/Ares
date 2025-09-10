@@ -93,11 +93,25 @@ class FeatureGenerationOptimizer:
     
     def __init__(self, config: Optional[FeatureOptimizationConfig] = None):
         """Initialize the feature generation optimizer."""
-        self.config = config or FeatureOptimizationConfig()
         self.logger = logger.getChild('FeatureGenerationOptimizer')
+        self.logger.info("🚀 Initializing FeatureGenerationOptimizer...")
+        start_time = time.time()
+        
+        self.config = config or FeatureOptimizationConfig()
+        self.logger.info(f"📊 Configuration loaded: {self.config.optimization_method.value}")
         
         # Initialize components
+        self.logger.debug("🔧 Initializing GPU manager...")
         self.gpu_manager = M1GPUManager() if self.config.parallel_processing else None
+        if self.gpu_manager:
+            self.logger.debug("✅ GPU manager initialized")
+        else:
+            self.logger.debug("ℹ️ GPU manager not initialized (parallel processing disabled)")
+        
+        init_time = time.time() - start_time
+        self.logger.info(f"✅ FeatureGenerationOptimizer initialized in {init_time:.3f}s")
+        self.logger.info(f"📊 Min lookback: {self.config.min_lookback}, Max lookback: {self.config.max_lookback}")
+        self.logger.info(f"📊 CV folds: {self.config.cv_folds}, Parallel processing: {self.config.parallel_processing}")
         self.parallel_processor = ParallelProcessor(max_workers=self.config.max_workers)
         
         # Cache for optimization results

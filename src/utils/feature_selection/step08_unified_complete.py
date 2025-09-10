@@ -177,8 +177,16 @@ class UnifiedStep08:
                  data_cleaner: Optional[Any] = None,
                  data_transformer: Optional[Any] = None) -> None:
         """Initialize unified Step08 with comprehensive configuration and dependency injection."""
+        start_time = time.time()
+        self.logger.info('Initializing UnifiedStep08...')
+        
         self.config = config
         self.logger = get_logger('UnifiedStep08')
+        
+        self.logger.info(f'Configuration keys: {list(self.config.keys())}')
+        self.logger.info(f'Symbol: {self.config.get("symbol", "ETHUSDT")}')
+        self.logger.info(f'Exchange: {self.config.get("exchange", "BINANCE")}')
+        self.logger.info(f'Timeframe: {self.config.get("timeframe", "1m")}')
         
         # Dependency injection for utilities
         self.parquet_utils = parquet_utils
@@ -189,12 +197,17 @@ class UnifiedStep08:
         self.data_cleaner = data_cleaner
         self.data_transformer = data_transformer
         
+        self.logger.info('Dependency injection completed')
+        
         # Initialize serialization utilities
         if UTILITIES_AVAILABLE:
             self.json_serializer = JSONSerializer()
             self.pickle_serializer = PickleSerializer()
             self.parquet_serializer = ParquetSerializer()
             self.universal_serializer = UniversalSerializer()
+            self.logger.info('Serialization utilities initialized')
+        else:
+            self.logger.warning('Serialization utilities not available')
         
         # Initialize components
         self._initialize_optimizations()
@@ -202,35 +215,56 @@ class UnifiedStep08:
         self._initialize_metrics()
         self._initialize_utility_integration()
         
-        self.logger.info('🚀 Unified Step08 initialized successfully with extensive utility integration')
+        init_time = time.time() - start_time
+        self.logger.info(f'🚀 Unified Step08 initialized successfully with extensive utility integration in {init_time:.3f} seconds')
 
     def _initialize_optimizations(self) -> None:
         """Initialize enhanced optimization components."""
+        start_time = time.time()
         self.logger.info("🔧 Initializing enhanced optimization components...")
         
         # Initialize M1 optimizations if available
         if ENHANCED_OPTIMIZATIONS_AVAILABLE:
             try:
+                self.logger.info('Initializing M1 GPU manager...')
                 self.m1_gpu_manager = get_m1_gpu_manager()
+                
+                self.logger.info('Initializing M1 memory optimizer...')
                 self.m1_memory_optimizer = get_m1_memory_optimizer()
+                
+                self.logger.info('Initializing M1 CPU optimizer...')
                 self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                
+                self.logger.info('Initializing pipeline executor...')
                 self.pipeline_executor = OptimizedPipelineExecutor(max_concurrent_stages=6)
+                
+                self.logger.info('Initializing matrix operations...')
                 self.matrix_operations = EnhancedMatrixOperations(
                     enable_gpu_acceleration=True,
                     enable_memory_optimization=True
                 )
+                
+                self.logger.info('Initializing optimization selector...')
                 self.optimization_selector = IntelligentOptimizationSelector()
+                
+                self.logger.info('Initializing data manager...')
                 self.data_manager = OptimizedDataManager(
                     base_path=Path("data_cache"),
                     enable_compression=True,
                     enable_caching=True
                 )
+                
+                self.logger.info('Initializing error handler...')
                 self.error_handler = ErrorHandler(enable_recovery=True)
-                self.logger.info("✅ Enhanced optimizations initialized")
+                
+                opt_time = time.time() - start_time
+                self.logger.info(f"✅ Enhanced optimizations initialized in {opt_time:.3f} seconds")
             except Exception as e:
-                self.logger.warning(f"⚠️ Enhanced optimizations failed: {e}")
+                opt_time = time.time() - start_time
+                self.logger.warning(f"⚠️ Enhanced optimizations failed after {opt_time:.3f} seconds: {e}")
                 self._initialize_fallback_optimizations()
         else:
+            self.logger.info('Enhanced optimizations not available, using fallback')
             self._initialize_fallback_optimizations()
 
     def _initialize_fallback_optimizations(self) -> None:
@@ -346,43 +380,75 @@ class UnifiedStep08:
         try:
             start_time = datetime.now()
             self.logger.info('🚀 Starting Unified Step08 execution...')
+            self.logger.info(f'Pipeline state keys: {list(pipeline_state.keys()) if pipeline_state else "None"}')
+            self.logger.info(f'Training input keys: {list(training_input.keys()) if training_input else "None"}')
             
             # Step 1: Load and validate data
+            step1_start = time.time()
             self.logger.info('📊 Step 1: Loading and validating data...')
             unified_data = await self._load_and_validate_data(training_input, pipeline_state)
+            step1_time = time.time() - step1_start
+            self.logger.info(f'Step 1 completed in {step1_time:.3f} seconds')
+            
             if unified_data is None:
                 return {'success': False, 'error': 'Failed to load or validate data'}
             
             # Step 2: Regime balance analysis and handling
+            step2_start = time.time()
             self.logger.info('⚖️ Step 2: Analyzing and handling regime balance...')
             balanced_data = await self._handle_regime_balance(unified_data)
+            step2_time = time.time() - step2_start
+            self.logger.info(f'Step 2 completed in {step2_time:.3f} seconds')
             
             # Step 3: Advanced feature selection with bias prevention
+            step3_start = time.time()
             self.logger.info('🔍 Step 3: Advanced feature selection with bias prevention...')
             selected_features = await self._advanced_feature_selection(balanced_data)
+            step3_time = time.time() - step3_start
+            self.logger.info(f'Step 3 completed in {step3_time:.3f} seconds')
             
             # Step 4: Financial metrics calculation
+            step4_start = time.time()
             self.logger.info('💰 Step 4: Calculating financial metrics...')
             financial_metrics = await self._calculate_financial_metrics(balanced_data, selected_features)
+            step4_time = time.time() - step4_start
+            self.logger.info(f'Step 4 completed in {step4_time:.3f} seconds')
             
             # Step 5: Risk assessment
+            step5_start = time.time()
             self.logger.info('⚠️ Step 5: Comprehensive risk assessment...')
             risk_metrics = await self._comprehensive_risk_assessment(balanced_data, selected_features, financial_metrics)
+            step5_time = time.time() - step5_start
+            self.logger.info(f'Step 5 completed in {step5_time:.3f} seconds')
             
             # Step 6: Generate comprehensive results
+            step6_start = time.time()
             self.logger.info('📋 Step 6: Generating comprehensive results...')
             results = await self._generate_comprehensive_results(
                 balanced_data, selected_features, financial_metrics, risk_metrics
             )
+            step6_time = time.time() - step6_start
+            self.logger.info(f'Step 6 completed in {step6_time:.3f} seconds')
             
             # Step 7: Save artifacts and reports
+            step7_start = time.time()
             self.logger.info('💾 Step 7: Saving artifacts and reports...')
             artifacts = await self._save_artifacts_and_reports(results)
+            step7_time = time.time() - step7_start
+            self.logger.info(f'Step 7 completed in {step7_time:.3f} seconds')
             
             end_time = datetime.now()
             execution_time = (end_time - start_time).total_seconds()
             
             self.logger.info(f'✅ Unified Step08 execution completed successfully in {execution_time:.2f} seconds')
+            self.logger.info(f'Step timing breakdown:')
+            self.logger.info(f'  Step 1 (Data Loading): {step1_time:.3f}s')
+            self.logger.info(f'  Step 2 (Regime Balance): {step2_time:.3f}s')
+            self.logger.info(f'  Step 3 (Feature Selection): {step3_time:.3f}s')
+            self.logger.info(f'  Step 4 (Financial Metrics): {step4_time:.3f}s')
+            self.logger.info(f'  Step 5 (Risk Assessment): {step5_time:.3f}s')
+            self.logger.info(f'  Step 6 (Results Generation): {step6_time:.3f}s')
+            self.logger.info(f'  Step 7 (Artifacts Saving): {step7_time:.3f}s')
             
             return {
                 'success': True,
@@ -392,57 +458,112 @@ class UnifiedStep08:
                 'metadata': {
                     'start_time': start_time.isoformat(),
                     'end_time': end_time.isoformat(),
-                    'config': self.config
+                    'config': self.config,
+                    'step_timings': {
+                        'step1_data_loading': step1_time,
+                        'step2_regime_balance': step2_time,
+                        'step3_feature_selection': step3_time,
+                        'step4_financial_metrics': step4_time,
+                        'step5_risk_assessment': step5_time,
+                        'step6_results_generation': step6_time,
+                        'step7_artifacts_saving': step7_time
+                    }
                 }
             }
             
         except Exception as e:
-            self.logger.error(f'❌ Unified Step08 execution failed: {e}')
+            end_time = datetime.now()
+            execution_time = (end_time - start_time).total_seconds() if 'start_time' in locals() else 0
+            self.logger.error(f'❌ Unified Step08 execution failed after {execution_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return {
                 'success': False,
                 'error': str(e),
-                'execution_time': (datetime.now() - start_time).total_seconds() if 'start_time' in locals() else 0
+                'execution_time': execution_time,
+                'metadata': {
+                    'start_time': start_time.isoformat() if 'start_time' in locals() else None,
+                    'end_time': end_time.isoformat(),
+                    'error_type': type(e).__name__,
+                    'config': self.config
+                }
             }
 
     async def _load_and_validate_data(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Load and validate data with comprehensive checks."""
+        start_time = time.time()
         try:
-            # Implementation would go here
             self.logger.info("📊 Loading and validating data...")
+            self.logger.info(f'Training input keys: {list(training_input.keys()) if training_input else "None"}')
+            self.logger.info(f'Pipeline state keys: {list(pipeline_state.keys()) if pipeline_state else "None"}')
+            
+            # Implementation would go here
             # Placeholder implementation
-            return pd.DataFrame()
+            result = pd.DataFrame()
+            
+            load_time = time.time() - start_time
+            self.logger.info(f'Data loading and validation completed in {load_time:.3f} seconds')
+            return result
         except Exception as e:
-            self.logger.error(f"❌ Data loading failed: {e}")
+            load_time = time.time() - start_time
+            self.logger.error(f"❌ Data loading failed after {load_time:.3f} seconds: {e}")
+            self.logger.error(f'Error type: {type(e).__name__}')
             return None
 
     async def _handle_regime_balance(self, data: pd.DataFrame) -> pd.DataFrame:
         """Handle regime balance with comprehensive rebalancing."""
+        start_time = time.time()
         try:
-            # Implementation would go here
             self.logger.info("⚖️ Handling regime balance...")
-            return data
+            self.logger.info(f'Input data shape: {data.shape}, memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB')
+            
+            # Implementation would go here
+            result = data
+            
+            balance_time = time.time() - start_time
+            self.logger.info(f'Regime balance handling completed in {balance_time:.3f} seconds')
+            return result
         except Exception as e:
-            self.logger.error(f"❌ Regime balance handling failed: {e}")
+            balance_time = time.time() - start_time
+            self.logger.error(f"❌ Regime balance handling failed after {balance_time:.3f} seconds: {e}")
+            self.logger.error(f'Error type: {type(e).__name__}')
             return data
 
     async def _advanced_feature_selection(self, data: pd.DataFrame) -> Dict[str, List[str]]:
         """Advanced feature selection with bias prevention."""
+        start_time = time.time()
         try:
-            # Implementation would go here
             self.logger.info("🔍 Performing advanced feature selection...")
-            return {}
+            self.logger.info(f'Input data shape: {data.shape}, columns: {len(data.columns)}')
+            
+            # Implementation would go here
+            result = {}
+            
+            selection_time = time.time() - start_time
+            self.logger.info(f'Advanced feature selection completed in {selection_time:.3f} seconds')
+            return result
         except Exception as e:
-            self.logger.error(f"❌ Feature selection failed: {e}")
+            selection_time = time.time() - start_time
+            self.logger.error(f"❌ Feature selection failed after {selection_time:.3f} seconds: {e}")
+            self.logger.error(f'Error type: {type(e).__name__}')
             return {}
 
     async def _calculate_financial_metrics(self, data: pd.DataFrame, selected_features: Dict[str, List[str]]) -> FinancialMetrics:
         """Calculate comprehensive financial metrics."""
+        start_time = time.time()
         try:
-            # Implementation would go here
             self.logger.info("💰 Calculating financial metrics...")
-            return FinancialMetrics()
+            self.logger.info(f'Input data shape: {data.shape}, selected features: {len(selected_features)}')
+            
+            # Implementation would go here
+            result = FinancialMetrics()
+            
+            metrics_time = time.time() - start_time
+            self.logger.info(f'Financial metrics calculation completed in {metrics_time:.3f} seconds')
+            return result
         except Exception as e:
-            self.logger.error(f"❌ Financial metrics calculation failed: {e}")
+            metrics_time = time.time() - start_time
+            self.logger.error(f"❌ Financial metrics calculation failed after {metrics_time:.3f} seconds: {e}")
+            self.logger.error(f'Error type: {type(e).__name__}')
             return FinancialMetrics()
 
     async def _comprehensive_risk_assessment(self, data: pd.DataFrame, selected_features: Dict[str, List[str]], financial_metrics: FinancialMetrics) -> RiskMetrics:

@@ -24,7 +24,7 @@ project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
 
-from .utils.common_operations import ensure_directory, safe_json_dump
+from src.utils.core.common import ensure_directory, safe_json_dump
 from .utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Import our new modular components
@@ -51,7 +51,7 @@ REQUIRED_MODULES = [
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
-enhanced_matrix_operations = PipelineStandards.safe_import('src.utils.feature_engineering.enhanced_matrix_operations', None)
+enhanced_matrix_operations = PipelineStandards.safe_import('src.feature_engineering.enhanced_matrix_operations', None)
 error_handler = PipelineStandards.safe_import('src.utils.error_handler', None)
 system_logger = PipelineStandards.safe_import('src.utils.logger', None)
 feature_engineering_optimizer = PipelineStandards.safe_import('src.training.feature_engineering_optimizer', None)

@@ -29,13 +29,66 @@ class BacktestingReportGenerator:
         self.quality_metrics = {}
         self.performance_metrics = {}
         self.recommendations = []
+        
+        # Initialize logger
+        self.logger = logging.getLogger(f"{__name__}.BacktestingReportGenerator")
+        self.logger.info(f"🚀 Initializing BacktestingReportGenerator for {symbol} on {exchange} ({timeframe})")
+        self.logger.info(f"📁 Data directory: {data_dir}")
+        
         ensure_directory(self.data_dir)
+        self.logger.info(f"✅ Directory ensured: {self.data_dir}")
 
     def generate_comprehensive_report(self, pipeline_results: Dict[str, Any], logger_data: Dict[str, Any], output_file: Optional[str]=None) -> Dict[str, Any]:
         """Generate comprehensive backtesting report."""
-        report = {'execution_summary': self._generate_execution_summary(pipeline_results), 'backtesting_results': self._generate_backtesting_results(pipeline_results), 'regime_analysis': self._generate_regime_analysis(pipeline_results), 'model_performance': self._generate_model_performance_analysis(pipeline_results), 'risk_analysis': self._generate_risk_analysis(pipeline_results), 'quality_assessment': self._generate_quality_assessment(pipeline_results, logger_data), 'performance_analysis': self._generate_performance_analysis(logger_data), 'data_quality_report': self._generate_data_quality_report(), 'validation_results': self._generate_validation_results(pipeline_results), 'error_analysis': self._generate_error_analysis(logger_data), 'recommendations': self._generate_recommendations(pipeline_results, logger_data), 'troubleshooting_guide': self._generate_troubleshooting_guide(logger_data), 'metadata': self._generate_metadata()}
+        self.logger.info("📊 Starting comprehensive report generation")
+        start_time = time.time()
+        
+        self.logger.info("🔍 Generating execution summary...")
+        report = {'execution_summary': self._generate_execution_summary(pipeline_results)}
+        
+        self.logger.info("📈 Generating backtesting results...")
+        report['backtesting_results'] = self._generate_backtesting_results(pipeline_results)
+        
+        self.logger.info("🎯 Generating regime analysis...")
+        report['regime_analysis'] = self._generate_regime_analysis(pipeline_results)
+        
+        self.logger.info("🤖 Generating model performance analysis...")
+        report['model_performance'] = self._generate_model_performance_analysis(pipeline_results)
+        
+        self.logger.info("⚠️ Generating risk analysis...")
+        report['risk_analysis'] = self._generate_risk_analysis(pipeline_results)
+        
+        self.logger.info("✅ Generating quality assessment...")
+        report['quality_assessment'] = self._generate_quality_assessment(pipeline_results, logger_data)
+        
+        self.logger.info("⚡ Generating performance analysis...")
+        report['performance_analysis'] = self._generate_performance_analysis(logger_data)
+        
+        self.logger.info("📋 Generating data quality report...")
+        report['data_quality_report'] = self._generate_data_quality_report()
+        
+        self.logger.info("🔍 Generating validation results...")
+        report['validation_results'] = self._generate_validation_results(pipeline_results)
+        
+        self.logger.info("❌ Generating error analysis...")
+        report['error_analysis'] = self._generate_error_analysis(logger_data)
+        
+        self.logger.info("💡 Generating recommendations...")
+        report['recommendations'] = self._generate_recommendations(pipeline_results, logger_data)
+        
+        self.logger.info("🔧 Generating troubleshooting guide...")
+        report['troubleshooting_guide'] = self._generate_troubleshooting_guide(logger_data)
+        
+        self.logger.info("📝 Generating metadata...")
+        report['metadata'] = self._generate_metadata()
+        
         if output_file:
+            self.logger.info(f"💾 Saving report to: {output_file}")
             safe_json_dump(report, output_file, indent = 2)
+            self.logger.info(f"✅ Report saved successfully to: {output_file}")
+        
+        generation_time = time.time() - start_time
+        self.logger.info(f"🎉 Comprehensive report generation completed in {generation_time:.2f} seconds")
         return report
 
     def generate_step_report(self, step_name: str, step_results: Dict[str, Any], symbol: str, timeframe: str, data_dir: str, output_file: Optional[str]=None) -> Dict[str, Any]:

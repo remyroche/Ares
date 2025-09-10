@@ -34,9 +34,18 @@ class MLMemoryManager:
     """Memory manager specifically designed for ML operations."""
     
     def __init__(self):
-        self.memory_optimizer = get_m1_memory_optimizer()
-        self.operation_memory_usage = {}
         self.logger = logger.getChild('MLMemoryManager')
+        self.logger.info("🚀 Initializing MLMemoryManager...")
+        start_time = time.time()
+        
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.logger.debug("✅ Memory optimizer initialized")
+        
+        self.operation_memory_usage = {}
+        self.logger.debug("✅ Operation memory usage tracking initialized")
+        
+        init_time = time.time() - start_time
+        self.logger.info(f"✅ MLMemoryManager initialized in {init_time:.3f}s")
         
     def estimate_ml_memory_requirements(
         self, 

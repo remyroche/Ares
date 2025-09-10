@@ -41,18 +41,35 @@ class Step1Orchestrator:
     @log_important_calls
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
+        # 🖨️ THOROUGH PRINTING: Step1 Orchestrator Initialization
+        print("🔧 INITIALIZING STEP1 ORCHESTRATOR")
+        print(f"   📁 Data cache path: {data_cache_path}")
+        
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
+        print(f"   ✅ Data cache directory created/verified: {self.data_cache_path}")
 
         # Initialize components
+        print("   🔧 Initializing components...")
+        
         self.gap_detector = DataGapDetector(data_cache_path)
+        print("   ✅ Data gap detector initialized")
+        
         self.aggtrades_validator = AggtradesValidator(data_cache_path)
+        print("   ✅ Aggtrades validator initialized")
+        
         self.data_preparation = DataPreparation(data_cache_path)
+        print("   ✅ Data preparation initialized")
         self.data_downloader = MissingDataDownloaderAndGapFiller(data_cache_path)
+        print("   ✅ Data downloader initialized")
+        
         self.comprehensive_gap_filler = ComprehensiveGapFiller(data_cache_path)
+        print("   ✅ Comprehensive gap filler initialized")
 
         # Initialize enhanced stability components
         self._stability_enabled = True
+        print("   ✅ Enhanced stability components initialized")
+        print("   🎉 Step1 orchestrator initialization complete")
         try:
             from .enhanced_data_resampler import EnhancedDataResampler
             self.enhanced_resampler = EnhancedDataResampler(data_cache_path)

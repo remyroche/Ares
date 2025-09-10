@@ -63,8 +63,12 @@ class LookaheadProtection:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize lookahead protection with configuration."""
-        self.config = config or {}
         self.logger = logger.getChild('LookaheadProtection')
+        self.logger.info("🚀 Initializing LookaheadProtection...")
+        start_time = time.time()
+        
+        self.config = config or {}
+        self.logger.info(f"📊 Configuration loaded with {len(self.config)} parameters")
 
         # Configuration defaults
         self.strict_mode = self.config.get('strict_mode', True)
@@ -72,6 +76,10 @@ class LookaheadProtection:
         self.enable_automatic_filtering = self.config.get('enable_automatic_filtering', True)
         self.detection_log = []
         self.current_timestamp = None
+        
+        self.logger.info(f"📊 Strict mode: {self.strict_mode}")
+        self.logger.info(f"📊 Tolerance seconds: {self.tolerance_seconds}")
+        self.logger.info(f"📊 Automatic filtering: {self.enable_automatic_filtering}")
 
         # Enhanced configuration for new features
         self.enable_gpu = self.config.get('enable_gpu', GPU_AVAILABLE)
@@ -79,16 +87,37 @@ class LookaheadProtection:
         self.rolling_window_size = self.config.get('rolling_window_size', 1000)
         self.information_barrier_rules = self.config.get('information_barrier_rules', {})
         self.feature_alignment_threshold = self.config.get('feature_alignment_threshold', timedelta(minutes=1))
+        
+        self.logger.info(f"📊 GPU enabled: {self.enable_gpu}")
+        self.logger.info(f"📊 Memory optimization: {self.enable_memory_optimization}")
+        self.logger.info(f"📊 Rolling window size: {self.rolling_window_size}")
 
         # Initialize utilities
+        self.logger.debug("🔧 Initializing GPU manager...")
         self.gpu_manager = M1GPUManager() if self.enable_gpu else None
+        if self.gpu_manager:
+            self.logger.debug("✅ GPU manager initialized")
+        else:
+            self.logger.debug("ℹ️ GPU manager not initialized")
+            
+        self.logger.debug("🔧 Initializing memory optimizer...")
         self.memory_optimizer = M1MemoryOptimizer() if self.enable_memory_optimization else None
+        if self.memory_optimizer:
+            self.logger.debug("✅ Memory optimizer initialized")
+        else:
+            self.logger.debug("ℹ️ Memory optimizer not initialized")
 
         # Initialize existing detector if available
+        self.logger.debug("🔧 Initializing base detector...")
         if EXISTING_DETECTOR_AVAILABLE:
             self.base_detector = LookaheadBiasDetector(strict_mode=self.strict_mode)
+            self.logger.debug("✅ Base detector initialized")
         else:
             self.base_detector = None
+            self.logger.warning("⚠️ Base detector not available")
+        
+        init_time = time.time() - start_time
+        self.logger.info(f"✅ LookaheadProtection initialized in {init_time:.3f}s")
 
     def set_current_timestamp(self, timestamp: datetime) -> None:
         """Set the current timestamp for bias detection."""

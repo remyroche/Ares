@@ -3,6 +3,12 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 Unified Step08 Methods Implementation - Part 3
 """
 
+import time
+import logging
+
+# Initialize logger
+logger = logging.getLogger('Step08UnifiedMethods')
+
 # Import existing SHAP and LIME analyzers
 try:
     from src.training.model_interpretability.shap_analyzer import SHAPAnalyzer
@@ -103,27 +109,40 @@ except ImportError:
 
     async def _advanced_feature_selection(self, data: pd.DataFrame) -> Dict[str, List[str]]:
         """Advanced feature selection with bias prevention."""
+        start_time = time.time()
         try:
             self.logger.info('🔍 Starting advanced feature selection...')
+            self.logger.info(f'Input data shape: {data.shape}, columns: {len(data.columns)}')
             
             # Extract features and target
             feature_columns = [col for col in data.columns if col not in ['composite_cluster_id', 'timestamp']]
             X = data[feature_columns]
+            self.logger.info(f'Feature columns extracted: {len(feature_columns)} features')
             
             # Create target from regime labels for feature selection
             y = data['composite_cluster_id'].astype(int)
+            self.logger.info(f'Target variable created: {len(y)} samples, {len(y.unique())} unique regimes')
             
             # Phase 1: Initial feature selection
+            phase1_start = time.time()
             self.logger.info('📊 Phase 1: Initial feature selection...')
             phase1_features = await self._phase1_feature_selection(X, y)
+            phase1_time = time.time() - phase1_start
+            self.logger.info(f'Phase 1 completed in {phase1_time:.3f} seconds: {len(phase1_features)} features')
             
             # Phase 2: Advanced feature selection with bias prevention
+            phase2_start = time.time()
             self.logger.info('🎯 Phase 2: Advanced feature selection with bias prevention...')
             phase2_features = await self._phase2_feature_selection(X[phase1_features], y)
+            phase2_time = time.time() - phase2_start
+            self.logger.info(f'Phase 2 completed in {phase2_time:.3f} seconds: {len(phase2_features)} features')
             
             # Phase 3: Feature validation and stability assessment
+            phase3_start = time.time()
             self.logger.info('✅ Phase 3: Feature validation and stability assessment...')
             validated_features = await self._validate_feature_stability(X, phase2_features, y)
+            phase3_time = time.time() - phase3_start
+            self.logger.info(f'Phase 3 completed in {phase3_time:.3f} seconds: {len(validated_features)} features')
             
             # Create final feature sets
             feature_sets = {
@@ -137,18 +156,29 @@ except ImportError:
             for target_size in self.phase2_targets:
                 if len(validated_features) >= target_size:
                     feature_sets[f'top_{target_size}'] = validated_features[:target_size]
+                    self.logger.info(f'Added top_{target_size} feature set: {len(validated_features[:target_size])} features')
             
-            self.logger.info(f'✅ Feature selection completed: {len(feature_columns)} → {len(validated_features)} features')
+            total_time = time.time() - start_time
+            self.logger.info(f'✅ Feature selection completed in {total_time:.3f} seconds: {len(feature_columns)} → {len(validated_features)} features')
+            self.logger.info(f'Phase timing breakdown:')
+            self.logger.info(f'  Phase 1: {phase1_time:.3f}s')
+            self.logger.info(f'  Phase 2: {phase2_time:.3f}s')
+            self.logger.info(f'  Phase 3: {phase3_time:.3f}s')
+            
             return feature_sets
             
         except Exception as e:
-            self.logger.error(f'Failed to perform advanced feature selection: {e}')
+            total_time = time.time() - start_time
+            self.logger.error(f'Failed to perform advanced feature selection after {total_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return {}
 
     async def _phase1_feature_selection(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         """Phase 1: Initial feature selection using mRMR and Random Forest."""
+        start_time = time.time()
         try:
             feature_names = X.columns.tolist()
+            self.logger.info(f'Phase 1 feature selection: {len(feature_names)} features, {len(y)} samples')
             X_values = X.values
             y_values = y.values
             
@@ -169,10 +199,12 @@ except ImportError:
             # Combine results
             consensus_features = list(set(mrmr_features) & set(rf_features))
             all_features = list(set(mrmr_features) | set(rf_features))
+            self.logger.info(f'Feature combination: consensus={len(consensus_features)}, union={len(all_features)}')
             
             # Select final features
             final_features = consensus_features.copy()
             remaining_slots = self.phase1_target_features - len(final_features)
+            self.logger.info(f'Consensus features: {len(final_features)}, remaining slots: {remaining_slots}')
             
             # Add remaining features from union
             for feature in all_features:
@@ -180,31 +212,51 @@ except ImportError:
                     final_features.append(feature)
                     remaining_slots -= 1
             
-            self.logger.info(f'✅ Phase 1 complete: {len(feature_names)} → {len(final_features)} features')
+            phase1_time = time.time() - start_time
+            self.logger.info(f'✅ Phase 1 complete in {phase1_time:.3f} seconds: {len(feature_names)} → {len(final_features)} features')
             self.logger.info(f'   Consensus features: {len(consensus_features)}')
+            self.logger.info(f'   Final target: {self.phase1_target_features}')
             
             return final_features
             
         except Exception as e:
-            self.logger.error(f'Phase 1 feature selection failed: {e}')
+            phase1_time = time.time() - start_time
+            self.logger.error(f'Phase 1 feature selection failed after {phase1_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return []
 
     def _mrmr_selection(self, X_values: np.ndarray, y_values: np.ndarray, feature_names: List[str], n_features: int) -> List[str]:
         """Minimum Redundancy Maximum Relevance feature selection."""
+        start_time = time.time()
         try:
+            self.logger.info(f'mRMR selection: {len(feature_names)} features, target: {n_features}')
+            
             # Calculate relevance scores (mutual information)
+            relevance_start = time.time()
             if NUMBA_AVAILABLE:
+                self.logger.info('Using Numba-accelerated mutual information calculation')
                 relevance_scores = fast_mutual_info_discrete(X_values, y_values)
             else:
+                self.logger.info('Using standard sklearn mutual information calculation')
                 relevance_scores = mutual_info_classif(X_values, y_values, random_state=42)
             
+            relevance_time = time.time() - relevance_start
+            self.logger.info(f'Relevance scores calculated in {relevance_time:.3f} seconds')
+            
             # Calculate correlation matrix
+            corr_start = time.time()
             if NUMBA_AVAILABLE:
+                self.logger.info('Using Numba-accelerated correlation matrix calculation')
                 corr_matrix = np.abs(fast_correlation_matrix(X_values))
             else:
+                self.logger.info('Using standard NumPy correlation matrix calculation')
                 corr_matrix = np.abs(np.corrcoef(X_values.T))
             
+            corr_time = time.time() - corr_start
+            self.logger.info(f'Correlation matrix calculated in {corr_time:.3f} seconds')
+            
             # mRMR algorithm
+            mrmr_start = time.time()
             selected_indices = []
             remaining_indices = list(range(len(feature_names)))
             
@@ -212,8 +264,10 @@ except ImportError:
             first_idx = np.argmax(relevance_scores)
             selected_indices.append(first_idx)
             remaining_indices.remove(first_idx)
+            self.logger.info(f'Initial feature selected: {feature_names[first_idx]} (relevance: {relevance_scores[first_idx]:.4f})')
             
             # Iteratively select features
+            iteration = 0
             while len(selected_indices) < n_features and remaining_indices:
                 remaining_relevance = relevance_scores[remaining_indices]
                 redundancy_scores = np.mean(corr_matrix[np.ix_(remaining_indices, selected_indices)], axis=1)
@@ -221,25 +275,48 @@ except ImportError:
                 
                 best_idx_in_remaining = np.argmax(mrmr_scores)
                 best_idx = remaining_indices[best_idx_in_remaining]
+                best_score = mrmr_scores[best_idx_in_remaining]
                 
                 selected_indices.append(best_idx)
                 remaining_indices.remove(best_idx)
+                iteration += 1
+                
+                # Log progress every 10 iterations
+                if iteration % 10 == 0:
+                    self.logger.info(f'mRMR iteration {iteration}: selected {feature_names[best_idx]} (score: {best_score:.4f})')
+            
+            mrmr_time = time.time() - mrmr_start
+            total_time = time.time() - start_time
+            self.logger.info(f'mRMR selection completed in {total_time:.3f} seconds: {len(selected_indices)} features selected')
+            self.logger.info(f'  Relevance calculation: {relevance_time:.3f}s')
+            self.logger.info(f'  Correlation calculation: {corr_time:.3f}s')
+            self.logger.info(f'  mRMR algorithm: {mrmr_time:.3f}s')
             
             return [feature_names[idx] for idx in selected_indices]
             
         except Exception as e:
-            self.logger.error(f'mRMR selection failed: {e}')
+            total_time = time.time() - start_time
+            self.logger.error(f'mRMR selection failed after {total_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return []
 
     def _rf_selection(self, X_values: np.ndarray, y_values: np.ndarray, feature_names: List[str], n_features: int) -> List[str]:
         """Random Forest feature selection with time-series validation."""
+        start_time = time.time()
+        self.logger.info(f'Starting Random Forest feature selection: {X_values.shape[1]} features, {X_values.shape[0]} samples, target: {n_features} features')
+        
         try:
             # Use time series cross-validation
             tscv = TimeSeriesSplit(n_splits=min(5, 3))
             feature_importances = np.zeros(X_values.shape[1])
             
-            for train_idx, val_idx in tscv.split(X_values):
+            self.logger.info(f'Using TimeSeriesSplit with {tscv.get_n_splits()} splits for Random Forest training')
+            
+            for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X_values)):
+                fold_start = time.time()
                 X_train, y_train = X_values[train_idx], y_values[train_idx]
+                
+                self.logger.info(f'Fold {fold_idx + 1}: training on {len(train_idx)} samples, validating on {len(val_idx)} samples')
                 
                 rf = RandomForestClassifier(
                     n_estimators=100,
@@ -249,19 +326,33 @@ except ImportError:
                 )
                 rf.fit(X_train, y_train)
                 feature_importances += rf.feature_importances_
+                
+                fold_time = time.time() - fold_start
+                self.logger.info(f'Fold {fold_idx + 1} completed in {fold_time:.3f} seconds')
             
             feature_importances /= tscv.get_n_splits()
             
             # Select top features
             top_indices = np.argsort(feature_importances)[-n_features:]
-            return [feature_names[idx] for idx in top_indices]
+            selected_features = [feature_names[idx] for idx in top_indices]
+            
+            total_time = time.time() - start_time
+            self.logger.info(f'Random Forest selection completed in {total_time:.3f} seconds: {len(selected_features)} features selected')
+            self.logger.info(f'Top feature importance scores: {[f"{feature_names[idx]}: {feature_importances[idx]:.4f}" for idx in top_indices[-5:]]}')
+            
+            return selected_features
             
         except Exception as e:
-            self.logger.error(f'RF selection failed: {e}')
+            total_time = time.time() - start_time
+            self.logger.error(f'Random Forest selection failed after {total_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return []
 
     async def _phase2_feature_selection(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         """Phase 2: Advanced feature selection with Boruta."""
+        start_time = time.time()
+        self.logger.info(f'Starting Phase 2 feature selection: {X.shape[1]} features, {X.shape[0]} samples')
+        
         try:
             if not BORUTA_AVAILABLE:
                 self.logger.warning('Boruta not available, using RF importance fallback')
@@ -277,6 +368,8 @@ except ImportError:
                 n_jobs=-1
             )
             
+            self.logger.info('Initializing Boruta with Random Forest base estimator')
+            
             # Initialize Boruta
             boruta = BorutaPy(
                 rf,
@@ -287,7 +380,11 @@ except ImportError:
             )
             
             # Fit Boruta
+            fit_start = time.time()
+            self.logger.info('Fitting Boruta feature selection...')
             boruta.fit(X.values, y.values)
+            fit_time = time.time() - fit_start
+            self.logger.info(f'Boruta fitting completed in {fit_time:.3f} seconds')
             
             # Get results
             confirmed_features = X.columns[boruta.support_].tolist()
@@ -299,14 +396,23 @@ except ImportError:
             # Combine confirmed and tentative features
             final_features = confirmed_features + tentative_features
             
+            total_time = time.time() - start_time
+            self.logger.info(f'Phase 2 feature selection completed in {total_time:.3f} seconds: {len(final_features)} features selected')
+            self.logger.info(f'  Boruta fitting: {fit_time:.3f}s')
+            
             return final_features
             
         except Exception as e:
-            self.logger.error(f'Phase 2 feature selection failed: {e}')
+            total_time = time.time() - start_time
+            self.logger.error(f'Phase 2 feature selection failed after {total_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return X.columns.tolist()
 
     def _rf_fallback_selection(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         """Fallback feature selection using Random Forest importance."""
+        start_time = time.time()
+        self.logger.info(f'Starting RF fallback selection: {X.shape[1]} features, {X.shape[0]} samples')
+        
         try:
             rf = RandomForestClassifier(
                 n_estimators=200,
@@ -314,7 +420,12 @@ except ImportError:
                 random_state=42,
                 n_jobs=-1
             )
+            
+            fit_start = time.time()
+            self.logger.info('Training Random Forest for fallback feature selection...')
             rf.fit(X, y)
+            fit_time = time.time() - fit_start
+            self.logger.info(f'Random Forest training completed in {fit_time:.3f} seconds')
             
             feature_importance = pd.Series(rf.feature_importances_, index=X.columns).sort_values(ascending=False)
             
@@ -322,14 +433,25 @@ except ImportError:
             threshold = feature_importance.quantile(0.2)
             selected_features = feature_importance[feature_importance > threshold].index.tolist()
             
+            total_time = time.time() - start_time
+            self.logger.info(f'RF fallback selection completed in {total_time:.3f} seconds: {len(selected_features)} features selected')
+            self.logger.info(f'  Training time: {fit_time:.3f}s')
+            self.logger.info(f'  Threshold: {threshold:.4f}')
+            self.logger.info(f'  Top 5 features: {feature_importance.head().to_dict()}')
+            
             return selected_features
             
         except Exception as e:
-            self.logger.error(f'RF fallback selection failed: {e}')
+            total_time = time.time() - start_time
+            self.logger.error(f'RF fallback selection failed after {total_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return X.columns.tolist()
 
     async def _validate_feature_stability(self, X: pd.DataFrame, features: List[str], y: pd.Series) -> List[str]:
         """Validate feature stability across time and regimes."""
+        start_time = time.time()
+        self.logger.info(f'Starting feature stability validation: {len(features)} features to validate')
+        
         try:
             self.logger.info('✅ Validating feature stability...')
             
@@ -351,13 +473,18 @@ except ImportError:
             # Sort by stability score
             stable_features.sort(key=lambda x: stability_scores.get(x, 0), reverse=True)
             
+            total_time = time.time() - start_time
+            self.logger.info(f'Feature stability validation completed in {total_time:.3f} seconds')
             self.logger.info(f'   Feature stability validation: {len(features)} → {len(stable_features)} features')
             self.logger.info(f'   Average stability score: {np.mean(list(stability_scores.values())):.3f}')
+            self.logger.info(f'   Stability threshold: {self.feature_stability_threshold:.3f}')
             
             return stable_features
             
         except Exception as e:
-            self.logger.error(f'Feature stability validation failed: {e}')
+            total_time = time.time() - start_time
+            self.logger.error(f'Feature stability validation failed after {total_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return features
 
     def _calculate_feature_stability(self, feature_values: pd.Series, y: pd.Series) -> float:
@@ -400,10 +527,14 @@ except ImportError:
             
         except Exception as e:
             self.logger.warning(f'Failed to calculate feature stability: {e}')
+            self.logger.warning(f'Error type: {type(e).__name__}')
             return 0.5  # Default moderate stability
 
     async def _calculate_financial_metrics(self, data: pd.DataFrame, selected_features: Dict[str, List[str]]) -> FinancialMetrics:
         """Calculate comprehensive financial metrics."""
+        start_time = time.time()
+        self.logger.info(f'Starting financial metrics calculation: {data.shape[0]} samples, {len(selected_features)} feature sets')
+        
         try:
             self.logger.info('💰 Calculating financial metrics...')
             
@@ -467,11 +598,20 @@ except ImportError:
                 if hasattr(financial_metrics, metric_name):
                     setattr(financial_metrics, metric_name, metric_values)
             
+            total_time = time.time() - start_time
+            self.logger.info(f'Financial metrics calculation completed in {total_time:.3f} seconds')
             self.logger.info('✅ Financial metrics calculated successfully')
+            self.logger.info(f'  Returns: {financial_metrics.returns}')
+            self.logger.info(f'  Volatility: {financial_metrics.volatility}')
+            self.logger.info(f'  Sharpe ratio: {financial_metrics.sharpe_ratio}')
+            self.logger.info(f'  Max drawdown: {financial_metrics.max_drawdown}')
+            
             return financial_metrics
             
         except Exception as e:
-            self.logger.error(f'Failed to calculate financial metrics: {e}')
+            total_time = time.time() - start_time
+            self.logger.error(f'Financial metrics calculation failed after {total_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return FinancialMetrics()
 
     def _calculate_returns(self, prices: pd.Series) -> Dict[str, float]:

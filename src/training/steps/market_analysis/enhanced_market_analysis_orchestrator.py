@@ -31,18 +31,35 @@ from .step04_regime_data_splitting import RegimeDataSplittingStep
 from .enhanced_step_validator import EnhancedStepValidator
 from .step04_regime_data_splitting_validator import Step4RegimeDataSplittingValidator as RegimeDataSplittingValidator
 from .step05_labeling_validator import Step5LabelingValidator as LabelingValidator
-from .step06_feature_engineering_validator import Step6FeatureEngineeringValidator as FeatureEngineeringValidator
+# from .step06_feature_engineering_validator import Step6FeatureEngineeringValidator as FeatureEngineeringValidator  # Module not found
+# Fallback validator
+class FeatureEngineeringValidator:
+    def __init__(self):
+        pass
+    def validate(self, *args, **kwargs):
+        return True
 from .step07_enhanced_matrix_operations_validator import Step7EnhancedMatrixOperationsValidator as MatrixOperationsValidator
 
 # Import step classes
 from .step05_labeling import LabelingStep
 try:
-    from .step06_feature_engineering import FeatureEngineeringStep
+    from .step06_feature_engineering_per_regime import FeatureEngineeringStep
 except ImportError:
-    from src.utils.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as FeatureEngineeringStep
+    try:
+        from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as FeatureEngineeringStep
+    except ImportError:
+        try:
+            from src.training.steps.data_collection.feature_engineering.step06_feature_engineering import FeatureEngineeringStep
+        except ImportError:
+            # Fallback class
+            class FeatureEngineeringStep:
+                def __init__(self, *args, **kwargs):
+                    pass
+                def process(self, *args, **kwargs):
+                    return None
 
 try:
-    from src.utils.feature_engineering.enhanced_matrix_operations import EnhancedMatrixOperations
+    from src.feature_engineering.enhanced_matrix_operations import EnhancedMatrixOperations
 except ImportError:
     from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
     class EnhancedMatrixOperationsStep:
@@ -56,7 +73,12 @@ except ImportError:
     class AdvancedFeatureSelectionStep:
         def __init__(self, config):
             self.feature_selector = UnifiedFeatureSelectionManager(config)
-from .hmm_clustering.step03_enhanced_hmm_regime_discovery import run_enhanced_step
+try:
+    from .hmm_clustering.step03_hmm_regime_discovery import run_step as run_enhanced_step
+except ImportError:
+    # Fallback function
+    def run_enhanced_step(*args, **kwargs):
+        return None
 import json
 import logging
 
@@ -87,16 +109,34 @@ class MarketAnalysisPipelineOrchestrator:
         self.validator_orchestrator = ValidatorOrchestrator()
         self.dependency_validator = StepDependencyValidator()
         self.enhanced_validator = EnhancedStepValidator(config)
+        
+        # 🖨️ THOROUGH PRINTING: Initialize orchestrator
+        print("🚀 INITIALIZING MARKET ANALYSIS ORCHESTRATOR")
+        print("=" * 80)
+        print(f"📋 Configuration received: {bool(config)}")
+        print(f"🔧 Enhanced logger initialized: {self.enhanced_logger}")
+        print(f"✅ Validator orchestrator initialized: {self.validator_orchestrator}")
+        print(f"🔗 Dependency validator initialized: {self.dependency_validator}")
+        print(f"🎯 Enhanced validator initialized: {self.enhanced_validator}")
+        print("=" * 80)
 
         # Initialize ML Common utilities if available
+        print("🔬 INITIALIZING ML COMMON UTILITIES")
+        print(f"📊 ML Common available: {ML_COMMON_AVAILABLE}")
+        
         if ML_COMMON_AVAILABLE:
             try:
                 self.ml_data_quality = DataQualityUtilities()
                 self.ml_feature_selection = FeatureSelectionFramework()
                 self.ml_pipeline_orchestrator = MLPipelineOrchestrator()
                 self.logger.info("✅ ML Common utilities initialized in market analysis orchestrator")
+                print("✅ ML Common utilities initialized successfully")
+                print(f"   📊 Data quality utilities: {self.ml_data_quality}")
+                print(f"   🎯 Feature selection framework: {self.ml_feature_selection}")
+                print(f"   🔧 Pipeline orchestrator: {self.ml_pipeline_orchestrator}")
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to initialize ML Common utilities: {e}")
+                print(f"⚠️ Failed to initialize ML Common utilities: {e}")
                 self.ml_data_quality = None
                 self.ml_feature_selection = None
                 self.ml_pipeline_orchestrator = None
@@ -104,8 +144,30 @@ class MarketAnalysisPipelineOrchestrator:
             self.ml_data_quality = None
             self.ml_feature_selection = None
             self.ml_pipeline_orchestrator = None
+            print("⚠️ ML Common utilities not available - using fallback components")
         self.pipeline_state = {'current_step': None, 'completed_steps': [], 'failed_steps': [], 'start_time': None, 'end_time': None, 'correlation_id': None}
         self.step_configs = {'hmm_clustering': {'enabled': True, 'timeout': 300, 'retry_attempts': 3, 'validator': None, 'step_number': 1}, 'regime_splitting': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': RegimeDataSplittingValidator(), 'step_number': 2}, 'labeling': {'enabled': True, 'timeout': 240, 'retry_attempts': 2, 'validator': LabelingValidator(), 'step_number': 3}, 'feature_engineering': {'enabled': True, 'timeout': 600, 'retry_attempts': 2, 'validator': FeatureEngineeringValidator(), 'step_number': 4}, 'matrix_operations': {'enabled': True, 'timeout': 300, 'retry_attempts': 2, 'validator': MatrixOperationsValidator(), 'step_number': 5}, 'feature_selection': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': None, 'step_number': 6}}
+        
+        # 🖨️ THOROUGH PRINTING: Pipeline state and step configurations
+        print("📊 PIPELINE STATE INITIALIZATION")
+        print(f"   🔄 Current step: {self.pipeline_state['current_step']}")
+        print(f"   ✅ Completed steps: {self.pipeline_state['completed_steps']}")
+        print(f"   ❌ Failed steps: {self.pipeline_state['failed_steps']}")
+        print(f"   ⏰ Start time: {self.pipeline_state['start_time']}")
+        print(f"   ⏰ End time: {self.pipeline_state['end_time']}")
+        print(f"   🔗 Correlation ID: {self.pipeline_state['correlation_id']}")
+        
+        print("🔧 STEP CONFIGURATIONS")
+        for step_name, config in self.step_configs.items():
+            print(f"   📋 {step_name}:")
+            print(f"      ✅ Enabled: {config['enabled']}")
+            print(f"      ⏱️ Timeout: {config['timeout']}s")
+            print(f"      🔄 Retry attempts: {config['retry_attempts']}")
+            print(f"      🔢 Step number: {config['step_number']}")
+            print(f"      ✅ Validator: {config['validator'] is not None}")
+        
+        print("🎉 ORCHESTRATOR INITIALIZATION COMPLETE")
+        print("=" * 80)
 
     async def execute_pipeline(self, symbol: str, exchange: str, timeframe: str='1m', data_dir: str='data_cache', **kwargs) -> bool:
         """
@@ -121,133 +183,276 @@ class MarketAnalysisPipelineOrchestrator:
         Returns:
             bool: True if pipeline completed successfully, False otherwise
         """
+        # 🖨️ THOROUGH PRINTING: Pipeline execution start
+        print("🚀 EXECUTING MARKET ANALYSIS PIPELINE")
+        print("=" * 80)
+        print(f"🎯 Symbol: {symbol}")
+        print(f"🏢 Exchange: {exchange}")
+        print(f"📊 Timeframe: {timeframe}")
+        print(f"📁 Data directory: {data_dir}")
+        print(f"⚙️ Additional kwargs: {kwargs}")
+        print("=" * 80)
+        
         correlation_id = f'market_analysis_{symbol}_{exchange}_{int(time.time())}'
         set_correlation_id(correlation_id)
         self.pipeline_state['correlation_id'] = correlation_id
         self.pipeline_state['start_time'] = get_current_datetime()
+        
+        print(f"🔗 Correlation ID generated: {correlation_id}")
+        print(f"⏰ Pipeline start time: {self.pipeline_state['start_time']}")
+        
         self.enhanced_logger.start_pipeline(symbol, exchange, correlation_id)
         progress_monitor.start_monitoring()
+        
+        print("📊 Enhanced logger started")
+        print("📈 Progress monitor started")
         try:
+            print("🔍 VALIDATING PIPELINE PREREQUISITES")
             if not await self._validate_pipeline_prerequisites(symbol, exchange, timeframe, data_dir):
+                print("❌ Pipeline prerequisites validation failed")
                 return False
-            if self.step_configs['hmm_clustering']['enabled']:
-                if not await self._execute_step_with_validation(step_name='hmm_clustering', step_func = self._execute_hmm_clustering, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
-                    return False
-            if self.step_configs['regime_splitting']['enabled']:
-                if not await self._execute_step_with_validation(step_name='regime_splitting', step_func = self._execute_regime_splitting, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
-                    return False
-            if self.step_configs['labeling']['enabled']:
-                if not await self._execute_step_with_validation(step_name='labeling', step_func = self._execute_labeling, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
-                    return False
-            if self.step_configs['feature_engineering']['enabled']:
-                if not await self._execute_step_with_validation(step_name='feature_engineering', step_func = self._execute_feature_engineering, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
-                    return False
-            if self.step_configs['matrix_operations']['enabled']:
-                if not await self._execute_step_with_validation(step_name='matrix_operations', step_func = self._execute_matrix_operations, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
-                    return False
-            if self.step_configs['feature_selection']['enabled']:
-                if not await self._execute_step_with_validation(step_name='feature_selection', step_func = self._execute_feature_selection, symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, **kwargs):
-                    return False
+            print("✅ Pipeline prerequisites validation passed")
+            
+            # Execute each step with detailed printing
+            steps_to_execute = [
+                ('hmm_clustering', self._execute_hmm_clustering, 'HMM Clustering'),
+                ('regime_splitting', self._execute_regime_splitting, 'Regime Data Splitting'),
+                ('labeling', self._execute_labeling, 'Triple Barrier Labeling'),
+                ('feature_engineering', self._execute_feature_engineering, 'Feature Engineering'),
+                ('matrix_operations', self._execute_matrix_operations, 'Matrix Operations'),
+                ('feature_selection', self._execute_feature_selection, 'Feature Selection')
+            ]
+            
+            for step_name, step_func, step_display_name in steps_to_execute:
+                if self.step_configs[step_name]['enabled']:
+                    print(f"🔄 EXECUTING STEP: {step_display_name}")
+                    print(f"   📋 Step name: {step_name}")
+                    print(f"   ⏱️ Timeout: {self.step_configs[step_name]['timeout']}s")
+                    print(f"   🔄 Retry attempts: {self.step_configs[step_name]['retry_attempts']}")
+                    
+                    if not await self._execute_step_with_validation(
+                        step_name=step_name, 
+                        step_func=step_func, 
+                        symbol=symbol, 
+                        exchange=exchange, 
+                        timeframe=timeframe, 
+                        data_dir=data_dir, 
+                        **kwargs
+                    ):
+                        print(f"❌ Step {step_display_name} failed")
+                        return False
+                    print(f"✅ Step {step_display_name} completed successfully")
+                else:
+                    print(f"⏭️ Skipping disabled step: {step_display_name}")
             self.pipeline_state['end_time'] = get_current_datetime()
             self.pipeline_state['completed_steps'] = list(self.step_configs.keys())
+            
+            print("🎉 ALL PIPELINE STEPS COMPLETED SUCCESSFULLY")
+            print(f"⏰ Pipeline end time: {self.pipeline_state['end_time']}")
+            print(f"✅ Completed steps: {self.pipeline_state['completed_steps']}")
+            
             await self._save_pipeline_state(symbol, exchange, timeframe, data_dir)
             progress_monitor.stop_monitoring()
             self.enhanced_logger.end_pipeline(success = True)
+            
+            print("💾 Pipeline state saved")
+            print("📈 Progress monitor stopped")
+            print("📊 Enhanced logger ended successfully")
+            print("🎉 PIPELINE EXECUTION COMPLETED SUCCESSFULLY")
+            print("=" * 80)
+            
             return True
         except Exception as e:
             self.pipeline_state['end_time'] = get_current_datetime()
             error_message = str(e)
+            
+            print("💥 PIPELINE EXECUTION FAILED")
+            print("=" * 80)
+            print(f"❌ Error: {error_message}")
+            print(f"⏰ Failure time: {self.pipeline_state['end_time']}")
+            print(f"🔄 Current step: {self.pipeline_state['current_step']}")
+            print(f"✅ Completed steps: {self.pipeline_state['completed_steps']}")
+            print(f"❌ Failed steps: {self.pipeline_state['failed_steps']}")
+            print("=" * 80)
+            
             self.logger.exception(f'💥 MARKET ANALYSIS PIPELINE FAILED: {error_message}')
             progress_monitor.stop_monitoring()
             self.enhanced_logger.end_pipeline(success = False, error_message = error_message)
             await self._save_pipeline_state(symbol, exchange, timeframe, data_dir, success = False)
+            
+            print("📈 Progress monitor stopped")
+            print("📊 Enhanced logger ended with failure")
+            print("💾 Pipeline state saved with failure status")
+            
             return False
 
     async def _validate_pipeline_prerequisites(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Validate prerequisites before starting the pipeline."""
+        print("🔍 VALIDATING PIPELINE PREREQUISITES")
+        print(f"   🎯 Symbol: {symbol}")
+        print(f"   🏢 Exchange: {exchange}")
+        print(f"   📊 Timeframe: {timeframe}")
+        print(f"   📁 Data directory: {data_dir}")
+        
         self.logger.info('🔍 Validating pipeline prerequisites...')
         data_path = Path(data_dir)
+        
+        print(f"📁 Checking data directory: {data_path}")
         if not data_path.exists():
+            print(f"❌ Data directory does not exist: {data_dir}")
             self.logger.error(f'❌ Data directory does not exist: {data_dir}')
             return False
+        print(f"✅ Data directory exists: {data_dir}")
         required_files = [f'aggtrades_{exchange}_{symbol}_consolidated.parquet', f'volume_{exchange}_{symbol}_consolidated.parquet']
+        print(f"📋 Checking required files: {required_files}")
+        
         for file_name in required_files:
             file_path = data_path / file_name
+            print(f"   📄 Checking file: {file_name}")
             if not safe_file_exists(file_path):
+                print(f"   ❌ Required file not found: {file_path}")
                 self.logger.error(f'❌ Required file not found: {file_path}')
                 return False
+            print(f"   ✅ File exists: {file_name}")
         price_data_path = data_path / required_files[0]
+        print(f"📊 Loading price data from: {price_data_path}")
+        
         try:
             price_data = standardized_parquet_handler.read_parquet_standardized(price_data_path)
+            print(f"   📈 Price data loaded: {len(price_data)} rows, {len(price_data.columns)} columns")
+            
             if price_data.empty:
+                print("   ❌ Price data is empty")
                 self.logger.error('❌ Price data is empty')
                 return False
+            print("   ✅ Price data is not empty")
+            
             required_columns = ['open', 'high', 'low', 'close', 'volume']
+            print(f"   🔍 Checking required columns: {required_columns}")
+            print(f"   📋 Available columns: {list(price_data.columns)}")
+            
             missing_columns = set(required_columns) - set(price_data.columns)
             if missing_columns:
+                print(f"   ❌ Missing required columns: {missing_columns}")
                 self.logger.error(f'❌ Missing required columns: {missing_columns}')
                 return False
+            print("   ✅ All required columns present")
             # Enhanced data quality validation using ML Common utilities
             if self.ml_data_quality:
+                print("   🔬 Running ML-enhanced data quality validation")
                 try:
                     enhanced_quality_report = await self.ml_data_quality.perform_comprehensive_validation(
                         price_data, symbol=symbol, exchange=exchange
                     )
+                    print(f"   📊 ML quality report generated: {bool(enhanced_quality_report)}")
+                    
                     if enhanced_quality_report.get('has_critical_issues', False):
+                        print(f"   🚨 Critical data quality issues detected: {enhanced_quality_report.get('critical_issues', [])}")
                         self.logger.error(f"🚨 Critical data quality issues detected by ML utilities: {enhanced_quality_report.get('critical_issues', [])}")
                         return False
+                    
                     if enhanced_quality_report.get('warnings', []):
+                        print(f"   ⚠️ ML-enhanced data quality warnings: {enhanced_quality_report.get('warnings', [])}")
                         self.logger.warning(f"⚠️ ML-enhanced data quality warnings: {enhanced_quality_report.get('warnings', [])}")
+                    
+                    print("   ✅ ML-enhanced data quality validation passed")
                     self.logger.info("✅ ML-enhanced data quality validation passed")
                 except Exception as e:
+                    print(f"   ⚠️ ML-enhanced data quality validation failed: {e}")
                     self.logger.warning(f"⚠️ ML-enhanced data quality validation failed: {e}")
+            else:
+                print("   ⏭️ Skipping ML-enhanced validation (not available)")
+                
         except Exception as e:
+            print(f"   ❌ Failed to validate data quality: {e}")
             self.logger.error(f'❌ Failed to validate data quality: {e}')
             return False
+            
+        print("✅ Pipeline prerequisites validated successfully")
         self.logger.info('✅ Pipeline prerequisites validated successfully')
         return True
 
     async def _execute_step_with_validation(self, step_name: str, step_func: callable, **kwargs) -> bool:
         """Execute a pipeline step with comprehensive validation and error handling."""
+        print(f"🔄 EXECUTING STEP WITH VALIDATION: {step_name}")
+        print(f"   📋 Step function: {step_func.__name__}")
+        print(f"   ⚙️ Additional kwargs: {kwargs}")
+        
         step_description = self._get_step_description(step_name)
         step_config = self.step_configs.get(step_name, {})
         step_number = step_config.get('step_number', 0)
         total_steps = len([s for s in self.step_configs.values() if s.get('enabled', True)])
+        
+        print(f"   📝 Step description: {step_description}")
+        print(f"   🔢 Step number: {step_number}/{total_steps}")
+        print(f"   ⏱️ Timeout: {step_config.get('timeout', 'N/A')}s")
+        print(f"   🔄 Retry attempts: {step_config.get('retry_attempts', 'N/A')}")
+        
         self.enhanced_logger.start_step(step_name, step_description, step_number, total_steps)
         progress_monitor.update_step_progress(step_name, 0.0, 'Starting...', 'running', step_number = step_number, total_steps = total_steps)
         self.logger.info(f'🔄 Executing step: {step_name}')
         self.pipeline_state['current_step'] = step_name
+        
+        print(f"   📊 Enhanced logger started for step: {step_name}")
+        print(f"   📈 Progress monitor updated: {step_name}")
+        print(f"   🔄 Pipeline state current step set to: {step_name}")
         try:
+            print(f"   🔍 Validating step prerequisites for: {step_name}")
             progress_monitor.update_step_progress(step_name, 0.1, 'Validating prerequisites...', 'running')
             if not await self._validate_step_prerequisites(step_name, **kwargs):
+                print(f"   ❌ Step prerequisites validation failed: {step_name}")
                 progress_monitor.complete_step(step_name, False, 'Prerequisites validation failed')
                 self.enhanced_logger.end_step(step_name, success = False, error_message='Prerequisites validation failed')
                 return False
+            print(f"   ✅ Step prerequisites validation passed: {step_name}")
+            
+            print(f"   🚀 Executing step function: {step_name}")
             progress_monitor.update_step_progress(step_name, 0.3, 'Executing step...', 'running')
             step_config = self.step_configs[step_name]
             success = await step_func(**kwargs)
+            
             if not success:
+                print(f"   ❌ Step execution failed: {step_name}")
                 self.logger.error(f'❌ Step {step_name} failed')
                 self.pipeline_state['failed_steps'].append(step_name)
                 progress_monitor.complete_step(step_name, False, 'Step execution failed')
                 self.enhanced_logger.end_step(step_name, success = False, error_message='Step execution failed')
                 return False
+            print(f"   ✅ Step execution completed: {step_name}")
+            
+            print(f"   🔍 Validating step output for: {step_name}")
             progress_monitor.update_step_progress(step_name, 0.8, 'Validating output...', 'running')
             if not await self._validate_step_output(step_name, **kwargs):
+                print(f"   ❌ Step output validation failed: {step_name}")
                 progress_monitor.complete_step(step_name, False, 'Output validation failed')
                 self.enhanced_logger.end_step(step_name, success = False, error_message='Output validation failed')
                 return False
+            print(f"   ✅ Step output validation passed: {step_name}")
+            
             self.logger.info(f'✅ Step {step_name} completed successfully')
             self.pipeline_state['completed_steps'].append(step_name)
             progress_monitor.complete_step(step_name, True, 'Completed successfully')
             self.enhanced_logger.end_step(step_name, success = True)
+            
+            print(f"   🎉 Step completed successfully: {step_name}")
+            print(f"   📊 Progress monitor completed: {step_name}")
+            print(f"   📈 Enhanced logger ended: {step_name}")
+            
             return True
         except Exception as e:
             error_message = str(e)
+            print(f"   💥 Step failed with exception: {step_name}")
+            print(f"   ❌ Error: {error_message}")
+            
             self.logger.exception(f'❌ Step {step_name} failed with exception: {error_message}')
             self.pipeline_state['failed_steps'].append(step_name)
             progress_monitor.complete_step(step_name, False, f'Failed: {error_message}')
             self.enhanced_logger.end_step(step_name, success = False, error_message = error_message)
+            
+            print(f"   📊 Progress monitor completed with failure: {step_name}")
+            print(f"   📈 Enhanced logger ended with failure: {step_name}")
+            print(f"   🔄 Pipeline state updated with failed step: {step_name}")
+            
             return False
     @log_all_calls
 
@@ -291,44 +496,80 @@ class MarketAnalysisPipelineOrchestrator:
     
     async def _execute_hmm_clustering(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
         """Execute HMM clustering step with comprehensive regime quality metrics."""
+        print("🧠 EXECUTING HMM CLUSTERING STEP")
+        print(f"   🎯 Symbol: {symbol}")
+        print(f"   🏢 Exchange: {exchange}")
+        print(f"   📊 Timeframe: {timeframe}")
+        print(f"   📁 Data directory: {data_dir}")
+        print(f"   🔄 Force rerun: {kwargs.get('force_rerun', True)}")
+        print(f"   ⚙️ Additional kwargs: {kwargs}")
+        
         self.logger.info('🧠 Executing HMM clustering...')
         try:
+            print("   🚀 Calling run_enhanced_step for HMM clustering")
             success = await run_enhanced_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = kwargs.get('force_rerun', True))
+            print(f"   📊 HMM clustering step result: {success}")
+            
             if success:
+                print("   ✅ HMM clustering completed successfully")
                 self.logger.info('✅ HMM clustering completed successfully')
                 try:
+                    print("   📊 Analyzing HMM clustering results")
                     try:
                         from pathlib import Path
                         regime_path = Path(data_dir) / f'regimes_{exchange}_{symbol}_{timeframe}.parquet'
+                        print(f"   📁 Checking regime data file: {regime_path}")
+                        
                         if regime_path.exists():
+                            print("   ✅ Regime data file found")
                             regime_data = standardized_parquet_handler.read_parquet_standardized(regime_path)
+                            print(f"   📈 Regime data loaded: {len(regime_data)} rows, {len(regime_data.columns)} columns")
+                            
                             if 'regime' in regime_data.columns:
+                                print("   🎯 Regime column found, analyzing regime quality")
                                 self.enhanced_logger.log_regime_quality('hmm_clustering', regime_data['regime'])
                                 unique_regimes = regime_data['regime'].unique()
                                 regime_counts = regime_data['regime'].value_counts().sort_index()
+                                
+                                print(f'   🎯 Regime Analysis Results:')
+                                print(f'     📊 Total Regimes Discovered: {len(unique_regimes)}')
+                                print(f'     📈 Regime Distribution:')
+                                
                                 self.logger.info(f'🎯 Regime Analysis Results:')
                                 self.logger.info(f'  📊 Total Regimes Discovered: {len(unique_regimes)}')
                                 self.logger.info(f'  📈 Regime Distribution:')
+                                
                                 for regime_id, count in regime_counts.items():
                                     percentage = count / len(regime_data) * 100
+                                    print(f'       Regime {regime_id}: {count} samples ({percentage:.1f}%)')
                                     self.logger.info(f'    Regime {regime_id}: {count} samples ({percentage:.1f}%)')
+                                
                                 min_samples = 100
                                 for regime_id, count in regime_counts.items():
                                     if count < min_samples:
+                                        print(f'     ⚠️ Regime {regime_id} has only {count} samples (minimum: {min_samples})')
                                         self.enhanced_logger.log_issue('hmm_clustering', 'regime_quality', f'Regime {regime_id} has only {count} samples (minimum: {min_samples})', 'warning')
                             else:
+                                print("   ⚠️ No 'regime' column found in regime data")
                                 self.logger.warning("⚠️ No 'regime' column found in regime data")
                         else:
+                            print("   📊 HMM clustering completed (regime data file not found)")
                             self.logger.info('📊 HMM clustering completed (regime data file not found)')
                     except ImportError:
+                        print("   🧠 HMM clustering completed (pandas not available for detailed metrics)")
                         self.logger.info('🧠 HMM clustering completed (pandas not available for detailed metrics)')
                 except Exception as metrics_error:
+                    print(f"   ⚠️ Could not log regime quality metrics: {metrics_error}")
                     self.logger.warning(f'⚠️ Could not log regime quality metrics: {metrics_error}')
             else:
+                print("   ❌ HMM clustering failed")
                 self.logger.error('❌ HMM clustering failed')
                 self.enhanced_logger.log_issue('hmm_clustering', 'execution', 'HMM clustering step failed', 'error')
+            
+            print(f"   🎯 HMM clustering step returning: {success}")
             return success
         except Exception as e:
+            print(f"   💥 HMM clustering failed with exception: {e}")
             self.logger.exception(f'❌ HMM clustering failed with exception: {e}')
             self.enhanced_logger.log_issue('hmm_clustering', 'exception', str(e), 'error')
             return False

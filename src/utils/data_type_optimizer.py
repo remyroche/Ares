@@ -1,233 +1,216 @@
-
 """
-Data Type Optimization Utilities
+Data type optimization utilities for memory efficiency.
 
-This module provides utilities for optimizing data types to reduce memory usage
-and improve computational efficiency in feature engineering.
+This module provides utilities for optimizing data types in DataFrames
+to reduce memory usage while maintaining data integrity.
 """
 
 import logging
-import numpy as np
 import pandas as pd
-import typing
+import numpy as np
+from typing import Any, Dict, List, Optional, Union
 
+# Setup logging
 logger = logging.getLogger(__name__)
 
-def optimize_dataframe_dtypes(
-    df: pd.DataFrame,
-    preserve_categorical: bool = True,
-) -> pd.DataFrame:
-    """
-    Optimize DataFrame data types to reduce memory usage while preserving functionality.
+def optimize_integer_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Optimize integer column data types."""
+    try:
+        for col in df.select_dtypes(include=['int64']).columns:
+            col_min = df[col].min()
+            col_max = df[col].max()
+            
+            if col_min >= np.iinfo(np.int8).min and col_max <= np.iinfo(np.int8).max:
+                df[col] = df[col].astype(np.int8)
+            elif col_min >= np.iinfo(np.int16).min and col_max <= np.iinfo(np.int16).max:
+                df[col] = df[col].astype(np.int16)
+            elif col_min >= np.iinfo(np.int32).min and col_max <= np.iinfo(np.int32).max:
+                df[col] = df[col].astype(np.int32)
+        
+        return df
+    except Exception as e:
+        logger.error(f"Error optimizing integer dtypes: {e}")
+        return df
 
-    Args:
-        df: Input DataFrame
-        preserve_categorical: Whether to preserve categorical columns
+def optimize_float_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Optimize float column data types."""
+    try:
+        for col in df.select_dtypes(include=['float64']).columns:
+            col_min = df[col].min()
+            col_max = df[col].max()
+            
+            if col_min >= np.finfo(np.float16).min and col_max <= np.finfo(np.float16).max:
+                df[col] = df[col].astype(np.float16)
+            elif col_min >= np.finfo(np.float32).min and col_max <= np.finfo(np.float32).max:
+                df[col] = df[col].astype(np.float32)
+        
+        return df
+    except Exception as e:
+        logger.error(f"Error optimizing float dtypes: {e}")
+        return df
 
-    Returns:
-        DataFrame with optimized data types
-    """
-    initial_memory = df.memory_usage(deep = True).sum()
-    logger.info(
-        f"🔧 Optimizing data types - Initial memory: {initial_memory / 1024**2:.2f} MB",
-    )
+def optimize_object_dtypes(df: pd.DataFrame, min_categories: int = 2) -> pd.DataFrame:
+    """Optimize object column data types by converting to category when appropriate."""
+    try:
+        for col in df.select_dtypes(include=['object']).columns:
+            unique_ratio = df[col].nunique() / len(df)
+            if unique_ratio < 0.5 and df[col].nunique() >= min_categories:
+                df[col] = df[col].astype('category')
+        
+        return df
+    except Exception as e:
+        logger.error(f"Error optimizing object dtypes: {e}")
+        return df
 
-    optimized_df = df.copy()
+def optimize_datetime_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Optimize datetime column data types."""
+    try:
+        for col in df.select_dtypes(include=['datetime64[ns]']).columns:
+            # Check if we can use a smaller datetime precision
+            if df[col].dt.nanosecond.sum() == 0:
+                df[col] = df[col].astype('datetime64[s]')
+        
+        return df
+    except Exception as e:
+        logger.error(f"Error optimizing datetime dtypes: {e}")
+        return df
 
-    # Optimize numeric columns
-    for col in df.select_dtypes(include=[np.number]).columns:
-        col_type = df[col].dtype
+def optimize_boolean_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Optimize boolean column data types."""
+    try:
+        for col in df.select_dtypes(include=['bool']).columns:
+            df[col] = df[col].astype('bool')
+        
+        return df
+    except Exception as e:
+        logger.error(f"Error optimizing boolean dtypes: {e}")
+        return df
 
-        # Skip if already optimized
-        if col_type in ["int8", "int16", "int32", "float16", "float32"]:
-            continue
+def reduce_dataframe_memory(df: pd.DataFrame, verbose: bool = True) -> pd.DataFrame:
+    """Reduce DataFrame memory usage by optimizing data types."""
+    try:
+        start_memory = df.memory_usage(deep=True).sum()
+        
+        # Optimize each data type
+        df = optimize_integer_dtypes(df)
+        df = optimize_float_dtypes(df)
+        df = optimize_object_dtypes(df)
+        df = optimize_datetime_dtypes(df)
+        df = optimize_boolean_dtypes(df)
+        
+        end_memory = df.memory_usage(deep=True).sum()
+        
+        if verbose:
+            logger.info(f"Memory usage decreased from {start_memory / 1024**2:.2f} MB to {end_memory / 1024**2:.2f} MB")
+            logger.info(f"Memory reduction: {(1 - end_memory / start_memory) * 100:.1f}%")
+        
+        return df
+    except Exception as e:
+        logger.error(f"Error reducing DataFrame memory: {e}")
+        return df
 
-        # Optimize integers
-        if col_type in ["int64"]:
-            c_min = df[col].min()
-            c_max = df[col].max()
+def get_memory_usage(df: pd.DataFrame) -> Dict[str, Any]:
+    """Get detailed memory usage information for DataFrame."""
+    try:
+        memory_usage = df.memory_usage(deep=True)
+        
+        return {
+            'total_memory': memory_usage.sum(),
+            'total_memory_mb': memory_usage.sum() / 1024**2,
+            'per_column': memory_usage.to_dict(),
+            'per_column_mb': (memory_usage / 1024**2).to_dict(),
+            'largest_columns': memory_usage.nlargest(10).to_dict()
+        }
+    except Exception as e:
+        logger.error(f"Error getting memory usage: {e}")
+        return {}
 
-            if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
-                optimized_df[col] = df[col].astype(np.int8)
-            elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
-                optimized_df[col] = df[col].astype(np.int16)
-            elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
-                optimized_df[col] = df[col].astype(np.int32)
+def suggest_optimizations(df: pd.DataFrame) -> Dict[str, List[str]]:
+    """Suggest data type optimizations for DataFrame."""
+    try:
+        suggestions = {
+            'integer_optimizations': [],
+            'float_optimizations': [],
+            'object_optimizations': [],
+            'datetime_optimizations': [],
+            'general_optimizations': []
+        }
+        
+        # Check integer columns
+        for col in df.select_dtypes(include=['int64']).columns:
+            col_min = df[col].min()
+            col_max = df[col].max()
+            
+            if col_min >= np.iinfo(np.int8).min and col_max <= np.iinfo(np.int8).max:
+                suggestions['integer_optimizations'].append(f"{col}: int64 -> int8")
+            elif col_min >= np.iinfo(np.int16).min and col_max <= np.iinfo(np.int16).max:
+                suggestions['integer_optimizations'].append(f"{col}: int64 -> int16")
+            elif col_min >= np.iinfo(np.int32).min and col_max <= np.iinfo(np.int32).max:
+                suggestions['integer_optimizations'].append(f"{col}: int64 -> int32")
+        
+        # Check float columns
+        for col in df.select_dtypes(include=['float64']).columns:
+            col_min = df[col].min()
+            col_max = df[col].max()
+            
+            if col_min >= np.finfo(np.float16).min and col_max <= np.finfo(np.float16).max:
+                suggestions['float_optimizations'].append(f"{col}: float64 -> float16")
+            elif col_min >= np.finfo(np.float32).min and col_max <= np.finfo(np.float32).max:
+                suggestions['float_optimizations'].append(f"{col}: float64 -> float32")
+        
+        # Check object columns
+        for col in df.select_dtypes(include=['object']).columns:
+            unique_ratio = df[col].nunique() / len(df)
+            if unique_ratio < 0.5:
+                suggestions['object_optimizations'].append(f"{col}: object -> category")
+        
+        # Check datetime columns
+        for col in df.select_dtypes(include=['datetime64[ns]']).columns:
+            if df[col].dt.nanosecond.sum() == 0:
+                suggestions['datetime_optimizations'].append(f"{col}: datetime64[ns] -> datetime64[s]")
+        
+        # General optimizations
+        if df.select_dtypes(include=['object']).shape[1] > 0:
+            suggestions['general_optimizations'].append("Consider converting object columns to category for better performance")
+        
+        if df.select_dtypes(include=['int64', 'float64']).shape[1] > 0:
+            suggestions['general_optimizations'].append("Consider downcasting numeric columns to smaller dtypes")
+        
+        return suggestions
+    except Exception as e:
+        logger.error(f"Error suggesting optimizations: {e}")
+        return {}
 
-        # Optimize floats
-        elif col_type in ["float64"]:
-            # Check if we can use float32 (lose some precision but save memory)
-            if df[col].isnull().sum() == 0:  # No NaN values
-                try:
-                    # Test if conversion preserves values within tolerance
-                    float32_vals = df[col].astype(np.float32)
-                    if np.allclose(df[col], float32_vals, rtol = 1e-5):
-                        optimized_df[col] = float32_vals
-                except Exception:
-                    pass
-
-    # Optimize categorical columns
-    if preserve_categorical:
-        for col in df.select_dtypes(include=["object"]).columns:
-            if (
-                len(df) > 0 and df[col].nunique() / len(df) < 0.5
-            ):  # Less than 50% unique values
-                optimized_df[col] = df[col].astype("category")
-
-    # Optimize boolean columns
-    for col in df.columns:
-        if df[col].dtype == "object":
-            if df[col].isin([True, False, 1, 0, "True", "False", "1", "0"]).all():
-                optimized_df[col] = (
-                    df[col]
-                    .map(
-                        {
-                            "True": True,
-                            "False": False,
-                            "1": True,
-                            "0": False,
-                            1: True,
-                            0: False,
-                        },
-                    )
-                    .astype("bool")
-                )
-
-    final_memory = optimized_df.memory_usage(deep = True).sum()
-    memory_reduction = (
-        (initial_memory - final_memory) / initial_memory if initial_memory else 0.0
-    )
-
-    logger.info("🔧 Data type optimization complete:")
-    logger.info(f"   Initial memory: {initial_memory / 1024**2:.2f} MB")
-    logger.info(f"   Final memory: {final_memory / 1024**2:.2f} MB")
-    logger.info(f"   Memory reduction: {memory_reduction:.1%}")
-
-    return optimized_df
-
-def get_optimal_dtypes_for_features() -> dict[str, str]:
-    """
-    Get optimal data types for common feature engineering outputs.
-
-    Returns:
-        Dictionary mapping feature patterns to optimal data types
-    """
-    return {
-        # Price-based features (typically float32 is sufficient)
-        "price_": "float32",
-        "close_": "float32",
-        "high_": "float32",
-        "low_": "float32",
-        "open_": "float32",
-        # Volume features (can often use int32)
-        "volume_": "int32",
-        "vol_": "int32",
-        # Technical indicators (float32 is sufficient)
-        "rsi_": "float32",
-        "sma_": "float32",
-        "ema_": "float32",
-        "bb_": "float32",
-        "macd_": "float32",
-        "stoch_": "float32",
-        # Cluster features (categorical or int8)
-        "cluster_": "int8",
-        "intensity_cluster_": "float32",
-        # Correlation features (float32)
-        "correlation_": "float32",
-        "corr_": "float32",
-        # Volatility features (float32)
-        "volatility_": "float32",
-        "vol_": "float32",
-        # Momentum features (float32)
-        "momentum_": "float32",
-        "mom_": "float32",
-        # Spread features (float32)
-        "spread_": "float32",
-        "bid_ask_": "float32",
-        # Impact features (float32)
-        "impact_": "float32",
-        "price_impact": "float32",
-        "volume_impact": "float32",
-    }
-
-def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Apply feature-specific data type optimizations based on feature names.
-
-    Args:
-        df: Input DataFrame with features
-
-    Returns:
-        DataFrame with optimized data types
-    """
-    optimized_df = df.copy()
-
-    for col in df.columns:
-        col_lower = col.lower()
-
-        # Find matching pattern
-        for pattern, dtype in optimal_dtypes.items():
-            if pattern in col_lower:
-                try:
-                    if dtype == "int8":
-                        # For cluster IDs, ensure they're small integers
-                        if col_lower.startswith("cluster_") or "cluster" in col_lower:
-                            optimized_df[col] = df[col].astype("int8")
-                    elif dtype == "float32":
-                        # For float features, use float32 if no precision loss
-                        if df[col].dtype == "float64":
-                            try:
-                                float32_vals = df[col].astype("float32")
-                                if np.allclose(df[col], float32_vals, rtol = 1e-5):
-                                    optimized_df[col] = float32_vals
-                            except Exception:
-                                pass
-                    elif dtype == "int32":
-                        # For volume features, use int32 if possible
-                        if df[col].dtype == "int64":
-                            c_min = df[col].min()
-                            c_max = df[col].max()
-                            if (
-                                c_min > np.iinfo(np.int32).min
-                                and c_max < np.iinfo(np.int32).max
-                            ):
-                                optimized_df[col] = df[col].astype("int32")
-                except Exception as e:
-                    logger.debug(f"Could not optimize {col} to {dtype}: {e}")
-                break
-
-    return optimized_df
-
-def optimize_feature_engineering_pipeline(
-    df: pd.DataFrame,
-    stage: str = "input",
-) -> pd.DataFrame:
-    """
-    Optimize DataFrame for feature engineering pipeline stages.
-
-    Args:
-        df: Input DataFrame
-        stage: Pipeline stage ("input", "intermediate", "output")
-
-    Returns:
-        Optimized DataFrame
-    """
-    if stage == "input":
-        # For input data, be conservative with optimizations
-        return optimize_dataframe_dtypes(
-            df,
-            preserve_categorical = True,
-        )
-
-    if stage == "intermediate":
-        # For intermediate calculations, be more aggressive
-        return optimize_dataframe_dtypes(
-            df,
-            preserve_categorical = False,
-        )
-
-    if stage == "output":
-        # For final output, apply feature-specific optimizations
-        return apply_feature_specific_optimization(df)
-
-    return df
+def apply_optimizations(df: pd.DataFrame, optimizations: Dict[str, List[str]]) -> pd.DataFrame:
+    """Apply suggested optimizations to DataFrame."""
+    try:
+        result_df = df.copy()
+        
+        # Apply integer optimizations
+        for opt in optimizations.get('integer_optimizations', []):
+            col, dtype = opt.split(': ')[0], opt.split(' -> ')[1]
+            if col in result_df.columns:
+                result_df[col] = result_df[col].astype(dtype)
+        
+        # Apply float optimizations
+        for opt in optimizations.get('float_optimizations', []):
+            col, dtype = opt.split(': ')[0], opt.split(' -> ')[1]
+            if col in result_df.columns:
+                result_df[col] = result_df[col].astype(dtype)
+        
+        # Apply object optimizations
+        for opt in optimizations.get('object_optimizations', []):
+            col = opt.split(': ')[0]
+            if col in result_df.columns:
+                result_df[col] = result_df[col].astype('category')
+        
+        # Apply datetime optimizations
+        for opt in optimizations.get('datetime_optimizations', []):
+            col, dtype = opt.split(': ')[0], opt.split(' -> ')[1]
+            if col in result_df.columns:
+                result_df[col] = result_df[col].astype(dtype)
+        
+        return result_df
+    except Exception as e:
+        logger.error(f"Error applying optimizations: {e}")
+        return df

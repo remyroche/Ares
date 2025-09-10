@@ -103,6 +103,55 @@ class ModelTrainingSubPipeline:
             'model_evaluation': self._model_evaluation_pipeline
         }
     
+    def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
+        """Helper method to log sub-pipeline completion with emojis and artifact paths."""
+        print("\n" + "="*80)
+        print(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        print("="*80)
+        print(f"📁 Artifact Paths:")
+        
+        # Log different types of artifacts with appropriate emojis
+        for key, value in artifacts.items():
+            if isinstance(value, list) and value:
+                if 'model' in key.lower():
+                    for item in value:
+                        print(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
+                elif 'file' in key.lower() or 'data' in key.lower():
+                    for item in value:
+                        print(f"   📄 {key.title()}: {config.data_dir}/{item}")
+                elif 'report' in key.lower():
+                    for item in value:
+                        print(f"   📋 {key.title()}: {config.data_dir}/{item}")
+                else:
+                    for item in value:
+                        print(f"   📊 {key.title()}: {config.data_dir}/{item}")
+            elif isinstance(value, dict) and value:
+                print(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
+        
+        print(f"📊 Artifacts Summary: {len(artifacts)} artifact types generated")
+        print("="*80 + "\n")
+        
+        # Log to logger as well
+        self.logger.info(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        self.logger.info(f"📁 Artifact Paths:")
+        for key, value in artifacts.items():
+            if isinstance(value, list) and value:
+                if 'model' in key.lower():
+                    for item in value:
+                        self.logger.info(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
+                elif 'file' in key.lower() or 'data' in key.lower():
+                    for item in value:
+                        self.logger.info(f"   📄 {key.title()}: {config.data_dir}/{item}")
+                elif 'report' in key.lower():
+                    for item in value:
+                        self.logger.info(f"   📋 {key.title()}: {config.data_dir}/{item}")
+                else:
+                    for item in value:
+                        self.logger.info(f"   📊 {key.title()}: {config.data_dir}/{item}")
+            elif isinstance(value, dict) and value:
+                self.logger.info(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
+        self.logger.info(f"📊 Artifacts Summary: {len(artifacts)} artifact types generated")
+    
     async def execute_sub_pipeline(
         self,
         sub_pipeline_name: str,
@@ -234,6 +283,19 @@ class ModelTrainingSubPipeline:
             self.logger.warning("⚠️ General model trainer not available, using mock training")
             artifacts['trained_models'] = ['general_model.pkl']
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("general_model_training", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: analyst_model_training
+        self.logger.info("🔄 General model training completed, triggering next: analyst_model_training")
+        try:
+            next_artifacts = await self._analyst_model_training_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Analyst model training pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute analyst model training pipeline: {e}")
+        
         return artifacts
     
     async def _analyst_model_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -271,6 +333,19 @@ class ModelTrainingSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Analyst model trainer not available, using mock training")
             artifacts['analyst_models'] = ['analyst_model.pkl']
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("analyst_model_training", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: tactician_model_training
+        self.logger.info("🔄 Analyst model training completed, triggering next: tactician_model_training")
+        try:
+            next_artifacts = await self._tactician_model_training_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Tactician model training pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute tactician model training pipeline: {e}")
         
         return artifacts
     
@@ -310,6 +385,19 @@ class ModelTrainingSubPipeline:
             self.logger.warning("⚠️ Tactician model trainer not available, using mock training")
             artifacts['tactician_models'] = ['tactician_model.pkl']
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("tactician_model_training", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: hmm_training
+        self.logger.info("🔄 Tactician model training completed, triggering next: hmm_training")
+        try:
+            next_artifacts = await self._hmm_training_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ HMM training pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute HMM training pipeline: {e}")
+        
         return artifacts
     
     async def _hmm_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -346,6 +434,19 @@ class ModelTrainingSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ HMM training pipeline not available, using mock training")
             artifacts['hmm_models'] = ['hmm_model.pkl']
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("hmm_training", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: ensemble_training
+        self.logger.info("🔄 HMM training completed, triggering next: ensemble_training")
+        try:
+            next_artifacts = await self._ensemble_training_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Ensemble training pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute ensemble training pipeline: {e}")
         
         return artifacts
     
@@ -384,6 +485,19 @@ class ModelTrainingSubPipeline:
             self.logger.warning("⚠️ Ensemble training pipeline not available, using mock training")
             artifacts['ensemble_models'] = ['ensemble_model.pkl']
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("ensemble_training", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: multi_timeframe_training
+        self.logger.info("🔄 Ensemble training completed, triggering next: multi_timeframe_training")
+        try:
+            next_artifacts = await self._multi_timeframe_training_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Multi-timeframe training pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute multi-timeframe training pipeline: {e}")
+        
         return artifacts
     
     async def _multi_timeframe_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -420,6 +534,19 @@ class ModelTrainingSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Multi-timeframe training pipeline not available, using mock training")
             artifacts['multi_tf_models'] = ['multi_tf_model.pkl']
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("multi_timeframe_training", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: regime_specific_training
+        self.logger.info("🔄 Multi-timeframe training completed, triggering next: regime_specific_training")
+        try:
+            next_artifacts = await self._regime_specific_training_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Regime-specific training pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute regime-specific training pipeline: {e}")
         
         return artifacts
     
@@ -458,6 +585,19 @@ class ModelTrainingSubPipeline:
             self.logger.warning("⚠️ Regime-specific training pipeline not available, using mock training")
             artifacts['regime_models'] = ['regime_0_model.pkl', 'regime_1_model.pkl']
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("regime_specific_training", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: model_validation
+        self.logger.info("🔄 Regime-specific training completed, triggering next: model_validation")
+        try:
+            next_artifacts = await self._model_validation_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Model validation pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute model validation pipeline: {e}")
+        
         return artifacts
     
     async def _model_validation_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -495,6 +635,19 @@ class ModelTrainingSubPipeline:
             self.logger.warning("⚠️ Model validation pipeline not available, using mock validation")
             artifacts['validation_results'] = {'status': 'passed', 'accuracy': 0.85}
         
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("model_validation", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: model_persistence
+        self.logger.info("🔄 Model validation completed, triggering next: model_persistence")
+        try:
+            next_artifacts = await self._model_persistence_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Model persistence pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute model persistence pipeline: {e}")
+        
         return artifacts
     
     async def _model_persistence_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -515,6 +668,19 @@ class ModelTrainingSubPipeline:
         # Model persistence logic would go here
         artifacts['saved_models'] = [f"saved_{config.symbol}_{config.exchange}_{config.timeframe}_model.pkl"]
         artifacts['persistence_metrics'] = {'models_saved': 1, 'total_size_mb': 5.2}
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("model_persistence", config, artifacts)
+        
+        # Automatically trigger the next sub-pipeline: model_evaluation
+        self.logger.info("🔄 Model persistence completed, triggering next: model_evaluation")
+        try:
+            next_artifacts = await self._model_evaluation_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Model evaluation pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute model evaluation pipeline: {e}")
         
         return artifacts
     
@@ -552,6 +718,12 @@ class ModelTrainingSubPipeline:
         except ImportError:
             self.logger.warning("⚠️ Model evaluation pipeline not available, using mock evaluation")
             artifacts['evaluation_results'] = {'overall_score': 0.85, 'sharpe_ratio': 1.2}
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("model_evaluation", config, artifacts)
+        
+        # This is the last sub-pipeline in the model training chain
+        self.logger.info("🎉 Model evaluation completed - end of model training pipeline chain")
         
         return artifacts
     

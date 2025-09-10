@@ -2,8 +2,11 @@ from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import functools
 """Core decorators for the Ares project."""
 
+print("DEBUG: decorators.py module starting to load...")
+
 def handles_errors(*args, **kwargs) -> Callable:
     """Enhanced decorator for handling errors in functions."""
+    print("DEBUG: handles_errors decorator function defined")
     import inspect
     
     def decorator(func: Callable) -> Callable:
@@ -17,7 +20,18 @@ def handles_errors(*args, **kwargs) -> Callable:
                     try:
                         from .errors.base import AppError, ValidationError
                         from .error_classes import initialization_error, execution_error
-                        from src.utils.logger import system_logger
+                        
+                        # Safe logger import with fallback
+                        def get_safe_logger():
+                            try:
+                                from src.utils.logger import system_logger
+                                return system_logger
+                            except (ImportError, AttributeError, Exception):
+                                # Fallback to basic logging
+                                import logging
+                                return logging.getLogger('AresFallback')
+                        
+                        system_logger = get_safe_logger()
 
                         # If it's already an AppError, re-raise it
                         if isinstance(e, AppError):
@@ -50,7 +64,18 @@ def handles_errors(*args, **kwargs) -> Callable:
                     try:
                         from .errors.base import AppError, ValidationError
                         from .error_classes import initialization_error, execution_error
-                        from src.utils.logger import system_logger
+                        
+                        # Safe logger import with fallback
+                        def get_safe_logger():
+                            try:
+                                from src.utils.logger import system_logger
+                                return system_logger
+                            except (ImportError, AttributeError, Exception):
+                                # Fallback to basic logging
+                                import logging
+                                return logging.getLogger('AresFallback')
+                        
+                        system_logger = get_safe_logger()
 
                         # If it's already an AppError, re-raise it
                         if isinstance(e, AppError):
@@ -77,6 +102,7 @@ def handles_errors(*args, **kwargs) -> Callable:
 
 def traced(*args, **kwargs) -> Callable:
     """Tracing decorator that accepts optional parameters."""
+    print("DEBUG: traced decorator function defined")
 
     def decorator(func: Callable) -> Callable:
         def wrapper(*args, **kwargs) -> Any:
@@ -95,7 +121,18 @@ def validates(*args, **kwargs) -> Callable:
                 # Try to import validation error for better handling
                 try:
                     from .errors.base import AppError, ValidationError
-                    from src.utils.logger import system_logger
+                    
+                    # Safe logger import with fallback
+                    def get_safe_logger():
+                        try:
+                            from src.utils.logger import system_logger
+                            return system_logger
+                        except (ImportError, AttributeError, Exception):
+                            # Fallback to basic logging
+                            import logging
+                            return logging.getLogger('AresFallback')
+                    
+                    system_logger = get_safe_logger()
 
                     # Convert to ValidationError if not already
                     if not isinstance(e, (ValidationError, AppError)):
@@ -179,3 +216,5 @@ __all__ = [
     'log_call',
     'span_event'
 ]
+
+print("DEBUG: decorators.py module loaded successfully!")

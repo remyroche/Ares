@@ -76,51 +76,104 @@ class DataFormatConverter:
         Returns:
             DataFrame with enforced schema
         """
+        self.logger.info(f'🔧 Enforcing schema "{schema_name}" on DataFrame...')
+        
         if df is None or df.empty:
+            self.logger.warning('⚠️ DataFrame is None or empty, returning as-is')
             return df
+            
+        self.logger.info(f'📊 Input DataFrame shape: {df.shape}')
+        self.logger.info(f'📋 Input columns: {list(df.columns)}')
+        self.logger.info(f'📋 Input dtypes: {dict(df.dtypes)}')
+        
         conversions: dict[str, str] = {}
         optional_columns: dict[str, str] = {}
+        
+        # Define schema conversions
         if schema_name == 'klines':
             conversions = {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64'}
+            self.logger.info('📋 Using klines schema: OHLCV + timestamp')
         elif schema_name == 'aggtrades':
             conversions = {'timestamp': 'int64', 'price': 'float64', 'quantity': 'float64', 'is_buyer_maker': 'bool', 'agg_trade_id': 'int64'}
+            self.logger.info('📋 Using aggtrades schema: price, quantity, trade info')
         elif schema_name == 'futures':
             conversions = {'timestamp': 'int64', 'fundingRate': 'float64'}
+            self.logger.info('📋 Using futures schema: funding rate data')
         elif schema_name == 'split':
             if 'timestamp' in df.columns:
                 conversions['timestamp'] = 'int64'
             if 'label' in df.columns:
                 conversions['label'] = 'int64'
+            self.logger.info('📋 Using split schema: timestamp + label')
         elif schema_name == 'unified':
             conversions = {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8'}
             optional_columns = {'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64', 'funding_rate': 'float64'}
+            self.logger.info('📋 Using unified schema: comprehensive market data')
+        else:
+            self.logger.warning(f'⚠️ Unknown schema name: {schema_name}')
+            
+        # Add optional columns if present
         for col, dtype in optional_columns.items():
             if col in df.columns:
                 conversions[col] = dtype
+                self.logger.info(f'📋 Added optional column "{col}" as {dtype}')
+                
+        self.logger.info(f'📋 Total columns to convert: {len(conversions)}')
+        
+        # Handle timestamp conversion first
         if 'timestamp' in df.columns:
+            self.logger.info('🕐 Converting timestamp column...')
             try:
+                original_dtype = str(df['timestamp'].dtype)
                 if pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+                    self.logger.info('🕐 Converting datetime to milliseconds timestamp')
                     df.loc[:, 'timestamp'] = (pd.to_datetime(df['timestamp'], utc = True).astype('int64') // 10 ** 6).astype('int64')
                 else:
                     ts_numeric = pd.to_numeric(df['timestamp'], errors='coerce')
                     if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 100000000000000.0:
+                        self.logger.info('🕐 Converting nanosecond timestamp to milliseconds')
                         df.loc[:, 'timestamp'] = (ts_numeric // 10 ** 6).astype('int64')
                     else:
+                        self.logger.info('🕐 Converting numeric timestamp to int64')
                         df.loc[:, 'timestamp'] = ts_numeric.astype('int64')
-            except Exception:
-                pass
+                        
+                new_dtype = str(df['timestamp'].dtype)
+                self.logger.info(f'✅ Timestamp converted: {original_dtype} → {new_dtype}')
+            except Exception as e:
+                self.logger.error(f'❌ Failed to convert timestamp: {e}')
+                
+        # Convert other columns
+        conversion_results = {'success': 0, 'failed': 0, 'skipped': 0}
+        
         for col, dtype in conversions.items():
             if col in df.columns:
                 try:
+                    original_dtype = str(df[col].dtype)
+                    
                     if dtype == 'bool':
+                        self.logger.info(f'🔧 Converting "{col}" to boolean: {original_dtype} → {dtype}')
                         df.loc[:, col] = df[col].astype('boolean').astype(bool)
                     elif dtype == 'string':
+                        self.logger.info(f'🔧 Converting "{col}" to string: {original_dtype} → {dtype}')
                         df.loc[:, col] = df[col].astype('string')
                     else:
+                        self.logger.info(f'🔧 Converting "{col}" to {dtype}: {original_dtype} → {dtype}')
                         df.loc[:, col] = pd.to_numeric(df[col], errors='coerce').astype(dtype)
-                except Exception:
-                    if self.logger:
-                        self.logger.debug(f'Schema conversion skipped for column: {col}')
+                        
+                    new_dtype = str(df[col].dtype)
+                    conversion_results['success'] += 1
+                    self.logger.info(f'✅ Column "{col}" converted successfully: {original_dtype} → {new_dtype}')
+                    
+                except Exception as e:
+                    conversion_results['failed'] += 1
+                    self.logger.error(f'❌ Failed to convert column "{col}" to {dtype}: {e}')
+            else:
+                conversion_results['skipped'] += 1
+                self.logger.warning(f'⚠️ Column "{col}" not found in DataFrame, skipping')
+                
+        self.logger.info(f'📊 Schema enforcement complete: {conversion_results["success"]} successful, {conversion_results["failed"]} failed, {conversion_results["skipped"]} skipped')
+        self.logger.info(f'📋 Final DataFrame dtypes: {dict(df.dtypes)}')
+        
         return df
 
     def write_partitioned_dataset(self, df: pd.DataFrame, base_dir: str, partition_cols: list[str], schema_name: str | None, compression: str='snappy', use_dictionary: bool | dict[str, bool]=True, min_rows_per_group: int = 50000, max_rows_per_file: int = 5000000, use_threads: bool = True, update_manifest: bool = True, metadata: dict[str, Any] | None = None, auto_add_date_columns: bool = True) -> None:

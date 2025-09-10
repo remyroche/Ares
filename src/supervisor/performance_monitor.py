@@ -17,7 +17,14 @@ from typing import Any
 import yaml
 from scipy import stats
 
-from src.utils.compat import handle_specific_errors
+try:
+    from src.utils.compat import handle_specific_errors
+except ImportError:
+    # Fallback decorator for handle_specific_errors
+    def handle_specific_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, warning
 import numpy as np

@@ -23,6 +23,7 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from datetime import datetime, timedelta
 import logging
+import time
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import (
     accuracy_score, balanced_accuracy_score, f1_score,
@@ -31,6 +32,16 @@ from sklearn.metrics import (
 )
 from sklearn.utils.class_weight import compute_sample_weight
 import warnings
+
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.CVUtils")
+    print("✅ Custom logger available for MLCommon.CVUtils")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.CVUtils")
+    _LOGGER.setLevel(logging.INFO)
 
 # ---------------------------------------------------------------------------
 # Utility helpers
@@ -70,7 +81,7 @@ from ..common_operations import create_fallback_logger
 from ..m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
 
-logger = logging.getLogger(__name__)
+logger = _LOGGER
 
 try:
     import torch
@@ -102,6 +113,13 @@ class CrossValidationUtilities:
         self.enable_parallel = self.config.get('enable_parallel', True)
         self.max_workers = self.config.get('max_workers', 4)
         self.memory_threshold = self.config.get('memory_threshold', 0.8)
+        
+        _LOGGER.info("🚀 Initializing CrossValidationUtilities...")
+        _LOGGER.info(f"⚙️ Configuration - GPU enabled: {self.enable_gpu}")
+        _LOGGER.info(f"⚙️ Configuration - Parallel processing: {self.enable_parallel}")
+        _LOGGER.info(f"⚙️ Configuration - Max workers: {self.max_workers}")
+        _LOGGER.info(f"⚙️ Configuration - Memory threshold: {self.memory_threshold}")
+        _LOGGER.info("✅ CrossValidationUtilities initialized successfully")
 
     def perform_temporal_cv(self, X: np.ndarray, y: np.ndarray,
                           model: Any, n_splits: int = 5,
@@ -122,14 +140,18 @@ class CrossValidationUtilities:
         Returns:
             Dictionary with CV results and metrics
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting temporal cross-validation...")
+        _LOGGER.info(f"📊 Parameters - Splits: {n_splits}, Gap: {gap}, Data shape: {X.shape}")
+        
         try:
-            self.logger.info(f"🔄 Starting temporal CV with {n_splits} splits, gap={gap}")
-
             # Validate inputs
             if len(X) != len(y):
+                _LOGGER.error(f"❌ X and y length mismatch: {len(X)} vs {len(y)}")
                 raise ValueError(f"X and y length mismatch: {len(X)} vs {len(y)}")
 
             if len(X) < (n_splits + 1) * 10:  # Minimum samples check
+                _LOGGER.error(f"❌ Insufficient data for {n_splits} splits: {len(X)} samples")
                 raise ValueError(f"Insufficient data for {n_splits} splits: {len(X)} samples")
 
             # Create time series split with gap
@@ -238,15 +260,23 @@ class CrossValidationUtilities:
 
                 mean_acc = cv_results['metrics'].get('accuracy_mean') if isinstance(cv_results.get('metrics'), dict) else None
                 mean_acc_str = f"{mean_acc:.4f}" if isinstance(mean_acc, (int, float, np.floating)) else str(mean_acc) if mean_acc is not None else "N/A"
-                self.logger.info(f"✅ Temporal CV completed: Mean accuracy: {mean_acc_str}")
+                
+                execution_time = time.time() - start_time
+                _LOGGER.info(f"✅ Temporal CV completed in {execution_time:.3f}s")
+                _LOGGER.info(f"📊 Results - Mean accuracy: {mean_acc_str}, Successful folds: {len(cv_results['fold_results'])}/{n_splits}")
+                
+                if len(cv_results['fold_results']) < n_splits:
+                    _LOGGER.warning(f"⚠️ Only {len(cv_results['fold_results'])}/{n_splits} folds completed successfully")
             else:
-                self.logger.error("❌ No folds completed successfully")
+                execution_time = time.time() - start_time
+                _LOGGER.error(f"❌ No folds completed successfully after {execution_time:.3f}s")
                 cv_results['error'] = "No successful folds"
 
             return _to_jsonable(cv_results)
 
         except Exception as e:
-            self.logger.error(f"❌ Temporal CV failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Temporal CV failed after {execution_time:.3f}s: {e}")
             return _to_jsonable({'error': str(e), 'fold_results': [], 'metrics': {}, 'summary': {}})
 
     def walk_forward_validation(self, X: np.ndarray, y: np.ndarray,

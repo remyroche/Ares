@@ -29,23 +29,69 @@ class ModelPersistenceStep(BaseStep):
         Args:
             config: Configuration dictionary
         """
+        # 🖨️ THOROUGH PRINTING: Model Persistence Step Initialization
+        print("🔧 INITIALIZING MODEL PERSISTENCE STEP")
+        print(f"   📋 Configuration: {config}")
+        
         super().__init__(config, '21', 'model_persistence')
+        print("   ✅ Base step initialized")
     @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
+        print("   🔧 Initializing step-specific components...")
+        
         self.model_serializer = ModelSerializer(self.config)
+        print("   ✅ Model serializer initialized")
+        
         self.version_manager = VersionManager(self.config)
+        print("   ✅ Version manager initialized")
+        
         self.metadata_tracker = MetadataTracker(self.config)
+        print("   ✅ Metadata tracker initialized")
+        
         self.model_registry = ModelRegistry(self.config)
+        print("   ✅ Model registry initialized")
+        
         self.persistence_config = self._initialize_persistence_config()
+        print("   ✅ Persistence configuration initialized")
+        
         self.saved_artifacts: Dict[str, str] = {}
         self.artifact_metadata: Dict[str, Any] = {}
+        print("   ✅ Artifact tracking initialized")
+        print("   🎉 Model persistence step components initialized")
     @log_all_calls
 
     def _initialize_persistence_config(self) -> Dict[str, Any]:
         """Initialize persistence configuration."""
-        return {'base_dir': self.config.get('model_storage_dir', 'models'), 'enable_versioning': self.config.get('enable_versioning', True), 'compression': self.config.get('model_compression', True), 'save_formats': self.config.get('save_formats', ['pickle', 'joblib', 'onnx']), 'track_lineage': self.config.get('track_model_lineage', True), 'save_training_data_stats': self.config.get('save_training_data_stats', True), 'save_feature_importance': self.config.get('save_feature_importance', True), 'use_model_registry': self.config.get('use_model_registry', True), 'registry_backend': self.config.get('registry_backend', 'local'), 'enable_mlflow': self.config.get('enable_mlflow', False), 'mlflow_tracking_uri': self.config.get('mlflow_tracking_uri', None), 'create_backups': self.config.get('create_backups', True), 'backup_location': self.config.get('backup_location', 'model_backups'), 'max_backups': self.config.get('max_backups', 5)}
+        print("   📋 Initializing persistence configuration...")
+        
+        config = {
+            'base_dir': self.config.get('model_storage_dir', 'models'),
+            'enable_versioning': self.config.get('enable_versioning', True),
+            'compression': self.config.get('model_compression', True),
+            'save_formats': self.config.get('save_formats', ['pickle', 'joblib', 'onnx']),
+            'track_lineage': self.config.get('track_model_lineage', True),
+            'save_training_data_stats': self.config.get('save_training_data_stats', True),
+            'save_feature_importance': self.config.get('save_feature_importance', True),
+            'use_model_registry': self.config.get('use_model_registry', True),
+            'registry_backend': self.config.get('registry_backend', 'local'),
+            'enable_mlflow': self.config.get('enable_mlflow', False),
+            'mlflow_tracking_uri': self.config.get('mlflow_tracking_uri', None),
+            'create_backups': self.config.get('create_backups', True),
+            'backup_location': self.config.get('backup_location', 'model_backups'),
+            'max_backups': self.config.get('max_backups', 5)
+        }
+        
+        print(f"   📁 Base directory: {config['base_dir']}")
+        print(f"   🔢 Versioning enabled: {config['enable_versioning']}")
+        print(f"   📦 Compression enabled: {config['compression']}")
+        print(f"   💾 Save formats: {config['save_formats']}")
+        print(f"   📊 Track lineage: {config['track_lineage']}")
+        print(f"   🏪 Use model registry: {config['use_model_registry']}")
+        print(f"   🔄 MLflow enabled: {config['enable_mlflow']}")
+        
+        return config
     @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:

@@ -74,11 +74,18 @@ class DataCollectionValidator:
         step_name = "step1_data_collection"
         
         try:
-            self.logger.info(f"🔍 Validating {step_name} for {symbol} on {exchange}")
+            self.logger.info('🔍 Starting Step 1 data collection validation...')
+            self.logger.info(f'📊 Validation parameters:')
+            self.logger.info(f'   📈 Symbol: {symbol}')
+            self.logger.info(f'   📊 Exchange: {exchange}')
+            self.logger.info(f'   📁 Data directory: {data_dir}')
+            self.logger.info(f'   📋 Additional kwargs: {list(kwargs.keys()) if kwargs else "None"}')
             
             # Check if data directory exists
+            self.logger.info('🔍 1. Checking data directory existence...')
             data_path = Path(data_dir)
             if not data_path.exists():
+                self.logger.error(f'❌ Data directory does not exist: {data_dir}')
                 return ValidationReport(
                     step_name = step_name,
                     result = ValidationResult.FAILED,
@@ -90,12 +97,17 @@ class DataCollectionValidator:
                     errors=[f"Data directory not found: {data_dir}"]
                 )
             
+            self.logger.info('✅ Data directory exists')
+            
             # Check for required data files
+            self.logger.info('🔍 2. Checking for required data files...')
             required_files = [
                 f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
                 f"klines_{exchange}_{symbol}_1m.parquet",
                 f"volume_{exchange}_{symbol}_consolidated.parquet"
             ]
+            
+            self.logger.info(f'📋 Required files: {required_files}')
             
             missing_files = []
             existing_files = []
@@ -104,24 +116,38 @@ class DataCollectionValidator:
                 file_path = data_path / file_name
                 if file_path.exists():
                     existing_files.append(str(file_path))
+                    self.logger.info(f'✅ Found: {file_name}')
                 else:
                     missing_files.append(file_name)
+                    self.logger.warning(f'⚠️ Missing: {file_name}')
+            
+            self.logger.info(f'📊 File check summary:')
+            self.logger.info(f'   📈 Existing files: {len(existing_files)}/{len(required_files)}')
+            self.logger.info(f'   ⚠️ Missing files: {len(missing_files)}')
             
             # Validate file sizes and basic structure
+            self.logger.info('🔍 3. Validating file sizes and structure...')
             file_validations = {}
             warnings = []
             errors = []
             
-            for file_path in existing_files:
+            for i, file_path in enumerate(existing_files, 1):
+                self.logger.info(f'📊 {i}. Validating file: {Path(file_path).name}')
+                
                 try:
                     file_size = Path(file_path).stat().st_size
+                    self.logger.info(f'   📊 File size: {file_size:,} bytes ({file_size/1024:.1f} KB)')
+                    
                     if file_size == 0:
+                        self.logger.error(f'   ❌ Empty file: {file_path}')
                         errors.append(f"Empty file: {file_path}")
                     elif file_size < 1024:  # Less than 1KB
+                        self.logger.warning(f'   ⚠️ Very small file: {file_path} ({file_size} bytes)')
                         warnings.append(f"Very small file: {file_path} ({file_size} bytes)")
                     
                     # Try to read the file to check structure
                     if file_path.endswith('.parquet'):
+                        self.logger.info(f'   🔍 Reading parquet file structure...')
                         try:
                             df = standardized_parquet_handler.read_parquet_standardized(file_path)
                             file_validations[file_path] = {
@@ -131,13 +157,23 @@ class DataCollectionValidator:
                                 "readable": True
                             }
                             
+                            self.logger.info(f'   📊 DataFrame info:')
+                            self.logger.info(f'      📈 Rows: {len(df):,}')
+                            self.logger.info(f'      📊 Columns: {len(df.columns)}')
+                            self.logger.info(f'      📋 Column names: {list(df.columns)}')
+                            
                             # Basic data quality checks
                             if len(df) == 0:
+                                self.logger.error(f'   ❌ Empty DataFrame in {file_path}')
                                 errors.append(f"Empty DataFrame in {file_path}")
                             elif len(df) < 100:
+                                self.logger.warning(f'   ⚠️ Very few rows in {file_path}: {len(df)}')
                                 warnings.append(f"Very few rows in {file_path}: {len(df)}")
+                            else:
+                                self.logger.info(f'   ✅ DataFrame has sufficient data: {len(df):,} rows')
                                 
                         except Exception as e:
+                            self.logger.error(f'   ❌ Cannot read parquet file {file_path}: {e}')
                             errors.append(f"Cannot read parquet file {file_path}: {e}")
                             file_validations[file_path] = {
                                 "readable": False,
@@ -145,19 +181,36 @@ class DataCollectionValidator:
                             }
                             
                 except Exception as e:
+                    self.logger.error(f'   ❌ Cannot access file {file_path}: {e}')
                     errors.append(f"Cannot access file {file_path}: {e}")
             
             # Determine validation result
+            self.logger.info('🔍 4. Determining validation result...')
             if errors:
                 result = ValidationResult.FAILED
                 message = f"Data collection validation failed with {len(errors)} errors"
+                self.logger.error(f'❌ Validation FAILED: {len(errors)} errors found')
+                for error in errors:
+                    self.logger.error(f'   ❌ {error}')
             elif missing_files:
                 result = ValidationResult.WARNING
                 message = f"Data collection validation passed with {len(missing_files)} missing files"
                 warnings.extend([f"Missing file: {f}" for f in missing_files])
+                self.logger.warning(f'⚠️ Validation WARNING: {len(missing_files)} missing files')
+                for missing_file in missing_files:
+                    self.logger.warning(f'   ⚠️ Missing: {missing_file}')
             else:
                 result = ValidationResult.PASSED
                 message = "Data collection validation passed successfully"
+                self.logger.info('✅ Validation PASSED: All checks successful')
+            
+            execution_time = time.time() - start_time
+            self.logger.info(f'📊 Validation summary:')
+            self.logger.info(f'   📊 Result: {result.value}')
+            self.logger.info(f'   📊 Execution time: {execution_time:.2f}s')
+            self.logger.info(f'   📊 Files found: {len(existing_files)}/{len(required_files)}')
+            self.logger.info(f'   📊 Warnings: {len(warnings)}')
+            self.logger.info(f'   📊 Errors: {len(errors)}')
             
             report = ValidationReport(
                 step_name = step_name,
@@ -174,7 +227,7 @@ class DataCollectionValidator:
                     "total_files_expected": len(required_files)
                 },
                 timestamp = format_datetime(get_current_datetime()),
-                execution_time = time.time() - start_time,
+                execution_time = execution_time,
                 warnings = warnings,
                 errors = errors
             )

@@ -28,13 +28,24 @@ import logging
 from functools import partial
 from concurrent.futures import ThreadPoolExecutor
 import warnings
+import time
 
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 from ..m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
 
-logger = logging.getLogger(__name__)
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.FeatureSelection")
+    print("✅ Custom logger available for MLCommon.FeatureSelection")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.FeatureSelection")
+    _LOGGER.setLevel(logging.INFO)
+
+logger = _LOGGER
 
 try:
     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
@@ -56,6 +67,8 @@ class FeatureSelectionFramework:
         """Initialize feature selection framework with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('FeatureSelection')
+        
+        _LOGGER.info("🚀 Initializing FeatureSelectionFramework...")
 
         # Configuration defaults
         self.enable_gpu = self.config.get('enable_gpu', True)
@@ -64,11 +77,18 @@ class FeatureSelectionFramework:
         self.memory_threshold = self.config.get('memory_threshold', 0.8)
         self.random_state = self.config.get('random_state', 42)
 
+        _LOGGER.info(f"⚙️ Configuration - GPU enabled: {self.enable_gpu}")
+        _LOGGER.info(f"⚙️ Configuration - Parallel processing: {self.enable_parallel}")
+        _LOGGER.info(f"⚙️ Configuration - Max workers: {self.max_workers}")
+        _LOGGER.info(f"⚙️ Configuration - Memory threshold: {self.memory_threshold}")
+        _LOGGER.info(f"⚙️ Configuration - Random state: {self.random_state}")
+
         # Initialize utilities
         self.gpu_manager = M1GPUManager() if self.enable_gpu else None
         self.parallel_processor = ParallelProcessor() if self.enable_parallel else None
 
         # Method configurations
+        _LOGGER.debug("🔧 Initializing method configurations...")
         self.method_configs = {
             'mrmr': {
                 'relevance_method': 'mutual_info',
@@ -94,7 +114,10 @@ class FeatureSelectionFramework:
 
         # Update with user config
         if 'method_configs' in self.config:
+            _LOGGER.debug("🔧 Updating method configurations with user config...")
             self.method_configs.update(self.config['method_configs'])
+        
+        _LOGGER.info("✅ FeatureSelectionFramework initialized successfully")
 
     def mrmr_selection(self, X: np.ndarray, y: np.ndarray,
                       feature_names: List[str], n_features: int,
@@ -114,9 +137,12 @@ class FeatureSelectionFramework:
         Returns:
             Dictionary with selected features and scores
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting mRMR feature selection...")
+        _LOGGER.info(f"📊 Parameters - Features to select: {n_features}, Data shape: {X.shape}")
+        _LOGGER.info(f"📊 Methods - Relevance: {relevance_method}, Redundancy: {redundancy_method}")
+        
         try:
-            self.logger.info(f"🔍 Starting mRMR selection for {n_features} features")
-
             mrmr_results = {
                 'selected_features': [],
                 'feature_scores': {},
@@ -215,11 +241,15 @@ class FeatureSelectionFramework:
 
             mrmr_results['selection_metadata']['n_features_selected'] = len(mrmr_results['selected_features'])
 
-            self.logger.info(f"✅ mRMR selection completed: {len(mrmr_results['selected_features'])} features selected")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ mRMR selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Selected: {len(mrmr_results['selected_features'])}/{n_features} features")
+            _LOGGER.debug(f"📊 Selected features: {mrmr_results['selected_features']}")
             return mrmr_results
 
         except Exception as e:
-            self.logger.error(f"❌ mRMR selection failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ mRMR selection failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'selected_features': []}
 
     def stability_weighted_selection(self, X: np.ndarray, y: np.ndarray,
@@ -241,9 +271,13 @@ class FeatureSelectionFramework:
         Returns:
             Dictionary with selected features and stability analysis
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting stability-weighted feature selection...")
+        _LOGGER.info(f"📊 Parameters - Threshold: {threshold}, Data shape: {X.shape}")
+        _LOGGER.info(f"📊 Features to select: {n_features if n_features else 'threshold-based'}")
+        _LOGGER.info(f"📊 Stability scores available: {len(stability_scores)}")
+        
         try:
-            self.logger.info(f"🔍 Starting stability-weighted selection (threshold={threshold})")
-
             stability_results = {
                 'selected_features': [],
                 'stability_analysis': {},
@@ -304,12 +338,17 @@ class FeatureSelectionFramework:
                 'stable_features': sum(1 for s in stabilities if s >= threshold)
             }
 
-            self.logger.info(f"✅ Stability-weighted selection completed: "
-                           f"{len(selected_features)} features selected")
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Stability-weighted selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Selected: {len(selected_features)} features")
+            _LOGGER.info(f"📊 Stability stats - Mean: {np.mean(stabilities):.3f}, "
+                        f"Stable features: {sum(1 for s in stabilities if s >= threshold)}")
+            _LOGGER.debug(f"📊 Selected features: {selected_features}")
             return stability_results
 
         except Exception as e:
-            self.logger.error(f"❌ Stability-weighted selection failed: {e}")
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Stability-weighted selection failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'selected_features': []}
 
     def correlation_based_filtering(self, X: np.ndarray, feature_names: List[str],

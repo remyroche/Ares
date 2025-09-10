@@ -65,23 +65,46 @@ def feature_selection_stability(
     Returns:
         Dict with selection counts, stability scores, and fold count
     """
+    _LOGGER.info(f"🔄 Computing feature selection stability for {len(all_features)} features across {len(fold_selections)} folds")
+    start_time = time.time()
+    
     n_folds = max(1, len(fold_selections))
+    _LOGGER.debug(f"📊 Number of folds: {n_folds}")
+    _LOGGER.debug(f"📊 Total features: {len(all_features)}")
+    _LOGGER.debug(f"📊 Use parallel processing: {use_parallel}")
 
     # Use parallel processing for large feature sets
     if use_parallel and CPU_OPTIMIZER_AVAILABLE and len(all_features) > 100:
+        _LOGGER.debug("🚀 Attempting parallel stability calculation...")
         try:
-            return _feature_selection_stability_parallel(fold_selections, all_features, n_folds)
+            result = _feature_selection_stability_parallel(fold_selections, all_features, n_folds)
+            stability_time = time.time() - start_time
+            _LOGGER.info(f"✅ Parallel stability calculation completed in {stability_time:.3f}s")
+            return result
         except Exception as e:
-            _LOGGER.warning(f"Parallel stability calculation failed: {e}, falling back to sequential")
+            _LOGGER.warning(f"⚠️ Parallel stability calculation failed: {e}, falling back to sequential")
 
     # Sequential implementation
+    _LOGGER.debug("🔄 Using sequential stability calculation...")
     counts: Dict[str, int] = {f: 0 for f in all_features}
-    for sel in fold_selections:
+    
+    for i, sel in enumerate(fold_selections):
+        if i % 10 == 0:  # Log progress every 10 folds
+            progress = (i / len(fold_selections)) * 100
+            _LOGGER.debug(f"📊 Processing fold {i+1}/{len(fold_selections)} ({progress:.1f}%)")
+        
         for f in sel:
             if f in counts:
                 counts[f] += 1
 
     stability = {f: counts[f] / n_folds for f in all_features}
+    
+    stability_time = time.time() - start_time
+    _LOGGER.info(f"✅ Sequential stability calculation completed in {stability_time:.3f}s")
+    _LOGGER.info(f"📊 Average stability score: {np.mean(list(stability.values())):.4f}")
+    _LOGGER.info(f"📊 Max stability score: {max(stability.values()):.4f}")
+    _LOGGER.info(f"📊 Min stability score: {min(stability.values()):.4f}")
+    
     return {
         'selection_counts': counts,
         'stability_scores': stability,

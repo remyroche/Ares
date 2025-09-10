@@ -185,14 +185,25 @@ class SRLevelsManager:
                     detection_methods = ['fractal', 'volume', 'pivot', 'atr']
                     for method in detection_methods:
                         try:
+                            self.logger.info(f'🔄 Trying {method} detection method...')
                             original_method = self.sr_predictor.sr_detection_method
                             self.sr_predictor.sr_detection_method = method
+                            
+                            # Regular execution with progress updates
+                            if method == 'volume':
+                                self.logger.info('⏱️ Volume detection may take time for large datasets...')
+                                self.logger.info('📊 Processing volume-based support level detection...')
+                            
                             method_support = await self.sr_predictor._detect_support_levels(market_data)
                             for level_data in method_support:
                                 level = self._create_sr_level_from_data(level_data, 'support')
                                 if level and (not self._level_exists(level, support_levels)):
                                     level.metadata['detection_method'] = method
                                     support_levels.append(level)
+                            # Regular execution with progress updates
+                            if method == 'volume':
+                                self.logger.info('📊 Processing volume-based resistance level detection...')
+                            
                             method_resistance = await self.sr_predictor._detect_resistance_levels(market_data)
                             for level_data in method_resistance:
                                 level = self._create_sr_level_from_data(level_data, 'resistance')

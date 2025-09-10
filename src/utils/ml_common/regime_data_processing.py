@@ -117,13 +117,24 @@ class AsyncFileProcessor:
     """High-performance async file processor for regime data."""
     
     def __init__(self, config: Optional[AsyncFileProcessorConfig] = None):
-        self.config = config or AsyncFileProcessorConfig()
         self.logger = create_fallback_logger("AsyncFileProcessor")
+        self.logger.info("🚀 Initializing AsyncFileProcessor...")
+        start_time = time.time()
+        
+        self.config = config or AsyncFileProcessorConfig()
+        self.logger.info(f"📊 Configuration loaded: chunk_size={self.config.chunk_size}, max_concurrent={self.config.max_concurrent_files}")
+        
         self.semaphore = asyncio.Semaphore(self.config.max_concurrent_files)
+        self.logger.debug("✅ Semaphore initialized")
         
         # Initialize utilities
+        self.logger.debug("🔧 Initializing utilities...")
         self.parquet_utils = ParquetUtils() if ParquetUtils else None
         self.serializer = UniversalSerializer() if UniversalSerializer else None
+        self.logger.debug("✅ Utilities initialized")
+        
+        init_time = time.time() - start_time
+        self.logger.info(f"✅ AsyncFileProcessor initialized in {init_time:.3f}s")
 
     async def process_file_async(
         self, 

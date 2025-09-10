@@ -1,0 +1,164 @@
+{
+  "timestamp": "2025-09-10T19:57:34.485291",
+  "target_repository": "Ares",
+  "analysis_type": "import_analysis_only",
+  "summary": {
+    "import_verifier": {
+      "total_files_analyzed": 750,
+      "unused_files": 382,
+      "used_files": 368,
+      "unused_files_list": [
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/tasks.py",
+          "module_name": "src.tasks",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/__init__.py",
+          "module_name": "src.__init__",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/strategist/__init__.py",
+          "module_name": "src.strategist.__init__",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/strategist/enhanced_regime_classifier.py",
+          "module_name": "src.strategist.enhanced_regime_classifier",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/strategist/strategist.py",
+          "module_name": "src.strategist.strategist",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/database/efficient_features_database.py",
+          "module_name": "src.database.efficient_features_database",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/database/precomputed_features_manager.py",
+          "module_name": "src.database.precomputed_features_manager",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/database/influxdb_manager.py",
+          "module_name": "src.database.influxdb_manager",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/database/firestore_manager.py",
+          "module_name": "src.database.firestore_manager",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/rolling_window_dataset.py",
+          "module_name": "src.transition.rolling_window_dataset",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/event_window_dataset.py",
+          "module_name": "src.transition.event_window_dataset",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/state_sequence_builder.py",
+          "module_name": "src.transition.state_sequence_builder",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/baseline_rf.py",
+          "module_name": "src.transition.baseline_rf",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/combined_features_builder.py",
+          "module_name": "src.transition.combined_features_builder",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/path_targets.py",
+          "module_name": "src.transition.path_targets",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/event_trigger_indexer.py",
+          "module_name": "src.transition.event_trigger_indexer",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/seq2seq_trainer.py",
+          "module_name": "src.transition.seq2seq_trainer",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/multitask_rf.py",
+          "module_name": "src.transition.multitask_rf",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/rolling_inference.py",
+          "module_name": "src.transition.rolling_inference",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/transition/inference_combiner.py",
+          "module_name": "src.transition.inference_combiner",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/launcher/enhanced_trading_launcher.py",
+          "module_name": "src.launcher.enhanced_trading_launcher",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/launcher/ares_launcher.py",
+          "module_name": "src.launcher.ares_launcher",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/launcher/ares_launcher_refactored.py",
+          "module_name": "src.launcher.ares_launcher_refactored",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/exchange/binance.py",
+          "module_name": "src.exchange.binance",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/analyst/market_health_analyzer.py",
+          "module_name": "src.analyst.market_health_analyzer",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/analyst/enhanced_regime_predictor.py",
+          "module_name": "src.analyst.enhanced_regime_predictor",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/analyst/meta_label_relevance.py",
+          "module_name": "src.analyst.meta_label_relevance",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/analyst/unified_regime_classifier_fractal_simplified.py",
+          "module_name": "src.analyst.unified_regime_classifier_fractal_simplified",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/analyst/enhanced_prediction_integrator.py",
+          "module_name": "src.analyst.enhanced_prediction_integrator",
+          "reason": "Not imported by any other file"
+        },
+        {
+          "file": "/Users/remyroche/Documents/Ares/src/analyst/regime_runtime.py",
+          "module_name": "src.analyst.regime_runtime",
+          "reason": "Not imported by any other file"
+        }
+      ]
+    }
+  }
+}

@@ -27,24 +27,45 @@ class BacktestingLogger:
         self.name = name
         self.log_dir = Path(log_dir)
         self.enable_console = enable_console
-        ensure_directory(self.log_dir)
+        
+        # Initialize logger with enhanced setup
         self.logger = logging.getLogger(f'backtesting.{name}')
         self.logger.setLevel(logging.DEBUG)
+        
+        # Clear existing handlers
         for handler in self.logger.handlers[:]:
             self.logger.removeHandler(handler)
+        
+        # Ensure log directory exists
+        ensure_directory(self.log_dir)
+        self.logger.info(f"📁 Log directory ensured: {self.log_dir}")
+        
+        # Create timestamped log file
         timestamp = format_datetime(get_current_datetime(), '%Y%m%d_%H%M%S')
         log_file = self.log_dir / f'backtesting_{name}_{timestamp}.log'
+        
+        # Setup file handler with detailed formatting
         file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
         file_handler.setLevel(logging.DEBUG)
+        file_formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)s | %(name)s | %(funcName)s:%(lineno)d | %(message)s', 
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(file_formatter)
+        self.logger.addHandler(file_handler)
+        
+        # Setup console handler if enabled
         if self.enable_console:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setLevel(logging.INFO)
-            console_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(name)s | %(message)s', datefmt='%H:%M:%S')
+            console_formatter = logging.Formatter(
+                '%(asctime)s | %(levelname)s | %(name)s | %(message)s', 
+                datefmt='%H:%M:%S'
+            )
             console_handler.setFormatter(console_formatter)
             self.logger.addHandler(console_handler)
-        file_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(name)s | %(funcName)s:%(lineno)d | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-        file_handler.setFormatter(file_formatter)
-        self.logger.addHandler(file_handler)
+        
+        # Initialize tracking variables
         self.start_time = time.time()
         self.step_times = {}
         self.quality_flags = []
@@ -54,9 +75,13 @@ class BacktestingLogger:
         self.performance_metrics = {}
         self.monitor_thread = None
         self.monitoring = False
+        
+        # Log initialization details
         self.logger.info('🚀 Enhanced Backtesting Logger Initialized')
         self.logger.info(f'📁 Log file: {log_file}')
         self.logger.info(f"🖥️ Console output: {('Enabled' if self.enable_console else 'Disabled')}")
+        self.logger.info(f"📊 Logger name: {name}")
+        self.logger.info(f"⏰ Start time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
 
     def start_performance_monitoring(self, interval: float = 5.0) -> None:
         """Start performance monitoring in background thread."""

@@ -29,25 +29,39 @@ def safe_json_load(file_path: str, default: Any = None) -> Any:
     Returns:
         Parsed JSON data or default value if loading fails
     """
+    logger.info(f'📁 Loading JSON file: {file_path}')
+    
     try:
         if not os.path.exists(file_path):
-            logger.warning(f"JSON file not found: {file_path}")
+            logger.warning(f"⚠️ JSON file not found: {file_path}")
+            logger.info(f'📊 Returning default value: {default}')
             return default
+
+        # Check file size
+        file_size = os.path.getsize(file_path)
+        logger.info(f'📊 File size: {file_size:,} bytes ({file_size/1024:.1f} KB)')
 
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        logger.debug(f"Successfully loaded JSON from: {file_path}")
+        logger.info(f"✅ Successfully loaded JSON from: {file_path}")
+        logger.info(f'📊 JSON data type: {type(data)}')
+        if isinstance(data, dict):
+            logger.info(f'📊 JSON keys: {list(data.keys())}')
+        elif isinstance(data, list):
+            logger.info(f'📊 JSON list length: {len(data)}')
         return data
 
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON in file {file_path}: {e}")
+        logger.error(f"❌ Invalid JSON in file {file_path}: {e}")
+        logger.error(f"📊 JSON error details: line {e.lineno}, column {e.colno}")
         return default
     except PermissionError as e:
-        logger.error(f"Permission denied reading file {file_path}: {e}")
+        logger.error(f"❌ Permission denied reading file {file_path}: {e}")
         return default
     except Exception as e:
-        logger.error(f"Unexpected error loading JSON from {file_path}: {e}")
+        logger.error(f"❌ Unexpected error loading JSON from {file_path}: {e}")
+        logger.error(f"📊 Error type: {type(e).__name__}")
         return default
 
 def safe_json_save(data: Any, file_path: str, indent: int = 2) -> bool:
@@ -61,21 +75,45 @@ def safe_json_save(data: Any, file_path: str, indent: int = 2) -> bool:
     Returns:
         True if save was successful, False otherwise
     """
+    logger.info(f'💾 Saving JSON data to: {file_path}')
+    logger.info(f'📊 Data type: {type(data)}')
+    
+    if isinstance(data, dict):
+        logger.info(f'📊 Dictionary keys: {list(data.keys())}')
+    elif isinstance(data, list):
+        logger.info(f'📊 List length: {len(data)}')
+    
     try:
         # Ensure directory exists
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        dir_path = os.path.dirname(file_path)
+        if dir_path:
+            logger.info(f'📁 Creating directory: {dir_path}')
+            os.makedirs(dir_path, exist_ok=True)
+
+        # Estimate file size
+        json_str = json.dumps(data, indent=indent, ensure_ascii=False)
+        estimated_size = len(json_str.encode('utf-8'))
+        logger.info(f'📊 Estimated file size: {estimated_size:,} bytes ({estimated_size/1024:.1f} KB)')
 
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=indent, ensure_ascii=False)
 
-        logger.debug(f"Successfully saved JSON to: {file_path}")
-        return True
+        # Verify file was created and get actual size
+        if os.path.exists(file_path):
+            actual_size = os.path.getsize(file_path)
+            logger.info(f"✅ Successfully saved JSON to: {file_path}")
+            logger.info(f'📊 Actual file size: {actual_size:,} bytes ({actual_size/1024:.1f} KB)')
+            return True
+        else:
+            logger.error(f"❌ File was not created: {file_path}")
+            return False
 
     except PermissionError as e:
-        logger.error(f"Permission denied writing to file {file_path}: {e}")
+        logger.error(f"❌ Permission denied writing to file {file_path}: {e}")
         return False
     except Exception as e:
-        logger.error(f"Unexpected error saving JSON to {file_path}: {e}")
+        logger.error(f"❌ Unexpected error saving JSON to {file_path}: {e}")
+        logger.error(f"📊 Error type: {type(e).__name__}")
         return False
 
 def validate_data_directory(data_dir: str, required_subdirs: List[str] = None) -> Dict[str, Any]:
@@ -88,6 +126,9 @@ def validate_data_directory(data_dir: str, required_subdirs: List[str] = None) -
     Returns:
         Dictionary with validation results
     """
+    logger.info(f'🔍 Validating data directory: {data_dir}')
+    logger.info(f'📊 Required subdirectories: {required_subdirs or "None"}')
+    
     result = {
         'valid': True,
         'exists': False,
@@ -99,55 +140,92 @@ def validate_data_directory(data_dir: str, required_subdirs: List[str] = None) -
 
     try:
         # Check if directory exists
+        logger.info('🔍 1. Checking if directory exists...')
         if not os.path.exists(data_dir):
+            logger.warning(f'⚠️ Data directory does not exist: {data_dir}')
             result['issues'].append(f"Data directory does not exist: {data_dir}")
             result['valid'] = False
             return result
 
+        logger.info('✅ Directory exists')
         result['exists'] = True
 
         # Check if it's actually a directory
+        logger.info('🔍 2. Checking if path is a directory...')
         if not os.path.isdir(data_dir):
+            logger.error(f'❌ Path exists but is not a directory: {data_dir}')
             result['issues'].append(f"Path exists but is not a directory: {data_dir}")
             result['valid'] = False
             return result
 
+        logger.info('✅ Path is a directory')
+
         # Check read permissions
+        logger.info('🔍 3. Checking read permissions...')
         try:
-            os.listdir(data_dir)
+            files = os.listdir(data_dir)
             result['readable'] = True
+            logger.info(f'✅ Read permissions OK - found {len(files)} items')
+            logger.info(f'📊 Directory contents: {files[:10]}{"..." if len(files) > 10 else ""}')
         except PermissionError:
+            logger.error(f'❌ No read permission for directory: {data_dir}')
             result['issues'].append(f"No read permission for directory: {data_dir}")
             result['valid'] = False
 
         # Check write permissions
+        logger.info('🔍 4. Checking write permissions...')
         try:
             test_file = os.path.join(data_dir, '.test_write')
             with open(test_file, 'w') as f:
                 f.write('test')
             os.remove(test_file)
             result['writable'] = True
+            logger.info('✅ Write permissions OK')
         except PermissionError:
             result['issues'].append(f"No write permission for directory: {data_dir}")
             result['valid'] = False
 
         # Check required subdirectories
         if required_subdirs:
+            logger.info('🔍 5. Checking required subdirectories...')
             for subdir in required_subdirs:
                 subdir_path = os.path.join(data_dir, subdir)
                 if not os.path.exists(subdir_path):
+                    logger.warning(f'⚠️ Missing required subdirectory: {subdir}')
                     result['missing_subdirs'].append(subdir)
                 elif not os.path.isdir(subdir_path):
+                    logger.error(f'❌ Required subdirectory is not a directory: {subdir_path}')
                     result['issues'].append(f"Required subdirectory is not a directory: {subdir_path}")
+                else:
+                    logger.info(f'✅ Required subdirectory exists: {subdir}')
 
         if result['missing_subdirs']:
+            logger.warning(f'⚠️ Missing required subdirectories: {result["missing_subdirs"]}')
             result['issues'].append(f"Missing required subdirectories: {result['missing_subdirs']}")
 
         result['valid'] = result['valid'] and len(result['issues']) == 0
 
+        # Final validation summary
+        logger.info('📊 Directory validation summary:')
+        logger.info(f'   📊 Valid: {result["valid"]}')
+        logger.info(f'   📊 Exists: {result["exists"]}')
+        logger.info(f'   📊 Readable: {result["readable"]}')
+        logger.info(f'   📊 Writable: {result["writable"]}')
+        logger.info(f'   📊 Missing subdirs: {len(result["missing_subdirs"])}')
+        logger.info(f'   📊 Issues: {len(result["issues"])}')
+        
+        if result['valid']:
+            logger.info('✅ Directory validation passed')
+        else:
+            logger.error('❌ Directory validation failed')
+            for issue in result['issues']:
+                logger.error(f'   ❌ {issue}')
+
         return result
 
     except Exception as e:
+        logger.error(f'❌ Unexpected error validating directory: {str(e)}')
+        logger.error(f'📊 Error type: {type(e).__name__}')
         result['issues'].append(f"Unexpected error validating directory: {str(e)}")
         result['valid'] = False
         return result
@@ -161,15 +239,36 @@ def ensure_directory_exists(directory_path: str) -> bool:
     Returns:
         True if directory exists or was created successfully, False otherwise
     """
+    logger.info(f'📁 Ensuring directory exists: {directory_path}')
+    
     try:
+        # Check if directory already exists
+        if os.path.exists(directory_path):
+            if os.path.isdir(directory_path):
+                logger.info(f'✅ Directory already exists: {directory_path}')
+                return True
+            else:
+                logger.error(f'❌ Path exists but is not a directory: {directory_path}')
+                return False
+        
+        # Create directory
+        logger.info(f'🔧 Creating directory: {directory_path}')
         Path(directory_path).mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Ensured directory exists: {directory_path}")
-        return True
+        
+        # Verify creation
+        if os.path.exists(directory_path) and os.path.isdir(directory_path):
+            logger.info(f'✅ Directory created successfully: {directory_path}')
+            return True
+        else:
+            logger.error(f'❌ Directory creation failed: {directory_path}')
+            return False
+            
     except PermissionError as e:
-        logger.error(f"Permission denied creating directory {directory_path}: {e}")
+        logger.error(f"❌ Permission denied creating directory {directory_path}: {e}")
         return False
     except Exception as e:
-        logger.error(f"Unexpected error creating directory {directory_path}: {e}")
+        logger.error(f"❌ Unexpected error creating directory {directory_path}: {e}")
+        logger.error(f"📊 Error type: {type(e).__name__}")
         return False
 
 def get_file_size_mb(file_path: str) -> Optional[float]:
@@ -181,16 +280,22 @@ def get_file_size_mb(file_path: str) -> Optional[float]:
     Returns:
         File size in MB, or None if file doesn't exist or can't be accessed
     """
+    logger.info(f'📊 Getting file size: {file_path}')
+    
     try:
         if not os.path.exists(file_path):
+            logger.warning(f'⚠️ File does not exist: {file_path}')
             return None
 
         size_bytes = os.path.getsize(file_path)
         size_mb = size_bytes / (1024 * 1024)
+        
+        logger.info(f'📊 File size: {size_bytes:,} bytes ({size_mb:.2f} MB)')
         return size_mb
 
     except Exception as e:
-        logger.warning(f"Error getting file size for {file_path}: {e}")
+        logger.warning(f"⚠️ Error getting file size for {file_path}: {e}")
+        logger.warning(f"📊 Error type: {type(e).__name__}")
         return None
 
 def validate_parquet_file(file_path: str) -> Dict[str, Any]:

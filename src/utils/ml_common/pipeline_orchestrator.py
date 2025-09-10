@@ -101,8 +101,12 @@ class MLPipelineOrchestrator:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize ML pipeline orchestrator with configuration."""
-        self.config = config or {}
         self.logger = logger.getChild('PipelineOrchestrator')
+        self.logger.info("🚀 Initializing MLPipelineOrchestrator...")
+        start_time = time.time()
+        
+        self.config = config or {}
+        self.logger.info(f"📊 Configuration loaded with {len(self.config)} parameters")
 
         # Configuration defaults
         self.max_workers = self.config.get('max_workers', 4)
@@ -110,14 +114,25 @@ class MLPipelineOrchestrator:
         self.default_timeout = self.config.get('default_timeout', 3600)
         self.retry_failed_steps = self.config.get('retry_failed_steps', True)
         self.enable_monitoring = self.config.get('enable_monitoring', True)
+        
+        self.logger.info(f"📊 Max workers: {self.max_workers}")
+        self.logger.info(f"📊 Parallel execution: {self.enable_parallel}")
+        self.logger.info(f"📊 Default timeout: {self.default_timeout}s")
+        self.logger.info(f"📊 Retry failed steps: {self.retry_failed_steps}")
+        self.logger.info(f"📊 Monitoring enabled: {self.enable_monitoring}")
 
         # Pipeline storage
         self.active_pipelines: Dict[str, PipelineExecution] = {}
         self.completed_pipelines: Dict[str, PipelineExecution] = {}
+        self.logger.debug("✅ Pipeline storage initialized")
 
         # Monitoring
         self.monitoring_queue = queue.Queue()
         self.monitoring_thread = None
+        self.logger.debug("✅ Monitoring system initialized")
+        
+        init_time = time.time() - start_time
+        self.logger.info(f"✅ MLPipelineOrchestrator initialized in {init_time:.3f}s")
 
         # Initialize utilities
         self.parallel_processor = ParallelProcessor() if self.enable_parallel else None

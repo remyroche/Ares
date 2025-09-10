@@ -28,6 +28,16 @@ import psutil
 import pandas as pd
 import numpy as np
 
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.ValidationUtils")
+    print("✅ Custom logger available for MLCommon.ValidationUtils")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.ValidationUtils")
+    _LOGGER.setLevel(logging.INFO)
+
 from ..math_validation import safe_divide, MathValidationError
 from ..common_operations import create_fallback_logger
 
@@ -47,6 +57,8 @@ class ConfigurationValidator:
 
     def __init__(self, logger: Optional[logging.Logger] = None):
         self.logger = logger or logging.getLogger(f"{__name__}.ConfigurationValidator")
+        _LOGGER.info("🚀 Initializing ConfigurationValidator...")
+        _LOGGER.info("✅ ConfigurationValidator initialized successfully")
 
     def validate_ml_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -68,6 +80,10 @@ class ConfigurationValidator:
             'validated_config': {}
         }
 
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting ML configuration validation...")
+        _LOGGER.debug(f"📊 Configuration keys: {list(config.keys()) if config else 'None'}")
+        
         try:
             # Required keys validation
             required_keys = ['symbol', 'exchange', 'timeframe']
@@ -75,8 +91,11 @@ class ConfigurationValidator:
 
             if missing_keys:
                 error_msg = f"❌ FAST FAIL: Missing required configuration keys: {missing_keys}"
+                _LOGGER.error(error_msg)
                 self.logger.error(error_msg)
                 raise ValidationError(error_msg, "configuration", {"missing_keys": missing_keys})
+            
+            _LOGGER.info(f"✅ Required keys validation passed")
 
             # Symbol validation
             symbol = config.get('symbol', '')
@@ -108,14 +127,20 @@ class ConfigurationValidator:
                 raise ValidationError(error_msg, "configuration", {"invalid_data_dir": data_dir})
 
             result['validated_config'] = config
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Configuration validation passed in {execution_time:.3f}s")
             self.logger.info("✅ Configuration validation passed")
 
         except ValidationError:
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Configuration validation failed after {execution_time:.3f}s")
             result['passed'] = False
             raise
         except Exception as e:
+            execution_time = time.time() - start_time
             result['passed'] = False
             error_msg = f"❌ FAST FAIL: Configuration validation failed: {e}"
+            _LOGGER.error(f"❌ Configuration validation failed after {execution_time:.3f}s: {e}")
             self.logger.error(error_msg)
             raise ValidationError(error_msg, "configuration", {"validation_error": str(e)}) from e
 
@@ -127,6 +152,8 @@ class DataValidator:
 
     def __init__(self, logger: Optional[logging.Logger] = None):
         self.logger = logger or logging.getLogger(f"{__name__}.DataValidator")
+        _LOGGER.info("🚀 Initializing DataValidator...")
+        _LOGGER.info("✅ DataValidator initialized successfully")
 
     def validate_dataframe(self, data: pd.DataFrame, validation_level: str = "comprehensive") -> Dict[str, Any]:
         """
@@ -142,17 +169,26 @@ class DataValidator:
         Raises:
             ValidationError: For critical data issues
         """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting DataFrame validation...")
+        _LOGGER.info(f"📊 Validation level: {validation_level}")
+        
         if data is None:
             error_msg = "❌ FAST FAIL: Input data is None"
+            _LOGGER.error(error_msg)
             self.logger.error(error_msg)
             raise ValidationError(error_msg, "data_integrity", {"data_is_none": True})
 
+        _LOGGER.info(f"📊 Data shape: {data.shape}")
+        
         if len(data) == 0:
             error_msg = "❌ FAST FAIL: Input data is empty"
+            _LOGGER.error(error_msg)
             self.logger.error(error_msg)
             raise ValidationError(error_msg, "data_integrity", {"data_is_empty": True})
 
         if len(data) < 100:
+            _LOGGER.warning("⚠️ Very small dataset detected - results may not be reliable")
             self.logger.warning("⚠️ Very small dataset detected - results may not be reliable")
 
         result = {
@@ -189,6 +225,7 @@ class DataValidator:
             if result['errors']:
                 result['passed'] = False
                 error_msg = f"❌ FAST FAIL: Data validation failed: {result['errors']}"
+                _LOGGER.error(error_msg)
                 self.logger.error(error_msg)
                 raise ValidationError(error_msg, "data_quality", {
                     "validation_errors": result['errors'],
@@ -197,12 +234,21 @@ class DataValidator:
 
             if result['warnings']:
                 for warning in result['warnings']:
+                    _LOGGER.warning(f"⚠️ Data validation warning: {warning}")
                     self.logger.warning(f"⚠️ Data validation warning: {warning}")
 
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ DataFrame validation passed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Errors: {len(result['errors'])}, Warnings: {len(result['warnings'])}")
+
         except ValidationError:
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ DataFrame validation failed after {execution_time:.3f}s")
             raise
         except Exception as e:
+            execution_time = time.time() - start_time
             error_msg = f"❌ FAST FAIL: Data validation process failed: {e}"
+            _LOGGER.error(f"❌ DataFrame validation failed after {execution_time:.3f}s: {e}")
             self.logger.error(error_msg)
             raise ValidationError(error_msg, "data_validation", {"process_error": str(e)}) from e
 

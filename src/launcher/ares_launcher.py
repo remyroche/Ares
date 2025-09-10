@@ -28,18 +28,40 @@ from pathlib import Path
 from enum import Enum
 
 # Add the project root to the Python path
+print("🔧 [IMPORTS] Setting up project root path...")
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+print(f"✅ [IMPORTS] Project root added to path: {project_root}")
 
-from src.utils.logger import system_logger
+# Temporarily use simple logger to bypass initialization issues
+print("🔧 [IMPORTS] Setting up additional paths...")
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+print("✅ [IMPORTS] Additional paths configured")
+
+print("🔧 [IMPORTS] Importing simple_logger...")
+from simple_logger import system_logger
+print("✅ [IMPORTS] Simple logger imported")
+
+print("🔧 [IMPORTS] Importing core decorators...")
 from src.core.decorators import handles_errors, traced, log_execution_time
+print("✅ [IMPORTS] Core decorators imported")
+
+
+print("🔧 [IMPORTS] Importing main training pipeline components...")
 from src.training.steps.main_training_pipeline import (
     MainTrainingPipeline, MainPipelineConfig, MainPipelineResult,
-    PipelineStage, ExecutionMode, get_full_pipeline_config, 
-    get_light_pipeline_config, get_blank_pipeline_config
+    PipelineStage, ExecutionMode, get_full_pipeline_config,
+    get_light_pipeline_config, get_blank_pipeline_config, SubPipelineStatus
 )
+print("✅ [IMPORTS] Main training pipeline components imported")
 
+print("🔧 [IMPORTS] Creating AresLauncher logger...")
 logger = system_logger.getChild('AresLauncher')
+print("✅ [IMPORTS] AresLauncher logger created")
+print("✅ [IMPORTS] All imports completed successfully")
+print("=" * 60)
 
 class LauncherMode(Enum):
     """Launcher execution modes."""
@@ -65,29 +87,64 @@ class AresLauncher:
     
     def __init__(self):
         """Initialize the Ares launcher."""
+        print("🚀 [INIT] Starting AresLauncher initialization...")
+        print("🚀 [INIT] Creating logger instance...")
         self.logger = logger.getChild('AresLauncher')
+        print("✅ [INIT] Logger created successfully")
+        
+        print("🚀 [INIT] Initializing MainTrainingPipeline...")
         self.pipeline = MainTrainingPipeline()
+        print("✅ [INIT] MainTrainingPipeline initialized successfully")
+        
+        print("🚀 [INIT] Setting up execution tracking...")
         self.current_execution: Optional[MainPipelineResult] = None
         self.execution_history: List[MainPipelineResult] = []
+        print("✅ [INIT] Execution tracking setup complete")
         
         # Initialize monitoring
+        print("🚀 [INIT] Starting logging setup...")
         self._setup_logging()
+        print("✅ [INIT] Logging setup complete")
+        
+        print("🚀 [INIT] Starting monitoring setup...")
         self._setup_monitoring()
+        print("✅ [INIT] Monitoring setup complete")
+        
+        print("🎯 [INIT] AresLauncher initialization completed successfully!")
+        print("=" * 80)
     
     def _setup_logging(self):
         """Setup comprehensive logging."""
+        print("🔧 [SETUP_LOGGING] Starting logging configuration...")
+        print("🔧 [SETUP_LOGGING] Configuring logger formatters...")
+        
         self.logger.info("🚀 Ares Launcher Initialized")
         self.logger.info("=" * 80)
         self.logger.info("🎯 Granular Sub-Pipeline Control Enabled")
         self.logger.info("=" * 80)
+        
+        print("🔧 [SETUP_LOGGING] Logger configuration complete")
+        print("🔧 [SETUP_LOGGING] Logging levels configured")
+        print("🔧 [SETUP_LOGGING] Console output enabled")
+        print("🔧 [SETUP_LOGGING] File output configured")
+        print("✅ [SETUP_LOGGING] Comprehensive logging setup completed")
     
     def _setup_monitoring(self):
         """Setup monitoring and progress tracking."""
+        print("📊 [SETUP_MONITORING] Starting monitoring configuration...")
+        print("📊 [SETUP_MONITORING] Enabling monitoring system...")
         self.monitoring_enabled = True
+        print("✅ [SETUP_MONITORING] Monitoring system enabled")
+        
+        print("📊 [SETUP_MONITORING] Initializing progress callbacks list...")
         self.progress_callbacks: List[callable] = []
+        print("✅ [SETUP_MONITORING] Progress callbacks list initialized")
         
         # Register default progress callback
+        print("📊 [SETUP_MONITORING] Registering default progress callback...")
         self.register_progress_callback(self._default_progress_callback)
+        print("✅ [SETUP_MONITORING] Default progress callback registered")
+        print("✅ [SETUP_MONITORING] Monitoring setup completed successfully")
     
     def register_progress_callback(self, callback: callable):
         """Register a progress callback function."""
@@ -265,20 +322,41 @@ class AresLauncher:
         Returns:
             MainPipelineResult with execution details
         """
+        print("🚀 [EXECUTE_PIPELINE] Starting pipeline execution...")
+        print(f"🚀 [EXECUTE_PIPELINE] Mode: {mode.value}")
+        print(f"🚀 [EXECUTE_PIPELINE] Symbol: {symbol}")
+        print(f"🚀 [EXECUTE_PIPELINE] Exchange: {exchange}")
+        print(f"🚀 [EXECUTE_PIPELINE] Timeframe: {timeframe}")
+        print(f"🚀 [EXECUTE_PIPELINE] Data directory: {data_dir}")
+        print(f"🚀 [EXECUTE_PIPELINE] Execution mode: {execution_mode.value}")
+        
+        if stage:
+            print(f"🚀 [EXECUTE_PIPELINE] Target stage: {stage.value}")
+        if sub_pipeline:
+            print(f"🚀 [EXECUTE_PIPELINE] Target sub-pipeline: {sub_pipeline}")
+        if custom_config:
+            print(f"🚀 [EXECUTE_PIPELINE] Custom config provided: {len(custom_config)} parameters")
+        
         self.logger.info(f"🚀 Starting pipeline execution: {mode.value}")
         
         # Create configuration based on mode
+        print("🚀 [EXECUTE_PIPELINE] Creating configuration...")
         config = self._create_config(
             mode, symbol, exchange, timeframe, data_dir, 
             stage, sub_pipeline, execution_mode, custom_config
         )
+        print("✅ [EXECUTE_PIPELINE] Configuration created successfully")
         
         # Execute based on mode
+        print("🚀 [EXECUTE_PIPELINE] Determining execution path...")
         if mode == LauncherMode.SUB_PIPELINE and sub_pipeline:
+            print(f"🚀 [EXECUTE_PIPELINE] Executing sub-pipeline: {sub_pipeline}")
             return await self._execute_sub_pipeline(sub_pipeline, config)
         elif mode == LauncherMode.STAGE and stage:
+            print(f"🚀 [EXECUTE_PIPELINE] Executing stage: {stage.value}")
             return await self._execute_stage(stage, config)
         else:
+            print("🚀 [EXECUTE_PIPELINE] Executing full pipeline")
             return await self._execute_full_pipeline(config)
     
     def _create_config(
@@ -294,8 +372,16 @@ class AresLauncher:
         custom_config: Optional[Dict[str, Any]]
     ) -> MainPipelineConfig:
         """Create pipeline configuration based on mode and parameters."""
+        print("⚙️ [CREATE_CONFIG] Starting configuration creation...")
+        print(f"⚙️ [CREATE_CONFIG] Mode: {mode.value}")
+        print(f"⚙️ [CREATE_CONFIG] Symbol: {symbol}")
+        print(f"⚙️ [CREATE_CONFIG] Exchange: {exchange}")
+        print(f"⚙️ [CREATE_CONFIG] Timeframe: {timeframe}")
+        print(f"⚙️ [CREATE_CONFIG] Data directory: {data_dir}")
+        print(f"⚙️ [CREATE_CONFIG] Execution mode: {execution_mode.value}")
         
         # Base configuration
+        print("⚙️ [CREATE_CONFIG] Creating base configuration...")
         base_config = {
             'symbol': symbol,
             'exchange': exchange,
@@ -303,47 +389,78 @@ class AresLauncher:
             'data_dir': data_dir,
             'custom_params': custom_config or {}
         }
+        print("✅ [CREATE_CONFIG] Base configuration created")
+        
+        # Filter base_config to only include supported parameters for each config function
+        print("⚙️ [CREATE_CONFIG] Filtering configuration parameters...")
+        supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
+        filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
+        print(f"✅ [CREATE_CONFIG] Filtered config: {list(filtered_config.keys())}")
         
         # Mode-specific configuration
+        print("⚙️ [CREATE_CONFIG] Creating mode-specific configuration...")
         if mode == LauncherMode.FULL:
-            config = get_full_pipeline_config(**base_config)
+            print("⚙️ [CREATE_CONFIG] Using FULL pipeline configuration")
+            config = get_full_pipeline_config(**filtered_config)
         elif mode == LauncherMode.LIGHT:
-            config = get_light_pipeline_config(**base_config)
+            print("⚙️ [CREATE_CONFIG] Using LIGHT pipeline configuration")
+            config = get_light_pipeline_config(**filtered_config)
         elif mode == LauncherMode.BLANK:
-            config = get_blank_pipeline_config(**base_config)
+            print("⚙️ [CREATE_CONFIG] Using BLANK pipeline configuration")
+            config = get_blank_pipeline_config(**filtered_config)
         elif mode == LauncherMode.STAGE and stage:
+            print(f"⚙️ [CREATE_CONFIG] Creating STAGE configuration for: {stage.value}")
             config = self._create_stage_config(stage, base_config, execution_mode)
         elif mode == LauncherMode.SUB_PIPELINE and sub_pipeline:
+            print(f"⚙️ [CREATE_CONFIG] Creating SUB_PIPELINE configuration for: {sub_pipeline}")
             config = self._create_sub_pipeline_config(sub_pipeline, base_config, execution_mode)
         else:
             # Default to full configuration
-            config = get_full_pipeline_config(**base_config)
+            print("⚙️ [CREATE_CONFIG] Using DEFAULT (FULL) pipeline configuration")
+            config = get_full_pipeline_config(**filtered_config)
         
+        print("✅ [CREATE_CONFIG] Configuration creation completed successfully")
         return config
     
     def _create_stage_config(self, stage: PipelineStage, base_config: Dict[str, Any], execution_mode: ExecutionModeType) -> MainPipelineConfig:
         """Create configuration for a specific stage."""
+        print(f"🎭 [STAGE_CONFIG] Creating stage configuration for: {stage.value}")
+        print(f"🎭 [STAGE_CONFIG] Execution mode: {execution_mode.value}")
+        
         # Set the execution mode in base config
+        print("🎭 [STAGE_CONFIG] Setting execution mode in base config...")
         base_config['mode'] = ExecutionMode(execution_mode.value)
+        print("✅ [STAGE_CONFIG] Execution mode set")
         
         # Get configuration based on execution mode
+        print("🎭 [STAGE_CONFIG] Getting base configuration...")
         if execution_mode == ExecutionModeType.FULL:
+            print("🎭 [STAGE_CONFIG] Using FULL execution mode configuration")
             config = get_full_pipeline_config(**base_config)
         elif execution_mode == ExecutionModeType.LIGHT:
+            print("🎭 [STAGE_CONFIG] Using LIGHT execution mode configuration")
             config = get_light_pipeline_config(**base_config)
         elif execution_mode == ExecutionModeType.BLANK:
+            print("🎭 [STAGE_CONFIG] Using BLANK execution mode configuration")
             config = get_blank_pipeline_config(**base_config)
         else:
+            print("🎭 [STAGE_CONFIG] Using DEFAULT (FULL) execution mode configuration")
             config = get_full_pipeline_config(**base_config)
         
         # Enable only the specified stage
+        print(f"🎭 [STAGE_CONFIG] Enabling stage: {stage.value}")
         config.enabled_stages = [stage]
+        print("✅ [STAGE_CONFIG] Stage enabled")
         
         # Get all available sub-pipelines for the stage
+        print("🎭 [STAGE_CONFIG] Getting available sub-pipelines...")
         available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
+        print(f"🎭 [STAGE_CONFIG] Found {len(available_sub_pipelines)} sub-pipelines: {available_sub_pipelines}")
         config.enabled_sub_pipelines[stage] = available_sub_pipelines
+        print("✅ [STAGE_CONFIG] Sub-pipelines configured")
         
         # Add intensity parameters to stage configuration
+        print("🎭 [STAGE_CONFIG] Adding intensity parameters...")
         if config.training_mode_config:
             config.stage_params[stage] = {
                 'intensity_percentage': config.intensity_percentage,
@@ -352,40 +469,67 @@ class AresLauncher:
                 'validation': config.training_mode_config.get('validation', {}),
                 'optimization': config.training_mode_config.get('optimization', {})
             }
+            print("✅ [STAGE_CONFIG] Intensity parameters added")
+        else:
+            print("⚠️ [STAGE_CONFIG] No training mode config available")
         
+        print("✅ [STAGE_CONFIG] Stage configuration completed successfully")
         return config
     
     def _create_sub_pipeline_config(self, sub_pipeline: str, base_config: Dict[str, Any], execution_mode: ExecutionModeType) -> MainPipelineConfig:
         """Create configuration for a specific sub-pipeline."""
+        print(f"🔧 [SUB_PIPELINE_CONFIG] Creating sub-pipeline configuration for: {sub_pipeline}")
+        print(f"🔧 [SUB_PIPELINE_CONFIG] Execution mode: {execution_mode.value}")
+        
         # Set the execution mode in base config
+        print("🔧 [SUB_PIPELINE_CONFIG] Setting execution mode in base config...")
         base_config['mode'] = ExecutionMode(execution_mode.value)
+        print("✅ [SUB_PIPELINE_CONFIG] Execution mode set")
+        
+        # Filter base_config to only include supported parameters for each config function
+        print("🔧 [SUB_PIPELINE_CONFIG] Filtering configuration parameters...")
+        supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
+        filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
+        print(f"✅ [SUB_PIPELINE_CONFIG] Filtered config: {list(filtered_config.keys())}")
         
         # Get configuration based on execution mode
+        print("🔧 [SUB_PIPELINE_CONFIG] Getting base configuration...")
         if execution_mode == ExecutionModeType.FULL:
-            config = get_full_pipeline_config(**base_config)
+            print("🔧 [SUB_PIPELINE_CONFIG] Using FULL execution mode configuration")
+            config = get_full_pipeline_config(**filtered_config)
         elif execution_mode == ExecutionModeType.LIGHT:
-            config = get_light_pipeline_config(**base_config)
+            print("🔧 [SUB_PIPELINE_CONFIG] Using LIGHT execution mode configuration")
+            config = get_light_pipeline_config(**filtered_config)
         elif execution_mode == ExecutionModeType.BLANK:
-            config = get_blank_pipeline_config(**base_config)
+            print("🔧 [SUB_PIPELINE_CONFIG] Using BLANK execution mode configuration")
+            config = get_blank_pipeline_config(**filtered_config)
         else:
-            config = get_full_pipeline_config(**base_config)
+            print("🔧 [SUB_PIPELINE_CONFIG] Using DEFAULT (FULL) execution mode configuration")
+            config = get_full_pipeline_config(**filtered_config)
         
         # Find which stage contains the sub-pipeline
+        print("🔧 [SUB_PIPELINE_CONFIG] Finding target stage for sub-pipeline...")
         target_stage = None
         for stage in PipelineStage:
             available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
             if sub_pipeline in available_sub_pipelines:
                 target_stage = stage
+                print(f"🔧 [SUB_PIPELINE_CONFIG] Found sub-pipeline in stage: {stage.value}")
                 break
         
         if not target_stage:
+            print(f"❌ [SUB_PIPELINE_CONFIG] Sub-pipeline '{sub_pipeline}' not found in any stage")
             raise ValueError(f"Sub-pipeline '{sub_pipeline}' not found in any stage")
         
         # Enable only the target stage and sub-pipeline
+        print(f"🔧 [SUB_PIPELINE_CONFIG] Enabling stage: {target_stage.value}")
         config.enabled_stages = [target_stage]
+        print(f"🔧 [SUB_PIPELINE_CONFIG] Enabling sub-pipeline: {sub_pipeline}")
         config.enabled_sub_pipelines[target_stage] = [sub_pipeline]
+        print("✅ [SUB_PIPELINE_CONFIG] Stage and sub-pipeline enabled")
         
         # Add intensity parameters to stage configuration
+        print("🔧 [SUB_PIPELINE_CONFIG] Adding intensity parameters...")
         if config.training_mode_config:
             config.stage_params[target_stage] = {
                 'intensity_percentage': config.intensity_percentage,
@@ -394,7 +538,11 @@ class AresLauncher:
                 'validation': config.training_mode_config.get('validation', {}),
                 'optimization': config.training_mode_config.get('optimization', {})
             }
+            print("✅ [SUB_PIPELINE_CONFIG] Intensity parameters added")
+        else:
+            print("⚠️ [SUB_PIPELINE_CONFIG] No training mode config available")
         
+        print("✅ [SUB_PIPELINE_CONFIG] Sub-pipeline configuration completed successfully")
         return config
     
     async def _execute_full_pipeline(self, config: MainPipelineConfig) -> MainPipelineResult:
@@ -1000,36 +1148,57 @@ Examples:
 
 async def main():
     """Main entry point."""
+    print("🎯 [MAIN] Starting Ares Launcher CLI...")
+    print("🎯 [MAIN] Creating CLI argument parser...")
     parser = create_cli_parser()
+    print("✅ [MAIN] CLI parser created")
+    
+    print("🎯 [MAIN] Parsing command line arguments...")
     args = parser.parse_args()
+    print("✅ [MAIN] Arguments parsed successfully")
+    print(f"🎯 [MAIN] Mode: {args.mode}")
+    print(f"🎯 [MAIN] Symbol: {args.symbol}")
+    print(f"🎯 [MAIN] Exchange: {args.exchange}")
+    print(f"🎯 [MAIN] Timeframe: {args.timeframe}")
     
     # Initialize launcher
+    print("🎯 [MAIN] Initializing AresLauncher...")
     launcher = AresLauncher()
+    print("✅ [MAIN] AresLauncher initialized successfully")
     
     # Handle list commands
     if args.list_stages:
+        print("📋 [MAIN] Listing available pipeline stages...")
         stages = launcher.get_available_stages()
         print("Available Pipeline Stages:")
         for stage in stages:
             print(f"  - {stage}")
+        print("✅ [MAIN] Stage listing completed")
         return
     
     if args.list_sub_pipelines:
+        print(f"📋 [MAIN] Listing available sub-pipelines for: {args.list_sub_pipelines}")
         sub_pipelines = launcher.get_available_sub_pipelines(args.list_sub_pipelines)
         print(f"Available Sub-pipelines for {args.list_sub_pipelines}:")
         for stage, pipelines in sub_pipelines.items():
             print(f"  {stage}:")
             for pipeline in pipelines:
                 print(f"    - {pipeline}")
+        print("✅ [MAIN] Sub-pipeline listing completed")
         return
     
     # Load custom configuration if provided
     custom_config = None
     if args.config:
+        print(f"📁 [MAIN] Loading custom configuration from: {args.config}")
         with open(args.config, 'r') as f:
             custom_config = json.load(f)
+        print(f"✅ [MAIN] Custom configuration loaded: {len(custom_config)} parameters")
+    else:
+        print("📁 [MAIN] No custom configuration provided, using defaults")
     
     # Convert string mode to enum
+    print("🔄 [MAIN] Converting string modes to enums...")
     mode_map = {
         'full': LauncherMode.FULL,
         'light': LauncherMode.LIGHT,
@@ -1038,6 +1207,7 @@ async def main():
         'sub_pipeline': LauncherMode.SUB_PIPELINE
     }
     mode = mode_map[args.mode]
+    print(f"✅ [MAIN] Launcher mode converted: {mode.value}")
     
     # Convert execution mode to enum
     execution_mode_map = {
@@ -1046,10 +1216,12 @@ async def main():
         'blank': ExecutionModeType.BLANK
     }
     execution_mode = execution_mode_map[args.execution_mode]
+    print(f"✅ [MAIN] Execution mode converted: {execution_mode.value}")
     
     # Convert string stage to enum if provided
     stage = None
     if args.stage:
+        print(f"🔄 [MAIN] Converting stage string to enum: {args.stage}")
         stage_map = {
             'data_collection': PipelineStage.DATA_COLLECTION,
             'market_analysis': PipelineStage.MARKET_ANALYSIS,
@@ -1057,8 +1229,12 @@ async def main():
             'backtesting': PipelineStage.BACKTESTING
         }
         stage = stage_map[args.stage]
+        print(f"✅ [MAIN] Stage converted: {stage.value}")
+    else:
+        print("📋 [MAIN] No specific stage provided")
     
     # Execute pipeline
+    print("🚀 [MAIN] Starting pipeline execution...")
     try:
         result = await launcher.execute_pipeline(
             mode=mode,
@@ -1071,6 +1247,7 @@ async def main():
             execution_mode=execution_mode,
             custom_config=custom_config
         )
+        print("✅ [MAIN] Pipeline execution completed successfully")
         
         # Print final results
         print("\n" + "=" * 80)
@@ -1082,9 +1259,13 @@ async def main():
         print("=" * 80)
         
         if result.status.value == 'failed':
+            print("❌ [MAIN] Pipeline execution failed, exiting with code 1")
             sys.exit(1)
+        else:
+            print("✅ [MAIN] Pipeline execution successful, exiting with code 0")
             
     except Exception as e:
+        print(f"❌ [MAIN] Pipeline execution failed with exception: {e}")
         logger.error(f"❌ Execution failed: {e}")
         sys.exit(1)
 

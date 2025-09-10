@@ -37,11 +37,10 @@ from ..math_validation import (
 from ..common_operations import create_fallback_logger, create_fallback_decorator
 from ..common_utilities import CommonUtilities
 from ..parquet_utils import ParquetUtils
-from ..serialization_utils import UniversalSerializer
-from ..data_processing_utils import DataProcessingUtils
-from ..m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
-from ..m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from ..m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+from ..parquet_utils import ParquetUtils as UniversalSerializer
+from ..data.processing.transformers import DataStreamingManager as DataProcessingUtils
+from ..hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
+from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
 
 # Import ML Common utilities for cross-validation
 from .cv_utils import TemporalCrossValidator, PurgedKFold
@@ -129,18 +128,49 @@ class EnhancedDataLabeler:
 
     def _initialize_utilities(self):
         """Initialize utility managers."""
+        self.logger.info("🔄 Initializing utility managers for EnhancedDataLabeler...")
+        start_time = time.time()
+        
         try:
+            self.logger.debug("🔧 Initializing M1 GPU manager...")
             self.gpu_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
-            self.cpu_optimizer = get_m1_cpu_optimizer()
-            self.parquet_utils = ParquetUtils()
-            self.serializer = UniversalSerializer()
-            self.data_processor = DataProcessingUtils()
-            self.common_utils = CommonUtilities()
+            self.logger.debug("✅ M1 GPU manager initialized")
             
-            self.logger.info("✅ All utility managers initialized successfully")
+            self.logger.debug("🔧 Initializing M1 memory optimizer...")
+            self.memory_optimizer = get_m1_memory_optimizer()
+            self.logger.debug("✅ M1 memory optimizer initialized")
+            
+            self.logger.debug("🔧 Initializing M1 CPU optimizer...")
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            self.logger.debug("✅ M1 CPU optimizer initialized")
+            
+            self.logger.debug("🔧 Initializing Parquet utilities...")
+            self.parquet_utils = ParquetUtils()
+            self.logger.debug("✅ Parquet utilities initialized")
+            
+            self.logger.debug("🔧 Initializing universal serializer...")
+            self.serializer = UniversalSerializer()
+            self.logger.debug("✅ Universal serializer initialized")
+            
+            self.logger.debug("🔧 Initializing data processing utilities...")
+            self.data_processor = DataProcessingUtils()
+            self.logger.debug("✅ Data processing utilities initialized")
+            
+            self.logger.debug("🔧 Initializing common utilities...")
+            self.common_utils = CommonUtilities()
+            self.logger.debug("✅ Common utilities initialized")
+            
+            init_time = time.time() - start_time
+            self.logger.info(f"✅ All utility managers initialized successfully in {init_time:.3f}s")
+            self.logger.info(f"🎯 GPU acceleration: {'Available' if self.gpu_manager else 'Not available'}")
+            self.logger.info(f"🧠 Memory optimization: {'Available' if self.memory_optimizer else 'Not available'}")
+            self.logger.info(f"⚡ CPU optimization: {'Available' if self.cpu_optimizer else 'Not available'}")
+            
         except Exception as e:
-            self.logger.warning(f"⚠️ Some utility managers failed to initialize: {e}")
+            init_time = time.time() - start_time
+            self.logger.warning(f"⚠️ Some utility managers failed to initialize after {init_time:.3f}s: {e}")
+            self.logger.warning("🔄 Falling back to basic implementations...")
+            
             # Set fallback implementations
             self.gpu_manager = None
             self.memory_optimizer = None
@@ -149,6 +179,8 @@ class EnhancedDataLabeler:
             self.serializer = None
             self.data_processor = None
             self.common_utils = None
+            
+            self.logger.info("✅ Fallback implementations set - basic functionality preserved")
 
     def create_triple_barrier_labels(
         self,
@@ -172,11 +204,25 @@ class EnhancedDataLabeler:
         config = config or self.config
         start_time = time.time()
         
+        self.logger.info(f"🚀 Starting triple barrier labeling with method: {method.value}")
+        self.logger.info(f"📊 Input data shape: {data.shape}")
+        self.logger.info(f"⚙️ Configuration: PT={config.pt_mult}, SL={config.sl_mult}, MinHold={config.min_holding_period}, MaxHold={config.max_holding_period}")
+        
+        if regime_data is not None:
+            self.logger.info(f"🎯 Regime data provided: {regime_data.shape}")
+            unique_regimes = regime_data['regime'].unique() if 'regime' in regime_data.columns else []
+            self.logger.info(f"📈 Unique regimes: {unique_regimes}")
+        
         try:
             # Validate input data
+            self.logger.debug("🔍 Validating input data...")
             self._validate_input_data(data)
+            self.logger.debug("✅ Input data validation passed")
             
             # Select implementation based on method
+            self.logger.info(f"🔄 Creating labels using {method.value} method...")
+            method_start_time = time.time()
+            
             if method == LabelingMethod.TRIPLE_BARRIER:
                 labels_df = self._create_standard_triple_barrier(data, config)
             elif method == LabelingMethod.REGIME_AWARE_TRIPLE_BARRIER:
@@ -188,17 +234,46 @@ class EnhancedDataLabeler:
             else:
                 raise ValueError(f"Unsupported labeling method: {method}")
             
+            method_time = time.time() - method_start_time
+            self.logger.info(f"✅ Label creation completed in {method_time:.3f}s")
+            
             # Assess label quality
+            self.logger.debug("🔍 Assessing label quality...")
+            quality_start_time = time.time()
             self.quality_metrics = self._assess_label_quality(labels_df, data)
+            quality_time = time.time() - quality_start_time
+            self.logger.info(f"📊 Quality assessment completed in {quality_time:.3f}s")
+            
+            # Log quality metrics
+            if self.quality_metrics:
+                self.logger.info(f"📈 Label distribution: {self.quality_metrics.label_distribution}")
+                self.logger.info(f"🎯 Overall quality score: {self.quality_metrics.overall_quality:.3f}")
+                self.logger.info(f"⏱️ Temporal consistency: {self.quality_metrics.temporal_consistency:.3f}")
+                self.logger.info(f"💰 Profit consistency: {self.quality_metrics.profit_consistency:.3f}")
+                
+                if self.quality_metrics.warnings:
+                    for warning in self.quality_metrics.warnings:
+                        self.logger.warning(f"⚠️ Quality warning: {warning}")
+                
+                if self.quality_metrics.errors:
+                    for error in self.quality_metrics.errors:
+                        self.logger.error(f"❌ Quality error: {error}")
             
             # Update performance stats
             self._update_performance_stats(start_time, len(labels_df))
             
-            self.logger.info(f"✅ Generated {len(labels_df)} labels using {method.value}")
+            total_time = time.time() - start_time
+            self.logger.info(f"✅ Generated {len(labels_df)} labels using {method.value} in {total_time:.3f}s")
+            self.logger.info(f"📊 Labels per second: {len(labels_df) / total_time:.1f}")
+            
             return labels_df
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to create triple barrier labels: {e}")
+            total_time = time.time() - start_time
+            self.logger.error(f"❌ Failed to create triple barrier labels after {total_time:.3f}s: {e}")
+            self.logger.error(f"📋 Method: {method.value}")
+            self.logger.error(f"📊 Data shape: {data.shape}")
+            self.logger.error(f"⚙️ Config: PT={config.pt_mult}, SL={config.sl_mult}")
             raise
 
     def _create_standard_triple_barrier(
@@ -207,9 +282,13 @@ class EnhancedDataLabeler:
         config: TripleBarrierConfig
     ) -> pd.DataFrame:
         """Create standard triple barrier labels."""
+        self.logger.debug(f"🔄 Creating standard triple barrier labels for {len(data)} samples")
+        
         if NUMBA_AVAILABLE:
+            self.logger.debug("⚡ Using Numba-accelerated implementation")
             return self._create_numba_triple_barrier(data, config)
         else:
+            self.logger.debug("🐍 Using pure Python implementation")
             return self._create_python_triple_barrier(data, config)
 
     def _create_numba_triple_barrier(
@@ -218,27 +297,46 @@ class EnhancedDataLabeler:
         config: TripleBarrierConfig
     ) -> pd.DataFrame:
         """Numba-accelerated triple barrier implementation."""
+        self.logger.debug("⚡ Starting Numba-accelerated triple barrier computation")
+        start_time = time.time()
+        
         close = data['close'].values
         high = data['high'].values
         low = data['low'].values
+        
+        self.logger.debug(f"📊 Processing {len(close)} price points")
+        self.logger.debug(f"💰 Price range: {close.min():.4f} - {close.max():.4f}")
         
         # Calculate end indices for each position
         end_indices = np.arange(len(close))
         
         # Use numba-accelerated function
+        self.logger.debug("🔄 Executing Numba-accelerated core function...")
+        core_start_time = time.time()
         labels, profit_pcts = self._numba_triple_barrier_core(
             close, high, low, 
             config.pt_mult, config.sl_mult, 
             end_indices, config.transaction_cost
         )
+        core_time = time.time() - core_start_time
+        self.logger.debug(f"⚡ Numba core computation completed in {core_time:.3f}s")
         
         # Create result DataFrame
+        self.logger.debug("📊 Creating result DataFrame...")
         result = data.copy()
         result['label'] = labels
         result['profit_pct'] = profit_pcts
         result['barrier_type'] = 'triple_barrier'
         result['config_pt'] = config.pt_mult
         result['config_sl'] = config.sl_mult
+        
+        # Log label statistics
+        label_counts = np.bincount(labels + 1)  # Convert -1,0,1 to 0,1,2
+        total_time = time.time() - start_time
+        
+        self.logger.info(f"✅ Numba triple barrier completed in {total_time:.3f}s")
+        self.logger.info(f"📊 Label distribution: Positive={label_counts[2]}, Neutral={label_counts[1]}, Negative={label_counts[0]}")
+        self.logger.info(f"💰 Profit range: {profit_pcts.min():.4f} - {profit_pcts.max():.4f}")
         
         return result
 
@@ -248,11 +346,23 @@ class EnhancedDataLabeler:
         config: TripleBarrierConfig
     ) -> pd.DataFrame:
         """Pure Python triple barrier implementation."""
+        self.logger.debug("🐍 Starting pure Python triple barrier computation")
+        start_time = time.time()
+        
         result = data.copy()
         labels = []
         profit_pcts = []
         
+        self.logger.debug(f"📊 Processing {len(data)} samples with Python implementation")
+        
+        # Progress tracking for large datasets
+        progress_interval = max(1, len(data) // 10)  # Log every 10%
+        
         for i in range(len(data)):
+            if i % progress_interval == 0:
+                progress = (i / len(data)) * 100
+                self.logger.debug(f"🔄 Progress: {progress:.1f}% ({i}/{len(data)})")
+            
             entry_price = data['close'].iloc[i]
             
             # Calculate barriers
@@ -273,6 +383,15 @@ class EnhancedDataLabeler:
         result['config_pt'] = config.pt_mult
         result['config_sl'] = config.sl_mult
         
+        # Log label statistics
+        label_counts = np.bincount(np.array(labels) + 1)  # Convert -1,0,1 to 0,1,2
+        total_time = time.time() - start_time
+        
+        self.logger.info(f"✅ Python triple barrier completed in {total_time:.3f}s")
+        self.logger.info(f"📊 Label distribution: Positive={label_counts[2]}, Neutral={label_counts[1]}, Negative={label_counts[0]}")
+        self.logger.info(f"💰 Profit range: {min(profit_pcts):.4f} - {max(profit_pcts):.4f}")
+        self.logger.info(f"⚡ Processing speed: {len(data) / total_time:.1f} samples/second")
+        
         return result
 
     def _create_regime_aware_triple_barrier(
@@ -282,35 +401,66 @@ class EnhancedDataLabeler:
         config: TripleBarrierConfig
     ) -> pd.DataFrame:
         """Create regime-aware triple barrier labels."""
+        self.logger.info("🎯 Starting regime-aware triple barrier labeling")
+        start_time = time.time()
+        
         if regime_data is None:
             self.logger.warning("⚠️ No regime data provided, falling back to standard triple barrier")
             return self._create_standard_triple_barrier(data, config)
         
+        self.logger.debug(f"📊 Merging regime data with price data...")
         # Merge regime data
         merged_data = data.merge(regime_data, left_index=True, right_index=True, how='left')
+        self.logger.debug(f"✅ Data merged successfully: {merged_data.shape}")
         
         # Get unique regimes
         regimes = merged_data['regime'].unique()
-        regime_results = []
+        self.logger.info(f"📈 Found {len(regimes)} unique regimes: {regimes}")
         
-        for regime in regimes:
+        regime_results = []
+        regime_stats = {}
+        
+        for i, regime in enumerate(regimes):
+            self.logger.debug(f"🔄 Processing regime {i+1}/{len(regimes)}: {regime}")
+            regime_start_time = time.time()
+            
             regime_mask = merged_data['regime'] == regime
             regime_data_subset = merged_data[regime_mask]
+            
+            self.logger.debug(f"📊 Regime {regime} has {len(regime_data_subset)} samples")
             
             # Get regime-specific config
             regime_config = self.regime_config.regime_params.get(
                 str(regime), self.regime_config.default_config
             )
             
+            self.logger.debug(f"⚙️ Regime {regime} config: PT={regime_config.pt_mult}, SL={regime_config.sl_mult}")
+            
             # Create labels for this regime
             regime_labels = self._create_standard_triple_barrier(regime_data_subset, regime_config)
             regime_labels['regime'] = regime
             regime_results.append(regime_labels)
+            
+            regime_time = time.time() - regime_start_time
+            regime_stats[regime] = {
+                'samples': len(regime_data_subset),
+                'processing_time': regime_time
+            }
+            
+            self.logger.debug(f"✅ Regime {regime} completed in {regime_time:.3f}s")
         
         # Combine results
+        self.logger.debug("🔄 Combining regime results...")
         result = pd.concat(regime_results, ignore_index=True)
         result = result.sort_index()
         result['barrier_type'] = 'regime_aware_triple_barrier'
+        
+        total_time = time.time() - start_time
+        
+        # Log regime statistics
+        self.logger.info(f"✅ Regime-aware triple barrier completed in {total_time:.3f}s")
+        for regime, stats in regime_stats.items():
+            self.logger.info(f"📊 Regime {regime}: {stats['samples']} samples in {stats['processing_time']:.3f}s")
         
         return result
 
@@ -571,19 +721,41 @@ class EnhancedDataLabeler:
 
     def _validate_input_data(self, data: pd.DataFrame):
         """Validate input data for labeling."""
+        self.logger.debug("🔍 Validating input data for labeling...")
+        
         required_columns = ['open', 'high', 'low', 'close']
         missing_columns = [col for col in required_columns if col not in data.columns]
         
         if missing_columns:
+            self.logger.error(f"❌ Missing required columns: {missing_columns}")
             raise ValueError(f"Missing required columns: {missing_columns}")
         
+        self.logger.debug(f"✅ Required columns present: {required_columns}")
+        
         if len(data) < 10:
+            self.logger.error(f"❌ Insufficient data: {len(data)} rows (minimum 10 required)")
             raise ValueError("Insufficient data for labeling (minimum 10 rows required)")
+        
+        self.logger.debug(f"✅ Data size validation passed: {len(data)} rows")
         
         # Check for null values
         null_counts = data[required_columns].isnull().sum()
         if null_counts.any():
+            self.logger.error(f"❌ Null values found in price data: {null_counts.to_dict()}")
             raise ValueError(f"Null values found in price data: {null_counts.to_dict()}")
+        
+        self.logger.debug("✅ No null values found in price data")
+        
+        # Check for reasonable price ranges
+        for col in required_columns:
+            col_min = data[col].min()
+            col_max = data[col].max()
+            if col_min <= 0:
+                self.logger.warning(f"⚠️ Non-positive values found in {col}: min={col_min}")
+            if col_max / col_min > 1000:  # Very large price range
+                self.logger.warning(f"⚠️ Large price range in {col}: {col_min:.4f} - {col_max:.4f}")
+        
+        self.logger.debug("✅ Input data validation completed successfully")
 
     def _update_performance_stats(self, start_time: float, num_labels: int):
         """Update performance statistics."""
@@ -594,20 +766,35 @@ class EnhancedDataLabeler:
         
         if self.quality_metrics:
             self.performance_stats['quality_scores'].append(self.quality_metrics.overall_quality)
+        
+        self.logger.debug(f"📊 Performance stats updated: {num_labels} labels in {processing_time:.3f}s")
+        self.logger.debug(f"📈 Total labels generated: {self.performance_stats['total_labels_generated']}")
+        self.logger.debug(f"⏱️ Total processing time: {self.performance_stats['processing_time']:.3f}s")
 
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary."""
-        avg_quality = np.mean(self.performance_stats['quality_scores']) if self.performance_stats['quality_scores'] else 0.0
+        self.logger.info("📊 Generating performance summary...")
         
-        return {
+        avg_quality = np.mean(self.performance_stats['quality_scores']) if self.performance_stats['quality_scores'] else 0.0
+        labels_per_second = safe_divide(
+            self.performance_stats['total_labels_generated'],
+            self.performance_stats['processing_time']
+        )
+        
+        summary = {
             'total_labels_generated': self.performance_stats['total_labels_generated'],
             'total_processing_time': self.performance_stats['processing_time'],
             'average_quality_score': avg_quality,
-            'labels_per_second': safe_divide(
-                self.performance_stats['total_labels_generated'],
-                self.performance_stats['processing_time']
-            )
+            'labels_per_second': labels_per_second
         }
+        
+        self.logger.info(f"📈 Performance Summary:")
+        self.logger.info(f"   📊 Total labels generated: {summary['total_labels_generated']}")
+        self.logger.info(f"   ⏱️ Total processing time: {summary['total_processing_time']:.3f}s")
+        self.logger.info(f"   🎯 Average quality score: {summary['average_quality_score']:.3f}")
+        self.logger.info(f"   ⚡ Labels per second: {summary['labels_per_second']:.1f}")
+        
+        return summary
 
     # Numba-accelerated core function
     if NUMBA_AVAILABLE:

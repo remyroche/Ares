@@ -22,11 +22,22 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 import logging
 from datetime import datetime
+import time
 
 from .confidence_metrics import calculate_confidence_metrics
 from ..common_operations import create_fallback_logger
 
-logger = logging.getLogger(__name__)
+# Enhanced dependency management with fast fail
+try:
+    from ..logger import get_logger
+    _LOGGER = get_logger("MLCommon.ModelExplanations")
+    print("✅ Custom logger available for MLCommon.ModelExplanations")
+except Exception as e:
+    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    _LOGGER = logging.getLogger("MLCommon.ModelExplanations")
+    _LOGGER.setLevel(logging.INFO)
+
+logger = _LOGGER
 
 # Optional imports for SHAP and LIME
 try:
@@ -58,12 +69,22 @@ class ModelExplainer:
         self.config = config or {}
         self.logger = create_fallback_logger(__name__)
         
+        _LOGGER.info("🚀 Initializing ModelExplainer...")
+        
         # Explanation configuration
         self.enable_shap = self.config.get('enable_shap', SHAP_AVAILABLE)
         self.enable_lime = self.config.get('enable_lime', LIME_AVAILABLE)
         self.shap_sample_size = self.config.get('shap_sample_size', 100)
         self.lime_sample_size = self.config.get('lime_sample_size', 10)
         self.explanation_cache = {}
+        
+        _LOGGER.info(f"⚙️ Configuration - SHAP enabled: {self.enable_shap}")
+        _LOGGER.info(f"⚙️ Configuration - LIME enabled: {self.enable_lime}")
+        _LOGGER.info(f"⚙️ Configuration - SHAP sample size: {self.shap_sample_size}")
+        _LOGGER.info(f"⚙️ Configuration - LIME sample size: {self.lime_sample_size}")
+        _LOGGER.info(f"⚙️ Dependencies - SHAP available: {SHAP_AVAILABLE}, LIME available: {LIME_AVAILABLE}")
+        
+        _LOGGER.info("✅ ModelExplainer initialized successfully")
         
     def explain_model(self, model: Any, X_train: np.ndarray, X_test: np.ndarray,
                      feature_names: Optional[List[str]] = None,
@@ -81,9 +102,12 @@ class ModelExplainer:
         Returns:
             Comprehensive explanation results
         """
+        start_time = time.time()
+        _LOGGER.info(f'🔍 Starting model explanations for {model_name}...')
+        _LOGGER.info(f'📊 Data shapes - Train: {X_train.shape}, Test: {X_test.shape}')
+        _LOGGER.info(f'📊 Features: {len(feature_names) if feature_names else X_train.shape[1]}')
+        
         try:
-            self.logger.info(f'🔍 Generating explanations for {model_name}...')
-            
             explanation_results = {
                 'model_name': model_name,
                 'shap_explanations': {},
@@ -123,10 +147,16 @@ class ModelExplainer:
             )
             
             self.logger.info(f'✅ Model explanations generated for {model_name}')
+            execution_time = time.time() - start_time
+            _LOGGER.info(f'✅ Model explanations completed in {execution_time:.3f}s for {model_name}')
+            _LOGGER.info(f'📊 Results - SHAP: {bool(explanation_results["shap_explanations"])}, '
+                        f'LIME: {bool(explanation_results["lime_explanations"])}, '
+                        f'Feature importance: {bool(explanation_results["feature_importance"])}')
             return explanation_results
             
         except Exception as e:
-            self.logger.error(f'❌ Model explanation failed for {model_name}: {e}')
+            execution_time = time.time() - start_time
+            _LOGGER.error(f'❌ Model explanation failed after {execution_time:.3f}s for {model_name}: {e}')
             return {
                 'model_name': model_name,
                 'error': str(e),
@@ -138,11 +168,13 @@ class ModelExplainer:
     def _generate_shap_explanations(self, model: Any, X_train: np.ndarray, X_test: np.ndarray,
                                    feature_names: Optional[List[str]]) -> Dict[str, Any]:
         """Generate SHAP explanations for the model."""
+        _LOGGER.debug("🔍 Generating SHAP explanations...")
         try:
             # Sample data for SHAP (to avoid memory issues)
             sample_size = min(self.shap_sample_size, len(X_test))
             test_indices = np.random.choice(len(X_test), sample_size, replace=False)
             X_test_sample = X_test[test_indices]
+            _LOGGER.debug(f"📊 Using sample size {sample_size} for SHAP explanations")
             
             # Create SHAP explainer based on model type
             if hasattr(model, 'predict_proba'):
@@ -193,17 +225,19 @@ class ModelExplainer:
             }
             
         except Exception as e:
-            self.logger.warning(f'SHAP explanation generation failed: {e}')
+            _LOGGER.warning(f'⚠️ SHAP explanation generation failed: {e}')
             return {'error': str(e)}
     
     def _generate_lime_explanations(self, model: Any, X_train: np.ndarray, X_test: np.ndarray,
                                    feature_names: Optional[List[str]]) -> Dict[str, Any]:
         """Generate LIME explanations for the model."""
+        _LOGGER.debug("🔍 Generating LIME explanations...")
         try:
             # Sample data for LIME
             sample_size = min(self.lime_sample_size, len(X_test))
             test_indices = np.random.choice(len(X_test), sample_size, replace=False)
             X_test_sample = X_test[test_indices]
+            _LOGGER.debug(f"📊 Using sample size {sample_size} for LIME explanations")
             
             # Create LIME explainer
             explainer = lime.lime_tabular.LimeTabularExplainer(
@@ -259,7 +293,7 @@ class ModelExplainer:
             }
             
         except Exception as e:
-            self.logger.warning(f'LIME explanation generation failed: {e}')
+            _LOGGER.warning(f'⚠️ LIME explanation generation failed: {e}')
             return {'error': str(e)}
     
     def _analyze_feature_importance(self, model: Any, X_test: np.ndarray,

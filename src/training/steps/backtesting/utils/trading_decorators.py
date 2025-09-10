@@ -3,6 +3,7 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 
 from typing import Callable, Any, Dict, List
 from functools import wraps
+import time
 
 import logging
 
@@ -23,18 +24,27 @@ try:
         ensure_data_integrity,
         validate_pipeline_step
     )
+    logger.info("✅ Core decorators imported successfully")
+    logger.info("🔧 Available decorators: handles_errors, validates, traced, log_execution_time, timeout, error_boundary, compose, validate_data_quality, monitor_step_execution, ensure_data_integrity, validate_pipeline_step")
 except ImportError:
-    logger.warning("Core decorators not available, using fallback implementations")
+    logger.warning("⚠️ Core decorators not available, using fallback implementations")
+    logger.info("🔄 Fallback decorators will provide basic functionality")
 
     def handles_errors(fallback=None):
         """Fallback decorator for error handling."""
         def decorator(func):
             @wraps(func)
             def wrapper(*args, **kwargs):
+                logger.info(f"🔄 Executing {func.__name__} with error handling")
+                start_time = time.time()
                 try:
-                    return func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+                    execution_time = time.time() - start_time
+                    logger.info(f"✅ {func.__name__} completed successfully in {execution_time:.3f}s")
+                    return result
                 except Exception as e:
-                    logger.error(f"Error in {func.__name__}: {e}")
+                    execution_time = time.time() - start_time
+                    logger.error(f"❌ Error in {func.__name__} after {execution_time:.3f}s: {e}")
                     return fallback
             return wrapper
         return decorator
@@ -54,7 +64,20 @@ except ImportError:
     def log_execution_time(*args, **kwargs):
         """Fallback decorator for execution time logging."""
         def decorator(func):
-            return func
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                logger.info(f"⏱️ Starting execution timing for {func.__name__}")
+                start_time = time.time()
+                try:
+                    result = func(*args, **kwargs)
+                    execution_time = time.time() - start_time
+                    logger.info(f"⏱️ {func.__name__} execution time: {execution_time:.3f}s")
+                    return result
+                except Exception as e:
+                    execution_time = time.time() - start_time
+                    logger.error(f"⏱️ {func.__name__} failed after {execution_time:.3f}s: {e}")
+                    raise
+            return wrapper
         return decorator
 
     def timeout(*args, **kwargs):

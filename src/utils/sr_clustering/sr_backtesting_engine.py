@@ -27,6 +27,25 @@ except ImportError:
     get_enhanced_matrix_operations = None
     m1_matrix_correlation_analysis = None
 
+# Import M1 optimization utilities
+try:
+    from ..hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
+    from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
+    M1_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    M1_OPTIMIZATIONS_AVAILABLE = False
+    get_m1_memory_optimizer = None
+    get_memory_manager = None
+    print(f"⚠️ M1 optimizations not available: {e}")
+
+# Import PyTorch for MPS acceleration
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+
 @dataclass
 class SRLevel:
     """Support/Resistance level for backtesting."""
@@ -76,6 +95,13 @@ class BacktestConfig:
     volume_confirmation_weight: float = 0.2
     time_persistence_weight: float = 0.15
     touch_frequency_weight: float = 0.1
+    
+    # M1 optimization parameters
+    enable_m1_optimizations: bool = True
+    enable_gpu_acceleration: bool = True
+    enable_memory_optimization: bool = True
+    memory_limit_gb: float = 8.0
+    chunk_size: int = 1000
 
 class SRBacktestingEngine:
     """Engine for backtesting SR levels and learning quality rules."""
@@ -83,31 +109,65 @@ class SRBacktestingEngine:
     def __init__(self, config: Optional[BacktestConfig] = None):
         self.config = config or BacktestConfig()
         self.logger = system_logger.getChild('SRBacktestingEngine')
+        
+        self.logger.info("Initializing SRBacktestingEngine")
+        self.logger.info(f"Configuration: touch_tolerance={self.config.touch_tolerance:.3f}, min_bounce_strength={self.config.min_bounce_strength:.3f}")
+        self.logger.info(f"Weight settings: success_rate={self.config.success_rate_weight:.2f}, bounce_strength={self.config.bounce_strength_weight:.2f}")
+        
+        # Initialize M1 optimizations
+        self.enable_m1_optimizations = self.config.enable_m1_optimizations and M1_OPTIMIZATIONS_AVAILABLE
+        self.enable_gpu_acceleration = self.config.enable_gpu_acceleration and TORCH_AVAILABLE
+        
+        if self.enable_m1_optimizations:
+            try:
+                self.m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=self.config.memory_limit_gb)
+                self.memory_monitor = get_memory_manager()
+                self.logger.info("✅ M1 optimizations initialized for SR backtesting")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize M1 optimizations: {e}")
+                self.enable_m1_optimizations = False
+        else:
+            self.m1_memory_optimizer = None
+            self.memory_monitor = None
+        
         self.learned_rules: Dict[str, Any] = {}
         self.performance_history: List[BacktestResult] = []
+        
+        self.logger.info("✅ SRBacktestingEngine initialization completed")
         
     def backtest_sr_level(self, level: SRLevel, data: pd.DataFrame) -> BacktestResult:
         """Backtest a single SR level against historical data."""
         try:
+            self.logger.debug(f"🔍 Backtesting SR level at price {level.price}, type {level.level_type}")
+            
             # Find the detection time in the data
             detection_idx = self._find_detection_time_index(level, data)
             if detection_idx is None:
+                self.logger.warning(f"Detection time not found for level at {level.price}")
                 return self._create_failed_result(level, "Detection time not found in data")
+            
+            self.logger.debug(f"Found detection index: {detection_idx}")
             
             # Analyze the level performance after detection
             analysis_data = data.iloc[detection_idx:detection_idx + self.config.max_analysis_period]
+            self.logger.debug(f"Analysis data: {len(analysis_data)} periods")
             
             # Detect touches and analyze performance
             touches = self._detect_touches(level, analysis_data)
             
             if not touches:
+                self.logger.warning(f"No touches detected for level at {level.price}")
                 return self._create_failed_result(level, "No touches detected")
+            
+            self.logger.debug(f"Detected {len(touches)} touches")
             
             # Analyze each touch
             touch_results = []
-            for touch in touches:
+            for i, touch in enumerate(touches):
                 result = self._analyze_touch(level, touch, analysis_data)
                 touch_results.append(result)
+                if i % 5 == 0:  # Log progress every 5 touches
+                    self.logger.debug(f"Analyzed touch {i+1}/{len(touches)}")
             
             # Calculate overall performance metrics
             performance_metrics = self._calculate_performance_metrics(level, touch_results, analysis_data)
@@ -130,40 +190,206 @@ class SRBacktestingEngine:
             )
             
             self.performance_history.append(result)
+            
+            self.logger.info(f"✅ Backtesting completed for level at {level.price}: quality={result.quality_score:.3f}, success_rate={result.success_rate:.3f}")
+            
             return result
             
         except Exception as e:
-            self.logger.error(f"Backtesting failed for level {level.price}: {e}")
+            self.logger.error(f"❌ Backtesting failed for level {level.price}: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return self._create_failed_result(level, str(e))
     
     def backtest_multiple_levels(self, levels: List[SRLevel], data: pd.DataFrame) -> List[BacktestResult]:
         """Backtest multiple SR levels."""
         results = []
         
-        self.logger.info(f"Backtesting {len(levels)} SR levels")
+        self.logger.info(f"🚀 Starting backtesting for {len(levels)} SR levels")
+        self.logger.info(f"Data shape: {data.shape}")
         
         for i, level in enumerate(levels):
             if i % 10 == 0:
-                self.logger.info(f"Backtesting level {i+1}/{len(levels)}: ${level.price:.2f}")
+                self.logger.info(f"Backtesting level {i+1}/{len(levels)}: ${level.price:.2f} ({level.level_type})")
             
             result = self.backtest_sr_level(level, data)
             results.append(result)
+            
+            # Log individual results for first few levels
+            if i < 3:
+                self.logger.debug(f"Level ${level.price:.2f}: quality={result.quality_score:.3f}, success_rate={result.success_rate:.3f}, touches={result.total_touches}")
         
-        self.logger.info(f"Backtesting completed. Average quality score: {np.mean([r.quality_score for r in results]):.3f}")
+        if results:
+            quality_scores = [r.quality_score for r in results]
+            success_rates = [r.success_rate for r in results]
+            touches = [r.total_touches for r in results]
+            
+            self.logger.info(f"✅ Backtesting completed for {len(results)} levels")
+            self.logger.info(f"Quality statistics: mean={np.mean(quality_scores):.3f}, std={np.std(quality_scores):.3f}, min={np.min(quality_scores):.3f}, max={np.max(quality_scores):.3f}")
+            self.logger.info(f"Success rate statistics: mean={np.mean(success_rates):.3f}, std={np.std(success_rates):.3f}")
+            self.logger.info(f"Touch statistics: mean={np.mean(touches):.1f}, std={np.std(touches):.1f}")
+        else:
+            self.logger.warning("⚠️ No backtesting results generated")
         return results
+
+    def backtest_sr_level_m1_optimized(self, level: SRLevel, data: pd.DataFrame) -> BacktestResult:
+        """Backtest a single SR level with M1 optimization."""
+        if not self.enable_m1_optimizations:
+            self.logger.warning("⚠️ M1 optimizations not available, falling back to standard method")
+            return self.backtest_sr_level(level, data)
+        
+        try:
+            self.logger.debug(f"🚀 M1-optimized backtesting for SR level at price {level.price}, type {level.level_type}")
+            
+            # Memory checkpoint for M1 optimization
+            with self.m1_memory_optimizer.memory_checkpoint(f"sr_backtest_{level.price}"):
+                # Check if data should be processed in chunks
+                data_size_mb = data.memory_usage(deep=True).sum() / (1024**2)
+                
+                if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "sr_backtesting"):
+                    self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks")
+                    return self._chunked_sr_backtesting(level, data)
+                
+                # Use GPU acceleration for heavy computations
+                if self.enable_gpu_acceleration and ENHANCED_MATRIX_OPS_AVAILABLE:
+                    self.logger.info("🎯 Using GPU acceleration for SR backtesting")
+                    return self._gpu_accelerated_sr_backtesting(level, data)
+                
+                # Standard M1-optimized processing
+                return self._m1_optimized_sr_backtesting(level, data)
+                
+        except Exception as e:
+            self.logger.error(f"❌ M1-optimized backtesting failed for level {level.price}: {e}")
+            return self._create_failed_result(level, str(e))
+
+    def _m1_optimized_sr_backtesting(self, level: SRLevel, data: pd.DataFrame) -> BacktestResult:
+        """M1-optimized SR level backtesting."""
+        # Find the detection time in the data
+        detection_idx = self._find_detection_time_index(level, data)
+        if detection_idx is None:
+            self.logger.warning(f"Detection time not found for level at {level.price}")
+            return self._create_failed_result(level, "Detection time not found in data")
+        
+        # Analyze the level performance after detection
+        analysis_data = data.iloc[detection_idx:detection_idx + self.config.max_analysis_period]
+        
+        # M1-optimized touch detection
+        touches = self._detect_touches_m1_optimized(level, analysis_data)
+        
+        if not touches:
+            self.logger.warning(f"No touches detected for level at {level.price}")
+            return self._create_failed_result(level, "No touches detected")
+        
+        # M1-optimized touch analysis
+        touch_results = self._analyze_touches_m1_optimized(level, touches, analysis_data)
+        
+        # M1-optimized performance metrics calculation
+        performance_metrics = self._calculate_performance_metrics_m1_optimized(level, touch_results, analysis_data)
+        
+        # Create backtest result
+        result = BacktestResult(
+            level=level,
+            total_touches=len(touches),
+            successful_touches=sum(1 for r in touch_results if r['successful']),
+            failed_touches=sum(1 for r in touch_results if not r['successful']),
+            success_rate=performance_metrics['success_rate'],
+            avg_bounce_strength=performance_metrics['avg_bounce_strength'],
+            max_bounce_strength=performance_metrics['max_bounce_strength'],
+            avg_hold_time=performance_metrics['avg_hold_time'],
+            total_volume_at_level=performance_metrics['total_volume_at_level'],
+            price_deviation=performance_metrics['price_deviation'],
+            time_persistence=performance_metrics['time_persistence'],
+            quality_score=performance_metrics['quality_score'],
+            performance_metrics=performance_metrics
+        )
+        
+        self.performance_history.append(result)
+        
+        self.logger.info(f"✅ M1-optimized backtesting completed for level at {level.price}: quality={result.quality_score:.3f}, success_rate={result.success_rate:.3f}")
+        
+        return result
+
+    def _detect_touches_m1_optimized(self, level: SRLevel, data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """M1-optimized touch detection."""
+        touches = []
+        tolerance = level.price * self.config.touch_tolerance
+        
+        # Use M1 memory-efficient operations
+        if self.m1_memory_optimizer:
+            # Check if data should be processed in chunks
+            data_size_mb = data.memory_usage(deep=True).sum() / (1024**2)
+            
+            if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "touch_detection"):
+                return self._chunked_touch_detection(level, data, tolerance)
+        
+        # Standard touch detection with M1 memory optimization
+        for idx, row in data.iterrows():
+            if self._is_touch(level, row, tolerance):
+                touch = {
+                    'index': idx,
+                    'timestamp': row.name if hasattr(row.name, 'to_pydatetime') else idx,
+                    'price': row['close'],
+                    'volume': row.get('volume', 0),
+                    'high': row.get('high', row['close']),
+                    'low': row.get('low', row['close'])
+                }
+                touches.append(touch)
+        
+        # M1 memory cleanup
+        if self.m1_memory_optimizer:
+            self.m1_memory_optimizer.optimize_memory()
+        
+        return touches
+
+    def _analyze_touches_m1_optimized(self, level: SRLevel, touches: List[Dict[str, Any]], data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """M1-optimized touch analysis."""
+        touch_results = []
+        
+        # Use M1 memory-efficient operations
+        if self.m1_memory_optimizer:
+            with self.m1_memory_optimizer.memory_checkpoint("touch_analysis"):
+                for i, touch in enumerate(touches):
+                    result = self._analyze_touch(level, touch, data)
+                    touch_results.append(result)
+                    
+                    # Memory cleanup every 10 touches
+                    if i % 10 == 0:
+                        self.m1_memory_optimizer.optimize_memory()
+        else:
+            for touch in touches:
+                result = self._analyze_touch(level, touch, data)
+                touch_results.append(result)
+        
+        return touch_results
+
+    def _calculate_performance_metrics_m1_optimized(self, level: SRLevel, touch_results: List[Dict[str, Any]], data: pd.DataFrame) -> Dict[str, float]:
+        """M1-optimized performance metrics calculation."""
+        if not touch_results:
+            return self._get_default_metrics()
+        
+        # Use M1 memory-efficient operations
+        if self.m1_memory_optimizer:
+            with self.m1_memory_optimizer.memory_checkpoint("performance_metrics"):
+                return self._calculate_performance_metrics(level, touch_results, data)
+        else:
+            return self._calculate_performance_metrics(level, touch_results, data)
     
     def learn_quality_rules(self, results: List[BacktestResult], 
                            optimize_weights: bool = True,
                            market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
         """Learn quality rules from backtesting results using continuous strength scoring."""
         try:
+            self.logger.info(f"🧠 Learning quality rules from {len(results)} backtesting results")
+            
             if not results:
+                self.logger.warning("No results provided for learning quality rules")
                 return {}
             
             # Use continuous quality scoring instead of binary categories
             quality_scores = [r.quality_score for r in results]
             
             # Calculate quality distribution statistics
+            self.logger.info("📊 Calculating quality distribution statistics")
             quality_stats = {
                 'mean': np.mean(quality_scores),
                 'std': np.std(quality_scores),
@@ -177,11 +403,13 @@ class SRBacktestingEngine:
                 }
             }
             
-            self.logger.info(f"Learning rules from {len(results)} levels with quality scores: mean={quality_stats['mean']:.3f}, std={quality_stats['std']:.3f}")
+            self.logger.info(f"Quality distribution: mean={quality_stats['mean']:.3f}, std={quality_stats['std']:.3f}, min={quality_stats['min']:.3f}, max={quality_stats['max']:.3f}")
+            self.logger.info(f"Quality percentiles: 25th={quality_stats['percentiles']['25th']:.3f}, 50th={quality_stats['percentiles']['50th']:.3f}, 75th={quality_stats['percentiles']['75th']:.3f}, 90th={quality_stats['percentiles']['90th']:.3f}")
             
             # Optimize weights if requested
             optimized_weights = {}
             if optimize_weights and market_data is not None:
+                self.logger.info("🎯 Starting weight optimization")
                 try:
                     from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
                     
@@ -192,58 +420,101 @@ class SRBacktestingEngine:
                         secondary_objective='stability'
                     )
                     
+                    self.logger.info("Configuring weight optimization engine")
                     weight_optimizer = get_weight_optimization_engine(weight_config)
+                    self.logger.info("Running weight optimization")
                     optimization_result = weight_optimizer.optimize_weights(results, market_data)
                     
                     if optimization_result and optimization_result.get('optimization_success', False):
                         optimized_weights = optimization_result.get('best_weights', {})
-                        self.logger.info(f"Weight optimization completed. Best score: {optimization_result.get('best_score', 0.0):.4f}")
-                        self.logger.info(f"Optimized weights: {optimized_weights}")
+                        best_score = optimization_result.get('best_score', 0.0)
+                        
+                        self.logger.info(f"✅ Weight optimization completed successfully")
+                        self.logger.info(f"Best optimization score: {best_score:.4f}")
+                        self.logger.info(f"Optimized weights for {len(optimized_weights)} features")
+                        
+                        # Log top optimized weights
+                        if optimized_weights:
+                            sorted_weights = sorted(optimized_weights.items(), key=lambda x: x[1], reverse=True)
+                            self.logger.info("Top 5 optimized weights:")
+                            for feature, weight in sorted_weights[:5]:
+                                self.logger.info(f"  {feature}: {weight:.3f}")
                     else:
-                        self.logger.warning("Weight optimization failed, using default weights")
+                        self.logger.warning("⚠️ Weight optimization failed, using default weights")
                         
                 except Exception as e:
-                    self.logger.warning(f"Weight optimization failed: {e}")
+                    self.logger.error(f"❌ Weight optimization failed: {e}")
+                    import traceback
+                    self.logger.error(f"Traceback: {traceback.format_exc()}")
+            else:
+                self.logger.info("⏭️ Weight optimization skipped")
             
             # Analyze quality-based feature relationships
-            # Build strength scoring model
+            self.logger.info("🔍 Building strength scoring model")
             strength_model = self._build_strength_scoring_model(results)
             
             # Log comprehensive feature analysis
             if strength_model:
+                self.logger.info("📊 Logging comprehensive feature analysis")
                 self._log_comprehensive_feature_analysis(results, strength_model)
+            else:
+                self.logger.warning("⚠️ Failed to build strength scoring model")
+            
+            # Calculate feature correlations and predictors
+            self.logger.info("🔗 Calculating feature quality correlations")
+            feature_correlations = self._calculate_feature_quality_correlations(results)
+            
+            self.logger.info("🎯 Identifying quality predictors")
+            quality_predictors = self._identify_quality_predictors(results)
+            
+            self.logger.info("⚖️ Learning feature weights")
+            learned_weights = self._learn_feature_weights(results)
+            
+            self.logger.info("📏 Calculating quality thresholds")
+            quality_thresholds = self._calculate_quality_thresholds(quality_stats)
             
             rules = {
                 'quality_distribution': quality_stats,
-                'feature_quality_correlations': self._calculate_feature_quality_correlations(results),
-                'quality_predictors': self._identify_quality_predictors(results),
-                'learned_weights': self._learn_feature_weights(results),
-                'quality_thresholds': self._calculate_quality_thresholds(quality_stats),
+                'feature_quality_correlations': feature_correlations,
+                'quality_predictors': quality_predictors,
+                'learned_weights': learned_weights,
+                'quality_thresholds': quality_thresholds,
                 'strength_scoring_model': strength_model,
                 'optimized_weights': optimized_weights,
                 'weight_optimization_enabled': optimize_weights
             }
             
             self.learned_rules = rules
-            self.logger.info(f"Learned quality rules with {len(rules['quality_predictors'])} key predictors")
+            
+            self.logger.info(f"✅ Quality rules learning completed successfully")
+            self.logger.info(f"Learned {len(quality_predictors)} quality predictors")
+            self.logger.info(f"Feature correlations calculated for {len(feature_correlations)} features")
             
             return rules
             
         except Exception as e:
-            self.logger.error(f"Failed to learn quality rules: {e}")
+            self.logger.error(f"❌ Failed to learn quality rules: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
     def predict_level_quality(self, level: SRLevel, data: pd.DataFrame) -> float:
         """Predict the quality of a level using learned rules."""
         try:
+            self.logger.debug(f"🔮 Predicting quality for level at price {level.price}, type {level.level_type}")
+            
             if not self.learned_rules:
+                self.logger.warning("No learned rules available, using original strength")
                 return level.strength  # Fallback to original strength
             
             # Extract features for prediction
             features = self._extract_prediction_features(level, data)
+            self.logger.debug(f"Extracted {len(features)} features for prediction")
             
             # Apply learned rules
             quality_score = self._apply_learned_rules(features)
+            
+            self.logger.debug(f"Predicted quality: {quality_score:.3f} (original strength: {level.strength:.3f})")
             
             return quality_score
             
@@ -1221,28 +1492,54 @@ class SRBacktestingEngine:
     
     def get_quality_rules_summary(self) -> Dict[str, Any]:
         """Get a summary of learned quality rules."""
+        self.logger.info("📊 Generating quality rules summary")
+        
         if not self.learned_rules:
+            self.logger.warning("No rules learned yet")
             return {'status': 'No rules learned yet'}
         
-        return {
+        summary = {
             'status': 'Rules learned',
             'quality_threshold': self.learned_rules.get('quality_threshold', 0.0),
             'discriminative_features': list(self.learned_rules.get('discriminative_features', {}).keys()),
             'performance_thresholds': self.learned_rules.get('performance_thresholds', {}),
             'total_levels_analyzed': len(self.performance_history)
         }
+        
+        self.logger.info(f"Quality rules summary: {summary}")
+        
+        return summary
 
 def create_sr_level_from_dict(level_dict: Dict[str, Any]) -> SRLevel:
     """Create SRLevel from dictionary."""
-    return SRLevel(
-        price=level_dict['price'],
-        level_type=level_dict.get('type', 'support'),
-        strength=level_dict.get('strength', 0.5),
-        touches=level_dict.get('touches', 1),
-        detection_time=level_dict.get('detection_time', datetime.now()),
-        metadata=level_dict.get('metadata', {})
-    )
+    logger = system_logger.getChild('SRBacktestingEngine')
+    
+    try:
+        sr_level = SRLevel(
+            price=level_dict['price'],
+            level_type=level_dict.get('type', 'support'),
+            strength=level_dict.get('strength', 0.5),
+            touches=level_dict.get('touches', 1),
+            detection_time=level_dict.get('detection_time', datetime.now()),
+            metadata=level_dict.get('metadata', {})
+        )
+        
+        logger.debug(f"Created SRLevel: price={sr_level.price}, type={sr_level.level_type}, strength={sr_level.strength}")
+        return sr_level
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to create SRLevel from dict: {e}")
+        raise
 
 def get_backtesting_engine(config: Optional[BacktestConfig] = None) -> SRBacktestingEngine:
     """Get a backtesting engine instance."""
-    return SRBacktestingEngine(config)
+    logger = system_logger.getChild('SRBacktestingEngine')
+    logger.info("Creating new SRBacktestingEngine instance")
+    
+    try:
+        instance = SRBacktestingEngine(config)
+        logger.info("✅ Successfully created SRBacktestingEngine instance")
+        return instance
+    except Exception as e:
+        logger.error(f"❌ Failed to create SRBacktestingEngine instance: {e}")
+        raise

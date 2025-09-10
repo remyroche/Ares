@@ -27,13 +27,13 @@ from .step05_labeling import LabelingStep
 from .step05_labeling_updated import EnhancedLabelingStep
 
 # Import enhanced utilities
-from src.utils.data_qualification_base import (
+from src.utils.data_quality.data_qualification_base import (
     DataQualificationStep,
     DataQualificationPipeline,
     DataQualificationResult,
     StepMetrics
 )
-from src.utils.data_qualification_config import (
+from src.utils.data_quality.data_qualification_config import (
     DataQualificationConfig,
     PerformanceConfig,
     SROptimizationConfig,
@@ -42,12 +42,12 @@ from src.utils.data_qualification_config import (
     RegimeProcessingConfig,
     MLCommonsConfig
 )
-from src.utils.data_qualification_error_handler import (
+from src.utils.data_quality.data_qualification_error_handler import (
     DataQualificationErrorHandler,
     handle_utility_failure,
     register_fallback
 )
-from src.utils.data_qualification_imports import (
+from src.utils.data_quality.data_qualification_imports import (
     DataQualificationImportManager,
     get_utility_suite,
     get_ml_commons_utilities,

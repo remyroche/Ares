@@ -24,7 +24,7 @@ except ImportError:
 
 from ...utils.logger import system_logger
 from ...core.decorators import handles_errors, traced
-from ...utils.clustering_alternatives import get_clustering_manager
+# from ...utils.clustering_alternatives  # Module not found, commented out import get_clustering_manager
 from ...utils.sr_clustering.backtesting_enhanced_clustering import get_backtesting_enhanced_clustering, BacktestingEnhancedConfig
 
 import hashlib
@@ -1246,65 +1246,157 @@ class EnhancedSRDetector:
 
             
             # Detect fractal levels with multiple periods for more levels
+            print("🔍 Starting Fractal Level Detection...")
+            print("   📊 Fractal detection identifies local highs and lows where price reverses direction")
+            print("   📊 A fractal high is a point higher than N periods before and after it")
+            print("   📊 A fractal low is a point lower than N periods before and after it")
+            self.logger.info("🔍 Starting Fractal Level Detection...")
+            self.logger.info("   📊 Fractal detection identifies local highs and lows where price reverses direction")
+            self.logger.info("   📊 A fractal high is a point higher than N periods before and after it")
+            self.logger.info("   📊 A fractal low is a point lower than N periods before and after it")
             fractal_levels = []
             for period in [3, 5, 7]:  # Multiple periods instead of single
+                print(f"   📊 Detecting fractals with period {period}...")
+                self.logger.info(f"   📊 Detecting fractals with period {period}...")
                 temp_config = self.config.copy()
                 temp_config['fractal_period'] = period
                 temp_detector = EnhancedSRDetector(temp_config)
                 period_levels = temp_detector._detect_fractal_levels(market_data)
                 fractal_levels.extend(period_levels[:75])  # Increased limit per period for more levels
+                print(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
+                self.logger.info(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
             # Remove duplicates based on price proximity
             fractal_levels = self._deduplicate_levels(fractal_levels, tolerance=0.001)
-            self.logger.info(f'📊 Fractal levels: {len(fractal_levels)}')
+            print(f"📊 Fractal Detection Complete: {len(fractal_levels)} unique levels")
+            self.logger.info(f'📊 Fractal Detection Complete: {len(fractal_levels)} unique levels')
 
             # Detect pivot levels with multiple periods for more levels
+            print("🔍 Starting Pivot Point Detection...")
+            print("   📊 Pivot points calculate traditional support/resistance levels using OHLC data")
+            print("   📊 Standard pivot point formula: P = (H + L + C) / 3")
+            print("   📊 Support levels: S1 = 2*P - H, S2 = P - (H - L)")
+            print("   📊 Resistance levels: R1 = 2*P - L, R2 = P + (H - L)")
+            self.logger.info("🔍 Starting Pivot Point Detection...")
+            self.logger.info("   📊 Pivot points calculate traditional support/resistance levels using OHLC data")
+            self.logger.info("   📊 Standard pivot point formula: P = (H + L + C) / 3")
+            self.logger.info("   📊 Support levels: S1 = 2*P - H, S2 = P - (H - L)")
+            self.logger.info("   📊 Resistance levels: R1 = 2*P - L, R2 = P + (H - L)")
             pivot_levels = []
             for period in [5, 7, 10]:  # Multiple periods instead of single
+                print(f"   📊 Detecting pivot points with period {period}...")
+                self.logger.info(f"   📊 Detecting pivot points with period {period}...")
                 temp_config = self.config.copy()
                 temp_config['pivot_period'] = period
                 temp_detector = EnhancedSRDetector(temp_config)
                 period_levels = temp_detector._detect_pivot_levels(market_data)
                 pivot_levels.extend(period_levels[:75])  # Increased limit per period for more levels
+                print(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
+                self.logger.info(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
             # Remove duplicates based on price proximity
             pivot_levels = self._deduplicate_levels(pivot_levels, tolerance=0.001)
-            self.logger.info(f'📊 Pivot levels: {len(pivot_levels)}')
+            print(f"📊 Pivot Point Detection Complete: {len(pivot_levels)} unique levels")
+            self.logger.info(f'📊 Pivot Point Detection Complete: {len(pivot_levels)} unique levels')
 
+            print("🔍 Starting Volume-Based Level Detection...")
+            print("   📊 Volume-based detection finds price levels with high trading volume")
+            print("   📊 High volume areas often act as strong support/resistance levels")
+            print("   📊 Analyzes volume distribution across price ranges")
+            self.logger.info("🔍 Starting Volume-Based Level Detection...")
+            self.logger.info("   📊 Volume-based detection finds price levels with high trading volume")
+            self.logger.info("   📊 High volume areas often act as strong support/resistance levels")
+            self.logger.info("   📊 Analyzes volume distribution across price ranges")
             volume_levels = self._detect_volume_levels(market_data)
-            self.logger.info(f'📊 Volume levels: {len(volume_levels)}')
+            print(f"📊 Volume-Based Detection Complete: {len(volume_levels)} levels")
+            self.logger.info(f'📊 Volume-Based Detection Complete: {len(volume_levels)} levels')
 
+            print("🔍 Starting Statistical Level Detection...")
+            self.logger.info("🔍 Starting Statistical Level Detection...")
             statistical_levels = self._detect_statistical_levels(market_data)
-            self.logger.info(f'📊 Statistical levels: {len(statistical_levels)}')
+            print(f"📊 Statistical Detection Complete: {len(statistical_levels)} levels")
+            self.logger.info(f'📊 Statistical Detection Complete: {len(statistical_levels)} levels')
 
+            print("🔍 Starting Psychological Level Detection...")
+            print("   📊 Psychological levels identify round numbers and key price levels")
+            print("   📊 Examples: $50,000, $100,000, $1.00, $10.00")
+            print("   📊 Traders often place orders at these psychologically significant levels")
+            self.logger.info("🔍 Starting Psychological Level Detection...")
+            self.logger.info("   📊 Psychological levels identify round numbers and key price levels")
+            self.logger.info("   📊 Examples: $50,000, $100,000, $1.00, $10.00")
+            self.logger.info("   📊 Traders often place orders at these psychologically significant levels")
             psychological_levels = self._detect_psychological_levels(market_data)
-            self.logger.info(f'📊 Psychological levels: {len(psychological_levels)}')
+            print(f"📊 Psychological Detection Complete: {len(psychological_levels)} levels")
+            self.logger.info(f'📊 Psychological Detection Complete: {len(psychological_levels)} levels')
 
+            print("🔍 Starting Fibonacci Level Detection...")
+            self.logger.info("🔍 Starting Fibonacci Level Detection...")
             fibonacci_levels = self._detect_fibonacci_levels(market_data)
-            self.logger.info(f'📊 Fibonacci levels: {len(fibonacci_levels)}')
+            print(f"📊 Fibonacci Detection Complete: {len(fibonacci_levels)} levels")
+            self.logger.info(f'📊 Fibonacci Detection Complete: {len(fibonacci_levels)} levels')
 
+            print("🔍 Starting Trendline Level Detection...")
+            self.logger.info("🔍 Starting Trendline Level Detection...")
             trendline_levels = self._detect_trendline_levels(market_data)
-            self.logger.info(f'📊 Trendline levels: {len(trendline_levels)}')
+            print(f"📊 Trendline Detection Complete: {len(trendline_levels)} levels")
+            self.logger.info(f'📊 Trendline Detection Complete: {len(trendline_levels)} levels')
 
-            self.logger.info('🔍 Starting channel level detection...')
+            print("🔍 Starting Channel Level Detection...")
+            self.logger.info('🔍 Starting Channel Level Detection...')
             channel_levels = self._detect_channel_levels(market_data)
-            self.logger.info(f'📊 Channel levels: {len(channel_levels)}')
+            print(f"📊 Channel Detection Complete: {len(channel_levels)} levels")
+            self.logger.info(f'📊 Channel Detection Complete: {len(channel_levels)} levels')
 
-            self.logger.info('🔍 Starting volume profile detection...')
+            print("🔍 Starting Volume Profile Detection...")
+            self.logger.info('🔍 Starting Volume Profile Detection...')
             volume_profile_levels = self._detect_volume_profile_levels(market_data)
-            self.logger.info(f'📊 Volume profile levels: {len(volume_profile_levels)}')
+            print(f"📊 Volume Profile Detection Complete: {len(volume_profile_levels)} levels")
+            self.logger.info(f'📊 Volume Profile Detection Complete: {len(volume_profile_levels)} levels')
 
-            self.logger.info('🔍 Starting market structure detection...')
+            print("🔍 Starting Market Structure Detection...")
+            self.logger.info('🔍 Starting Market Structure Detection...')
             market_structure_levels = self._detect_market_structure_levels(market_data)
-            self.logger.info(f'📊 Market structure levels: {len(market_structure_levels)}')
+            print(f"📊 Market Structure Detection Complete: {len(market_structure_levels)} levels")
+            self.logger.info(f'📊 Market Structure Detection Complete: {len(market_structure_levels)} levels')
 
             all_levels = volume_levels + psychological_levels + pivot_levels + fractal_levels + statistical_levels + fibonacci_levels + trendline_levels + channel_levels + volume_profile_levels + market_structure_levels
+            print(f"📊 Total levels before validation: {len(all_levels)}")
             self.logger.info(f'📊 Total levels before validation: {len(all_levels)}')
 
             # Log breakdown of levels by detection method
+            print("📊 Method-by-Method Breakdown:")
+            self.logger.info("📊 Method-by-Method Breakdown:")
             method_counts = {}
+            method_details = {}
             for level in all_levels:
                 method = level.metadata.get('method', 'unknown') if hasattr(level, 'metadata') and level.metadata else 'unknown'
                 method_counts[method] = method_counts.get(method, 0) + 1
-            self.logger.info(f'📊 Level sources: {method_counts}')
+                
+                # Track details for each method
+                if method not in method_details:
+                    method_details[method] = {'support': 0, 'resistance': 0, 'prices': []}
+                method_details[method][level.type] += 1
+                method_details[method]['prices'].append(level.price)
+            
+            for method, count in method_counts.items():
+                details = method_details[method]
+                support_count = details['support']
+                resistance_count = details['resistance']
+                prices = details['prices']
+                price_range = f"${min(prices):.2f}-${max(prices):.2f}" if prices else "N/A"
+                print(f"   🔍 {method.title()}: {count} levels ({support_count} support, {resistance_count} resistance) - Range: {price_range}")
+                self.logger.info(f"   🔍 {method.title()}: {count} levels ({support_count} support, {resistance_count} resistance) - Range: {price_range}")
+                
+                # Show sample levels from each method
+                method_levels = [level for level in all_levels if level.metadata.get('method', 'unknown') == method]
+                if method_levels:
+                    sample_levels = sorted(method_levels, key=lambda x: x.strength, reverse=True)[:3]
+                    print(f"      📊 Sample levels from {method}:")
+                    self.logger.info(f"      📊 Sample levels from {method}:")
+                    for i, level in enumerate(sample_levels, 1):
+                        print(f"         {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f})")
+                        self.logger.info(f"         {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f})")
+            
+            print(f"📊 Level sources summary: {method_counts}")
+            self.logger.info(f'📊 Level sources summary: {method_counts}')
 
             validated_levels = self._validate_and_merge_levels(all_levels, market_data)
             self.logger.info(f'📊 Levels after validation/merging: {len(validated_levels)} (reduced by {len(all_levels) - len(validated_levels)})')
@@ -1345,7 +1437,23 @@ class EnhancedSRDetector:
             elapsed_time = time.time() - start_time
             support_count = len([level for level in enhanced_levels if level.type == 'support'])
             resistance_count = len([level for level in enhanced_levels if level.type == 'resistance'])
-            self.logger.info(f'✅ Processed {len(enhanced_levels)} total S/R levels ({support_count} support, {resistance_count} resistance) in {elapsed_time:.2f}s')
+            
+            print(f"✅ Enhanced SR Detection Complete!")
+            print(f"   📊 Total levels: {len(enhanced_levels)} ({support_count} support, {resistance_count} resistance)")
+            print(f"   ⏱️ Processing time: {elapsed_time:.2f}s")
+            self.logger.info(f'✅ Enhanced SR Detection Complete!')
+            self.logger.info(f'   📊 Total levels: {len(enhanced_levels)} ({support_count} support, {resistance_count} resistance)')
+            self.logger.info(f'   ⏱️ Processing time: {elapsed_time:.2f}s')
+            
+            # Show sample of strongest levels
+            if enhanced_levels:
+                print("📊 Sample of Strongest Levels:")
+                self.logger.info("📊 Sample of Strongest Levels:")
+                sorted_levels = sorted(enhanced_levels, key=lambda x: x.strength, reverse=True)[:5]
+                for i, level in enumerate(sorted_levels, 1):
+                    method = level.metadata.get('method', 'unknown') if hasattr(level, 'metadata') and level.metadata else 'unknown'
+                    print(f"   {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
+                    self.logger.info(f"   {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
 
             # Return just the enhanced levels (maintain backward compatibility)
             return enhanced_levels
@@ -1392,6 +1500,8 @@ class EnhancedSRDetector:
                 support_array, resistance_array = self._basic_fractal_detection(high, low, self.fractal_period)
 
             # Convert to SRLevel objects
+            support_levels_found = 0
+            resistance_levels_found = 0
             for idx, price in support_array:
                 i = int(idx)
                 if i < len(data):
@@ -1403,6 +1513,7 @@ class EnhancedSRDetector:
                                   pivot_level=False, psychological_level=False,
                                   metadata={'method': 'fractal', 'period': self.fractal_period})
                     levels.append(level)
+                    support_levels_found += 1
 
             for idx, price in resistance_array:
                 i = int(idx)
@@ -1415,30 +1526,10 @@ class EnhancedSRDetector:
                                   pivot_level=False, psychological_level=False,
                                   metadata={'method': 'fractal', 'period': self.fractal_period})
                     levels.append(level)
-            else:
-                # Fallback to original method
-                fractal_highs = self._find_fractal_highs(high, self.fractal_period)
-                fractal_lows = self._find_fractal_lows(low, self.fractal_period)
-                for i, price in enumerate(fractal_highs):
-                    if i < len(data):
-                        level = SRLevel(price=price, strength=0.7, type='resistance', touch_count=1,
-                                      first_touch_time=data.index[i], last_touch_time=data.index[i],
-                                      age_bars=0, avg_bounce_ratio=0.0, max_bounce_ratio=0.0,
-                                      volume_confirmation_score=0.0, consistency_score=0.0,
-                                      failure_count=0, confidence_score=0.7, confluence_score=0.0,
-                                      pivot_level=False, psychological_level=False,
-                                      metadata={'method': 'fractal', 'period': self.fractal_period})
-                        levels.append(level)
-                for i, price in enumerate(fractal_lows):
-                    if i < len(data):
-                        level = SRLevel(price=price, strength=0.7, type='support', touch_count=1,
-                                      first_touch_time=data.index[i], last_touch_time=data.index[i],
-                                      age_bars=0, avg_bounce_ratio=0.0, max_bounce_ratio=0.0,
-                                      volume_confirmation_score=0.0, consistency_score=0.0,
-                                      failure_count=0, confidence_score=0.7, confluence_score=0.0,
-                                      pivot_level=False, psychological_level=False,
-                                      metadata={'method': 'fractal', 'period': self.fractal_period})
-                        levels.append(level)
+                    resistance_levels_found += 1
+            
+            print(f"   🔍 Fractal Detection (period {self.fractal_period}): Found {support_levels_found} support, {resistance_levels_found} resistance levels")
+            self.logger.info(f"   🔍 Fractal Detection (period {self.fractal_period}): Found {support_levels_found} support, {resistance_levels_found} resistance levels")
 
             # Limit to configurable number of levels by strength
             levels = sorted(levels, key=lambda x: x.strength, reverse=True)[:self.max_fractal_levels]

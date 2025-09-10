@@ -3,6 +3,12 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 Unified Step08 Final Methods - Part 5
 """
 
+import time
+import logging
+
+# Initialize logger
+logger = logging.getLogger('Step08UnifiedFinal')
+
 # Import required classes
 try:
     from .step08_unified_complete import (
@@ -91,8 +97,12 @@ from src.utils.lookahead_bias_detector import (
                                             feature_validation: FeatureSelectionValidation, interpretability_results: Dict[str, Any],
                                             validation_results: Dict[str, Any], start_time: datetime) -> Step08Results:
         """Generate comprehensive results from all analysis components."""
+        start_time_func = time.time()
         try:
             self.logger.info('📋 Generating comprehensive results...')
+            self.logger.info(f'Input data shape: {data.shape}, selected features: {len(selected_features)}')
+            self.logger.info(f'Financial metrics available: {bool(financial_metrics)}')
+            self.logger.info(f'Risk metrics available: {bool(risk_metrics)}')
             
             results = Step08Results()
             
@@ -103,14 +113,18 @@ from src.utils.lookahead_bias_detector import (
             results.risk_metrics = risk_metrics
             results.regime_balance = self.regime_balance
             results.feature_validation = feature_validation
+            
+            self.logger.info('Basic results structure initialized')
 
             # Add interpretability results
             if interpretability_results:
                 results.execution_metadata['interpretability_analysis'] = interpretability_results
+                self.logger.info(f'Interpretability results added: {len(interpretability_results)} components')
 
             # Add validation results
             if validation_results:
                 results.execution_metadata['walk_forward_validation'] = validation_results
+                self.logger.info(f'Validation results added: {len(validation_results)} components')
             
             # Execution metadata
             end_time = datetime.now()
@@ -133,6 +147,8 @@ from src.utils.lookahead_bias_detector import (
                 }
             }
             
+            self.logger.info('Execution metadata generated')
+            
             # Success determination
             results.success = (
                 len(selected_features.get('final', [])) > 0 and
@@ -141,33 +157,47 @@ from src.utils.lookahead_bias_detector import (
                 self.regime_balance.balance_score > 0.3
             )
             
+            self.logger.info(f'Success determination completed: {results.success}')
+            
             # Generate warnings
             if not feature_validation.validation_passed:
                 results.warnings.append("Feature selection validation failed")
+                self.logger.warning("Feature selection validation failed")
             if risk_metrics.overall_risk_score > 0.8:
                 results.warnings.append("High overall risk score detected")
+                self.logger.warning(f"High overall risk score detected: {risk_metrics.overall_risk_score:.3f}")
             if self.regime_balance.balance_score < 0.3:
                 results.warnings.append("Poor regime balance detected")
+                self.logger.warning(f"Poor regime balance detected: {self.regime_balance.balance_score:.3f}")
             if not results.success:
                 results.errors.append("Overall execution failed validation criteria")
+                self.logger.error("Overall execution failed validation criteria")
             
-            self.logger.info(f'✅ Comprehensive results generated:')
+            func_time = time.time() - start_time_func
+            self.logger.info(f'✅ Comprehensive results generated in {func_time:.3f} seconds:')
             self.logger.info(f'   Success: {results.success}')
             self.logger.info(f'   Selected features: {len(selected_features.get("final", []))}')
             self.logger.info(f'   Risk score: {risk_metrics.overall_risk_score:.3f}')
             self.logger.info(f'   Balance score: {self.regime_balance.balance_score:.3f}')
+            self.logger.info(f'   Warnings: {len(results.warnings)}')
+            self.logger.info(f'   Errors: {len(results.errors)}')
             
             return results
             
         except Exception as e:
-            self.logger.error(f'Failed to generate comprehensive results: {e}')
+            func_time = time.time() - start_time_func
+            self.logger.error(f'Failed to generate comprehensive results after {func_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
             return Step08Results(success=False, errors=[str(e)])
 
     @timed_operation("artifact_saving")
     async def _save_artifacts_and_reports(self, results: Step08Results) -> None:
         """Save all artifacts and reports with extensive utility integration."""
+        start_time = time.time()
         try:
             self.logger.info('💾 Saving artifacts and reports with utility integration...')
+            self.logger.info(f'Results success: {results.success}')
+            self.logger.info(f'Artifacts to save: {len(results.artifacts_generated)}')
             
             # Memory checkpoint for artifact saving
             with self.memory_optimizer.memory_checkpoint("artifact_saving_start"):
@@ -175,6 +205,7 @@ from src.utils.lookahead_bias_detector import (
                 # Save regime data using parquet utilities
                 if results.regime_data is not None:
                     regime_file = os.path.join(self.artifacts_dir, 'regime_data.parquet')
+                    self.logger.info(f'Saving regime data to {regime_file}...')
                     
                     # Use parquet utilities for safe saving
                     if self.parquet_serializer.save(results.regime_data, regime_file, compression='snappy'):
@@ -182,10 +213,13 @@ from src.utils.lookahead_bias_detector import (
                         self.logger.info(f"✅ Regime data saved to {regime_file}")
                     else:
                         self.logger.error(f"Failed to save regime data to {regime_file}")
+                else:
+                    self.logger.warning("No regime data to save")
                 
                 # Save selected features using JSON serializer
                 if results.selected_features:
                     features_file = os.path.join(self.artifacts_dir, 'selected_features.json')
+                    self.logger.info(f'Saving selected features to {features_file}...')
                     
                     # Use JSON serializer for safe saving
                     if self.json_serializer.save(results.selected_features, features_file, indent=2):
@@ -193,6 +227,8 @@ from src.utils.lookahead_bias_detector import (
                         self.logger.info(f"✅ Selected features saved to {features_file}")
                     else:
                         self.logger.error(f"Failed to save selected features to {features_file}")
+                else:
+                    self.logger.warning("No selected features to save")
             
                 # Save financial metrics using JSON serializer
                 if results.financial_metrics:
@@ -295,25 +331,34 @@ from src.utils.lookahead_bias_detector import (
                         self.logger.info(f"✅ Performance metrics saved to {performance_file}")
             
             # Generate comprehensive report
+            self.logger.info('Generating comprehensive report...')
             comprehensive_report = self._generate_comprehensive_report(results)
             report_file = os.path.join(self.reports_dir, 'comprehensive_report.json')
             safe_json_dump(comprehensive_report, report_file)
             results.artifacts_generated.append(report_file)
+            self.logger.info(f'Comprehensive report saved to {report_file}')
             
             # Generate markdown report
+            self.logger.info('Generating markdown report...')
             markdown_report = self._generate_markdown_report(results)
             markdown_file = os.path.join(self.reports_dir, 'comprehensive_report.md')
             with open(markdown_file, 'w') as f:
                 f.write(markdown_report)
             results.artifacts_generated.append(markdown_file)
+            self.logger.info(f'Markdown report saved to {markdown_file}')
             
             # Generate visualizations
+            self.logger.info('Generating visualizations...')
             await self._generate_visualizations(results)
+            self.logger.info('Visualizations generated')
             
-            self.logger.info(f'✅ Artifacts and reports saved: {len(results.artifacts_generated)} files')
+            save_time = time.time() - start_time
+            self.logger.info(f'✅ Artifacts and reports saved in {save_time:.3f} seconds: {len(results.artifacts_generated)} files')
             
         except Exception as e:
-            self.logger.error(f'Failed to save artifacts and reports: {e}')
+            save_time = time.time() - start_time
+            self.logger.error(f'Failed to save artifacts and reports after {save_time:.3f} seconds: {e}')
+            self.logger.error(f'Error type: {type(e).__name__}')
 
     def _generate_comprehensive_report(self, results: Step08Results) -> Dict[str, Any]:
         """Generate comprehensive JSON report."""

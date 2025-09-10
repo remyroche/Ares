@@ -64,13 +64,21 @@ class DataPreprocessor:
         Returns:
             Fixed data with regular intervals
         """
-        self.logger.info(f'🔧 Auto-fixing irregular intervals for {exchange} {symbol}')
+        self.logger.info('🔧 Starting automatic irregular interval fixing...')
+        self.logger.info(f'📊 Processing {exchange} {symbol} data')
+        self.logger.info(f'📈 Input data shape: {data.shape}')
+        
+        if data.empty:
+            self.logger.warning('⚠️ Empty data provided, returning as-is')
+            return data
         
         time_diffs = data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
             self.logger.info('✅ No time differences found - data is already regular')
             return data
             
+        self.logger.info(f'📊 Analyzing {len(time_diffs)} time intervals...')
+        
         expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
         expected_interval_seconds = expected_interval.total_seconds()
         tolerance_percentage = self.config["tolerance"]["interval_tolerance_percentage"]
@@ -79,13 +87,25 @@ class DataPreprocessor:
         irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds = tolerance_seconds)]
         irregular_ratio = len(irregular_intervals) / len(time_diffs)
         
-        self.logger.info('🔍 Interval analysis:')
-        self.logger.info(f'   Expected interval: {expected_interval}')
-        self.logger.info(f'   Irregular intervals: {len(irregular_intervals)} ({irregular_ratio:.3f})')
-        self.logger.info(f'   Tolerance: ±{tolerance_seconds:.1f}s')
+        self.logger.info('🔍 Detailed interval analysis:')
+        self.logger.info(f'   📅 Expected interval: {expected_interval} ({expected_interval_seconds:.1f}s)')
+        self.logger.info(f'   📊 Total intervals analyzed: {len(time_diffs):,}')
+        self.logger.info(f'   ⚠️ Irregular intervals found: {len(irregular_intervals):,} ({irregular_ratio:.3f})')
+        self.logger.info(f'   🎯 Tolerance threshold: ±{tolerance_seconds:.1f}s ({tolerance_percentage:.1%})')
+        self.logger.info(f'   📋 Irregular interval threshold: {self.config["tolerance"]["irregular_interval_threshold"]:.3f}')
+        
+        # Show some examples of irregular intervals
+        if len(irregular_intervals) > 0:
+            self.logger.info('📋 Sample irregular intervals:')
+            for i, (timestamp, interval) in enumerate(irregular_intervals.head(5).items()):
+                self.logger.info(f'   {i+1}. {timestamp}: {interval} (expected: {expected_interval})')
+            if len(irregular_intervals) > 5:
+                self.logger.info(f'   ... and {len(irregular_intervals) - 5} more irregular intervals')
         
         if irregular_ratio > self.config["tolerance"]["irregular_interval_threshold"]:
-            self.logger.info('🔧 Applying enhanced preprocessing to fix irregular intervals')
+            self.logger.warning(f'⚠️ Irregular interval ratio {irregular_ratio:.3f} exceeds threshold {self.config["tolerance"]["irregular_interval_threshold"]:.3f}')
+            self.logger.info('🔧 Applying enhanced preprocessing to fix irregular intervals...')
+            
             fixed_data = self.enhanced_preprocess_market_data(
                 data = data, 
                 symbol = symbol, 
@@ -96,25 +116,34 @@ class DataPreprocessor:
             )
             
             # Verify the fix
+            self.logger.info('🔍 Verifying interval fix...')
             fixed_time_diffs = fixed_data.index.to_series().diff().dropna()
             if len(fixed_time_diffs) > 0:
                 fixed_expected_interval = fixed_time_diffs.mode().iloc[0] if len(fixed_time_diffs.mode()) > 0 else fixed_time_diffs.median()
                 fixed_irregular_intervals = fixed_time_diffs[abs(fixed_time_diffs - fixed_expected_interval) > pd.Timedelta(seconds = tolerance_seconds)]
                 fixed_irregular_ratio = len(fixed_irregular_intervals) / len(fixed_time_diffs)
                 
-                self.logger.info('✅ Fix verification:')
-                self.logger.info(f'   Before: {irregular_ratio:.3f} irregular intervals')
-                self.logger.info(f'   After: {fixed_irregular_ratio:.3f} irregular intervals')
-                self.logger.info(f'   Improvement: {irregular_ratio - fixed_irregular_ratio:.3f}')
+                self.logger.info('✅ Fix verification results:')
+                self.logger.info(f'   📊 Original data shape: {data.shape}')
+                self.logger.info(f'   📊 Fixed data shape: {fixed_data.shape}')
+                self.logger.info(f'   📈 Before: {irregular_ratio:.3f} irregular intervals ({len(irregular_intervals):,} out of {len(time_diffs):,})')
+                self.logger.info(f'   📈 After: {fixed_irregular_ratio:.3f} irregular intervals ({len(fixed_irregular_intervals):,} out of {len(fixed_time_diffs):,})')
+                self.logger.info(f'   📈 Improvement: {irregular_ratio - fixed_irregular_ratio:.3f} ({((irregular_ratio - fixed_irregular_ratio) / irregular_ratio * 100):.1f}% reduction)')
                 
                 if fixed_irregular_ratio < 0.001:
-                    self.logger.info('✅ Irregular intervals successfully fixed!')
+                    self.logger.info('✅ Irregular intervals successfully fixed! Data is now highly regular')
+                elif fixed_irregular_ratio < irregular_ratio * 0.5:
+                    self.logger.info('✅ Significant improvement achieved in interval regularity')
                 else:
                     self.logger.warning(f'⚠️ Some irregular intervals remain: {fixed_irregular_ratio:.3f}')
                     
                 return fixed_data
+            else:
+                self.logger.warning('⚠️ No time differences found in fixed data - verification failed')
+                return fixed_data
         else:
-            self.logger.info('✅ No significant irregular intervals detected')
+            self.logger.info('✅ No significant irregular intervals detected - data is within acceptable tolerance')
+            self.logger.info(f'   📊 Irregular ratio: {irregular_ratio:.3f} ≤ threshold: {self.config["tolerance"]["irregular_interval_threshold"]:.3f}')
             
         return data
         
@@ -146,21 +175,47 @@ class DataPreprocessor:
         Returns:
             Preprocessed data with intelligent gap handling
         """
-        self.logger.info(f'🔧 Enhanced preprocessing for {exchange} {symbol}')
+        self.logger.info('🔧 Starting enhanced preprocessing...')
+        self.logger.info(f'📊 Processing {exchange} {symbol} data')
+        self.logger.info(f'📈 Input data shape: {data.shape}')
+        self.logger.info(f'⚙️ Configuration:')
         self.logger.info(f'   Expected interval: {expected_interval_seconds}s')
         self.logger.info(f'   Max forward-fill: {max_forward_fill_seconds}s')
         self.logger.info(f'   Download missing: {download_missing_data}')
+        
+        if data.empty:
+            self.logger.warning('⚠️ Empty data provided, returning as-is')
+            return data
+        
+        # Analyze original data
+        original_start = data.index.min()
+        original_end = data.index.max()
+        original_duration = (original_end - original_start).total_seconds()
+        original_points = len(data)
+        
+        self.logger.info('📊 Original data analysis:')
+        self.logger.info(f'   📅 Time range: {original_start} to {original_end}')
+        self.logger.info(f'   ⏱️ Duration: {original_duration:.1f}s ({original_duration/3600:.1f}h)')
+        self.logger.info(f'   📈 Data points: {original_points:,}')
+        self.logger.info(f'   📊 Columns: {list(data.columns)}')
         
         # Remove duplicates
         if data.index.duplicated().any():
             duplicates = data.index.duplicated().sum()
             self.logger.warning(f'⚠️ Found {duplicates} duplicate timestamps, removing duplicates')
             data = data[~data.index.duplicated(keep='last')]
+            self.logger.info(f'✅ Removed {duplicates} duplicates, new shape: {data.shape}')
+        else:
+            self.logger.info('✅ No duplicate timestamps found')
             
         # Step 1: Resample to expected intervals
         freq = f'{expected_interval_seconds}S'
         self.logger.info(f'🔧 Step 1: Resampling to {freq} intervals')
+        self.logger.info(f'   📊 Original data points: {len(data):,}')
+        
         resampled = data.resample(freq).last()
+        self.logger.info(f'   📈 Resampled data points: {len(resampled):,}')
+        self.logger.info(f'   📊 Resampling ratio: {len(resampled)/len(data):.3f}')
         
         # Step 2: Re-add original data to preserve accuracy
         self.logger.info('🔧 Step 2: Re-adding original data to preserve accuracy')
@@ -170,49 +225,93 @@ class DataPreprocessor:
         orig.index = orig.index.floor(freq)
         orig = orig[~orig.index.duplicated(keep='last')]
         combined_data.update(orig)
+        
+        self.logger.info(f'   📈 Combined data points: {len(combined_data):,}')
+        self.logger.info(f'   📊 Data points added from original: {len(orig):,}')
                 
         # Step 3: Analyze gaps and apply intelligent handling
         self.logger.info('🔧 Step 3: Analyzing gaps and applying intelligent handling')
         time_diffs = combined_data.index.to_series().diff().dropna()
         gaps = time_diffs[time_diffs > pd.Timedelta(seconds = expected_interval_seconds)]
         
+        self.logger.info(f'📊 Gap analysis:')
+        self.logger.info(f'   📈 Total time differences analyzed: {len(time_diffs):,}')
+        self.logger.info(f'   ⚠️ Gaps found: {len(gaps):,}')
+        
         if len(gaps) > 0:
-            self.logger.info(f'🔍 Found {len(gaps)} gaps in the data')
+            self.logger.info(f'🔍 Detailed gap analysis:')
             small_gaps = gaps[gaps <= pd.Timedelta(seconds = max_forward_fill_seconds)]
             large_gaps = gaps[gaps > pd.Timedelta(seconds = max_forward_fill_seconds)]
             
-            self.logger.info(f'   Small gaps (≤{max_forward_fill_seconds}s): {len(small_gaps)}')
-            self.logger.info(f'   Large gaps (>{max_forward_fill_seconds}s): {len(large_gaps)}')
+            self.logger.info(f'   📊 Small gaps (≤{max_forward_fill_seconds}s): {len(small_gaps):,}')
+            self.logger.info(f'   📊 Large gaps (>{max_forward_fill_seconds}s): {len(large_gaps):,}')
+            
+            if len(small_gaps) > 0:
+                avg_small_gap = small_gaps.mean().total_seconds()
+                max_small_gap = small_gaps.max().total_seconds()
+                self.logger.info(f'   📈 Small gap stats: avg={avg_small_gap:.1f}s, max={max_small_gap:.1f}s')
+            
+            if len(large_gaps) > 0:
+                avg_large_gap = large_gaps.mean().total_seconds()
+                max_large_gap = large_gaps.max().total_seconds()
+                self.logger.info(f'   📈 Large gap stats: avg={avg_large_gap:.1f}s, max={max_large_gap:.1f}s')
+                
+                # Show some examples of large gaps
+                self.logger.info('📋 Sample large gaps:')
+                for i, (timestamp, gap) in enumerate(large_gaps.head(3).items()):
+                    self.logger.info(f'   {i+1}. {timestamp}: {gap.total_seconds():.1f}s')
+                if len(large_gaps) > 3:
+                    self.logger.info(f'   ... and {len(large_gaps) - 3} more large gaps')
             
             # Handle small gaps with forward fill
             if len(small_gaps) > 0:
                 self.logger.info('🔧 Step 4a: Forward-filling small gaps')
+                nulls_before = combined_data.isnull().sum().sum()
                 combined_data = combined_data.fillna(method='ffill')
+                nulls_after = combined_data.isnull().sum().sum()
+                self.logger.info(f'   📊 Nulls before: {nulls_before:,}, after: {nulls_after:,}')
+                self.logger.info('✅ Small gaps forward filled')
+            else:
+                self.logger.info('✅ No small gaps to forward fill')
                 
             # Handle large gaps with data download
             if len(large_gaps) > 0 and download_missing_data:
                 self.logger.info('🔧 Step 4b: Downloading missing data for large gaps')
+                nulls_before = combined_data.isnull().sum().sum()
                 combined_data = self._download_and_fill_missing_data(
                     combined_data, symbol, exchange, large_gaps
                 )
+                nulls_after = combined_data.isnull().sum().sum()
+                self.logger.info(f'   📊 Nulls before: {nulls_before:,}, after: {nulls_after:,}')
+                self.logger.info('✅ Large gaps processed with data download')
             elif len(large_gaps) > 0:
                 self.logger.warning(f'⚠️ {len(large_gaps)} large gaps remain unfilled (download disabled)')
+        else:
+            self.logger.info('✅ No gaps found - data is already regular')
                 
         # Final cleanup
         remaining_nulls = combined_data.isnull().sum().sum()
         if remaining_nulls > 0:
-            self.logger.info(f'🔧 Step 5: Final forward-fill for {remaining_nulls} remaining nulls')
+            self.logger.info(f'🔧 Step 5: Final forward-fill for {remaining_nulls:,} remaining nulls')
             combined_data = combined_data.fillna(method='ffill')
+            final_nulls = combined_data.isnull().sum().sum()
+            self.logger.info(f'   📊 Final nulls after cleanup: {final_nulls:,}')
+        else:
+            self.logger.info('✅ No remaining nulls to clean up')
             
         # Final verification
+        self.logger.info('🔍 Final verification...')
         final_gaps = combined_data.index.to_series().diff().dropna()
         final_large_gaps = final_gaps[final_gaps > pd.Timedelta(seconds = expected_interval_seconds)]
+        final_completeness = combined_data.notna().sum().sum() / combined_data.size
         
         self.logger.info('✅ Enhanced preprocessing completed:')
-        self.logger.info(f'   Original shape: {data.shape}')
-        self.logger.info(f'   Final shape: {combined_data.shape}')
-        self.logger.info(f'   Remaining large gaps: {len(final_large_gaps)}')
-        self.logger.info(f'   Data completeness: {combined_data.notna().sum().sum() / combined_data.size:.3f}')
+        self.logger.info(f'   📊 Original shape: {data.shape}')
+        self.logger.info(f'   📊 Final shape: {combined_data.shape}')
+        self.logger.info(f'   📈 Data points added: {len(combined_data) - original_points:,}')
+        self.logger.info(f'   ⚠️ Remaining large gaps: {len(final_large_gaps):,}')
+        self.logger.info(f'   📊 Data completeness: {final_completeness:.3f}')
+        self.logger.info(f'   📈 Completeness improvement: {((final_completeness - (1 - len(gaps)/len(time_diffs))) * 100):.1f}%')
         
         return combined_data
         
@@ -458,4 +557,5 @@ class DataPreprocessor:
             
         except Exception as e:
             self.logger.exception(f'❌ Error filling gap in dataset: {e}')
+            return main_data
             return main_data

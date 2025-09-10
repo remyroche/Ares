@@ -20,7 +20,7 @@ from src.utils.optimized_data_manager import get_optimized_data_manager
 from src.utils.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
+from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
 from src.utils.enhanced_step_optimizations import (
     get_step_optimization_manager,
     create_optimization_profile,
@@ -62,7 +62,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
         self.gpu_manager = get_m1_gpu_manager()
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
-        self.matrix_operations = get_enhanced_matrix_operations()
+        self.matrix_operations = EnhancedMatrixOperations()
         self.step_optimizer = get_step_optimization_manager()
 
         # Initialize ML Common utilities for streamlined processing

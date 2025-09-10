@@ -1,3 +1,14 @@
+import warnings, sys
+warnings.warn(
+    "`step07_enhanced_matrix_operations` is deprecated; use `src.utils.ml_common.matrix_operations` instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+# Re-export new helper so existing imports continue to work
+from src.utils.ml_common.matrix_operations import *  # type: ignore F403,F401
+sys.modules[__name__] = sys.modules["src.utils.ml_common.matrix_operations"]
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 import pandas as pd

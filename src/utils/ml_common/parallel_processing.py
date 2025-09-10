@@ -35,7 +35,7 @@ from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
 from ..parallel_processing_optimizer import ParallelProcessor
 from ..m1_cpu_optimizer import M1CPUOptimizer
-from ..data_processing_utils import safe_dataframe_operation
+from ..common_utilities import safe_dataframe_operation
 
 logger = logging.getLogger(__name__)
 

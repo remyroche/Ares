@@ -1,4 +1,3 @@
-
 """Step 06: Advanced Feature Engineering with Hardware Acceleration (standard path for orchestrator).
 
 Mandatory components: wavelet features and multi-timeframe/resampling are required.
@@ -40,7 +39,7 @@ except ImportError:
 # Import optimization utilities for enhanced performance
 try:
     from src.utils.vectorized_processing_core import get_vectorized_processing_core
-    from src.utils.enhanced_matrix_operations import get_enhanced_matrix_operations
+    from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
     from src.utils.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
@@ -258,10 +257,39 @@ class AdvancedFeatureEngineeringStep(BaseStep):
                 if self.logger:
                     self.logger.info('🔍 Running ML-enhanced data quality validation...')
 
-                # Perform comprehensive data quality validation
-                quality_report = await self.ml_data_quality.perform_comprehensive_validation(
-                    labeled, symbol=symbol, exchange=exchange, context='feature_engineering'
+                # Perform comprehensive data quality validation using available methods
+                quality_report = {}
+                
+                # Check for missing values
+                missing_analysis = self.ml_data_quality.missing_value_analysis(labeled)
+                quality_report['missing_analysis'] = missing_analysis
+                
+                # Calculate data quality score
+                quality_score = self.ml_data_quality.calculate_data_quality_score(labeled)
+                quality_report['quality_score'] = quality_score
+                
+                # Check for outliers
+                outlier_report = self.ml_data_quality.automated_outlier_detection(
+                    labeled.select_dtypes(include=[np.number])
                 )
+                quality_report['outlier_analysis'] = outlier_report
+                
+                # Determine if there are critical issues
+                quality_report['has_critical_issues'] = (
+                    missing_analysis.get('missing_percentage', 0) > 0.5 or
+                    quality_score.get('overall_score', 0) < 0.7 or
+                    outlier_report.get('outlier_percentage', 0) > 0.3
+                )
+                
+                if quality_report['has_critical_issues']:
+                    critical_issues = []
+                    if missing_analysis.get('missing_percentage', 0) > 0.5:
+                        critical_issues.append(f"High missing values: {missing_analysis.get('missing_percentage', 0):.1%}")
+                    if quality_score.get('overall_score', 0) < 0.7:
+                        critical_issues.append(f"Low quality score: {quality_score.get('overall_score', 0):.2f}")
+                    if outlier_report.get('outlier_percentage', 0) > 0.3:
+                        critical_issues.append(f"High outlier percentage: {outlier_report.get('outlier_percentage', 0):.1%}")
+                    quality_report['critical_issues'] = critical_issues
                 if quality_report.get('has_critical_issues', False):
                     if self.logger:
                         self.logger.error(f"🚨 Critical data quality issues detected: {quality_report.get('critical_issues', [])}")
@@ -291,7 +319,15 @@ class AdvancedFeatureEngineeringStep(BaseStep):
 
         # Core feature sets (must succeed)
         base_features = self._build_basic_features(labeled)
-        wavelet_features = self._build_wavelet_features_required(labeled)
+        
+        # Wavelet features - conditional based on enable_wavelets setting
+        if self.enable_wavelets:
+            wavelet_features = self._build_wavelet_features_required(labeled)
+        else:
+            if self.logger:
+                self.logger.info('🚫 Wavelet features disabled - skipping wavelet feature generation')
+            wavelet_features = pd.DataFrame(index=labeled.index)
+            
         mtf_features = await self._build_mtf_features_required(labeled)
 
         # Market microstructure features

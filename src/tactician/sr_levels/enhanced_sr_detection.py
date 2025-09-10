@@ -3847,17 +3847,143 @@ class EnhancedSRDetector:
 
             # Try Optuna first, then fallback to grid search
             try:
-                return self._optimize_dbscan_optuna(levels, data)
+                eps, min_samples = self._optimize_dbscan_optuna(levels, data)
             except ImportError:
                 try:
-                    return self._optimize_dbscan_skopt(levels, data)
+                    eps, min_samples = self._optimize_dbscan_skopt(levels, data)
                 except ImportError:
                     # Final fallback to heuristics
-                    return self._get_heuristic_dbscan_params(levels, data)
+                    eps, min_samples = self._get_heuristic_dbscan_params(levels, data)
+            else:
+                # Validate optimized parameters
+                eps, min_samples = self._validate_dbscan_parameters(eps, min_samples, levels, data)
+
+            return eps, min_samples
 
         except Exception as e:
             self.logger.warning(f'DBSCAN parameter optimization failed: {e}')
             return self._get_heuristic_dbscan_params(levels, data)
+
+    def _validate_dbscan_parameters(self, eps: float, min_samples: int, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
+        """
+        Validate DBSCAN parameters for logical consistency with market conditions.
+        
+        Ensures parameters are realistic given:
+        - Market volatility during SR level formation period
+        - Level density and distribution
+        - Minimum expected cluster spread
+        """
+        try:
+            # Calculate volatility from the same time period as SR levels
+            price_volatility = self._calculate_level_period_volatility(levels, data)
+            avg_price = data['close'].mean()
+            
+            # Calculate minimum expected cluster spread
+            min_cluster_spread = min_samples * price_volatility * avg_price
+            
+            # Check if eps is too small relative to expected cluster spread
+            if eps < min_cluster_spread:
+                self.logger.warning(f'🔧 Epsilon ({eps:.2f}) too small relative to min_samples ({min_samples}) '
+                                  f'and volatility ({price_volatility:.4f}). '
+                                  f'Minimum expected spread: {min_cluster_spread:.2f}')
+                
+                # Suggest correction with 1.5x buffer for realistic clustering
+                suggested_eps = min_cluster_spread * 1.5
+                self.logger.info(f'🔧 Correcting eps: {eps:.2f} -> {suggested_eps:.2f}')
+                eps = suggested_eps
+            
+            # Check if eps is too large (would create too few clusters)
+            max_reasonable_eps = min_samples * price_volatility * avg_price * 3.0
+            if eps > max_reasonable_eps:
+                self.logger.warning(f'🔧 Epsilon ({eps:.2f}) too large. '
+                                  f'Maximum reasonable: {max_reasonable_eps:.2f}')
+                
+                suggested_eps = max_reasonable_eps
+                self.logger.info(f'🔧 Correcting eps: {eps:.2f} -> {suggested_eps:.2f}')
+                eps = suggested_eps
+            
+            # Validate min_samples is reasonable for level count
+            max_reasonable_min_samples = max(2, len(levels) // 3)
+            if min_samples > max_reasonable_min_samples:
+                self.logger.warning(f'🔧 min_samples ({min_samples}) too high for {len(levels)} levels. '
+                                  f'Maximum reasonable: {max_reasonable_min_samples}')
+                
+                suggested_min_samples = max_reasonable_min_samples
+                self.logger.info(f'🔧 Correcting min_samples: {min_samples} -> {suggested_min_samples}')
+                min_samples = suggested_min_samples
+            
+            # Final validation: ensure eps is within reasonable bounds
+            min_eps = avg_price * 0.001  # 0.1% minimum
+            max_eps = avg_price * 0.1    # 10% maximum
+            eps = np.clip(eps, min_eps, max_eps)
+            
+            self.logger.info(f'✅ Validated DBSCAN params - eps: {eps:.2f}, min_samples: {min_samples}, '
+                           f'volatility: {price_volatility:.4f}, expected_spread: {min_cluster_spread:.2f}')
+            
+            return eps, min_samples
+            
+        except Exception as e:
+            self.logger.warning(f'DBSCAN parameter validation failed: {e}')
+            return eps, min_samples
+
+    def _calculate_level_period_volatility(self, levels: List[SRLevel], data: pd.DataFrame) -> float:
+        """
+        Calculate volatility from the same time period as SR level formation.
+        
+        This ensures we use volatility that's relevant to the levels being clustered,
+        not just the entire dataset volatility.
+        """
+        try:
+            if not levels:
+                # Fallback to overall dataset volatility
+                return data['close'].pct_change().std()
+            
+            # Get time range of SR levels
+            level_times = []
+            for level in levels:
+                if level.first_touch_time is not None:
+                    level_times.append(level.first_touch_time)
+                if level.last_touch_time is not None:
+                    level_times.append(level.last_touch_time)
+            
+            if not level_times:
+                # Fallback to overall dataset volatility
+                return data['close'].pct_change().std()
+            
+            # Find the time range covering all levels
+            min_time = min(level_times)
+            max_time = max(level_times)
+            
+            # Add buffer to capture more context around level formation
+            time_buffer = pd.Timedelta(hours=24)  # 24-hour buffer
+            start_time = min_time - time_buffer
+            end_time = max_time + time_buffer
+            
+            # Filter data to level formation period
+            level_period_data = data[(data.index >= start_time) & (data.index <= end_time)]
+            
+            if len(level_period_data) < 10:
+                # Not enough data in level period, use overall volatility
+                self.logger.info('🔧 Insufficient data in level period, using overall volatility')
+                return data['close'].pct_change().std()
+            
+            # Calculate volatility for the level formation period
+            level_period_volatility = level_period_data['close'].pct_change().std()
+            
+            # Ensure we have a reasonable volatility value
+            if pd.isna(level_period_volatility) or level_period_volatility <= 0:
+                # Fallback to overall dataset volatility
+                level_period_volatility = data['close'].pct_change().std()
+            
+            self.logger.info(f'🔧 Level period volatility: {level_period_volatility:.4f} '
+                           f'(period: {start_time} to {end_time}, {len(level_period_data)} bars)')
+            
+            return level_period_volatility
+            
+        except Exception as e:
+            self.logger.warning(f'Failed to calculate level period volatility: {e}')
+            # Fallback to overall dataset volatility
+            return data['close'].pct_change().std()
 
     def _optimize_dbscan_optuna(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
         """Optimize DBSCAN parameters using Optuna."""
@@ -3865,7 +3991,8 @@ class EnhancedSRDetector:
 
         level_data = np.array([[level.price, level.strength] for level in levels])
         avg_price = data['close'].mean()
-        price_volatility = data['close'].pct_change().std()
+        # Use volatility from the same time period as SR levels
+        price_volatility = self._calculate_level_period_volatility(levels, data)
 
         def objective(trial: optuna.Trial) -> float:
             # Define parameter search space
@@ -3923,6 +4050,8 @@ class EnhancedSRDetector:
 
         level_data = np.array([[level.price, level.strength] for level in levels])
         avg_price = data['close'].mean()
+        # Use volatility from the same time period as SR levels
+        price_volatility = self._calculate_level_period_volatility(levels, data)
 
         def objective(params):
             eps_relative, min_samples = params
@@ -3964,8 +4093,9 @@ class EnhancedSRDetector:
 
     def _get_heuristic_dbscan_params(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
         """Get heuristic DBSCAN parameters when optimization is not available."""
+        # Calculate volatility from the same time period as SR levels
+        price_volatility = self._calculate_level_period_volatility(levels, data)
         avg_price = data['close'].mean()
-        price_volatility = data['close'].pct_change().std()
 
         # Adaptive epsilon based on price volatility and level count
         base_eps_relative = 0.01  # 1% base
@@ -3978,6 +4108,9 @@ class EnhancedSRDetector:
 
         # Adaptive minimum samples (original aggressive settings)
         min_samples = max(2, min(6, len(levels) // 8))
+
+        # Validate heuristic parameters
+        eps, min_samples = self._validate_dbscan_parameters(eps, min_samples, levels, data)
 
         self.logger.info(f'🔧 Heuristic DBSCAN params - eps: {eps:.6f}, min_samples: {min_samples}')
 

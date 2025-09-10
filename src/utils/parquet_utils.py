@@ -85,7 +85,7 @@ class ParquetUtils:
         **kwargs: Any,
     ) -> pd.DataFrame | None:
         """
-        Safely read a parquet file with multiple fallback strategies.
+        Safely read a parquet file with multiple fallback strategies and enhanced schema compatibility.
 
         Args:
             file_path: Path to the parquet file
@@ -98,22 +98,40 @@ class ParquetUtils:
         """
         self.logger.info(f"🔧 Safe reading parquet file: {file_path}")
 
-        # Attempt strategies in order: prefer pyarrow, then fastparquet, then pandas default
-        engines: list[str | None] = ["pyarrow", "fastparquet", None]
-        for idx, engine in enumerate(engines, start = 1):
+        # Enhanced strategies with schema compatibility options
+        strategies = [
+            {"engine": "pyarrow", "use_legacy_dataset": False, "coerce_int96_timestamp_unit": "ms"},
+            {"engine": "pyarrow", "use_legacy_dataset": True, "coerce_int96_timestamp_unit": "ms"},
+            {"engine": "fastparquet", "use_legacy_dataset": False},
+            {"engine": "fastparquet", "use_legacy_dataset": True},
+            {"engine": None, "use_legacy_dataset": False},  # pandas default
+        ]
+        
+        for idx, strategy in enumerate(strategies, start=1):
             try:
-                strategy_msg = f"   Trying strategy {idx}/{len(engines)}: {'default' if engine is None else engine} engine"
+                engine = strategy.get("engine")
+                strategy_msg = f"   Trying strategy {idx}/{len(strategies)}: {'default' if engine is None else engine} engine"
+                if strategy.get("use_legacy_dataset"):
+                    strategy_msg += " (legacy dataset)"
                 self.logger.info(strategy_msg)
+                
                 read_kwargs = dict(kwargs)
+                read_kwargs.update({k: v for k, v in strategy.items() if k != "engine"})
+                
                 if engine is not None:
                     read_kwargs["engine"] = engine
-                df = pd.read_parquet(file_path, columns = columns, **read_kwargs)
+                    
+                df = pd.read_parquet(file_path, columns=columns, **read_kwargs)
+                
                 if nrows is not None and len(df) > nrows:
                     df = df.head(nrows)
-                self.logger.info(
-                    f"✅ Successfully read with strategy {idx}: {df.shape}"
-                )
+                    
+                # Apply immediate schema harmonization to prevent downstream issues
+                df = self._harmonize_schema_immediately(df)
+                
+                self.logger.info(f"✅ Successfully read with strategy {idx}: {df.shape}")
                 return df
+                
             except Exception as e:
                 self.logger.warning(f"   Strategy {idx} failed: {e}")
                 continue
@@ -214,6 +232,60 @@ class ParquetUtils:
                     self.logger.debug(f"   Column info: dtype={df_normalized[col].dtype}, shape={df_normalized[col].shape}, unique_values={df_normalized[col].nunique() if len(df_normalized[col]) > 0 else 'N/A'}")
 
         return df_normalized
+
+    def _harmonize_schema_immediately(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Immediately harmonize schema to prevent compatibility issues.
+        This is a lightweight version of _normalize_dtypes for immediate use.
+        
+        Args:
+            df: DataFrame to harmonize
+            
+        Returns:
+            DataFrame with harmonized schema
+        """
+        if df is None or df.empty:
+            return df
+            
+        df_harmonized = df.copy()
+        
+        # Critical schema harmonization for common compatibility issues
+        critical_mappings = {
+            'year': 'int32',  # Fix int16 vs dictionary<int32> conflicts
+            'month': 'string',  # Fix category vs string conflicts
+            'symbol': 'string',  # Fix object vs string conflicts
+            'exchange': 'string',  # Fix object vs string conflicts
+        }
+        
+        for col, target_dtype in critical_mappings.items():
+            if col in df_harmonized.columns:
+                try:
+                    original_dtype = str(df_harmonized[col].dtype)
+                    
+                    # Handle dictionary encoding conflicts (main cause of the error)
+                    if str(df_harmonized[col].dtype).startswith('dictionary'):
+                        if target_dtype == 'string':
+                            df_harmonized[col] = df_harmonized[col].astype(str).astype('string')
+                        else:
+                            # Convert dictionary to numeric
+                            temp_series = df_harmonized[col].astype(str)
+                            df_harmonized[col] = pd.to_numeric(temp_series, errors='coerce').astype(target_dtype)
+                    elif hasattr(df_harmonized[col], 'cat'):
+                        # Handle categorical conflicts
+                        if target_dtype == 'string':
+                            df_harmonized[col] = df_harmonized[col].astype('string')
+                        else:
+                            df_harmonized[col] = df_harmonized[col].astype(target_dtype)
+                    else:
+                        # Regular conversion
+                        df_harmonized[col] = df_harmonized[col].astype(target_dtype)
+                        
+                    self.logger.debug(f"🔧 Harmonized {col}: {original_dtype} -> {target_dtype}")
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not harmonize {col}: {e}")
+                    
+        return df_harmonized
 
     @handles_errors(default_return = False, context="ParquetUtils.repair_parquet_file")
     def repair_parquet_file(

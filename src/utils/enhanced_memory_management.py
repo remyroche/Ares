@@ -314,13 +314,18 @@ def trigger_gc_if_needed(max_memory_mb: float = 1024.0) -> Dict[str, float]:
     monitor = MemoryMonitor(config)
     return monitor.trigger_gc()
 
+# Global memory manager instance
+_global_memory_manager = None
+
 def get_memory_manager(config: Optional[MemoryConfig] = None) -> MemoryMonitor:
-    """Get a memory manager instance."""
-    return MemoryMonitor(config)
+    """Get or create a global memory manager instance."""
+    global _global_memory_manager
+    if _global_memory_manager is None:
+        _global_memory_manager = MemoryMonitor(config)
+    return _global_memory_manager
 
 class MemoryContext:
     """Context manager for memory monitoring."""
-    
     def __init__(self, config: Optional[MemoryConfig] = None, context_name: str = ""):
         self.config = config or MemoryConfig()
         self.monitor = MemoryMonitor(self.config)
@@ -342,4 +347,5 @@ class MemoryContext:
 def memory_context(context_name: str = "", max_memory_mb: float = 1024.0):
     """Create a memory context manager."""
     config = MemoryConfig(max_memory_mb=max_memory_mb)
+
     return MemoryContext(config, context_name)

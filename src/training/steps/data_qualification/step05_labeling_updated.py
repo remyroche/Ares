@@ -47,7 +47,7 @@ except ImportError as e:
 
 # Import existing utilities as fallback
 try:
-    from src.utils.step06_utilities.step06_labeling_components import (
+    from src.utils.feature_engineering.step06_labeling_components import (
         OptimizedTripleBarrierLabeling, RegimeAwareTripleBarrierLabeling
     )
     FALLBACK_LABELING_AVAILABLE = True

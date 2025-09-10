@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Union
 
 # Import the actual functionality from the new locations
 try:
-    from src.utils.step06_utilities import (
+    from src.utils.feature_engineering.step06_enhanced_feature_engineering import (
         EnhancedFeatureEngineeringStep,
         EnhancedFeatureEngineering
     )
@@ -39,7 +39,7 @@ class FeatureEngineeringStep:
         self.enhanced_engine = EnhancedFeatureEngineeringStep(self.config)
         
         warnings.warn(
-            "FeatureEngineeringStep is deprecated. Use EnhancedFeatureEngineeringStep from src.utils.step06_utilities instead.",
+            "FeatureEngineeringStep is deprecated. Use EnhancedFeatureEngineeringStep from src.utils.feature_engineering instead.",
             DeprecationWarning,
             stacklevel=2
         )

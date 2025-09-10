@@ -19,6 +19,7 @@ Sub-pipelines:
 
 import asyncio
 import logging
+import numpy as np
 from typing import Any, Dict, List, Optional, Union, Callable
 from datetime import datetime
 from pathlib import Path
@@ -225,19 +226,38 @@ class MarketAnalysisSubPipeline:
         
         # Import and use SR detection
         try:
-            from .step03_hmm_clustering import HMMClusteringStep
+            from .sr_detection_pipeline import SRDetectionPipeline, SRDetectionConfig
             
-            sr_detector = HMMClusteringStep({})
-            # Note: HMMClusteringStep doesn't have detect_sr_levels method
-            # This is a placeholder for future SR detection implementation
-            self.logger.info("📊 SR detection using HMM clustering step (placeholder implementation)")
+            sr_config = SRDetectionConfig(
+                min_touches=2,
+                max_levels=20,
+                strength_threshold=0.3,
+                enable_data_quality_validation=True
+            )
+            sr_detector = SRDetectionPipeline(sr_config)
             
+            # Execute SR detection
+            sr_result = await sr_detector.detect_sr_levels(
+                data_dir=config.data_dir,
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe
+            )
+            
+            # Convert SRLevel objects to dictionaries
             artifacts['sr_levels'] = [
-                {'level': 50000, 'type': 'support', 'strength': 0.8},
-                {'level': 52000, 'type': 'resistance', 'strength': 0.7}
+                {
+                    'level': level.level,
+                    'type': level.level_type,
+                    'strength': level.strength,
+                    'touches': level.touches,
+                    'confidence': level.confidence,
+                    'algorithm': level.algorithm
+                }
+                for level in sr_result.levels
             ]
-            artifacts['sr_metrics'] = {'detection_method': 'hmm_based', 'confidence': 0.75}
-            artifacts['detection_params'] = {'algorithm': 'hmm_clustering', 'version': '1.0'}
+            artifacts['sr_metrics'] = sr_result.metrics
+            artifacts['detection_params'] = sr_result.algorithm_performance
             
         except ImportError:
             self.logger.warning("⚠️ SR detection pipeline not available, using mock SR levels")
@@ -265,19 +285,35 @@ class MarketAnalysisSubPipeline:
         
         # Import and use SR clustering
         try:
-            from .step03_hmm_clustering import HMMClusteringStep
+            from .sr_detection_pipeline import SRDetectionPipeline, SRDetectionConfig
             
-            sr_clusterer = HMMClusteringStep({})
-            # Note: HMMClusteringStep doesn't have cluster_sr_levels method
-            # This is a placeholder for future SR clustering implementation
-            self.logger.info("🔗 SR clustering using HMM clustering step (placeholder implementation)")
+            # Use SR detection pipeline for clustering (clustering is part of SR detection)
+            sr_config = SRDetectionConfig(
+                min_touches=2,
+                max_levels=20,
+                strength_threshold=0.3,
+                enable_data_quality_validation=True
+            )
+            sr_detector = SRDetectionPipeline(sr_config)
             
-            artifacts['sr_clusters'] = [
-                {'cluster_id': 1, 'levels': [50000, 50100], 'strength': 0.8},
-                {'cluster_id': 2, 'levels': [52000, 52100], 'strength': 0.7}
-            ]
-            artifacts['clustering_metrics'] = {'clustering_method': 'hmm_based', 'silhouette_score': 0.65}
-            artifacts['cluster_params'] = {'algorithm': 'hmm_clustering', 'n_clusters': 2}
+            # Execute SR detection (which includes clustering)
+            sr_result = await sr_detector.detect_sr_levels(
+                data_dir=config.data_dir,
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe
+            )
+            
+            # Group levels into clusters based on proximity
+            clusters = self._cluster_sr_levels(sr_result.levels)
+            
+            artifacts['sr_clusters'] = clusters
+            artifacts['clustering_metrics'] = {
+                'clustering_method': 'proximity_based',
+                'n_clusters': len(clusters),
+                'avg_cluster_size': np.mean([len(cluster['levels']) for cluster in clusters]) if clusters else 0
+            }
+            artifacts['cluster_params'] = {'algorithm': 'proximity_clustering', 'distance_threshold': 0.02}
             
         except ImportError:
             self.logger.warning("⚠️ SR clustering pipeline not available, using mock clusters")
@@ -305,19 +341,29 @@ class MarketAnalysisSubPipeline:
         
         # Import and use SR ML learning
         try:
-            # Note: sr_ml_enhancer.py doesn't exist, using placeholder implementation
-            self.logger.info("🤖 SR ML learning (placeholder implementation - sr_ml_enhancer.py not found)")
+            from .sr_ml_learning_pipeline import SRMLLearningPipeline, SRMLConfig
             
-            artifacts['ml_models'] = ['sr_predictor_model.pkl']
-            artifacts['training_metrics'] = {
-                'training_accuracy': 0.78,
-                'validation_accuracy': 0.75,
-                'training_time': 120.5
-            }
+            sr_ml_config = SRMLConfig(
+                model_type='random_forest',
+                test_size=0.2,
+                validation_size=0.2,
+                enable_data_quality_validation=True
+            )
+            sr_ml_pipeline = SRMLLearningPipeline(sr_ml_config)
+            
+            # Execute SR ML learning
+            ml_result = await sr_ml_pipeline.train_sr_models(
+                data_dir=config.data_dir,
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe
+            )
+            
+            artifacts['ml_models'] = list(ml_result.models.keys())
+            artifacts['training_metrics'] = ml_result.performance_metrics
             artifacts['model_performance'] = {
-                'precision': 0.72,
-                'recall': 0.68,
-                'f1_score': 0.70
+                'feature_importance': ml_result.feature_importance,
+                'training_history': ml_result.training_history
             }
             
         except ImportError:
@@ -344,20 +390,29 @@ class MarketAnalysisSubPipeline:
         
         # Import and use HMM clustering
         try:
-            from .step03_hmm_clustering import HMMClusteringStep
+            from .hmm_clustering_pipeline import HMMClusteringPipeline, HMMClusteringConfig
             
-            hmm_clusterer = HMMClusteringStep({})
-            # Note: HMMClusteringStep doesn't have cluster_regimes method
-            # This is a placeholder for future HMM clustering implementation
-            self.logger.info("🔄 HMM clustering using HMM clustering step (placeholder implementation)")
+            hmm_config = HMMClusteringConfig(
+                n_states=3,
+                n_iterations=100,
+                detection_method='hmm_gaussian',
+                enable_data_quality_validation=True
+            )
+            hmm_pipeline = HMMClusteringPipeline(hmm_config)
             
-            artifacts['hmm_models'] = ['hmm_model.pkl']
-            artifacts['clustering_results'] = {
-                'n_states': 3,
-                'convergence_iterations': 15,
-                'log_likelihood': -1250.5
-            }
-            artifacts['regime_assignments'] = [0, 1, 2, 0, 1, 2, 1, 0]
+            # Execute HMM clustering
+            hmm_result = await hmm_pipeline.cluster_regimes(
+                data_dir=config.data_dir,
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe
+            )
+            
+            artifacts['hmm_models'] = list(hmm_result.models.keys())
+            artifacts['clustering_results'] = hmm_result.regime_statistics
+            artifacts['regime_assignments'] = hmm_result.regime_assignments.tolist()
+            artifacts['transition_matrix'] = hmm_result.transition_matrix.tolist()
+            artifacts['performance_metrics'] = hmm_result.performance_metrics
             
         except ImportError:
             self.logger.warning("⚠️ HMM clustering pipeline not available, using mock clustering")
@@ -573,24 +628,30 @@ class MarketAnalysisSubPipeline:
         
         # Import and use fractional differentiation
         try:
-            from .fractional_differentiation import FractionalDifferentiation
+            from .fractional_differentiation_pipeline import FractionalDifferentiationPipeline, FractionalDiffConfig
             
-            frac_diff = FractionalDifferentiation()
-            # Note: FractionalDifferentiation doesn't have apply_fractional_differentiation method
-            # This is a placeholder for future fractional differentiation implementation
-            self.logger.info("🔢 Fractional differentiation (placeholder implementation)")
+            frac_diff_config = FractionalDiffConfig(
+                d_min=0.0,
+                d_max=1.0,
+                d_step=0.1,
+                threshold=0.01,
+                enable_data_quality_validation=True
+            )
+            frac_diff_pipeline = FractionalDifferentiationPipeline(frac_diff_config)
+            
+            # Execute fractional differentiation
+            frac_diff_result = await frac_diff_pipeline.apply_fractional_differentiation(
+                data_dir=config.data_dir,
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe
+            )
             
             artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
-            artifacts['differentiation_params'] = {
-                'd_value': 0.5,
-                'threshold': 0.01,
-                'method': 'fixed_window'
-            }
-            artifacts['stationarity_metrics'] = {
-                'adf_statistic': -3.45,
-                'p_value': 0.01,
-                'is_stationary': True
-            }
+            artifacts['differentiation_params'] = frac_diff_result.differentiation_params
+            artifacts['stationarity_metrics'] = frac_diff_result.stationarity_metrics
+            artifacts['memory_metrics'] = frac_diff_result.memory_metrics
+            artifacts['optimal_d'] = frac_diff_result.optimal_d
             
         except ImportError:
             self.logger.warning("⚠️ Fractional differentiation pipeline not available, using mock")
@@ -615,30 +676,76 @@ class MarketAnalysisSubPipeline:
         
         # Import and use cross timeframe analysis
         try:
-            from .cross_timeframe_interaction_features import CrossTimeframeFeatureGenerator
+            from .cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig
             
-            cross_tf = CrossTimeframeFeatureGenerator()
-            # Note: CrossTimeframeFeatureGenerator doesn't have analyze_cross_timeframes method
-            # This is a placeholder for future cross timeframe analysis implementation
-            self.logger.info("⏰ Cross timeframe analysis (placeholder implementation)")
+            cross_tf_config = CrossTimeframeConfig(
+                timeframes=['1m', '5m', '15m', '1h'],
+                base_timeframe='1m',
+                interaction_features=['correlation', 'momentum', 'volatility', 'volume'],
+                enable_data_quality_validation=True
+            )
+            cross_tf_pipeline = CrossTimeframeAnalysisPipeline(cross_tf_config)
+            
+            # Execute cross timeframe analysis
+            cross_tf_result = await cross_tf_pipeline.analyze_cross_timeframes(
+                data_dir=config.data_dir,
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframes=['1m', '5m', '15m', '1h']
+            )
             
             artifacts['cross_timeframe_features'] = ['cross_tf_features.parquet']
-            artifacts['interaction_metrics'] = {
-                'total_interactions': 15,
-                'significant_correlations': 8,
-                'timeframe_coverage': 4
-            }
-            artifacts['timeframe_correlations'] = {
-                '1m_5m': 0.85,
-                '5m_15m': 0.78,
-                '15m_1h': 0.72
-            }
+            artifacts['interaction_metrics'] = cross_tf_result.interaction_metrics
+            artifacts['timeframe_correlations'] = cross_tf_result.timeframe_correlations
+            artifacts['feature_importance'] = cross_tf_result.feature_importance
+            artifacts['analysis_metadata'] = cross_tf_result.analysis_metadata
             
         except ImportError:
             self.logger.warning("⚠️ Cross timeframe analysis pipeline not available, using mock")
             artifacts['cross_timeframe_features'] = ['cross_tf_features.parquet']
         
         return artifacts
+    
+    def _cluster_sr_levels(self, levels: List[Any]) -> List[Dict[str, Any]]:
+        """Cluster SR levels based on proximity."""
+        if not levels:
+            return []
+        
+        clusters = []
+        used_levels = set()
+        
+        for i, level in enumerate(levels):
+            if i in used_levels:
+                continue
+            
+            # Start a new cluster
+            cluster = {
+                'cluster_id': len(clusters) + 1,
+                'levels': [level.level],
+                'strength': level.strength,
+                'type': level.level_type,
+                'touches': level.touches
+            }
+            used_levels.add(i)
+            
+            # Find nearby levels
+            for j, other_level in enumerate(levels[i+1:], i+1):
+                if j in used_levels:
+                    continue
+                
+                # Check if levels are close enough
+                price_diff = abs(level.level - other_level.level)
+                price_tolerance = level.level * 0.02  # 2% tolerance
+                
+                if price_diff <= price_tolerance and level.level_type == other_level.level_type:
+                    cluster['levels'].append(other_level.level)
+                    cluster['strength'] = max(cluster['strength'], other_level.strength)
+                    cluster['touches'] += other_level.touches
+                    used_levels.add(j)
+            
+            clusters.append(cluster)
+        
+        return clusters
     
     def get_available_sub_pipelines(self) -> List[str]:
         """Get list of available sub-pipelines."""

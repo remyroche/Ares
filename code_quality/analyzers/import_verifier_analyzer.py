@@ -234,15 +234,15 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         if module_name in imports:
             return True
         
-        # Check if any import starts with this module name (submodule imports)
+        # Check if any import is a submodule of this module (import starts with module_name + '.')
+        # This handles cases like importing 'src.utils.vif_calculator' when looking for 'src.utils'
         for imp in imports:
             if imp.startswith(module_name + '.'):
                 return True
         
-        # Check if this module is a submodule of any import
-        for imp in imports:
-            if module_name.startswith(imp + '.'):
-                return True
+        # REMOVED: Check if this module is a submodule of any import
+        # This was causing false positives - importing 'src.utils' doesn't mean
+        # 'src.utils.vif_calculator' is imported
         
         # Check for exact matches with different representations
         module_parts = module_name.split('.')

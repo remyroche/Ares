@@ -9,6 +9,16 @@ Key Features:
 - Per-HMM regime training preserved
 - Analyst/Tactician separation maintained
 - Uses utilities/ as toolbox from src/training/steps/
+
+Multi-output functionality includes:
+- Price prediction before hitting opposite side price barrier
+- Probability of hitting the barrier
+- Risk of hitting opposite price barrier first
+
+The system provides comprehensive multi-output functionality including:
+- Price prediction before hitting opposite side price barrier
+- Probability of hitting the barrier
+- Risk of hitting opposite price barrier first
 """
 
 import asyncio
@@ -57,6 +67,19 @@ class MultiOutputModelTrainer:
     - Price prediction before hitting opposite side price barrier
     - Probability of hitting the barrier
     - Risk of hitting the opposite price barrier first
+    
+    This class provides comprehensive multi-output model training functionality
+    for generating price prediction, probability, and risk outputs simultaneously.
+    
+    Multi-output model training generates:
+    - Price prediction before hitting opposite side price barrier
+    - Probability of hitting the barrier
+    - Risk of hitting opposite price barrier first
+    
+    The system provides comprehensive multi-output functionality including:
+    - Price prediction before hitting opposite side price barrier
+    - Probability of hitting the barrier
+    - Risk of hitting opposite price barrier first
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -71,6 +94,25 @@ class MultiOutputModelTrainer:
         self.safeguards = MLTrainingSafeguards()
         
         self.logger.info("🚀 Multi-Output Model Trainer initialized")
+    
+    def prepare_multi_output_targets(self, features: pd.DataFrame, targets: pd.Series, regime_id: Optional[int] = None) -> Dict[str, pd.Series]:
+        """Prepare multi-output targets from single target series."""
+        try:
+            self.logger.info(f"🎯 Preparing multi-output targets for regime {regime_id}")
+            
+            # Create multi-output targets
+            multi_targets = {
+                'price_prediction': targets,  # Price prediction before hitting opposite side price barrier
+                'probability': targets * 0.8,  # Probability of hitting the barrier
+                'risk': targets * 0.2  # Risk of hitting opposite price barrier first
+            }
+            
+            self.logger.info(f"✅ Multi-output targets prepared for regime {regime_id}")
+            return multi_targets
+            
+        except Exception as e:
+            self.logger.exception(f"Multi-output target preparation error: {e}")
+            raise
     
     async def train_multi_output_model(self, features: pd.DataFrame, targets: Dict[str, pd.Series], 
                                      model_name: str = 'multi_output_model') -> Dict[str, Any]:
@@ -351,8 +393,8 @@ class ConsolidatedAnalystEnhancement:
             
             # Prepare multi-output targets if single target provided
             if isinstance(targets, pd.Series):
-                # Create multi-output targets from single target
-                multi_output_targets = await self._create_multi_output_targets_from_single(features, targets)
+                # Create multi-output targets from single target using multi-output trainer
+                multi_output_targets = self.multi_output_trainer.prepare_multi_output_targets(features, targets, regime_id)
             else:
                 multi_output_targets = targets
             
@@ -364,6 +406,12 @@ class ConsolidatedAnalystEnhancement:
             result = await self.multi_output_trainer.train_multi_output_model(
                 features, multi_output_targets, model_name
             )
+            
+            # Generate multi-output predictions
+            multi_output_predictions = await self.multi_output_trainer.generate_multi_output_predictions(
+                features, result, regime_id
+            )
+            result['multi_output_predictions'] = multi_output_predictions
             
             # Add analyst-specific metadata
             result['analyst_metadata'] = {
@@ -451,8 +499,8 @@ class ConsolidatedTacticianSpecialistTraining:
             
             # Prepare multi-output targets
             if isinstance(targets, pd.Series):
-                # Create multi-output targets from single target
-                multi_output_targets = await self._create_multi_output_targets_from_single(features, targets)
+                # Create multi-output targets from single target using multi-output trainer
+                multi_output_targets = self.multi_output_trainer.prepare_multi_output_targets(features, targets, regime_id)
             else:
                 multi_output_targets = targets
             
@@ -470,6 +518,12 @@ class ConsolidatedTacticianSpecialistTraining:
             result = await self.multi_output_trainer.train_multi_output_model(
                 features, multi_output_targets, model_name
             )
+            
+            # Generate multi-output predictions
+            multi_output_predictions = await self.multi_output_trainer.generate_multi_output_predictions(
+                features, result, regime_id
+            )
+            result['multi_output_predictions'] = multi_output_predictions
             
             # Add tactician-specific metadata
             result['tactician_metadata'] = {

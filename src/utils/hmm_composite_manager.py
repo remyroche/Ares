@@ -31,6 +31,46 @@ from pathlib import Path
 from .logger import system_logger
 from ..core.decorators import handles_errors
 
+# Import comprehensive utility infrastructure
+try:
+    from .math_validation import (
+        safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
+        validate_positive, validate_range, MathValidationError
+    )
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
+
+try:
+    from .parquet_utils import ParquetUtils
+    PARQUET_UTILS_AVAILABLE = True
+except ImportError:
+    PARQUET_UTILS_AVAILABLE = False
+
+try:
+    from .serialization_utils import JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+    SERIALIZATION_UTILS_AVAILABLE = True
+except ImportError:
+    SERIALIZATION_UTILS_AVAILABLE = False
+
+try:
+    from .data_processing_utils import DataProcessingUtils
+    DATA_PROCESSING_UTILS_AVAILABLE = True
+except ImportError:
+    DATA_PROCESSING_UTILS_AVAILABLE = False
+
+try:
+    from .common_operations import create_fallback_logger, create_fallback_decorator
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError:
+    COMMON_OPERATIONS_AVAILABLE = False
+
+try:
+    from .common_utilities import CommonUtilities
+    COMMON_UTILITIES_AVAILABLE = True
+except ImportError:
+    COMMON_UTILITIES_AVAILABLE = False
+
 # Import M1 optimization utilities (replacing memory management files)
 try:
     from .m1_gpu_utils import get_m1_gpu_manager, M1GPUManager

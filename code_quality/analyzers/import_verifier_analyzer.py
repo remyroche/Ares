@@ -20,25 +20,32 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
     def analyze_directory(self, directory_path: str) -> Dict[str, Any]:
         """
         Analyze directory to determine which files are imported by others.
+        Always checks the entire repository scope for imports, not just the target directory.
         
         Returns:
             Dict containing import status for each file with yes/no answers
         """
-        python_files = self._find_python_files(directory_path)
+        # Get all Python files in the target directory (files to analyze)
+        target_python_files = self._find_python_files(directory_path)
         
-        # Build a mapping of module names to file paths
+        # Get all Python files in the entire repository (for import checking)
+        # We need to find the repository root first
+        repo_root = self._find_repository_root(directory_path)
+        all_python_files = self._find_python_files(repo_root)
+        
+        # Build a mapping of module names to file paths for the entire repository
         module_to_file = {}
         file_to_module = {}
         
-        # First pass: collect all modules and their file paths
-        for file_path in python_files:
-            module_name = self._get_module_name(file_path, directory_path)
+        # First pass: collect all modules and their file paths from entire repo
+        for file_path in all_python_files:
+            module_name = self._get_module_name(file_path, repo_root)
             module_to_file[module_name] = file_path
             file_to_module[str(file_path)] = module_name
         
-        # Second pass: collect all imports from each file
+        # Second pass: collect all imports from each file in the entire repository
         file_imports = {}
-        for file_path in python_files:
+        for file_path in all_python_files:
             content = self._read_file_safely(file_path)
             if not content:
                 continue
@@ -47,16 +54,21 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
             if not tree:
                 continue
             
-            imports = self._extract_all_imports(tree, file_path, directory_path)
+            imports = self._extract_all_imports(tree, file_path, repo_root)
             file_imports[str(file_path)] = imports
             self.stats["files_analyzed"] += 1
             self.stats["total_items"] += len(imports)
         
-        # Third pass: determine which files are imported by others
+        # Third pass: determine which target files are imported by others (anywhere in repo)
         import_status = {}
-        for file_path in python_files:
+        for file_path in target_python_files:
             file_path_str = str(file_path)
+            # Try both absolute and relative paths
             module_name = file_to_module.get(file_path_str)
+            if not module_name:
+                # Try with absolute path
+                abs_path = str(file_path.resolve())
+                module_name = file_to_module.get(abs_path)
             
             if not module_name:
                 import_status[file_path_str] = {
@@ -66,7 +78,7 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
                 }
                 continue
             
-            # Check if this module is imported by any other file
+            # Check if this module is imported by any other file in the entire repository
             imported_by = []
             for other_file, other_imports in file_imports.items():
                 if other_file != file_path_str:  # Don't count self-imports
@@ -82,15 +94,15 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
             }
         
         # Calculate summary statistics
-        total_files = len(python_files)
+        total_files = len(target_python_files)
         imported_files = sum(1 for status in import_status.values() if status["is_imported"])
         unimported_files = total_files - imported_files
         
         # Find most/least imported files
         most_imported = max(import_status.items(), 
-                          key=lambda x: x[1]["import_count"]) if import_status else None
+                          key=lambda x: x[1].get("import_count", 0)) if import_status else None
         least_imported = min(import_status.items(), 
-                           key=lambda x: x[1]["import_count"]) if import_status else None
+                           key=lambda x: x[1].get("import_count", 0)) if import_status else None
         
         return {
             "import_status": import_status,
@@ -101,15 +113,38 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
                 "import_percentage": (imported_files / total_files * 100) if total_files > 0 else 0,
                 "most_imported_file": {
                     "file": most_imported[0] if most_imported else None,
-                    "import_count": most_imported[1]["import_count"] if most_imported else 0
+                    "import_count": most_imported[1].get("import_count", 0) if most_imported else 0
                 },
                 "least_imported_file": {
                     "file": least_imported[0] if least_imported else None,
-                    "import_count": least_imported[1]["import_count"] if least_imported else 0
+                    "import_count": least_imported[1].get("import_count", 0) if least_imported else 0
                 }
             },
             "stats": self.stats
         }
+    
+    def _find_repository_root(self, directory_path: str) -> str:
+        """Find the repository root by looking for common indicators."""
+        current_path = Path(directory_path).resolve()
+        
+        # Look for .git directory first (most reliable indicator)
+        while current_path != current_path.parent:
+            if (current_path / '.git').exists():
+                return str(current_path)
+            current_path = current_path.parent
+        
+        # If no .git found, look for other indicators
+        current_path = Path(directory_path).resolve()
+        indicators = ['pyproject.toml', 'setup.py', 'README.md']
+        
+        while current_path != current_path.parent:
+            for indicator in indicators:
+                if (current_path / indicator).exists():
+                    return str(current_path)
+            current_path = current_path.parent
+        
+        # If no indicators found, use the original directory
+        return directory_path
     
     def _get_module_name(self, file_path: Path, root_path: str) -> str:
         """Convert file path to module name."""

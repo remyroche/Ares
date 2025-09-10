@@ -32,7 +32,7 @@ from scipy import stats
 from collections import Counter
 import warnings
 
-from ..data_processing_utils import safe_dataframe_operation
+from ..common_utilities import safe_dataframe_operation
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 

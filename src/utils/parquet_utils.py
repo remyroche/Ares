@@ -3,6 +3,10 @@ import os
 import shutil
 from typing import Any
 import pandas as pd
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 from .logger import system_logger
 
@@ -316,7 +320,11 @@ class ParquetUtils:
                         self.logger.warning(f"⚠️ Could not harmonize timestamp column {col}: {e}")
 
             # Optimize numeric dtypes where safe
-            numeric_cols = harmonized_df.select_dtypes(include=[np.number]).columns
+            if np is None:
+                self.logger.warning("⚠️ NumPy not available, skipping numeric dtype optimization")
+                numeric_cols = harmonized_df.select_dtypes(include=['number']).columns
+            else:
+                numeric_cols = harmonized_df.select_dtypes(include=[np.number]).columns
             for col in numeric_cols:
                 if col == 'year':  # Skip year as we already handled it
                     continue

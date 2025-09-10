@@ -82,7 +82,7 @@ from src.utils.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.vectorized_processing_core import get_vectorized_processing_core
-from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations
+from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
 from src.utils.enhanced_step_optimizations import IntelligentOptimizationSelector, OptimizationProfile, WorkloadType
 from src.utils.optimized_data_manager import OptimizedDataManager
 

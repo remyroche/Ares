@@ -24,7 +24,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
+# Create logger instance early to avoid undefined variable errors
+logger = logging.getLogger(__name__)
+
 # Import validation with proper error handling
+
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
@@ -170,7 +174,6 @@ def safe_copy(src: Any, dst: Any) -> bool:
     except Exception as e:
         print(f'Error copying file from {src} to {dst}: {e}')
         return False
-logger = logging.getLogger(__name__)
 
 def get_current_datetime() -> datetime.datetime:
     """Get current datetime with comprehensive error handling."""
@@ -1110,7 +1113,7 @@ def safe_log_artifact(file_path: str | Path) -> None:
             mlflow.log_artifact(str(file_path))
     except Exception:
         pass
-__all__ = ['get_current_datetime', 'get_today', 'format_datetime', 'parse_datetime', 'create_empty_dataframe', 'safe_fillna', 'safe_rolling', 'safe_copy', 'safe_deepcopy', 'safe_resample', 'align_dataframes', 'safe_mean', 'safe_std', 'ensure_directory', 'safe_file_exists', 'safe_json_dump', 'safe_json_load', 'safe_glob', 'list_files', 'get_latest_file', 'safe_read_parquet', 'safe_to_parquet', 'list_parquet_files', 'generate_hash', 'generate_cache_key', 'safe_sleep', 'safe_gather', 'create_async_task', 'safe_append', 'safe_extend', 'safe_dict_get', 'safe_dict_items', 'safe_defaultdict', 'safe_counter', 'safe_deque', 'safe_lower', 'safe_upper', 'safe_join', 'get_logger', 'setup_basic_logging', 'create_argument_parser', 'add_common_arguments', 'safe_exception_handler', 'safe_float', 'safe_int', 'suggest_float_uniform', 'suggest_int_uniform', 'validate_dataframe', 'validate_numeric_range', 'validate_dataframe_schema', 'validate_data_quality', 'optimize_dataframe_dtypes', 'timed_operation', 'format_bytes', 'chunked_iterable', 'parallel_map', 'safe_log_metric', 'safe_log_params', 'safe_log_artifact']
+__all__ = ['get_current_datetime', 'get_today', 'format_datetime', 'parse_datetime', 'create_empty_dataframe', 'safe_fillna', 'safe_rolling', 'safe_copy', 'safe_deepcopy', 'safe_resample', 'align_dataframes', 'safe_mean', 'safe_std', 'ensure_directory', 'safe_file_exists', 'safe_json_dump', 'safe_json_load', 'safe_glob', 'list_files', 'get_latest_file', 'safe_read_parquet', 'safe_to_parquet', 'list_parquet_files', 'generate_hash', 'generate_cache_key', 'safe_sleep', 'safe_gather', 'create_async_task', 'safe_append', 'safe_extend', 'safe_dict_get', 'safe_dict_items', 'safe_defaultdict', 'safe_counter', 'safe_deque', 'safe_lower', 'safe_upper', 'safe_join', 'get_logger', 'setup_basic_logging', 'create_argument_parser', 'add_common_arguments', 'safe_exception_handler', 'safe_float', 'safe_int', 'suggest_float_uniform', 'suggest_int_uniform', 'validate_dataframe', 'validate_numeric_range', 'validate_dataframe_schema', 'validate_data_quality', 'optimize_dataframe_dtypes', 'timed_operation', 'format_bytes', 'chunked_iterable', 'parallel_map', 'safe_log_metric', 'safe_log_params', 'safe_log_artifact', 'integrate_with_m1_optimizers', 'get_m1_gpu_manager', 'get_m1_memory_optimizer', 'get_m1_cpu_optimizer', 'cleanup_m1_optimizers', 'memory_checkpoint', 'gpu_context', 'optimize_memory', 'get_memory_usage']
 
 def standardize_price_action_probabilities(probabilities: dict) -> dict:
     """Standardize various model probability outputs to the unified schema.
@@ -1132,3 +1135,214 @@ def standardize_price_action_probabilities(probabilities: dict) -> dict:
             val_f = 1.0
         out[key] = val_f
     return out
+
+# M1 OPTIMIZATION INTEGRATION FUNCTIONS
+
+def integrate_with_m1_optimizers() -> Dict[str, Any]:
+    """
+    Integrate with M1 optimization utilities (GPU, Memory, CPU optimizers).
+
+    Returns:
+        Dict[str, Any]: Integration status and availability of M1 components
+    """
+    integration_result = {
+        'gpu_manager': False,
+        'memory_optimizer': False,
+        'cpu_optimizer': False,
+        'integration_status': 'failed',
+        'available_components': [],
+        'errors': []
+    }
+
+    logger = get_logger(__name__)
+
+    try:
+        # Try to import GPU manager
+        try:
+            from .m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+            gpu_manager = get_m1_gpu_manager()
+            integration_result['gpu_manager'] = True
+            integration_result['available_components'].append('gpu_manager')
+            logger.info("✅ M1 GPU Manager available")
+        except ImportError as e:
+            integration_result['errors'].append(f"GPU Manager not available: {e}")
+            logger.debug(f"M1 GPU Manager not available: {e}")
+        except Exception as e:
+            integration_result['errors'].append(f"GPU Manager error: {e}")
+            logger.warning(f"M1 GPU Manager error: {e}")
+
+        # Try to import Memory optimizer
+        try:
+            from .m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+            memory_optimizer = get_m1_memory_optimizer()
+            integration_result['memory_optimizer'] = True
+            integration_result['available_components'].append('memory_optimizer')
+            logger.info("✅ M1 Memory Optimizer available")
+        except ImportError as e:
+            integration_result['errors'].append(f"Memory Optimizer not available: {e}")
+            logger.debug(f"M1 Memory Optimizer not available: {e}")
+        except Exception as e:
+            integration_result['errors'].append(f"Memory Optimizer error: {e}")
+            logger.warning(f"M1 Memory Optimizer error: {e}")
+
+        # Try to import CPU optimizer
+        try:
+            from .m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+            cpu_optimizer = get_m1_cpu_optimizer()
+            integration_result['cpu_optimizer'] = True
+            integration_result['available_components'].append('cpu_optimizer')
+            logger.info("✅ M1 CPU Optimizer available")
+        except ImportError as e:
+            integration_result['errors'].append(f"CPU Optimizer not available: {e}")
+            logger.debug(f"M1 CPU Optimizer not available: {e}")
+        except Exception as e:
+            integration_result['errors'].append(f"CPU Optimizer error: {e}")
+            logger.warning(f"M1 CPU Optimizer error: {e}")
+
+        # Determine integration status
+        available_count = len(integration_result['available_components'])
+        if available_count == 3:
+            integration_result['integration_status'] = 'success'
+            logger.info("🎯 Complete M1 utilities integration successful")
+        elif available_count > 0:
+            integration_result['integration_status'] = 'partial'
+            logger.info(f"⚠️ Partial M1 utilities integration - {available_count}/3 components available")
+        else:
+            integration_result['integration_status'] = 'failed'
+            logger.warning("❌ M1 utilities integration failed - no components available")
+
+    except Exception as e:
+        integration_result['errors'].append(f"Integration setup error: {e}")
+        logger.error(f"Unexpected error during M1 utilities integration: {e}")
+
+    return integration_result
+
+def get_m1_gpu_manager():
+    """Get M1 GPU manager instance."""
+    try:
+        from .m1_gpu_utils import get_m1_gpu_manager as _get_m1_gpu_manager
+        return _get_m1_gpu_manager()
+    except ImportError:
+        logger = get_logger(__name__)
+        logger.warning("M1 GPU Manager not available")
+        return None
+
+def get_m1_memory_optimizer():
+    """Get M1 Memory optimizer instance."""
+    try:
+        from .m1_memory_optimizer import get_m1_memory_optimizer as _get_m1_memory_optimizer
+        return _get_m1_memory_optimizer()
+    except ImportError:
+        logger = get_logger(__name__)
+        logger.warning("M1 Memory Optimizer not available")
+        return None
+
+def get_m1_cpu_optimizer():
+    """Get M1 CPU optimizer instance."""
+    try:
+        from .m1_cpu_optimizer import get_m1_cpu_optimizer as _get_m1_cpu_optimizer
+        return _get_m1_cpu_optimizer()
+    except ImportError:
+        logger = get_logger(__name__)
+        logger.warning("M1 CPU Optimizer not available")
+        return None
+
+def cleanup_m1_optimizers():
+    """Clean up M1 optimizers."""
+    try:
+        # Try to cleanup GPU manager
+        try:
+            gpu_manager = get_m1_gpu_manager()
+            if gpu_manager and hasattr(gpu_manager, 'cleanup'):
+                gpu_manager.cleanup()
+        except Exception:
+            pass
+
+        # Try to cleanup memory optimizer
+        try:
+            memory_optimizer = get_m1_memory_optimizer()
+            if memory_optimizer and hasattr(memory_optimizer, 'cleanup'):
+                memory_optimizer.cleanup()
+        except Exception:
+            pass
+
+        # Try to cleanup CPU optimizer
+        try:
+            cpu_optimizer = get_m1_cpu_optimizer()
+            if cpu_optimizer and hasattr(cpu_optimizer, 'cleanup'):
+                cpu_optimizer.cleanup()
+        except Exception:
+            pass
+
+        logger = get_logger(__name__)
+        logger.info("✅ M1 optimizers cleanup completed")
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.warning(f"M1 optimizers cleanup failed: {e}")
+
+def memory_checkpoint(name: str):
+    """Create a memory checkpoint context manager."""
+    try:
+        memory_optimizer = get_m1_memory_optimizer()
+        if memory_optimizer and hasattr(memory_optimizer, 'memory_checkpoint'):
+            return memory_optimizer.memory_checkpoint(name)
+    except Exception:
+        pass
+
+    # Fallback: return a null context manager
+    from contextlib import nullcontext
+    return nullcontext()
+
+def gpu_context(operation_name: str = "unknown"):
+    """Create a GPU context manager."""
+    try:
+        gpu_manager = get_m1_gpu_manager()
+        if gpu_manager and hasattr(gpu_manager, 'gpu_context'):
+            return gpu_manager.gpu_context(operation_name)
+    except Exception:
+        pass
+
+    # Fallback: return a null context manager
+    from contextlib import nullcontext
+    return nullcontext()
+
+def optimize_memory():
+    """Optimize memory usage."""
+    try:
+        # Try memory optimizer first
+        memory_optimizer = get_m1_memory_optimizer()
+        if memory_optimizer and hasattr(memory_optimizer, 'optimize_memory'):
+            return memory_optimizer.optimize_memory()
+
+        # Try GPU manager as fallback
+        gpu_manager = get_m1_gpu_manager()
+        if gpu_manager and hasattr(gpu_manager, 'optimize_memory'):
+            return gpu_manager.optimize_memory()
+
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.debug(f"Memory optimization failed: {e}")
+
+    return {'status': 'no_optimizer_available'}
+
+def get_memory_usage():
+    """Get current memory usage."""
+    try:
+        memory_optimizer = get_m1_memory_optimizer()
+        if memory_optimizer and hasattr(memory_optimizer, 'get_memory_usage'):
+            return memory_optimizer.get_memory_usage()
+
+        # Fallback to basic memory info
+        import psutil
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        return {
+            'rss_gb': memory_info.rss / (1024**3),
+            'vms_gb': memory_info.vms / (1024**3),
+            'percent': process.memory_percent()
+        }
+
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.debug(f"Memory usage check failed: {e}")
+        return {'error': str(e)}

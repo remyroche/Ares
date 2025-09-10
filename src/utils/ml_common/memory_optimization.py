@@ -36,7 +36,7 @@ from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
 from ..m1_gpu_utils import M1GPUManager
 from ..m1_memory_optimizer import M1MemoryOptimizer
-from ..data_processing_utils import safe_dataframe_operation
+from ..common_utilities import safe_dataframe_operation
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,22 @@ class MemoryEfficientTraining:
 
         # GPU memory pool (if available)
         self.gpu_memory_pool = self._initialize_gpu_memory_pool()
+
+    def memory_checkpoint(self, checkpoint_name: str):
+        """Create a memory checkpoint context manager for compatibility with M1 memory optimizer."""
+        from contextlib import contextmanager
+
+        @contextmanager
+        def checkpoint_context():
+            try:
+                # Log memory usage at checkpoint
+                self.logger.debug(f'🧠 Memory checkpoint: {checkpoint_name} - start')
+                yield
+            finally:
+                # Log memory usage after checkpoint
+                self.logger.debug(f'🧠 Memory checkpoint: {checkpoint_name} - end')
+
+        return checkpoint_context()
 
     def data_chunking_strategy(self, X: Union[np.ndarray, pd.DataFrame],
                              y: Optional[Union[np.ndarray, pd.Series]] = None,
@@ -636,6 +652,25 @@ class GPUMemoryPool:
             return size_mb
 
         except Exception:
+            return 0.0
+
+    def test_method(self):
+        """Simple test method to verify file is working."""
+        return "test"
+
+    def _get_memory_usage(self) -> float:
+        """
+        Get current memory usage in GB.
+
+        Returns:
+            Current memory usage in GB
+        """
+        try:
+            process = psutil.Process(os.getpid())
+            memory_gb = process.memory_info().rss / (1024 ** 3)
+            return memory_gb
+        except Exception as e:
+            self.logger.warning(f"Could not get memory usage: {e}")
             return 0.0
 
     def __del__(self):

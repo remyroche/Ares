@@ -32,7 +32,7 @@ import warnings
 
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
-from ..data_processing_utils import safe_dataframe_operation
+from ..common_utilities import safe_dataframe_operation
 from ..datetime_utils import get_current_datetime, format_datetime
 
 # Enhanced imports for new functionality
@@ -1600,3 +1600,89 @@ class LookaheadProtection:
             return violations
         except Exception:
             return []
+
+    async def detect_and_prevent_leakage(self, data: pd.DataFrame, 
+                                       symbol: Optional[str] = None,
+                                       exchange: Optional[str] = None,
+                                       context: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Detect and prevent data leakage - wrapper method for compatibility.
+        
+        Args:
+            data: DataFrame containing features and targets
+            symbol: Trading symbol (optional)
+            exchange: Trading exchange (optional) 
+            context: Context for the analysis (optional)
+            
+        Returns:
+            Dictionary with leakage detection results
+        """
+        try:
+            self.logger.info(f"🔍 Starting detect_and_prevent_leakage for {symbol or 'unknown'} on {exchange or 'unknown'}")
+            
+            # Set current timestamp if not already set
+            if self.current_timestamp is None:
+                if 'timestamp' in data.columns:
+                    self.current_timestamp = data['timestamp'].max()
+                else:
+                    self.current_timestamp = datetime.now()
+            
+            # Prepare data for leakage detection
+            # Assume the data contains both features and targets
+            feature_cols = [col for col in data.columns 
+                          if col not in ['timestamp', 'target', 'label', 'outcome']]
+            
+            # Create separate DataFrames for features and targets
+            features_df = data[['timestamp'] + feature_cols].copy() if 'timestamp' in data.columns else data[feature_cols].copy()
+            target_df = data[['timestamp', 'target']].copy() if 'target' in data.columns else None
+            
+            # If no target column, create a dummy target DataFrame
+            if target_df is None:
+                target_df = features_df.copy()
+                if 'target' not in target_df.columns:
+                    target_df['target'] = 0  # Dummy target
+            
+            # Perform data leakage detection
+            leakage_results = self.detect_data_leakage(
+                features_df=features_df,
+                target_df=target_df,
+                timestamp_col='timestamp' if 'timestamp' in data.columns else None,
+                feature_cols=feature_cols
+            )
+            
+            # Convert to expected format
+            result = {
+                'has_leakage': leakage_results.get('leakage_detected', False),
+                'leakage_details': leakage_results.get('issues', []),
+                'warnings': leakage_results.get('warnings', []),
+                'recommendations': leakage_results.get('recommendations', []),
+                'feature_analysis': leakage_results.get('feature_analysis', {}),
+                'temporal_analysis': leakage_results.get('temporal_analysis', {}),
+                'symbol': symbol,
+                'exchange': exchange,
+                'context': context,
+                'timestamp': self.current_timestamp
+            }
+            
+            # Log results
+            if result['has_leakage']:
+                self.logger.warning(f"🚨 Data leakage detected: {len(result['leakage_details'])} issues found")
+                for issue in result['leakage_details']:
+                    self.logger.warning(f"  - {issue}")
+            else:
+                self.logger.info("✅ No data leakage detected")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ detect_and_prevent_leakage failed: {e}")
+            return {
+                'has_leakage': True,  # Assume leakage on error
+                'leakage_details': [f"Detection failed: {str(e)}"],
+                'warnings': [f"Error in leakage detection: {str(e)}"],
+                'recommendations': ["Review data format and try again"],
+                'error': str(e),
+                'symbol': symbol,
+                'exchange': exchange,
+                'context': context
+            }

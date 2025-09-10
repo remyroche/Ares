@@ -35,7 +35,7 @@ try:
     from src.utils.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
     from src.utils.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
     from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
-    from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations, ErrorHandler
+    from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations, ErrorHandler
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager, IntelligentOptimizationSelector, OptimizationStrategy, WorkloadType, OptimizationProfile
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
@@ -1841,7 +1841,7 @@ class EnhancedHMMBasedTrainingStep:
                 
                 # Create enhanced matrix operations manager with proper validation
                 try:
-                    from src.utils.enhanced_matrix_operations import EnhancedMatrixOperations
+                    from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
                     feature_selector = EnhancedMatrixOperations(self.config)
                     self.logger.info("✅ Enhanced feature selector initialized")
                 except ImportError:

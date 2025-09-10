@@ -473,10 +473,18 @@ class EnhancedSRDetector:
         self.max_volume_profile_levels = config.get('max_volume_profile_levels', 40)  # Keep original 30
         self.max_market_structure_levels = config.get('max_market_structure_levels', 30)  # Keep original 30
 
-        # DBSCAN clustering parameters (original aggressive settings)
-        self.dbscan_eps_multiplier = config.get('dbscan_eps_multiplier', 1.0)  # Original eps multiplier
-        self.dbscan_min_samples_multiplier = config.get('dbscan_min_samples_multiplier', 1.0)  # Original min_samples multiplier
+        # DBSCAN clustering parameters (much less aggressive settings for more levels)
+        self.dbscan_eps_multiplier = config.get('dbscan_eps_multiplier', 0.5)  # Much less aggressive: 0.5 instead of 0.7
+        self.dbscan_min_samples_multiplier = config.get('dbscan_min_samples_multiplier', 1.0)  # Less conservative: 1.0 instead of 1.5
         self.disable_dbscan_clustering = config.get('disable_dbscan_clustering', False)  # Option to disable clustering
+        
+        # DBSCAN parameter adjustment settings - AGGRESSIVE
+        self.min_levels_threshold = config.get('min_levels_threshold', 90)  # Minimum levels to maintain after clustering
+        self.min_levels_ratio = config.get('min_levels_ratio', 0.2)  # Minimum ratio of original levels to maintain (20%)
+        self.max_relaxation_attempts = config.get('max_relaxation_attempts', 6)  # Fewer attempts for faster convergence
+        self.eps_strictness_factor = config.get('eps_strictness_factor', 2.5)  # More aggressive eps reduction
+        self.min_samples_reduction_factor = config.get('min_samples_reduction_factor', 0.5)  # More aggressive min_samples reduction
+        
         
         # NEW: ATR and normalization parameters
         self.atr_period = config.get('atr_period', 14)  # ATR calculation period
@@ -606,18 +614,19 @@ class EnhancedSRDetector:
         
         try:
             filtered_levels = []
-            atr = self._calculate_atr(data)
-            current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
+            # Use price-based metrics instead of ATR
+            price_range = data['high'].max() - data['low'].min()
+            avg_price = (data['high'].mean() + data['low'].mean()) / 2
             
             # Separate support and resistance levels for independent filtering
             support_levels = [level for level in levels if level.type == 'support']
             resistance_levels = [level for level in levels if level.type == 'resistance']
             
             # Filter support levels using prominence
-            filtered_support = self._filter_levels_with_prominence(support_levels, data, 'support', current_atr)
+            filtered_support = self._filter_levels_with_prominence_simple(support_levels, data, 'support', price_range, avg_price)
             
             # Filter resistance levels using prominence
-            filtered_resistance = self._filter_levels_with_prominence(resistance_levels, data, 'resistance', current_atr)
+            filtered_resistance = self._filter_levels_with_prominence_simple(resistance_levels, data, 'resistance', price_range, avg_price)
             
             # Combine filtered levels
             filtered_levels = filtered_support + filtered_resistance
@@ -702,8 +711,113 @@ class EnhancedSRDetector:
             # Fallback to strength-based filtering
             return [level for level in levels if level.strength >= self.prominence_threshold]
 
+    def _filter_levels_with_prominence_simple(self, levels: List[SRLevel], data: pd.DataFrame, level_type: str, price_range: float, avg_price: float) -> List[SRLevel]:
+        """Filter levels using scipy.signal.find_peaks with price-based prominence (no ATR dependency)."""
+        try:
+            if not levels:
+                return levels
+            
+            # Get price data based on level type
+            if level_type == 'support':
+                price_data = data['low'].values
+            else:
+                price_data = data['high'].values
+            
+            # Calculate prominence and width thresholds based on price range
+            prominence_threshold = price_range * 0.02  # 2% of price range
+            width_threshold = self.width_threshold
+            
+            # Use scipy.signal.find_peaks to find significant peaks/valleys
+            from scipy.signal import find_peaks
+            
+            if level_type == 'support':
+                # For support, find valleys (invert the data)
+                peaks, properties = find_peaks(
+                    -price_data,  # Invert for valleys
+                    prominence=prominence_threshold,
+                    width=width_threshold,
+                    distance=5  # Minimum distance between peaks
+                )
+                significant_levels = set(price_data[peaks])
+            else:
+                # For resistance, find peaks
+                peaks, properties = find_peaks(
+                    price_data,
+                    prominence=prominence_threshold,
+                    width=width_threshold,
+                    distance=5  # Minimum distance between peaks
+                )
+                significant_levels = set(price_data[peaks])
+            
+            # Filter levels based on proximity to significant peaks/valleys
+            filtered_levels = []
+            proximity_threshold = price_range * 0.01  # 1% of price range for proximity
+            
+            for level in levels:
+                # Check if this level is close to a significant peak/valley
+                is_significant = False
+                for sig_level in significant_levels:
+                    if abs(level.price - sig_level) <= proximity_threshold:
+                        is_significant = True
+                        break
+                
+                if is_significant:
+                    # Calculate actual prominence and width scores
+                    level.prominence_score = self._calculate_level_prominence_simple(level, data, level_type, price_range, avg_price)
+                    level.width_score = self._calculate_level_width(level, data, level_type)
+                    filtered_levels.append(level)
+                else:
+                    # Keep level if it has high strength even without prominence
+                    if level.strength >= 0.8:
+                        level.prominence_score = level.strength * (price_range * 0.1)
+                        level.width_score = 1.0
+                        filtered_levels.append(level)
+            
+            return filtered_levels
+            
+        except Exception as e:
+            self.logger.warning(f'Simple prominence filtering for {level_type} failed: {e}')
+            # Fallback to strength-based filtering
+            return [level for level in levels if level.strength >= 0.5]
+
+    def _calculate_level_prominence_simple(self, level: SRLevel, data: pd.DataFrame, level_type: str, price_range: float, avg_price: float) -> float:
+        """Calculate the prominence of a specific level without ATR dependency."""
+        try:
+            # Find the closest price point to this level
+            if level_type == 'support':
+                price_data = data['low'].values
+            else:
+                price_data = data['high'].values
+            
+            # Find the closest index to this level
+            closest_idx = np.argmin(np.abs(price_data - level.price))
+            
+            # Calculate prominence using scipy.signal.peak_prominences
+            from scipy.signal import peak_prominences
+            
+            if level_type == 'support':
+                # For support, calculate prominence based on how much the valley stands out
+                # Use a combination of strength and price-based metrics
+                prominence = level.strength * (price_range * 0.1)  # 10% of price range as base
+            else:
+                # For resistance, calculate actual prominence
+                try:
+                    prominences, left_bases, right_bases = peak_prominences(
+                        price_data, [closest_idx], wlen=20
+                    )
+                    prominence = prominences[0] if len(prominences) > 0 else level.strength * (price_range * 0.1)
+                except:
+                    prominence = level.strength * (price_range * 0.1)
+            
+            # Normalize by price range instead of ATR
+            return prominence / price_range if price_range > 0 else level.strength
+            
+        except Exception as e:
+            self.logger.warning(f'Simple prominence calculation failed: {e}')
+            return level.strength
+
     def _calculate_level_prominence(self, level: SRLevel, data: pd.DataFrame, level_type: str, atr: float) -> float:
-        """Calculate the prominence of a specific level."""
+        """Calculate the prominence of a specific level (legacy ATR-based method)."""
         try:
             # Find the closest price point to this level
             if level_type == 'support':
@@ -986,6 +1100,89 @@ class EnhancedSRDetector:
             self.logger.warning(f'ML feature enhancement failed: {e}')
             return levels
 
+    def _validate_input_data_quality(self, market_data: pd.DataFrame) -> None:
+        """Validate input data quality for SR detection."""
+        try:
+            self.logger.info('🔍 Validating input data quality for SR detection...')
+            
+            # Basic validation
+            if market_data is None or market_data.empty:
+                raise ValueError("Input data is None or empty")
+            
+            if len(market_data) < 100:
+                raise ValueError(f"Insufficient data: {len(market_data)} rows, minimum 100 required")
+            
+            # Check required columns
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            missing_cols = [col for col in required_cols if col not in market_data.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required columns: {missing_cols}")
+            
+            # Check for data quality issues
+            price_cols = ['open', 'high', 'low', 'close']
+            issues_found = []
+            
+            for col in price_cols:
+                # Check for negative or zero prices
+                invalid_prices = (market_data[col] <= 0).sum()
+                if invalid_prices > 0:
+                    issues_found.append(f"{invalid_prices} invalid prices in {col}")
+                
+                # Check for extreme outliers
+                if len(market_data) > 10:
+                    Q1 = market_data[col].quantile(0.25)
+                    Q3 = market_data[col].quantile(0.75)
+                    IQR = Q3 - Q1
+                    if IQR > 0:
+                        lower_bound = Q1 - 5 * IQR  # Very conservative outlier detection
+                        upper_bound = Q3 + 5 * IQR
+                        outliers = ((market_data[col] < lower_bound) | (market_data[col] > upper_bound)).sum()
+                        if outliers > 0:
+                            issues_found.append(f"{outliers} extreme outliers in {col}")
+            
+            # Check OHLC relationships
+            invalid_ohlc = 0
+            if len(market_data) > 0:
+                invalid_high = (market_data['high'] < market_data[['open', 'close']].max(axis=1)) | (market_data['high'] < market_data['low'])
+                invalid_low = (market_data['low'] > market_data[['open', 'close']].min(axis=1)) | (market_data['low'] > market_data['high'])
+                invalid_ohlc = (invalid_high | invalid_low).sum()
+                if invalid_ohlc > 0:
+                    issues_found.append(f"{invalid_ohlc} rows with invalid OHLC relationships")
+            
+            # Check volume
+            if 'volume' in market_data.columns:
+                negative_volume = (market_data['volume'] < 0).sum()
+                if negative_volume > 0:
+                    issues_found.append(f"{negative_volume} negative volume values")
+            
+            # Log data quality summary
+            if issues_found:
+                self.logger.warning(f'🚨 Data quality issues found: {"; ".join(issues_found)}')
+                # Calculate data quality score
+                total_issues = sum(int(issue.split()[0]) for issue in issues_found if issue.split()[0].isdigit())
+                quality_score = max(0, 100 - (total_issues / len(market_data) * 100))
+                self.logger.warning(f'📊 Data quality score: {quality_score:.1f}% ({total_issues} issues in {len(market_data)} rows)')
+            else:
+                self.logger.info('✅ Data quality validation passed - no issues found')
+            
+            # Log price range statistics
+            if len(market_data) > 0:
+                price_stats = {}
+                for col in price_cols:
+                    price_stats[col] = {
+                        'min': market_data[col].min(),
+                        'max': market_data[col].max(),
+                        'mean': market_data[col].mean()
+                    }
+                
+                self.logger.info(f'📊 Input data price ranges:')
+                for col, stats in price_stats.items():
+                    self.logger.info(f'   {col}: {stats["min"]:.4f} to {stats["max"]:.4f} (mean: {stats["mean"]:.4f})')
+            
+        except Exception as e:
+            self.logger.error(f'Data quality validation failed: {e}')
+            raise
+
     @handles_errors(exceptions=(ValueError, AttributeError), default_return=[], context='detect enhanced SR levels')
     @traced(span_name='EnhancedSR.detect_levels')
     def detect_sr_levels(self, market_data: pd.DataFrame) -> List[SRLevel]:
@@ -1002,6 +1199,9 @@ class EnhancedSRDetector:
             import time
             start_time = time.time()
             self.logger.info('🔍 Starting enhanced S/R level detection...')
+            
+            # Enhanced data quality validation
+            self._validate_input_data_quality(market_data)
 
             # Limit data size for performance with stratified sampling to maintain historical context
             sr_config = self.config.get('sr_detection', {})
@@ -1097,25 +1297,32 @@ class EnhancedSRDetector:
             all_levels = volume_levels + psychological_levels + pivot_levels + fractal_levels + statistical_levels + fibonacci_levels + trendline_levels + channel_levels + volume_profile_levels + market_structure_levels
             self.logger.info(f'📊 Total levels before validation: {len(all_levels)}')
 
+            # Log breakdown of levels by detection method
+            method_counts = {}
+            for level in all_levels:
+                method = level.metadata.get('method', 'unknown') if hasattr(level, 'metadata') and level.metadata else 'unknown'
+                method_counts[method] = method_counts.get(method, 0) + 1
+            self.logger.info(f'📊 Level sources: {method_counts}')
 
             validated_levels = self._validate_and_merge_levels(all_levels, market_data)
-            self.logger.info(f'📊 Levels after validation: {len(validated_levels)}')
+            self.logger.info(f'📊 Levels after validation/merging: {len(validated_levels)} (reduced by {len(all_levels) - len(validated_levels)})')
 
             enhanced_levels = self._calculate_enhanced_metrics(validated_levels, market_data)
+            self.logger.info(f'📊 Levels after enhanced metrics: {len(enhanced_levels)}')
 
-            # Apply ML-optimized filtering to remove weak levels before ML training
+            # Apply unified strength×prominence filtering to remove weak/non-prominent levels
             original_count = len(enhanced_levels)
-            enhanced_levels = self._apply_ml_optimized_filtering(enhanced_levels, market_data)
+            enhanced_levels = self._apply_unified_strength_prominence_filtering(enhanced_levels, market_data)
             filtered_count = len(enhanced_levels)
+            self.logger.info(f'📊 Levels after strength×prominence filtering: {filtered_count} (removed {original_count - filtered_count})')
 
-            # Apply prominence filtering first
-            enhanced_levels = self._apply_prominence_filtering(enhanced_levels, market_data)
-            
             # Enhance levels with ML-optimized features
             enhanced_levels = self._enhance_levels_with_ml_features(enhanced_levels, market_data)
-            
+            self.logger.info(f'📊 Levels after ML feature enhancement: {len(enhanced_levels)}')
+
             # Apply DBSCAN clustering to avoid nearby levels (unless disabled)
             pre_clustering_count = len(enhanced_levels)
+            self.logger.info(f'📊 Levels before DBSCAN clustering: {pre_clustering_count}')
 
             if self.disable_dbscan_clustering:
                 self.logger.info('🔗 DBSCAN clustering disabled - keeping all levels')
@@ -1129,6 +1336,8 @@ class EnhancedSRDetector:
             else:
                 enhanced_levels, clustering_info = self._cluster_nearby_levels(enhanced_levels, market_data)
                 post_clustering_count = len(enhanced_levels)
+                self.logger.info(f'🔗 DBSCAN clustering: {pre_clustering_count} -> {post_clustering_count} levels '
+                               f'(removed {pre_clustering_count - post_clustering_count})')
                 self.logger.info(f'🔗 DBSCAN clustering summary: {clustering_info}')
 
             elapsed_time = time.time() - start_time
@@ -3112,9 +3321,22 @@ class EnhancedSRDetector:
             True if levels should be merged, False otherwise
         """
         try:
+            # Enhanced validation: Check for extreme price differences first
+            if level1.price <= 0 or level2.price <= 0:
+                self.logger.debug(f'❌ No merge: Invalid prices (Level1: {level1.price:.4f}, Level2: {level2.price:.4f})')
+                return False
+            
+            # Check for extreme price ratio (more than 10x difference)
+            price_ratio = max(level1.price, level2.price) / min(level1.price, level2.price)
+            if price_ratio > 10.0:
+                self.logger.debug(f'❌ No merge: Extreme price ratio {price_ratio:.2f} (Level1: {level1.price:.4f}, Level2: {level2.price:.4f})')
+                return False
+            
             # Basic price proximity check
             price_diff = abs(level1.price - level2.price) / level1.price if level1.price != 0 else 1.0
             if price_diff >= self.touch_proximity_threshold:
+                self.logger.debug(f'❌ No merge: Price difference {price_diff:.4f} >= threshold {self.touch_proximity_threshold} '
+                                f'(Level1: {level1.price:.4f}, Level2: {level2.price:.4f})')
                 return False
 
             # If levels are the same type, they're more likely to be merged
@@ -3123,26 +3345,56 @@ class EnhancedSRDetector:
                 # or if one is significantly weaker than the other
                 strength_ratio = min(level1.strength, level2.strength) / max(level1.strength, level2.strength)
 
-                # Merge if very close (within 0.3%) or strength difference is significant (>3x)
-                if price_diff < 0.003 or strength_ratio < 0.33:
+                # More conservative: Merge only if extremely close (within 0.1%) or strength difference is very significant (>5x)
+                if price_diff < 0.001 or strength_ratio < 0.2:
+                    reason = "extremely close prices" if price_diff < 0.001 else "significant strength difference"
+                    self.logger.debug(f'✅ Same-type merge: {reason} '
+                                    f'(Price diff: {price_diff:.4f}, Strength ratio: {strength_ratio:.3f}, '
+                                    f'Type: {level1.type}, Prices: {level1.price:.4f}/{level2.price:.4f})')
                     return True
 
                 # Don't merge strong levels of same type that are moderately close
                 # (let them remain separate for more precision)
+                self.logger.debug(f'❌ No same-type merge: Moderate proximity, strong levels '
+                                f'(Price diff: {price_diff:.4f}, Strength ratio: {strength_ratio:.3f}, '
+                                f'Type: {level1.type}, Strengths: {level1.strength:.3f}/{level2.strength:.3f})')
                 return False
 
-            # Different types (support vs resistance) - more conservative merging
+            # Different types (support vs resistance) - very conservative merging
             else:
-                # Only merge different types if they're extremely close
-                # AND both are relatively weak (potential consolidation zone)
-                very_close_threshold = 0.002  # 0.2%
-                both_weak = level1.strength < 0.4 and level2.strength < 0.4
+                # Only merge different types if they're extremely close (within 0.05%)
+                # AND both are very weak (potential consolidation zone)
+                very_close_threshold = 0.0005  # 0.05% - much more restrictive
+                both_very_weak = level1.strength < 0.2 and level2.strength < 0.2
 
                 # Check if levels might represent a consolidation zone
                 # (area where price oscillates between support and resistance)
                 consolidation_zone = self._is_consolidation_zone(level1, level2, data)
 
-                return price_diff < very_close_threshold and (both_weak or consolidation_zone)
+                if price_diff < very_close_threshold and (both_very_weak or consolidation_zone):
+                    reason_parts = []
+                    if price_diff < very_close_threshold:
+                        reason_parts.append("extremely close prices")
+                    if both_very_weak:
+                        reason_parts.append("both very weak")
+                    if consolidation_zone:
+                        reason_parts.append("consolidation zone")
+
+                    self.logger.debug(f'✅ Different-type merge: {", ".join(reason_parts)} '
+                                    f'(Types: {level1.type}/{level2.type}, Price diff: {price_diff:.4f}, '
+                                    f'Strengths: {level1.strength:.3f}/{level2.strength:.3f})')
+                    return True
+                else:
+                    reasons_no_merge = []
+                    if price_diff >= very_close_threshold:
+                        reasons_no_merge.append("not extremely close")
+                    if not both_very_weak and not consolidation_zone:
+                        reasons_no_merge.append("not weak and not consolidation zone")
+
+                    self.logger.debug(f'❌ No different-type merge: {", ".join(reasons_no_merge)} '
+                                    f'(Types: {level1.type}/{level2.type}, Price diff: {price_diff:.4f}, '
+                                    f'Strengths: {level1.strength:.3f}/{level2.strength:.3f})')
+                    return False
 
         except Exception as e:
             self.logger.warning(f'Error determining merge decision: {e}')
@@ -3186,7 +3438,7 @@ class EnhancedSRDetector:
                     touches_level1 += 1
 
             # If both levels have been touched multiple times, likely consolidation
-            min_touches_for_consolidation = 3
+            min_touches_for_consolidation = 2
             return touches_level1 >= min_touches_for_consolidation and touches_level2 >= min_touches_for_consolidation
 
         except Exception as e:
@@ -3197,7 +3449,31 @@ class EnhancedSRDetector:
         """Validate and merge similar levels with intelligent merging logic."""
         try:
             if not levels:
+                self.logger.info('📊 No levels to validate/merge')
                 return []
+
+            # Log initial level statistics
+            support_count = len([level for level in levels if level.type == 'support'])
+            resistance_count = len([level for level in levels if level.type == 'resistance'])
+            self.logger.info(f'📊 Pre-merge level analysis: {len(levels)} total ({support_count} support, {resistance_count} resistance)')
+
+            # Analyze level strength distribution
+            strong_levels = len([level for level in levels if level.strength >= 0.7])
+            medium_levels = len([level for level in levels if 0.3 <= level.strength < 0.7])
+            weak_levels = len([level for level in levels if level.strength < 0.3])
+            self.logger.info(f'📊 Level strength distribution: {strong_levels} strong (>=0.7), {medium_levels} medium (0.3-0.7), {weak_levels} weak (<0.3)')
+
+            # Analyze price clustering
+            if len(levels) > 1:
+                prices = sorted([level.price for level in levels])
+                price_ranges = []
+                for i in range(1, len(prices)):
+                    price_diff_pct = abs(prices[i] - prices[i-1]) / prices[i-1] if prices[i-1] != 0 else 0
+                    if price_diff_pct <= 0.01:  # Within 1%
+                        price_ranges.append(price_diff_pct)
+
+                clustered_pairs = len(price_ranges)
+                self.logger.info(f'📊 Price clustering analysis: {clustered_pairs} level pairs within 1% price proximity')
 
             # For large numbers of levels, use a more efficient approach
             if len(levels) > 100:
@@ -3206,11 +3482,17 @@ class EnhancedSRDetector:
 
             merged_levels = []
             used_indices = set()
+            total_groups = 0
+            merged_groups = 0
+            single_levels_kept = 0
+
+            self.logger.info('🔄 Starting level-by-level merging analysis...')
 
             for i, level in enumerate(levels):
                 if i in used_indices:
                     continue
                 similar_levels = [level]
+                total_groups += 1
 
                 for j, other_level in enumerate(levels[i + 1:], i + 1):
                     if j in used_indices:
@@ -3222,11 +3504,19 @@ class EnhancedSRDetector:
                         used_indices.add(j)
 
                 if len(similar_levels) > 1:
+                    merged_groups += 1
+                    self.logger.info(f'🔀 Merging group {total_groups}: {len(similar_levels)} levels around price {level.price:.4f} '
+                                   f'(strengths: {[round(l.strength, 3) for l in similar_levels]})')
                     merged_level = self._merge_similar_levels(similar_levels)
                     merged_levels.append(merged_level)
                 else:
+                    single_levels_kept += 1
                     merged_levels.append(level)
                 used_indices.add(i)
+
+            # Summary logging
+            self.logger.info(f'📊 Merging summary: {total_groups} total groups, {merged_groups} merged groups, {single_levels_kept} single levels kept')
+            self.logger.info(f'📊 Final result: {len(merged_levels)} levels after merging ({len(levels)} -> {len(merged_levels)})')
 
             return merged_levels
         except Exception as e:
@@ -3240,26 +3530,61 @@ class EnhancedSRDetector:
             merge_start = time.time()
 
             if not levels:
+                self.logger.info('📊 Optimized merging: No levels to process')
+                return []
+
+            # Log initial statistics for optimized merging
+            support_count = len([level for level in levels if level.type == 'support'])
+            resistance_count = len([level for level in levels if level.type == 'resistance'])
+            self.logger.info(f'📊 Optimized merging input: {len(levels)} total ({support_count} support, {resistance_count} resistance)')
+
+            # Filter out invalid levels before merging
+            valid_levels = []
+            for level in levels:
+                if level.price > 0 and level.strength > 0:
+                    valid_levels.append(level)
+                else:
+                    self.logger.debug(f'❌ Filtered out invalid level: price={level.price:.4f}, strength={level.strength:.3f}')
+
+            if len(valid_levels) != len(levels):
+                self.logger.warning(f'⚠️ Filtered out {len(levels) - len(valid_levels)} invalid levels (negative prices or zero strength)')
+
+            if not valid_levels:
+                self.logger.warning('⚠️ No valid levels remaining after filtering')
                 return []
 
             # Sort levels by price for more efficient merging
-            levels_sorted = sorted(levels, key=lambda x: x.price)
+            levels_sorted = sorted(valid_levels, key=lambda x: x.price)
+            self.logger.info(f'📊 Valid levels sorted by price: range {levels_sorted[0].price:.4f} to {levels_sorted[-1].price:.4f}')
 
             merged_levels = []
             i = 0
+            total_groups = 0
+            merged_groups = 0
+            single_levels_kept = 0
+
+            self.logger.info('🔄 Starting optimized merging analysis...')
+
             while i < len(levels_sorted):
                 current_level = levels_sorted[i]
                 similar_levels = [current_level]
+                total_groups += 1
                 j = i + 1
 
                 # Look ahead for similar levels within price tolerance
-                while j < len(levels_sorted):
+                max_group_size = 5  # Limit group size to prevent over-merging
+                while j < len(levels_sorted) and len(similar_levels) < max_group_size:
                     next_level = levels_sorted[j]
                     price_diff = abs(current_level.price - next_level.price) / current_level.price if current_level.price != 0 else 1.0
 
                     # If price difference is too large, no more similar levels ahead
-                    if price_diff > self.touch_proximity_threshold * 2:  # Use 2x tolerance for early stopping
+                    if price_diff > self.touch_proximity_threshold:  # Use stricter tolerance
                         break
+
+                    # Validate price ranges - skip invalid prices
+                    if next_level.price <= 0:
+                        j += 1
+                        continue
 
                     # Check if levels should merge
                     if self._should_merge_levels(current_level, next_level, data):
@@ -3267,14 +3592,20 @@ class EnhancedSRDetector:
                     j += 1
 
                 if len(similar_levels) > 1:
+                    merged_groups += 1
+                    self.logger.info(f'🔀 Optimized merge group {total_groups}: {len(similar_levels)} levels around price {current_level.price:.4f} '
+                                   f'(strengths: {[round(l.strength, 3) for l in similar_levels]})')
                     merged_level = self._merge_similar_levels(similar_levels)
                     merged_levels.append(merged_level)
                 else:
+                    single_levels_kept += 1
                     merged_levels.append(current_level)
 
                 i = j  # Skip merged levels
 
+            # Summary logging for optimized merging
             merge_time = time.time() - merge_start
+            self.logger.info(f'📊 Optimized merging summary: {total_groups} total groups, {merged_groups} merged groups, {single_levels_kept} single levels kept')
             self.logger.info(f'✅ Optimized merging completed in {merge_time:.2f}s: {len(levels)} -> {len(merged_levels)} levels')
             return merged_levels
 
@@ -3323,6 +3654,15 @@ class EnhancedSRDetector:
     def _merge_similar_levels(self, levels: List[SRLevel]) -> SRLevel:
         """Merge similar S/R levels into one."""
         try:
+            # Log the merging operation details
+            level_prices = [round(level.price, 4) for level in levels]
+            level_strengths = [round(level.strength, 3) for level in levels]
+            level_types = [level.type for level in levels]
+            level_methods = [level.metadata.get('method', 'unknown') for level in levels]
+
+            self.logger.debug(f'🔧 Merging {len(levels)} levels: prices={level_prices}, strengths={level_strengths}, '
+                            f'types={level_types}, methods={level_methods}')
+
             total_strength = sum((level.strength for level in levels))
             weighted_price = sum((level.price * level.strength for level in levels)) / total_strength if total_strength != 0 else sum((level.price for level in levels)) / len(levels) if len(levels) > 0 else 0.0
             base_level = max(levels, key=lambda x: x.strength)
@@ -3334,25 +3674,38 @@ class EnhancedSRDetector:
             first_touch_time = min(first_times) if first_times else None
             last_touch_time = max(last_times) if last_times else None
 
+            # Calculate merged attributes
+            merged_touch_count = sum((level.touch_count for level in levels))
+            merged_avg_bounce_ratio = np.mean([level.avg_bounce_ratio for level in levels])
+            merged_max_bounce_ratio = max((level.max_bounce_ratio for level in levels))
+            merged_volume_score = np.mean([level.volume_confirmation_score for level in levels])
+            merged_consistency = np.mean([level.consistency_score for level in levels])
+            merged_failure_count = sum((level.failure_count for level in levels))
+            merged_confidence = min(np.mean([level.confidence_score for level in levels]) * 1.1, 1.0)
+            merged_confluence = len(levels) / 10.0
+
             merged_level = SRLevel(
                 price=weighted_price,
                 strength=min(total_strength / len(levels) * 1.2, 1.0),
                 type=base_level.type,
-                touch_count=sum((level.touch_count for level in levels)),
+                touch_count=merged_touch_count,
                 first_touch_time=first_touch_time,
                 last_touch_time=last_touch_time,
                 age_bars=max((level.age_bars for level in levels)),
-                avg_bounce_ratio=np.mean([level.avg_bounce_ratio for level in levels]),
-                max_bounce_ratio=max((level.max_bounce_ratio for level in levels)),
-                volume_confirmation_score=np.mean([level.volume_confirmation_score for level in levels]),
-                consistency_score=np.mean([level.consistency_score for level in levels]),
-                failure_count=sum((level.failure_count for level in levels)),
-                confidence_score=min(np.mean([level.confidence_score for level in levels]) * 1.1, 1.0),
-                confluence_score=len(levels) / 10.0,
+                avg_bounce_ratio=merged_avg_bounce_ratio,
+                max_bounce_ratio=merged_max_bounce_ratio,
+                volume_confirmation_score=merged_volume_score,
+                consistency_score=merged_consistency,
+                failure_count=merged_failure_count,
+                confidence_score=merged_confidence,
+                confluence_score=merged_confluence,
                 pivot_level=any((level.pivot_level for level in levels)),
                 psychological_level=any((level.psychological_level for level in levels)),
-                metadata={'merged_from': len(levels), 'methods': [level.metadata.get('method', 'unknown') for level in levels]}
+                metadata={'merged_from': len(levels), 'methods': level_methods}
             )
+
+            self.logger.debug(f'✅ Created merged level: price={round(weighted_price, 4)}, strength={round(merged_level.strength, 3)}, '
+                            f'type={base_level.type}, touches={merged_touch_count}')
             return merged_level
         except Exception as e:
             self.logger.warning(f'Level merging failed: {e}')
@@ -3603,44 +3956,110 @@ class EnhancedSRDetector:
             self.logger.warning(f'Enhanced strength calculation failed: {e}')
             return level.strength
 
-    def _apply_ml_optimized_filtering(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
-        """Apply ML-optimized filtering to remove bottom levels based on total count for better ML training."""
+    def _apply_unified_strength_prominence_filtering(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
+        """Apply unified filtering combining strength×prominence with guaranteed minimum 100 levels."""
         try:
-            if len(levels) < 20:  # Minimum threshold for meaningful filtering
+            if len(levels) < 10:  # Minimum threshold for meaningful filtering
                 return levels
 
-            self.logger.info(f'🎯 Applying ML-optimized filtering to {len(levels)} levels')
+            self.logger.info(f'🎯 Applying unified strength×prominence filtering to {len(levels)} levels')
 
-            # Sort levels by strength in descending order
-            sorted_levels = sorted(levels, key=lambda x: x.strength, reverse=True)
+            # Calculate prominence scores for all levels first (without ATR dependency)
+            # Use price-based prominence instead of ATR-normalized
+            price_range = data['high'].max() - data['low'].min()
+            avg_price = (data['high'].mean() + data['low'].mean()) / 2
 
-            # Apply tiered filtering based on total level count
-            if len(sorted_levels) > 200:
-                # Remove 66% of bottom levels for very large datasets
-                keep_count = int(len(sorted_levels) * 0.34)
-                removal_rate = "66%"
-            elif len(sorted_levels) > 100:
-                # Remove 50% of bottom levels for large datasets
-                keep_count = int(len(sorted_levels) * 0.50)
-                removal_rate = "50%"
-            else:
-                # Keep all levels for smaller datasets
+            # Calculate prominence for each level
+            for level in levels:
+                level.prominence_score = self._calculate_level_prominence_simple(level, data, level.type, price_range, avg_price)
+                level.width_score = self._calculate_level_width(level, data, level.type)
+
+            # Create composite score using multiplication: strength × prominence
+            for level in levels:
+                strength_component = level.strength if hasattr(level, 'strength') and level.strength > 0 else 0.1
+                prominence_component = level.prominence_score if hasattr(level, 'prominence_score') and level.prominence_score > 0 else 0.1
+                level.composite_score = strength_component * prominence_component
+
+            # Sort levels by composite score (descending)
+            sorted_levels = sorted(levels, key=lambda x: x.composite_score, reverse=True)
+
+            # Apply progressive filtering: keep more levels for better coverage
+            if len(sorted_levels) <= 150:
+                # Keep all levels if we have 150 or fewer
                 keep_count = len(sorted_levels)
                 removal_rate = "0%"
+            elif len(sorted_levels) <= 300:
+                # Keep 150 levels + 60% of the levels above 150
+                excess_levels = len(sorted_levels) - 150
+                keep_excess = int(excess_levels * 0.60)  # Keep 60% of excess
+                keep_count = 150 + keep_excess
+                removal_rate = f"{int((1 - keep_count/len(sorted_levels)) * 100)}%"
+            else:
+                # Keep 150 levels + 40% of the levels above 150 for very large datasets
+                excess_levels = len(sorted_levels) - 150
+                keep_excess = int(excess_levels * 0.40)  # Keep 40% of excess
+                keep_count = 150 + keep_excess
+                removal_rate = f"{int((1 - keep_count/len(sorted_levels)) * 100)}%"
 
             filtered_levels = sorted_levels[:keep_count]
 
+            # Detailed logging of filtering process
             if len(sorted_levels) > 100:
-                self.logger.info(f'🎯 Filtered out {len(sorted_levels) - len(filtered_levels)} weak levels '
-                               f'({removal_rate} removal rate, {len(filtered_levels)} remaining)')
+                # Log composite score distribution
+                composite_scores = [level.composite_score for level in sorted_levels]
+                score_stats = {
+                    'mean': np.mean(composite_scores),
+                    'median': np.median(composite_scores),
+                    'min': min(composite_scores),
+                    'max': max(composite_scores),
+                    'std': np.std(composite_scores)
+                }
+                self.logger.info(f'🎯 Composite score distribution: mean={score_stats["mean"]:.4f}, '
+                               f'median={score_stats["median"]:.4f}, min={score_stats["min"]:.4f}, '
+                               f'max={score_stats["max"]:.4f}, std={score_stats["std"]:.4f}')
+
+                # Log level type distribution before and after filtering
+                original_types = {}
+                filtered_types = {}
+                for level in sorted_levels:
+                    level_type = level.type
+                    original_types[level_type] = original_types.get(level_type, 0) + 1
+
+                for level in filtered_levels:
+                    level_type = level.type
+                    filtered_types[level_type] = filtered_types.get(level_type, 0) + 1
+
+                self.logger.info(f'🎯 Level type distribution: Before={original_types}, After={filtered_types}')
+
+                # Log top and bottom performers
+                if len(sorted_levels) >= 5:
+                    top_5_scores = [round(level.composite_score, 4) for level in sorted_levels[:5]]
+                    bottom_5_scores = [round(level.composite_score, 4) for level in sorted_levels[-5:]]
+                    self.logger.info(f'🎯 Top 5 composite scores: {top_5_scores}')
+                    self.logger.info(f'🎯 Bottom 5 composite scores: {bottom_5_scores}')
+
+                self.logger.info(f'🎯 Unified filtering: {len(sorted_levels)} -> {len(filtered_levels)} levels '
+                               f'({removal_rate} removal, kept 150 + 60% of excess)')
+
+                # Log composite score statistics
+                top_score = filtered_levels[0].composite_score if filtered_levels else 0
+                cutoff_score = filtered_levels[-1].composite_score if filtered_levels else 0
+                self.logger.info(f'🎯 Composite scores: top={top_score:.4f}, cutoff={cutoff_score:.4f}')
+            elif len(sorted_levels) == keep_count:
+                self.logger.info(f'🎯 Keeping all {len(filtered_levels)} levels (≤100 levels)')
             else:
-                self.logger.info(f'🎯 Keeping all {len(filtered_levels)} levels (below threshold for filtering)')
+                self.logger.info(f'🎯 Unified filtering: {len(sorted_levels)} -> {len(filtered_levels)} levels '
+                               f'(ensuring minimum 100 levels)')
 
             return filtered_levels
 
         except Exception as e:
-            self.logger.warning(f'ML-optimized filtering failed: {e}')
+            self.logger.warning(f'Unified strength×prominence filtering failed: {e}')
             return levels
+
+    def _apply_ml_optimized_filtering(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
+        """Legacy method - now delegates to unified filtering."""
+        return self._apply_unified_strength_prominence_filtering(levels, data)
 
     def _cluster_nearby_levels(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[List[SRLevel], Dict[str, Any]]:
         """Cluster nearby SR levels using DBSCAN for optimal grouping."""
@@ -3684,7 +4103,16 @@ class EnhancedSRDetector:
             return levels, {'clustered': False, 'error': str(e)}
 
     def _dbscan_cluster_levels(self, levels: List[SRLevel], data: pd.DataFrame, level_type: str) -> List[SRLevel]:
-        """Apply DBSCAN clustering to group nearby SR levels with strength-aware distance metric."""
+        """
+        Apply DBSCAN clustering to group nearby SR levels with strength-aware distance metric and parameter relaxation.
+        
+        This method implements adaptive parameter relaxation to ensure sufficient levels are maintained:
+        - If clustering produces too few levels, parameters are progressively relaxed
+        - eps is increased by eps_relaxation_factor (default 1.5x) on each attempt
+        - min_samples is decreased by min_samples_relaxation_factor (default 0.8x) on each attempt
+        - Minimum threshold is adaptive: max(fixed_threshold, original_levels * ratio)
+        - Up to max_relaxation_attempts attempts are made to achieve sufficient levels
+        """
         try:
             if len(levels) < 2:
                 return levels
@@ -3692,46 +4120,98 @@ class EnhancedSRDetector:
             # Prepare data for DBSCAN with strength-aware distance
             level_data = np.array([[level.price, level.strength] for level in levels])
 
-            # Get optimized DBSCAN parameters
+            # Get initial optimized DBSCAN parameters
             eps, min_samples = self._optimize_dbscan_parameters(levels, data)
+            original_eps, original_min_samples = eps, min_samples
+            
+            # Calculate adaptive minimum threshold
+            adaptive_threshold = max(self.min_levels_threshold, int(len(levels) * self.min_levels_ratio))
+            avg_price = data['close'].mean()  # Calculate average price for eps threshold
+            self.logger.info(f'🔧 DBSCAN {level_type}: Starting with {len(levels)} levels, target minimum: {adaptive_threshold} (fixed: {self.min_levels_threshold}, ratio: {self.min_levels_ratio:.1%})')
 
-            # Apply DBSCAN with custom strength-aware distance metric
-            from sklearn.cluster import DBSCAN
-            clustering = DBSCAN(
-                eps=eps,
-                min_samples=min_samples,
-                metric=self._strength_aware_distance
-            )
-            cluster_labels = clustering.fit_predict(level_data)
+            # Try clustering with parameter adjustment if needed
+            for attempt in range(self.max_relaxation_attempts):
+                # Apply DBSCAN with current parameters
+                from sklearn.cluster import DBSCAN
+                clustering = DBSCAN(
+                    eps=eps,
+                    min_samples=min_samples,
+                    metric=self._strength_aware_distance
+                )
+                cluster_labels = clustering.fit_predict(level_data)
 
-            # Group levels by cluster
-            clusters = {}
-            noise_levels = []
+                # Group levels by cluster
+                clusters = {}
+                noise_levels = []
 
-            for i, level in enumerate(levels):
-                label = cluster_labels[i]
-                if label == -1:  # Noise point
-                    noise_levels.append(level)
+                for i, level in enumerate(levels):
+                    label = cluster_labels[i]
+                    if label == -1:  # Noise point
+                        noise_levels.append(level)
+                    else:
+                        if label not in clusters:
+                            clusters[label] = []
+                        clusters[label].append(level)
+
+                # Merge levels in each cluster - be more conservative about merging
+                clustered_levels = []
+                
+                for cluster_levels in clusters.values():
+                    if len(cluster_levels) > 1:
+                        # Be conservative: only merge very large clusters (5+ levels)
+                        # This preserves more individual levels
+                        if len(cluster_levels) >= 5:  # Only merge large clusters (5+ levels)
+                            merged_level = self._merge_cluster_dbscan(cluster_levels, data)
+                            clustered_levels.append(merged_level)
+                        else:
+                            # Keep smaller clusters as individual levels
+                            clustered_levels.extend(cluster_levels)
+                    else:
+                        clustered_levels.extend(cluster_levels)
+
+                # Keep noise levels as-is (they're important individual levels)
+                clustered_levels.extend(noise_levels)
+                final_level_count = len(clustered_levels)
+
+                # Debug logging to understand what's happening
+                self.logger.info(f'🔍 DBSCAN {level_type} attempt {attempt + 1} debug:')
+                self.logger.info(f'   - eps: {eps:.6f}, min_samples: {min_samples}')
+                self.logger.info(f'   - clusters: {len(clusters)}, noise: {len(noise_levels)}')
+                self.logger.info(f'   - clustered levels: {len(clustered_levels) - len(noise_levels)}, noise levels: {len(noise_levels)}')
+                self.logger.info(f'   - total final levels: {final_level_count} (target: {adaptive_threshold})')
+
+                # Check if we have enough levels
+                if final_level_count >= adaptive_threshold:
+                    if attempt > 0:
+                        self.logger.info(f'🔗 DBSCAN {level_type} (attempt {attempt + 1}): {len(clusters)} clusters, {len(noise_levels)} noise levels, {final_level_count} total levels')
+                        self.logger.info(f'🔧 Parameter relaxation: eps {original_eps:.6f} -> {eps:.6f}, min_samples {original_min_samples} -> {min_samples}')
+                    else:
+                        self.logger.info(f'🔗 DBSCAN {level_type}: {len(clusters)} clusters, {len(noise_levels)} noise levels')
+                    return clustered_levels
+
+                # Adjust parameters for next attempt (unless this is the last attempt)
+                if attempt < self.max_relaxation_attempts - 1:
+                    # To get MORE levels, we need to make clustering MORE strict (smaller eps)
+                    eps /= self.eps_strictness_factor  # Decrease eps to make clustering more strict
+                    min_samples = max(2, int(min_samples * self.min_samples_reduction_factor))  # Decrease min_samples
+                    self.logger.info(f'🔧 DBSCAN {level_type} attempt {attempt + 1}: Only {final_level_count} levels (need {adaptive_threshold}), making clustering more strict...')
                 else:
-                    if label not in clusters:
-                        clusters[label] = []
-                    clusters[label].append(level)
+                    self.logger.info(f'🔧 DBSCAN {level_type} attempt {attempt + 1}: Only {final_level_count} levels (need {adaptive_threshold}) - final attempt')
 
-            # Merge levels in each cluster
-            clustered_levels = []
-            for cluster_levels in clusters.values():
-                if len(cluster_levels) > 1:
-                    merged_level = self._merge_cluster_dbscan(cluster_levels, data)
-                    clustered_levels.append(merged_level)
-                else:
-                    clustered_levels.extend(cluster_levels)
-
-            # Keep noise levels as-is (they're important individual levels)
-            clustered_levels.extend(noise_levels)
-
-            self.logger.info(f'🔗 DBSCAN {level_type}: {len(clusters)} clusters, {len(noise_levels)} noise levels')
-
-            return clustered_levels
+            # If we get here, DBSCAN failed to achieve minimum levels even with aggressive relaxation
+            adaptive_threshold = max(self.min_levels_threshold, int(len(levels) * self.min_levels_ratio))
+            final_level_count = len(clustered_levels)
+            
+            # If we still don't have enough levels, return all original levels (no clustering)
+            if final_level_count < adaptive_threshold:
+                self.logger.warning(f'🔧 DBSCAN {level_type}: Failed to achieve minimum levels after {self.max_relaxation_attempts} aggressive relaxation attempts')
+                self.logger.warning(f'   Final result: {final_level_count} levels (target: {adaptive_threshold})')
+                self.logger.info(f'🔄 Falling back to no clustering: returning all {len(levels)} original levels')
+                return levels
+            else:
+                self.logger.warning(f'🔧 DBSCAN {level_type}: Failed to achieve minimum levels after {self.max_relaxation_attempts} aggressive relaxation attempts')
+                self.logger.warning(f'   Final result: {final_level_count} levels (target: {adaptive_threshold})')
+                return clustered_levels
 
         except ImportError:
             self.logger.warning('DBSCAN not available, falling back to simple clustering')
@@ -3868,11 +4348,11 @@ class EnhancedSRDetector:
         price_volatility = data['close'].pct_change().std()
 
         def objective(trial: optuna.Trial) -> float:
-            # Define parameter search space
-            eps_relative = trial.suggest_float('eps_relative', 0.002, 0.05)  # 0.2% to 5% of price
+            # Define parameter search space - much less aggressive
+            eps_relative = trial.suggest_float('eps_relative', 0.005, 0.10)  # 0.5% to 10% of price (much wider range)
             eps = eps_relative * avg_price
 
-            min_samples_upper = max(2, min(8, len(levels) // 5))
+            min_samples_upper = max(2, min(6, len(levels) // 8))  # More conservative
             min_samples = trial.suggest_int('min_samples', 2, min_samples_upper)
 
             # Apply DBSCAN with strength-aware distance
@@ -3944,10 +4424,10 @@ class EnhancedSRDetector:
             score = -(cluster_ratio * 0.7 - noise_ratio * 0.3)  # Negative for minimization
             return score
 
-        # Define search space with proper bounds
-        min_samples_upper = max(2, min(8, len(levels) // 5))
+        # Define search space with proper bounds - much less aggressive
+        min_samples_upper = max(2, min(6, len(levels) // 8))  # More conservative
         space = [
-            Real(0.002, 0.05, name='eps_relative'),  # 0.2% to 5% of price
+            Real(0.005, 0.10, name='eps_relative'),  # 0.5% to 10% of price (much wider range)
             Integer(2, min_samples_upper, name='min_samples')
         ]
 
@@ -3967,17 +4447,17 @@ class EnhancedSRDetector:
         avg_price = data['close'].mean()
         price_volatility = data['close'].pct_change().std()
 
-        # Adaptive epsilon based on price volatility and level count
-        base_eps_relative = 0.01  # 1% base
-        volatility_factor = min(price_volatility * 1.5, 0.02)  # Cap at 2%
-        level_density_factor = max(0.005, 1.0 / np.sqrt(len(levels)))  # Denser levels = smaller eps
+        # Much less aggressive epsilon based on price volatility and level count
+        base_eps_relative = 0.02  # 2% base (doubled from 1%)
+        volatility_factor = min(price_volatility * 2.0, 0.03)  # Cap at 3% (increased from 2%)
+        level_density_factor = max(0.002, 1.0 / np.sqrt(len(levels)))  # Denser levels = smaller eps
 
         eps_relative = base_eps_relative + volatility_factor - level_density_factor
-        eps_relative = np.clip(eps_relative, 0.003, 0.04)  # Clamp between 0.3% and 4%
+        eps_relative = np.clip(eps_relative, 0.005, 0.08)  # Clamp between 0.5% and 8% (much wider range)
         eps = eps_relative * avg_price
 
-        # Adaptive minimum samples (original aggressive settings)
-        min_samples = max(2, min(6, len(levels) // 8))
+        # Much less aggressive minimum samples
+        min_samples = max(2, min(4, len(levels) // 12))  # Reduced from 6 and //8
 
         self.logger.info(f'🔧 Heuristic DBSCAN params - eps: {eps:.6f}, min_samples: {min_samples}')
 

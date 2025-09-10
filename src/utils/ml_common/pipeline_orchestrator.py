@@ -32,7 +32,7 @@ import threading
 
 from ..common_operations import create_fallback_logger
 from ..parallel_processing_optimizer import ParallelProcessor
-from ..data_processing_utils import safe_dataframe_operation
+from ..common_utilities import safe_dataframe_operation
 
 logger = logging.getLogger(__name__)
 

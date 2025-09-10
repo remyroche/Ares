@@ -80,6 +80,26 @@ class CrossTimeframeFeatureGenerator:
         """
         self.config = config or CrossTimeframeConfig()
         self.logger = logger or logging.getLogger(__name__)
+        
+        # Initialize the comprehensive cross timeframe analysis pipeline
+        self.cross_timeframe_pipeline = None
+        try:
+            from .cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig as PipelineConfig
+            
+            # Configure for high leverage trading with short timeframes
+            pipeline_config = PipelineConfig(
+                timeframes=['1m', '5m', '15m', '30m'],  # Short timeframes for high leverage
+                base_timeframe='1m',
+                interaction_features=['correlation', 'momentum', 'volatility', 'volume'],
+                correlation_threshold=0.7,
+                min_observations=50,  # Reduced for short timeframes
+                enable_data_quality_validation=True
+            )
+            self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline(pipeline_config)
+            self.logger.info("✅ Cross Timeframe Analysis Pipeline integrated")
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Cross Timeframe Analysis Pipeline not available: {e}")
+            self.cross_timeframe_pipeline = None
 
     def generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, pd.Series]:
         """Generate cross-timeframe features with reduced complexity.
@@ -93,6 +113,23 @@ class CrossTimeframeFeatureGenerator:
         """
         if not self._validate_input_data(price_data):
             return {}
+        
+        # Try to use the comprehensive cross timeframe analysis pipeline first
+        if self.cross_timeframe_pipeline is not None:
+            try:
+                import asyncio
+                # Run the async method in a new event loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    features = loop.run_until_complete(self._generate_features_with_pipeline(price_data, volume_data))
+                    return features
+                finally:
+                    loop.close()
+            except Exception as e:
+                self.logger.warning(f"⚠️ Pipeline-based feature generation failed: {e}, falling back to legacy method")
+        
+        # Fallback to legacy method
         price_components = self._extract_price_components(price_data)
         if not price_components:
             return {}
@@ -104,6 +141,69 @@ class CrossTimeframeFeatureGenerator:
         valid_features = self._validate_features(features)
         self.logger.info(f'✅ Generated {len(valid_features)} valid cross-timeframe features')
         return valid_features
+    
+    async def _generate_features_with_pipeline(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, pd.Series]:
+        """Generate features using the comprehensive cross timeframe analysis pipeline."""
+        try:
+            # Create a temporary data directory structure for the pipeline
+            import tempfile
+            import os
+            from pathlib import Path
+            
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save data to temporary parquet file
+                temp_file = Path(temp_dir) / "temp_data.parquet"
+                
+                # Combine price and volume data
+                combined_data = price_data.copy()
+                if volume_data is not None:
+                    combined_data['volume'] = volume_data['volume'] if 'volume' in volume_data.columns else volume_data.iloc[:, 0]
+                else:
+                    # Create mock volume data if not provided
+                    combined_data['volume'] = 1000.0
+                
+                # Add timestamp if not present
+                if 'timestamp' not in combined_data.columns:
+                    combined_data['timestamp'] = pd.date_range(start='2023-01-01', periods=len(combined_data), freq='1T')
+                
+                # Save to parquet
+                combined_data.to_parquet(temp_file)
+                
+                # Run the cross timeframe analysis pipeline
+                result = await self.cross_timeframe_pipeline.analyze_cross_timeframes(
+                    data_dir=temp_dir,
+                    symbol="TEMP",
+                    exchange="temp",
+                    timeframes=['1m', '5m', '15m', '30m']
+                )
+                
+                # Convert the cross timeframe features to the expected format
+                features = {}
+                if hasattr(result, 'cross_timeframe_features') and not result.cross_timeframe_features.empty:
+                    for col in result.cross_timeframe_features.columns:
+                        features[col] = result.cross_timeframe_features[col]
+                
+                # Add interaction metrics as features
+                if hasattr(result, 'interaction_metrics'):
+                    for key, value in result.interaction_metrics.items():
+                        if isinstance(value, (int, float)):
+                            features[f'interaction_{key}'] = pd.Series([value] * len(price_data), index=price_data.index)
+                
+                # Add timeframe correlations as features
+                if hasattr(result, 'timeframe_correlations'):
+                    for metric, corr_matrix in result.timeframe_correlations.items():
+                        if isinstance(corr_matrix, pd.DataFrame):
+                            # Extract average correlation as a feature
+                            avg_corr = corr_matrix.values.mean()
+                            features[f'timeframe_corr_{metric}'] = pd.Series([avg_corr] * len(price_data), index=price_data.index)
+                
+                self.logger.info(f'✅ Generated {len(features)} features using comprehensive pipeline')
+                return features
+                
+        except Exception as e:
+            self.logger.error(f"❌ Pipeline-based feature generation failed: {e}")
+            raise
+    
     @log_all_calls
 
     def _validate_input_data(self, price_data: pd.DataFrame) -> bool:

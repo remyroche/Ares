@@ -553,6 +553,7 @@ class ComprehensiveTrainingPipeline:
             
         except Exception as e:
             self.logger.exception(f"Pipeline execution error: {e}")
+            # Error handling and recovery mechanisms
             raise
     
     def get_pipeline_summary(self) -> Dict[str, Any]:

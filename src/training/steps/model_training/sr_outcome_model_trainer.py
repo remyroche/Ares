@@ -14,6 +14,10 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
 from ..enhanced_monitoring_system import monitor_critical_process
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.intensity_scaler import (
+    get_intensity_from_environment, get_scaled_hpo_trials, 
+    get_scaled_hpo_timeout, log_intensity_info, apply_intensity_scaling
+)
 
 'S/R Outcome Model Trainer."\n\nTrains ML models to predict S/R outcomes (breakout/rebounce/consolidation)\nusing LightGBM + XGBoost ensemble with comprehensive feature engineering and time-series validation.\n'
 import json
@@ -48,6 +52,12 @@ class SROutcomeModelTrainer:
         self.training_config = self.model_config.get('training', {})
         self.validation_months = self.training_config.get('validation_months', 1)
         self.training_months = self.training_config.get('training_months', 3)
+        
+        # Apply intensity scaling to training config
+        intensity_pct = get_intensity_from_environment()
+        if intensity_pct < 1.0:
+            self.training_config = apply_intensity_scaling(self.training_config, intensity_pct)
+            self.logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%) to SR outcome training config")
         self.min_samples_per_class = self.training_config.get('min_samples_per_class', 1000)
         self.ensemble_config = self.model_config.get('ensemble', {})
         self.use_ensemble = self.ensemble_config.get('use_ensemble', True)
@@ -447,6 +457,9 @@ class SROutcomeModelTrainer:
                     scores.append(score)
                 return float(np.mean(scores))
             sr_lightgbm_trials = getattr(self, 'training_input', {}).get('sr_lightgbm_trials', 30)
+            # Apply intensity scaling to trials
+            intensity_pct = get_intensity_from_environment()
+            sr_lightgbm_trials = get_scaled_hpo_trials(sr_lightgbm_trials, intensity_pct)
             study = optuna.create_study(direction='maximize')
             study.optimize(objective, n_trials = sr_lightgbm_trials)
             best_params = study.best_params
@@ -478,6 +491,9 @@ class SROutcomeModelTrainer:
                     scores.append(score)
                 return float(np.mean(scores))
             sr_xgboost_trials = getattr(self, 'training_input', {}).get('sr_xgboost_trials', 30)
+            # Apply intensity scaling to trials
+            intensity_pct = get_intensity_from_environment()
+            sr_xgboost_trials = get_scaled_hpo_trials(sr_xgboost_trials, intensity_pct)
             study = optuna.create_study(direction='maximize')
             study.optimize(objective, n_trials = sr_xgboost_trials)
             best_params = study.best_params

@@ -129,13 +129,7 @@ from src.utils.math_validation import (
 from src.utils.parquet_utils import get_parquet_utils
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-# Import dependency injection for step04 utilities
-from ..model_training.step04_dependency_injection import (
-    get_step04_utilities, get_step04_container, create_step04_config,
-    get_common_ops, get_common_utils, get_math_validation, get_parquet_utils,
-    get_serialization_utils, get_data_processing_utils, get_m1_gpu_utils,
-    get_m1_memory_optimizer, get_m1_cpu_optimizer
-)
+# Note: Legacy dependency injection removed - now using unified import manager
 
 # M1 Hardware Optimizations
 try:
@@ -172,65 +166,9 @@ try:
 except ImportError:
     FINANCIAL_LOGGING_AVAILABLE = False
 
-def create_fallback_logger() -> Any:
-    logging.basicConfig(level = logging.INFO)
-    return logging.getLogger(__name__)
+# Note: Legacy fallback decorators removed - now using unified error handling
 
-def create_fallback_decorator() -> Any:
-
-    def decorator(*decorator_args, **decorator_kwargs) -> Callable:
-        def wrapper(func: Callable) -> Callable:
-            def inner_wrapper(*args, **kwargs) -> None:
-                return func(*args, **kwargs)
-            return inner_wrapper
-        return wrapper
-    return decorator
-
-def create_fallback_validates():
-    def decorator(*decorator_args, **decorator_kwargs):
-        def wrapper(func: Callable) -> Callable:
-            def inner_wrapper(*args, **kwargs) -> None:
-                return func(*args, **kwargs)
-            return inner_wrapper
-        return wrapper
-    return decorator
-
-if system_logger is None:
-    system_logger = create_fallback_logger()
-
-# Set fallback decorators
-comprehensive_data_validation = create_fallback_validates()
-handle_errors = handles_errors
-memory_efficient = create_fallback_decorator()
-resource_monitor = create_fallback_decorator()
-secure_data_processing = handles_errors
-validate_data_structure = create_fallback_validates()
-with_tracing_span = create_fallback_decorator()
-quality_gate = create_fallback_validates()
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
-    log_step_report = lambda *args, **kwargs: 'fallback_report'
-    create_detailed_step_report = lambda *args, **kwargs: {}
-    log_step_metrics = lambda *args, **kwargs: None
-    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: 'fallback_dataframe'
-    log_step_artifact_with_standardized_name = lambda *args, **kwargs: 'fallback_artifact'
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
-    log_step_report = enhanced_mlflow.log_step_report
-    create_detailed_step_report = enhanced_mlflow.create_detailed_step_report
-    log_step_metrics = enhanced_mlflow.log_step_metrics
-    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
-    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
-
-# Ensure all decorators have fallbacks
-if 'traced' not in globals():
-    traced = create_fallback_decorator()
-if 'validates' not in globals():
-    validates = create_fallback_validates()
-if 'cached' not in globals():
-    cached = create_fallback_decorator()
-if 'log_execution_time' not in globals():
-    log_execution_time = create_fallback_decorator()
+# Note: Legacy decorator fallbacks removed - now using unified error handling
 logger = system_logger.getChild('Step4RegimeDataSplitting')
 _function_call_stack = threading.local()
 _function_call_history = []
@@ -648,14 +586,11 @@ class RegimeDataSplittingStep:
             enable_m1_memory_optimizer=True,
             enable_m1_cpu_optimizer=True
         )
-        self.container = get_step04_container(self.utility_config)
-        self.utils = get_step04_utilities()
+        # Note: Legacy dependency injection removed - now using unified import manager
+        self.utils = None
 
-        # Get logger from utilities
-        try:
-            self.logger = self.utils.get_function('common_operations', 'get_logger')('RegimeDataSplittingStep')
-        except Exception:
-            self.logger = system_logger.getChild('RegimeDataSplittingStep')
+        # Initialize logger
+        self.logger = system_logger.getChild('RegimeDataSplittingStep')
 
         self.standards = pipeline_standards
         self.start_time = None

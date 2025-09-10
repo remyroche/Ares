@@ -1,5 +1,12 @@
 from . import errors
-import pandas as pd
+
+# Optional imports
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 # handles_errors is imported from .errors below
 

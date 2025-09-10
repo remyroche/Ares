@@ -9,7 +9,13 @@ from typing import Any, Callable
 from ..errors.base import ServiceUnavailableError
 from ..errors.base import TimeoutError as AppTimeoutError
 from .compose import P, R, uniform_wrapper
-import numpy as np
+# Optional imports
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
 
 class CircuitState(Enum):
     """Circuit breaker states."""

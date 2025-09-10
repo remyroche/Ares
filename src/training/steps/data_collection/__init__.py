@@ -15,35 +15,41 @@ except ImportError:
     FEATURE_ENGINEERING_STEP_AVAILABLE = False
 
 # Import comprehensive monitoring modules
-from .step01_enhanced_with_monitoring import (
-    EnhancedDataCollectionStepWithMonitoring,
-    run_enhanced_step01_with_monitoring
-)
+try:
+    from .step01_enhanced_with_monitoring import (
+        EnhancedDataCollectionStepWithMonitoring,
+        run_enhanced_step01_with_monitoring
+    )
+    ENHANCED_MONITORING_AVAILABLE = True
+except ImportError:
+    ENHANCED_MONITORING_AVAILABLE = False
 
-from .step01_comprehensive_monitoring import (
-    Step01ComprehensiveMonitoring,
-    run_comprehensive_step01
-)
+try:
+    from .step01_comprehensive_monitoring import (
+        Step01ComprehensiveMonitoring,
+        run_comprehensive_step01
+    )
+    COMPREHENSIVE_MONITORING_AVAILABLE = True
+except ImportError:
+    COMPREHENSIVE_MONITORING_AVAILABLE = False
 
-__all__ = [
-    # Original modules
-    'DataCollectionStep',
-    'DataCollectionValidator',
-    'DataConverterValidator',
-    'DataReadingStep',
-    'DataReadingValidator',
-    'SROptimizationValidator',
-    'UnifiedDataLoader',
-    'RawDataQualityChecker',
-    'RefactoredDataQualityChecker',
-    'IntegratedDataQualityPipeline',
-    'run_data_collection_pipeline',
-    
-    # Enhanced monitoring modules
-    'EnhancedDataCollectionStepWithMonitoring',
-    'run_enhanced_step01_with_monitoring',
-    
-    # Comprehensive monitoring modules
-    'Step01ComprehensiveMonitoring',
-    'run_comprehensive_step01'
-]
+# Build __all__ list dynamically based on available modules
+__all__ = []
+
+# Add feature engineering if available
+if FEATURE_ENGINEERING_STEP_AVAILABLE:
+    __all__.extend(['FeatureEngineeringStep'])
+
+# Add enhanced monitoring if available
+if ENHANCED_MONITORING_AVAILABLE:
+    __all__.extend([
+        'EnhancedDataCollectionStepWithMonitoring',
+        'run_enhanced_step01_with_monitoring'
+    ])
+
+# Add comprehensive monitoring if available
+if COMPREHENSIVE_MONITORING_AVAILABLE:
+    __all__.extend([
+        'Step01ComprehensiveMonitoring',
+        'run_comprehensive_step01'
+    ])

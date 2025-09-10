@@ -384,17 +384,153 @@ class FeatureOutputValidator:
         return None
 
     def _validate_output_structure(self, features_df: pd.DataFrame, results: dict[str, Any]) -> bool:
-        """Validate basic output structure."""
+        """Validate comprehensive output structure including data types and row checks."""
         self.logger.info('Validating output structure...')
+        
+        # Basic structure checks
+        if features_df.empty:
+            results['critical_issues'].append('Feature DataFrame is empty')
+            return False
+        
+        if len(features_df.columns) == 0:
+            results['critical_issues'].append('Feature DataFrame has no columns')
+            return False
+        
+        # Feature count validation
         min_features = self.config['critical_thresholds']['min_feature_count']
         max_features = self.config['critical_thresholds']['max_feature_count']
         if len(features_df.columns) < min_features:
             results['warnings'].append(f'Insufficient features generated: {len(features_df.columns)} (minimum: {min_features})')
         if len(features_df.columns) > max_features:
             results['warnings'].append(f'Large number of features: {len(features_df.columns)} (maximum: {max_features})')
+        
+        # Check for completely empty rows
+        empty_rows = features_df.isnull().all(axis=1).sum()
+        if empty_rows > 0:
+            results['warnings'].append(f'Found {empty_rows} completely empty rows in features')
+            results['feature_statistics']['empty_rows_count'] = empty_rows
+        
+        # Check for duplicate feature names
+        duplicate_features = features_df.columns[features_df.columns.duplicated()].tolist()
+        if duplicate_features:
+            results['critical_issues'].append(f'Duplicate feature names found: {duplicate_features}')
+        
+        # Check for completely empty features
         empty_features = features_df.columns[features_df.isnull().all()].tolist()
         if empty_features:
             results['warnings'].append(f'Empty features detected: {empty_features}')
+        
+        # Comprehensive data type validation
+        dtype_issues = []
+        dtype_warnings = []
+        
+        # Analyze each feature's data type
+        for col in features_df.columns:
+            col_series = features_df[col]
+            col_dtype = str(col_series.dtype)
+            
+            # Check for object dtype (potential mixed types)
+            if col_dtype == 'object':
+                # Check if it's actually numeric data stored as object
+                try:
+                    numeric_conversion = pd.to_numeric(col_series, errors='coerce')
+                    non_numeric_count = numeric_conversion.isnull().sum() - col_series.isnull().sum()
+                    if non_numeric_count > 0:
+                        dtype_warnings.append(f"Feature '{col}' (object) contains {non_numeric_count} non-numeric values")
+                    else:
+                        dtype_warnings.append(f"Feature '{col}' is numeric data stored as object - consider converting to numeric")
+                except Exception:
+                    dtype_warnings.append(f"Feature '{col}' (object) may contain mixed data types")
+            
+            # Check for datetime columns (unusual for features)
+            elif 'datetime' in col_dtype:
+                dtype_warnings.append(f"Feature '{col}' is datetime type - consider if this is appropriate for ML features")
+            
+            # Check for numeric columns
+            elif pd.api.types.is_numeric_dtype(col_series):
+                # Check for infinite values
+                if col_series.dtype in ['float64', 'float32']:
+                    inf_count = np.isinf(col_series).sum()
+                    if inf_count > 0:
+                        dtype_issues.append(f"Feature '{col}' contains {inf_count} infinite values")
+                
+                # Check for negative values in features that shouldn't have them
+                if any(keyword in col.lower() for keyword in ['price', 'volume', 'amount', 'size', 'count', 'length', 'distance']):
+                    negative_count = (col_series < 0).sum()
+                    if negative_count > 0:
+                        dtype_issues.append(f"Feature '{col}' contains {negative_count} negative values")
+            
+            # Check for boolean columns
+            elif col_dtype == 'bool':
+                # Check for mixed boolean types
+                unique_values = col_series.dropna().unique()
+                if len(unique_values) > 2:
+                    dtype_warnings.append(f"Feature '{col}' (bool) contains more than 2 unique values: {unique_values}")
+        
+        # Check for features with all NaN values
+        all_nan_features = features_df.columns[features_df.isnull().all()].tolist()
+        if all_nan_features:
+            dtype_issues.append(f'Features with all NaN values: {all_nan_features}')
+        
+        # Check for completely constant features
+        constant_features = []
+        for col in features_df.columns:
+            unique_count = features_df[col].nunique(dropna=True)
+            if unique_count <= 1:
+                constant_features.append(col)
+        
+        if constant_features:
+            results['warnings'].append(f'Constant features detected: {constant_features}')
+        
+        # Check for features with very low variance (for numeric features)
+        low_variance_features = []
+        numeric_features = features_df.select_dtypes(include=[np.number]).columns
+        for col in numeric_features:
+            if features_df[col].notna().sum() > 1:  # Need at least 2 non-null values
+                variance = features_df[col].var()
+                if variance < 1e-10:  # Very low variance threshold
+                    low_variance_features.append(col)
+        
+        if low_variance_features:
+            dtype_warnings.append(f'Features with very low variance: {low_variance_features}')
+        
+        # Check for potential data type inconsistencies
+        inconsistent_dtype_features = []
+        for col in features_df.columns:
+            if features_df[col].dtype == 'object':
+                # Check if all non-null values can be converted to the same type
+                non_null_values = features_df[col].dropna()
+                if len(non_null_values) > 0:
+                    # Try to infer consistent type
+                    try:
+                        # Try numeric conversion
+                        pd.to_numeric(non_null_values, errors='raise')
+                        inconsistent_dtype_features.append(f"{col} (should be numeric)")
+                    except (ValueError, TypeError):
+                        try:
+                            # Try datetime conversion
+                            pd.to_datetime(non_null_values, errors='raise')
+                            inconsistent_dtype_features.append(f"{col} (should be datetime)")
+                        except (ValueError, TypeError):
+                            # Check if it's boolean-like
+                            unique_vals = set(str(v).lower() for v in non_null_values.unique())
+                            if unique_vals.issubset({'true', 'false', '1', '0', 'yes', 'no'}):
+                                inconsistent_dtype_features.append(f"{col} (should be boolean)")
+        
+        if inconsistent_dtype_features:
+            dtype_warnings.append(f'Features with inconsistent data types: {inconsistent_dtype_features}')
+        
+        # Check for features with very few unique values (potential categorical)
+        categorical_candidates = []
+        for col in features_df.columns:
+            unique_count = features_df[col].nunique(dropna=True)
+            if 1 < unique_count < 20:  # Between 2 and 19 unique values
+                categorical_candidates.append(col)
+        
+        if categorical_candidates:
+            dtype_warnings.append(f'Features that might benefit from categorical dtype: {categorical_candidates}')
+        
+        # Feature name validation
         if self.config['validation_checks']['check_feature_names']:
             invalid_names: list[str] = []
             for col in features_df.columns:
@@ -402,10 +538,32 @@ class FeatureOutputValidator:
                     invalid_names.append(str(col))
             if invalid_names:
                 results['warnings'].append(f'Invalid feature names detected: {invalid_names}')
-        results['feature_statistics']['total_features'] = len(features_df.columns)
-        results['feature_statistics']['total_rows'] = len(features_df)
-        results['feature_statistics']['feature_names'] = list(features_df.columns)
-        return True
+        
+        # Compile results
+        results['critical_issues'].extend(dtype_issues)
+        results['warnings'].extend(dtype_warnings)
+        
+        # Update feature statistics
+        results['feature_statistics'].update({
+            'total_features': len(features_df.columns),
+            'total_rows': len(features_df),
+            'feature_names': list(features_df.columns),
+            'constant_features': constant_features,
+            'low_variance_features': low_variance_features,
+            'categorical_candidates': categorical_candidates,
+            'dtype_analysis': {
+                'total_features': len(features_df.columns),
+                'numeric_features': len(numeric_features),
+                'object_features': len(features_df.select_dtypes(include=['object']).columns),
+                'datetime_features': len(features_df.select_dtypes(include=['datetime']).columns),
+                'boolean_features': len(features_df.select_dtypes(include=['bool']).columns),
+                'constant_features': constant_features,
+                'low_variance_features': low_variance_features,
+                'inconsistent_dtype_features': inconsistent_dtype_features
+            }
+        })
+        
+        return len(results['critical_issues']) == 0
 
     def _validate_data_types(self, features_df: pd.DataFrame, results: dict[str, Any]) -> bool:
         """Validate data types of features."""

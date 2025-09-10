@@ -163,7 +163,7 @@ class EnhancedDataQualityValidator:
             )
 
     def _validate_dataframe_structure(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Validate dataframe structure with memory optimization."""
+        """Validate dataframe structure with comprehensive data type and row checks."""
         result = {'issues': [], 'warnings': [], 'metrics': {}}
         
         # Basic structure checks
@@ -191,13 +191,144 @@ class EnhancedDataQualityValidator:
         if empty_cols:
             result['warnings'].append(f'Completely empty columns: {empty_cols}')
         
+        # Check for completely empty rows
+        empty_rows = df.isnull().all(axis=1).sum()
+        if empty_rows > 0:
+            result['warnings'].append(f'Found {empty_rows} completely empty rows')
+            result['metrics']['empty_rows_count'] = empty_rows
+        
+        # Comprehensive data type validation
+        dtype_issues = []
+        dtype_warnings = []
+        dtype_metrics = {}
+        
+        # Analyze each column's data type
+        for col in df.columns:
+            col_series = df[col]
+            col_dtype = str(col_series.dtype)
+            
+            # Check for object dtype (potential mixed types)
+            if col_dtype == 'object':
+                # Check if it's actually numeric data stored as object
+                try:
+                    numeric_conversion = pd.to_numeric(col_series, errors='coerce')
+                    non_numeric_count = numeric_conversion.isnull().sum() - col_series.isnull().sum()
+                    if non_numeric_count > 0:
+                        dtype_warnings.append(f"Column '{col}' (object) contains {non_numeric_count} non-numeric values")
+                    else:
+                        dtype_warnings.append(f"Column '{col}' is numeric data stored as object - consider converting to numeric")
+                except Exception:
+                    dtype_warnings.append(f"Column '{col}' (object) may contain mixed data types")
+            
+            # Check for datetime columns
+            elif 'datetime' in col_dtype:
+                # Validate datetime format consistency
+                try:
+                    if col_series.notna().any():
+                        # Check for invalid datetime values
+                        invalid_dates = col_series.isnull().sum() - col_series.isna().sum()
+                        if invalid_dates > 0:
+                            dtype_issues.append(f"Column '{col}' contains {invalid_dates} invalid datetime values")
+                except Exception:
+                    dtype_warnings.append(f"Column '{col}' datetime validation failed")
+            
+            # Check for numeric columns
+            elif pd.api.types.is_numeric_dtype(col_series):
+                # Check for infinite values
+                if col_series.dtype in ['float64', 'float32']:
+                    inf_count = np.isinf(col_series).sum()
+                    if inf_count > 0:
+                        dtype_issues.append(f"Column '{col}' contains {inf_count} infinite values")
+                
+                # Check for negative values in columns that shouldn't have them
+                if any(keyword in col.lower() for keyword in ['price', 'volume', 'amount', 'size', 'count']):
+                    negative_count = (col_series < 0).sum()
+                    if negative_count > 0:
+                        dtype_issues.append(f"Column '{col}' contains {negative_count} negative values")
+            
+            # Check for boolean columns
+            elif col_dtype == 'bool':
+                # Check for mixed boolean types
+                unique_values = col_series.dropna().unique()
+                if len(unique_values) > 2:
+                    dtype_warnings.append(f"Column '{col}' (bool) contains more than 2 unique values: {unique_values}")
+        
+        # Check for columns with all NaN values
+        all_nan_cols = df.columns[df.isnull().all()].tolist()
+        if all_nan_cols:
+            dtype_issues.append(f'Columns with all NaN values: {all_nan_cols}')
+        
+        # Check for columns with only one unique value (excluding NaN)
+        constant_cols = []
+        for col in df.columns:
+            unique_count = df[col].nunique(dropna=True)
+            if unique_count <= 1:
+                constant_cols.append(col)
+        
+        if constant_cols:
+            dtype_warnings.append(f'Columns with constant values: {constant_cols}')
+        
+        # Check for columns with very low variance (for numeric columns)
+        low_variance_cols = []
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            if df[col].notna().sum() > 1:  # Need at least 2 non-null values
+                variance = df[col].var()
+                if variance < 1e-10:  # Very low variance threshold
+                    low_variance_cols.append(col)
+        
+        if low_variance_cols:
+            dtype_warnings.append(f'Columns with very low variance: {low_variance_cols}')
+        
+        # Check for potential data type inconsistencies
+        inconsistent_dtype_cols = []
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                # Check if all non-null values can be converted to the same type
+                non_null_values = df[col].dropna()
+                if len(non_null_values) > 0:
+                    # Try to infer consistent type
+                    try:
+                        # Try numeric conversion
+                        pd.to_numeric(non_null_values, errors='raise')
+                        inconsistent_dtype_cols.append(f"{col} (should be numeric)")
+                    except (ValueError, TypeError):
+                        try:
+                            # Try datetime conversion
+                            pd.to_datetime(non_null_values, errors='raise')
+                            inconsistent_dtype_cols.append(f"{col} (should be datetime)")
+                        except (ValueError, TypeError):
+                            # Check if it's boolean-like
+                            unique_vals = set(str(v).lower() for v in non_null_values.unique())
+                            if unique_vals.issubset({'true', 'false', '1', '0', 'yes', 'no'}):
+                                inconsistent_dtype_cols.append(f"{col} (should be boolean)")
+        
+        if inconsistent_dtype_cols:
+            dtype_warnings.append(f'Columns with inconsistent data types: {inconsistent_dtype_cols}')
+        
+        # Compile results
+        result['issues'].extend(dtype_issues)
+        result['warnings'].extend(dtype_warnings)
+        result['metrics'].update({
+            'dtype_analysis': {
+                'total_columns': len(df.columns),
+                'numeric_columns': len(numeric_cols),
+                'object_columns': len(df.select_dtypes(include=['object']).columns),
+                'datetime_columns': len(df.select_dtypes(include=['datetime']).columns),
+                'boolean_columns': len(df.select_dtypes(include=['bool']).columns),
+                'constant_columns': constant_cols,
+                'low_variance_columns': low_variance_cols,
+                'inconsistent_dtype_columns': inconsistent_dtype_cols
+            }
+        })
+        
         return result
 
     def _validate_data_types(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Validate data types with CPU optimization."""
+        """Validate data types with CPU optimization - focused on null value analysis."""
         result = {'issues': [], 'warnings': [], 'metrics': {}}
         
-        # Parallel data type analysis
+        # Parallel data type analysis focused on null values and basic type info
         def analyze_column_dtype(col):
             return {
                 'name': col.name,
@@ -205,7 +336,9 @@ class EnhancedDataQualityValidator:
                 'is_numeric': pd.api.types.is_numeric_dtype(col),
                 'is_datetime': pd.api.types.is_datetime64_any_dtype(col),
                 'null_count': col.isnull().sum(),
-                'null_ratio': col.isnull().sum() / len(col)
+                'null_ratio': col.isnull().sum() / len(col),
+                'unique_count': col.nunique(dropna=True),
+                'memory_usage': col.memory_usage(deep=True)
             }
         
         # Use CPU optimizer for parallel processing
@@ -213,25 +346,41 @@ class EnhancedDataQualityValidator:
             list(df.columns), analyze_column_dtype
         )
         
-        result['metrics']['dtype_analysis'] = dtype_analysis
+        result['metrics']['detailed_dtype_analysis'] = dtype_analysis
         
-        # Check for mixed data types
-        mixed_dtype_cols = []
+        # Check for high null ratios
+        high_null_cols = []
         for analysis in dtype_analysis:
             if analysis['null_ratio'] > self.thresholds['max_nan_ratio']:
                 result['warnings'].append(f"Column '{analysis['name']}' has {analysis['null_ratio']:.1%} null values")
-            
-            # Check for potential mixed types
-            if not analysis['is_numeric'] and not analysis['is_datetime']:
-                # Check if numeric values exist in non-numeric columns
-                try:
-                    pd.to_numeric(df[analysis['name']], errors='raise')
-                    mixed_dtype_cols.append(analysis['name'])
-                except (ValueError, TypeError):
-                    pass
+                high_null_cols.append(analysis['name'])
         
-        if mixed_dtype_cols:
-            result['warnings'].append(f'Columns with mixed data types: {mixed_dtype_cols}')
+        # Check for memory usage optimization opportunities
+        memory_optimization_warnings = []
+        for analysis in dtype_analysis:
+            col_name = analysis['name']
+            col_dtype = analysis['dtype']
+            memory_usage = analysis['memory_usage']
+            
+            # Check for potential memory optimization
+            if col_dtype == 'object' and analysis['is_numeric']:
+                memory_optimization_warnings.append(f"Column '{col_name}' could be converted to numeric to save memory")
+            elif col_dtype == 'float64' and analysis['unique_count'] < 1000:
+                memory_optimization_warnings.append(f"Column '{col_name}' could use float32 to save memory")
+            elif col_dtype == 'int64' and analysis['unique_count'] < 2**31:
+                memory_optimization_warnings.append(f"Column '{col_name}' could use int32 to save memory")
+        
+        if memory_optimization_warnings:
+            result['warnings'].extend(memory_optimization_warnings)
+        
+        # Check for columns with very few unique values (potential categorical)
+        categorical_candidates = []
+        for analysis in dtype_analysis:
+            if analysis['unique_count'] < 20 and analysis['unique_count'] > 1:
+                categorical_candidates.append(analysis['name'])
+        
+        if categorical_candidates:
+            result['warnings'].append(f'Columns that might benefit from categorical dtype: {categorical_candidates}')
         
         return result
 

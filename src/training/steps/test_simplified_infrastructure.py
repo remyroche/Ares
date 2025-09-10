@@ -365,8 +365,10 @@ class SimplifiedInfrastructureTestSuite:
             test_data['target'] = y
             
             # Mock trained model
-            from sklearn.ensemble import RandomForestClassifier
-            model = RandomForestClassifier(n_estimators=10, random_state=42)
+            # Use ml_common utilities instead of direct sklearn imports
+            from src.utils.ml_common.model_training import EnhancedModelTrainer
+            model_trainer = EnhancedModelTrainer({'model_type': 'random_forest'})
+            model = model_trainer.create_model({'n_estimators': 10, 'random_state': 42})
             model.fit(X, y)
             
             # Test model evaluation

@@ -28,11 +28,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import psutil
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
-from sklearn.metrics import accuracy_score, log_loss
-from sklearn.model_selection import KFold
-from sklearn.preprocessing import StandardScaler
+# Use ml_common utilities instead of direct sklearn imports
+from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
+from src.utils.ml_common.feature_selection import FeatureSelectionFramework
+from src.utils.ml_common.model_training import EnhancedModelTrainer
+from src.utils.ml_common.data_quality import DataQualityUtilities
 
 # Import existing utilities
 from src.utils.comprehensive_function_logger import (
@@ -653,7 +653,10 @@ class VectorizedPreprocessor:
         if cache_key in self.scaler_cache:
             scaler = self.scaler_cache[cache_key]
         else:
-            scaler = StandardScaler()
+            # Use ml_common data quality utilities for scaling
+            from src.utils.ml_common.data_quality import DataQualityUtilities
+            data_quality = DataQualityUtilities()
+            scaler = data_quality.get_standard_scaler()
             self.scaler_cache[cache_key] = scaler
         
         # Fit and transform

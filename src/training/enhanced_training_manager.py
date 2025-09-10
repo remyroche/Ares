@@ -1399,24 +1399,23 @@ class TrainingManager:
                     self._heartbeat('Step 6_5: Unified Regime Intelligence')
                     step_start_6_5 = time.time()
                     try:
-                        from .steps.model_training.step12_analyst_enhancement_per_regime import RegimeAwareAnalystEnhancementStep
+                        # Use simplified analyst training instead
+                        from .steps.model_training.simplified import AnalystModelTrainer
                         from .steps import step8_tactician_labeling
                         from .steps.model_training.step15_tactician_specialist_training_per_regime import RegimeAwareTacticianSpecialistTrainingStep
-                        from .steps.optimisation.step16_confidence_calibration_per_regime import RegimeAwareConfidenceCalibrationStep
+                        # Use ML commons confidence calibration instead
+                        from src.utils.ml_common.confidence_metrics import ModelConfidenceCalibration
                         from ..analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
                         import pandas as _pd
-                        from .steps import step12_walk_forward_validation
-                        from .steps import step13_monte_carlo_validation
-                        from .steps import step14_ab_testing
-                        from .steps import step15_saving
-                        from .steps import step16_confidence_calibration
-                        from .steps import step17_final_parameters_optimization
+                        # Use consolidated backtesting step instead of individual steps
+                        from .steps.backtesting import ConsolidatedBacktestingStep
                         # Use consolidated backtesting step instead of individual steps
                         from .steps.backtesting import ConsolidatedBacktestingStep
                         from .steps import step2_feature_engineering
                         from pathlib import Path
                         import glob
-                        from .steps.model_training.step10_unified_regime_intelligence import run_step as step6_5_run_step
+                        # Use simplified model training instead
+                        from .steps.model_training.simplified import GeneralModelTrainer
                         step6_5_success = await step6_5_run_step(symbol = symbol, exchange = exchange, data_dir = data_dir, timeframe = timeframe, lookback_days = self.lookback_days)
                     except Exception as e:
                         self.logger.exception(f'❌ Error in Step 6_5: {e}')
@@ -1585,7 +1584,8 @@ class TrainingManager:
                     return False
 
                 async def _execute_step12() -> None:
-                    from .steps import step12_walk_forward_validation
+                    # Use consolidated backtesting step instead
+                    from .steps.backtesting import ConsolidatedBacktestingStep
                     return await step12_walk_forward_validation.run_step(symbol = symbol, data_dir = data_dir, timeframe = timeframe, exchange = exchange)
                 step12_success = await self._execute_pipeline_step_with_validation(step_name='step12_walk_forward_validation', step_key='step12_walk_forward_validation', step_description='Step 12: Walk Forward Validation', step_function = _execute_step12, step_args={}, pipeline_state = pipeline_state, training_input = training_input, step_times = step_times, start_step_key = start_step_key, _should_run = _should_run, is_fatal = True)
                 if not step12_success:

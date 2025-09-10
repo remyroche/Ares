@@ -33,9 +33,9 @@ def main():
         'from src.training.steps.step05_labeling import LabelingStep': 'from src.training.steps.simplified_step5_labeling import step5_labeling',
         'from src.training.steps.feature_engineering.step06_advanced_features import AdvancedFeatureEngineeringStep': 'from src.training.steps.unified_feature_engineering import comprehensive_feature_engineering',
         'from src.training.steps.model_training.step09_hmm_based_training import HMMBasedTraining': 'from src.training.steps.unified_model_training import comprehensive_model_training',
-        'from src.training.steps.model_training.step11_analyst_creation import AnalystCreationStep': 'from src.training.steps.unified_model_training import comprehensive_model_training',
-        'from src.training.steps.model_training.step12_analyst_enhancement import AnalystEnhancement': 'from src.training.steps.unified_model_training import comprehensive_model_training',
-        'from src.training.steps.model_training.step15_tactician_specialist_training import TacticianSpecialistTraining': 'from src.training.steps.unified_model_training import comprehensive_model_training',
+        'from src.training.steps.model_training.step11_analyst_creation import AnalystCreationStep': 'from src.training.steps.consolidated_analyst_tactician_training import ConsolidatedAnalystEnhancement',
+        'from src.training.steps.model_training.step12_analyst_enhancement import AnalystEnhancement': 'from src.training.steps.consolidated_analyst_tactician_training import ConsolidatedAnalystEnhancement',
+        'from src.training.steps.model_training.step15_tactician_specialist_training import TacticianSpecialistTraining': 'from src.training.steps.consolidated_analyst_tactician_training import ConsolidatedTacticianSpecialistTraining',
     }
     
     # Files to be deleted after successful transition

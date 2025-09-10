@@ -255,78 +255,12 @@ class ConsolidatedHMMBasedTraining:
             raise
 
 
-class ConsolidatedAnalystEnhancement:
-    """
-    Consolidated Analyst Enhancement.
-    
-    This replaces:
-    - src/training/steps/model_training/step12_analyst_enhancement.py (2,703 lines)
-    - src/training/steps/model_training/step12_analyst_enhancement_per_regime.py
-    - src/training/steps/model_training/step12_analyst_enhancement_optimized.py
-    """
-    
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize consolidated analyst enhancement."""
-        self.config = validate_and_fix_config(config, 'model_training')
-        self.logger = logger.getChild('ConsolidatedAnalystEnhancement')
-        
-        # Initialize unified model training manager
-        self.training_manager = UnifiedModelTrainingManager(self.config)
-        
-        self.logger.info("🚀 Consolidated Analyst Enhancement initialized")
-    
-    async def execute(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, Any]:
-        """Execute analyst enhancement training."""
-        try:
-            self.logger.info("🤖 Executing consolidated analyst enhancement...")
-            
-            # Train comprehensive model
-            result = await self.training_manager.train_model(features, targets, 'comprehensive', 'analyst_enhancement_model')
-            
-            self.logger.info(f"✅ Analyst enhancement completed: {result['training_metadata']['model_name']}")
-            
-            return result
-            
-        except Exception as e:
-            self.logger.exception(f"Analyst enhancement error: {e}")
-            raise
-
-
-class ConsolidatedTacticianSpecialistTraining:
-    """
-    Consolidated Tactician Specialist Training.
-    
-    This replaces:
-    - src/training/steps/model_training/step15_tactician_specialist_training.py (1,667 lines)
-    - src/training/steps/model_training/step15_tactician_specialist_training_per_regime.py
-    - src/training/steps/model_training/step14_tactician_labeling.py
-    """
-    
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize consolidated tactician specialist training."""
-        self.config = validate_and_fix_config(config, 'model_training')
-        self.logger = logger.getChild('ConsolidatedTacticianSpecialistTraining')
-        
-        # Initialize unified model training manager
-        self.training_manager = UnifiedModelTrainingManager(self.config)
-        
-        self.logger.info("🚀 Consolidated Tactician Specialist Training initialized")
-    
-    async def execute(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, Any]:
-        """Execute tactician specialist training."""
-        try:
-            self.logger.info("🤖 Executing consolidated tactician specialist training...")
-            
-            # Train comprehensive model
-            result = await self.training_manager.train_model(features, targets, 'comprehensive', 'tactician_specialist_model')
-            
-            self.logger.info(f"✅ Tactician specialist training completed: {result['training_metadata']['model_name']}")
-            
-            return result
-            
-        except Exception as e:
-            self.logger.exception(f"Tactician specialist training error: {e}")
-            raise
+# Import consolidated analyst and tactician training from separate module
+from .consolidated_analyst_tactician_training import (
+    ConsolidatedAnalystEnhancement,
+    ConsolidatedTacticianSpecialistTraining,
+    MultiOutputModelTrainer
+)
 
 
 class ConsolidatedUnifiedRegimeIntelligence:

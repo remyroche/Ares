@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-import numpy as np
-
 """
 Base Pipeline Class - Enhanced with Plugin Architecture and Standardized Initialization
 
@@ -18,11 +16,34 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Union
 
-# Import plugin system
-from plugins import (
-    PluginManager, PluginRegistry, PluginContext, PluginResult,
-    PluginCategory, PluginPriority, BasePlugin
-)
+# Import plugin system (with fallback)
+try:
+    from plugins import (
+        PluginManager, PluginRegistry, PluginContext, PluginResult,
+        PluginCategory, PluginPriority, BasePlugin
+    )
+    PLUGINS_AVAILABLE = True
+except ImportError:
+    # Create minimal fallback classes if plugins are not available
+    class PluginManager:
+        def __init__(self, *args, **kwargs):
+            pass
+    class PluginRegistry:
+        def __init__(self, *args, **kwargs):
+            pass
+    class PluginContext:
+        def __init__(self, *args, **kwargs):
+            pass
+    class PluginResult:
+        def __init__(self, *args, **kwargs):
+            pass
+    class PluginCategory:
+        pass
+    class PluginPriority:
+        pass
+    class BasePlugin:
+        pass
+    PLUGINS_AVAILABLE = False
 
 
 try:
@@ -207,8 +228,12 @@ class BasePipeline:
 
     def _setup_plugin_system(self) -> None:
         """Standardized plugin system setup."""
-        self.plugin_registry: PluginRegistry = PluginRegistry()
-        self.plugin_manager: PluginManager = PluginManager(self.plugin_registry)
+        if PLUGINS_AVAILABLE:
+            self.plugin_registry: PluginRegistry = PluginRegistry()
+            self.plugin_manager: PluginManager = PluginManager(self.plugin_registry)
+        else:
+            self.plugin_registry = None
+            self.plugin_manager = None
 
     def _setup_metrics(self) -> None:
         """Standardized metrics setup."""

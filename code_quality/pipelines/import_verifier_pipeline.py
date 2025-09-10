@@ -18,8 +18,15 @@ if str(parent_dir) not in sys.path:
 
 from pipelines.base_pipeline import BasePipeline, PipelineConfig
 from analyzers.import_verifier_analyzer import ImportVerifierAnalyzer
-from visualizers.dependency_graph import DependencyGraphVisualizer
-from visualizers.interaction_network import InteractionNetworkVisualizer
+# Import visualizers with fallback
+try:
+    from visualizers.dependency_graph import DependencyGraphVisualizer
+    from visualizers.interaction_network import InteractionNetworkVisualizer
+    VISUALIZERS_AVAILABLE = True
+except ImportError:
+    VISUALIZERS_AVAILABLE = False
+    DependencyGraphVisualizer = None
+    InteractionNetworkVisualizer = None
 
 
 class ImportVerifierPipeline(BasePipeline):
@@ -35,9 +42,13 @@ class ImportVerifierPipeline(BasePipeline):
         # Initialize the analyzer
         self.analyzer = ImportVerifierAnalyzer(self.config.__dict__)
         
-        # Initialize visualizers for enhanced analysis
-        self.dependency_visualizer = DependencyGraphVisualizer(str(self.reports_dir / "dependency_graphs"))
-        self.interaction_visualizer = InteractionNetworkVisualizer(str(self.reports_dir / "interaction_networks"))
+        # Initialize visualizers for enhanced analysis (if available)
+        if VISUALIZERS_AVAILABLE:
+            self.dependency_visualizer = DependencyGraphVisualizer(str(self.reports_dir / "dependency_graphs"))
+            self.interaction_visualizer = InteractionNetworkVisualizer(str(self.reports_dir / "interaction_networks"))
+        else:
+            self.dependency_visualizer = None
+            self.interaction_visualizer = None
         
         self.logger.info(f"Initialized ImportVerifierPipeline for project: {self.project_root}")
     
@@ -75,12 +86,15 @@ class ImportVerifierPipeline(BasePipeline):
                 "analyzer_used": "ImportVerifierAnalyzer"
             }
             
-            # Create enhanced visualizations if requested
+            # Create enhanced visualizations if requested and available
             visualizations = {}
-            if create_visualizations:
+            if create_visualizations and VISUALIZERS_AVAILABLE:
                 self.logger.info("Creating enhanced visualizations...")
                 visualizations = self._create_enhanced_visualizations(results)
                 results["visualizations"] = visualizations
+            elif create_visualizations and not VISUALIZERS_AVAILABLE:
+                self.logger.warning("Visualizations requested but visualizer dependencies not available")
+                results["visualizations"] = {"error": "Visualizer dependencies not available"}
             
             # Print report if requested
             if print_report:
@@ -274,6 +288,9 @@ class ImportVerifierPipeline(BasePipeline):
             Dictionary of created visualizations
         """
         visualizations = {}
+        
+        if not VISUALIZERS_AVAILABLE:
+            return {"error": "Visualizer dependencies not available"}
         
         try:
             # Extract import relationships for dependency graph

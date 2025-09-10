@@ -18,9 +18,9 @@ except ImportError:
     LIME_AVAILABLE = False
     LIMEAnalyzer = None
 
-# Import existing walk-forward validation from step18
+# Import consolidated backtesting step instead of step18
 try:
-    from src.training.steps.backtesting.step18_walk_forward_validation_per_regime import Step18WalkForwardValidationPerRegime
+    from src.training.steps.backtesting import ConsolidatedBacktestingStep
     WALK_FORWARD_AVAILABLE = True
 except ImportError:
     WALK_FORWARD_AVAILABLE = False
@@ -853,7 +853,7 @@ except ImportError:
             }
 
             if not WALK_FORWARD_AVAILABLE or not Step18WalkForwardValidationPerRegime:
-                validation_results['validation_warnings'].append('Walk-forward validation from step18 not available')
+                validation_results['validation_warnings'].append('Walk-forward validation from consolidated backtesting step not available')
                 return validation_results
 
             if not selected_features or 'final' not in selected_features:

@@ -3,6 +3,10 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.intensity_scaler import (
+    get_intensity_from_environment, get_scaled_hpo_trials, 
+    get_scaled_hpo_timeout, log_intensity_info, apply_intensity_scaling
+)
 
 """HMM training components for model training.
 
@@ -34,6 +38,12 @@ class HMMModelTrainer:
         self.config = config
         self.logger = system_logger.getChild('HMMModelTrainer')
         self.model_types = config.get('model_types', ['lightgbm', 'random_forest'])
+        
+        # Apply intensity scaling to config
+        intensity_pct = get_intensity_from_environment()
+        if intensity_pct < 1.0:
+            self.config = apply_intensity_scaling(self.config, intensity_pct)
+            self.logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%) to HMM training config")
 
     async def train_models(self, prepared_data: Dict[str, Any]) -> Dict[str, Any]:
         """Train multiple model types.
@@ -321,6 +331,12 @@ class HyperparameterOptimizer:
         self.logger = system_logger.getChild('HyperparameterOptimizer')
         self.n_trials = config.get('n_trials', 50)
         self.cv_folds = config.get('cv_folds', 5)
+        
+        # Apply intensity scaling
+        intensity_pct = get_intensity_from_environment()
+        if intensity_pct < 1.0:
+            self.n_trials = get_scaled_hpo_trials(self.n_trials, intensity_pct)
+            self.logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%): HPO trials={self.n_trials}")
 
     async def optimize_hyperparameters(self, model_type: str, train_data: Dict[str, Any]) -> Dict[str, Any]:
         """Optimize hyperparameters for a model type.

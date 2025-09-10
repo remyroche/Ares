@@ -17,8 +17,6 @@ from .training.steps.market_analysis.step04_regime_data_splitting import RegimeD
 from .training.steps.step04_regime_data_splitting_validator import run_validator as validate_step4
 from .training.steps.model_training.step05_labeling import LabelingStep
 from .training.steps.step05_labeling_validator import run_validator as validate_step5
-from .training.steps.feature_engineering.step06_feature_engineering import FeatureEngineeringStep
-from .training.steps.step06_feature_engineering_validator import run_validator as validate_step6
 from .training.steps.model_training.step07_enhanced_matrix_operations import EnhancedMatrixOperationsStep
 from .training.steps.step07_enhanced_matrix_operations_validator import run_validator as validate_step7
 from .utils.enhanced_mlflow_integration import log_step_report
@@ -49,8 +47,8 @@ class Steps1To7ComprehensiveExecutor:
         self.execution_timings = {}
         self.data_quality_scores = {}
         self.errors_encountered = []
-        self.steps = {'step01': DataCollectionStep(config), 'step1_5': DataConverterStep(config), 'step02': DataReadingStep(config), 'step03': EnhancedHMMRegimeDiscoveryStep(config), 'step04': RegimeDataSplittingStep(config), 'step05': LabelingStep(config), 'step06': FeatureEngineeringStep(config), 'step07': EnhancedMatrixOperationsStep(config)}
-        self.validators = {'step01': validate_step1, 'step1_5': validate_step1_5, 'step02': validate_step2, 'step03': validate_step3, 'step04': validate_step4, 'step05': validate_step5, 'step06': validate_step6, 'step07': validate_step7}
+        self.steps = {'step01': DataCollectionStep(config), 'step1_5': DataConverterStep(config), 'step02': DataReadingStep(config), 'step03': EnhancedHMMRegimeDiscoveryStep(config), 'step04': RegimeDataSplittingStep(config), 'step05': LabelingStep(config), 'step07': EnhancedMatrixOperationsStep(config)}
+        self.validators = {'step01': validate_step1, 'step1_5': validate_step1_5, 'step02': validate_step2, 'step03': validate_step3, 'step04': validate_step4, 'step05': validate_step5, 'step07': validate_step7}
         self.logger.info('🚀 Steps 1-7 Comprehensive Executor initialized')
 
     async def initialize_all_steps(self) -> bool:
@@ -107,12 +105,12 @@ class Steps1To7ComprehensiveExecutor:
 
     def _get_required_columns_for_step(self, step_name: str) -> list[str]:
         """Get required columns for a specific step."""
-        column_requirements = {'step01': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'step1_5': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'step02': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'step03': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'step04': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'composite_cluster_id'], 'step05': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'composite_cluster_id'], 'step06': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'composite_cluster_id'], 'step07': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'composite_cluster_id']}
+        column_requirements = {'step01': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'step1_5': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'step02': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'step03': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'step04': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'composite_cluster_id'], 'step05': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'composite_cluster_id'], 'step07': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'composite_cluster_id']}
         return column_requirements.get(step_name, [])
 
     def _get_required_keys_for_step(self, step_name: str) -> list[str]:
         """Get required keys for a specific step."""
-        key_requirements = {'step01': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step1_5': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step02': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step03': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step04': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step05': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step06': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step07': ['symbol', 'exchange', 'timeframe', 'data_dir']}
+        key_requirements = {'step01': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step1_5': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step02': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step03': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step04': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step05': ['symbol', 'exchange', 'timeframe', 'data_dir'], 'step07': ['symbol', 'exchange', 'timeframe', 'data_dir']}
         return key_requirements.get(step_name, [])
 
     def _validate_data_types(self, data: pd.DataFrame, step_name: str) -> list[str]:
@@ -329,7 +327,7 @@ class Steps1To7ComprehensiveExecutor:
         self.logger.info('🚀 Starting comprehensive pipeline execution (Steps 1-7)...')
         if not await self.initialize_all_steps():
             return {'success': False, 'error': 'Failed to initialize steps'}
-        step_order = ['step01', 'step1_5', 'step02', 'step03', 'step04', 'step05', 'step06', 'step07']
+        step_order = ['step01', 'step1_5', 'step02', 'step03', 'step04', 'step05', 'step07']
         step_results = {}
         for step_name in step_order:
             self.logger.info(f'🔄 Executing {step_name}...')

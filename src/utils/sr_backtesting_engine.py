@@ -314,7 +314,7 @@ class SRBacktestingEngine:
             }
     
     def _calculate_performance_metrics(self, level: SRLevel, touch_results: List[Dict], data: pd.DataFrame) -> Dict[str, float]:
-        """Calculate comprehensive performance metrics."""
+        """Calculate comprehensive performance metrics including penetration and pattern features."""
         try:
             if not touch_results:
                 return self._get_default_metrics()
@@ -345,16 +345,23 @@ class SRBacktestingEngine:
             # Time persistence (how long the level remains relevant)
             time_persistence = min(1.0, total_touches / 10.0)  # Normalized to 0-1
             
-            # Calculate overall quality score
+            # Calculate penetration and pattern features
+            penetration_metrics = self._calculate_penetration_metrics(level, touch_results, data)
+            pattern_metrics = self._calculate_pattern_metrics(level, touch_results, data)
+            
+            # Calculate overall quality score with enhanced features
             quality_score = (
                 self.config.success_rate_weight * success_rate +
                 self.config.bounce_strength_weight * min(avg_bounce_strength * 10, 1.0) +
                 self.config.volume_confirmation_weight * min(avg_volume / 1000000, 1.0) +
                 self.config.time_persistence_weight * time_persistence +
-                self.config.touch_frequency_weight * min(total_touches / 5.0, 1.0)
+                self.config.touch_frequency_weight * min(total_touches / 5.0, 1.0) +
+                0.1 * penetration_metrics['penetration_depth'] +  # 10% weight for penetration
+                0.1 * pattern_metrics['pattern_consistency']      # 10% weight for pattern consistency
             )
             
-            return {
+            # Combine all metrics
+            metrics = {
                 'success_rate': success_rate,
                 'avg_bounce_strength': avg_bounce_strength,
                 'max_bounce_strength': max_bounce_strength,
@@ -367,10 +374,136 @@ class SRBacktestingEngine:
                 'successful_touches': successful_touches
             }
             
+            # Add penetration and pattern metrics
+            metrics.update(penetration_metrics)
+            metrics.update(pattern_metrics)
+            
+            return metrics
+            
         except Exception as e:
             self.logger.warning(f"Performance metrics calculation failed: {e}")
             return self._get_default_metrics()
     
+    def _calculate_penetration_metrics(self, level: SRLevel, touch_results: List[Dict], data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate penetration depth and frequency metrics."""
+        try:
+            if not touch_results:
+                return {
+                    'penetration_depth': 0.0,
+                    'penetration_frequency': 0.0
+                }
+            
+            # Calculate penetration depth (how deep price went beyond the level)
+            penetration_depths = []
+            penetration_count = 0
+            
+            for touch in touch_results:
+                touch_idx = touch['index']
+                if touch_idx < len(data) - 1:
+                    # Look at the next few bars to see penetration depth
+                    next_bars = data.iloc[touch_idx:touch_idx + 3]  # Look at next 3 bars
+                    
+                    if level.level_type == 'support':
+                        # For support: measure how far below the level price went
+                        min_low = next_bars['low'].min()
+                        if min_low < level.price:
+                            penetration = (level.price - min_low) / level.price
+                            penetration_depths.append(penetration)
+                            penetration_count += 1
+                    else:  # resistance
+                        # For resistance: measure how far above the level price went
+                        max_high = next_bars['high'].max()
+                        if max_high > level.price:
+                            penetration = (max_high - level.price) / level.price
+                            penetration_depths.append(penetration)
+                            penetration_count += 1
+            
+            # Calculate metrics
+            avg_penetration_depth = np.mean(penetration_depths) if penetration_depths else 0.0
+            penetration_frequency = penetration_count / len(touch_results) if touch_results else 0.0
+            
+            return {
+                'penetration_depth': min(avg_penetration_depth, 1.0),  # Cap at 100%
+                'penetration_frequency': penetration_frequency
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Penetration metrics calculation failed: {e}")
+            return {
+                'penetration_depth': 0.0,
+                'penetration_frequency': 0.0
+            }
+    
+    def _calculate_pattern_metrics(self, level: SRLevel, touch_results: List[Dict], data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate pattern consistency and strength metrics."""
+        try:
+            if not touch_results:
+                return {
+                    'pattern_consistency': 0.0,
+                    'pattern_strength': 0.0,
+                    'order_flow_confirmation': 0.0,
+                    'absorption_patterns': 0.0,
+                    'structure_break': 0.0
+                }
+            
+            # Pattern consistency: how consistent are the bounce patterns?
+            bounce_strengths = [r['bounce_strength'] for r in touch_results if r['successful']]
+            if len(bounce_strengths) > 1:
+                pattern_consistency = 1.0 - (np.std(bounce_strengths) / (np.mean(bounce_strengths) + 1e-8))
+                pattern_consistency = max(0.0, min(1.0, pattern_consistency))
+            else:
+                pattern_consistency = 1.0 if bounce_strengths else 0.0
+            
+            # Pattern strength: average strength of successful bounces
+            pattern_strength = np.mean(bounce_strengths) if bounce_strengths else 0.0
+            
+            # Order flow confirmation: volume patterns at touches
+            volumes_at_touches = [r['volume'] for r in touch_results]
+            avg_volume_at_touches = np.mean(volumes_at_touches) if volumes_at_touches else 0.0
+            overall_avg_volume = data['volume'].mean() if 'volume' in data.columns else 1.0
+            order_flow_confirmation = min(avg_volume_at_touches / overall_avg_volume, 2.0) / 2.0  # Normalize to 0-1
+            
+            # Absorption patterns: high volume with little price movement
+            absorption_count = 0
+            for touch in touch_results:
+                touch_idx = touch['index']
+                if touch_idx < len(data) - 2:
+                    # Check for absorption pattern (high volume, low price movement)
+                    touch_volume = touch['volume']
+                    price_range = data.iloc[touch_idx-1:touch_idx+2]['high'].max() - data.iloc[touch_idx-1:touch_idx+2]['low'].min()
+                    price_range_pct = price_range / level.price
+                    
+                    if touch_volume > overall_avg_volume * 1.5 and price_range_pct < 0.01:  # High volume, low movement
+                        absorption_count += 1
+            
+            absorption_patterns = absorption_count / len(touch_results) if touch_results else 0.0
+            
+            # Structure break: how often did the level break market structure
+            structure_breaks = 0
+            for touch in touch_results:
+                if not touch['successful']:  # Failed touches indicate structure breaks
+                    structure_breaks += 1
+            
+            structure_break = structure_breaks / len(touch_results) if touch_results else 0.0
+            
+            return {
+                'pattern_consistency': pattern_consistency,
+                'pattern_strength': min(pattern_strength, 1.0),
+                'order_flow_confirmation': order_flow_confirmation,
+                'absorption_patterns': absorption_patterns,
+                'structure_break': structure_break
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Pattern metrics calculation failed: {e}")
+            return {
+                'pattern_consistency': 0.0,
+                'pattern_strength': 0.0,
+                'order_flow_confirmation': 0.0,
+                'absorption_patterns': 0.0,
+                'structure_break': 0.0
+            }
+
     def _get_default_metrics(self) -> Dict[str, float]:
         """Get default metrics for failed calculations."""
         return {
@@ -383,7 +516,16 @@ class SRBacktestingEngine:
             'time_persistence': 0.0,
             'quality_score': 0.0,
             'total_touches': 0,
-            'successful_touches': 0
+            'successful_touches': 0,
+            # Penetration metrics
+            'penetration_depth': 0.0,
+            'penetration_frequency': 0.0,
+            # Pattern metrics
+            'pattern_consistency': 0.0,
+            'pattern_strength': 0.0,
+            'order_flow_confirmation': 0.0,
+            'absorption_patterns': 0.0,
+            'structure_break': 0.0
         }
     
     def _create_failed_result(self, level: SRLevel, reason: str) -> BacktestResult:
@@ -422,17 +564,48 @@ class SRBacktestingEngine:
         }
     
     def _calculate_feature_quality_correlations(self, results: List[BacktestResult]) -> Dict[str, float]:
-        """Calculate correlations between features and quality scores."""
+        """Calculate correlations between SR-focused features and quality scores."""
         if not results:
             return {}
         
-        features = ['success_rate', 'avg_bounce_strength', 'total_volume_at_level', 'total_touches', 'time_persistence']
+        # Primary SR-focused features (optimized)
+        primary_features = [
+            'success_rate',           # How often level held
+            'avg_bounce_strength',    # Strength of price reaction
+            'max_bounce_strength',    # Maximum bounce strength
+            'total_touches',          # Number of touches
+            'time_persistence',       # How long level remained relevant
+            'total_volume_at_level',  # Volume confirmation
+            'avg_hold_time'           # How long price held at level
+        ]
+        
+        # Penetration and pattern features
+        penetration_pattern_features = [
+            'penetration_depth',      # How deep price penetrated the level
+            'penetration_frequency',  # How often level was penetrated
+            'pattern_consistency',    # Consistency of bounce patterns
+            'pattern_strength',       # Strength of the pattern
+            'order_flow_confirmation', # Order flow pattern confirmation
+            'absorption_patterns',    # Volume absorption patterns
+            'structure_break'         # Market structure break confirmation
+        ]
+        
+        # Use existing step06 features for secondary analysis
+        step06_features = [
+            'market_regime',          # From step06: Market regime context
+            'volatility_regime',      # From step06: Volatility regime
+            'trend_strength',         # From step06: Trend strength
+            'volume_regime',          # From step06: Volume regime
+            'time_of_day_effect'      # From step06: Time of day effects
+        ]
+        
+        all_features = primary_features + penetration_pattern_features + step06_features
         correlations = {}
         
         quality_scores = [r.quality_score for r in results]
         
-        for feature in features:
-            feature_values = [getattr(r, feature) for r in results]
+        for feature in all_features:
+            feature_values = [getattr(r, feature, 0.0) for r in results]
             correlation = np.corrcoef(feature_values, quality_scores)[0, 1]
             correlations[feature] = correlation if not np.isnan(correlation) else 0.0
         
@@ -469,38 +642,100 @@ class SRBacktestingEngine:
         }
     
     def _build_strength_scoring_model(self, results: List[BacktestResult]) -> Dict[str, Any]:
-        """Build a model for predicting quality scores."""
+        """
+        Build a Ridge Regression model for predicting quality scores.
+        
+        We use Ridge Regression because:
+        1. It handles multicollinearity well (SR features are often correlated)
+        2. It provides stable, interpretable coefficients
+        3. It prevents overfitting with L2 regularization
+        4. It's computationally efficient for real-time prediction
+        """
         if not results:
             return {}
         
-        # Extract features and target
-        features = ['success_rate', 'avg_bounce_strength', 'total_volume_at_level', 'total_touches', 'time_persistence']
-        X = np.array([[getattr(r, feature) for feature in features] for r in results])
+        # Extract all available features (primary + penetration + pattern)
+        primary_features = [
+            'success_rate', 'avg_bounce_strength', 'max_bounce_strength', 
+            'total_touches', 'time_persistence', 'total_volume_at_level', 'avg_hold_time'
+        ]
+        
+        penetration_pattern_features = [
+            'penetration_depth', 'penetration_frequency', 'pattern_consistency', 
+            'pattern_strength', 'order_flow_confirmation', 'absorption_patterns', 'structure_break'
+        ]
+        
+        all_features = primary_features + penetration_pattern_features
+        
+        # Build feature matrix
+        X = []
+        valid_features = []
+        
+        for feature in all_features:
+            feature_values = [getattr(r, feature, 0.0) for r in results]
+            if not all(v == 0.0 for v in feature_values):  # Skip features with no variation
+                X.append(feature_values)
+                valid_features.append(feature)
+        
+        if not X:
+            return {}
+        
+        X = np.array(X).T  # Transpose to get (samples, features)
         y = np.array([r.quality_score for r in results])
         
-        # Simple linear regression model (can be enhanced with ML)
         try:
-            # Calculate feature weights using correlation
-            correlations = self._calculate_feature_quality_correlations(results)
-            weights = np.array([correlations.get(feature, 0.0) for feature in features])
+            # Use Ridge Regression with cross-validation for optimal alpha
+            from sklearn.linear_model import RidgeCV
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.model_selection import cross_val_score
             
-            # Normalize weights
-            if np.sum(np.abs(weights)) > 0:
-                weights = weights / np.sum(np.abs(weights))
+            # Standardize features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # Ridge Regression with cross-validation to find optimal alpha
+            alphas = np.logspace(-4, 2, 50)  # Range of regularization strengths
+            ridge_model = RidgeCV(alphas=alphas, cv=5, scoring='r2')
+            ridge_model.fit(X_scaled, y)
+            
+            # Get feature importance (absolute coefficients)
+            feature_importance = np.abs(ridge_model.coef_)
+            feature_importance_normalized = feature_importance / np.sum(feature_importance)
+            
+            # Calculate model performance
+            y_pred = ridge_model.predict(X_scaled)
+            r_squared = ridge_model.score(X_scaled, y)
+            
+            # Cross-validation score
+            cv_scores = cross_val_score(ridge_model, X_scaled, y, cv=5, scoring='r2')
+            cv_mean = np.mean(cv_scores)
+            cv_std = np.std(cv_scores)
             
             model = {
-                'feature_names': features,
-                'weights': weights.tolist(),
-                'intercept': np.mean(y) - np.dot(weights, np.mean(X, axis=0)),
-                'r_squared': self._calculate_r_squared(X, y, weights),
-                'feature_importance': dict(zip(features, np.abs(weights)))
+                'model_type': 'Ridge Regression',
+                'feature_names': valid_features,
+                'coefficients': ridge_model.coef_.tolist(),
+                'intercept': ridge_model.alpha_,
+                'optimal_alpha': ridge_model.alpha_,
+                'r_squared': r_squared,
+                'cv_r_squared_mean': cv_mean,
+                'cv_r_squared_std': cv_std,
+                'feature_importance': dict(zip(valid_features, feature_importance_normalized)),
+                'scaler_mean': scaler.mean_.tolist(),
+                'scaler_scale': scaler.scale_.tolist(),
+                'model_object': ridge_model,
+                'scaler_object': scaler
             }
+            
+            self.logger.info(f"Built Ridge Regression model with R²={r_squared:.3f}, CV R²={cv_mean:.3f}±{cv_std:.3f}")
+            self.logger.info(f"Top 5 features: {sorted(model['feature_importance'].items(), key=lambda x: x[1], reverse=True)[:5]}")
             
             return model
             
         except Exception as e:
-            self.logger.warning(f"Failed to build strength scoring model: {e}")
-            return {}
+            self.logger.warning(f"Failed to build Ridge Regression model: {e}")
+            # Fallback to simple correlation-based model
+            return self._build_simple_correlation_model(results, valid_features)
     
     def _calculate_r_squared(self, X: np.ndarray, y: np.ndarray, weights: np.ndarray) -> float:
         """Calculate R-squared for the model."""
@@ -547,13 +782,60 @@ class SRBacktestingEngine:
             'level_type': 1.0 if level.level_type == 'support' else 0.0
         }
     
+    def _build_simple_correlation_model(self, results: List[BacktestResult], valid_features: List[str]) -> Dict[str, Any]:
+        """Build a simple correlation-based model as fallback."""
+        try:
+            correlations = self._calculate_feature_quality_correlations(results)
+            weights = np.array([correlations.get(feature, 0.0) for feature in valid_features])
+            
+            # Normalize weights
+            if np.sum(np.abs(weights)) > 0:
+                weights = weights / np.sum(np.abs(weights))
+            
+            y = np.array([r.quality_score for r in results])
+            
+            return {
+                'model_type': 'Correlation-based',
+                'feature_names': valid_features,
+                'weights': weights.tolist(),
+                'intercept': np.mean(y) - np.dot(weights, np.mean([[getattr(r, f, 0.0) for f in valid_features] for r in results], axis=0)),
+                'r_squared': self._calculate_r_squared(np.array([[getattr(r, f, 0.0) for f in valid_features] for r in results]), y, weights),
+                'feature_importance': dict(zip(valid_features, np.abs(weights)))
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to build simple correlation model: {e}")
+            return {}
+
     def _apply_learned_rules(self, features: Dict[str, float]) -> float:
-        """Apply learned rules to predict quality using continuous scoring model."""
+        """Apply learned rules to predict quality using Ridge Regression model."""
         if not self.learned_rules:
             return features.get('strength', 0.5)
         
-        # Use the strength scoring model if available
+        # Use the Ridge Regression model if available
         model = self.learned_rules.get('strength_scoring_model', {})
+        if model and 'model_object' in model:
+            try:
+                # Extract features in the same order as the model
+                feature_values = []
+                for feature_name in model['feature_names']:
+                    feature_values.append(features.get(feature_name, 0.0))
+                
+                # Standardize features using the fitted scaler
+                feature_array = np.array(feature_values).reshape(1, -1)
+                scaler = model['scaler_object']
+                feature_array_scaled = scaler.transform(feature_array)
+                
+                # Apply the Ridge Regression model
+                quality_score = model['model_object'].predict(feature_array_scaled)[0]
+                
+                # Ensure score is within valid range
+                return min(max(quality_score, 0.0), 1.0)
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to apply Ridge Regression model: {e}")
+        
+        # Fallback to simple correlation-based prediction
         if model and 'weights' in model:
             try:
                 # Extract features in the same order as the model
@@ -561,7 +843,7 @@ class SRBacktestingEngine:
                 for feature_name in model['feature_names']:
                     feature_values.append(features.get(feature_name, 0.0))
                 
-                # Apply the model
+                # Apply the simple model
                 weights = np.array(model['weights'])
                 intercept = model.get('intercept', 0.0)
                 
@@ -571,9 +853,9 @@ class SRBacktestingEngine:
                 return min(max(quality_score, 0.0), 1.0)
                 
             except Exception as e:
-                self.logger.warning(f"Failed to apply strength scoring model: {e}")
+                self.logger.warning(f"Failed to apply simple correlation model: {e}")
         
-        # Fallback to correlation-based prediction
+        # Final fallback to correlation-based prediction
         predictors = self.learned_rules.get('quality_predictors', {})
         if predictors:
             quality_score = 0.0

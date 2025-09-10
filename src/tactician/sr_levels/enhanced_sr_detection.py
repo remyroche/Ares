@@ -24,6 +24,7 @@ except ImportError:
 
 from ...utils.logger import system_logger
 from ...core.decorators import handles_errors, traced
+from ...utils.clustering_alternatives import get_clustering_manager
 
 import hashlib
 import logging
@@ -4062,48 +4063,85 @@ class EnhancedSRDetector:
         return self._apply_unified_strength_prominence_filtering(levels, data)
 
     def _cluster_nearby_levels(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[List[SRLevel], Dict[str, Any]]:
-        """Cluster nearby SR levels using DBSCAN for optimal grouping."""
+        """Cluster nearby SR levels using strength-proximity clustering for optimal grouping."""
         try:
             if len(levels) < 2:
                 return levels, {'clustered': False, 'reason': 'insufficient_levels'}
 
-            self.logger.info(f'🔗 Applying DBSCAN clustering to {len(levels)} levels')
+            self.logger.info(f'🔗 Applying strength-proximity clustering to {len(levels)} levels')
 
-            # Separate support and resistance levels for independent clustering
-            support_levels = [level for level in levels if level.type == 'support']
-            resistance_levels = [level for level in levels if level.type == 'resistance']
+            # Get price range for clustering
+            prices = [level.price for level in levels]
+            price_range = (min(prices), max(prices))
 
-            # Cluster each type separately
-            clustered_support = self._dbscan_cluster_levels(support_levels, data, level_type='support')
-            clustered_resistance = self._dbscan_cluster_levels(resistance_levels, data, level_type='resistance')
+            # Convert SRLevel objects to dictionaries for clustering
+            level_dicts = []
+            for level in levels:
+                level_dict = {
+                    'price': level.price,
+                    'strength': level.strength,
+                    'touches': getattr(level, 'touches', 1),
+                    'type': level.type,
+                    'original_level': level  # Keep reference to original object
+                }
+                level_dicts.append(level_dict)
 
-            clustered_levels = clustered_support + clustered_resistance
+            # Initialize clustering manager
+            clustering_manager = get_clustering_manager()
+
+            # Cluster levels using strength-proximity approach
+            result = clustering_manager.cluster_with_fallback(
+                levels=level_dicts,
+                price_range=price_range,
+                proximity_threshold=0.01,  # 1% of price range
+                strength_similarity_threshold=0.2,  # 20% strength difference
+                preferred_algorithm='strength_proximity'
+            )
+
+            # Convert clustering result back to SRLevel objects
+            clustered_levels = []
+            cluster_count = 0
+
+            for cluster in result.clusters:
+                if len(cluster) > 1:
+                    # Multiple levels in cluster - merge them
+                    cluster_levels = [level_dicts[i]['original_level'] for i in cluster]
+                    merged_level = self._merge_cluster_strength_proximity(cluster_levels, data, cluster_count)
+                    clustered_levels.append(merged_level)
+                    cluster_count += 1
+                else:
+                    # Single level - keep as is
+                    clustered_levels.append(level_dicts[cluster[0]]['original_level'])
 
             # Calculate clustering statistics
-            support_clusters = len([l for l in clustered_support if l.metadata and l.metadata.get('clustered_by') == 'dbscan'])
-            resistance_clusters = len([l for l in clustered_resistance if l.metadata and l.metadata.get('clustered_by') == 'dbscan'])
-
             clustering_info = {
                 'clustered': True,
                 'original_levels': len(levels),
                 'final_levels': len(clustered_levels),
-                'support_clusters': support_clusters,
-                'resistance_clusters': resistance_clusters,
-                'total_clusters': support_clusters + resistance_clusters,
-                'reduction_percentage': ((len(levels) - len(clustered_levels)) / len(levels)) * 100 if len(levels) > 0 else 0
+                'support_clusters': len([c for c in result.clusters if len(c) > 1 and any(level_dicts[i]['type'] == 'support' for i in c)]),
+                'resistance_clusters': len([c for c in result.clusters if len(c) > 1 and any(level_dicts[i]['type'] == 'resistance' for i in c)]),
+                'total_clusters': len([c for c in result.clusters if len(c) > 1]),
+                'reduction_percentage': ((len(levels) - len(clustered_levels)) / len(levels)) * 100 if len(levels) > 0 else 0,
+                'algorithm_used': result.algorithm_used,
+                'quality_score': result.quality_score,
+                'parameters': result.parameters
             }
 
-            self.logger.info(f'🔗 DBSCAN clustering complete: {len(clustered_levels)} levels after clustering '
+            self.logger.info(f'🔗 Strength-proximity clustering complete: {len(clustered_levels)} levels after clustering '
                            f'({len(levels)} -> {len(clustered_levels)})')
+            self.logger.info(f'   Algorithm: {result.algorithm_used}, Quality: {result.quality_score:.3f}')
+            self.logger.info(f'   Clusters formed: {clustering_info["total_clusters"]}')
 
             return clustered_levels, clustering_info
 
         except Exception as e:
-            self.logger.warning(f'DBSCAN clustering failed: {e}')
+            self.logger.warning(f'Strength-proximity clustering failed: {e}')
             return levels, {'clustered': False, 'error': str(e)}
 
     def _dbscan_cluster_levels(self, levels: List[SRLevel], data: pd.DataFrame, level_type: str) -> List[SRLevel]:
         """
+        DEPRECATED: This method is no longer used. Replaced by strength-proximity clustering.
+        
         Apply DBSCAN clustering to group nearby SR levels with strength-aware distance metric and parameter relaxation.
         
         This method implements adaptive parameter relaxation to ensure sufficient levels are maintained:
@@ -4113,11 +4151,9 @@ class EnhancedSRDetector:
         - Minimum threshold is adaptive: max(fixed_threshold, original_levels * ratio)
         - Up to max_relaxation_attempts attempts are made to achieve sufficient levels
         """
-        try:
-            if len(levels) < 2:
-                return levels
-
-            # Prepare data for DBSCAN with strength-aware distance
+        # DEPRECATED: Return levels as-is since this method is no longer used
+        self.logger.warning("_dbscan_cluster_levels is deprecated. Use strength-proximity clustering instead.")
+        return levels
             level_data = np.array([[level.price, level.strength] for level in levels])
 
             # Get initial optimized DBSCAN parameters
@@ -4252,6 +4288,60 @@ class EnhancedSRDetector:
         except Exception as e:
             # Fallback to simple price distance
             return abs(point1[0] - point2[0])
+
+    def _merge_cluster_strength_proximity(self, cluster: List[SRLevel], data: pd.DataFrame, cluster_id: int) -> SRLevel:
+        """Merge a cluster of SR levels using strength-proximity approach."""
+        try:
+            if not cluster:
+                return None
+            
+            if len(cluster) == 1:
+                return cluster[0]
+            
+            # Calculate weighted average price (weighted by strength)
+            total_strength = sum(level.strength for level in cluster)
+            if total_strength > 0:
+                weighted_price = sum(level.price * level.strength for level in cluster) / total_strength
+            else:
+                weighted_price = sum(level.price for level in cluster) / len(cluster)
+            
+            # Calculate combined strength (average of all levels)
+            combined_strength = sum(level.strength for level in cluster) / len(cluster)
+            
+            # Calculate combined touches
+            combined_touches = sum(getattr(level, 'touches', 1) for level in cluster)
+            
+            # Determine type (majority vote)
+            support_count = sum(1 for level in cluster if level.type == 'support')
+            resistance_count = len(cluster) - support_count
+            combined_type = 'support' if support_count > resistance_count else 'resistance'
+            
+            # Create merged level
+            merged_level = SRLevel(
+                price=weighted_price,
+                strength=combined_strength,
+                type=combined_type,
+                touches=combined_touches,
+                metadata={
+                    'clustered_by': 'strength_proximity',
+                    'cluster_id': cluster_id,
+                    'original_levels': len(cluster),
+                    'original_prices': [level.price for level in cluster],
+                    'original_strengths': [level.strength for level in cluster],
+                    'price_spread': max(level.price for level in cluster) - min(level.price for level in cluster),
+                    'strength_spread': max(level.strength for level in cluster) - min(level.strength for level in cluster)
+                }
+            )
+            
+            self.logger.debug(f'Merged {len(cluster)} levels into cluster {cluster_id}: '
+                            f'${weighted_price:.2f} (strength: {combined_strength:.3f})')
+            
+            return merged_level
+            
+        except Exception as e:
+            self.logger.warning(f'Failed to merge cluster: {e}')
+            # Return the strongest level as fallback
+            return max(cluster, key=lambda x: x.strength)
 
     def _merge_cluster_dbscan(self, cluster: List[SRLevel], data: pd.DataFrame) -> SRLevel:
         """Merge a DBSCAN cluster using advanced aggregation."""

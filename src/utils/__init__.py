@@ -111,6 +111,17 @@ from .parameter_loader import (
     global_parameter_loader
 )
 
+# Import step06 utilities
+from .step06_enhanced_feature_engineering import EnhancedFeatureEngineering
+from .step06_utility_container import Step06UtilityContainer
+from .step06_labeling_components import (
+    OptimizedTripleBarrierLabeling,
+    FractionalTripleBarrierLabeling,
+    RegimeSpecificTripleBarrierOptimizer,
+    ProfitBasedFeatureEngineering,
+    RegimeAwareTripleBarrierLabeling
+)
+
 __all__ = [
     # Function Call Monitoring
     'FunctionCallMonitor',
@@ -208,5 +219,14 @@ __all__ = [
     'initialize_sr_parameters',
     'load_sr_parameters',
     'load_parameters',
-    'global_parameter_loader'
+    'global_parameter_loader',
+    
+    # Step06 Utilities
+    'EnhancedFeatureEngineering',
+    'Step06UtilityContainer',
+    'OptimizedTripleBarrierLabeling',
+    'FractionalTripleBarrierLabeling',
+    'RegimeSpecificTripleBarrierOptimizer',
+    'ProfitBasedFeatureEngineering',
+    'RegimeAwareTripleBarrierLabeling'
 ]

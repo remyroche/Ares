@@ -117,6 +117,55 @@ async def train_model(self, data: pd.DataFrame, **kwargs) -> ModelTrainingResult
 - ✅ OHLCV sanity checks (positive values, OHLC consistency, outlier detection)
 - ✅ Volume sanity checks (positive values, reasonable ranges, outlier detection)
 
+## Existing Data Quality Utilities
+
+The system leverages existing comprehensive utilities for advanced data quality checks:
+
+### **1. Math Validation Utilities** (`src/utils/math_validation.py`)
+- ✅ `validate_finite()` - Checks for NaN and infinite values
+- ✅ `validate_positive()` - Ensures positive values
+- ✅ `validate_range()` - Validates value ranges
+- ✅ Safe mathematical operations with finite checks
+
+### **2. Enhanced Data Quality Validator** (`src/utils/enhanced_data_quality_validator.py`)
+- ✅ `_validate_constant_features()` - Detects constant and low-variance features
+- ✅ `_validate_infinite_values()` - Checks for infinite values
+- ✅ `_validate_nan_values()` - Validates NaN values
+- ✅ Price anomaly detection
+
+### **3. Feature Output Validator** (`src/utils/feature_output_validator.py`)
+- ✅ **NaN Value Checks**: `max_nan_percentage` thresholds (0.1-0.4 depending on feature type)
+- ✅ **Infinite Value Checks**: `max_infinite_percentage` thresholds (0.001-0.1)
+- ✅ **Constant Feature Detection**: `max_constant_percentage` thresholds (0.8-0.9)
+- ✅ **Zero Variance Detection**: `max_zero_variance_percentage` thresholds (0.5-0.7)
+- ✅ **Empty Value Detection**: Comprehensive empty data validation
+- ✅ **Feature Type-Specific Thresholds**: Different thresholds for wavelet, microstructure, technical indicators, and price features
+
+### **4. Pipeline Standards** (`src/utils/pipeline_standards.py`)
+- ✅ Infinite value detection: `np.isinf(df[column]).sum()`
+- ✅ Constant feature detection: `features[col].nunique() <= 1`
+- ✅ Comprehensive quality scoring with finite value validation
+
+### **5. VIF Calculator** (`src/utils/vif_calculator.py`)
+- ✅ NaN handling: `X.isna().any().any()`
+- ✅ Infinite value handling: `np.isinf(X).any().any()`
+- ✅ Zero value detection: `(vif_values == 0).sum()`
+
+### **6. Feature Engineering Validation** (`src/utils/feature_engineering_validation.py`)
+- ✅ Zero variance feature detection
+- ✅ Constant feature detection
+- ✅ Highly correlated feature pairs
+- ✅ Feature leakage detection
+
+## Quality Verification Points
+
+The system now automatically verifies data quality at:
+- **End of data collection** - Ensures collected data meets quality standards
+- **Beginning of data conversion** - Validates input data before conversion
+- **Beginning of feature engineering** - Ensures clean data for feature creation
+- **Beginning of SR levels creation** - Validates data quality before support/resistance detection
+- **Beginning of model training** - Quality gate enforcement before training
+
 ## Integration Benefits
 
 ### 1. **Automatic Quality Checks**

@@ -79,6 +79,11 @@ class OverallPipeline:
                 "default_args": ["--analysis-type", "syntax"],
                 "description": "Import-free code analysis (syntax, structure, patterns)"
             },
+            "import_verifier": {
+                "script": "import_verifier_pipeline.py",
+                "default_args": [],
+                "description": "Verify which files are imported by others (yes/no analysis)"
+            },
             "unified_enhanced": {
                 "script": "pipeline_unified_enhanced.py",
                 "default_args": [],

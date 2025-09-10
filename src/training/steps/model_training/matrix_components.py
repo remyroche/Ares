@@ -97,6 +97,26 @@ except ImportError:
     M1GPUManager = None
     get_m1_gpu_manager = None
 
+# Import enhanced matrix operations
+try:
+    from ....utils.ml_common.matrix_operations import (
+        get_enhanced_matrix_operations, 
+        m1_matrix_multiply,
+        m1_matrix_correlation_analysis,
+        m1_matrix_eigendecomposition,
+        m1_matrix_svd,
+        m1_matrix_cholesky
+    )
+    ENHANCED_MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    ENHANCED_MATRIX_OPS_AVAILABLE = False
+    get_enhanced_matrix_operations = None
+    m1_matrix_multiply = None
+    m1_matrix_correlation_analysis = None
+    m1_matrix_eigendecomposition = None
+    m1_matrix_svd = None
+    m1_matrix_cholesky = None
+
 from ....utils.logger import system_logger
 from ....utils.comprehensive_function_logger import (
     log_step_functions, log_important_calls, log_all_calls,
@@ -360,7 +380,7 @@ class MatrixProcessor:
     @log_important_calls
 
     def __init__(self, use_gpu: bool = True, batch_size: int = 1000) -> None:
-        """Initialize matrix processor with enhanced MPS support.
+        """Initialize matrix processor with enhanced M1 optimization support.
 
         Args:
             use_gpu: Whether to use GPU acceleration
@@ -368,6 +388,15 @@ class MatrixProcessor:
         """
         self.logger = system_logger.getChild('MatrixProcessor')
         self.batch_size = batch_size
+
+        # Initialize enhanced matrix operations if available
+        self.enhanced_matrix_ops = None
+        if ENHANCED_MATRIX_OPS_AVAILABLE:
+            try:
+                self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+                self.logger.info('🚀 Using enhanced M1-optimized matrix operations')
+            except Exception as e:
+                self.logger.warning(f'Failed to initialize enhanced matrix operations: {e}')
 
         # Initialize M1 GPU manager if available
         self.m1_gpu_manager = None
@@ -401,6 +430,7 @@ class MatrixProcessor:
 
         self.logger.info(f'✅ Matrix processor initialized with device: {self.device}')
         self.logger.info(f'🎯 MPS enabled: {self.use_mps}, CUDA enabled: {self.use_cuda}, M1 GPU Manager: {M1_GPU_AVAILABLE}')
+        self.logger.info(f'🚀 Enhanced Matrix Ops: {ENHANCED_MATRIX_OPS_AVAILABLE}')
     @log_all_calls
 
     def _setup_device(self, use_gpu: bool) -> torch.device:
@@ -498,7 +528,7 @@ class MatrixProcessor:
                 return {'gpu_cache_cleared': False, 'gc_collected': 0}
 
     async def compute_correlation_matrix(self, data: pd.DataFrame) -> np.ndarray:
-        """Compute correlation matrix using GPU/MPS with batch processing.
+        """Compute correlation matrix using enhanced M1-optimized operations.
 
         Args:
             data: Feature data
@@ -507,6 +537,11 @@ class MatrixProcessor:
             Correlation matrix
         """
         try:
+            # Use enhanced matrix operations if available
+            if self.enhanced_matrix_ops and m1_matrix_correlation_analysis:
+                self.logger.info('🚀 Using enhanced M1-optimized correlation analysis')
+                return m1_matrix_correlation_analysis(data.values)
+            
             # Use M1 GPU manager for device decision if available
             if self.m1_gpu_manager:
                 use_gpu = self.m1_gpu_manager.should_use_gpu(data.shape[0] * data.shape[1], "matrix_mult")
@@ -522,7 +557,7 @@ class MatrixProcessor:
             else:
                 return self._compute_correlation_single(data, dtype)
         except Exception as e:
-            self.logger.warning(f'GPU computation failed: {e}, using CPU')
+            self.logger.warning(f'Enhanced computation failed: {e}, using CPU fallback')
             return data.corr().values
 
     def _compute_correlation_single(self, data: pd.DataFrame, dtype: torch.dtype) -> np.ndarray:
@@ -661,7 +696,7 @@ class MatrixProcessor:
         return cov_matrix.cpu().numpy()
 
     def compute_eigendecomposition(self, matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Compute eigendecomposition with MPS optimizations.
+        """Compute eigendecomposition with enhanced M1-optimized operations.
 
         Args:
             matrix: Input matrix
@@ -670,6 +705,11 @@ class MatrixProcessor:
             Tuple of (eigenvalues, eigenvectors)
         """
         try:
+            # Use enhanced matrix operations if available
+            if self.enhanced_matrix_ops and m1_matrix_eigendecomposition:
+                self.logger.info('🚀 Using enhanced M1-optimized eigendecomposition')
+                return m1_matrix_eigendecomposition(matrix)
+            
             # Use appropriate precision for MPS
             dtype = torch.float16 if self.use_mps and self.use_float16 else torch.float32
             matrix_tensor = torch.tensor(matrix, dtype=dtype, device=self.device)
@@ -690,7 +730,7 @@ class MatrixProcessor:
 
             return (eigenvalues.cpu().numpy(), eigenvectors.cpu().numpy())
         except Exception as e:
-            self.logger.warning(f'GPU computation failed: {e}, using CPU')
+            self.logger.warning(f'Enhanced computation failed: {e}, using CPU fallback')
             eigenvalues, eigenvectors = np.linalg.eigh(matrix)
             indices = np.argsort(eigenvalues)[::-1]
             return (eigenvalues[indices], eigenvectors[:, indices])

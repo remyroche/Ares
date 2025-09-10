@@ -254,7 +254,6 @@ class PredictiveSREngine:
                     
                     # Use actual step06 features
                     return {
-                        'market_regime': step06_features.get('Market_Regime', 0.0),
                         'volatility_regime': step06_features.get('ATR_14', 0.0),
                         'trend_strength': step06_features.get('SMA_5', 0.0) / step06_features.get('SMA_100', 1.0) - 1.0 if step06_features.get('SMA_100', 0) > 0 else 0.0,
                         'volume_regime': step06_features.get('Volume_Ratio', 0.0),
@@ -311,7 +310,6 @@ class PredictiveSREngine:
                     vwap_momentum = (current_price - current_vwap) / current_vwap if current_vwap > 0 else 0.0
                 
                 return {
-                    'market_regime': 0.0,  # Default neutral
                     'volatility_regime': volatility_regime,
                     'trend_strength': trend_strength,
                     'volume_regime': volume_regime,
@@ -336,7 +334,6 @@ class PredictiveSREngine:
                 }
             else:
                 return {
-                    'market_regime': 0.0,
                     'volatility_regime': 0.0,
                     'trend_strength': 0.0,
                     'volume_regime': 0.0,

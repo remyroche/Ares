@@ -661,7 +661,6 @@ class SRBacktestingEngine:
         
         # Use existing step06 features for secondary analysis
         step06_features = [
-            'market_regime',          # From step06: Market regime context
             'volatility_regime',      # From step06: Volatility regime
             'trend_strength',         # From step06: Trend strength
             'volume_regime',          # From step06: Volume regime
@@ -944,7 +943,7 @@ class SRBacktestingEngine:
                     penetration_features.append((feature, importance))
                 elif any(x in feature.lower() for x in ['pattern', 'order_flow', 'absorption', 'structure']):
                     pattern_features.append((feature, importance))
-                elif any(x in feature.lower() for x in ['market', 'volatility', 'trend', 'rsi', 'macd', 'roc', 'stochastic', 'cci', 'momentum', 'bb', 'obv', 'mfi', 'williams', 'adx', 'cross_timeframe']):
+                elif any(x in feature.lower() for x in ['volatility', 'trend', 'rsi', 'macd', 'roc', 'stochastic', 'cci', 'momentum', 'bb', 'obv', 'mfi', 'williams', 'adx', 'cross_timeframe']):
                     step06_features.append((feature, importance))
             
             self.logger.info("📈 FEATURE CATEGORY ANALYSIS:")

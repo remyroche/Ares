@@ -1,32 +1,16 @@
 """
-Comprehensive Training Pipeline
+Comprehensive Training Pipeline - No Dependencies Version
 
-This module provides a complete training pipeline that orchestrates the entire ML workflow:
-1. Data Collection & Qualification
-2. SR Levels Detection
-3. Cluster/HMM Regimes Definition
-4. Analyst Training (per-regime)
-5. General Model Training (unified regime intelligence)
-6. Tactician Training (per-regime with Analyst integration)
-7. Backtesting & Validation
+This module provides a complete training pipeline that orchestrates the entire ML workflow
+without requiring external dependencies like pandas, numpy, scikit-learn.
 
-The pipeline uses utilities/ as toolbox while maintaining the business logic in training steps.
+This version uses simple Python data structures and mock implementations.
 """
 
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime
-
-# Import mock dependencies for testing
-try:
-    import pandas as pd
-    import numpy as np
-except ImportError:
-    # Use mock dependencies if real ones are not available
-    from src.utils.mock_dependencies import MockDataFrame, MockNumpy, MockSeries
-    pd = type('MockPandas', (), {'DataFrame': MockDataFrame, 'Series': MockSeries})()
-    np = MockNumpy()
 
 # Import pipeline infrastructure
 from .simplified_pipeline_infrastructure import (
@@ -57,18 +41,10 @@ from src.utils.ml_common import (
     MLTrainingSafeguards,
     FeatureSelectionFramework,
     MemoryEfficientTraining,
-    ParallelProcessingCoordinator,
-    ConfigurationValidator
+    ParallelProcessingCoordinator
 )
 
-# Import comprehensive configuration integration
-from .comprehensive_config_integration import (
-    config_integration,
-    validate_pipeline_config,
-    create_custom_config
-)
-
-# Import standardized validation for backward compatibility
+# Import standardized validation
 from .standardized_config_validation import (
     validate_config,
     validate_and_fix_config
@@ -94,11 +70,9 @@ class ComprehensiveTrainingPipeline:
     7. Backtesting & Validation
     """
     
-    def __init__(self, config: Dict[str, Any], environment: str = 'development'):
+    def __init__(self, config: Dict[str, Any]):
         """Initialize comprehensive training pipeline."""
-        # Use comprehensive configuration integration
-        self.config = validate_pipeline_config(config)
-        self.environment = environment
+        self.config = validate_and_fix_config(config, 'comprehensive_training')
         self.logger = logger.getChild('ComprehensiveTrainingPipeline')
         
         # Initialize pipeline manager
@@ -601,7 +575,7 @@ class ComprehensiveTrainingPipeline:
             return {'error': str(e)}
     
     # Helper methods for toolbox integration
-    def _detect_sr_levels(self, data: pd.DataFrame) -> List[Dict[str, Any]]:
+    def _detect_sr_levels(self, data) -> List[Dict[str, Any]]:
         """Detect Support/Resistance levels using toolbox utilities."""
         # In practice, this would use specialized SR detection utilities from toolbox
         return [
@@ -610,24 +584,24 @@ class ComprehensiveTrainingPipeline:
             {'level': 52000, 'type': 'resistance', 'strength': 0.7}
         ]
     
-    def _define_regimes(self, data: pd.DataFrame, sr_levels: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _define_regimes(self, data, sr_levels: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Define cluster/HMM regimes using toolbox utilities."""
         # In practice, this would use HMM/clustering utilities from toolbox
         return {
             'regime_0': {
                 'type': 'trending',
-                'data': data.iloc[:len(data)//3],
-                'targets': pd.Series(np.random.randn(len(data)//3))
+                'data': data,
+                'targets': [0.1, 0.2, 0.3, 0.4, 0.5]  # Mock targets
             },
             'regime_1': {
                 'type': 'ranging',
-                'data': data.iloc[len(data)//3:2*len(data)//3],
-                'targets': pd.Series(np.random.randn(len(data)//3))
+                'data': data,
+                'targets': [0.2, 0.3, 0.4, 0.5, 0.6]  # Mock targets
             },
             'regime_2': {
                 'type': 'volatile',
-                'data': data.iloc[2*len(data)//3:],
-                'targets': pd.Series(np.random.randn(len(data)//3))
+                'data': data,
+                'targets': [0.3, 0.4, 0.5, 0.6, 0.7]  # Mock targets
             }
         }
     

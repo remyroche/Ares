@@ -726,6 +726,40 @@ class SROptimizationStep(BaseStep):
         except Exception as e:
             self.logger.warning(f"Memory manager initialization failed: {e}")
 
+        # Initialize enhanced utility instances
+        try:
+            self.data_validator = DataFrameValidator()
+            self.data_processor = DataProcessor()
+            self.data_transformer = DataTransformer()
+            self.data_cleaner = DataCleaner()
+            self.logger.info("✅ Enhanced data processing utilities initialized")
+        except Exception as e:
+            self.logger.warning(f"Enhanced data processing utilities initialization failed: {e}")
+            self.data_validator = None
+            self.data_processor = None
+            self.data_transformer = None
+            self.data_cleaner = None
+
+        # Initialize M1 optimization utilities
+        try:
+            self.m1_memory_optimizer = M1MemoryOptimizer(
+                memory_limit_gb=8.0,
+                enable_gc_tuning=True,
+                enable_memory_leak_detection=True,
+                enable_swap_management=True
+            )
+            self.m1_cpu_optimizer = M1CPUOptimizer(
+                max_workers=None,
+                enable_hyperthreading=True
+            )
+            self.m1_gpu_utils = M1GPUUtils()
+            self.logger.info('✅ M1 optimization utilities initialized successfully')
+        except Exception as e:
+            self.logger.warning(f'⚠️ M1 optimization utilities not available: {e}')
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+            self.m1_gpu_utils = None
+
         # Initialize ML Model Configurations early to prevent attribute errors
         self.ml_model_configs = {
             'RandomForestClassifier': {
@@ -1160,7 +1194,26 @@ class SROptimizationStep(BaseStep):
                 )
             
             # Use step06 features directly - no fallback to basic features
-            return self._integrate_step06_advanced_features(data)
+            features_data = self._integrate_step06_advanced_features(data)
+            
+            # Enhanced feature validation using math validation utilities
+            if features_data is not None and not features_data.empty:
+                # Validate numeric features for mathematical operations
+                numeric_cols = features_data.select_dtypes(include=[np.number]).columns
+                for col in numeric_cols:
+                    if not validate_finite(features_data[col].values):
+                        self.logger.warning(f"⚠️ Non-finite values detected in feature: {col}")
+                        # Clean non-finite values
+                        features_data[col] = features_data[col].replace([np.inf, -np.inf], np.nan)
+                        features_data[col] = features_data[col].fillna(features_data[col].median())
+                
+                # Validate feature ranges
+                for col in numeric_cols:
+                    if col in ['price_change_pct', 'volatility', 'rsi', 'macd']:
+                        if not validate_range(features_data[col].values, min_val=-1000, max_val=1000):
+                            self.logger.warning(f"⚠️ Feature {col} has values outside expected range")
+            
+            return features_data
 
         except Exception as e:
             self.logger.error(f'❌ Step06 advanced feature integration failed: {e}')
@@ -1183,13 +1236,20 @@ class SROptimizationStep(BaseStep):
                 'step': 'step02_5_sr_optimization'
             }
             
-            # Save using safe serialization
+            # Save using enhanced serialization utilities
             if self.serializer:
                 self.serializer.save_data(checkpoint_data, str(checkpoint_file))
             else:
-                import pickle
-                with open(checkpoint_file, 'wb') as f:
-                    pickle.dump(checkpoint_data, f)
+                # Fallback to enhanced serialization utilities
+                try:
+                    from src.utils.serialization_utils import PickleSerializer
+                    pickle_serializer = PickleSerializer()
+                    pickle_serializer.save(checkpoint_data, str(checkpoint_file))
+                except Exception as e:
+                    self.logger.warning(f"Enhanced serialization failed, using basic pickle: {e}")
+                    import pickle
+                    with open(checkpoint_file, 'wb') as f:
+                        pickle.dump(checkpoint_data, f)
             
             self.logger.info(f'💾 Checkpoint saved: {checkpoint_name} -> {checkpoint_file}')
             return str(checkpoint_file)
@@ -1349,6 +1409,21 @@ class SROptimizationStep(BaseStep):
             data = pipeline_state.get('dataframe')
             if data is None:
                 raise ValueError("No dataframe found in pipeline state")
+
+            # Enhanced data validation using utility modules
+            if self.data_validator:
+                validation_result = self.data_validator.validate_dataframe(data)
+                if not validation_result.is_valid:
+                    self.logger.warning(f"⚠️ Data validation issues detected: {len(validation_result.issues)} issues")
+                    for issue in validation_result.issues[:5]:  # Log first 5 issues
+                        self.logger.warning(f"   - {issue.issue_type}: {issue.description}")
+                else:
+                    self.logger.info("✅ Data validation passed successfully")
+
+            # Enhanced data processing using utility modules
+            if self.data_processor:
+                data = self.data_processor.optimize_memory_usage(data)
+                self.logger.info("🧠 Data memory usage optimized")
 
             self.logger.info(f'📊 Data loaded: {data.shape[0]:,} rows, {data.shape[1]} columns')
 
@@ -2194,11 +2269,32 @@ class SROptimizationStep(BaseStep):
                 if level_details:
                     self.logger.info(f'      - Strength: {level_details.get("strength", "N/A")}')
                     self.logger.info(f'      - Touch Count: {level_details.get("touch_count", "N/A")}')
-                    self.logger.info(f'      - First Touch: {level_details.get("first_touch", "N/A")}')
-                    self.logger.info(f'      - Last Touch: {level_details.get("last_touch", "N/A")}')
+                    
+                    # Enhanced timestamp logging with human-readable format
+                    first_touch = level_details.get("first_touch", "N/A")
+                    last_touch = level_details.get("last_touch", "N/A")
+                    age_bars = level_details.get("age_bars", "N/A")
+                    
+                    if first_touch != "N/A":
+                        first_touch_readable = self._format_timestamp_human_readable(first_touch)
+                        self.logger.info(f'      - First Touch: {first_touch_readable}')
+                    else:
+                        self.logger.info(f'      - First Touch: {first_touch}')
+                    
+                    if last_touch != "N/A":
+                        last_touch_readable = self._format_timestamp_human_readable(last_touch)
+                        self.logger.info(f'      - Last Touch: {last_touch_readable}')
+                    else:
+                        self.logger.info(f'      - Last Touch: {last_touch}')
+                    
+                    if age_bars != "N/A":
+                        age_readable = self._format_age_human_readable(age_bars, first_touch, last_touch)
+                        self.logger.info(f'      - Age: {age_readable}')
+                    else:
+                        self.logger.info(f'      - Age: {age_bars}')
+                    
                     self.logger.info(f'      - Validation Status: {level_details.get("validation_status", "N/A")}')
                     self.logger.info(f'      - Cluster ID: {level_details.get("cluster_id", "N/A")}')
-                    self.logger.info(f'      - Age (bars): {level_details.get("age_bars", "N/A")}')
                     self.logger.info(f'      - Volume Confirmation: {level_details.get("volume_confirmation", "N/A")}')
                     self.logger.info(f'      - Consistency Score: {level_details.get("consistency_score", "N/A")}')
                 
@@ -2277,6 +2373,98 @@ class SROptimizationStep(BaseStep):
         except Exception as e:
             self.logger.debug(f'Failed to extract level info: {e}')
             return None
+
+    def _format_timestamp_human_readable(self, timestamp: Any) -> str:
+        """Format timestamp to human-readable format."""
+        try:
+            if timestamp is None:
+                return "N/A"
+            
+            # Handle different timestamp formats
+            if isinstance(timestamp, str):
+                # Try to parse string timestamp
+                try:
+                    if 'T' in timestamp:
+                        dt = pd.to_datetime(timestamp)
+                    else:
+                        dt = pd.to_datetime(timestamp)
+                except:
+                    return str(timestamp)
+            elif isinstance(timestamp, (int, float)):
+                # Handle Unix timestamp
+                try:
+                    dt = pd.to_datetime(timestamp, unit='s')
+                except:
+                    dt = pd.to_datetime(timestamp)
+            elif hasattr(timestamp, 'strftime'):
+                # Already a datetime object
+                dt = timestamp
+            else:
+                return str(timestamp)
+            
+            # Format to human-readable string
+            now = datetime.now()
+            time_diff = now - dt
+            
+            # Format based on how recent it is
+            if time_diff.days > 365:
+                return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} ({time_diff.days // 365} years ago)"
+            elif time_diff.days > 30:
+                return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} ({time_diff.days // 30} months ago)"
+            elif time_diff.days > 0:
+                return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} ({time_diff.days} days ago)"
+            elif time_diff.seconds > 3600:
+                return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} ({time_diff.seconds // 3600} hours ago)"
+            elif time_diff.seconds > 60:
+                return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} ({time_diff.seconds // 60} minutes ago)"
+            else:
+                return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} (just now)"
+                
+        except Exception as e:
+            return f"Invalid timestamp: {str(timestamp)}"
+
+    def _format_age_human_readable(self, age_bars: Any, first_touch: Any, last_touch: Any) -> str:
+        """Format age in human-readable format with context."""
+        try:
+            if age_bars is None or age_bars == "N/A":
+                return "N/A"
+            
+            age_bars = int(age_bars)
+            
+            # Calculate time span if we have timestamps
+            time_span = ""
+            if first_touch != "N/A" and last_touch != "N/A":
+                try:
+                    if isinstance(first_touch, str):
+                        first_dt = pd.to_datetime(first_touch)
+                    else:
+                        first_dt = first_touch
+                    
+                    if isinstance(last_touch, str):
+                        last_dt = pd.to_datetime(last_touch)
+                    else:
+                        last_dt = last_touch
+                    
+                    span = last_dt - first_dt
+                    if span.days > 0:
+                        time_span = f" (span: {span.days} days)"
+                    elif span.seconds > 3600:
+                        time_span = f" (span: {span.seconds // 3600} hours)"
+                    elif span.seconds > 60:
+                        time_span = f" (span: {span.seconds // 60} minutes)"
+                except:
+                    pass
+            
+            # Format age based on magnitude
+            if age_bars > 10000:
+                return f"{age_bars:,} bars ({age_bars // 1000}k bars){time_span}"
+            elif age_bars > 1000:
+                return f"{age_bars:,} bars ({age_bars / 1000:.1f}k bars){time_span}"
+            else:
+                return f"{age_bars} bars{time_span}"
+                
+        except Exception as e:
+            return f"{age_bars} bars (format error)"
 
     def _log_clustering_configuration(self, clustering_config: Any, config_type: str) -> None:
         """Log clustering configuration parameters."""
@@ -2611,13 +2799,29 @@ class SROptimizationStep(BaseStep):
             self.logger.info('🤖 ENHANCED ML TRAINING WITH ML_COMMON UTILITIES:')
             self.logger.info('=' * 60)
 
-            # Use ml_common memory optimization
+            # Enhanced memory optimization using multiple utility layers
+            optimized_data = features_data
+            
+            # Layer 1: M1 Memory Optimizer
+            if self.m1_memory_optimizer:
+                self.logger.info('🧠 Using M1MemoryOptimizer for Apple Silicon optimization...')
+                memory_usage = self.m1_memory_optimizer.get_memory_usage()
+                data_size = len(features_data)
+                
+                self.logger.info(f'   - M1 Memory usage: {memory_usage:.1%}')
+                self.logger.info(f'   - Data size: {data_size:,} rows')
+                
+                # Apply M1-specific memory optimization
+                optimized_data = self.m1_memory_optimizer.optimize_dataframe(optimized_data)
+                self.logger.info(f'   - M1 optimized data shape: {optimized_data.shape}')
+            
+            # Layer 2: ml_common memory optimization
             if self.memory_optimizer:
                 self.logger.info('🧠 Using MemoryEfficientTraining from ml_common...')
                 memory_usage = self.memory_optimizer.get_memory_usage()
-                data_size = len(features_data)
+                data_size = len(optimized_data)
                 
-                self.logger.info(f'   - Memory usage: {memory_usage:.1%}')
+                self.logger.info(f'   - ML Common memory usage: {memory_usage:.1%}')
                 self.logger.info(f'   - Data size: {data_size:,} rows')
                 
                 # Use ml_common memory optimization strategy
@@ -2625,11 +2829,18 @@ class SROptimizationStep(BaseStep):
                 self.logger.info(f'   - Optimization strategy: {optimization_strategy}')
                 
                 # Apply memory optimization
-                optimized_data = self.memory_optimizer.optimize_data_for_training(features_data)
-                self.logger.info(f'   - Optimized data shape: {optimized_data.shape}')
-            else:
+                optimized_data = self.memory_optimizer.optimize_data_for_training(optimized_data)
+                self.logger.info(f'   - ML Common optimized data shape: {optimized_data.shape}')
+            
+            # Layer 3: Data processing utilities
+            if self.data_processor:
+                self.logger.info('🔧 Using DataProcessor for final optimization...')
+                optimized_data = self.data_processor.optimize_memory_usage(optimized_data)
+                self.logger.info(f'   - Final optimized data shape: {optimized_data.shape}')
+            
+            if optimized_data is None:
                 optimized_data = features_data
-                self.logger.warning('⚠️ MemoryEfficientTraining not available, using original data')
+                self.logger.warning('⚠️ All memory optimization failed, using original data')
 
             # Use ml_common parallel processing if available
             if self.parallel_processor and len(optimized_data) > 10000:
@@ -2686,28 +2897,52 @@ class SROptimizationStep(BaseStep):
         try:
             self.logger.info('⚡ PARALLEL OPTIMIZED TRAINING WITH ML_COMMON:')
             
-            # Use parallel processing coordinator
-            if self.parallel_processor:
-                # Determine optimal chunk size using ml_common
-                optimal_chunk_size = self.parallel_processor.determine_optimal_chunk_size(
-                    data_size=len(features_data),
-                    available_memory=self.memory_optimizer.get_memory_usage() if self.memory_optimizer else 0.5
-                )
+            # Enhanced parallel processing with M1 CPU optimization
+            if self.parallel_processor or self.m1_cpu_optimizer:
+                # Determine optimal chunk size using multiple strategies
+                optimal_chunk_size = 10000  # Default
                 
-                self.logger.info(f'   - Optimal chunk size: {optimal_chunk_size:,} rows')
+                if self.m1_cpu_optimizer:
+                    # Use M1 CPU optimizer for Apple Silicon
+                    optimal_workers = self.m1_cpu_optimizer.get_optimal_worker_count()
+                    optimal_chunk_size = self.m1_cpu_optimizer.calculate_optimal_chunk_size(
+                        data_size=len(features_data),
+                        worker_count=optimal_workers
+                    )
+                    self.logger.info(f'   - M1 optimal workers: {optimal_workers}')
+                    self.logger.info(f'   - M1 optimal chunk size: {optimal_chunk_size:,} rows')
+                
+                if self.parallel_processor:
+                    # Use ml_common parallel processing
+                    ml_common_chunk_size = self.parallel_processor.determine_optimal_chunk_size(
+                        data_size=len(features_data),
+                        available_memory=self.memory_optimizer.get_memory_usage() if self.memory_optimizer else 0.5
+                    )
+                    optimal_chunk_size = min(optimal_chunk_size, ml_common_chunk_size)
+                    self.logger.info(f'   - ML Common optimal chunk size: {ml_common_chunk_size:,} rows')
+                
+                self.logger.info(f'   - Final optimal chunk size: {optimal_chunk_size:,} rows')
                 
                 # Use parallel processing for training
-                results = await self.parallel_processor.execute_parallel_training(
-                    data=features_data,
-                    sr_levels=sr_levels,
-                    chunk_size=optimal_chunk_size,
-                    max_workers=4
-                )
+                if self.parallel_processor:
+                    results = await self.parallel_processor.execute_parallel_training(
+                        data=features_data,
+                        sr_levels=sr_levels,
+                        chunk_size=optimal_chunk_size,
+                        max_workers=optimal_workers if self.m1_cpu_optimizer else 4
+                    )
+                else:
+                    # Fallback to M1 CPU optimizer parallel processing
+                    results = await self.m1_cpu_optimizer.execute_parallel_training(
+                        data=features_data,
+                        sr_levels=sr_levels,
+                        chunk_size=optimal_chunk_size
+                    )
                 
-                self.logger.info('✅ Parallel training completed using ml_common utilities')
+                self.logger.info('✅ Enhanced parallel training completed')
                 return results
             else:
-                self.logger.warning('⚠️ ParallelProcessingCoordinator not available, using enhanced training')
+                self.logger.warning('⚠️ No parallel processing available, using enhanced training')
                 return await self._train_ml_models_enhanced(features_data, sr_levels)
                 
         except Exception as e:

@@ -1819,7 +1819,7 @@ class SROptimizationStep(BaseStep):
                             distance_from_max = abs(level_price - chunk_max)
                             closest_distance = min(distance_from_min, distance_from_max)
                             type_display = level_type.capitalize() if isinstance(level_type, str) else str(level_type)
-                            self.logger.info('.2f')
+                            self.logger.info(f'   - Price range: {chunk_min:.2f} - {chunk_max:.2f}')
                         except Exception as e:
                             self.logger.debug(f'Error logging individual level {i+1}: {e}')
                             continue
@@ -1871,7 +1871,7 @@ class SROptimizationStep(BaseStep):
                     if level_price >= market_min:
                         validated_support.append(level)
                     else:
-                        self.logger.debug('.2f')
+                        self.logger.debug(f'   - Market price range: {market_min:.2f} - {market_max:.2f}')
 
             # Validate resistance levels
             original_resistance_count = len(sr_levels.get('resistance_levels', []))
@@ -1884,7 +1884,7 @@ class SROptimizationStep(BaseStep):
                     if level_price <= market_max:
                         validated_resistance.append(level)
                     else:
-                        self.logger.warning('.2f')
+                        self.logger.warning(f'   - Filtered resistance level: {level_price:.2f} (above market max: {market_max:.2f})')
 
             # Update SR levels with validated results
             validated_sr_levels = {

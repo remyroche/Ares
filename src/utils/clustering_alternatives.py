@@ -50,27 +50,229 @@ class BaseClusteringAlgorithm(ABC):
         self.logger = system_logger.getChild(f'Clustering_{name}')
     
     @abstractmethod
-    def cluster(self, levels: List[Dict], target_min_levels: int, 
-                price_range: Tuple[float, float]) -> ClusteringResult:
-        """Cluster levels and return result."""
+    def cluster(self, levels: List[Dict], price_range: Tuple[float, float], 
+                proximity_threshold: float = 0.01, strength_similarity_threshold: float = 0.2) -> ClusteringResult:
+        """Cluster levels based on strength and proximity."""
         pass
     
     def _prepare_data(self, levels: List[Dict]) -> np.ndarray:
-        """Prepare data for clustering."""
+        """Prepare data for clustering with normalized features."""
         if not levels:
-            return np.array([]).reshape(0, 1)
+            return np.array([]).reshape(0, 2)
         
-        # Extract price and strength features
-        features = []
-        for level in levels:
-            price = level.get('price', 0.0)
-            strength = level.get('strength', 0.5)
-            touches = level.get('touches', 1)
-            
-            # Create feature vector: [price, strength, touches]
-            features.append([price, strength, touches])
+        # Extract and normalize features
+        prices = [level.get('price', 0.0) for level in levels]
+        strengths = [level.get('strength', 0.5) for level in levels]
         
+        # Normalize prices to [0, 1] range
+        min_price, max_price = min(prices), max(prices)
+        price_range = max_price - min_price
+        if price_range > 0:
+            normalized_prices = [(p - min_price) / price_range for p in prices]
+        else:
+            normalized_prices = [0.5] * len(prices)
+        
+        # Strengths are already in [0, 1] range
+        features = list(zip(normalized_prices, strengths))
         return np.array(features)
+    
+    def _calculate_strength_proximity_distance(self, level1: Dict, level2: Dict, 
+                                            price_range: Tuple[float, float]) -> float:
+        """Calculate combined distance based on price proximity and strength similarity."""
+        price1, price2 = level1.get('price', 0.0), level2.get('price', 0.0)
+        strength1, strength2 = level1.get('strength', 0.5), level2.get('strength', 0.5)
+        
+        # Price proximity (normalized by price range)
+        min_price, max_price = price_range
+        price_range_size = max_price - min_price
+        if price_range_size > 0:
+            price_distance = abs(price1 - price2) / price_range_size
+        else:
+            price_distance = 0.0
+        
+        # Strength similarity (inverse of strength difference)
+        strength_distance = abs(strength1 - strength2)
+        
+        # Combined distance (weighted combination)
+        # Price proximity is more important (70%) than strength similarity (30%)
+        combined_distance = 0.7 * price_distance + 0.3 * strength_distance
+        
+        return combined_distance
+
+class StrengthProximityClustering(BaseClusteringAlgorithm):
+    """Strength and proximity-based clustering for SR levels."""
+    
+    def __init__(self):
+        super().__init__("StrengthProximity")
+    
+    def cluster(self, levels: List[Dict], price_range: Tuple[float, float], 
+                proximity_threshold: float = 0.01, strength_similarity_threshold: float = 0.2) -> ClusteringResult:
+        """Cluster levels based on strength and proximity using adaptive thresholds."""
+        
+        if not levels:
+            return ClusteringResult(
+                clusters=[],
+                noise_points=[],
+                cluster_centers=[],
+                algorithm_used="StrengthProximity",
+                parameters={},
+                quality_score=0.0,
+                total_levels=0
+            )
+        
+        try:
+            # Convert proximity threshold to absolute price difference
+            min_price, max_price = price_range
+            price_range_size = max_price - min_price
+            absolute_proximity_threshold = proximity_threshold * price_range_size
+            
+            self.logger.info(f"Clustering {len(levels)} levels with proximity threshold: {absolute_proximity_threshold:.2f} ({proximity_threshold:.1%} of price range)")
+            self.logger.info(f"Strength similarity threshold: {strength_similarity_threshold:.2f}")
+            
+            # Initialize clusters
+            clusters = []
+            unassigned_levels = list(range(len(levels)))
+            
+            while unassigned_levels:
+                # Start new cluster with strongest unassigned level
+                current_cluster = []
+                seed_idx = self._find_strongest_level(levels, unassigned_levels)
+                current_cluster.append(seed_idx)
+                unassigned_levels.remove(seed_idx)
+                
+                # Find all levels that should be in this cluster
+                self._grow_cluster(levels, current_cluster, unassigned_levels, 
+                                 absolute_proximity_threshold, strength_similarity_threshold)
+                
+                clusters.append(current_cluster)
+                
+                # Remove assigned levels from unassigned
+                for idx in current_cluster[1:]:  # Skip seed (already removed)
+                    if idx in unassigned_levels:
+                        unassigned_levels.remove(idx)
+            
+            # Calculate cluster centers and quality
+            cluster_centers = []
+            total_quality = 0.0
+            
+            for cluster in clusters:
+                if cluster:
+                    # Calculate weighted center (by strength)
+                    cluster_prices = [levels[i].get('price', 0.0) for i in cluster]
+                    cluster_strengths = [levels[i].get('strength', 0.5) for i in cluster]
+                    
+                    # Weighted average by strength
+                    total_strength = sum(cluster_strengths)
+                    if total_strength > 0:
+                        weighted_center = sum(p * s for p, s in zip(cluster_prices, cluster_strengths)) / total_strength
+                    else:
+                        weighted_center = sum(cluster_prices) / len(cluster_prices)
+                    
+                    cluster_centers.append(weighted_center)
+                    
+                    # Calculate cluster quality (cohesion)
+                    cluster_quality = self._calculate_cluster_quality(levels, cluster, weighted_center)
+                    total_quality += cluster_quality
+            
+            # Overall quality score
+            quality_score = total_quality / len(clusters) if clusters else 0.0
+            
+            self.logger.info(f"Strength-proximity clustering: {len(levels)} levels -> {len(clusters)} clusters")
+            self.logger.info(f"Average cluster size: {len(levels) / len(clusters):.1f} levels")
+            self.logger.info(f"Quality score: {quality_score:.3f}")
+            
+            return ClusteringResult(
+                clusters=clusters,
+                noise_points=[],
+                cluster_centers=cluster_centers,
+                algorithm_used="StrengthProximity",
+                parameters={
+                    "proximity_threshold": proximity_threshold,
+                    "strength_similarity_threshold": strength_similarity_threshold,
+                    "absolute_proximity_threshold": absolute_proximity_threshold
+                },
+                quality_score=quality_score,
+                total_levels=len(levels)
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Strength-proximity clustering failed: {e}")
+            raise
+    
+    def _find_strongest_level(self, levels: List[Dict], available_indices: List[int]) -> int:
+        """Find the level with highest strength among available indices."""
+        if not available_indices:
+            return 0
+        
+        strongest_idx = available_indices[0]
+        strongest_strength = levels[strongest_idx].get('strength', 0.5)
+        
+        for idx in available_indices[1:]:
+            strength = levels[idx].get('strength', 0.5)
+            if strength > strongest_strength:
+                strongest_strength = strength
+                strongest_idx = idx
+        
+        return strongest_idx
+    
+    def _grow_cluster(self, levels: List[Dict], current_cluster: List[int], 
+                     unassigned_levels: List[int], proximity_threshold: float, 
+                     strength_similarity_threshold: float) -> None:
+        """Grow cluster by adding nearby levels with similar strength."""
+        
+        # Get cluster characteristics
+        cluster_prices = [levels[i].get('price', 0.0) for i in current_cluster]
+        cluster_strengths = [levels[i].get('strength', 0.5) for i in current_cluster]
+        cluster_center_price = sum(cluster_prices) / len(cluster_prices)
+        cluster_avg_strength = sum(cluster_strengths) / len(cluster_strengths)
+        
+        # Find levels to add to cluster
+        levels_to_add = []
+        
+        for idx in unassigned_levels:
+            level_price = levels[idx].get('price', 0.0)
+            level_strength = levels[idx].get('strength', 0.5)
+            
+            # Check proximity
+            price_distance = abs(level_price - cluster_center_price)
+            if price_distance > proximity_threshold:
+                continue
+            
+            # Check strength similarity
+            strength_difference = abs(level_strength - cluster_avg_strength)
+            if strength_difference > strength_similarity_threshold:
+                continue
+            
+            # Level qualifies for this cluster
+            levels_to_add.append(idx)
+        
+        # Add qualifying levels
+        current_cluster.extend(levels_to_add)
+    
+    def _calculate_cluster_quality(self, levels: List[Dict], cluster: List[int], 
+                                 cluster_center: float) -> float:
+        """Calculate quality score for a cluster based on cohesion."""
+        if not cluster:
+            return 0.0
+        
+        cluster_prices = [levels[i].get('price', 0.0) for i in cluster]
+        cluster_strengths = [levels[i].get('strength', 0.5) for i in cluster]
+        
+        # Price cohesion (lower variance = higher quality)
+        price_variance = np.var(cluster_prices) if len(cluster_prices) > 1 else 0.0
+        price_cohesion = 1.0 / (1.0 + price_variance)
+        
+        # Strength cohesion (lower variance = higher quality)
+        strength_variance = np.var(cluster_strengths) if len(cluster_strengths) > 1 else 0.0
+        strength_cohesion = 1.0 / (1.0 + strength_variance)
+        
+        # Average strength (higher = better)
+        avg_strength = sum(cluster_strengths) / len(cluster_strengths)
+        
+        # Combined quality score
+        quality = 0.4 * price_cohesion + 0.3 * strength_cohesion + 0.3 * avg_strength
+        
+        return quality
 
 class KMeansClustering(BaseClusteringAlgorithm):
     """K-Means clustering for SR levels."""
@@ -78,13 +280,8 @@ class KMeansClustering(BaseClusteringAlgorithm):
     def __init__(self):
         super().__init__("KMeans")
     
-    def cluster(self, levels: List[Dict], target_min_levels: int, 
-                price_range: Tuple[float, float]) -> ClusteringResult:
-        """Cluster using K-Means."""
-        if not SKLEARN_AVAILABLE:
-            raise ImportError("scikit-learn not available for K-Means clustering")
-        
-        if len(levels) < target_min_levels:
+    def cluster(self, levels: List[Dict], price_range: Tuple[float, float], 
+                proximity_threshold: float = 0.01, strength_similarity_threshold: float = 0.2) -> ClusteringResult:
             # Not enough levels to cluster
             return ClusteringResult(
                 clusters=[[i] for i in range(len(levels))],
@@ -434,6 +631,7 @@ class ClusteringManager:
     def __init__(self):
         self.logger = system_logger.getChild('ClusteringManager')
         self.algorithms = {
+            'strength_proximity': StrengthProximityClustering(),
             'kmeans': KMeansClustering(),
             'agglomerative': AgglomerativeClusteringAlgorithm(),
             'hdbscan': HDBSCANClustering() if HDBSCAN_AVAILABLE else None,
@@ -446,10 +644,11 @@ class ClusteringManager:
         
         self.logger.info(f"Available clustering algorithms: {list(self.algorithms.keys())}")
     
-    def cluster_with_fallback(self, levels: List[Dict], target_min_levels: int, 
-                             price_range: Tuple[float, float], 
-                             preferred_algorithm: str = 'kmeans') -> ClusteringResult:
-        """Cluster levels with fallback to alternative algorithms."""
+    def cluster_with_fallback(self, levels: List[Dict], price_range: Tuple[float, float], 
+                             proximity_threshold: float = 0.01, 
+                             strength_similarity_threshold: float = 0.2,
+                             preferred_algorithm: str = 'strength_proximity') -> ClusteringResult:
+        """Cluster levels based on strength and proximity with fallback to alternative algorithms."""
         
         if not levels:
             return ClusteringResult(
@@ -462,22 +661,24 @@ class ClusteringManager:
                 total_levels=0
             )
         
+        self.logger.info(f"Clustering {len(levels)} levels with strength-proximity approach")
+        self.logger.info(f"Price range: {price_range[0]:.2f} - {price_range[1]:.2f}")
+        self.logger.info(f"Proximity threshold: {proximity_threshold:.1%} of price range")
+        self.logger.info(f"Strength similarity threshold: {strength_similarity_threshold:.2f}")
+        
         # Try preferred algorithm first
         if preferred_algorithm in self.algorithms:
             try:
                 result = self.algorithms[preferred_algorithm].cluster(
-                    levels, target_min_levels, price_range
+                    levels, price_range, proximity_threshold, strength_similarity_threshold
                 )
-                if result.total_levels >= target_min_levels:
-                    self.logger.info(f"Successfully clustered with {preferred_algorithm}")
-                    return result
-                else:
-                    self.logger.warning(f"{preferred_algorithm} produced insufficient levels: {result.total_levels} < {target_min_levels}")
+                self.logger.info(f"Successfully clustered with {preferred_algorithm}: {len(result.clusters)} clusters")
+                return result
             except Exception as e:
                 self.logger.warning(f"{preferred_algorithm} failed: {e}")
         
         # Try other algorithms in order of preference
-        algorithm_order = ['kmeans', 'agglomerative', 'gaussian_mixture', 'hdbscan', 'price_based']
+        algorithm_order = ['strength_proximity', 'kmeans', 'agglomerative', 'gaussian_mixture', 'hdbscan', 'price_based']
         
         for algorithm_name in algorithm_order:
             if algorithm_name == preferred_algorithm:
@@ -486,13 +687,10 @@ class ClusteringManager:
             if algorithm_name in self.algorithms:
                 try:
                     result = self.algorithms[algorithm_name].cluster(
-                        levels, target_min_levels, price_range
+                        levels, price_range, proximity_threshold, strength_similarity_threshold
                     )
-                    if result.total_levels >= target_min_levels:
-                        self.logger.info(f"Successfully clustered with {algorithm_name} (fallback)")
-                        return result
-                    else:
-                        self.logger.warning(f"{algorithm_name} produced insufficient levels: {result.total_levels} < {target_min_levels}")
+                    self.logger.info(f"Successfully clustered with {algorithm_name} (fallback): {len(result.clusters)} clusters")
+                    return result
                 except Exception as e:
                     self.logger.warning(f"{algorithm_name} failed: {e}")
         

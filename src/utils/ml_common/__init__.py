@@ -27,6 +27,7 @@ from .base_safeguards import *
 from .cv_utils import *
 from .lookahead_protection import *
 from .feature_selection import *
+from .feature_generation_optimization import *
 from .model_evaluation import *
 from .hpo_utils import *
 from .memory_optimization import *
@@ -58,6 +59,14 @@ __all__ = [
 
     # Feature selection framework
     'FeatureSelectionFramework',
+
+    # Feature generation optimization
+    'FeatureGenerationOptimizer',
+    'FeatureOptimizationConfig',
+    'FeatureOptimizationResult',
+    'OptimizationMethod',
+    'get_feature_optimizer',
+    'optimize_feature_lookback',
 
     # Model evaluation utilities
     'ModelEvaluationUtilities',

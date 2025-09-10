@@ -54,6 +54,11 @@ def safe_divide(a, b):
 # Core imports
 from src.training.base_step import BaseStep
 from src.utils.logger import system_logger
+from src.utils.ml_common.data_validation import (
+    verify_stage_beginning_quality,
+    DataType,
+    get_quality_integration
+)
 
 # Initialize logger early to avoid usage before definition
 logger = system_logger.getChild('Step2_5SROptimization')
@@ -1258,6 +1263,29 @@ class SROptimizationStep(BaseStep):
             data = pipeline_state.get('dataframe')
             if data is None:
                 raise ValueError("No dataframe found in pipeline state")
+            
+            # Verify data quality before SR levels creation
+            try:
+                self.logger.info('🔍 Verifying data quality before SR levels creation...')
+                quality_integration = get_quality_integration()
+                cleaned_data, quality_report = await quality_integration.verify_stage_beginning(
+                    data, "sr_levels_creation", DataType.KLINES
+                )
+                
+                self.logger.info(f'✅ Data quality verification completed')
+                self.logger.info(f'   Quality score: {quality_report.quality_score:.3f}')
+                self.logger.info(f'   Issues found: {len(quality_report.issues)}')
+                
+                # Use cleaned data if quality verification made changes
+                if len(cleaned_data) != len(data):
+                    self.logger.info(f'📊 Data cleaned: {len(data)} -> {len(cleaned_data)} rows')
+                    data = cleaned_data
+                    # Update pipeline state with cleaned data
+                    pipeline_state['dataframe'] = data
+                
+            except Exception as e:
+                self.logger.warning(f'⚠️ Data quality verification failed: {e}')
+                # Continue with original data if quality verification fails
 
             self.logger.info(f'📊 Data loaded: {data.shape[0]:,} rows, {data.shape[1]} columns')
 

@@ -38,18 +38,13 @@ Step08 was removed from the main training pipeline but its functionality has bee
   - Regime transition handling
 
 ### 4. Optimized Implementations
-- **step08_optimized_class.py**: Optimized class-based implementation
-- **step08_optimized_execution.py**: Optimized execution strategies
 - **step08_optimized_methods.py**: Optimized method implementations
 - **step08_optimized.py**: General optimized implementation
 
 ### 5. Unified Implementations
-- **step08_unified_class.py**: Unified class-based approach
-- **step08_unified_complete.py**: Complete unified implementation
+- **step08_unified_complete.py**: Complete unified implementation (consolidated from multiple files)
 - **step08_unified_final.py**: Final unified version
 - **step08_unified_methods.py**: Unified method implementations
-- **step08_unified_risk.py**: Risk-aware unified implementation
-- **step08_unified.py**: General unified implementation
 
 ### 6. Regime Data Splitting (`step08_regime_data_splitting.py`)
 - **Purpose**: Regime-specific data splitting utilities

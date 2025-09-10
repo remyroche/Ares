@@ -86,17 +86,23 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
                         imported_by.append(other_file)
             
             is_imported = len(imported_by) > 0
+            
+            # Check if file is only imported by non-production files
+            only_imported_by_non_production = self._is_only_imported_by_non_production(imported_by)
+            
             import_status[file_path_str] = {
                 "is_imported": is_imported,
                 "imported_by": imported_by,
                 "import_count": len(imported_by),
-                "module_name": module_name
+                "module_name": module_name,
+                "only_imported_by_non_production": only_imported_by_non_production
             }
         
         # Calculate summary statistics
         total_files = len(target_python_files)
         imported_files = sum(1 for status in import_status.values() if status["is_imported"])
         unimported_files = total_files - imported_files
+        only_non_production_files = sum(1 for status in import_status.values() if status.get("only_imported_by_non_production", False))
         
         # Find most/least imported files
         most_imported = max(import_status.items(), 
@@ -110,7 +116,9 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
                 "total_files": total_files,
                 "imported_files": imported_files,
                 "unimported_files": unimported_files,
+                "only_non_production_files": only_non_production_files,
                 "import_percentage": (imported_files / total_files * 100) if total_files > 0 else 0,
+                "non_production_percentage": (only_non_production_files / total_files * 100) if total_files > 0 else 0,
                 "most_imported_file": {
                     "file": most_imported[0] if most_imported else None,
                     "import_count": most_imported[1].get("import_count", 0) if most_imported else 0
@@ -237,6 +245,21 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         
         return False
     
+    def _is_only_imported_by_non_production(self, imported_by: List[str]) -> bool:
+        """Check if file is only imported by non-production files (fix, example, test, .md)."""
+        if not imported_by:
+            return False
+        
+        non_production_patterns = ["fix", "example", "test", ".md"]
+        
+        for importer in imported_by:
+            importer_lower = importer.lower()
+            is_non_production = any(pattern in importer_lower for pattern in non_production_patterns)
+            if not is_non_production:
+                return False  # Found at least one production import
+        
+        return True  # All imports are from non-production files
+    
     def get_simple_yes_no_report(self, results: Dict[str, Any]) -> Dict[str, str]:
         """
         Generate a simple yes/no report for each file.
@@ -264,7 +287,9 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         print(f"Total files analyzed: {summary.get('total_files', 0)}")
         print(f"Files imported by others: {summary.get('imported_files', 0)}")
         print(f"Files NOT imported by others: {summary.get('unimported_files', 0)}")
+        print(f"Files only imported by non-production files: {summary.get('only_non_production_files', 0)}")
         print(f"Import percentage: {summary.get('import_percentage', 0):.1f}%")
+        print(f"Non-production only percentage: {summary.get('non_production_percentage', 0):.1f}%")
         print("\n" + "-"*80)
         print("FILE IMPORT STATUS (YES = imported by others, NO = not imported)")
         print("-"*80)
@@ -274,11 +299,14 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
             status = simple_report[file_path]
             file_info = import_status.get(file_path, {})
             imported_by = file_info.get("imported_by", [])
+            only_non_production = file_info.get("only_imported_by_non_production", False)
             
             # Show relative path for better readability
             try:
                 rel_path = Path(file_path).relative_to(Path.cwd())
-                print(f"{status:3} | {rel_path}")
+                # Add flag indicator
+                flag_indicator = " [NON-PROD]" if only_non_production else ""
+                print(f"{status:3} | {rel_path}{flag_indicator}")
                 
                 # Show which files import this file (if any)
                 if imported_by:
@@ -293,7 +321,8 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
                     print(f"     └─ Not imported by any other files")
                     
             except ValueError:
-                print(f"{status:3} | {file_path}")
+                flag_indicator = " [NON-PROD]" if only_non_production else ""
+                print(f"{status:3} | {file_path}{flag_indicator}")
                 if imported_by:
                     print(f"     └─ Imported by {len(imported_by)} file(s):")
                     for importer in sorted(imported_by):

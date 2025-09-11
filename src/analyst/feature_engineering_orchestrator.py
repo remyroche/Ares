@@ -7,7 +7,7 @@ import pandas as pd
 import pandas_ta as ta
 from .advanced_feature_engineering import AdvancedFeatureEngineering
 from .autoencoder_feature_generator import AutoencoderFeatureGenerator
-from ..analytics.limited_microstructure_features import LimitedMicrostructureFeatures
+from ..feature_engineering.limited_microstructure_features import LimitedMicrostructureFeatures
 from ..training.steps.data_collection.feature_engineering.feature_components import EntropyFeatureEngine
 from ..utils.step06_utilities import CrossTimeframeFeatureGenerator
 from ..config import CONFIG

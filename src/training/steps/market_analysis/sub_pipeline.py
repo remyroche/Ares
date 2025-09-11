@@ -1629,10 +1629,10 @@ class MarketAnalysisSubPipeline:
             # Start a new cluster
             cluster = {
                 'cluster_id': len(clusters) + 1,
-                'levels': [level.level],
+                'levels': [level.price],  # Fixed: use level.price instead of level.level
                 'strength': level.strength,
                 'type': level.level_type,
-                'touches': level.touches
+                'touches': level.touch_count  # Fixed: use level.touch_count instead of level.touches
             }
             used_levels.add(i)
             
@@ -1642,13 +1642,13 @@ class MarketAnalysisSubPipeline:
                     continue
                 
                 # Check if levels are close enough
-                price_diff = abs(level.level - other_level.level)
-                price_tolerance = level.level * 0.02  # 2% tolerance
+                price_diff = abs(level.price - other_level.price)  # Fixed: use level.price instead of level.level
+                price_tolerance = level.price * 0.02  # 2% tolerance  # Fixed: use level.price instead of level.level
                 
                 if price_diff <= price_tolerance and level.level_type == other_level.level_type:
-                    cluster['levels'].append(other_level.level)
+                    cluster['levels'].append(other_level.price)  # Fixed: use other_level.price instead of other_level.level
                     cluster['strength'] = max(cluster['strength'], other_level.strength)
-                    cluster['touches'] += other_level.touches
+                    cluster['touches'] += other_level.touch_count  # Fixed: use other_level.touch_count instead of other_level.touches
                     used_levels.add(j)
             
             clusters.append(cluster)

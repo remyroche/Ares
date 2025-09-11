@@ -652,6 +652,9 @@ class AresLauncher:
         # Execute only the specified stage
         result = await self.pipeline.execute_pipeline(config)
         
+        # Calculate overall metrics for stage execution
+        self.pipeline._calculate_pipeline_metrics(result)
+        
         # Create outcome file for this stage
         if result.stage_results and stage in result.stage_results:
             stage_results = result.stage_results[stage]
@@ -694,6 +697,9 @@ class AresLauncher:
         
         # Execute only the specified sub-pipeline
         result = await self.pipeline.execute_pipeline(config)
+        
+        # Calculate overall metrics for sub-pipeline execution
+        self.pipeline._calculate_pipeline_metrics(result)
         
         # Create outcome file for this sub-pipeline
         if result.stage_results and target_stage in result.stage_results:

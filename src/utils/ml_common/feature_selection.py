@@ -176,16 +176,19 @@ class FeatureSelectionFramework:
         start_time = time.time()
         features_initial_count = len(feature_names)
         
-        # Configurable thresholds
+        # Configurable thresholds with dynamic defaults
         default_config = {
+            'use_dynamic_thresholds': True,     # Enable dynamic threshold determination
             'mrmr_skip_threshold': 150,        # Skip mRMR if features < this
-            'mrmr_target_threshold': 100,      # Target after mRMR
             'consensus_reduction_factor': 0.5,  # Reduce by this fraction in consensus
-            'correlation_threshold': 0.95,     # Correlation filtering threshold
-            'stability_threshold': 0.6,        # LASSO stability threshold
+            'correlation_threshold': None,     # Will be determined dynamically if None
+            'stability_threshold': None,       # Will be determined dynamically if None
             'enable_parallel': self.enable_parallel,
             'memory_optimization': True,
-            'verbose': True
+            'verbose': True,
+            'cv_folds': 5,                     # CV folds for RFE optimization
+            'min_features_ratio': 0.05,        # Minimum 5% of features at each stage
+            'max_features_ratio': 0.5          # Maximum 50% of features at each stage
         }
         
         config = {**default_config, **(config or {})}
@@ -211,11 +214,18 @@ class FeatureSelectionFramework:
         current_X = X.copy()
         
         try:
-            # Stage 1: Correlation-based filtering
-            _LOGGER.info("🔍 Stage 1: Correlation-based filtering...")
+            # Stage 1: Correlation-based filtering with dynamic threshold
+            _LOGGER.info("🔍 Stage 1: Correlation-based filtering with dynamic threshold...")
+            
+            # Determine adaptive correlation threshold
+            if config['use_dynamic_thresholds'] and config['correlation_threshold'] is None:
+                correlation_threshold = self._determine_adaptive_correlation_threshold(current_X, current_features)
+            else:
+                correlation_threshold = config['correlation_threshold'] or 0.95
+            
             correlation_result = self.correlation_based_filtering(
                 current_X, current_features, 
-                correlation_threshold=config['correlation_threshold']
+                correlation_threshold=correlation_threshold
             )
             
             if 'selected_features' in correlation_result:
@@ -241,19 +251,49 @@ class FeatureSelectionFramework:
                     'output_count': len(current_features)
                 }
             
-            # Stage 2: mRMR selection (conditional)
-            _LOGGER.info("🔍 Stage 2: mRMR selection (conditional)...")
+            # Stage 2: mRMR selection with dynamic threshold
+            _LOGGER.info("🔍 Stage 2: mRMR selection with dynamic threshold...")
             features_after_mrmr = current_features.copy()
             
             if len(current_features) >= config['mrmr_skip_threshold']:
-                # Calculate target features for mRMR
-                mrmr_target = max(config['mrmr_target_threshold'], 
-                                features_target_count * 2)  # Ensure we don't go below target
-                mrmr_target = min(mrmr_target, len(current_features))
+                # First, run mRMR to get scores
+                _LOGGER.info("🔍 Computing mRMR scores for dynamic threshold determination...")
+                mrmr_result = self.mrmr_selection(current_X, y, current_features, len(current_features))
                 
-                _LOGGER.info(f"📊 mRMR target: {mrmr_target} (from {len(current_features)})")
-                
-                mrmr_result = self.mrmr_selection(current_X, y, current_features, mrmr_target)
+                if 'mrmr_scores' in mrmr_result and config['use_dynamic_thresholds']:
+                    # Determine dynamic threshold based on mRMR scores
+                    mrmr_threshold, mrmr_target = self._determine_mrmr_threshold(
+                        mrmr_result['mrmr_scores'], current_features
+                    )
+                    
+                    # Filter features based on dynamic threshold
+                    features_above_threshold = [
+                        feature for feature, score in mrmr_result['mrmr_scores'].items()
+                        if score >= mrmr_threshold
+                    ]
+                    
+                    # Ensure we don't go below target count
+                    if len(features_above_threshold) < features_target_count:
+                        # Take top features by score
+                        sorted_features = sorted(
+                            mrmr_result['mrmr_scores'].items(),
+                            key=lambda x: x[1],
+                            reverse=True
+                        )
+                        features_above_threshold = [f for f, _ in sorted_features[:features_target_count]]
+                    
+                    mrmr_result['selected_features'] = features_above_threshold
+                    mrmr_result['dynamic_threshold'] = mrmr_threshold
+                    mrmr_result['threshold_method'] = 'dynamic'
+                    
+                    _LOGGER.info(f"📊 mRMR dynamic target: {len(features_above_threshold)} (threshold: {mrmr_threshold:.4f})")
+                else:
+                    # Fallback to proportional reduction
+                    mrmr_target = max(features_target_count * 2, len(current_features) // 2)
+                    mrmr_target = min(mrmr_target, len(current_features))
+                    mrmr_result = self.mrmr_selection(current_X, y, current_features, mrmr_target)
+                    mrmr_result['threshold_method'] = 'proportional'
+                    _LOGGER.info(f"📊 mRMR proportional target: {mrmr_target}")
                 
                 if 'selected_features' in mrmr_result:
                     features_after_mrmr = mrmr_result['selected_features']
@@ -286,29 +326,61 @@ class FeatureSelectionFramework:
                     'output_count': len(current_features)
                 }
             
-            # Stage 3: LASSO stability + RFE consensus
-            _LOGGER.info("🔍 Stage 3: LASSO stability + RFE consensus...")
+            # Stage 3: LASSO stability + RFE consensus with dynamic optimization
+            _LOGGER.info("🔍 Stage 3: LASSO stability + RFE consensus with dynamic optimization...")
             
-            # Calculate target for consensus stage
-            consensus_target = max(features_target_count, 
-                                 int(len(current_features) * config['consensus_reduction_factor']))
-            consensus_target = min(consensus_target, len(current_features))
-            
-            _LOGGER.info(f"📊 Consensus target: {consensus_target} (from {len(current_features)})")
-            
-            # LASSO stability selection
+            # LASSO stability selection with dynamic threshold
             lasso_result = self.lasso_stability_selection(
                 current_X, y, current_features,
-                stability_threshold=config['stability_threshold']
+                stability_threshold=config['stability_threshold'] or 0.6
             )
             
-            # RFE selection
+            # Determine dynamic stability threshold if enabled
+            if config['use_dynamic_thresholds'] and 'feature_stability_scores' in lasso_result:
+                stability_threshold, stable_features_count = self._determine_lasso_stability_threshold(
+                    lasso_result['feature_stability_scores'], current_features
+                )
+                lasso_result['dynamic_stability_threshold'] = stability_threshold
+                lasso_result['threshold_method'] = 'dynamic'
+                _LOGGER.info(f"📊 LASSO dynamic stability threshold: {stability_threshold:.3f}")
+            
+            # RFE selection with optimal feature count determination
             base_model = self._get_default_model(y)
             rfe_result = None
             if base_model is not None:
+                if config['use_dynamic_thresholds']:
+                    # Determine optimal number of features using cross-validation
+                    optimal_rfe_features = self._determine_optimal_rfe_features(
+                        current_X, y, current_features, base_model, config['cv_folds']
+                    )
+                    _LOGGER.info(f"📊 RFE optimal features determined by CV: {optimal_rfe_features}")
+                else:
+                    # Use proportional reduction
+                    optimal_rfe_features = max(features_target_count, 
+                                             int(len(current_features) * config['consensus_reduction_factor']))
+                    optimal_rfe_features = min(optimal_rfe_features, len(current_features))
+                    _LOGGER.info(f"📊 RFE proportional target: {optimal_rfe_features}")
+                
                 rfe_result = self.recursive_feature_elimination(
-                    base_model, current_X, y, current_features, consensus_target
+                    base_model, current_X, y, current_features, optimal_rfe_features
                 )
+                rfe_result['optimal_features'] = optimal_rfe_features
+            
+            # Calculate consensus target based on both methods
+            lasso_features = lasso_result.get('selected_features', [])
+            rfe_features = rfe_result.get('selected_features', []) if rfe_result else []
+            
+            # Dynamic consensus target based on method results
+            if config['use_dynamic_thresholds']:
+                # Use the smaller of the two method results, but ensure we don't go below target
+                consensus_target = max(features_target_count, min(len(lasso_features), len(rfe_features)))
+            else:
+                # Use proportional reduction
+                consensus_target = max(features_target_count, 
+                                     int(len(current_features) * config['consensus_reduction_factor']))
+            
+            consensus_target = min(consensus_target, len(current_features))
+            _LOGGER.info(f"📊 Dynamic consensus target: {consensus_target} (LASSO: {len(lasso_features)}, RFE: {len(rfe_features)})")
             
             # Compute consensus
             consensus_features = self._compute_lasso_rfe_consensus(
@@ -333,16 +405,61 @@ class FeatureSelectionFramework:
             
             _LOGGER.info(f"✅ Stage 3 complete: {len(current_features)} features remaining")
             
-            # Stage 4: Tree-based ensemble selection (final)
-            _LOGGER.info("🔍 Stage 4: Tree-based ensemble selection (final)...")
+            # Stage 4: Tree-based ensemble selection with dynamic threshold (final)
+            _LOGGER.info("🔍 Stage 4: Tree-based ensemble selection with dynamic threshold (final)...")
             
+            # First run tree ensemble to get importance scores
             tree_result = self.tree_based_ensemble_selection(
                 current_X, y, current_features,
                 methods=['correlation', 'mrmr', 'lasso_stability'],
-                n_features=features_target_count,
-                cv_folds=5,
+                n_features=None,  # Get all features with importance scores
+                cv_folds=config['cv_folds'],
                 permutation_importance_repeats=10
             )
+            
+            # Apply dynamic threshold if enabled
+            if config['use_dynamic_thresholds'] and 'permutation_importance' in tree_result:
+                importance_threshold, important_features_count = self._determine_tree_ensemble_threshold(
+                    tree_result['permutation_importance'], current_features
+                )
+                
+                # Filter features based on dynamic threshold
+                features_above_threshold = [
+                    feature for feature, data in tree_result['permutation_importance'].items()
+                    if data['importance'] >= importance_threshold
+                ]
+                
+                # Ensure we don't go below target count
+                if len(features_above_threshold) < features_target_count:
+                    # Take top features by importance
+                    sorted_features = sorted(
+                        tree_result['permutation_importance'].items(),
+                        key=lambda x: x[1]['importance'],
+                        reverse=True
+                    )
+                    features_above_threshold = [f for f, _ in sorted_features[:features_target_count]]
+                
+                tree_result['selected_features'] = features_above_threshold
+                tree_result['dynamic_importance_threshold'] = importance_threshold
+                tree_result['threshold_method'] = 'dynamic'
+                
+                _LOGGER.info(f"📊 Tree ensemble dynamic target: {len(features_above_threshold)} (threshold: {importance_threshold:.6f})")
+            else:
+                # Fallback to target count
+                if 'selected_features' not in tree_result:
+                    # Take top features by importance
+                    if 'permutation_importance' in tree_result:
+                        sorted_features = sorted(
+                            tree_result['permutation_importance'].items(),
+                            key=lambda x: x[1]['importance'],
+                            reverse=True
+                        )
+                        tree_result['selected_features'] = [f for f, _ in sorted_features[:features_target_count]]
+                    else:
+                        tree_result['selected_features'] = current_features[:features_target_count]
+                
+                tree_result['threshold_method'] = 'target_count'
+                _LOGGER.info(f"📊 Tree ensemble target count: {features_target_count}")
             
             if 'selected_features' in tree_result:
                 final_features = tree_result['selected_features']
@@ -373,13 +490,28 @@ class FeatureSelectionFramework:
                 'reduction_percentage': safe_divide(features_initial_count - len(final_features), features_initial_count) * 100
             })
             
-            # Enhanced reporting
+            # Enhanced reporting with dynamic threshold information
             additional_stats = {
                 'Pipeline stages': len(pipeline_results['pipeline_stages']),
                 'Target achieved': len(final_features) == features_target_count,
                 'Final vs target': f"{len(final_features)}/{features_target_count}",
-                'Total reduction': f"{features_initial_count - len(final_features)} ({pipeline_results['pipeline_summary']['reduction_percentage']:.1f}%)"
+                'Total reduction': f"{features_initial_count - len(final_features)} ({pipeline_results['pipeline_summary']['reduction_percentage']:.1f}%)",
+                'Dynamic thresholds': config['use_dynamic_thresholds'],
+                'CV folds': config['cv_folds']
             }
+            
+            # Add threshold information for each stage
+            for stage_name, stage_data in pipeline_results['pipeline_stages'].items():
+                if 'result' in stage_data and isinstance(stage_data['result'], dict):
+                    result = stage_data['result']
+                    if 'threshold_method' in result:
+                        additional_stats[f'{stage_name}_method'] = result['threshold_method']
+                    if 'dynamic_threshold' in result:
+                        additional_stats[f'{stage_name}_threshold'] = f"{result['dynamic_threshold']:.4f}"
+                    if 'dynamic_stability_threshold' in result:
+                        additional_stats[f'{stage_name}_stability_threshold'] = f"{result['dynamic_stability_threshold']:.4f}"
+                    if 'dynamic_importance_threshold' in result:
+                        additional_stats[f'{stage_name}_importance_threshold'] = f"{result['dynamic_importance_threshold']:.6f}"
             
             self._log_feature_reduction_stats(
                 "Hierarchical Feature Selection Pipeline", 
@@ -435,6 +567,234 @@ class FeatureSelectionFramework:
         _LOGGER.info(f"📊 Consensus: {len(consensus_features)} features from {len(lasso_features)} LASSO + {len(rfe_features)} RFE")
         
         return consensus_features
+
+    def _determine_adaptive_correlation_threshold(self, X: np.ndarray, feature_names: List[str]) -> float:
+        """Determine adaptive correlation threshold based on data characteristics."""
+        try:
+            # Calculate correlation matrix
+            corr_matrix = m1_correlation_matrix(X.T)
+            
+            # Get upper triangle correlations (excluding diagonal)
+            upper_tri = np.triu(corr_matrix, k=1)
+            correlations = upper_tri[upper_tri != 0]
+            
+            if len(correlations) == 0:
+                return 0.95  # Default threshold
+            
+            # Calculate statistics
+            mean_corr = np.mean(np.abs(correlations))
+            std_corr = np.std(np.abs(correlations))
+            q75_corr = np.percentile(np.abs(correlations), 75)
+            q90_corr = np.percentile(np.abs(correlations), 90)
+            
+            # Adaptive threshold based on correlation distribution
+            if mean_corr > 0.7:  # High correlation data
+                threshold = min(0.98, q90_corr)
+            elif mean_corr > 0.4:  # Medium correlation data
+                threshold = min(0.95, q75_corr + std_corr)
+            else:  # Low correlation data
+                threshold = max(0.90, q75_corr)
+            
+            _LOGGER.info(f"📊 Adaptive correlation threshold: {threshold:.3f} (mean: {mean_corr:.3f}, std: {std_corr:.3f})")
+            return threshold
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Adaptive correlation threshold failed: {e}, using default 0.95")
+            return 0.95
+
+    def _determine_mrmr_threshold(self, mrmr_scores: Dict[str, float], 
+                                feature_names: List[str]) -> Tuple[float, int]:
+        """Determine dynamic threshold for mRMR feature selection based on score distribution."""
+        try:
+            if not mrmr_scores:
+                return 0.0, 0
+            
+            scores = list(mrmr_scores.values())
+            scores = [s for s in scores if not np.isnan(s) and np.isfinite(s)]
+            
+            if not scores:
+                return 0.0, 0
+            
+            # Calculate score statistics
+            mean_score = np.mean(scores)
+            std_score = np.std(scores)
+            median_score = np.median(scores)
+            q75_score = np.percentile(scores, 75)
+            q90_score = np.percentile(scores, 90)
+            
+            # Dynamic threshold based on score distribution
+            if std_score > mean_score:  # High variance in scores
+                threshold = max(median_score, mean_score - std_score)
+            else:  # Low variance in scores
+                threshold = q75_score
+            
+            # Count features above threshold
+            features_above_threshold = sum(1 for score in scores if score >= threshold)
+            
+            # Ensure minimum and maximum bounds
+            min_features = max(10, len(feature_names) // 20)  # At least 5% of features
+            max_features = min(len(feature_names), len(feature_names) // 2)  # At most 50% of features
+            
+            features_above_threshold = max(min_features, min(max_features, features_above_threshold))
+            
+            _LOGGER.info(f"📊 mRMR dynamic threshold: {threshold:.4f}")
+            _LOGGER.info(f"📊 Features above threshold: {features_above_threshold}/{len(feature_names)}")
+            _LOGGER.info(f"📊 Score stats - mean: {mean_score:.4f}, std: {std_score:.4f}, q75: {q75_score:.4f}")
+            
+            return threshold, features_above_threshold
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ mRMR threshold determination failed: {e}")
+            return 0.0, max(10, len(feature_names) // 10)
+
+    def _determine_optimal_rfe_features(self, X: np.ndarray, y: np.ndarray, 
+                                      feature_names: List[str], 
+                                      base_model: Any, cv_folds: int = 5) -> int:
+        """Determine optimal number of features for RFE using cross-validation."""
+        try:
+            if not SKLEARN_AVAILABLE:
+                return min(20, len(feature_names) // 2)
+            
+            from sklearn.model_selection import cross_val_score
+            from sklearn.feature_selection import RFECV
+            
+            _LOGGER.info(f"🔍 Determining optimal RFE features using {cv_folds}-fold CV...")
+            
+            # Use RFECV to find optimal number of features
+            rfecv = RFECV(
+                estimator=base_model,
+                step=0.1,  # Remove 10% of features at each step
+                cv=cv_folds,
+                scoring='accuracy' if len(np.unique(y)) <= 10 else 'r2',
+                min_features_to_select=1,
+                n_jobs=1  # Single job for parallel processing compatibility
+            )
+            
+            rfecv.fit(X, y)
+            optimal_features = rfecv.n_features_
+            
+            # Get CV scores for analysis
+            cv_scores = rfecv.cv_results_['mean_test_score']
+            cv_stds = rfecv.cv_results_['std_test_score']
+            
+            # Find the point where performance starts to degrade significantly
+            max_score = np.max(cv_scores)
+            max_idx = np.argmax(cv_scores)
+            
+            # Look for significant drop in performance (more than 1 std)
+            for i in range(max_idx, len(cv_scores)):
+                if cv_scores[i] < max_score - cv_stds[max_idx]:
+                    optimal_features = max(1, i)
+                    break
+            
+            # Ensure reasonable bounds
+            min_features = max(1, len(feature_names) // 20)  # At least 5% of features
+            max_features = min(len(feature_names), len(feature_names) // 2)  # At most 50% of features
+            optimal_features = max(min_features, min(max_features, optimal_features))
+            
+            _LOGGER.info(f"📊 Optimal RFE features: {optimal_features}/{len(feature_names)}")
+            _LOGGER.info(f"📊 Max CV score: {max_score:.4f} ± {cv_stds[max_idx]:.4f}")
+            
+            return optimal_features
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Optimal RFE features determination failed: {e}")
+            return min(20, len(feature_names) // 2)
+
+    def _determine_lasso_stability_threshold(self, stability_scores: Dict[str, float],
+                                           feature_names: List[str]) -> Tuple[float, int]:
+        """Determine dynamic stability threshold for LASSO feature selection."""
+        try:
+            if not stability_scores:
+                return 0.6, 0
+            
+            scores = list(stability_scores.values())
+            scores = [s for s in scores if not np.isnan(s) and np.isfinite(s)]
+            
+            if not scores:
+                return 0.6, 0
+            
+            # Calculate score statistics
+            mean_stability = np.mean(scores)
+            std_stability = np.std(scores)
+            median_stability = np.median(scores)
+            q75_stability = np.percentile(scores, 75)
+            
+            # Dynamic threshold based on stability distribution
+            if mean_stability > 0.7:  # High stability data
+                threshold = max(0.6, q75_stability)
+            elif mean_stability > 0.4:  # Medium stability data
+                threshold = max(0.5, median_stability)
+            else:  # Low stability data
+                threshold = max(0.3, mean_stability - std_stability)
+            
+            # Count features above threshold
+            features_above_threshold = sum(1 for score in scores if score >= threshold)
+            
+            # Ensure reasonable bounds
+            min_features = max(5, len(feature_names) // 20)  # At least 5% of features
+            max_features = min(len(feature_names), len(feature_names) // 2)  # At most 50% of features
+            features_above_threshold = max(min_features, min(max_features, features_above_threshold))
+            
+            _LOGGER.info(f"📊 LASSO stability threshold: {threshold:.3f}")
+            _LOGGER.info(f"📊 Stable features: {features_above_threshold}/{len(feature_names)}")
+            _LOGGER.info(f"📊 Stability stats - mean: {mean_stability:.3f}, std: {std_stability:.3f}")
+            
+            return threshold, features_above_threshold
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ LASSO stability threshold determination failed: {e}")
+            return 0.6, max(5, len(feature_names) // 10)
+
+    def _determine_tree_ensemble_threshold(self, importance_scores: Dict[str, Dict[str, Any]],
+                                         feature_names: List[str]) -> Tuple[float, int]:
+        """Determine dynamic threshold for tree ensemble feature selection based on importance scores."""
+        try:
+            if not importance_scores:
+                return 0.0, 0
+            
+            # Extract importance values
+            importances = []
+            for feature, data in importance_scores.items():
+                if isinstance(data, dict) and 'importance' in data:
+                    imp = data['importance']
+                    if not np.isnan(imp) and np.isfinite(imp):
+                        importances.append(imp)
+            
+            if not importances:
+                return 0.0, 0
+            
+            # Calculate importance statistics
+            mean_importance = np.mean(importances)
+            std_importance = np.std(importances)
+            median_importance = np.median(importances)
+            q75_importance = np.percentile(importances, 75)
+            
+            # Dynamic threshold based on importance distribution
+            if mean_importance > 0.01:  # High importance features
+                threshold = max(0.001, q75_importance)
+            elif mean_importance > 0.001:  # Medium importance features
+                threshold = max(0.0001, median_importance)
+            else:  # Low importance features
+                threshold = max(0.00001, mean_importance - std_importance)
+            
+            # Count features above threshold
+            features_above_threshold = sum(1 for imp in importances if imp >= threshold)
+            
+            # Ensure reasonable bounds
+            min_features = max(1, len(feature_names) // 50)  # At least 2% of features
+            max_features = min(len(feature_names), len(feature_names) // 2)  # At most 50% of features
+            features_above_threshold = max(min_features, min(max_features, features_above_threshold))
+            
+            _LOGGER.info(f"📊 Tree ensemble threshold: {threshold:.6f}")
+            _LOGGER.info(f"📊 Important features: {features_above_threshold}/{len(feature_names)}")
+            _LOGGER.info(f"📊 Importance stats - mean: {mean_importance:.6f}, std: {std_importance:.6f}")
+            
+            return threshold, features_above_threshold
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Tree ensemble threshold determination failed: {e}")
+            return 0.0, max(1, len(feature_names) // 20)
 
     def _log_feature_reduction_stats(self, method_name: str, original_count: int, 
                                    selected_count: int, execution_time: float,

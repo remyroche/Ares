@@ -1,0 +1,33 @@
+📊 Artifact Versioning Integration Report
+==================================================
+
+📁 DATA_COLLECTION Stage:
+  ✅ Integrated: 5
+  ⏭️ Skipped: 72
+  ❌ Errors: 0
+
+📁 MARKET_ANALYSIS Stage:
+  ✅ Integrated: 4
+  ⏭️ Skipped: 76
+  ❌ Errors: 0
+
+📁 MODEL_TRAINING Stage:
+  ✅ Integrated: 8
+  ⏭️ Skipped: 16
+  ❌ Errors: 0
+
+📁 BACKTESTING Stage:
+  ✅ Integrated: 2
+  ⏭️ Skipped: 8
+  ❌ Errors: 0
+
+📈 Overall Summary:
+  ✅ Total Integrated: 19
+  ⏭️ Total Skipped: 172
+  ❌ Total Errors: 0
+
+🔧 Next Steps:
+1. Review integrated files for any manual adjustments needed
+2. Test pipeline execution with new artifact system
+3. Update any hardcoded file paths to use pickup utilities
+4. Remove backup files after successful testing

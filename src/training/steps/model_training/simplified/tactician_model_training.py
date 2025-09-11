@@ -235,6 +235,10 @@ class TacticianModelTrainer:
         self.logger.info(f"🤖 Model types: {[mt.value for mt in config.model_types]}")
         self.logger.info(f"🔬 Advanced HPO: {config.enable_advanced_hpo}")
     
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @traced(span_name='train_tactician_models')
     @log_execution_time
     async def train_tactician_models(
@@ -892,25 +896,35 @@ class TacticianModelTrainer:
         return optimizations
     
     async def save_tactician_models(self, results: TacticianTrainingResults) -> None:
-        """Save all trained Tactician models."""
+        """Save all trained Tactician models with versioned filenames."""
         
         try:
-            # Save individual models
+            # Save individual models with versioned filenames
             for model_name, model_result in results.individual_models.items():
                 if model_result.trained_model is not None:
-                    model_path = f"{self.config.output_dir}/{model_name}_model.pkl"
+                    # Use versioned filename
+                    model_filename = self.artifact_manager.get_versioned_filename(
+                        f"{model_name}_model", ".pkl"
+                    )
+                    model_path = f"{self.config.output_dir}/{model_filename}"
                     await self._save_model(model_result.trained_model, model_path)
             
-            # Save tactical insights
+            # Save tactical insights with versioned filename
             if self.config.save_tactical_insights:
-                insights_path = f"{self.config.output_dir}/tactical_insights.json"
+                insights_filename = self.artifact_manager.get_versioned_filename(
+                    "tactical_insights", ".json"
+                )
+                insights_path = f"{self.config.output_dir}/{insights_filename}"
                 await safe_json_dump(insights_path, results.tactical_insights)
             
-            # Save results metadata
-            results_path = f"{self.config.output_dir}/training_results.json"
+            # Save results metadata with versioned filename
+            results_filename = self.artifact_manager.get_versioned_filename(
+                "tactician_training_results", ".json"
+            )
+            results_path = f"{self.config.output_dir}/{results_filename}"
             await safe_json_dump(results_path, results.__dict__)
             
-            self.logger.info(f"💾 All Tactician models saved to {self.config.output_dir}")
+            self.logger.info(f"💾 All Tactician models saved with versioned filenames to {self.config.output_dir}")
             
         except Exception as e:
             self.logger.error(f"Error saving Tactician models: {e}")
@@ -921,6 +935,9 @@ class TacticianModelTrainer:
         
         try:
             import joblib
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
             joblib.dump(model, file_path)
         except Exception as e:
             self.logger.error(f"Error saving model to {file_path}: {e}")

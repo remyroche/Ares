@@ -105,6 +105,10 @@ class BacktestingSubPipeline:
             'reporting': self._reporting_pipeline
         }
     
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
         """Helper method to log sub-pipeline completion with emojis and artifact paths."""
         print("\n" + "="*80)
@@ -855,6 +859,9 @@ class BacktestingSubPipeline:
         # Import and use reporting
         try:
             from .comprehensive_reporting import ComprehensiveReportingPipeline
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
             
             reporter = ComprehensiveReportingPipeline()
             reporting_result = await reporter.generate_reports(

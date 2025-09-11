@@ -108,6 +108,10 @@ class RegimeAwareConfidenceCalibrationStep:
         else:
             self.logger.info('Financial logging not available, using fallback logging')
             self.financial_logger = None
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @log_all_calls
 
     def _initialize_regime_config(self) -> dict[str, Any]:
@@ -627,6 +631,10 @@ class _PrefitWrapper:
         self.base = base
         if hasattr(base, 'feature_names_in_'):
             self.feature_names_in_ = base.feature_names_in_
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @log_important_calls
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
@@ -796,3 +804,6 @@ if __name__ == '__main__':
         await run_step('ETHUSDT', 'BINANCE', 'data/training')
     asyncio.run(test())
 import asyncio
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager

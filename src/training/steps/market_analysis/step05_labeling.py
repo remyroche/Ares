@@ -3,6 +3,9 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 import numpy as np
 import pandas as pd
 
@@ -656,6 +659,11 @@ class LabelingStep:
         self.timer = SimpleTimer(self.logger)
         self.error_handler = EnhancedErrorHandler(self.logger)
         self.validation_framework = ComprehensiveValidationFramework(self.logger)
+        
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
 
         # Initialize comprehensive optimization components
         if OPTIMIZATIONS_AVAILABLE:
@@ -1113,26 +1121,39 @@ class LabelingStep:
         metadata: Dict[str, Any],
         optimization_context: Dict[str, Any]
     ) -> bool:
-        """Save data using optimized data manager."""
+        """Save data using optimized data manager with versioned filenames."""
         try:
+            # Generate versioned filenames
+            base_name = output_path.stem.replace('_labeled_data', '')
+            versioned_filename = self.artifact_manager.get_versioned_filename(f"{base_name}_labeled_data", ".parquet")
+            versioned_metadata_filename = self.artifact_manager.get_versioned_filename(f"{base_name}_labeling_metadata", ".json")
+            
+            # Update paths to use versioned filenames
+            versioned_output_path = output_path.parent / versioned_filename
+            versioned_metadata_path = metadata_path.parent / versioned_metadata_filename
+            
             session = optimization_context.get('data_manager_session')
             if not session:
-                # Fallback to standard saving
-                standardized_parquet_handler.write_parquet_standardized(data, output_path)
-                safe_json_dump(metadata, metadata_path, indent=2, default=str)
+                # Fallback to standard saving with versioned filenames
+                standardized_parquet_handler.write_parquet_standardized(data, versioned_output_path)
+                safe_json_dump(metadata, versioned_metadata_path, indent=2, default=str)
+                self.logger.info(f"✅ Saved labeled data with versioned filename: {versioned_filename}")
                 return True
 
-            # Use optimized data manager for saving
-            data_id = f"{output_path.stem}_labeled_data"
-            await session.save_data_async(data_id, data, output_path, metadata=metadata)
+            # Use optimized data manager for saving with versioned filenames
+            data_id = f"{base_name}_labeled_data"
+            await session.save_data_async(data_id, data, versioned_output_path, metadata=metadata)
 
+            self.logger.info(f"✅ Saved labeled data with versioned filename: {versioned_filename}")
             return True
 
         except Exception as e:
             self.logger.warning(f"Optimized data saving failed, falling back to standard saving: {e}")
             try:
-                standardized_parquet_handler.write_parquet_standardized(data, output_path)
-                safe_json_dump(metadata, metadata_path, indent=2, default=str)
+                # Use versioned filenames in fallback
+                standardized_parquet_handler.write_parquet_standardized(data, versioned_output_path)
+                safe_json_dump(metadata, versioned_metadata_path, indent=2, default=str)
+                self.logger.info(f"✅ Saved labeled data with versioned filename (fallback): {versioned_filename}")
                 return True
             except Exception as fallback_error:
                 self.logger.error(f"Standard saving also failed: {fallback_error}")

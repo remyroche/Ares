@@ -23,6 +23,9 @@ from src.training.steps.data_collection.data_preparation.sr_strength_optimizer i
 import numpy as np
 import logging
 import time
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
 @dataclass
 class EnsembleSRLevel:
@@ -56,6 +59,10 @@ class OptimizedSRMethod(BaseSRMethod):
         self.logger = system_logger.getChild('OptimizedSRMethod')
         self.identifier = SRLevelIdentifier(config)
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def identify_levels(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
         """Identify levels using optimized parameters."""
         strong_levels = self.identifier.identify_strong_sr_levels(market_data)
@@ -73,6 +80,10 @@ class ClassicalSRMethod(BaseSRMethod):
         self.logger = system_logger.getChild('ClassicalSRMethod')
         self.lookback = config.get('classical_sr_lookback', 100)
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def identify_levels(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
         """Identify levels using classical pivot points and swing highs/lows."""
         levels = []
@@ -145,6 +156,10 @@ class VolumeProfileSRMethod(BaseSRMethod):
         self.logger = system_logger.getChild('VolumeProfileSRMethod')
         self.n_bins = config.get('volume_profile_bins', 50)
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def identify_levels(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
         """Identify high volume nodes as S/R levels."""
         price_range = market_data['high'].max() - market_data['low'].min()
@@ -184,6 +199,10 @@ class FractalSRMethod(BaseSRMethod):
         self.config = config
         self.logger = system_logger.getChild('FractalSRMethod')
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def identify_levels(self, market_data: pd.DataFrame) -> List[Dict[str, Any]]:
         """Identify S/R using Williams fractals."""
         levels = []
@@ -226,6 +245,10 @@ class EnsembleSRPredictor:
         self.method_weights = self._load_method_weights()
         self.min_method_agreement = config.get('min_method_agreement', 2)
         self.price_clustering_threshold = config.get('price_clustering_threshold', 0.002)
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @log_all_calls
 
     def _load_method_weights(self) -> Dict[str, float]:

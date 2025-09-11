@@ -60,6 +60,10 @@ except ImportError:
         def __init__(self, config):
             self.config = config
         
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
         async def execute(self, data):
             pass
         
@@ -488,6 +492,10 @@ class Step02_5DependencyContainer:
         self._services = {}
         self._initialized = False
         
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def initialize_services(self):
         """Initialize all utility services with dependency injection."""
         if self._initialized:
@@ -857,6 +865,10 @@ class SROptimizationStep(BaseStep):
         # Use unified monitoring system instead of multiple trackers
         self.performance_monitor = global_monitor
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def _initialize_ml_common_utilities(self) -> None:
         """Initialize ML Common utilities with proper error handling."""
         try:
@@ -3573,6 +3585,10 @@ class SROptimizationStep(BaseStep):
                 self.start_time = None
                 self.start_memory = None
             
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
             def __enter__(self):
                 self.start_time = time.time()
                 self.start_memory = self.memory_checker()
@@ -6114,6 +6130,9 @@ class SROptimizationStep(BaseStep):
             try:
                 # Import and use the Pareto analysis from ML Common
                 from src.utils.ml_common.hpo_utils import HyperparameterOptimization
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
                 hpo_analyzer = HyperparameterOptimization()
 
                 # Get detailed Pareto analysis

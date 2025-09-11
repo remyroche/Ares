@@ -20,6 +20,9 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 import pandas as pd
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.config', 'src.utils.logger', 'src.utils.error_handler', 'src.training.steps.data_collection.data_downloader', 'src.utils.enhanced_mlflow_integration', 'src.utils.centralized_decorators']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)

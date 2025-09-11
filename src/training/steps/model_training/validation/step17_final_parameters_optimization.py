@@ -121,6 +121,10 @@ class FinalParametersOptimizationStep:
         self.start_time = None
         self.step_timings = {}
         self._validate_environment()
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @log_all_calls
 
     def _validate_environment(self) -> None:
@@ -438,6 +442,9 @@ class FinalParametersOptimizationStep:
         """Optimize timing parameters with advanced features."""
         try:
             import optuna
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
             def objective(trial: Any) -> float:
                 params = {'base_cooldown_minutes': trial.suggest_int('base_cooldown_minutes', 15, 60, 5), 'high_confidence_cooldown': trial.suggest_int('high_confidence_cooldown', 5, 30, 5), 'low_confidence_cooldown': trial.suggest_int('low_confidence_cooldown', 30, 120, 10), 'bull_trend_cooldown': trial.suggest_int('bull_trend_cooldown', 10, 40, 5), 'bear_trend_cooldown': trial.suggest_int('bear_trend_cooldown', 20, 60, 5), 'sideways_cooldown': trial.suggest_int('sideways_cooldown', 30, 90, 10), 'high_impact_cooldown': trial.suggest_int('high_impact_cooldown', 60, 180, 15)}

@@ -22,6 +22,9 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import optuna
 import numpy as np
 import logging
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,10 @@ class FinalParametersOptimizer:
         self.logger.info(f"📝 Study name: {self.study_name}")
         self.logger.info(f"🎯 Categories to optimize: {', '.join(self.categories)}")
     
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def _get_default_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Get default search spaces for parameter categories."""
         return {

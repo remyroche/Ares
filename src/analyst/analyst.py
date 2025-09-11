@@ -1359,20 +1359,16 @@ class Analyst:
             return {"regime": "UNKNOWN", "confidence": 0.0}
 
     @handle_errors_with_tracking(
-        context="model selection for live trading",
+        context="model loading for live trading",
         log_level="INFO",
         print_errors=True
     )
-    async def select_model(self, model_name: str, market_conditions: dict[str, Any] = None) -> bool:
+    async def load_analyst_model(self) -> bool:
         """
-        Select a pre-trained model for live trading based on market conditions.
+        Load the single analyst model trained on various market conditions.
         
-        Args:
-            model_name: Name of the pre-trained model to select
-            market_conditions: Current market conditions for model selection
-            
         Returns:
-            bool: True if model selection successful
+            bool: True if model loading successful
         """
         if not self.model_manager:
             error_msg = "Model Manager not available"
@@ -1381,13 +1377,16 @@ class Analyst:
             return False
         
         try:
-            self.logger.info(f"Selecting model for live trading: {model_name}")
-            print(f"Selecting model for live trading: {model_name}")
+            # Use the single analyst model trained on various market conditions
+            model_name = "analyst_regime_classifier"
+            
+            self.logger.info(f"Loading analyst model for live trading: {model_name}")
+            print(f"Loading analyst model for live trading: {model_name}")
             
             # Check if model is available
             available_models = await self.model_manager.list_available_models()
             if model_name not in available_models:
-                error_msg = f"Model {model_name} not available for live trading"
+                error_msg = f"Analyst model {model_name} not available for live trading"
                 self.logger.error(error_msg)
                 print(f"❌ {error_msg}")
                 return False
@@ -1397,17 +1396,17 @@ class Analyst:
             if model:
                 self.selected_model = model_name
                 self.model_cache[model_name] = model
-                self.logger.info(f"✅ Model selected and cached: {model_name}")
-                print(f"✅ Model selected and cached: {model_name}")
+                self.logger.info(f"✅ Analyst model loaded and cached: {model_name}")
+                print(f"✅ Analyst model loaded and cached: {model_name}")
                 return True
             else:
-                error_msg = f"Failed to load model: {model_name}"
+                error_msg = f"Failed to load analyst model: {model_name}"
                 self.logger.error(error_msg)
                 print(f"❌ {error_msg}")
                 return False
             
         except Exception as e:
-            error_msg = f"Error selecting model {model_name}: {e}"
+            error_msg = f"Error loading analyst model: {e}"
             self.logger.error(error_msg)
             print(f"❌ {error_msg}")
             return False
@@ -1660,10 +1659,11 @@ class Analyst:
             self.logger.info("✅ Model Manager initialized")
             print("✅ Model Manager initialized")
             
-            # Set default model selection
-            self.selected_model = self.analyst_config.get("default_model", "analyst_regime_classifier")
-            self.logger.info(f"✅ Default model selected: {self.selected_model}")
-            print(f"✅ Default model selected: {self.selected_model}")
+            # Load the single analyst model
+            success = await self.load_analyst_model()
+            if not success:
+                self.logger.warning("⚠️ Failed to load analyst model during initialization")
+                print("⚠️ Failed to load analyst model during initialization")
             
             # Initialize model cache
             self.model_cache = {}
@@ -1761,61 +1761,83 @@ class Analyst:
             return {"error": error_msg}
 
     @handle_errors_with_tracking(
-        context="model switching for market conditions",
+        context="HMM regime-based model coordination",
         log_level="INFO",
         print_errors=True
     )
-    async def switch_model_for_conditions(self, market_conditions: dict[str, Any]) -> bool:
+    async def coordinate_with_hmm_regime(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
         """
-        Switch to appropriate model based on current market conditions.
+        Coordinate model usage based on HMM regime detection.
         
         Args:
-            market_conditions: Current market conditions (volatility, trend, etc.)
+            hmm_regime: Detected HMM regime (e.g., "bull_market", "bear_market", "sideways")
+            regime_confidence: Confidence in the regime detection
             
         Returns:
-            bool: True if model switch successful
+            dict: Coordination results and regime-specific parameters
         """
-        if not self.model_manager:
-            error_msg = "Model Manager not available"
+        if not self.model_manager or not self.selected_model:
+            error_msg = "Model Manager or selected model not available"
             self.logger.error(error_msg)
             print(f"❌ {error_msg}")
-            return False
+            return {"error": error_msg}
         
         try:
-            self.logger.info("Switching model based on market conditions...")
-            print("Switching model based on market conditions...")
+            self.logger.info(f"Coordinating with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            print(f"Coordinating with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
             
-            # Determine appropriate model based on conditions
-            volatility = market_conditions.get("volatility", "normal")
-            trend = market_conditions.get("trend", "sideways")
+            # Get the single model (trained on various market conditions)
+            model = self.model_cache.get(self.selected_model)
+            if not model:
+                error_msg = f"Model {self.selected_model} not loaded in cache"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return {"error": error_msg}
             
-            # Model selection logic based on market conditions
-            if volatility == "high":
-                model_name = "analyst_high_volatility_model"
-            elif volatility == "low":
-                model_name = "analyst_low_volatility_model"
-            elif trend == "strong_trend":
-                model_name = "analyst_trend_following_model"
+            # Configure regime-specific parameters for the same model
+            regime_config = {
+                "hmm_regime": hmm_regime,
+                "regime_confidence": regime_confidence,
+                "model_name": self.selected_model,
+                "regime_parameters": {}
+            }
+            
+            # Set regime-specific parameters based on HMM regime
+            if hmm_regime == "bull_market":
+                regime_config["regime_parameters"] = {
+                    "confidence_threshold": 0.6,
+                    "lookback_period": 20,
+                    "volatility_adjustment": 1.2
+                }
+            elif hmm_regime == "bear_market":
+                regime_config["regime_parameters"] = {
+                    "confidence_threshold": 0.7,
+                    "lookback_period": 30,
+                    "volatility_adjustment": 1.5
+                }
+            elif hmm_regime == "sideways":
+                regime_config["regime_parameters"] = {
+                    "confidence_threshold": 0.5,
+                    "lookback_period": 15,
+                    "volatility_adjustment": 1.0
+                }
             else:
-                model_name = "analyst_regime_classifier"  # default
+                # Default parameters for unknown regimes
+                regime_config["regime_parameters"] = {
+                    "confidence_threshold": 0.6,
+                    "lookback_period": 20,
+                    "volatility_adjustment": 1.1
+                }
             
-            # Switch to the selected model
-            success = await self.select_model(model_name, market_conditions)
-            
-            if success:
-                self.logger.info(f"✅ Model switched to: {model_name}")
-                print(f"✅ Model switched to: {model_name}")
-            else:
-                self.logger.warning(f"⚠️ Failed to switch to model: {model_name}, keeping current model")
-                print(f"⚠️ Failed to switch to model: {model_name}, keeping current model")
-            
-            return success
+            self.logger.info(f"✅ HMM regime coordination completed: {hmm_regime}")
+            print(f"✅ HMM regime coordination completed: {hmm_regime}")
+            return regime_config
             
         except Exception as e:
-            error_msg = f"Error switching model for market conditions: {e}"
+            error_msg = f"Error coordinating with HMM regime: {e}"
             self.logger.error(error_msg)
             print(f"❌ {error_msg}")
-            return False
+            return {"error": error_msg}
 
     @handle_errors_with_tracking(
         context="analyst cleanup",

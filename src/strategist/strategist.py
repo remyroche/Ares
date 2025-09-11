@@ -647,8 +647,8 @@ class Strategist:
             self.logger.info("✅ Model Manager initialized")
             print("✅ Model Manager initialized")
             
-            # Set default model selection for strategy generation
-            self.selected_model = self.strategist_config.dict().get("default_model", "strategist_market_analysis_model")
+            # Set default model selection for strategy generation (single model trained on various conditions)
+            self.selected_model = "strategist_market_analysis_model"
             self.logger.info(f"✅ Default model selected: {self.selected_model}")
             print(f"✅ Default model selected: {self.selected_model}")
             

@@ -410,60 +410,167 @@ class MainSupervisor:
             return False
 
     @handle_errors_with_tracking(
-        context="supervisor model coordination",
+        context="HMM regime-based model coordination",
         log_level="INFO",
         print_errors=True
     )
-    async def coordinate_models(self, market_conditions: dict[str, Any]) -> dict[str, bool]:
+    async def coordinate_models_with_hmm_regime(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
         """
-        Coordinate model selection across all components based on market conditions.
+        Coordinate model usage across all components based on HMM regime detection.
+        Uses single models trained on various market conditions with regime-specific parameters.
         
         Args:
-            market_conditions: Current market conditions
+            hmm_regime: Detected HMM regime (e.g., "bull_market", "bear_market", "sideways")
+            regime_confidence: Confidence in the regime detection
             
         Returns:
-            dict: Results of model coordination for each component
+            dict: Coordination results and regime-specific parameters for each component
         """
         try:
-            self.logger.info("Coordinating models across all components...")
-            print("Coordinating models across all components...")
+            self.logger.info(f"Coordinating models with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            print(f"Coordinating models with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
             
-            results = {}
+            # Single models for each component (trained on various market conditions)
+            component_models = {
+                "analyst": "analyst_regime_classifier",
+                "strategist": "strategist_market_analysis_model", 
+                "tactician": "tactician_position_sizing_model"
+            }
             
-            # Determine appropriate models based on market conditions
-            volatility = market_conditions.get("volatility", "normal")
-            trend = market_conditions.get("trend", "sideways")
+            coordination_results = {
+                "hmm_regime": hmm_regime,
+                "regime_confidence": regime_confidence,
+                "component_configs": {},
+                "success": True
+            }
             
-            # Model selection logic for each component
-            if volatility == "high":
-                analyst_model = "analyst_high_volatility_model"
-                strategist_model = "strategist_high_volatility_model"
-                tactician_model = "tactician_high_volatility_model"
-            elif trend == "strong_trend":
-                analyst_model = "analyst_trend_following_model"
-                strategist_model = "strategist_trend_following_model"
-                tactician_model = "tactician_trend_following_model"
-            else:
-                analyst_model = "analyst_regime_classifier"
-                strategist_model = "strategist_market_analysis_model"
-                tactician_model = "tactician_position_sizing_model"
+            # Configure regime-specific parameters for each component
+            for component, model_name in component_models.items():
+                try:
+                    # Load the single model for this component
+                    model = await self.model_manager.load_model(model_name)
+                    if model:
+                        self.model_cache[model_name] = model
+                        self.selected_models[component] = model_name
+                        
+                        # Set regime-specific parameters based on HMM regime
+                        regime_config = self._get_regime_specific_config(component, hmm_regime, regime_confidence)
+                        coordination_results["component_configs"][component] = {
+                            "model_name": model_name,
+                            "regime_config": regime_config,
+                            "loaded": True
+                        }
+                        
+                        self.logger.info(f"✅ {component} model coordinated: {model_name}")
+                        print(f"✅ {component} model coordinated: {model_name}")
+                    else:
+                        coordination_results["component_configs"][component] = {
+                            "model_name": model_name,
+                            "regime_config": None,
+                            "loaded": False,
+                            "error": f"Failed to load model: {model_name}"
+                        }
+                        coordination_results["success"] = False
+                        
+                except Exception as e:
+                    coordination_results["component_configs"][component] = {
+                        "model_name": model_name,
+                        "regime_config": None,
+                        "loaded": False,
+                        "error": str(e)
+                    }
+                    coordination_results["success"] = False
             
-            # Update models for each component
-            results["analyst"] = await self.manage_component_models("analyst", analyst_model)
-            results["strategist"] = await self.manage_component_models("strategist", strategist_model)
-            results["tactician"] = await self.manage_component_models("tactician", tactician_model)
+            success_count = sum(1 for config in coordination_results["component_configs"].values() if config["loaded"])
+            self.logger.info(f"✅ HMM regime coordination completed: {success_count}/3 components coordinated")
+            print(f"✅ HMM regime coordination completed: {success_count}/3 components coordinated")
             
-            success_count = sum(results.values())
-            self.logger.info(f"✅ Model coordination completed: {success_count}/3 components updated")
-            print(f"✅ Model coordination completed: {success_count}/3 components updated")
-            
-            return results
+            return coordination_results
             
         except Exception as e:
-            error_msg = f"Error coordinating models: {e}"
+            error_msg = f"Error coordinating models with HMM regime: {e}"
             self.logger.error(error_msg)
             print(f"❌ {error_msg}")
-            return {"error": error_msg}
+            return {"error": error_msg, "success": False}
+
+    def _get_regime_specific_config(self, component: str, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get regime-specific configuration for a component based on HMM regime.
+        
+        Args:
+            component: Component name (analyst, strategist, tactician)
+            hmm_regime: Detected HMM regime
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Regime-specific configuration
+        """
+        base_config = {
+            "hmm_regime": hmm_regime,
+            "regime_confidence": regime_confidence
+        }
+        
+        if component == "analyst":
+            if hmm_regime == "bull_market":
+                base_config.update({
+                    "confidence_threshold": 0.6,
+                    "lookback_period": 20,
+                    "volatility_adjustment": 1.2
+                })
+            elif hmm_regime == "bear_market":
+                base_config.update({
+                    "confidence_threshold": 0.7,
+                    "lookback_period": 30,
+                    "volatility_adjustment": 1.5
+                })
+            elif hmm_regime == "sideways":
+                base_config.update({
+                    "confidence_threshold": 0.5,
+                    "lookback_period": 15,
+                    "volatility_adjustment": 1.0
+                })
+                
+        elif component == "strategist":
+            if hmm_regime == "bull_market":
+                base_config.update({
+                    "strategy_aggressiveness": 1.2,
+                    "risk_tolerance": 0.8,
+                    "trend_following_weight": 0.7
+                })
+            elif hmm_regime == "bear_market":
+                base_config.update({
+                    "strategy_aggressiveness": 0.6,
+                    "risk_tolerance": 0.4,
+                    "trend_following_weight": 0.3
+                })
+            elif hmm_regime == "sideways":
+                base_config.update({
+                    "strategy_aggressiveness": 1.0,
+                    "risk_tolerance": 0.6,
+                    "trend_following_weight": 0.5
+                })
+                
+        elif component == "tactician":
+            if hmm_regime == "bull_market":
+                base_config.update({
+                    "position_size_multiplier": 1.2,
+                    "kelly_fraction": 0.25,
+                    "max_leverage": 10.0
+                })
+            elif hmm_regime == "bear_market":
+                base_config.update({
+                    "position_size_multiplier": 0.6,
+                    "kelly_fraction": 0.15,
+                    "max_leverage": 5.0
+                })
+            elif hmm_regime == "sideways":
+                base_config.update({
+                    "position_size_multiplier": 1.0,
+                    "kelly_fraction": 0.20,
+                    "max_leverage": 7.5
+                })
+        
+        return base_config
 
 main_supervisor: MainSupervisor | None = None
 

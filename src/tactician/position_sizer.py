@@ -449,10 +449,11 @@ class PositionSizer:
             self.logger.info("✅ Model Manager initialized")
             print("✅ Model Manager initialized")
             
-            # Set default model selection for position sizing
-            self.selected_model = self.sizing_config.get("default_model", "tactician_position_sizing_model")
-            self.logger.info(f"✅ Default model selected: {self.selected_model}")
-            print(f"✅ Default model selected: {self.selected_model}")
+            # Load the single position sizing model
+            success = await self.load_position_sizing_model()
+            if not success:
+                self.logger.warning("⚠️ Failed to load position sizing model during initialization")
+                print("⚠️ Failed to load position sizing model during initialization")
             
             # Initialize caches
             self.model_cache = {}
@@ -546,19 +547,16 @@ class PositionSizer:
             return {"error": error_msg}
 
     @handle_errors_with_tracking(
-        context="model selection for position sizing",
+        context="position sizing model loading",
         log_level="INFO",
         print_errors=True
     )
-    async def select_position_sizing_model(self, market_conditions: dict[str, Any]) -> bool:
+    async def load_position_sizing_model(self) -> bool:
         """
-        Select appropriate model for position sizing based on market conditions.
+        Load the single position sizing model trained on various market conditions.
         
-        Args:
-            market_conditions: Current market conditions
-            
         Returns:
-            bool: True if model selection successful
+            bool: True if model loading successful
         """
         if not self.model_manager:
             error_msg = "Model Manager not available"
@@ -567,30 +565,27 @@ class PositionSizer:
             return False
         
         try:
-            self.logger.info("Selecting position sizing model based on market conditions...")
-            print("Selecting position sizing model based on market conditions...")
+            # Use the single position sizing model trained on various market conditions
+            model_name = "tactician_position_sizing_model"
             
-            # Determine appropriate model based on conditions
-            volatility = market_conditions.get("volatility", "normal")
-            leverage_level = market_conditions.get("leverage_level", "medium")
+            self.logger.info(f"Loading position sizing model for live trading: {model_name}")
+            print(f"Loading position sizing model for live trading: {model_name}")
             
-            # Model selection logic for position sizing
-            if volatility == "high" and leverage_level == "high":
-                model_name = "tactician_high_vol_high_leverage_model"
-            elif volatility == "high":
-                model_name = "tactician_high_volatility_model"
-            elif leverage_level == "high":
-                model_name = "tactician_high_leverage_model"
-            else:
-                model_name = "tactician_position_sizing_model"  # default
+            # Check if model is available
+            available_models = await self.model_manager.list_available_models()
+            if model_name not in available_models:
+                error_msg = f"Position sizing model {model_name} not available for live trading"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return False
             
             # Load and cache the model
             model = await self.model_manager.load_model(model_name)
             if model:
                 self.selected_model = model_name
                 self.model_cache[model_name] = model
-                self.logger.info(f"✅ Position sizing model selected and cached: {model_name}")
-                print(f"✅ Position sizing model selected and cached: {model_name}")
+                self.logger.info(f"✅ Position sizing model loaded and cached: {model_name}")
+                print(f"✅ Position sizing model loaded and cached: {model_name}")
                 return True
             else:
                 error_msg = f"Failed to load position sizing model: {model_name}"
@@ -599,7 +594,7 @@ class PositionSizer:
                 return False
             
         except Exception as e:
-            error_msg = f"Error selecting position sizing model: {e}"
+            error_msg = f"Error loading position sizing model: {e}"
             self.logger.error(error_msg)
             print(f"❌ {error_msg}")
             return False

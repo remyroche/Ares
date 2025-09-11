@@ -2,7 +2,8 @@
 Advanced Feature Engineering Utilities
 
 This module provides advanced feature engineering capabilities for trading data,
-including technical indicators, statistical features, and domain-specific transformations.
+leveraging existing feature engineering components from src/feature_engineering
+for consistency and avoiding duplication.
 """
 
 import asyncio
@@ -17,7 +18,6 @@ import time
 import gc
 from scipy import stats
 from scipy.signal import find_peaks
-import talib
 
 # Core utilities
 from src.utils.common_operations import (
@@ -38,6 +38,29 @@ from src.core.decorators import (
 )
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.logger import system_logger
+
+# Use existing feature engineering components
+from src.feature_engineering.step06_enhanced_feature_engineering import (
+    EnhancedFeatureEngineeringStep,
+    FeatureEngineeringConfig
+)
+from src.feature_engineering.step06_utility_container import (
+    Step06UtilityContainer,
+    get_utility_container
+)
+from src.feature_engineering.math_validation import (
+    safe_divide as fe_safe_divide,
+    safe_log as fe_safe_log,
+    safe_sqrt as fe_safe_sqrt,
+    validate_positive as fe_validate_positive
+)
+
+# Optional imports for technical indicators
+try:
+    import talib
+    TALIB_AVAILABLE = True
+except ImportError:
+    TALIB_AVAILABLE = False
 
 class FeatureType(Enum):
     """Feature engineering types."""
@@ -83,7 +106,8 @@ class AdvancedFeatureEngineer:
     """
     Advanced feature engineering for trading data.
     
-    This class provides comprehensive feature engineering capabilities including:
+    This class leverages existing feature engineering components from src/feature_engineering
+    and provides comprehensive feature engineering capabilities including:
     - Technical indicators (RSI, MACD, Bollinger Bands, etc.)
     - Statistical features (rolling statistics, percentiles, etc.)
     - Time series features (trends, seasonality, etc.)
@@ -98,6 +122,10 @@ class AdvancedFeatureEngineer:
         """Initialize advanced feature engineer."""
         self.config = config
         self.logger = system_logger.getChild('AdvancedFeatureEngineer')
+        
+        # Initialize existing feature engineering components
+        self.feature_engineering_step = EnhancedFeatureEngineeringStep(config)
+        self.utility_container = get_utility_container()
         
         # Feature engineering configuration
         self.feature_config = config.get('feature_engineering', {})
@@ -114,12 +142,25 @@ class AdvancedFeatureEngineer:
         self._initialize_feature_registry()
 
     def _initialize_feature_registry(self) -> None:
-        """Initialize the feature engineering registry."""
-        # Technical indicators
+        """Initialize the feature engineering registry using existing components."""
+        # Technical indicators - use existing feature engineering step where possible
+        if hasattr(self.feature_engineering_step, 'calculate_technical_indicators'):
+            # Use existing technical indicators from feature engineering step
+            self.feature_registry.update({
+                'rsi': self._calculate_rsi_via_existing,
+                'macd': self._calculate_macd_via_existing,
+                'bollinger_bands': self._calculate_bollinger_bands_via_existing,
+            })
+        else:
+            # Fallback to direct calculations
+            self.feature_registry.update({
+                'rsi': self._calculate_rsi,
+                'macd': self._calculate_macd,
+                'bollinger_bands': self._calculate_bollinger_bands,
+            })
+        
+        # Additional technical indicators
         self.feature_registry.update({
-            'rsi': self._calculate_rsi,
-            'macd': self._calculate_macd,
-            'bollinger_bands': self._calculate_bollinger_bands,
             'stochastic': self._calculate_stochastic,
             'williams_r': self._calculate_williams_r,
             'cci': self._calculate_cci,
@@ -186,7 +227,7 @@ class AdvancedFeatureEngineer:
         feature_configs: Optional[List[FeatureConfig]] = None
     ) -> pd.DataFrame:
         """
-        Engineer features from trading data.
+        Engineer features from trading data using existing feature engineering components.
         
         Args:
             data: Trading data DataFrame
@@ -197,6 +238,20 @@ class AdvancedFeatureEngineer:
         """
         try:
             self.logger.info(f"🔧 Starting feature engineering for {len(data)} records")
+            
+            # First, try to use existing feature engineering step
+            try:
+                if hasattr(self.feature_engineering_step, 'engineer_features'):
+                    self.logger.info("🔧 Using existing feature engineering step")
+                    result_df = await self.feature_engineering_step.engineer_features(data)
+                    if result_df is not None and not result_df.empty:
+                        self.logger.info(f"✅ Feature engineering completed via existing step: {len(result_df.columns)} features")
+                        return result_df
+            except Exception as e:
+                self.logger.warning(f"⚠️ Existing feature engineering step failed: {e}")
+            
+            # Fallback to custom feature engineering
+            self.logger.info("🔧 Using custom feature engineering as fallback")
             
             if feature_configs is None:
                 feature_configs = self._get_default_feature_configs()
@@ -492,26 +547,98 @@ class AdvancedFeatureEngineer:
                     except Exception as e:
                         self.logger.warning(f"⚠️ Failed to calculate {feature} with period {period}: {e}")
 
-    # Technical Indicator Calculations
+    # Technical Indicator Calculations - Using Existing Components
+    def _calculate_rsi_via_existing(self, df: pd.DataFrame, period: int) -> np.ndarray:
+        """Calculate RSI using existing feature engineering step."""
+        try:
+            # Use existing feature engineering step if available
+            if hasattr(self.feature_engineering_step, 'calculate_rsi'):
+                return self.feature_engineering_step.calculate_rsi(df, period)
+            else:
+                return self._calculate_rsi(df, period)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate RSI via existing step: {e}")
+            return self._calculate_rsi(df, period)
+
+    def _calculate_macd_via_existing(self, df: pd.DataFrame, period: int) -> np.ndarray:
+        """Calculate MACD using existing feature engineering step."""
+        try:
+            # Use existing feature engineering step if available
+            if hasattr(self.feature_engineering_step, 'calculate_macd'):
+                return self.feature_engineering_step.calculate_macd(df, period)
+            else:
+                return self._calculate_macd(df, period)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate MACD via existing step: {e}")
+            return self._calculate_macd(df, period)
+
+    def _calculate_bollinger_bands_via_existing(self, df: pd.DataFrame, period: int) -> np.ndarray:
+        """Calculate Bollinger Bands using existing feature engineering step."""
+        try:
+            # Use existing feature engineering step if available
+            if hasattr(self.feature_engineering_step, 'calculate_bollinger_bands'):
+                return self.feature_engineering_step.calculate_bollinger_bands(df, period)
+            else:
+                return self._calculate_bollinger_bands(df, period)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate Bollinger Bands via existing step: {e}")
+            return self._calculate_bollinger_bands(df, period)
+
+    # Technical Indicator Calculations - Direct Implementation
     def _calculate_rsi(self, df: pd.DataFrame, period: int) -> np.ndarray:
         """Calculate RSI indicator."""
         if 'close' not in df.columns:
             return None
-        return talib.RSI(df['close'].values, timeperiod=period)
+        
+        if TALIB_AVAILABLE:
+            return talib.RSI(df['close'].values, timeperiod=period)
+        else:
+            # Fallback implementation using existing math validation
+            close_prices = df['close'].values
+            deltas = np.diff(close_prices)
+            gains = np.where(deltas > 0, deltas, 0)
+            losses = np.where(deltas < 0, -deltas, 0)
+            
+            avg_gains = pd.Series(gains).rolling(window=period).mean().values
+            avg_losses = pd.Series(losses).rolling(window=period).mean().values
+            
+            rs = fe_safe_divide(avg_gains, avg_losses)
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
 
     def _calculate_macd(self, df: pd.DataFrame, period: int) -> np.ndarray:
         """Calculate MACD indicator."""
         if 'close' not in df.columns:
             return None
-        macd, _, _ = talib.MACD(df['close'].values, fastperiod=12, slowperiod=26, signalperiod=9)
-        return macd
+        
+        if TALIB_AVAILABLE:
+            macd, _, _ = talib.MACD(df['close'].values, fastperiod=12, slowperiod=26, signalperiod=9)
+            return macd
+        else:
+            # Fallback implementation
+            close_prices = df['close'].values
+            ema_12 = pd.Series(close_prices).ewm(span=12).mean().values
+            ema_26 = pd.Series(close_prices).ewm(span=26).mean().values
+            macd = ema_12 - ema_26
+            return macd
 
     def _calculate_bollinger_bands(self, df: pd.DataFrame, period: int) -> np.ndarray:
         """Calculate Bollinger Bands."""
         if 'close' not in df.columns:
             return None
-        upper, middle, lower = talib.BBANDS(df['close'].values, timeperiod=period, nbdevup=2, nbdevdn=2)
-        return (upper - lower) / middle  # Band width
+        
+        if TALIB_AVAILABLE:
+            upper, middle, lower = talib.BBANDS(df['close'].values, timeperiod=period, nbdevup=2, nbdevdn=2)
+            return (upper - lower) / middle  # Band width
+        else:
+            # Fallback implementation
+            close_prices = df['close'].values
+            middle = pd.Series(close_prices).rolling(window=period).mean().values
+            std = pd.Series(close_prices).rolling(window=period).std().values
+            upper = middle + (2 * std)
+            lower = middle - (2 * std)
+            band_width = fe_safe_divide((upper - lower), middle)
+            return band_width
 
     def _calculate_stochastic(self, df: pd.DataFrame, period: int) -> np.ndarray:
         """Calculate Stochastic oscillator."""

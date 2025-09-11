@@ -3,6 +3,8 @@ Data Quality Validator
 
 This module provides comprehensive data quality validation for trading data,
 ensuring data integrity, completeness, and consistency before model training.
+
+Uses existing data quality utilities from src.utils.ml_common for consistency.
 """
 
 import asyncio
@@ -36,6 +38,15 @@ from src.core.decorators import (
 )
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.logger import system_logger
+
+# Use existing data quality utilities
+from src.utils.ml_common.data_quality import (
+    DataQualityUtilities,
+    detect_concept_drift,
+    analyze_feature_stability,
+    calculate_data_quality_score,
+    enhanced_automated_data_cleaning
+)
 
 class DataQualityLevel(Enum):
     """Data quality levels for validation."""
@@ -82,13 +93,16 @@ class DataQualityValidator:
     """
     Comprehensive data quality validator for trading data.
     
-    This validator performs multiple quality checks including:
+    This validator leverages existing data quality utilities from ml_common
+    and performs multiple quality checks including:
     - Data completeness and consistency
     - Statistical validation
     - Temporal integrity
     - Schema validation
     - Outlier detection
     - Missing data analysis
+    - Concept drift detection
+    - Feature stability analysis
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -96,6 +110,9 @@ class DataQualityValidator:
         self.config = config
         self.logger = system_logger.getChild('DataQualityValidator')
         self.parquet_utils = get_parquet_utils()
+        
+        # Initialize existing data quality utilities
+        self.data_quality_utils = DataQualityUtilities(config)
         
         # Quality thresholds
         self.quality_config = config.get('data_quality', {})
@@ -109,6 +126,8 @@ class DataQualityValidator:
         self.enable_temporal_validation = self.quality_config.get('enable_temporal_validation', True)
         self.enable_schema_validation = self.quality_config.get('enable_schema_validation', True)
         self.enable_outlier_detection = self.quality_config.get('enable_outlier_detection', True)
+        self.enable_concept_drift_detection = self.quality_config.get('enable_concept_drift_detection', True)
+        self.enable_feature_stability_analysis = self.quality_config.get('enable_feature_stability_analysis', True)
         
         self.validation_results: List[QualityMetric] = []
         self.quality_report: Optional[DataQualityReport] = None
@@ -165,7 +184,7 @@ class DataQualityValidator:
                 validation_time=0.0
             )
             
-            # Perform validation checks
+            # Perform validation checks using existing utilities
             await self._validate_completeness(df)
             await self._validate_consistency(df)
             await self._validate_schema(df)
@@ -173,6 +192,13 @@ class DataQualityValidator:
             await self._validate_statistical_properties(df)
             await self._detect_outliers(df)
             await self._analyze_missing_data(df)
+            
+            # Use existing advanced data quality utilities
+            if self.enable_concept_drift_detection:
+                await self._detect_concept_drift(df)
+            
+            if self.enable_feature_stability_analysis:
+                await self._analyze_feature_stability(df)
             
             # Calculate overall quality score
             self._calculate_quality_score()
@@ -541,6 +567,77 @@ class DataQualityValidator:
             recommendations.append("Data quality is excellent - proceed with training")
         
         self.quality_report.recommendations = recommendations
+
+    @handles_errors(Exception, fallback=False, log_level='WARNING')
+    @traced("detect_concept_drift")
+    async def _detect_concept_drift(self, df: pd.DataFrame) -> None:
+        """Detect concept drift using existing utilities."""
+        self.logger.info("🔍 Detecting concept drift...")
+        
+        try:
+            # Use existing concept drift detection
+            drift_results = detect_concept_drift(df, window_size=100)
+            
+            if drift_results.get('drift_detected', False):
+                metric = QualityMetric(
+                    name="concept_drift",
+                    value=0.0,
+                    threshold=1.0,
+                    result=ValidationResult.WARNING,
+                    message=f"Concept drift detected: {drift_results.get('drift_score', 0.0):.3f}",
+                    severity=DataQualityLevel.MEDIUM
+                )
+                self.validation_results.append(metric)
+                self.quality_report.warnings.append("Concept drift detected in data")
+            else:
+                metric = QualityMetric(
+                    name="concept_drift",
+                    value=1.0,
+                    threshold=1.0,
+                    result=ValidationResult.PASS,
+                    message="No concept drift detected",
+                    severity=DataQualityLevel.HIGH
+                )
+                self.validation_results.append(metric)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Concept drift detection failed: {e}")
+
+    @handles_errors(Exception, fallback=False, log_level='WARNING')
+    @traced("analyze_feature_stability")
+    async def _analyze_feature_stability(self, df: pd.DataFrame) -> None:
+        """Analyze feature stability using existing utilities."""
+        self.logger.info("🔍 Analyzing feature stability...")
+        
+        try:
+            # Use existing feature stability analysis
+            stability_results = analyze_feature_stability(df, window_size=50)
+            
+            unstable_features = stability_results.get('unstable_features', [])
+            if unstable_features:
+                metric = QualityMetric(
+                    name="feature_stability",
+                    value=1.0 - (len(unstable_features) / len(df.columns)),
+                    threshold=0.8,
+                    result=ValidationResult.WARNING,
+                    message=f"Unstable features detected: {len(unstable_features)}",
+                    severity=DataQualityLevel.MEDIUM
+                )
+                self.validation_results.append(metric)
+                self.quality_report.warnings.append(f"Unstable features: {unstable_features}")
+            else:
+                metric = QualityMetric(
+                    name="feature_stability",
+                    value=1.0,
+                    threshold=0.8,
+                    result=ValidationResult.PASS,
+                    message="All features are stable",
+                    severity=DataQualityLevel.HIGH
+                )
+                self.validation_results.append(metric)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Feature stability analysis failed: {e}")
 
     @handles_errors(Exception, fallback=False, log_level='ERROR')
     @traced("save_quality_report")

@@ -29,6 +29,7 @@ from functools import partial
 from concurrent.futures import ThreadPoolExecutor
 import warnings
 import time
+import sys
 
 from ..math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
@@ -244,20 +245,82 @@ class FeatureSelectionFramework:
             self.adaptive_thresholding = None
 
     def _setup_optimization_settings(self):
-        """Setup optimization-specific settings."""
-        self.cache_enabled = self.config.get('cache_enabled', True)
-        self.memory_efficient_mode = self.config.get('memory_efficient_mode', True)
-        self.performance_monitoring = self.config.get('performance_monitoring', True)
-        self.stability_analysis = self.config.get('stability_analysis', True)
+        """Setup optimization-specific settings with validation."""
+        # Core optimization settings
+        self.cache_enabled = self._validate_boolean_setting('cache_enabled', True)
+        self.memory_efficient_mode = self._validate_boolean_setting('memory_efficient_mode', True)
+        self.performance_monitoring = self._validate_boolean_setting('performance_monitoring', True)
+        self.stability_analysis = self._validate_boolean_setting('stability_analysis', True)
         
-        # Memory management settings
-        self.chunk_size = self.config.get('chunk_size', 10000)
-        self.memory_limit_gb = self.config.get('memory_limit_gb', 8.0)
-        self.gc_frequency = self.config.get('gc_frequency', 100)
+        # Memory management settings with validation
+        self.chunk_size = self._validate_positive_int('chunk_size', 10000, min_val=1000, max_val=100000)
+        self.memory_limit_gb = self._validate_positive_float('memory_limit_gb', 8.0, min_val=1.0, max_val=128.0)
+        self.gc_frequency = self._validate_positive_int('gc_frequency', 100, min_val=10, max_val=1000)
+        
+        # Additional production settings
+        self.max_features_per_method = self._validate_positive_int('max_features_per_method', 1000, min_val=10, max_val=10000)
+        self.min_samples_for_analysis = self._validate_positive_int('min_samples_for_analysis', 10, min_val=5, max_val=1000)
+        self.correlation_threshold = self._validate_float_range('correlation_threshold', 0.95, 0.0, 1.0)
+        self.stability_threshold = self._validate_float_range('stability_threshold', 0.6, 0.0, 1.0)
         
         _LOGGER.info(f"⚙️ Optimization settings - Cache: {self.cache_enabled}")
         _LOGGER.info(f"⚙️ Optimization settings - Memory efficient: {self.memory_efficient_mode}")
         _LOGGER.info(f"⚙️ Optimization settings - Performance monitoring: {self.performance_monitoring}")
+        _LOGGER.info(f"⚙️ Optimization settings - Chunk size: {self.chunk_size}")
+        _LOGGER.info(f"⚙️ Optimization settings - Memory limit: {self.memory_limit_gb} GB")
+
+    def _validate_boolean_setting(self, key: str, default: bool) -> bool:
+        """Validate boolean configuration setting."""
+        value = self.config.get(key, default)
+        if not isinstance(value, bool):
+            _LOGGER.warning(f"⚠️ Invalid {key}: {value}, using default: {default}")
+            return default
+        return value
+
+    def _validate_positive_int(self, key: str, default: int, min_val: int = 1, max_val: int = None) -> int:
+        """Validate positive integer configuration setting."""
+        value = self.config.get(key, default)
+        try:
+            int_val = int(value)
+            if int_val < min_val:
+                _LOGGER.warning(f"⚠️ {key} too small: {int_val}, using minimum: {min_val}")
+                return min_val
+            if max_val is not None and int_val > max_val:
+                _LOGGER.warning(f"⚠️ {key} too large: {int_val}, using maximum: {max_val}")
+                return max_val
+            return int_val
+        except (ValueError, TypeError):
+            _LOGGER.warning(f"⚠️ Invalid {key}: {value}, using default: {default}")
+            return default
+
+    def _validate_positive_float(self, key: str, default: float, min_val: float = 0.0, max_val: float = None) -> float:
+        """Validate positive float configuration setting."""
+        value = self.config.get(key, default)
+        try:
+            float_val = float(value)
+            if float_val < min_val:
+                _LOGGER.warning(f"⚠️ {key} too small: {float_val}, using minimum: {min_val}")
+                return min_val
+            if max_val is not None and float_val > max_val:
+                _LOGGER.warning(f"⚠️ {key} too large: {float_val}, using maximum: {max_val}")
+                return max_val
+            return float_val
+        except (ValueError, TypeError):
+            _LOGGER.warning(f"⚠️ Invalid {key}: {value}, using default: {default}")
+            return default
+
+    def _validate_float_range(self, key: str, default: float, min_val: float, max_val: float) -> float:
+        """Validate float configuration setting within range."""
+        value = self.config.get(key, default)
+        try:
+            float_val = float(value)
+            if float_val < min_val or float_val > max_val:
+                _LOGGER.warning(f"⚠️ {key} out of range: {float_val}, using default: {default}")
+                return default
+            return float_val
+        except (ValueError, TypeError):
+            _LOGGER.warning(f"⚠️ Invalid {key}: {value}, using default: {default}")
+            return default
 
     def _optimize_method_execution(self, method_name: str, func: callable, *args, **kwargs):
         """
@@ -566,6 +629,76 @@ class FeatureSelectionFramework:
             _LOGGER.warning(f"⚠️ Optimization stats failed: {e}")
             return {'error': str(e)}
 
+    def check_system_requirements(self) -> Dict[str, Any]:
+        """Check system requirements and dependencies for production readiness."""
+        requirements = {
+            'python_version': sys.version_info,
+            'numpy_available': True,
+            'sklearn_available': True,
+            'scipy_available': True,
+            'psutil_available': True,
+            'memory_available_gb': 0.0,
+            'cpu_count': 1,
+            'warnings': [],
+            'errors': []
+        }
+        
+        try:
+            # Check Python version
+            if sys.version_info < (3, 7):
+                requirements['errors'].append(f"Python {sys.version_info.major}.{sys.version_info.minor} not supported. Minimum: 3.7")
+            
+            # Check NumPy
+            try:
+                import numpy as np
+                requirements['numpy_version'] = np.__version__
+            except ImportError:
+                requirements['numpy_available'] = False
+                requirements['errors'].append("NumPy not available")
+            
+            # Check scikit-learn
+            try:
+                import sklearn
+                requirements['sklearn_version'] = sklearn.__version__
+            except ImportError:
+                requirements['sklearn_available'] = False
+                requirements['errors'].append("scikit-learn not available")
+            
+            # Check SciPy
+            try:
+                import scipy
+                requirements['scipy_version'] = scipy.__version__
+            except ImportError:
+                requirements['scipy_available'] = False
+                requirements['warnings'].append("SciPy not available - some features may not work")
+            
+            # Check psutil
+            try:
+                import psutil
+                requirements['psutil_version'] = psutil.__version__
+                requirements['memory_available_gb'] = psutil.virtual_memory().available / (1024**3)
+                requirements['cpu_count'] = psutil.cpu_count()
+            except ImportError:
+                requirements['psutil_available'] = False
+                requirements['warnings'].append("psutil not available - memory monitoring disabled")
+            
+            # Check memory requirements
+            if requirements['memory_available_gb'] < 2.0:
+                requirements['warnings'].append(f"Low memory available: {requirements['memory_available_gb']:.1f} GB")
+            
+            # Check if all critical dependencies are available
+            requirements['production_ready'] = (
+                requirements['numpy_available'] and 
+                requirements['sklearn_available'] and 
+                len(requirements['errors']) == 0
+            )
+            
+        except Exception as e:
+            requirements['errors'].append(f"System check failed: {e}")
+            requirements['production_ready'] = False
+        
+        return requirements
+
     def run_comprehensive_feature_selection(self, X: np.ndarray, y: np.ndarray,
                                           feature_names: List[str],
                                           target_count: int,
@@ -579,8 +712,8 @@ class FeatureSelectionFramework:
         src/utils/ and src/utils/ml_common/.
         
         Args:
-            X: Feature matrix
-            y: Target array
+            X: Feature matrix (n_samples, n_features)
+            y: Target array (n_samples,)
             feature_names: List of feature names
             target_count: Target number of features to select
             model_type: Type of model for feature selection
@@ -589,6 +722,27 @@ class FeatureSelectionFramework:
         Returns:
             Comprehensive results with optimization metadata
         """
+        # Input validation
+        if X is None or y is None or feature_names is None:
+            _LOGGER.error("❌ Invalid input: X, y, and feature_names cannot be None")
+            return {'error': 'Invalid input parameters', 'selected_features': []}
+        
+        if len(feature_names) != X.shape[1]:
+            _LOGGER.error(f"❌ Mismatch: {len(feature_names)} feature names but {X.shape[1]} features")
+            return {'error': 'Feature count mismatch', 'selected_features': []}
+        
+        if len(X) != len(y):
+            _LOGGER.error(f"❌ Mismatch: {len(X)} samples in X but {len(y)} in y")
+            return {'error': 'Sample count mismatch', 'selected_features': []}
+        
+        if target_count <= 0 or target_count > len(feature_names):
+            _LOGGER.error(f"❌ Invalid target_count: {target_count}. Must be between 1 and {len(feature_names)}")
+            return {'error': 'Invalid target count', 'selected_features': []}
+        
+        if len(X) == 0 or X.shape[1] == 0:
+            _LOGGER.warning("⚠️ Empty dataset provided")
+            return {'error': 'Empty dataset', 'selected_features': []}
+        
         start_time = time.time()
         _LOGGER.info("🚀 Starting comprehensive feature selection with all optimizations...")
         
@@ -5902,12 +6056,11 @@ class FeatureSelectionFramework:
         
         This method identifies and removes features that are likely to be spurious
         (correlated but not causally related) before applying traditional feature
-        selection methods. This is particularly important for crypto trading where
-        many features may be correlated due to market conditions rather than causal relationships.
+        selection methods.
         
         Args:
-            X: Feature matrix
-            y: Target array (price/returns)
+            X: Feature matrix (n_samples, n_features)
+            y: Target array (n_samples,)
             feature_names: List of feature names
             causal_graph: Optional causal graph structure
             domain_knowledge: Optional domain knowledge about feature relationships
@@ -5915,6 +6068,23 @@ class FeatureSelectionFramework:
         Returns:
             List of causally relevant feature names
         """
+        # Input validation
+        if X is None or y is None or feature_names is None:
+            _LOGGER.error("❌ Invalid input: X, y, and feature_names cannot be None")
+            return feature_names if feature_names else []
+        
+        if len(feature_names) != X.shape[1]:
+            _LOGGER.error(f"❌ Mismatch: {len(feature_names)} feature names but {X.shape[1]} features")
+            return feature_names
+        
+        if len(X) != len(y):
+            _LOGGER.error(f"❌ Mismatch: {len(X)} samples in X but {len(y)} in y")
+            return feature_names
+        
+        if len(X) == 0 or X.shape[1] == 0:
+            _LOGGER.warning("⚠️ Empty dataset provided")
+            return feature_names
+        
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting causal pre-filtering...")
         _LOGGER.info(f"📊 Initial features: {len(feature_names)}")
@@ -6014,8 +6184,8 @@ class FeatureSelectionFramework:
             variance = safe_std(feature_values) ** 2
             normalized_variance = min(1.0, variance / np.var(feature_values))
             
-            # 3. Temporal stability (important for trading)
-            stability = self._calculate_temporal_stability(feature_values, target)
+            # 3. Feature stability
+            stability = self._calculate_feature_stability(feature_values)
             
             # 4. Non-linearity (captures complex relationships)
             non_linearity = self._calculate_non_linearity(feature_values, target)
@@ -6282,8 +6452,8 @@ class FeatureSelectionFramework:
             # 3. Information content (variance and entropy)
             information_content = self._calculate_information_content(feature_values)
             
-            # 4. Stability across time windows (for crypto trading)
-            stability_score = self._calculate_temporal_stability(feature_values, target)
+            # 4. Feature stability
+            stability_score = self._calculate_feature_stability(feature_values)
             
             # 5. Non-redundancy with other features
             redundancy_penalty = self._calculate_redundancy_penalty(
@@ -6307,24 +6477,14 @@ class FeatureSelectionFramework:
 
     def _calculate_predictive_power(self, feature_values: np.ndarray, 
                                   target: np.ndarray) -> float:
-        """Calculate how well feature predicts target (lead-lag analysis)."""
+        """Calculate how well feature predicts target using basic correlation."""
         try:
-            if len(feature_values) < 10:
+            if len(feature_values) < 5:
                 return 0.0
             
-            # Check if feature at time t predicts target at time t+1
-            feature_lead = feature_values[:-1]
-            target_lag = target[1:]
-            
-            lead_correlation = abs(safe_correlation(feature_lead, target_lag))
-            
-            # Also check reverse relationship
-            feature_lag = feature_values[1:]
-            target_lead = target[:-1]
-            lag_correlation = abs(safe_correlation(feature_lag, target_lead))
-            
-            # Return the stronger predictive relationship
-            return max(lead_correlation, lag_correlation)
+            # Use basic correlation as predictive power metric
+            correlation = abs(safe_correlation(feature_values, target))
+            return correlation if not np.isnan(correlation) else 0.0
             
         except:
             return 0.0
@@ -6332,46 +6492,39 @@ class FeatureSelectionFramework:
     def _calculate_information_content(self, feature_values: np.ndarray) -> float:
         """Calculate information content of the feature."""
         try:
-            # Normalized variance
-            variance = safe_std(feature_values) ** 2
-            normalized_variance = min(1.0, variance / np.var(feature_values))
+            if len(feature_values) < 3:
+                return 0.0
             
-            # Entropy-based information content
-            from scipy.stats import entropy
-            hist, _ = np.histogram(feature_values, bins=min(20, len(feature_values)//2))
-            hist = hist / np.sum(hist)  # Normalize
-            hist = hist[hist > 0]  # Remove zeros
-            entropy_score = entropy(hist) / np.log(len(hist)) if len(hist) > 1 else 0
+            # Calculate coefficient of variation as information content
+            mean_val = safe_mean(feature_values)
+            std_val = safe_std(feature_values)
             
-            return (normalized_variance + entropy_score) / 2
+            if mean_val == 0:
+                # If mean is zero, use standard deviation as information content
+                return min(1.0, std_val)
+            
+            # Coefficient of variation (higher = more information)
+            cv = std_val / abs(mean_val)
+            return min(1.0, cv)
             
         except:
             return 0.0
 
-    def _calculate_temporal_stability(self, feature_values: np.ndarray, 
-                                    target: np.ndarray) -> float:
-        """Calculate temporal stability for crypto trading."""
+    def _calculate_feature_stability(self, feature_values: np.ndarray) -> float:
+        """Calculate feature stability based on variance consistency."""
         try:
-            if len(feature_values) < 20:
+            if len(feature_values) < 10:
                 return 0.0
             
-            # Calculate rolling correlations
-            window_size = min(10, len(feature_values) // 2)
-            rolling_corrs = []
+            # Calculate coefficient of variation (stability metric)
+            mean_val = safe_mean(feature_values)
+            std_val = safe_std(feature_values)
             
-            for i in range(window_size, len(feature_values)):
-                feature_window = feature_values[i-window_size:i]
-                target_window = target[i-window_size:i]
-                corr = safe_correlation(feature_window, target_window)
-                if not np.isnan(corr):
-                    rolling_corrs.append(abs(corr))
-            
-            if not rolling_corrs:
+            if mean_val == 0:
                 return 0.0
             
-            # Stability is inverse of correlation variance
-            corr_std = safe_std(rolling_corrs)
-            stability = max(0.0, 1.0 - corr_std)
+            cv = std_val / abs(mean_val)
+            stability = max(0.0, 1.0 - cv)  # Higher stability = lower CV
             
             return stability
             
@@ -6383,18 +6536,28 @@ class FeatureSelectionFramework:
                                     feature_idx: int) -> float:
         """Calculate penalty for redundancy with other features."""
         try:
+            if X.shape[1] <= 1:
+                return 0.0
+            
             # Sample a subset of other features to avoid O(n²) complexity
-            n_other = min(10, X.shape[1] - 1)
+            n_other = min(5, X.shape[1] - 1)
+            available_indices = [i for i in range(X.shape[1]) if i != feature_idx]
+            
+            if len(available_indices) == 0:
+                return 0.0
+            
             other_indices = np.random.choice(
-                [i for i in range(X.shape[1]) if i != feature_idx],
-                size=n_other, replace=False
+                available_indices,
+                size=min(n_other, len(available_indices)), 
+                replace=False
             )
             
             max_correlation = 0.0
             for other_idx in other_indices:
                 other_values = X[:, other_idx]
                 corr = abs(safe_correlation(feature_values, other_values))
-                max_correlation = max(max_correlation, corr)
+                if not np.isnan(corr):
+                    max_correlation = max(max_correlation, corr)
             
             # Penalty increases with redundancy
             return max_correlation
@@ -6578,12 +6741,11 @@ class FeatureSelectionFramework:
             # Calculate multiple relevance metrics
             relevance_metrics = self._calculate_relevance_metrics(x, y)
             
-            # Weight metrics based on crypto trading characteristics
+            # Weight metrics for feature selection
             crypto_relevance = (
-                0.4 * relevance_metrics['volatility_adjusted_correlation'] +
-                0.3 * relevance_metrics['trend_correlation'] +
-                0.2 * relevance_metrics['information_content'] +
-                0.1 * relevance_metrics['temporal_stability']
+                0.5 * relevance_metrics['target_correlation'] +
+                0.3 * relevance_metrics['information_content'] +
+                0.2 * relevance_metrics['mutual_information']
             )
             
             return max(0.0, min(1.0, crypto_relevance))
@@ -6592,74 +6754,33 @@ class FeatureSelectionFramework:
             return 0.0
 
     def _calculate_relevance_metrics(self, x: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Calculate comprehensive relevance metrics for crypto trading."""
+        """Calculate basic relevance metrics for feature selection."""
         try:
             metrics = {}
             
-            # 1. Volatility-adjusted correlation
-            metrics['volatility_adjusted_correlation'] = self._calculate_volatility_adjusted_correlation(x, y)
+            # 1. Basic correlation with target
+            metrics['target_correlation'] = self._calculate_basic_correlation(x, y)
             
-            # 2. Trend correlation
-            metrics['trend_correlation'] = self._calculate_trend_correlation(x, y)
-            
-            # 3. Information content
+            # 2. Information content (variance and entropy)
             metrics['information_content'] = self._calculate_information_content(x)
             
-            # 4. Temporal stability
-            metrics['temporal_stability'] = self._calculate_temporal_stability(x, y)
+            # 3. Mutual information (non-linear relationships)
+            metrics['mutual_information'] = self._safe_mutual_information(x, y)
             
             return metrics
             
         except:
             return {
-                'volatility_adjusted_correlation': 0.0,
-                'trend_correlation': 0.0,
+                'target_correlation': 0.0,
                 'information_content': 0.0,
-                'temporal_stability': 0.0
+                'mutual_information': 0.0
             }
 
-    def _calculate_volatility_adjusted_correlation(self, x: np.ndarray, y: np.ndarray) -> float:
-        """Calculate volatility-adjusted correlation for crypto features."""
+    def _calculate_basic_correlation(self, x: np.ndarray, y: np.ndarray) -> float:
+        """Calculate basic correlation between feature and target."""
         try:
-            # Calculate rolling correlation
-            if len(x) > 20:
-                window_size = min(20, len(x) // 2)
-                rolling_corrs = []
-                
-                for i in range(window_size, len(x)):
-                    x_window = x[i-window_size:i]
-                    y_window = y[i-window_size:i]
-                    corr = np.corrcoef(x_window, y_window)[0, 1]
-                    if not np.isnan(corr):
-                        rolling_corrs.append(abs(corr))
-                
-                if rolling_corrs:
-                    return np.mean(rolling_corrs)
-            
-            # Fallback to simple correlation
-            corr = np.corrcoef(x, y)[0, 1]
+            corr = safe_correlation(x, y)
             return abs(corr) if not np.isnan(corr) else 0.0
-            
-        except:
-            return 0.0
-
-    def _calculate_trend_correlation(self, x: np.ndarray, y: np.ndarray) -> float:
-        """Calculate trend correlation for technical indicators."""
-        try:
-            if len(x) > 5:
-                # Calculate trend strength
-                x_trend = np.polyfit(range(len(x)), x, 1)[0]
-                y_trend = np.polyfit(range(len(y)), y, 1)[0]
-                
-                # Trend correlation
-                if x_trend != 0 and y_trend != 0:
-                    trend_corr = (x_trend * y_trend) / (abs(x_trend) * abs(y_trend))
-                    return abs(trend_corr)
-            
-            # Fallback to simple correlation
-            corr = np.corrcoef(x, y)[0, 1]
-            return abs(corr) if not np.isnan(corr) else 0.0
-            
         except:
             return 0.0
 
@@ -8051,6 +8172,21 @@ if __name__ == "__main__":
     }
     
     framework = FeatureSelectionFramework(config)
+    
+    # Check system requirements first
+    print("\n🔍 System Requirements Check:")
+    print("-" * 40)
+    requirements = framework.check_system_requirements()
+    
+    if requirements['production_ready']:
+        print("✅ System ready for production use")
+    else:
+        print("❌ System not ready for production")
+        for error in requirements['errors']:
+            print(f"   ❌ {error}")
+    
+    for warning in requirements['warnings']:
+        print(f"   ⚠️ {warning}")
     
     # Display optimization capabilities
     print("\n📊 Available Optimization Tools:")

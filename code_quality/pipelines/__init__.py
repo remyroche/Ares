@@ -1,15 +1,22 @@
 """
-Code Quality Pipelines
+Code Quality Analysis Functions
 
-This module contains various pipelines for running code quality tools:
+This module provides simple, direct functions for code quality analysis.
+The pipeline abstraction has been removed in favor of simple functions that
+directly call analyzers without unnecessary complexity.
 
-- pipeline_unified_enhanced: Enhanced unified pipeline with comprehensive reporting
-- pipeline_unified_integrated: Integrated pipeline with direct imports
-- pipeline_unified_standalone: Standalone pipeline using subprocess (no imports)
-- pipeline_syntax_imports: Pipeline for syntax and import fixes
-- pipeline_syntax_imports_enhanced: Enhanced syntax/import pipeline with unified reporting
-- pipeline_async_types: Pipeline for async and type hint fixes
-- pipeline_analysis: Pipeline for code analysis and validation
+Main functions:
+- run_import_verification: Check which files are imported by others
+- run_enhanced_import_analysis: Comprehensive import analysis
+- run_dead_code_analysis: Find unused code
+- run_complexity_analysis: Measure code complexity
+- run_dependency_analysis: Understand module dependencies
+- run_all_analyses: Run all available analyses
+- run_sequential_fixes: Run automated code fixes
+
+Usage:
+    from analysis_functions import run_import_verification
+    results = run_import_verification("/path/to/project")
 """
 
 from pathlib import Path
@@ -28,7 +35,7 @@ REPORTS_DIR = CODE_QUALITY_DIR / "reports"
 
 __all__ = [
     "PIPELINE_DIR",
-    "CODE_QUALITY_DIR",
+    "CODE_QUALITY_DIR", 
     "SCRIPTS_DIR",
     "REPORTS_DIR",
 ]

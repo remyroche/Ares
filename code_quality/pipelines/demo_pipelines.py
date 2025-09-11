@@ -21,6 +21,7 @@ from .dead_code_analysis_pipeline import run_dead_code_analysis
 from .code_graph_pipeline import run_code_graph_analysis
 from .complexity_analysis_pipeline import run_complexity_analysis
 from .auto_fixer_pipeline import run_auto_fixer
+from .function_import_analysis_pipeline import run_function_import_analysis
 
 
 async def demo_all_pipelines(project_root: str = "/workspace"):
@@ -43,6 +44,7 @@ async def demo_all_pipelines(project_root: str = "/workspace"):
         ("Dead Code Analysis", run_dead_code_analysis),
         ("Code Graph Analysis", run_code_graph_analysis),
         ("Complexity Analysis", run_complexity_analysis),
+        ("Function Import Analysis", run_function_import_analysis),
         ("Auto-Fixer (Dry Run)", lambda root, **kwargs: run_auto_fixer(root, dry_run=True, **kwargs))
     ]
     
@@ -112,6 +114,7 @@ async def demo_single_pipeline(pipeline_name: str, project_root: str = "/workspa
         "dead-code": run_dead_code_analysis,
         "graph": run_code_graph_analysis,
         "complexity": run_complexity_analysis,
+        "function-import": run_function_import_analysis,
         "autofixer": lambda root, **kwargs: run_auto_fixer(root, dry_run=True, **kwargs)
     }
     
@@ -173,7 +176,7 @@ def main():
         asyncio.run(demo_single_pipeline(args.pipeline, args.project_root))
     else:
         print("Please specify --pipeline <name> or --all")
-        print("Available pipelines: syntax, import, import-free, dead-code, graph, complexity, autofixer")
+        print("Available pipelines: syntax, import, import-free, dead-code, graph, complexity, function-import, autofixer")
 
 
 if __name__ == "__main__":

@@ -127,6 +127,8 @@ class TacticianTrainingConfig:
     enable_advanced_hpo: bool = True
     hpo_trials: int = 200  # More trials for tactical models
     hpo_timeout: int = 7200  # 2 hours
+    hpo_sampler: str = "TPE"  # TPE, Random, CMA-ES
+    hpo_pruner: str = "MedianPruner"  # MedianPruner, PercentilePruner, SuccessiveHalvingPruner
     enable_multi_objective_optimization: bool = True
     optimization_objectives: List[str] = field(default_factory=lambda: ['sharpe_ratio', 'max_drawdown', 'win_rate'])
     
@@ -593,6 +595,9 @@ class TacticianModelTrainer:
             test_split=self.config.test_split,
             enable_hyperparameter_optimization=True,  # Always enable for tactical models
             hpo_trials=self.config.hpo_trials,
+            hpo_timeout=self.config.hpo_timeout,
+            hpo_sampler=self.config.hpo_sampler,
+            hpo_pruner=self.config.hpo_pruner,
             enable_early_stopping=self.config.enable_early_stopping,
             early_stopping_patience=self.config.early_stopping_patience,
             enable_gpu_acceleration=self.config.enable_gpu_acceleration,

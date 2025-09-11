@@ -113,6 +113,9 @@ class AnalystTrainingConfig:
     # Training configuration
     enable_hyperparameter_optimization: bool = True
     hpo_trials: int = 50  # Reduced for multiple models
+    hpo_timeout: int = 1800  # 30 minutes per model
+    hpo_sampler: str = "TPE"  # TPE, Random, CMA-ES
+    hpo_pruner: str = "MedianPruner"  # MedianPruner, PercentilePruner, SuccessiveHalvingPruner
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
     
@@ -341,8 +344,18 @@ class AnalystModelTrainer:
             self.logger.info(f"🔄 Training {model_type.value} with ML commons...")
             
             try:
+                # Perform analyst-specific HPO if enabled
+                analyst_hpo_params = {}
+                if self.config.enable_hyperparameter_optimization:
+                    analyst_hpo_params = await self._optimize_analyst_hyperparameters(data, model_type)
+                
                 # Create training config for this model type
                 training_config = self._create_training_config(model_type)
+                
+                # Apply analyst-specific HPO parameters if available
+                if analyst_hpo_params:
+                    training_config.model_params.update(analyst_hpo_params)
+                    self.logger.info(f"🔧 Applied analyst-specific HPO parameters for {model_type.value}")
                 
                 # Train model with enhanced ML commons integration
                 trainer = GeneralModelTrainer(training_config)
@@ -435,6 +448,9 @@ class AnalystModelTrainer:
             test_split=self.config.test_split,
             enable_hyperparameter_optimization=self.config.enable_hyperparameter_optimization,
             hpo_trials=self.config.hpo_trials,
+            hpo_timeout=self.config.hpo_timeout,
+            hpo_sampler=self.config.hpo_sampler,
+            hpo_pruner=self.config.hpo_pruner,
             enable_early_stopping=self.config.enable_early_stopping,
             early_stopping_patience=self.config.early_stopping_patience,
             enable_gpu_acceleration=self.config.enable_gpu_acceleration,
@@ -586,6 +602,150 @@ class AnalystModelTrainer:
         optimizations.append("ml_commons_integration")
         
         return optimizations
+    
+    async def _optimize_analyst_hyperparameters(
+        self, 
+        data: pd.DataFrame, 
+        model_type: AnalystModelType
+    ) -> Dict[str, Any]:
+        """Perform analyst-specific hyperparameter optimization."""
+        
+        self.logger.info(f"🔬 Starting analyst-specific HPO for {model_type.value}...")
+        
+        try:
+            # Get analyst-specific search space
+            search_space = self._get_analyst_search_space(model_type)
+            
+            # Prepare data for this model type
+            target_column = self.config.target_columns.get(model_type.value, 'target')
+            X = data[self.config.feature_columns].copy()
+            y = data[target_column].copy()
+            
+            # Handle missing values
+            X = X.fillna(X.mean())
+            y = y.fillna(y.mode()[0] if len(y.mode()) > 0 else 0)
+            
+            # Split data
+            from sklearn.model_selection import train_test_split
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=self.config.validation_split, random_state=42
+            )
+            
+            # Use ML commons HPO optimizer with analyst-specific configuration
+            best_params = await self.hpo_optimizer.optimize(
+                model_type=self._get_analyst_model_type(model_type).value,
+                X_train=X_train,
+                y_train=y_train,
+                X_val=X_val,
+                y_val=y_val,
+                n_trials=self.config.hpo_trials,
+                timeout=self.config.hpo_timeout,
+                task_type=self._get_analyst_task_type(model_type).value,
+                sampler=self.config.hpo_sampler,
+                pruner=self.config.hpo_pruner,
+                search_space=search_space
+            )
+            
+            self.logger.info(f"✅ Analyst HPO completed for {model_type.value}")
+            self.logger.info(f"📊 Best parameters: {best_params}")
+            
+            return best_params
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Analyst HPO failed for {model_type.value}: {e}")
+            return {}
+    
+    def _get_analyst_search_space(self, model_type: AnalystModelType) -> Dict[str, Any]:
+        """Get analyst-specific hyperparameter search space."""
+        
+        if model_type == AnalystModelType.REGIME_CLASSIFIER:
+            # Regime classifier needs robust parameters
+            return {
+                'n_estimators': {'type': 'int', 'low': 100, 'high': 800, 'step': 20},
+                'max_depth': {'type': 'int', 'low': 5, 'high': 25},
+                'min_samples_split': {'type': 'int', 'low': 5, 'high': 50},
+                'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 20},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 0.7, 0.8, 0.9]},
+                'bootstrap': {'type': 'categorical', 'choices': [True, False]},
+                'class_weight': {'type': 'categorical', 'choices': [None, 'balanced', 'balanced_subsample']}
+            }
+        
+        elif model_type == AnalystModelType.SIGNAL_PREDICTOR:
+            # Signal predictor needs fast and accurate parameters
+            return {
+                'n_estimators': {'type': 'int', 'low': 50, 'high': 500, 'step': 10},
+                'max_depth': {'type': 'int', 'low': 3, 'high': 15},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
+                'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
+                'colsample_bytree': {'type': 'float', 'low': 0.7, 'high': 1.0},
+                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 5.0, 'log': True},
+                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 5.0, 'log': True}
+            }
+        
+        elif model_type == AnalystModelType.CONFIDENCE_ESTIMATOR:
+            # Confidence estimator needs calibrated parameters
+            return {
+                'n_estimators': {'type': 'int', 'low': 50, 'high': 400, 'step': 10},
+                'max_depth': {'type': 'int', 'low': 3, 'high': 12},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.15, 'log': True},
+                'subsample': {'type': 'float', 'low': 0.8, 'high': 1.0},
+                'colsample_bytree': {'type': 'float', 'low': 0.8, 'high': 1.0},
+                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 2.0, 'log': True},
+                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 2.0, 'log': True},
+                'min_child_samples': {'type': 'int', 'low': 10, 'high': 100}
+            }
+        
+        elif model_type == AnalystModelType.RISK_ASSESSOR:
+            # Risk assessor needs conservative parameters
+            return {
+                'n_estimators': {'type': 'int', 'low': 100, 'high': 600, 'step': 20},
+                'max_depth': {'type': 'int', 'low': 4, 'high': 20},
+                'min_samples_split': {'type': 'int', 'low': 10, 'high': 100},
+                'min_samples_leaf': {'type': 'int', 'low': 5, 'high': 50},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 0.6, 0.7, 0.8]},
+                'bootstrap': {'type': 'categorical', 'choices': [True, False]},
+                'max_samples': {'type': 'float', 'low': 0.7, 'high': 1.0}
+            }
+        
+        elif model_type == AnalystModelType.META_LABELER:
+            # Meta labeler needs balanced parameters
+            return {
+                'n_estimators': {'type': 'int', 'low': 75, 'high': 500, 'step': 15},
+                'max_depth': {'type': 'int', 'low': 4, 'high': 18},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
+                'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
+                'colsample_bytree': {'type': 'float', 'low': 0.7, 'high': 1.0},
+                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 3.0, 'log': True},
+                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 3.0, 'log': True}
+            }
+        
+        else:
+            # Default search space
+            return {}
+    
+    def _get_analyst_model_type(self, analyst_model_type: AnalystModelType) -> ModelType:
+        """Get the underlying ML model type for analyst model type."""
+        
+        if analyst_model_type == AnalystModelType.REGIME_CLASSIFIER:
+            return ModelType.RANDOM_FOREST
+        elif analyst_model_type == AnalystModelType.SIGNAL_PREDICTOR:
+            return ModelType.XGBOOST
+        elif analyst_model_type == AnalystModelType.CONFIDENCE_ESTIMATOR:
+            return ModelType.LIGHTGBM
+        elif analyst_model_type == AnalystModelType.RISK_ASSESSOR:
+            return ModelType.RANDOM_FOREST
+        elif analyst_model_type == AnalystModelType.META_LABELER:
+            return ModelType.XGBOOST
+        else:
+            return ModelType.RANDOM_FOREST
+    
+    def _get_analyst_task_type(self, analyst_model_type: AnalystModelType) -> TaskType:
+        """Get the task type for analyst model type."""
+        
+        if analyst_model_type in [AnalystModelType.REGIME_CLASSIFIER, AnalystModelType.SIGNAL_PREDICTOR, AnalystModelType.META_LABELER]:
+            return TaskType.CLASSIFICATION
+        else:
+            return TaskType.REGRESSION
     
     async def predict(
         self, 

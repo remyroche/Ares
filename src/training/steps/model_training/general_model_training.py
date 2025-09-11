@@ -103,6 +103,8 @@ class ModelTrainingConfig:
     enable_hyperparameter_optimization: bool = True
     hpo_trials: int = 100
     hpo_timeout: int = 3600  # 1 hour
+    hpo_sampler: str = "TPE"  # TPE, Random, CMA-ES
+    hpo_pruner: str = "MedianPruner"  # MedianPruner, PercentilePruner, SuccessiveHalvingPruner
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
     
@@ -418,26 +420,243 @@ class GeneralModelTrainer:
         X_val: pd.DataFrame,
         y_val: pd.Series
     ) -> Dict[str, Any]:
-        """Optimize hyperparameters using ML commons HPO."""
+        """Optimize hyperparameters using ML commons HPO with comprehensive search spaces."""
         
         self.logger.info("🔄 Starting enhanced hyperparameter optimization...")
+        self.logger.info(f"🎯 Model type: {self.config.model_type.value}")
+        self.logger.info(f"🔬 HPO trials: {self.config.hpo_trials}")
+        self.logger.info(f"⏱️ HPO timeout: {self.config.hpo_timeout}s")
+        self.logger.info(f"📊 Sampler: {self.config.hpo_sampler}")
+        self.logger.info(f"✂️ Pruner: {self.config.hpo_pruner}")
         
-        # Use ML commons HPO optimizer
-        best_params = await self.hpo_optimizer.optimize(
-            model_type=self.config.model_type.value,
-            X_train=X_train,
-            y_train=y_train,
-            X_val=X_val,
-            y_val=y_val,
-            n_trials=self.config.hpo_trials,
-            timeout=self.config.hpo_timeout,
-            task_type=self.config.task_type.value
+        try:
+            # Use ML commons HPO optimizer with enhanced configuration
+            best_params = await self.hpo_optimizer.optimize(
+                model_type=self.config.model_type.value,
+                X_train=X_train,
+                y_train=y_train,
+                X_val=X_val,
+                y_val=y_val,
+                n_trials=self.config.hpo_trials,
+                timeout=self.config.hpo_timeout,
+                task_type=self.config.task_type.value,
+                sampler=self.config.hpo_sampler,
+                pruner=self.config.hpo_pruner,
+                search_space=self._get_enhanced_search_space()
+            )
+            
+            self.logger.info(f"✅ Enhanced HPO completed successfully")
+            self.logger.info(f"📊 Best parameters: {best_params}")
+            
+            return best_params
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ ML commons HPO failed, using fallback: {e}")
+            # Fallback to basic HPO
+            return await self._fallback_hyperparameter_optimization(X_train, y_train, X_val, y_val)
+    
+    def _get_enhanced_search_space(self) -> Dict[str, Any]:
+        """Get enhanced hyperparameter search space based on model type."""
+        
+        if self.config.model_type == ModelType.RANDOM_FOREST:
+            return {
+                'n_estimators': {'type': 'int', 'low': 50, 'high': 1000, 'step': 10},
+                'max_depth': {'type': 'int', 'low': 3, 'high': 30},
+                'min_samples_split': {'type': 'int', 'low': 2, 'high': 20},
+                'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', None, 0.5, 0.7, 0.9]},
+                'bootstrap': {'type': 'categorical', 'choices': [True, False]},
+                'max_samples': {'type': 'float', 'low': 0.5, 'high': 1.0}
+            }
+        
+        elif self.config.model_type == ModelType.XGBOOST:
+            return {
+                'n_estimators': {'type': 'int', 'low': 50, 'high': 1000, 'step': 10},
+                'max_depth': {'type': 'int', 'low': 3, 'high': 15},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3, 'log': True},
+                'subsample': {'type': 'float', 'low': 0.6, 'high': 1.0},
+                'colsample_bytree': {'type': 'float', 'low': 0.6, 'high': 1.0},
+                'colsample_bylevel': {'type': 'float', 'low': 0.6, 'high': 1.0},
+                'colsample_bynode': {'type': 'float', 'low': 0.6, 'high': 1.0},
+                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 10.0, 'log': True},
+                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 10.0, 'log': True},
+                'gamma': {'type': 'float', 'low': 0.0, 'high': 5.0},
+                'min_child_weight': {'type': 'int', 'low': 1, 'high': 10}
+            }
+        
+        elif self.config.model_type == ModelType.LIGHTGBM:
+            return {
+                'n_estimators': {'type': 'int', 'low': 50, 'high': 1000, 'step': 10},
+                'max_depth': {'type': 'int', 'low': 3, 'high': 15},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3, 'log': True},
+                'subsample': {'type': 'float', 'low': 0.6, 'high': 1.0},
+                'colsample_bytree': {'type': 'float', 'low': 0.6, 'high': 1.0},
+                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 10.0, 'log': True},
+                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 10.0, 'log': True},
+                'min_child_samples': {'type': 'int', 'low': 5, 'high': 100},
+                'min_child_weight': {'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True},
+                'num_leaves': {'type': 'int', 'low': 10, 'high': 300}
+            }
+        
+        elif self.config.model_type == ModelType.CATBOOST:
+            return {
+                'iterations': {'type': 'int', 'low': 50, 'high': 1000, 'step': 10},
+                'depth': {'type': 'int', 'low': 3, 'high': 10},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3, 'log': True},
+                'l2_leaf_reg': {'type': 'float', 'low': 1.0, 'high': 10.0, 'log': True},
+                'bootstrap_type': {'type': 'categorical', 'choices': ['Bayesian', 'Bernoulli', 'MVS']},
+                'subsample': {'type': 'float', 'low': 0.6, 'high': 1.0},
+                'colsample_bylevel': {'type': 'float', 'low': 0.6, 'high': 1.0},
+                'min_data_in_leaf': {'type': 'int', 'low': 1, 'high': 20}
+            }
+        
+        elif self.config.model_type == ModelType.LOGISTIC_REGRESSION:
+            return {
+                'C': {'type': 'float', 'low': 0.001, 'high': 100.0, 'log': True},
+                'penalty': {'type': 'categorical', 'choices': ['l1', 'l2', 'elasticnet']},
+                'solver': {'type': 'categorical', 'choices': ['liblinear', 'saga', 'lbfgs']},
+                'max_iter': {'type': 'int', 'low': 100, 'high': 1000, 'step': 50},
+                'l1_ratio': {'type': 'float', 'low': 0.0, 'high': 1.0}  # Only for elasticnet
+            }
+        
+        elif self.config.model_type == ModelType.SVM:
+            return {
+                'C': {'type': 'float', 'low': 0.001, 'high': 100.0, 'log': True},
+                'kernel': {'type': 'categorical', 'choices': ['linear', 'poly', 'rbf', 'sigmoid']},
+                'gamma': {'type': 'categorical', 'choices': ['scale', 'auto']},
+                'degree': {'type': 'int', 'low': 2, 'high': 5},  # Only for poly kernel
+                'coef0': {'type': 'float', 'low': 0.0, 'high': 1.0}  # For poly and sigmoid
+            }
+        
+        else:
+            # Default search space
+            return {}
+    
+    async def _fallback_hyperparameter_optimization(
+        self, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> Dict[str, Any]:
+        """Fallback hyperparameter optimization using Optuna directly."""
+        
+        self.logger.info("🔄 Starting fallback hyperparameter optimization...")
+        
+        import optuna
+        
+        # Create study
+        study = optuna.create_study(
+            direction='maximize',
+            study_name=f"{self.config.model_name}_fallback_hpo"
         )
         
-        self.logger.info(f"✅ Enhanced HPO completed")
+        # Define objective function
+        def objective(trial):
+            return self._objective_function(trial, X_train, y_train, X_val, y_val)
+        
+        # Optimize
+        study.optimize(
+            objective, 
+            n_trials=min(50, self.config.hpo_trials),  # Reduced for fallback
+            timeout=min(1800, self.config.hpo_timeout)  # Reduced for fallback
+        )
+        
+        best_params = study.best_params
+        best_score = study.best_value
+        
+        self.logger.info(f"✅ Fallback HPO completed. Best score: {best_score:.4f}")
         self.logger.info(f"📊 Best parameters: {best_params}")
         
         return best_params
+    
+    def _objective_function(
+        self, 
+        trial: optuna.Trial, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> float:
+        """Objective function for Optuna optimization."""
+        
+        try:
+            # Get hyperparameters from trial
+            params = self._suggest_hyperparameters(trial)
+            
+            # Create and train model
+            model = self.model_factory.create_model(self.config.model_type, params)
+            model.fit(X_train, y_train)
+            
+            # Evaluate model
+            if hasattr(model, 'predict_proba'):
+                y_pred_proba = model.predict_proba(X_val)
+                if self.config.task_type == TaskType.CLASSIFICATION:
+                    from sklearn.metrics import roc_auc_score
+                    score = roc_auc_score(y_val, y_pred_proba[:, 1])
+                else:
+                    from sklearn.metrics import accuracy_score
+                    y_pred = np.argmax(y_pred_proba, axis=1)
+                    score = accuracy_score(y_val, y_pred)
+            else:
+                y_pred = model.predict(X_val)
+                if self.config.task_type == TaskType.REGRESSION:
+                    from sklearn.metrics import r2_score
+                    score = r2_score(y_val, y_pred)
+                else:
+                    from sklearn.metrics import accuracy_score
+                    score = accuracy_score(y_val, y_pred)
+            
+            return score
+            
+        except Exception as e:
+            self.logger.error(f"Error in objective function: {e}")
+            return 0.0
+    
+    def _suggest_hyperparameters(self, trial: optuna.Trial) -> Dict[str, Any]:
+        """Suggest hyperparameters based on model type."""
+        
+        if self.config.model_type == ModelType.RANDOM_FOREST:
+            return {
+                'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                'max_depth': trial.suggest_int('max_depth', 3, 20),
+                'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
+                'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
+                'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None]),
+                'random_state': 42
+            }
+        
+        elif self.config.model_type == ModelType.XGBOOST:
+            return {
+                'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                'max_depth': trial.suggest_int('max_depth', 3, 10),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+                'random_state': 42
+            }
+        
+        elif self.config.model_type == ModelType.LIGHTGBM:
+            return {
+                'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                'max_depth': trial.suggest_int('max_depth', 3, 10),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+                'random_state': 42
+            }
+        
+        elif self.config.model_type == ModelType.LOGISTIC_REGRESSION:
+            return {
+                'C': trial.suggest_float('C', 0.01, 100.0, log=True),
+                'penalty': trial.suggest_categorical('penalty', ['l1', 'l2']),
+                'solver': trial.suggest_categorical('solver', ['liblinear', 'saga']),
+                'random_state': 42
+            }
+        
+        else:
+            # Default parameters
+            return self.config.model_params
     
     async def _train_final_model_enhanced(
         self, 

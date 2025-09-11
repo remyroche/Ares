@@ -51,8 +51,9 @@ try:
     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
     from sklearn.feature_selection import RFE, RFECV
     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-    from sklearn.linear_model import LogisticRegression, LinearRegression
-    from sklearn.model_selection import cross_val_score, StratifiedKFold
+    from sklearn.linear_model import LogisticRegression, LinearRegression, Lasso, LassoCV, ElasticNet, ElasticNetCV
+    from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
+    from sklearn.preprocessing import StandardScaler
     from scipy.stats import pearsonr, spearmanr
     SKLEARN_AVAILABLE = True
 except ImportError:
@@ -109,6 +110,20 @@ class FeatureSelectionFramework:
                 'n_bootstraps': 50,
                 'bootstrap_fraction': 0.8,
                 'stability_threshold': 0.6
+            },
+            'lasso': {
+                'alpha_range': (0.001, 1.0),
+                'cv_folds': 5,
+                'max_iter': 1000,
+                'tol': 1e-4,
+                'random_state': 42
+            },
+            'lasso_stability': {
+                'n_bootstraps': 100,
+                'bootstrap_fraction': 0.8,
+                'stability_threshold': 0.6,
+                'alpha_range': (0.001, 1.0),
+                'cv_folds': 5
             }
         }
 
@@ -813,6 +828,498 @@ class FeatureSelectionFramework:
         except Exception as e:
             self.logger.error(f"❌ Cross-validated feature selection failed: {e}")
             return {'error': str(e), 'consensus_features': []}
+
+    def lasso_stability_selection(self, X: np.ndarray, y: np.ndarray,
+                                 feature_names: List[str],
+                                 n_bootstrap: int = 100,
+                                 bootstrap_fraction: float = 0.8,
+                                 alpha_range: Tuple[float, float] = (0.001, 1.0),
+                                 stability_threshold: float = 0.6,
+                                 cv_folds: int = 5) -> Dict[str, Any]:
+        """
+        LASSO with stability selection to overcome instability issues.
+        
+        This method combines:
+        1. LASSO regularization for automatic feature selection
+        2. Bootstrap sampling for stability assessment
+        3. Cross-validation for optimal alpha selection
+        4. Stability thresholding for robust feature selection
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            n_bootstrap: Number of bootstrap samples
+            bootstrap_fraction: Fraction of data to use in each bootstrap
+            alpha_range: Range of alpha values to test
+            stability_threshold: Minimum stability score for feature selection
+            cv_folds: Number of CV folds for alpha selection
+            
+        Returns:
+            Dictionary with stable features and LASSO analysis
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting LASSO stability selection...")
+        _LOGGER.info(f"📊 Parameters - Bootstrap samples: {n_bootstrap}, Data shape: {X.shape}")
+        _LOGGER.info(f"📊 Alpha range: {alpha_range}, Stability threshold: {stability_threshold}")
+        
+        try:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn required for LASSO stability selection")
+            
+            # Standardize features (important for LASSO)
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            lasso_stability_results = {
+                'selected_features': [],
+                'feature_stability_scores': {},
+                'feature_coefficients': {},
+                'alpha_analysis': {},
+                'bootstrap_results': [],
+                'selection_metadata': {
+                    'method': 'lasso_stability_selection',
+                    'n_bootstrap': n_bootstrap,
+                    'bootstrap_fraction': bootstrap_fraction,
+                    'alpha_range': alpha_range,
+                    'stability_threshold': stability_threshold,
+                    'cv_folds': cv_folds
+                }
+            }
+            
+            # Determine if classification or regression
+            is_classification = len(np.unique(y)) <= 10 and not np.issubdtype(np.asarray(y).dtype, np.floating)
+            
+            # Initialize feature selection counts
+            feature_selection_counts = {feature: 0 for feature in feature_names}
+            feature_coefficients_sum = {feature: 0.0 for feature in feature_names}
+            
+            # Bootstrap sampling and LASSO selection
+            bootstrap_size = int(len(X_scaled) * bootstrap_fraction)
+            
+            for bootstrap_idx in range(n_bootstrap):
+                try:
+                    # Bootstrap sampling
+                    bootstrap_indices = np.random.choice(
+                        len(X_scaled), size=bootstrap_size, replace=True
+                    )
+                    X_bootstrap = X_scaled[bootstrap_indices]
+                    y_bootstrap = y[bootstrap_indices]
+                    
+                    # Find optimal alpha using cross-validation
+                    if is_classification:
+                        lasso_cv = LassoCV(
+                            alphas=np.logspace(np.log10(alpha_range[0]), np.log10(alpha_range[1]), 20),
+                            cv=cv_folds,
+                            max_iter=self.method_configs['lasso']['max_iter'],
+                            tol=self.method_configs['lasso']['tol'],
+                            random_state=self.random_state + bootstrap_idx
+                        )
+                    else:
+                        lasso_cv = LassoCV(
+                            alphas=np.logspace(np.log10(alpha_range[0]), np.log10(alpha_range[1]), 20),
+                            cv=cv_folds,
+                            max_iter=self.method_configs['lasso']['max_iter'],
+                            tol=self.method_configs['lasso']['tol'],
+                            random_state=self.random_state + bootstrap_idx
+                        )
+                    
+                    # Fit LASSO with cross-validation
+                    lasso_cv.fit(X_bootstrap, y_bootstrap)
+                    
+                    # Get selected features (non-zero coefficients)
+                    selected_mask = np.abs(lasso_cv.coef_) > 1e-6
+                    selected_features = [feature_names[i] for i in range(len(feature_names)) if selected_mask[i]]
+                    
+                    # Update selection counts and coefficient sums
+                    for feature in selected_features:
+                        feature_selection_counts[feature] += 1
+                        feature_idx = feature_names.index(feature)
+                        feature_coefficients_sum[feature] += lasso_cv.coef_[feature_idx]
+                    
+                    # Store bootstrap result
+                    lasso_stability_results['bootstrap_results'].append({
+                        'bootstrap_idx': bootstrap_idx,
+                        'optimal_alpha': lasso_cv.alpha_,
+                        'selected_features': selected_features,
+                        'n_selected': len(selected_features),
+                        'cv_score': lasso_cv.score(X_bootstrap, y_bootstrap)
+                    })
+                    
+                except Exception as bootstrap_e:
+                    _LOGGER.warning(f"⚠️ Bootstrap {bootstrap_idx} failed: {bootstrap_e}")
+                    continue
+            
+            # Calculate stability scores
+            for feature in feature_names:
+                stability_score = feature_selection_counts[feature] / n_bootstrap
+                avg_coefficient = (feature_coefficients_sum[feature] / feature_selection_counts[feature] 
+                                 if feature_selection_counts[feature] > 0 else 0.0)
+                
+                lasso_stability_results['feature_stability_scores'][feature] = stability_score
+                lasso_stability_results['feature_coefficients'][feature] = avg_coefficient
+            
+            # Select stable features
+            stable_features = [
+                feature for feature, stability in lasso_stability_results['feature_stability_scores'].items()
+                if stability >= stability_threshold
+            ]
+            
+            lasso_stability_results['selected_features'] = stable_features
+            
+            # Alpha analysis
+            if lasso_stability_results['bootstrap_results']:
+                alphas = [result['optimal_alpha'] for result in lasso_stability_results['bootstrap_results']]
+                lasso_stability_results['alpha_analysis'] = {
+                    'mean_alpha': np.mean(alphas),
+                    'std_alpha': np.std(alphas),
+                    'min_alpha': np.min(alphas),
+                    'max_alpha': np.max(alphas),
+                    'median_alpha': np.median(alphas)
+                }
+            
+            lasso_stability_results['selection_metadata'].update({
+                'n_features_selected': len(stable_features),
+                'n_bootstrap_successful': len(lasso_stability_results['bootstrap_results']),
+                'stability_stats': {
+                    'mean_stability': np.mean(list(lasso_stability_results['feature_stability_scores'].values())),
+                    'std_stability': np.std(list(lasso_stability_results['feature_stability_scores'].values())),
+                    'max_stability': np.max(list(lasso_stability_results['feature_stability_scores'].values())),
+                    'min_stability': np.min(list(lasso_stability_results['feature_stability_scores'].values()))
+                }
+            })
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ LASSO stability selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Selected: {len(stable_features)} stable features")
+            _LOGGER.info(f"📊 Stability stats - Mean: {lasso_stability_results['selection_metadata']['stability_stats']['mean_stability']:.3f}")
+            _LOGGER.debug(f"📊 Selected features: {stable_features}")
+            return lasso_stability_results
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ LASSO stability selection failed after {execution_time:.3f}s: {e}")
+            return {'error': str(e), 'selected_features': []}
+
+    def lasso_feature_selection(self, X: np.ndarray, y: np.ndarray,
+                               feature_names: List[str],
+                               alpha: Optional[float] = None,
+                               cv_folds: int = 5,
+                               selection_criterion: str = 'cv') -> Dict[str, Any]:
+        """
+        Standard LASSO feature selection with optional cross-validation.
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            alpha: LASSO regularization strength (None for CV selection)
+            cv_folds: Number of CV folds for alpha selection
+            selection_criterion: 'cv' for cross-validation, 'aic' for AIC, 'bic' for BIC
+            
+        Returns:
+            Dictionary with selected features and LASSO results
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting LASSO feature selection...")
+        _LOGGER.info(f"📊 Parameters - Alpha: {alpha if alpha else 'CV'}, Data shape: {X.shape}")
+        _LOGGER.info(f"📊 Selection criterion: {selection_criterion}")
+        
+        try:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn required for LASSO feature selection")
+            
+            # Standardize features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            lasso_results = {
+                'selected_features': [],
+                'feature_coefficients': {},
+                'alpha_analysis': {},
+                'selection_metadata': {
+                    'method': 'lasso_feature_selection',
+                    'alpha': alpha,
+                    'cv_folds': cv_folds,
+                    'selection_criterion': selection_criterion
+                }
+            }
+            
+            # Determine if classification or regression
+            is_classification = len(np.unique(y)) <= 10 and not np.issubdtype(np.asarray(y).dtype, np.floating)
+            
+            if alpha is None:
+                # Use cross-validation to find optimal alpha
+                if is_classification:
+                    lasso_cv = LassoCV(
+                        alphas=np.logspace(np.log10(self.method_configs['lasso']['alpha_range'][0]), 
+                                         np.log10(self.method_configs['lasso']['alpha_range'][1]), 20),
+                        cv=cv_folds,
+                        max_iter=self.method_configs['lasso']['max_iter'],
+                        tol=self.method_configs['lasso']['tol'],
+                        random_state=self.random_state
+                    )
+                else:
+                    lasso_cv = LassoCV(
+                        alphas=np.logspace(np.log10(self.method_configs['lasso']['alpha_range'][0]), 
+                                         np.log10(self.method_configs['lasso']['alpha_range'][1]), 20),
+                        cv=cv_folds,
+                        max_iter=self.method_configs['lasso']['max_iter'],
+                        tol=self.method_configs['lasso']['tol'],
+                        random_state=self.random_state
+                    )
+                
+                lasso_cv.fit(X_scaled, y)
+                optimal_alpha = lasso_cv.alpha_
+                lasso_model = lasso_cv
+                
+                lasso_results['alpha_analysis'] = {
+                    'optimal_alpha': optimal_alpha,
+                    'cv_scores': lasso_cv.mse_path_.mean(axis=1).tolist(),
+                    'alphas_tested': lasso_cv.alphas_.tolist()
+                }
+            else:
+                # Use specified alpha
+                if is_classification:
+                    lasso_model = Lasso(
+                        alpha=alpha,
+                        max_iter=self.method_configs['lasso']['max_iter'],
+                        tol=self.method_configs['lasso']['tol'],
+                        random_state=self.random_state
+                    )
+                else:
+                    lasso_model = Lasso(
+                        alpha=alpha,
+                        max_iter=self.method_configs['lasso']['max_iter'],
+                        tol=self.method_configs['lasso']['tol'],
+                        random_state=self.random_state
+                    )
+                
+                lasso_model.fit(X_scaled, y)
+                optimal_alpha = alpha
+            
+            # Get selected features (non-zero coefficients)
+            selected_mask = np.abs(lasso_model.coef_) > 1e-6
+            selected_features = [feature_names[i] for i in range(len(feature_names)) if selected_mask[i]]
+            
+            # Store coefficients
+            for i, feature in enumerate(feature_names):
+                lasso_results['feature_coefficients'][feature] = float(lasso_model.coef_[i])
+            
+            lasso_results['selected_features'] = selected_features
+            lasso_results['selection_metadata'].update({
+                'n_features_selected': len(selected_features),
+                'optimal_alpha': optimal_alpha,
+                'model_score': lasso_model.score(X_scaled, y)
+            })
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ LASSO feature selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Selected: {len(selected_features)} features")
+            _LOGGER.info(f"📊 Optimal alpha: {optimal_alpha:.6f}")
+            _LOGGER.debug(f"📊 Selected features: {selected_features}")
+            return lasso_results
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ LASSO feature selection failed after {execution_time:.3f}s: {e}")
+            return {'error': str(e), 'selected_features': []}
+
+    def comprehensive_feature_selection(self, X: np.ndarray, y: np.ndarray,
+                                      feature_names: List[str],
+                                      methods: List[str] = None,
+                                      weights: Optional[Dict[str, float]] = None,
+                                      n_features: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Comprehensive feature selection combining multiple methods.
+        
+        This method implements a multi-stage approach:
+        1. Filter methods (correlation, mRMR) for initial reduction
+        2. Embedded methods (LASSO stability) for robust selection
+        3. Wrapper methods (RFE) for final validation
+        4. Ensemble voting for consensus features
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            methods: List of methods to use ['correlation', 'mrmr', 'lasso_stability', 'rfe']
+            weights: Weights for each method in final voting
+            n_features: Target number of features (None for automatic)
+            
+        Returns:
+            Dictionary with comprehensive feature selection results
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting comprehensive feature selection...")
+        _LOGGER.info(f"📊 Data shape: {X.shape}, Methods: {methods}")
+        
+        try:
+            if methods is None:
+                methods = ['correlation', 'mrmr', 'lasso_stability']
+            
+            if weights is None:
+                weights = {method: 1.0 / len(methods) for method in methods}
+            
+            comprehensive_results = {
+                'selected_features': [],
+                'method_results': {},
+                'consensus_features': [],
+                'feature_votes': {},
+                'selection_metadata': {
+                    'method': 'comprehensive_feature_selection',
+                    'methods_used': methods,
+                    'method_weights': weights,
+                    'n_features_requested': n_features
+                }
+            }
+            
+            current_features = feature_names.copy()
+            current_X = X.copy()
+            
+            # Stage 1: Filter methods (correlation, mRMR)
+            filter_methods = [m for m in methods if m in ['correlation', 'mrmr']]
+            
+            for method in filter_methods:
+                try:
+                    if method == 'correlation':
+                        _LOGGER.info("🔍 Stage 1: Applying correlation-based filtering...")
+                        result = self.correlation_based_filtering(current_X, current_features)
+                        if 'selected_features' in result:
+                            current_features = result['selected_features']
+                            # Update X to match selected features
+                            selected_indices = [feature_names.index(f) for f in current_features if f in feature_names]
+                            current_X = X[:, selected_indices]
+                            comprehensive_results['method_results']['correlation'] = result
+                    
+                    elif method == 'mrmr':
+                        _LOGGER.info("🔍 Stage 1: Applying mRMR selection...")
+                        target_features = min(n_features or len(current_features) // 2, len(current_features))
+                        result = self.mrmr_selection(current_X, y, current_features, target_features)
+                        if 'selected_features' in result:
+                            current_features = result['selected_features']
+                            # Update X to match selected features
+                            selected_indices = [feature_names.index(f) for f in current_features if f in feature_names]
+                            current_X = X[:, selected_indices]
+                            comprehensive_results['method_results']['mrmr'] = result
+                
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Filter method {method} failed: {e}")
+                    continue
+            
+            # Stage 2: Embedded methods (LASSO stability)
+            embedded_methods = [m for m in methods if m in ['lasso_stability', 'lasso']]
+            
+            for method in embedded_methods:
+                try:
+                    if method == 'lasso_stability':
+                        _LOGGER.info("🔍 Stage 2: Applying LASSO stability selection...")
+                        result = self.lasso_stability_selection(current_X, y, current_features)
+                        if 'selected_features' in result:
+                            comprehensive_results['method_results']['lasso_stability'] = result
+                    
+                    elif method == 'lasso':
+                        _LOGGER.info("🔍 Stage 2: Applying LASSO selection...")
+                        result = self.lasso_feature_selection(current_X, y, current_features)
+                        if 'selected_features' in result:
+                            comprehensive_results['method_results']['lasso'] = result
+                
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Embedded method {method} failed: {e}")
+                    continue
+            
+            # Stage 3: Wrapper methods (RFE)
+            wrapper_methods = [m for m in methods if m in ['rfe']]
+            
+            for method in wrapper_methods:
+                try:
+                    if method == 'rfe':
+                        _LOGGER.info("🔍 Stage 3: Applying RFE selection...")
+                        # Use a simple model for RFE
+                        if len(np.unique(y)) <= 10:
+                            base_model = RandomForestClassifier(n_estimators=50, random_state=self.random_state)
+                        else:
+                            base_model = RandomForestRegressor(n_estimators=50, random_state=self.random_state)
+                        
+                        target_features = min(n_features or len(current_features) // 2, len(current_features))
+                        result = self.recursive_feature_elimination(base_model, current_X, y, current_features, target_features)
+                        if 'selected_features' in result:
+                            comprehensive_results['method_results']['rfe'] = result
+                
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Wrapper method {method} failed: {e}")
+                    continue
+            
+            # Stage 4: Ensemble voting
+            _LOGGER.info("🔍 Stage 4: Computing ensemble consensus...")
+            
+            # Initialize feature votes
+            feature_votes = {feature: 0.0 for feature in feature_names}
+            
+            # Collect votes from each method
+            for method, result in comprehensive_results['method_results'].items():
+                if 'selected_features' in result:
+                    weight = weights.get(method, 1.0)
+                    for feature in result['selected_features']:
+                        if feature in feature_votes:
+                            feature_votes[feature] += weight
+            
+            comprehensive_results['feature_votes'] = feature_votes
+            
+            # Select consensus features
+            if n_features is None:
+                # Use threshold-based selection (features with >50% vote)
+                consensus_threshold = 0.5
+                consensus_features = [
+                    feature for feature, votes in feature_votes.items()
+                    if votes >= consensus_threshold
+                ]
+            else:
+                # Use top-N selection
+                sorted_features = sorted(
+                    feature_votes.items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )
+                consensus_features = [feature for feature, _ in sorted_features[:n_features]]
+            
+            comprehensive_results['consensus_features'] = consensus_features
+            comprehensive_results['selected_features'] = consensus_features
+            
+            # Final statistics
+            comprehensive_results['selection_metadata'].update({
+                'n_features_selected': len(consensus_features),
+                'n_methods_successful': len(comprehensive_results['method_results']),
+                'consensus_threshold': consensus_threshold if n_features is None else f"top_{n_features}",
+                'feature_vote_stats': {
+                    'mean_votes': np.mean(list(feature_votes.values())),
+                    'std_votes': np.std(list(feature_votes.values())),
+                    'max_votes': np.max(list(feature_votes.values())),
+                    'min_votes': np.min(list(feature_votes.values()))
+                }
+            })
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Comprehensive feature selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Selected: {len(consensus_features)} consensus features")
+            _LOGGER.info(f"📊 Methods successful: {len(comprehensive_results['method_results'])}/{len(methods)}")
+            _LOGGER.debug(f"📊 Selected features: {consensus_features}")
+            return comprehensive_results
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Comprehensive feature selection failed after {execution_time:.3f}s: {e}")
+            return {'error': str(e), 'selected_features': []}
+
+    def _get_default_model(self, y: np.ndarray):
+        """Get a default model based on the target type."""
+        if not SKLEARN_AVAILABLE:
+            return None
+        
+        if len(np.unique(y)) <= 10 and not np.issubdtype(np.asarray(y).dtype, np.floating):
+            return RandomForestClassifier(n_estimators=50, random_state=self.random_state)
+        else:
+            return RandomForestRegressor(n_estimators=50, random_state=self.random_state)
 
     def _calculate_relevance_scores(self, X: np.ndarray, y: np.ndarray,
                                   feature_names: List[str], method: str) -> Dict[str, float]:

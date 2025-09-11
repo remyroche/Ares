@@ -105,20 +105,64 @@ class ModelTrainingConfig:
     hpo_timeout: int = 3600  # 1 hour
     hpo_sampler: str = "TPE"  # TPE, Random, CMA-ES, GridSearch, HalvingGridSearch
     hpo_pruner: str = "MedianPruner"  # MedianPruner, PercentilePruner, SuccessiveHalvingPruner
-    hpo_strategy: str = "adaptive"  # adaptive, coarse_first, fine_tune, budget_aware
-    enable_coarse_grid_search: bool = True  # Use coarse grid before fine-tuning
-    coarse_grid_trials: int = 20  # Trials for coarse grid search
+    hpo_strategy: str = "coarse_first_tpe"  # Always use coarse-first then Full TPE
+    enable_coarse_grid_search: bool = True  # Always enabled for coarse-first strategy
+    coarse_grid_trials: int = 20  # Trials for coarse grid search (will be scaled by launch mode)
+    launch_mode: str = "full"  # full, blank, light - determines HPO intensity
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
     
     def __post_init__(self):
-        """Apply intensity scaling after initialization."""
+        """Apply intensity scaling and launch mode scaling after initialization."""
+        # Apply launch mode scaling first
+        self._apply_launch_mode_scaling()
+        
+        # Then apply intensity scaling
         intensity_pct = get_intensity_from_environment()
         if intensity_pct < 1.0:
             self.hpo_trials = get_scaled_hpo_trials(self.hpo_trials, intensity_pct)
             self.hpo_timeout = get_scaled_hpo_timeout(self.hpo_timeout, intensity_pct)
+            self.coarse_grid_trials = get_scaled_hpo_trials(self.coarse_grid_trials, intensity_pct)
             self.early_stopping_patience = max(1, int(self.early_stopping_patience * intensity_pct))
             logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%): HPO trials={self.hpo_trials}, timeout={self.hpo_timeout}s")
+    
+    def _apply_launch_mode_scaling(self):
+        """Apply launch mode scaling to HPO parameters."""
+        
+        if self.launch_mode == "light":
+            # Light mode: Minimal HPO for quick testing
+            self.hpo_trials = 20
+            self.coarse_grid_trials = 5
+            self.hpo_timeout = 600  # 10 minutes
+            self.early_stopping_patience = 5
+            logger.info("🚀 Light mode: Minimal HPO (20 trials, 10 min)")
+            
+        elif self.launch_mode == "blank":
+            # Blank mode: Moderate HPO for development
+            self.hpo_trials = 50
+            self.coarse_grid_trials = 10
+            self.hpo_timeout = 1800  # 30 minutes
+            self.early_stopping_patience = 8
+            logger.info("🔧 Blank mode: Moderate HPO (50 trials, 30 min)")
+            
+        elif self.launch_mode == "full":
+            # Full mode: Comprehensive HPO for production
+            self.hpo_trials = 100
+            self.coarse_grid_trials = 20
+            self.hpo_timeout = 3600  # 60 minutes
+            self.early_stopping_patience = 10
+            logger.info("🎯 Full mode: Comprehensive HPO (100 trials, 60 min)")
+            
+        else:
+            # Default to full mode if unknown
+            self.launch_mode = "full"
+            self.hpo_trials = 100
+            self.coarse_grid_trials = 20
+            self.hpo_timeout = 3600
+            self.early_stopping_patience = 10
+            logger.warning(f"⚠️ Unknown launch mode '{self.launch_mode}', defaulting to full mode")
+        
+        logger.info(f"📊 Launch mode '{self.launch_mode}': HPO trials={self.hpo_trials}, coarse trials={self.coarse_grid_trials}, timeout={self.hpo_timeout}s")
     
     # Model-specific configuration
     model_params: Dict[str, Any] = field(default_factory=dict)
@@ -433,26 +477,9 @@ class GeneralModelTrainer:
         self.logger.info(f"✂️ Pruner: {self.config.hpo_pruner}")
         
         try:
-            # Choose HPO strategy based on configuration
-            if self.config.hpo_strategy == "coarse_first" and self.config.enable_coarse_grid_search:
-                best_params = await self._coarse_then_fine_hpo(X_train, y_train, X_val, y_val)
-            elif self.config.hpo_strategy == "budget_aware":
-                best_params = await self._budget_aware_hpo(X_train, y_train, X_val, y_val)
-            else:
-                # Use ML commons HPO optimizer with enhanced configuration
-                best_params = await self.hpo_optimizer.optimize(
-                    model_type=self.config.model_type.value,
-                    X_train=X_train,
-                    y_train=y_train,
-                    X_val=X_val,
-                    y_val=y_val,
-                    n_trials=self.config.hpo_trials,
-                    timeout=self.config.hpo_timeout,
-                    task_type=self.config.task_type.value,
-                    sampler=self.config.hpo_sampler,
-                    pruner=self.config.hpo_pruner,
-                    search_space=self._get_enhanced_search_space()
-                )
+            # Always use coarse-first then Full TPE strategy
+            self.logger.info("🔍 Using coarse-first then Full TPE strategy...")
+            best_params = await self._coarse_first_then_tpe_hpo(X_train, y_train, X_val, y_val)
             
             self.logger.info(f"✅ Enhanced HPO completed successfully")
             self.logger.info(f"📊 Best parameters: {best_params}")
@@ -667,29 +694,32 @@ class GeneralModelTrainer:
             # Default parameters
             return self.config.model_params
     
-    async def _coarse_then_fine_hpo(
+    async def _coarse_first_then_tpe_hpo(
         self, 
         X_train: pd.DataFrame, 
         y_train: pd.Series,
         X_val: pd.DataFrame,
         y_val: pd.Series
     ) -> Dict[str, Any]:
-        """Coarse grid search followed by fine-tuning for computational efficiency."""
+        """Coarse grid search followed by Full TPE optimization."""
         
-        self.logger.info("🔍 Starting coarse-then-fine HPO strategy...")
+        self.logger.info("🔍 Starting coarse-first then Full TPE HPO strategy...")
+        self.logger.info(f"📊 Launch mode: {self.config.launch_mode}")
+        self.logger.info(f"🎯 Total trials: {self.config.hpo_trials}")
+        self.logger.info(f"⏱️ Total timeout: {self.config.hpo_timeout}s")
         
         # Step 1: Coarse grid search
         self.logger.info("📊 Phase 1: Coarse grid search...")
         coarse_params = await self._coarse_grid_search(X_train, y_train, X_val, y_val)
         
-        # Step 2: Fine-tuning around best coarse parameters
-        self.logger.info("🎯 Phase 2: Fine-tuning around best parameters...")
-        fine_params = await self._fine_tune_around_params(
+        # Step 2: Full TPE optimization around best coarse parameters
+        self.logger.info("🎯 Phase 2: Full TPE optimization around best parameters...")
+        tpe_params = await self._full_tpe_around_params(
             coarse_params, X_train, y_train, X_val, y_val
         )
         
-        self.logger.info("✅ Coarse-then-fine HPO completed")
-        return fine_params
+        self.logger.info("✅ Coarse-first then Full TPE HPO completed")
+        return tpe_params
     
     async def _coarse_grid_search(
         self, 
@@ -711,11 +741,14 @@ class GeneralModelTrainer:
         def coarse_objective(trial):
             return self._coarse_objective_function(trial, X_train, y_train, X_val, y_val)
         
-        # Run coarse search with fewer trials
+        # Run coarse search with launch mode scaled trials
+        coarse_timeout = min(600, self.config.hpo_timeout // 3)  # 1/3 of total time
+        self.logger.info(f"📊 Coarse search: {self.config.coarse_grid_trials} trials, {coarse_timeout}s timeout")
+        
         study.optimize(
             coarse_objective, 
             n_trials=self.config.coarse_grid_trials,
-            timeout=min(600, self.config.hpo_timeout // 3)  # 1/3 of total time
+            timeout=coarse_timeout
         )
         
         return study.best_params
@@ -789,7 +822,7 @@ class GeneralModelTrainer:
             # Fallback to regular parameters
             return self._suggest_hyperparameters(trial)
     
-    async def _fine_tune_around_params(
+    async def _full_tpe_around_params(
         self, 
         coarse_params: Dict[str, Any],
         X_train: pd.DataFrame, 
@@ -797,32 +830,36 @@ class GeneralModelTrainer:
         X_val: pd.DataFrame,
         y_val: pd.Series
     ) -> Dict[str, Any]:
-        """Fine-tune around the best coarse parameters."""
+        """Full TPE optimization around the best coarse parameters."""
         
         import optuna
         
-        # Create study for fine-tuning
+        # Create study for Full TPE optimization
         study = optuna.create_study(
             direction='maximize',
-            study_name=f"{self.config.model_name}_fine_hpo"
+            sampler=optuna.samplers.TPESampler(),
+            pruner=optuna.pruners.MedianPruner(),
+            study_name=f"{self.config.model_name}_full_tpe_hpo"
         )
         
-        def fine_objective(trial):
-            return self._fine_objective_function(trial, coarse_params, X_train, y_train, X_val, y_val)
+        def tpe_objective(trial):
+            return self._tpe_objective_function(trial, coarse_params, X_train, y_train, X_val, y_val)
         
-        # Run fine-tuning with remaining trials
+        # Run Full TPE with remaining trials and time
         remaining_trials = max(10, self.config.hpo_trials - self.config.coarse_grid_trials)
         remaining_time = max(300, self.config.hpo_timeout - 600)  # At least 5 minutes
         
+        self.logger.info(f"🎯 Full TPE: {remaining_trials} trials, {remaining_time}s timeout")
+        
         study.optimize(
-            fine_objective, 
+            tpe_objective, 
             n_trials=remaining_trials,
             timeout=remaining_time
         )
         
         return study.best_params
     
-    def _fine_objective_function(
+    def _tpe_objective_function(
         self, 
         trial: optuna.Trial, 
         coarse_params: Dict[str, Any],
@@ -831,11 +868,11 @@ class GeneralModelTrainer:
         X_val: pd.DataFrame,
         y_val: pd.Series
     ) -> float:
-        """Fine objective function with narrow parameter ranges around coarse best."""
+        """TPE objective function with intelligent parameter ranges around coarse best."""
         
         try:
-            # Get fine-tuned hyperparameters around coarse best
-            params = self._suggest_fine_hyperparameters(trial, coarse_params)
+            # Get TPE-optimized hyperparameters around coarse best
+            params = self._suggest_tpe_hyperparameters(trial, coarse_params)
             
             # Create and train model
             model = self.model_factory.create_model(self.config.model_type, params)
@@ -866,8 +903,8 @@ class GeneralModelTrainer:
             self.logger.error(f"Error in fine objective function: {e}")
             return 0.0
     
-    def _suggest_fine_hyperparameters(self, trial: optuna.Trial, coarse_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Suggest fine-tuned hyperparameters around coarse best parameters."""
+    def _suggest_tpe_hyperparameters(self, trial: optuna.Trial, coarse_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Suggest TPE-optimized hyperparameters around coarse best parameters."""
         
         params = coarse_params.copy()
         

@@ -116,16 +116,57 @@ class AnalystTrainingConfig:
     hpo_timeout: int = 1800  # 30 minutes per model
     hpo_sampler: str = "TPE"  # TPE, Random, CMA-ES
     hpo_pruner: str = "MedianPruner"  # MedianPruner, PercentilePruner, SuccessiveHalvingPruner
+    hpo_strategy: str = "coarse_first_tpe"  # Always use coarse-first then Full TPE
+    launch_mode: str = "full"  # full, blank, light - determines HPO intensity
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
     
     def __post_init__(self):
-        """Apply intensity scaling after initialization."""
+        """Apply intensity scaling and launch mode scaling after initialization."""
+        # Apply launch mode scaling first
+        self._apply_launch_mode_scaling()
+        
+        # Then apply intensity scaling
         intensity_pct = get_intensity_from_environment()
         if intensity_pct < 1.0:
             self.hpo_trials = get_scaled_hpo_trials(self.hpo_trials, intensity_pct)
+            self.hpo_timeout = get_scaled_hpo_timeout(self.hpo_timeout, intensity_pct)
             self.early_stopping_patience = max(1, int(self.early_stopping_patience * intensity_pct))
             logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%): HPO trials={self.hpo_trials}")
+    
+    def _apply_launch_mode_scaling(self):
+        """Apply launch mode scaling to HPO parameters."""
+        
+        if self.launch_mode == "light":
+            # Light mode: Minimal HPO for quick testing
+            self.hpo_trials = 10
+            self.hpo_timeout = 300  # 5 minutes
+            self.early_stopping_patience = 3
+            logger.info("🚀 Light mode: Minimal HPO (10 trials, 5 min)")
+            
+        elif self.launch_mode == "blank":
+            # Blank mode: Moderate HPO for development
+            self.hpo_trials = 25
+            self.hpo_timeout = 900  # 15 minutes
+            self.early_stopping_patience = 5
+            logger.info("🔧 Blank mode: Moderate HPO (25 trials, 15 min)")
+            
+        elif self.launch_mode == "full":
+            # Full mode: Comprehensive HPO for production
+            self.hpo_trials = 50
+            self.hpo_timeout = 1800  # 30 minutes
+            self.early_stopping_patience = 8
+            logger.info("🎯 Full mode: Comprehensive HPO (50 trials, 30 min)")
+            
+        else:
+            # Default to full mode if unknown
+            self.launch_mode = "full"
+            self.hpo_trials = 50
+            self.hpo_timeout = 1800
+            self.early_stopping_patience = 8
+            logger.warning(f"⚠️ Unknown launch mode '{self.launch_mode}', defaulting to full mode")
+        
+        logger.info(f"📊 Launch mode '{self.launch_mode}': HPO trials={self.hpo_trials}, timeout={self.hpo_timeout}s")
     
     # M1 optimization settings
     enable_gpu_acceleration: bool = True
@@ -349,13 +390,17 @@ class AnalystModelTrainer:
                 if self.config.enable_hyperparameter_optimization:
                     analyst_hpo_params = await self._optimize_analyst_hyperparameters(data, model_type)
                 
-                # Create training config for this model type
-                training_config = self._create_training_config(model_type)
-                
-                # Apply analyst-specific HPO parameters if available
-                if analyst_hpo_params:
-                    training_config.model_params.update(analyst_hpo_params)
-                    self.logger.info(f"🔧 Applied analyst-specific HPO parameters for {model_type.value}")
+        # Create training config for this model type
+        training_config = self._create_training_config(model_type)
+        
+        # Apply analyst-specific HPO parameters if available
+        if analyst_hpo_params:
+            training_config.model_params.update(analyst_hpo_params)
+            self.logger.info(f"🔧 Applied analyst-specific HPO parameters for {model_type.value}")
+        
+        # Pass launch mode to GeneralModelTrainer
+        training_config.launch_mode = self.config.launch_mode
+        training_config.hpo_strategy = self.config.hpo_strategy
                 
                 # Train model with enhanced ML commons integration
                 trainer = GeneralModelTrainer(training_config)

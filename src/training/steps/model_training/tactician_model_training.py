@@ -129,17 +129,57 @@ class TacticianTrainingConfig:
     hpo_timeout: int = 7200  # 2 hours
     hpo_sampler: str = "TPE"  # TPE, Random, CMA-ES
     hpo_pruner: str = "MedianPruner"  # MedianPruner, PercentilePruner, SuccessiveHalvingPruner
+    hpo_strategy: str = "coarse_first_tpe"  # Always use coarse-first then Full TPE
+    launch_mode: str = "full"  # full, blank, light - determines HPO intensity
     enable_multi_objective_optimization: bool = True
     optimization_objectives: List[str] = field(default_factory=lambda: ['sharpe_ratio', 'max_drawdown', 'win_rate'])
     
     def __post_init__(self):
-        """Apply intensity scaling after initialization."""
+        """Apply intensity scaling and launch mode scaling after initialization."""
+        # Apply launch mode scaling first
+        self._apply_launch_mode_scaling()
+        
+        # Then apply intensity scaling
         intensity_pct = get_intensity_from_environment()
         if intensity_pct < 1.0:
             self.hpo_trials = get_scaled_hpo_trials(self.hpo_trials, intensity_pct)
             self.hpo_timeout = get_scaled_hpo_timeout(self.hpo_timeout, intensity_pct)
             self.early_stopping_patience = max(1, int(self.early_stopping_patience * intensity_pct))
             logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%): HPO trials={self.hpo_trials}, timeout={self.hpo_timeout}s")
+    
+    def _apply_launch_mode_scaling(self):
+        """Apply launch mode scaling to HPO parameters."""
+        
+        if self.launch_mode == "light":
+            # Light mode: Minimal HPO for quick testing
+            self.hpo_trials = 40
+            self.hpo_timeout = 1200  # 20 minutes
+            self.early_stopping_patience = 5
+            logger.info("🚀 Light mode: Minimal HPO (40 trials, 20 min)")
+            
+        elif self.launch_mode == "blank":
+            # Blank mode: Moderate HPO for development
+            self.hpo_trials = 100
+            self.hpo_timeout = 3600  # 60 minutes
+            self.early_stopping_patience = 8
+            logger.info("🔧 Blank mode: Moderate HPO (100 trials, 60 min)")
+            
+        elif self.launch_mode == "full":
+            # Full mode: Comprehensive HPO for production
+            self.hpo_trials = 200
+            self.hpo_timeout = 7200  # 120 minutes
+            self.early_stopping_patience = 15
+            logger.info("🎯 Full mode: Comprehensive HPO (200 trials, 120 min)")
+            
+        else:
+            # Default to full mode if unknown
+            self.launch_mode = "full"
+            self.hpo_trials = 200
+            self.hpo_timeout = 7200
+            self.early_stopping_patience = 15
+            logger.warning(f"⚠️ Unknown launch mode '{self.launch_mode}', defaulting to full mode")
+        
+        logger.info(f"📊 Launch mode '{self.launch_mode}': HPO trials={self.hpo_trials}, timeout={self.hpo_timeout}s")
     
     # Tactical-specific configuration
     enable_regime_awareness: bool = True
@@ -370,6 +410,10 @@ class TacticianModelTrainer:
             try:
                 # Create training config for this model type
                 training_config = self._create_tactical_training_config(model_type)
+                
+                # Pass launch mode to GeneralModelTrainer
+                training_config.launch_mode = self.config.launch_mode
+                training_config.hpo_strategy = self.config.hpo_strategy
                 
                 # Perform advanced HPO using ML commons if enabled
                 if self.config.enable_advanced_hpo:

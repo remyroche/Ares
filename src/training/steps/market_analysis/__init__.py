@@ -4,14 +4,12 @@ from .sr_detection import SRDetectionStep
 from .sr_clustering import SRClusteringStep
 from .sr_ml_learning import SRMLLearningStep
 from .sub_pipeline import MarketAnalysisSubPipeline
-
-# For backward compatibility, alias the sub_pipeline as the main orchestrator
-SROptimizationStep = MarketAnalysisSubPipeline
+from .sr_optimization_compatibility import SROptimizationStep
 
 __all__ = [
     'SRDetectionStep', 
     'SRClusteringStep',
     'SRMLLearningStep',
     'MarketAnalysisSubPipeline',
-    'SROptimizationStep'  # Backward compatibility alias
+    'SROptimizationStep'  # Backward compatibility wrapper
 ]

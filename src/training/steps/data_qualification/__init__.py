@@ -20,7 +20,7 @@ Enhanced Features:
 """
 
 # Import legacy steps for backward compatibility
-from ..market_analysis.sub_pipeline import MarketAnalysisSubPipeline
+from ..market_analysis.sr_optimization_compatibility import SROptimizationStep
 from .step03_hmm_regime_discovery import Step03HMMRegimeDiscovery
 from .step04_regime_data_splitting import RegimeDataSplittingStep
 from .step05_labeling import LabelingStep

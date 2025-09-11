@@ -23,6 +23,17 @@ import logging
 from pathlib import Path
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
+# Import feature generation optimization
+try:
+    from src.feature_engineering.feature_generation_optimization import (
+        FeatureGenerationOptimizer, 
+        FeatureOptimizationConfig, 
+        OptimizationMethod
+    )
+    FEATURE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    FEATURE_OPTIMIZATION_AVAILABLE = False
+
 try:
     from .step06_feature_engineering import FeatureInteractionEngine
 except ImportError:
@@ -90,6 +101,20 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         self.config = config
         self.force_regime_specific_periods = True
         self.validator = EnhancedValidator()
+        
+        # Initialize feature optimization
+        if FEATURE_OPTIMIZATION_AVAILABLE:
+            optimization_config = FeatureOptimizationConfig(
+                optimization_method=OptimizationMethod.REGIME_AWARE,
+                regime_aware=True,
+                parallel_processing=True
+            )
+            self.feature_optimizer = FeatureGenerationOptimizer(optimization_config)
+            self.logger.info('✅ Feature generation optimizer initialized')
+        else:
+            self.feature_optimizer = None
+            self.logger.warning('⚠️ Feature generation optimizer not available')
+        
         self.logger.info('🎯 Per-regime feature engineering initialized with regime-specific optimization enabled')
 
     @critical_async_process('feature_generation')
@@ -552,6 +577,91 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         else:
             self.logger.error(f'❌ Regime {regime_id} optimization failed')
             regime_config['optimized_periods'] = {}
+    @log_all_calls
+    async def optimize_lookback_periods(self, data: pd.DataFrame, target: pd.Series, regimes: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """Optimize lookback periods for features using the feature generation optimizer.
+        
+        Args:
+            data: Input data DataFrame
+            target: Target variable series
+            regimes: Optional regime series for regime-aware optimization
+            
+        Returns:
+            Dictionary containing optimization results
+        """
+        if not self.feature_optimizer:
+            self.logger.warning('⚠️ Feature optimizer not available, using fallback periods')
+            return self._get_fallback_periods()
+        
+        try:
+            # Get feature columns (exclude common non-feature columns)
+            feature_columns = [col for col in data.columns 
+                             if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'label', 'regime']]
+            
+            if not feature_columns:
+                self.logger.warning('⚠️ No feature columns found for optimization')
+                return self._get_fallback_periods()
+            
+            self.logger.info(f'🔬 Optimizing lookback periods for {len(feature_columns)} features')
+            
+            # Create feature configurations for optimization
+            feature_configs = {}
+            for feature_name in feature_columns:
+                # Create a simple feature generator that returns the feature as-is
+                def create_feature_generator(feature_col):
+                    def feature_generator(data_df, lookback):
+                        return data_df[feature_col]
+                    return feature_generator
+                
+                feature_configs[feature_name] = {
+                    'generator': create_feature_generator(feature_name)
+                }
+            
+            # Perform optimization
+            regime_column = 'regime' if regimes is not None else None
+            if regime_column and regime_column not in data.columns and regimes is not None:
+                data = data.copy()
+                data[regime_column] = regimes
+            
+            results = await self.feature_optimizer.optimize_multiple_features(
+                data, feature_configs, 'label', regime_column
+            )
+            
+            # Process results
+            optimized_periods = {}
+            for feature_name, result in results.items():
+                optimized_periods[feature_name] = {
+                    'selected_periods': [result.optimal_lookback],
+                    'performance_score': result.performance_score,
+                    'stability_score': result.stability_score,
+                    'method': result.optimization_method
+                }
+            
+            return {
+                'status': 'optimized',
+                'periods': optimized_periods,
+                'optimization_results': {
+                    'regime_specific_periods': {f'regime_{regime}': optimized_periods for regime in data[regime_column].unique()} if regime_column else {}
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ Error in lookback period optimization: {e}')
+            return self._get_fallback_periods()
+    
+    def _get_fallback_periods(self) -> Dict[str, Any]:
+        """Get fallback periods when optimization fails."""
+        return {
+            'status': 'fallback',
+            'periods': {
+                'price': {'selected_periods': [10, 20, 50]},
+                'volume': {'selected_periods': [10, 20]},
+                'technical': {'selected_periods': [14, 21]},
+                'volatility': {'selected_periods': [20, 50]},
+                'momentum': {'selected_periods': [10, 20]}
+            }
+        }
+
     @log_all_calls
 
     def _process_optimized_results(self, regime_id: int, optimization_results: Dict[str, Any], regime_config: Dict[str, Any]) -> None:

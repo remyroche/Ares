@@ -27,7 +27,7 @@ from .base_safeguards import *
 from .cv_utils import *
 from .lookahead_protection import *
 from .feature_selection import *
-from .feature_generation_optimization import *
+# Feature generation optimization moved to src/feature_engineering/
 from .data_labeling import *
 from .hmm_regime_detection import *
 from .regime_data_processing import *
@@ -65,13 +65,7 @@ __all__ = [
     # Feature selection framework
     'FeatureSelectionFramework',
 
-    # Feature generation optimization
-    'FeatureGenerationOptimizer',
-    'FeatureOptimizationConfig',
-    'FeatureOptimizationResult',
-    'OptimizationMethod',
-    'get_feature_optimizer',
-    'optimize_feature_lookback',
+    # Feature generation optimization (moved to src/feature_engineering/)
 
     # Data labeling utilities
     'DataLabelingUtilities',

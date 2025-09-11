@@ -38,7 +38,7 @@ try:
     from src.utils.ml_common.data_labeling import get_data_labeler, TripleBarrierConfig, LabelingMethod
     from src.utils.ml_common.hmm_regime_detection import get_hmm_regime_detector, HMMRegimeConfig, RegimeDetectionMethod
     from src.utils.ml_common.regime_data_processing import get_regime_processor, RegimeProcessingConfig
-    from src.utils.ml_common.feature_generation_optimization import get_feature_optimizer, FeatureOptimizationConfig
+    from src.feature_engineering.feature_generation_optimization import get_feature_optimizer, FeatureOptimizationConfig
     ML_COMMONS_AVAILABLE = True
 except ImportError:
     ML_COMMONS_AVAILABLE = False

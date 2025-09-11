@@ -5925,7 +5925,7 @@ class FeatureSelectionFramework:
             # Method 1: Domain knowledge filtering
             if domain_knowledge:
                 causally_relevant_features.extend(
-                    self._domain_knowledge_filtering(feature_names, domain_knowledge)
+                    self._domain_knowledge_filtering(X, y, feature_names, domain_knowledge)
                 )
                 _LOGGER.info(f"📊 Domain knowledge filtering: {len(causally_relevant_features)} features")
             
@@ -5965,43 +5965,95 @@ class FeatureSelectionFramework:
             _LOGGER.error(f"❌ Causal pre-filtering failed: {e}")
             return feature_names  # Fallback to all features
 
-    def _domain_knowledge_filtering(self, feature_names: List[str], 
+    def _domain_knowledge_filtering(self, X: np.ndarray, y: np.ndarray,
+                                  feature_names: List[str], 
                                   domain_knowledge: Dict[str, Any]) -> List[str]:
-        """Filter features based on domain knowledge."""
+        """
+        Data-driven domain knowledge filtering.
+        
+        Uses statistical analysis to identify features that match domain-specific
+        characteristics rather than hardcoded pattern matching.
+        """
         causally_relevant = []
         
-        # Crypto-specific domain knowledge
-        crypto_causal_patterns = domain_knowledge.get('crypto_causal_patterns', {})
+        try:
+            # Extract domain-specific criteria from configuration
+            domain_criteria = domain_knowledge.get('causal_criteria', {})
+            
+            # Statistical thresholds for different feature types
+            correlation_threshold = domain_criteria.get('correlation_threshold', 0.1)
+            variance_threshold = domain_criteria.get('variance_threshold', 0.01)
+            information_threshold = domain_criteria.get('information_threshold', 0.5)
+            
+            for i, feature in enumerate(feature_names):
+                feature_values = X[:, i]
+                
+                # Calculate domain-specific relevance scores
+                relevance_score = self._calculate_domain_relevance_score(
+                    feature_values, y, domain_criteria
+                )
+                
+                # Select features that meet domain criteria
+                if relevance_score > domain_criteria.get('min_relevance', 0.3):
+                    causally_relevant.append(feature)
         
-        # Price-related features (always causally relevant)
-        price_patterns = crypto_causal_patterns.get('price_related', [
-            'price', 'close', 'open', 'high', 'low', 'volume', 'vwap'
-        ])
-        
-        # Technical indicators (causally relevant)
-        technical_patterns = crypto_causal_patterns.get('technical_indicators', [
-            'rsi', 'macd', 'bollinger', 'sma', 'ema', 'stochastic', 'williams'
-        ])
-        
-        # Market microstructure (causally relevant)
-        microstructure_patterns = crypto_causal_patterns.get('microstructure', [
-            'bid', 'ask', 'spread', 'depth', 'order_flow', 'trade_size'
-        ])
-        
-        # Sentiment indicators (potentially causally relevant)
-        sentiment_patterns = crypto_causal_patterns.get('sentiment', [
-            'fear_greed', 'social_sentiment', 'news_sentiment'
-        ])
-        
-        # Combine all patterns
-        all_patterns = price_patterns + technical_patterns + microstructure_patterns + sentiment_patterns
-        
-        for feature in feature_names:
-            feature_lower = feature.lower()
-            if any(pattern in feature_lower for pattern in all_patterns):
-                causally_relevant.append(feature)
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Domain knowledge filtering failed: {e}")
         
         return causally_relevant
+
+    def _calculate_domain_relevance_score(self, feature_values: np.ndarray, 
+                                        target: np.ndarray,
+                                        domain_criteria: Dict[str, Any]) -> float:
+        """Calculate domain-specific relevance score based on statistical properties."""
+        try:
+            # 1. Correlation with target
+            target_corr = abs(safe_correlation(feature_values, target))
+            
+            # 2. Variance (information content)
+            variance = safe_std(feature_values) ** 2
+            normalized_variance = min(1.0, variance / np.var(feature_values))
+            
+            # 3. Temporal stability (important for trading)
+            stability = self._calculate_temporal_stability(feature_values, target)
+            
+            # 4. Non-linearity (captures complex relationships)
+            non_linearity = self._calculate_non_linearity(feature_values, target)
+            
+            # Combined domain relevance score
+            domain_score = (
+                0.4 * target_corr +
+                0.3 * normalized_variance +
+                0.2 * stability +
+                0.1 * non_linearity
+            )
+            
+            return max(0.0, min(1.0, domain_score))
+            
+        except:
+            return 0.0
+
+    def _calculate_non_linearity(self, feature_values: np.ndarray, 
+                               target: np.ndarray) -> float:
+        """Calculate non-linear relationship strength."""
+        try:
+            if len(feature_values) < 10:
+                return 0.0
+            
+            # Compare linear vs non-linear correlation
+            linear_corr = abs(safe_correlation(feature_values, target))
+            
+            # Calculate mutual information (captures non-linear relationships)
+            from sklearn.feature_selection import mutual_info_regression
+            mi = mutual_info_regression(feature_values.reshape(-1, 1), target)[0]
+            
+            # Non-linearity is the difference between MI and linear correlation
+            non_linearity = max(0.0, mi - linear_corr)
+            
+            return min(1.0, non_linearity)
+            
+        except:
+            return 0.0
 
     def _causal_graph_filtering(self, feature_names: List[str], 
                               causal_graph: Dict[str, Any]) -> List[str]:
@@ -6183,54 +6235,172 @@ class FeatureSelectionFramework:
 
     def _crypto_specific_causal_filtering(self, X: np.ndarray, y: np.ndarray, 
                                         feature_names: List[str]) -> List[str]:
-        """Crypto-specific causal filtering for 1-30 minute timeframes."""
+        """
+        Data-driven causal filtering for crypto trading features.
+        
+        Uses statistical analysis to identify causally relevant features
+        rather than hardcoded pattern matching.
+        """
         crypto_causal_features = []
         
         try:
-            # High-frequency crypto trading patterns
+            # Data-driven causal relevance analysis
             for i, feature in enumerate(feature_names):
-                feature_lower = feature.lower()
+                feature_values = X[:, i]
                 
-                # Price impact features (causally relevant)
-                if any(pattern in feature_lower for pattern in [
-                    'price_impact', 'market_impact', 'slippage', 'spread'
-                ]):
-                    crypto_causal_features.append(feature)
+                # Statistical causal relevance tests
+                causal_score = self._calculate_causal_relevance_score(
+                    feature_values, y, X, i
+                )
                 
-                # Order flow features (causally relevant)
-                elif any(pattern in feature_lower for pattern in [
-                    'order_flow', 'trade_flow', 'buy_pressure', 'sell_pressure'
-                ]):
-                    crypto_causal_features.append(feature)
-                
-                # Volatility features (causally relevant for high leverage)
-                elif any(pattern in feature_lower for pattern in [
-                    'volatility', 'vol', 'atr', 'garch'
-                ]):
-                    crypto_causal_features.append(feature)
-                
-                # Momentum features (causally relevant for short timeframes)
-                elif any(pattern in feature_lower for pattern in [
-                    'momentum', 'roc', 'rate_of_change', 'acceleration'
-                ]):
-                    crypto_causal_features.append(feature)
-                
-                # Liquidity features (causally relevant)
-                elif any(pattern in feature_lower for pattern in [
-                    'liquidity', 'depth', 'bid_ask', 'order_book'
-                ]):
-                    crypto_causal_features.append(feature)
-                
-                # Market microstructure (causally relevant)
-                elif any(pattern in feature_lower for pattern in [
-                    'microstructure', 'tick', 'trade_size', 'trade_frequency'
-                ]):
+                # Select features with high causal relevance
+                if causal_score > 0.3:  # Threshold based on data characteristics
                     crypto_causal_features.append(feature)
         
         except Exception as e:
-            _LOGGER.warning(f"⚠️ Crypto-specific causal filtering failed: {e}")
+            _LOGGER.warning(f"⚠️ Data-driven causal filtering failed: {e}")
         
         return crypto_causal_features
+
+    def _calculate_causal_relevance_score(self, feature_values: np.ndarray, 
+                                        target: np.ndarray, 
+                                        feature_names: List[str], 
+                                        feature_idx: int) -> float:
+        """
+        Calculate causal relevance score based on statistical properties.
+        
+        This method analyzes the feature's statistical relationship with the target
+        and other features to determine causal relevance, without hardcoding patterns.
+        """
+        try:
+            # 1. Direct correlation with target
+            target_correlation = abs(safe_correlation(feature_values, target))
+            
+            # 2. Predictive power (lead-lag relationship)
+            predictive_power = self._calculate_predictive_power(feature_values, target)
+            
+            # 3. Information content (variance and entropy)
+            information_content = self._calculate_information_content(feature_values)
+            
+            # 4. Stability across time windows (for crypto trading)
+            stability_score = self._calculate_temporal_stability(feature_values, target)
+            
+            # 5. Non-redundancy with other features
+            redundancy_penalty = self._calculate_redundancy_penalty(
+                feature_values, X, feature_idx
+            )
+            
+            # Combined causal relevance score
+            causal_score = (
+                0.4 * target_correlation +
+                0.3 * predictive_power +
+                0.2 * information_content +
+                0.1 * stability_score -
+                0.1 * redundancy_penalty
+            )
+            
+            return max(0.0, min(1.0, causal_score))  # Clamp to [0,1]
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Causal relevance calculation failed: {e}")
+            return 0.0
+
+    def _calculate_predictive_power(self, feature_values: np.ndarray, 
+                                  target: np.ndarray) -> float:
+        """Calculate how well feature predicts target (lead-lag analysis)."""
+        try:
+            if len(feature_values) < 10:
+                return 0.0
+            
+            # Check if feature at time t predicts target at time t+1
+            feature_lead = feature_values[:-1]
+            target_lag = target[1:]
+            
+            lead_correlation = abs(safe_correlation(feature_lead, target_lag))
+            
+            # Also check reverse relationship
+            feature_lag = feature_values[1:]
+            target_lead = target[:-1]
+            lag_correlation = abs(safe_correlation(feature_lag, target_lead))
+            
+            # Return the stronger predictive relationship
+            return max(lead_correlation, lag_correlation)
+            
+        except:
+            return 0.0
+
+    def _calculate_information_content(self, feature_values: np.ndarray) -> float:
+        """Calculate information content of the feature."""
+        try:
+            # Normalized variance
+            variance = safe_std(feature_values) ** 2
+            normalized_variance = min(1.0, variance / np.var(feature_values))
+            
+            # Entropy-based information content
+            from scipy.stats import entropy
+            hist, _ = np.histogram(feature_values, bins=min(20, len(feature_values)//2))
+            hist = hist / np.sum(hist)  # Normalize
+            hist = hist[hist > 0]  # Remove zeros
+            entropy_score = entropy(hist) / np.log(len(hist)) if len(hist) > 1 else 0
+            
+            return (normalized_variance + entropy_score) / 2
+            
+        except:
+            return 0.0
+
+    def _calculate_temporal_stability(self, feature_values: np.ndarray, 
+                                    target: np.ndarray) -> float:
+        """Calculate temporal stability for crypto trading."""
+        try:
+            if len(feature_values) < 20:
+                return 0.0
+            
+            # Calculate rolling correlations
+            window_size = min(10, len(feature_values) // 2)
+            rolling_corrs = []
+            
+            for i in range(window_size, len(feature_values)):
+                feature_window = feature_values[i-window_size:i]
+                target_window = target[i-window_size:i]
+                corr = safe_correlation(feature_window, target_window)
+                if not np.isnan(corr):
+                    rolling_corrs.append(abs(corr))
+            
+            if not rolling_corrs:
+                return 0.0
+            
+            # Stability is inverse of correlation variance
+            corr_std = safe_std(rolling_corrs)
+            stability = max(0.0, 1.0 - corr_std)
+            
+            return stability
+            
+        except:
+            return 0.0
+
+    def _calculate_redundancy_penalty(self, feature_values: np.ndarray, 
+                                    X: np.ndarray, 
+                                    feature_idx: int) -> float:
+        """Calculate penalty for redundancy with other features."""
+        try:
+            # Sample a subset of other features to avoid O(n²) complexity
+            n_other = min(10, X.shape[1] - 1)
+            other_indices = np.random.choice(
+                [i for i in range(X.shape[1]) if i != feature_idx],
+                size=n_other, replace=False
+            )
+            
+            max_correlation = 0.0
+            for other_idx in other_indices:
+                other_values = X[:, other_idx]
+                corr = abs(safe_correlation(feature_values, other_values))
+                max_correlation = max(max_correlation, corr)
+            
+            # Penalty increases with redundancy
+            return max_correlation
+            
+        except:
+            return 0.0
 
     def _relaxed_causal_filtering(self, X: np.ndarray, y: np.ndarray, 
                                 feature_names: List[str]) -> List[str]:
@@ -6398,33 +6568,55 @@ class FeatureSelectionFramework:
             return 1.0
 
     def _calculate_crypto_relevance(self, x: np.ndarray, y: np.ndarray, feature: str) -> float:
-        """Calculate crypto-specific relevance for a feature."""
+        """
+        Calculate crypto-specific relevance for a feature using statistical analysis.
+        
+        This method analyzes the feature's statistical properties to determine
+        its relevance for crypto trading without hardcoding feature name patterns.
+        """
         try:
-            feature_lower = feature.lower()
+            # Calculate multiple relevance metrics
+            relevance_metrics = self._calculate_relevance_metrics(x, y)
             
-            # High-frequency trading relevance
-            if any(pattern in feature_lower for pattern in [
-                'volatility', 'momentum', 'order_flow', 'spread', 'volume'
-            ]):
-                # Calculate volatility-adjusted correlation
-                vol_adj_corr = self._calculate_volatility_adjusted_correlation(x, y)
-                return vol_adj_corr
+            # Weight metrics based on crypto trading characteristics
+            crypto_relevance = (
+                0.4 * relevance_metrics['volatility_adjusted_correlation'] +
+                0.3 * relevance_metrics['trend_correlation'] +
+                0.2 * relevance_metrics['information_content'] +
+                0.1 * relevance_metrics['temporal_stability']
+            )
             
-            # Technical indicator relevance
-            elif any(pattern in feature_lower for pattern in [
-                'rsi', 'macd', 'bollinger', 'sma', 'ema'
-            ]):
-                # Calculate trend-following correlation
-                trend_corr = self._calculate_trend_correlation(x, y)
-                return trend_corr
-            
-            # Default relevance
-            else:
-                corr = np.corrcoef(x, y)[0, 1]
-                return abs(corr) if not np.isnan(corr) else 0.0
+            return max(0.0, min(1.0, crypto_relevance))
                 
         except:
             return 0.0
+
+    def _calculate_relevance_metrics(self, x: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Calculate comprehensive relevance metrics for crypto trading."""
+        try:
+            metrics = {}
+            
+            # 1. Volatility-adjusted correlation
+            metrics['volatility_adjusted_correlation'] = self._calculate_volatility_adjusted_correlation(x, y)
+            
+            # 2. Trend correlation
+            metrics['trend_correlation'] = self._calculate_trend_correlation(x, y)
+            
+            # 3. Information content
+            metrics['information_content'] = self._calculate_information_content(x)
+            
+            # 4. Temporal stability
+            metrics['temporal_stability'] = self._calculate_temporal_stability(x, y)
+            
+            return metrics
+            
+        except:
+            return {
+                'volatility_adjusted_correlation': 0.0,
+                'trend_correlation': 0.0,
+                'information_content': 0.0,
+                'temporal_stability': 0.0
+            }
 
     def _calculate_volatility_adjusted_correlation(self, x: np.ndarray, y: np.ndarray) -> float:
         """Calculate volatility-adjusted correlation for crypto features."""

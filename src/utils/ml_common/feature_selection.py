@@ -34,6 +34,10 @@ from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 from ..m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
+from ..matrix_operations import (
+    m1_correlation_matrix, m1_matrix_multiply, m1_batch_process,
+    m1_parallel_operations, m1_optimize_memory, get_m1_performance_stats
+)
 
 # Enhanced dependency management with fast fail
 try:
@@ -145,6 +149,65 @@ class FeatureSelectionFramework:
         
         _LOGGER.info("✅ FeatureSelectionFramework initialized successfully")
 
+    def _log_feature_reduction_stats(self, method_name: str, original_count: int, 
+                                   selected_count: int, execution_time: float,
+                                   additional_stats: Optional[Dict[str, Any]] = None):
+        """Enhanced feature reduction reporting with comprehensive statistics."""
+        removed_count = original_count - selected_count
+        reduction_percent = safe_divide(removed_count, original_count) * 100
+        
+        _LOGGER.info(f"📊 {method_name} Results:")
+        _LOGGER.info(f"   Original features: {original_count}")
+        _LOGGER.info(f"   Selected features: {selected_count}")
+        _LOGGER.info(f"   Removed features: {removed_count} ({reduction_percent:.1f}%)")
+        _LOGGER.info(f"   Execution time: {execution_time:.3f}s")
+        _LOGGER.info(f"   Features/second: {safe_divide(original_count, execution_time):.1f}")
+        
+        # Memory reporting
+        try:
+            memory_stats = get_m1_performance_stats()
+            if 'memory_report' in memory_stats:
+                memory_info = memory_stats['memory_report']
+                _LOGGER.info(f"   Memory usage: {memory_info.get('current_mb', 0):.1f}MB")
+                _LOGGER.info(f"   Peak memory: {memory_info.get('peak_mb', 0):.1f}MB")
+        except Exception as e:
+            _LOGGER.debug(f"Memory stats unavailable: {e}")
+        
+        # Additional statistics
+        if additional_stats:
+            for key, value in additional_stats.items():
+                _LOGGER.info(f"   {key}: {value}")
+        
+        # Performance monitoring
+        try:
+            perf_stats = get_m1_performance_stats()
+            if 'm1_enhanced_operations' in perf_stats:
+                ops_stats = perf_stats['m1_enhanced_operations']
+                _LOGGER.info(f"   GPU operations: {ops_stats.get('gpu_operations', 0)}")
+                _LOGGER.info(f"   CPU operations: {ops_stats.get('cpu_operations', 0)}")
+                _LOGGER.info(f"   Memory optimizations: {ops_stats.get('memory_optimizations', 0)}")
+        except Exception as e:
+            _LOGGER.debug(f"Performance stats unavailable: {e}")
+
+    def _monitor_performance(self, operation_name: str, start_time: float, start_memory: float = 0.0):
+        """Monitor and report performance metrics."""
+        execution_time = time.time() - start_time
+        
+        # Get performance stats
+        try:
+            perf_stats = get_m1_performance_stats()
+            if 'gpu_device' in perf_stats:
+                _LOGGER.info(f"🎯 GPU device: {perf_stats['gpu_device']}")
+            if 'gpu_memory_info' in perf_stats:
+                gpu_mem = perf_stats['gpu_memory_info']
+                _LOGGER.info(f"🎯 GPU memory: {gpu_mem.get('used_mb', 0):.1f}MB / {gpu_mem.get('total_mb', 0):.1f}MB")
+        except Exception as e:
+            _LOGGER.debug(f"GPU stats unavailable: {e}")
+        
+        # Report throughput
+        throughput = safe_divide(1.0, execution_time)
+        _LOGGER.info(f"⚡ {operation_name} throughput: {throughput:.2f} ops/sec")
+
     def mrmr_selection(self, X: np.ndarray, y: np.ndarray,
                       feature_names: List[str], n_features: int,
                       relevance_method: str = 'mutual_info',
@@ -183,8 +246,9 @@ class FeatureSelectionFramework:
                 }
             }
 
-            # Calculate relevance scores
-            relevance_scores = self._calculate_relevance_scores(X, y, feature_names, relevance_method)
+            # Calculate relevance scores with parallel processing
+            _LOGGER.info("🔍 Calculating relevance scores with parallel processing...")
+            relevance_scores = self._calculate_relevance_scores_parallel(X, y, feature_names, relevance_method)
             mrmr_results['relevance_scores'] = relevance_scores
 
             # mRMR algorithm
@@ -268,8 +332,18 @@ class FeatureSelectionFramework:
             mrmr_results['selection_metadata']['n_features_selected'] = len(mrmr_results['selected_features'])
 
             execution_time = time.time() - start_time
-            _LOGGER.info(f"✅ mRMR selection completed in {execution_time:.3f}s")
-            _LOGGER.info(f"📊 Results - Selected: {len(mrmr_results['selected_features'])}/{n_features} features")
+            
+            # Enhanced reporting with comprehensive statistics
+            additional_stats = {
+                'Relevance method': relevance_method,
+                'Redundancy method': redundancy_method,
+                'Target features': n_features,
+                'Selection ratio': f"{len(mrmr_results['selected_features'])}/{n_features}"
+            }
+            self._log_feature_reduction_stats(
+                "mRMR Selection", len(feature_names), len(mrmr_results['selected_features']), 
+                execution_time, additional_stats
+            )
             _LOGGER.debug(f"📊 Selected features: {mrmr_results['selected_features']}")
             return mrmr_results
 
@@ -392,6 +466,7 @@ class FeatureSelectionFramework:
         Returns:
             Dictionary with filtered features and correlation analysis
         """
+        start_time = time.time()
         try:
             self.logger.info(f"🔍 Starting correlation-based filtering (threshold={correlation_threshold})")
 
@@ -407,21 +482,40 @@ class FeatureSelectionFramework:
                 }
             }
 
-            # Calculate correlation matrix
-            if method == 'pearson':
-                corr_matrix = np.corrcoef(X.T)
-            elif method == 'spearman':
-                from scipy.stats import spearmanr
-                corr_matrix = np.zeros((X.shape[1], X.shape[1]))
-                for i in range(X.shape[1]):
-                    for j in range(X.shape[1]):
-                        if i != j:
-                            corr, _ = spearmanr(X[:, i], X[:, j])
-                            corr_matrix[i, j] = corr
-                        else:
-                            corr_matrix[i, j] = 1.0
-            else:
-                raise ValueError(f"Unsupported correlation method: {method}")
+            # Calculate correlation matrix using M1-optimized operations
+            _LOGGER.info("🔍 Computing correlation matrix with M1 optimization...")
+            try:
+                if method == 'pearson':
+                    corr_matrix = m1_correlation_matrix(X.T)
+                elif method == 'spearman':
+                    # For Spearman, convert to DataFrame and use pandas (more efficient than loops)
+                    import pandas as pd
+                    df = pd.DataFrame(X.T)
+                    corr_matrix = df.corr(method='spearman').values
+                else:
+                    raise ValueError(f"Unsupported correlation method: {method}")
+                
+                # Memory optimization after correlation computation
+                m1_optimize_memory()
+                _LOGGER.info("🧠 Memory optimized after correlation computation")
+                
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ M1 correlation failed, falling back to numpy: {e}")
+                # Fallback to original implementation
+                if method == 'pearson':
+                    corr_matrix = np.corrcoef(X.T)
+                elif method == 'spearman':
+                    from scipy.stats import spearmanr
+                    corr_matrix = np.zeros((X.shape[1], X.shape[1]))
+                    for i in range(X.shape[1]):
+                        for j in range(X.shape[1]):
+                            if i != j:
+                                corr, _ = spearmanr(X[:, i], X[:, j])
+                                corr_matrix[i, j] = corr
+                            else:
+                                corr_matrix[i, j] = 1.0
+                else:
+                    raise ValueError(f"Unsupported correlation method: {method}")
 
             # Store correlation matrix
             for i, feature_i in enumerate(feature_names):
@@ -465,9 +559,18 @@ class FeatureSelectionFramework:
                 'n_correlated_pairs': len(correlation_results['highly_correlated_pairs'])
             })
 
-            self.logger.info(f"✅ Correlation-based filtering completed: "
-                           f"{len(correlation_results['selected_features'])} features retained, "
-                           f"{len(correlation_results['removed_features'])} removed")
+            # Enhanced reporting
+            execution_time = time.time() - start_time
+            additional_stats = {
+                'Correlation method': method,
+                'Correlation threshold': correlation_threshold,
+                'Correlated pairs found': len(correlation_results['highly_correlated_pairs']),
+                'Retention rate': f"{len(correlation_results['selected_features'])}/{len(feature_names)}"
+            }
+            self._log_feature_reduction_stats(
+                "Correlation Filtering", len(feature_names), 
+                len(correlation_results['selected_features']), execution_time, additional_stats
+            )
             return correlation_results
 
         except Exception as e:
@@ -508,15 +611,20 @@ class FeatureSelectionFramework:
             if not SKLEARN_AVAILABLE:
                 raise ImportError("Scikit-learn required for recursive feature elimination")
 
-            # Create RFE selector
+            # Create RFE selector with M1 optimization
             rfe_selector = RFE(
                 estimator=model,
                 n_features_to_select=n_features,
                 step=self.method_configs['rfe']['step']
             )
 
-            # Fit RFE
+            # Fit RFE with memory optimization
+            _LOGGER.info("🔍 Fitting RFE with M1 optimization...")
             rfe_selector.fit(X, y)
+            
+            # Memory optimization after RFE fitting
+            m1_optimize_memory()
+            _LOGGER.info("🧠 Memory optimized after RFE fitting")
 
             # Get selected features
             selected_mask = rfe_selector.support_
@@ -905,61 +1013,61 @@ class FeatureSelectionFramework:
             feature_selection_counts = {feature: 0 for feature in feature_names}
             feature_coefficients_sum = {feature: 0.0 for feature in feature_names}
             
-            # Bootstrap sampling and LASSO selection
+            # Bootstrap sampling and LASSO selection with parallel processing
             bootstrap_size = int(len(X_scaled) * bootstrap_fraction)
             
+            _LOGGER.info(f"🔄 Starting parallel bootstrap processing ({n_bootstrap} samples)...")
+            
+            # Prepare bootstrap parameters for parallel processing
+            bootstrap_params = []
             for bootstrap_idx in range(n_bootstrap):
+                bootstrap_params.append({
+                    'bootstrap_idx': bootstrap_idx,
+                    'X_scaled': X_scaled,
+                    'y': y,
+                    'bootstrap_size': bootstrap_size,
+                    'feature_names': feature_names,
+                    'alpha_range': alpha_range,
+                    'cv_folds': cv_folds,
+                    'is_classification': is_classification,
+                    'random_state': self.random_state + bootstrap_idx,
+                    'method_configs': self.method_configs
+                })
+            
+            # Use parallel processing for bootstrap iterations
+            if self.parallel_processor and self.enable_parallel:
                 try:
-                    # Bootstrap sampling
-                    bootstrap_indices = np.random.choice(
-                        len(X_scaled), size=bootstrap_size, replace=True
+                    _LOGGER.info(f"⚡ Using parallel processing with {self.max_workers} workers")
+                    bootstrap_results = self.parallel_processor.parallel_apply(
+                        bootstrap_params,
+                        self._lasso_bootstrap_fit,
+                        max_workers=self.max_workers
                     )
-                    X_bootstrap = X_scaled[bootstrap_indices]
-                    y_bootstrap = y[bootstrap_indices]
-                    
-                    # Find optimal alpha using cross-validation
-                    if is_classification:
-                        lasso_cv = LassoCV(
-                            alphas=np.logspace(np.log10(alpha_range[0]), np.log10(alpha_range[1]), 20),
-                            cv=cv_folds,
-                            max_iter=self.method_configs['lasso']['max_iter'],
-                            tol=self.method_configs['lasso']['tol'],
-                            random_state=self.random_state + bootstrap_idx
-                        )
-                    else:
-                        lasso_cv = LassoCV(
-                            alphas=np.logspace(np.log10(alpha_range[0]), np.log10(alpha_range[1]), 20),
-                            cv=cv_folds,
-                            max_iter=self.method_configs['lasso']['max_iter'],
-                            tol=self.method_configs['lasso']['tol'],
-                            random_state=self.random_state + bootstrap_idx
-                        )
-                    
-                    # Fit LASSO with cross-validation
-                    lasso_cv.fit(X_bootstrap, y_bootstrap)
-                    
-                    # Get selected features (non-zero coefficients)
-                    selected_mask = np.abs(lasso_cv.coef_) > 1e-6
-                    selected_features = [feature_names[i] for i in range(len(feature_names)) if selected_mask[i]]
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Parallel bootstrap failed: {e}, falling back to sequential")
+                    bootstrap_results = [self._lasso_bootstrap_fit(params) for params in bootstrap_params]
+            else:
+                # Sequential fallback
+                bootstrap_results = [self._lasso_bootstrap_fit(params) for params in bootstrap_params]
+            
+            # Process bootstrap results
+            for result in bootstrap_results:
+                if result and 'error' not in result:
+                    bootstrap_idx = result['bootstrap_idx']
+                    selected_features = result['selected_features']
                     
                     # Update selection counts and coefficient sums
                     for feature in selected_features:
                         feature_selection_counts[feature] += 1
                         feature_idx = feature_names.index(feature)
-                        feature_coefficients_sum[feature] += lasso_cv.coef_[feature_idx]
+                        feature_coefficients_sum[feature] += result['coefficients'][feature_idx]
                     
                     # Store bootstrap result
-                    lasso_stability_results['bootstrap_results'].append({
-                        'bootstrap_idx': bootstrap_idx,
-                        'optimal_alpha': lasso_cv.alpha_,
-                        'selected_features': selected_features,
-                        'n_selected': len(selected_features),
-                        'cv_score': lasso_cv.score(X_bootstrap, y_bootstrap)
-                    })
-                    
-                except Exception as bootstrap_e:
-                    _LOGGER.warning(f"⚠️ Bootstrap {bootstrap_idx} failed: {bootstrap_e}")
-                    continue
+                    lasso_stability_results['bootstrap_results'].append(result)
+                else:
+                    _LOGGER.warning(f"⚠️ Bootstrap result failed: {result.get('error', 'Unknown error')}")
+            
+            _LOGGER.info(f"✅ Completed {len(lasso_stability_results['bootstrap_results'])}/{n_bootstrap} bootstrap iterations")
             
             # Calculate stability scores
             for feature in feature_names:
@@ -1460,8 +1568,9 @@ class FeatureSelectionFramework:
             _LOGGER.info("🔍 Stage 2a: Hyperparameter search for tree model...")
             
             if enable_hyperparameter_search:
-                # Perform hyperparameter search
-                best_params, best_score = self._search_tree_hyperparameters(
+                # Perform hyperparameter search with parallel processing
+                _LOGGER.info("🔍 Performing parallel hyperparameter search...")
+                best_params, best_score = self._search_tree_hyperparameters_parallel(
                     X_candidates, y, param_grid, is_classification, cv_folds
                 )
             else:
@@ -1501,8 +1610,15 @@ class FeatureSelectionFramework:
             # Stage 3: Calculate permutation importance with correlation grouping
             _LOGGER.info("🔍 Stage 3: Calculating permutation importance with correlation grouping...")
             
-            # Calculate correlation matrix for candidate features
-            correlation_matrix = np.corrcoef(X_candidates.T)
+            # Calculate correlation matrix for candidate features using M1 optimization
+            _LOGGER.info("🔍 Computing correlation matrix for feature grouping with M1 optimization...")
+            try:
+                correlation_matrix = m1_correlation_matrix(X_candidates.T)
+                _LOGGER.info("✅ M1-optimized correlation matrix computed")
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ M1 correlation failed, falling back to numpy: {e}")
+                correlation_matrix = np.corrcoef(X_candidates.T)
+            
             correlation_threshold = self.method_configs['tree_ensemble']['correlation_threshold']
             
             # Group highly correlated features
@@ -1661,9 +1777,24 @@ class FeatureSelectionFramework:
             })
             
             execution_time = time.time() - start_time
-            _LOGGER.info(f"✅ Tree-based ensemble selection completed in {execution_time:.3f}s")
-            _LOGGER.info(f"📊 Results - Selected: {len(selected_features)} features")
-            _LOGGER.info(f"📊 Methods successful: {len(method_results)}/{len(methods)}")
+            
+            # Memory optimization
+            m1_optimize_memory()
+            
+            # Enhanced reporting
+            additional_stats = {
+                'Methods used': ', '.join(methods),
+                'Methods successful': f"{len(method_results)}/{len(methods)}",
+                'Candidate features': len(candidate_features),
+                'Hyperparameter search': enable_hyperparameter_search,
+                'Best hyperparameters': best_params,
+                'CV folds': cv_folds,
+                'Permutation repeats': permutation_importance_repeats
+            }
+            self._log_feature_reduction_stats(
+                "Tree-Based Ensemble Selection", len(feature_names), 
+                len(selected_features), execution_time, additional_stats
+            )
             _LOGGER.debug(f"📊 Selected features: {selected_features}")
             return ensemble_results
             
@@ -1712,6 +1843,67 @@ class FeatureSelectionFramework:
         
         return groups
 
+    def _lasso_bootstrap_fit(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Helper method for parallel LASSO bootstrap fitting."""
+        try:
+            bootstrap_idx = params['bootstrap_idx']
+            X_scaled = params['X_scaled']
+            y = params['y']
+            bootstrap_size = params['bootstrap_size']
+            feature_names = params['feature_names']
+            alpha_range = params['alpha_range']
+            cv_folds = params['cv_folds']
+            is_classification = params['is_classification']
+            random_state = params['random_state']
+            method_configs = params['method_configs']
+            
+            # Bootstrap sampling
+            bootstrap_indices = np.random.choice(
+                len(X_scaled), size=bootstrap_size, replace=True
+            )
+            X_bootstrap = X_scaled[bootstrap_indices]
+            y_bootstrap = y[bootstrap_indices]
+            
+            # Find optimal alpha using cross-validation
+            if is_classification:
+                lasso_cv = LassoCV(
+                    alphas=np.logspace(np.log10(alpha_range[0]), np.log10(alpha_range[1]), 20),
+                    cv=cv_folds,
+                    max_iter=method_configs['lasso']['max_iter'],
+                    tol=method_configs['lasso']['tol'],
+                    random_state=random_state
+                )
+            else:
+                lasso_cv = LassoCV(
+                    alphas=np.logspace(np.log10(alpha_range[0]), np.log10(alpha_range[1]), 20),
+                    cv=cv_folds,
+                    max_iter=method_configs['lasso']['max_iter'],
+                    tol=method_configs['lasso']['tol'],
+                    random_state=random_state
+                )
+            
+            # Fit LASSO with cross-validation
+            lasso_cv.fit(X_bootstrap, y_bootstrap)
+            
+            # Get selected features (non-zero coefficients)
+            selected_mask = np.abs(lasso_cv.coef_) > 1e-6
+            selected_features = [feature_names[i] for i in range(len(feature_names)) if selected_mask[i]]
+            
+            return {
+                'bootstrap_idx': bootstrap_idx,
+                'optimal_alpha': lasso_cv.alpha_,
+                'selected_features': selected_features,
+                'coefficients': lasso_cv.coef_,
+                'n_selected': len(selected_features),
+                'cv_score': lasso_cv.score(X_bootstrap, y_bootstrap)
+            }
+            
+        except Exception as e:
+            return {
+                'bootstrap_idx': params.get('bootstrap_idx', -1),
+                'error': str(e)
+            }
+
     def _search_tree_hyperparameters(self, X: np.ndarray, y: np.ndarray, 
                                    param_grid: Dict[str, List], 
                                    is_classification: bool, 
@@ -1759,6 +1951,111 @@ class FeatureSelectionFramework:
         
         return grid_search.best_params_, grid_search.best_score_
 
+    def _search_tree_hyperparameters_parallel(self, X: np.ndarray, y: np.ndarray, 
+                                            param_grid: Dict[str, List], 
+                                            is_classification: bool, 
+                                            cv_folds: int) -> Tuple[Dict[str, Any], float]:
+        """
+        Search for optimal hyperparameters using parallel processing.
+        """
+        try:
+            if not self.parallel_processor or not self.enable_parallel:
+                return self._search_tree_hyperparameters(X, y, param_grid, is_classification, cv_folds)
+            
+            # Create parameter combinations
+            param_combinations = []
+            for n_est in param_grid['n_estimators']:
+                for max_dep in param_grid['max_depth']:
+                    param_combinations.append({
+                        'n_estimators': n_est,
+                        'max_depth': max_dep,
+                        'X': X,
+                        'y': y,
+                        'is_classification': is_classification,
+                        'cv_folds': cv_folds,
+                        'random_state': self.random_state
+                    })
+            
+            _LOGGER.info(f"⚡ Testing {len(param_combinations)} parameter combinations in parallel")
+            
+            # Evaluate parameter combinations in parallel
+            param_results = self.parallel_processor.parallel_apply(
+                param_combinations,
+                self._evaluate_hyperparameter_combination,
+                max_workers=self.max_workers
+            )
+            
+            # Find best parameters
+            best_score = -np.inf
+            best_params = None
+            
+            for result in param_results:
+                if result and 'error' not in result:
+                    if result['cv_score'] > best_score:
+                        best_score = result['cv_score']
+                        best_params = {
+                            'n_estimators': result['n_estimators'],
+                            'max_depth': result['max_depth']
+                        }
+            
+            if best_params is None:
+                _LOGGER.warning("⚠️ No valid hyperparameter combinations found, using defaults")
+                return self._search_tree_hyperparameters(X, y, param_grid, is_classification, cv_folds)
+            
+            return best_params, best_score
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Parallel hyperparameter search failed: {e}, falling back to sequential")
+            return self._search_tree_hyperparameters(X, y, param_grid, is_classification, cv_folds)
+
+    def _evaluate_hyperparameter_combination(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Evaluate a single hyperparameter combination."""
+        try:
+            n_estimators = params['n_estimators']
+            max_depth = params['max_depth']
+            X = params['X']
+            y = params['y']
+            is_classification = params['is_classification']
+            cv_folds = params['cv_folds']
+            random_state = params['random_state']
+            
+            # Create model
+            if is_classification:
+                from sklearn.ensemble import RandomForestClassifier
+                model = RandomForestClassifier(
+                    n_estimators=n_estimators,
+                    max_depth=max_depth,
+                    random_state=random_state,
+                    n_jobs=1  # Single job for parallel processing
+                )
+            else:
+                from sklearn.ensemble import RandomForestRegressor
+                model = RandomForestRegressor(
+                    n_estimators=n_estimators,
+                    max_depth=max_depth,
+                    random_state=random_state,
+                    n_jobs=1  # Single job for parallel processing
+                )
+            
+            # Cross-validation
+            from sklearn.model_selection import cross_val_score
+            cv_scores = cross_val_score(model, X, y, cv=cv_folds, scoring='accuracy' if is_classification else 'r2')
+            cv_score = np.mean(cv_scores)
+            
+            return {
+                'n_estimators': n_estimators,
+                'max_depth': max_depth,
+                'cv_score': cv_score,
+                'cv_scores': cv_scores.tolist()
+            }
+            
+        except Exception as e:
+            return {
+                'n_estimators': params.get('n_estimators', 0),
+                'max_depth': params.get('max_depth', 0),
+                'error': str(e)
+            }
+
     def _get_default_model(self, y: np.ndarray):
         """Get a default model based on the target type."""
         if not SKLEARN_AVAILABLE:
@@ -1768,6 +2065,126 @@ class FeatureSelectionFramework:
             return RandomForestClassifier(n_estimators=50, random_state=self.random_state)
         else:
             return RandomForestRegressor(n_estimators=50, random_state=self.random_state)
+
+    def _calculate_relevance_scores_parallel(self, X: np.ndarray, y: np.ndarray,
+                                           feature_names: List[str], method: str) -> Dict[str, float]:
+        """Calculate relevance scores with parallel processing."""
+        try:
+            if not self.parallel_processor or not self.enable_parallel:
+                return self._calculate_relevance_scores(X, y, feature_names, method)
+            
+            # Split features into chunks for parallel processing
+            chunk_size = max(1, len(feature_names) // self.max_workers)
+            feature_chunks = [feature_names[i:i + chunk_size] for i in range(0, len(feature_names), chunk_size)]
+            
+            _LOGGER.info(f"⚡ Processing {len(feature_chunks)} feature chunks in parallel")
+            
+            # Prepare parameters for parallel processing
+            chunk_params = []
+            for i, chunk in enumerate(feature_chunks):
+                chunk_indices = [feature_names.index(f) for f in chunk]
+                chunk_params.append({
+                    'chunk_idx': i,
+                    'feature_names': chunk,
+                    'feature_indices': chunk_indices,
+                    'X_chunk': X[:, chunk_indices],
+                    'y': y,
+                    'method': method
+                })
+            
+            # Process chunks in parallel
+            chunk_results = self.parallel_processor.parallel_apply(
+                chunk_params,
+                self._calculate_relevance_chunk,
+                max_workers=self.max_workers
+            )
+            
+            # Combine results
+            relevance_scores = {}
+            for result in chunk_results:
+                if result and 'error' not in result:
+                    relevance_scores.update(result['scores'])
+                else:
+                    _LOGGER.warning(f"⚠️ Relevance chunk failed: {result.get('error', 'Unknown error')}")
+            
+            # Fallback for any missing scores
+            for feature in feature_names:
+                if feature not in relevance_scores:
+                    relevance_scores[feature] = 0.0
+            
+            return relevance_scores
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Parallel relevance calculation failed: {e}, falling back to sequential")
+            return self._calculate_relevance_scores(X, y, feature_names, method)
+
+    def _calculate_relevance_chunk(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate relevance scores for a chunk of features."""
+        try:
+            chunk_idx = params['chunk_idx']
+            feature_names = params['feature_names']
+            X_chunk = params['X_chunk']
+            y = params['y']
+            method = params['method']
+            
+            scores = {}
+            for i, feature_name in enumerate(feature_names):
+                if method == 'mutual_info':
+                    if SKLEARN_AVAILABLE:
+                        try:
+                            if len(np.unique(y)) <= 10 and not np.issubdtype(np.asarray(y).dtype, np.floating):
+                                mi_score = mutual_info_classif(X_chunk[:, i:i+1], y, random_state=self.random_state)[0]
+                            else:
+                                mi_score = mutual_info_regression(X_chunk[:, i:i+1], y, random_state=self.random_state)[0]
+                            scores[feature_name] = float(mi_score)
+                        except Exception:
+                            # Fallback to correlation
+                            corr_matrix = np.corrcoef(X_chunk[:, i], y)
+                            if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
+                                scores[feature_name] = abs(float(corr_matrix[0, 1]))
+                            else:
+                                scores[feature_name] = 0.0
+                    else:
+                        # Fallback to correlation
+                        corr_matrix = np.corrcoef(X_chunk[:, i], y)
+                        if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
+                            scores[feature_name] = abs(float(corr_matrix[0, 1]))
+                        else:
+                            scores[feature_name] = 0.0
+                            
+                elif method == 'correlation':
+                    corr_matrix = np.corrcoef(X_chunk[:, i], y)
+                    if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
+                        scores[feature_name] = abs(float(corr_matrix[0, 1]))
+                    else:
+                        scores[feature_name] = 0.0
+                        
+                elif method == 'importance':
+                    # Use a simple importance calculation for the chunk
+                    if len(np.unique(y)) <= 10:
+                        from sklearn.ensemble import RandomForestClassifier
+                        model = RandomForestClassifier(n_estimators=10, random_state=self.random_state)
+                    else:
+                        from sklearn.ensemble import RandomForestRegressor
+                        model = RandomForestRegressor(n_estimators=10, random_state=self.random_state)
+                    
+                    model.fit(X_chunk[:, i:i+1], y)
+                    scores[feature_name] = float(model.feature_importances_[0])
+                
+                # Handle NaN values
+                if np.isnan(scores[feature_name]):
+                    scores[feature_name] = 0.0
+            
+            return {
+                'chunk_idx': chunk_idx,
+                'scores': scores
+            }
+            
+        except Exception as e:
+            return {
+                'chunk_idx': params.get('chunk_idx', -1),
+                'error': str(e)
+            }
 
     def _calculate_relevance_scores(self, X: np.ndarray, y: np.ndarray,
                                   feature_names: List[str], method: str) -> Dict[str, float]:

@@ -130,6 +130,8 @@ class FeatureSelectionFramework:
                 'max_depth': 10,
                 'cv_folds': 5,
                 'permutation_importance_repeats': 10,
+                'correlation_threshold': 0.8,
+                'use_lgbm': False,  # Set to True to use LightGBM instead of RandomForest
                 'random_state': 42
             }
         }
@@ -1447,57 +1449,111 @@ class FeatureSelectionFramework:
             # Determine if classification or regression
             is_classification = len(np.unique(y)) <= 10 and not np.issubdtype(np.asarray(y).dtype, np.floating)
             
-            # Train the tree-based model
-            if is_classification:
-                from sklearn.ensemble import RandomForestClassifier
-                tree_model = RandomForestClassifier(
-                    n_estimators=n_estimators,
-                    max_depth=max_depth,
-                    random_state=self.random_state,
-                    n_jobs=-1
-                )
-            else:
-                from sklearn.ensemble import RandomForestRegressor
-                tree_model = RandomForestRegressor(
-                    n_estimators=n_estimators,
-                    max_depth=max_depth,
-                    random_state=self.random_state,
-                    n_jobs=-1
-                )
+            # Train the tree-based model (with option for LGBM)
+            use_lgbm = self.method_configs['tree_ensemble'].get('use_lgbm', False)
+            
+            if use_lgbm:
+                try:
+                    import lightgbm as lgb
+                    if is_classification:
+                        tree_model = lgb.LGBMClassifier(
+                            n_estimators=n_estimators,
+                            max_depth=max_depth,
+                            random_state=self.random_state,
+                            n_jobs=-1,
+                            verbose=-1
+                        )
+                    else:
+                        tree_model = lgb.LGBMRegressor(
+                            n_estimators=n_estimators,
+                            max_depth=max_depth,
+                            random_state=self.random_state,
+                            n_jobs=-1,
+                            verbose=-1
+                        )
+                    _LOGGER.info("📊 Using LightGBM for tree-based model")
+                except ImportError:
+                    _LOGGER.warning("⚠️ LightGBM not available, falling back to RandomForest")
+                    use_lgbm = False
+            
+            if not use_lgbm:
+                if is_classification:
+                    from sklearn.ensemble import RandomForestClassifier
+                    tree_model = RandomForestClassifier(
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        random_state=self.random_state,
+                        n_jobs=-1
+                    )
+                else:
+                    from sklearn.ensemble import RandomForestRegressor
+                    tree_model = RandomForestRegressor(
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        random_state=self.random_state,
+                        n_jobs=-1
+                    )
+                _LOGGER.info("📊 Using RandomForest for tree-based model")
             
             tree_model.fit(X_candidates, y)
             baseline_score = tree_model.score(X_candidates, y)
             
             _LOGGER.info(f"📊 Tree model trained - Baseline score: {baseline_score:.3f}")
             
-            # Stage 3: Calculate permutation importance
-            _LOGGER.info("🔍 Stage 3: Calculating permutation importance...")
+            # Stage 3: Calculate permutation importance with correlation grouping
+            _LOGGER.info("🔍 Stage 3: Calculating permutation importance with correlation grouping...")
             
+            # Calculate correlation matrix for candidate features
+            correlation_matrix = np.corrcoef(X_candidates.T)
+            correlation_threshold = self.method_configs['tree_ensemble']['correlation_threshold']
+            
+            # Group highly correlated features
+            feature_groups = self._group_correlated_features(
+                candidate_features, correlation_matrix, correlation_threshold
+            )
+            
+            _LOGGER.info(f"📊 Grouped {len(candidate_features)} features into {len(feature_groups)} groups")
+            for i, group in enumerate(feature_groups):
+                if len(group) > 1:
+                    _LOGGER.debug(f"📊 Group {i}: {group} (correlation group)")
+                else:
+                    _LOGGER.debug(f"📊 Group {i}: {group[0]} (individual)")
+            
+            # Calculate grouped permutation importance
             permutation_importance = {}
-            for i, feature in enumerate(candidate_features):
-                feature_importance_scores = []
+            for group_idx, feature_group in enumerate(feature_groups):
+                group_importance_scores = []
                 
                 for repeat in range(permutation_importance_repeats):
                     # Create permuted data
                     X_permuted = X_candidates.copy()
-                    np.random.shuffle(X_permuted[:, i])
                     
-                    # Calculate score with permuted feature
+                    # Permute all features in the group together
+                    for feature in feature_group:
+                        feature_idx = candidate_features.index(feature)
+                        np.random.shuffle(X_permuted[:, feature_idx])
+                    
+                    # Calculate score with permuted feature group
                     permuted_score = tree_model.score(X_permuted, y)
                     
                     # Importance is the drop in score
                     importance = baseline_score - permuted_score
-                    feature_importance_scores.append(importance)
+                    group_importance_scores.append(importance)
                 
                 # Average importance across repeats
-                avg_importance = np.mean(feature_importance_scores)
-                std_importance = np.std(feature_importance_scores)
+                avg_importance = np.mean(group_importance_scores)
+                std_importance = np.std(group_importance_scores)
                 
-                permutation_importance[feature] = {
-                    'importance': avg_importance,
-                    'std_importance': std_importance,
-                    'scores': feature_importance_scores
-                }
+                # Assign the same importance to all features in the group
+                for feature in feature_group:
+                    permutation_importance[feature] = {
+                        'importance': avg_importance,
+                        'std_importance': std_importance,
+                        'scores': group_importance_scores,
+                        'group': feature_group,
+                        'group_size': len(feature_group),
+                        'is_correlated_group': len(feature_group) > 1
+                    }
             
             ensemble_results['permutation_importance'] = permutation_importance
             
@@ -1615,6 +1671,46 @@ class FeatureSelectionFramework:
             execution_time = time.time() - start_time
             _LOGGER.error(f"❌ Tree-based ensemble selection failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'selected_features': []}
+
+    def _group_correlated_features(self, feature_names: List[str], 
+                                 correlation_matrix: np.ndarray, 
+                                 threshold: float = 0.8) -> List[List[str]]:
+        """
+        Group highly correlated features together.
+        
+        Args:
+            feature_names: List of feature names
+            correlation_matrix: Correlation matrix of features
+            threshold: Correlation threshold for grouping
+            
+        Returns:
+            List of feature groups, where each group contains highly correlated features
+        """
+        n_features = len(feature_names)
+        visited = set()
+        groups = []
+        
+        for i in range(n_features):
+            if i in visited:
+                continue
+            
+            # Start a new group with feature i
+            current_group = [feature_names[i]]
+            visited.add(i)
+            
+            # Find all features highly correlated with feature i
+            for j in range(i + 1, n_features):
+                if j in visited:
+                    continue
+                
+                # Check if features i and j are highly correlated
+                if abs(correlation_matrix[i, j]) >= threshold:
+                    current_group.append(feature_names[j])
+                    visited.add(j)
+            
+            groups.append(current_group)
+        
+        return groups
 
     def _get_default_model(self, y: np.ndarray):
         """Get a default model based on the target type."""

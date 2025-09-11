@@ -3,7 +3,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 import logging
 
 @dataclass
@@ -140,7 +143,7 @@ class IAnalyst(ABC):
         """Get historical analysis results"""
 
     @abstractmethod
-    async def train_models(self, training_data: pd.DataFrame) -> bool:
+    async def train_models(self, training_data: Any) -> bool:
         """Train analysis models"""
 
     @abstractmethod

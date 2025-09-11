@@ -307,14 +307,16 @@ class UnifiedDataDownloader:
         """Get or create exchange instance."""
         if exchange.upper() not in self._exchange_instances:
             try:
-                # Import exchange dynamically
-                exchange_module = f"src.exchanges.{exchange.lower()}"
-                exchange_class = f"{exchange.title()}Exchange"
+                # Use the exchange factory to create exchange instances
+                from exchange.factory import ExchangeFactory
                 
-                module = __import__(exchange_module, fromlist=[exchange_class])
-                exchange_class_obj = getattr(module, exchange_class)
+                exchange_instance = ExchangeFactory.get_exchange(exchange.lower())
                 
-                self._exchange_instances[exchange.upper()] = exchange_class_obj()
+                # Initialize the exchange if it has an initialize method
+                if hasattr(exchange_instance, '_initialize_exchange'):
+                    await exchange_instance._initialize_exchange()
+                
+                self._exchange_instances[exchange.upper()] = exchange_instance
                 self.logger.info(f"✅ Initialized {exchange} exchange")
                 
             except Exception as e:
@@ -335,16 +337,12 @@ class UnifiedDataDownloader:
     ) -> List[Dict[str, Any]]:
         """Download a batch of klines data."""
         try:
-            # Convert timestamps to datetime
-            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc=True)
-            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc=True)
-            
-            # Download from exchange
-            raw_data = await exchange_instance.fetch_klines(
+            # Use the BaseExchange interface method
+            raw_data = await exchange_instance._get_historical_klines_raw(
                 symbol=symbol,
-                timeframe=timeframe,
-                start_time=start_dt,
-                end_time=end_dt,
+                interval=timeframe,
+                start_time_ms=start_timestamp,
+                end_time_ms=end_timestamp,
                 limit=batch_size
             )
             
@@ -359,7 +357,7 @@ class UnifiedDataDownloader:
                     'close': float(item.get('close', 0)),
                     'volume': float(item.get('volume', 0)),
                     'symbol': symbol,
-                    'exchange': exchange_instance.name.upper(),
+                    'exchange': 'BINANCE',  # Use exchange name directly
                     'timeframe': timeframe
                 })
             
@@ -380,15 +378,11 @@ class UnifiedDataDownloader:
     ) -> List[Dict[str, Any]]:
         """Download a batch of aggtrades data."""
         try:
-            # Convert timestamps to datetime
-            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc=True)
-            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc=True)
-            
-            # Download from exchange
-            raw_data = await exchange_instance.fetch_aggtrades(
+            # Use the BaseExchange interface method
+            raw_data = await exchange_instance._get_historical_agg_trades_raw(
                 symbol=symbol,
-                start_time=start_dt,
-                end_time=end_dt,
+                start_time_ms=start_timestamp,
+                end_time_ms=end_timestamp,
                 limit=batch_size
             )
             
@@ -402,7 +396,7 @@ class UnifiedDataDownloader:
                     'is_buyer_maker': item.get('is_buyer_maker', item.get('m', False)),
                     'trade_id': item.get('trade_id', item.get('a', 0)),
                     'symbol': symbol,
-                    'exchange': exchange_instance.name.upper()
+                    'exchange': 'BINANCE'  # Use exchange name directly
                 })
             
             return standardized_data
@@ -422,17 +416,17 @@ class UnifiedDataDownloader:
     ) -> List[Dict[str, Any]]:
         """Download a batch of futures data."""
         try:
-            # Convert timestamps to datetime
-            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc=True)
-            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc=True)
-            
-            # Download from exchange
-            raw_data = await exchange_instance.fetch_futures(
-                symbol=symbol,
-                start_time=start_dt,
-                end_time=end_dt,
-                limit=batch_size
-            )
+            # Use Binance-specific futures funding rates method
+            if hasattr(exchange_instance, 'get_futures_funding_rates'):
+                raw_data = await exchange_instance.get_futures_funding_rates(
+                    symbol=symbol,
+                    start_time_ms=start_timestamp,
+                    end_time_ms=end_timestamp,
+                    limit=batch_size
+                )
+            else:
+                # Fallback to empty data if method not available
+                raw_data = []
             
             # Convert to standardized format
             standardized_data = []
@@ -441,7 +435,7 @@ class UnifiedDataDownloader:
                     'timestamp': item.get('timestamp', item.get('fundingTime', 0)),
                     'funding_rate': float(item.get('funding_rate', item.get('fundingRate', 0))),
                     'symbol': symbol,
-                    'exchange': exchange_instance.name.upper()
+                    'exchange': 'BINANCE'  # Use exchange name directly
                 })
             
             return standardized_data

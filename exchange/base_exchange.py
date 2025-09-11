@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 
-from src.interfaces.base_interfaces import IExchangeClient as IExchangeClient_src_interfaces_base_interfaces, MarketData
+from src.interfaces.base_interfaces import IExchangeClient, MarketData
 
 
 

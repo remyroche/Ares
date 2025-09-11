@@ -18,14 +18,13 @@ from sklearn.feature_selection import (
 )
 from sklearn.ensemble import RandomForestRegressor
 
-from .utils.logger import get_logger
+from src.utils.logger import get_logger
 import pandas as pd
-
-from .utils.validation import (
 import datetime
 import logging
 import typing
 
+from src.utils.validation import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
 )

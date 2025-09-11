@@ -1,1 +1,0 @@
-{'enabled': True, 'max_trials': 5, 'optimization_metric': 'sharpe_ratio'}

@@ -87,11 +87,14 @@ from src.utils.comprehensive_function_logger import (
 
 # ML Common utilities
 try:
-    from src.utils.ml_common.model_explanations import explain_model_with_shap_lime
-    from src.utils.ml_common.memory_efficient_training import MemoryEfficientTraining
-    from src.utils.ml_common.hyperparameter_optimization import HyperparameterOptimization
-    from src.utils.ml_common.model_registry import ModelRegistry
-    from src.utils.ml_common.parallel_processing import ParallelProcessingCoordinator
+    from src.utils.ml_common import (
+        ModelExplainabilityManager,
+        ModelExplanationResult,
+        MemoryEfficientTraining,
+        HyperparameterOptimization,
+        ModelRegistry,
+        ParallelProcessingCoordinator
+    )
     ML_COMMON_AVAILABLE = True
     logger.info('✅ ML Common utilities available')
 except ImportError as e:
@@ -284,6 +287,31 @@ class SRMLLearningStep(BaseStep):
             self.hyperparameter_optimizer = None
             self.model_registry = None
             self.parallel_coordinator = None
+        
+        # Initialize explainability manager
+        if ML_COMMON_AVAILABLE:
+            try:
+                explainability_config = {
+                    'enable_auto_explanations': True,
+                    'enable_explanation_caching': True,
+                    'auto_explain_on_training': True,
+                    'explanations': {
+                        'enable_shap': True,
+                        'enable_lime': True,
+                        'shap_sample_size': 50,
+                        'lime_sample_size': 10
+                    }
+                }
+                self.explainability_manager = ModelExplainabilityManager(
+                    config=explainability_config,
+                    model_registry=self.model_registry
+                )
+                self.logger.info("✅ Model explainability manager initialized")
+            except Exception as e:
+                self.logger.warning(f"Model explainability manager initialization failed: {e}")
+                self.explainability_manager = None
+        else:
+            self.explainability_manager = None
 
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the SR ML learning stage."""
@@ -402,12 +430,46 @@ class SRMLLearningStep(BaseStep):
                     elif hasattr(model, 'coef_'):
                         feature_importance = np.abs(model.coef_[0]) if len(model.coef_.shape) > 1 else np.abs(model.coef_)
                     
+                    # Generate model explanations if explainability manager is available
+                    model_explanation = None
+                    if self.explainability_manager is not None:
+                        try:
+                            self.logger.info(f'🧠 Generating explanations for {model_name}...')
+                            explanation_start_time = time.time()
+                            
+                            # Use smaller sample for explanations to avoid memory issues
+                            explanation_sample_size = min(50, len(X_test))
+                            if explanation_sample_size < len(X_test):
+                                test_indices = np.random.choice(len(X_test), explanation_sample_size, replace=False)
+                                X_test_sample = X_test[test_indices]
+                            else:
+                                X_test_sample = X_test
+                            
+                            model_explanation = self.explainability_manager.explain_model(
+                                model=model,
+                                X_train=X_train[:100],  # Use small sample for background
+                                X_test=X_test_sample,
+                                model_id=f"sr_ml_{model_name}",
+                                model_type=type(model).__name__,
+                                feature_names=feature_names,
+                                cache_key=f"sr_ml_{model_name}_{hash(X_train.tobytes())}"
+                            )
+                            
+                            explanation_time = time.time() - explanation_start_time
+                            self.logger.info(f'✅ Model explanations generated in {explanation_time:.2f} seconds')
+                            self.logger.info(f'   • Explanation confidence: {model_explanation.explanation_confidence:.3f}')
+                            
+                        except Exception as explanation_error:
+                            self.logger.warning(f'⚠️ Model explanations failed for {model_name}: {explanation_error}')
+                            model_explanation = None
+                    
                     model_time = time.time() - model_start_time
                     
                     model_results[model_name] = {
                         'model': model,
                         'metrics': metrics,
                         'feature_importance': feature_importance,
+                        'model_explanation': model_explanation,
                         'training_time': model_time,
                         'feature_names': feature_names,
                         'model_params': default_params
@@ -430,9 +492,19 @@ class SRMLLearningStep(BaseStep):
             
             total_training_time = time.time() - training_start_time
             
+            # Log explainability summary
+            explanations_generated = sum(1 for result in model_results.values() 
+                                       if result.get('model_explanation') is not None)
+            total_models = len(model_results)
+            
             self.logger.info('🤖 ===== ML MODEL TRAINING COMPLETED =====')
             self.logger.info(f'✅ Total training time: {total_training_time:.2f} seconds')
             self.logger.info(f'🏆 Best model: {best_model_name}')
+            self.logger.info(f'🧠 Model explanations: {explanations_generated}/{total_models} models explained')
+            
+            if self.explainability_manager is not None:
+                cache_stats = self.explainability_manager.get_cache_stats()
+                self.logger.info(f'📊 Explanation cache: {cache_stats["cache_size"]} entries, hit rate: {cache_stats["hit_rate"]:.3f}')
             
             return {
                 'model_results': model_results,

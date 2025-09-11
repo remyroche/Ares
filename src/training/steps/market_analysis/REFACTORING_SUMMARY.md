@@ -6,7 +6,7 @@ The `step02_5_sr_optimization.py` file has been successfully moved from `data_pr
 ## File Structure Changes
 
 ### New Location
-- **Main orchestrator**: `src/training/steps/market_analysis/step02_5_sr_optimization.py`
+- **Pipeline orchestrator**: `src/training/steps/market_analysis/sub_pipeline.py` (uses existing sub_pipeline infrastructure)
 - **Stage 1**: `src/training/steps/market_analysis/sr_detection.py`
 - **Stage 2**: `src/training/steps/market_analysis/sr_clustering.py`
 - **Stage 3**: `src/training/steps/market_analysis/sr_ml_learning.py`
@@ -15,6 +15,7 @@ The `step02_5_sr_optimization.py` file has been successfully moved from `data_pr
 ### Removed Files
 - `src/training/steps/data_collection/data_preparation/step02_5_sr_optimization.py`
 - `src/training/steps/data_qualification/step02_5_sr_optimization.py`
+- `src/training/steps/market_analysis/step02_5_sr_optimization.py` (main orchestrator removed as requested)
 
 ## Three-Stage Architecture
 
@@ -45,11 +46,12 @@ The `step02_5_sr_optimization.py` file has been successfully moved from `data_pr
   - Feature importance analysis
   - Memory-efficient training
 
-### Main Orchestrator (`step02_5_sr_optimization.py`)
-- **Purpose**: Coordinates all three stages in sequence
-- **Class**: `SROptimizationStep`
+### Pipeline Orchestrator (`sub_pipeline.py`)
+- **Purpose**: Uses existing sub_pipeline infrastructure to coordinate SR stages
+- **Class**: `MarketAnalysisSubPipeline`
 - **Key Features**:
-  - Sequential stage execution
+  - Integration with existing sub_pipeline system
+  - Three dedicated SR pipeline methods: `_sr_detection_pipeline`, `_sr_clustering_pipeline`, `_sr_ml_learning_pipeline`
   - Comprehensive error handling
   - Pipeline state management
   - Detailed logging and monitoring
@@ -64,7 +66,8 @@ The `step02_5_sr_optimization.py` file has been successfully moved from `data_pr
 
 ### Import Path Changes
 - **Old**: `src.training.steps.data_collection.data_preparation.step02_5_sr_optimization`
-- **New**: `src.training.steps.market_analysis.step02_5_sr_optimization`
+- **New**: `src.training.steps.market_analysis.sub_pipeline` (MarketAnalysisSubPipeline)
+- **Backward Compatibility**: `SROptimizationStep` alias available in `__init__.py`
 
 ## Benefits of Refactoring
 
@@ -107,11 +110,17 @@ ml_step = SRMLLearningStep(config)
 
 ### Complete Pipeline Usage
 ```python
-from src.training.steps.market_analysis import SROptimizationStep
+from src.training.steps.market_analysis import MarketAnalysisSubPipeline
 
-# Use the complete orchestrator
-sr_step = SROptimizationStep(config)
-result = await sr_step.execute(training_input, pipeline_state)
+# Use the sub_pipeline orchestrator
+sr_pipeline = MarketAnalysisSubPipeline(config)
+result = await sr_pipeline.execute_sub_pipeline('sr_detection', config)
+result = await sr_pipeline.execute_sub_pipeline('sr_clustering', config)
+result = await sr_pipeline.execute_sub_pipeline('sr_ml_learning', config)
+
+# Or use backward compatibility alias
+from src.training.steps.market_analysis import SROptimizationStep
+sr_step = SROptimizationStep(config)  # Same as MarketAnalysisSubPipeline
 ```
 
 ## Backward Compatibility

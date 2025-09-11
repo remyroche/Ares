@@ -169,8 +169,8 @@ class ValidatedStepFactory:
         validated_steps = {}
         step_imports = {
             'step02_data_reading': ('src.training.steps.data_collection.step02_data_reading', 'DataReadingStep'),
-            'step02_5_sr_optimization': ('src.training.steps.market_analysis.step02_5_sr_optimization', 'SROptimizationStep'),
-            'step2_5_sr_optimization': ('src.training.steps.market_analysis.step02_5_sr_optimization', 'SROptimizationStep'),
+            'step02_5_sr_optimization': ('src.training.steps.market_analysis.sub_pipeline', 'MarketAnalysisSubPipeline'),
+            'step2_5_sr_optimization': ('src.training.steps.market_analysis.sub_pipeline', 'MarketAnalysisSubPipeline'),
             'step03_hmm_regime_discovery': ('src.training.steps.data_collection.data_preparation.step03_hmm_regime_discovery', 'Step03HMMRegimeDiscovery'),
             'step04_regime_data_splitting': ('src.training.steps.step08_regime_data_splitting', 'RegimeDataSplittingStep'),
             'step05_labeling': ('src.training.steps.step5_labeling', 'LabelingStep'),

@@ -338,7 +338,7 @@ class MarketAnalysisSubPipeline:
     
     # Sub-pipeline implementations
     async def _sr_detection_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """SR detection sub-pipeline."""
+        """SR detection sub-pipeline using the new SRDetectionStep."""
         print("📊 Executing SR detection pipeline")
         print(f"🔧 Configuration: mode={config.mode.value}, symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
         self.logger.info("📊 Executing SR detection pipeline")
@@ -355,56 +355,63 @@ class MarketAnalysisSubPipeline:
             artifacts['sr_levels'] = [{'level': 50000, 'type': 'support', 'strength': 0.8}]
             return artifacts
         
-        # Import and use existing SR levels manager
+        # Use the new SRDetectionStep
         try:
-            print("📦 Importing SRLevelsManager...")
-            self.logger.info("📦 Importing SRLevelsManager...")
-            from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager
+            from .sr_detection import SRDetectionStep
             
-            # Create proper configuration for SR levels manager
+            # Create configuration for SR detection
             sr_config = {
-                'sr_levels_manager': {
-                    'storage_path': f"{config.data_dir}/sr_levels",
-                    'max_levels': 50,
-                    'min_strength': 0.3,
-                    'proximity_threshold': 0.005
-                }
+                'sr_optimization': {
+                    'min_touches': 2,
+                    'tolerance_pct': 0.5,
+                    'lookback_periods': 100 if config.mode == ExecutionMode.FULL else 10,
+                    'proximity_threshold': 0.002,
+                    'min_sr_ratio': 0.15,
+                    'max_sr_ratio': 0.30
+                },
+                'training_mode': 'light' if config.mode == ExecutionMode.LIGHT else 'full'
             }
             
-            print(f"🔧 Creating SRLevelsManager with config: {sr_config}")
-            self.logger.info(f"🔧 Creating SRLevelsManager with config: {sr_config}")
-            sr_manager = SRLevelsManager(sr_config)
+            # Create SR detection step
+            sr_detection_step = SRDetectionStep(sr_config)
             
-            print("🚀 Initializing SRLevelsManager...")
-            self.logger.info("🚀 Initializing SRLevelsManager...")
-            await sr_manager.initialize()
-            print("✅ SRLevelsManager initialized successfully")
-            self.logger.info("✅ SRLevelsManager initialized successfully")
+            # Load market data
+            market_data = await self._load_market_data_for_sr_detection(config)
+            if market_data is None or market_data.empty:
+                self.logger.error("❌ No market data available for SR detection")
+                return artifacts
             
-            # Try to load existing levels first
-            self.logger.info("📂 Attempting to load existing SR levels...")
-            try:
-                await sr_manager.load_levels()
-                existing_levels = sr_manager.support_levels + sr_manager.resistance_levels
-                self.logger.info(f"📂 Loaded {len(existing_levels)} existing SR levels")
-                self.logger.info(f"   - Support levels: {len(sr_manager.support_levels)}")
-                self.logger.info(f"   - Resistance levels: {len(sr_manager.resistance_levels)}")
-            except Exception as e:
-                self.logger.info(f"📊 No existing SR levels found, will perform detection: {e}")
-                existing_levels = []
+            # Prepare pipeline state
+            pipeline_state = {'dataframe': market_data}
+            training_input = {'training_mode': config.mode.value}
             
-            # If no existing levels or in full mode, perform actual SR detection
-            if not existing_levels or config.mode == ExecutionMode.FULL:
-                self.logger.info("🔍 Performing SR level detection from market data")
-                self.logger.info(f"   - Mode: {config.mode.value}")
-                self.logger.info(f"   - Existing levels: {len(existing_levels)}")
+            # Execute SR detection
+            result = await sr_detection_step.execute(training_input, pipeline_state)
+            
+            if result.get('success', False):
+                sr_levels = result.get('sr_levels', {})
+                artifacts['sr_levels'] = sr_levels.get('all_levels', [])
+                artifacts['sr_metrics'] = {
+                    'detection_time': result.get('execution_time', 0),
+                    'support_count': len(sr_levels.get('support_levels', [])),
+                    'resistance_count': len(sr_levels.get('resistance_levels', [])),
+                    'total_levels': len(sr_levels.get('all_levels', []))
+                }
+                artifacts['detection_params'] = sr_levels.get('detection_config', {})
                 
-                # Load market data for SR detection
-                print("📊 Loading market data for SR detection...")
-                self.logger.info("📊 Loading market data for SR detection...")
-                market_data = await self._load_market_data_for_sr_detection(config)
+                self.logger.info(f"✅ SR detection completed successfully")
+                self.logger.info(f"   - Support levels: {artifacts['sr_metrics']['support_count']}")
+                self.logger.info(f"   - Resistance levels: {artifacts['sr_metrics']['resistance_count']}")
+                self.logger.info(f"   - Total levels: {artifacts['sr_metrics']['total_levels']}")
+            else:
+                self.logger.error(f"❌ SR detection failed: {result.get('error', 'Unknown error')}")
                 
-                if market_data is not None and not market_data.empty:
+        except Exception as e:
+            self.logger.error(f"❌ SR detection pipeline failed: {e}")
+            import traceback
+            self.logger.error(f"❌ Error details: {traceback.format_exc()}")
+        
+        return artifacts
                     print(f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns")
                     print(f"   - Data range: {market_data.index.min()} to {market_data.index.max()}")
                     print(f"   - Columns: {list(market_data.columns)}")

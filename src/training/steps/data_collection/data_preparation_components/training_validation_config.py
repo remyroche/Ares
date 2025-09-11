@@ -18,6 +18,10 @@ class DataValidator:
     def __init__(self) -> None:
         self.errors = []
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def validate_data_format(self, data: dict[str, Any]) -> tuple[bool, list[str]]:
         """Validate data format and structure."""
         self.errors = []
@@ -159,6 +163,9 @@ def validate_system_resources() -> tuple[bool, list[str]]:
     import psutil
     memory = psutil.virtual_memory()
     import os as _os
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
     blank_mode = _os.getenv('BLANK_TRAINING_MODE', '0') == '1'
     if blank_mode:
         min_memory_gb = 2

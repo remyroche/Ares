@@ -245,6 +245,10 @@ class FunctionCallTracker:
         self.performance_metrics = {}
         self.error_tracking = {}
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def start_call(self, func_name: str, args: tuple, kwargs: dict, caller: str = None) -> str:
         """Start tracking a function call."""
         call_id = f'{func_name}_{int(time.time() * 1000000)}'
@@ -420,6 +424,10 @@ class AsyncFileProcessor:
             'processing_times': []
         }
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     async def process_files_concurrent(
         self,
         file_paths: List[Path],
@@ -518,6 +526,10 @@ class MemoryPoolManager:
         self.memory_chunks: List[bytes] = []
         self.gc_threshold = max_memory_gb * 0.8 * 1024**3  # 80% threshold
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     async def allocate_chunk(self, estimated_size_bytes: int) -> bool:
         """Allocate memory for a data chunk."""
         async with self.lock:
@@ -692,6 +704,10 @@ class RegimeDataSplittingStep:
             self.logger.info('ℹ️ Financial metrics logging system not available, using basic reporting')
             self.financial_logger = None
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def _init_performance_optimizers(self) -> None:
         """Initialize performance optimization components."""
         max_concurrent = self.config.get('max_concurrent_batches', 3)
@@ -2095,6 +2111,9 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = N
     
     # Initialize lookahead bias detector
     from datetime import datetime
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
     current_time = datetime.now()
     bias_detector = get_global_detector()
     bias_detector.set_current_timestamp(current_time)

@@ -76,6 +76,10 @@ class MemoryManager:
         self._baseline_memory = self.get_memory_usage()
         self._memory_history = []
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
         return self.process.memory_info().rss / 1024 / 1024
@@ -129,6 +133,10 @@ class IntelligentCache:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._cache_index = self._load_cache_index()
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def _load_cache_index(self) -> Dict[str, Dict[str, Any]]:
         """Load cache index from disk."""
         index_file = self.cache_dir / "cache_index.json"
@@ -252,6 +260,10 @@ class TimeSeriesValidator:
             "1h": pd.Timedelta(hours=1),
         }
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def detect_gaps(self, df: pd.DataFrame, timeframe: str, max_gap_minutes: int = 60) -> List[Dict[str, Any]]:
         """Detect gaps in time series data."""
         if df.empty or "timestamp" not in df.columns:
@@ -331,6 +343,10 @@ class EnhancedDataResampler:
         memory_config: Optional[MemoryConfig] = None,
         cache_config: Optional[CacheConfig] = None,
         processing_config: Optional[ProcessingConfig] = None
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     ):
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
@@ -788,6 +804,9 @@ class EnhancedDataResampler:
                 backup_path = output_path.with_suffix(f"{output_path.suffix}.backup")
                 try:
                     import shutil
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
                     shutil.copy2(output_path, backup_path)
                     logger.debug(f"✅ Created backup: {backup_path.name}")
                 except Exception as e:

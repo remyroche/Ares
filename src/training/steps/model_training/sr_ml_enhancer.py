@@ -109,6 +109,10 @@ class SRMLEnhancer:
         self.feature_names = []
         self.model_performance = {'sr_quality': {'accuracy': 0.0, 'last_update': None}, 'breakout_prediction': {'accuracy': 0.0, 'last_update': None}, 'regime_classification': {'accuracy': 0.0, 'last_update': None}}
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @sr_error_handler(exceptions=(SROptimizationError, SRDataError), default_return = None, context='ML model training', max_retries = 2)
     async def train_models(self, market_data: pd.DataFrame, sr_levels: List[Dict[str, Any]], historical_performance: Optional[Dict[str, Any]]=None) -> bool:
         """Train all ML models."""
@@ -964,6 +968,9 @@ class SRMLEnhancer:
         try:
             try:
                 import shap
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
                 SHAP_AVAILABLE = True
             except ImportError:
                 SHAP_AVAILABLE = False

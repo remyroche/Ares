@@ -29,6 +29,9 @@ try:
     import numba
 import logging
 import time
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
     NUMBA_AVAILABLE = True
 except ImportError:
@@ -108,6 +111,10 @@ class SRStrengthOptimizer:
         self.cache_size = 1000
         self.best_parameters = SRStrengthParameters()
         self.optimization_history = []
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @log_all_calls
 
     def _get_parameter_ranges(self) -> Dict[str, Tuple[float, float]]:
@@ -686,6 +693,10 @@ class SRLevelIdentifier:
         self.config = config
         self.logger = system_logger.getChild('SRLevelIdentifier')
         self.parameters = self._load_parameters()
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @log_all_calls
 
     def _load_parameters(self) -> SRStrengthParameters:

@@ -207,6 +207,10 @@ class GeneralModelTrainer:
         self.logger.info(f"🎯 Task type: {config.task_type.value}")
         self.logger.info(f"🤖 Model type: {config.model_type.value}")
     
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @traced(span_name='train_model')
     @log_execution_time
     async def train_model(
@@ -700,6 +704,9 @@ class ModelFactory:
         
         elif model_type == ModelType.SVM:
             from sklearn.svm import SVC, SVR
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
             if 'task_type' in params and params['task_type'] == TaskType.REGRESSION:
                 return SVR(**params)
             else:

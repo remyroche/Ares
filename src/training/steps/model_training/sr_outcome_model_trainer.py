@@ -79,6 +79,10 @@ class SROutcomeModelTrainer:
         self.feature_names = []
         self.validator = EnhancedValidator()
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @handles_errors(exceptions=(Exception,), default_return = False, context='S/R outcome model initialization')
     async def initialize(self) -> bool:
         """Initialize the S/R outcome model trainer."""
@@ -541,6 +545,9 @@ class SROutcomeModelTrainer:
 
             # Save evaluation results using centralized reporting system
             from src.training.reports import save_training_report
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
             # Get symbol and timeframe from config or use defaults
             symbol = getattr(self, 'symbol', 'UNKNOWN')

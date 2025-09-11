@@ -40,6 +40,9 @@ from src.utils.math_validation import (
     safe_weighted_average, safe_percentage_change, MathValidationError
 )
 from src.utils.parquet_utils import get_parquet_utils, ParquetUtils
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 from src.core.decorators import (
     handles_errors, validates, traced, log_execution_time, 
     timeout, error_boundary, compose, validate_data_quality, 
@@ -186,6 +189,11 @@ class AnalystModelTrainer:
         
         # Initialize utilities
         self.parquet_utils = get_parquet_utils()
+        
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
         
         # Initialize ensemble manager if enabled
         self.ensemble_manager = None
@@ -571,25 +579,35 @@ class AnalystModelTrainer:
         return predictions
     
     async def save_analyst_models(self, results: AnalystTrainingResults) -> None:
-        """Save all trained Analyst models."""
+        """Save all trained Analyst models with versioned filenames."""
         
         try:
-            # Save individual models
+            # Save individual models with versioned filenames
             for model_name, model_result in results.individual_models.items():
                 if model_result.trained_model is not None:
-                    model_path = f"{self.config.output_dir}/{model_name}_model.pkl"
+                    # Use versioned filename
+                    model_filename = self.artifact_manager.get_versioned_filename(
+                        f"{model_name}_model", ".pkl"
+                    )
+                    model_path = f"{self.config.output_dir}/{model_filename}"
                     await self._save_model(model_result.trained_model, model_path)
             
-            # Save ensemble if available
+            # Save ensemble if available with versioned filename
             if results.ensemble_manager:
-                ensemble_path = f"{self.config.output_dir}/ensemble.pkl"
+                ensemble_filename = self.artifact_manager.get_versioned_filename(
+                    "analyst_ensemble", ".pkl"
+                )
+                ensemble_path = f"{self.config.output_dir}/{ensemble_filename}"
                 await results.ensemble_manager.save_ensemble(ensemble_path)
             
-            # Save results metadata
-            results_path = f"{self.config.output_dir}/training_results.json"
+            # Save results metadata with versioned filename
+            results_filename = self.artifact_manager.get_versioned_filename(
+                "analyst_training_results", ".json"
+            )
+            results_path = f"{self.config.output_dir}/{results_filename}"
             await safe_json_dump(results_path, results.__dict__)
             
-            self.logger.info(f"💾 All Analyst models saved to {self.config.output_dir}")
+            self.logger.info(f"💾 All Analyst models saved with versioned filenames to {self.config.output_dir}")
             
         except Exception as e:
             self.logger.error(f"Error saving Analyst models: {e}")

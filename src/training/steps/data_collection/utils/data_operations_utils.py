@@ -17,6 +17,9 @@ from enum import Enum
 from typing import Union, Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 import pickle
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
 import pandas as pd
 
@@ -678,11 +681,16 @@ class DataAccessManager:
         )
 
 class DataStorageManager:
-    """Utility class for managing data storage operations."""
+    """Utility class for managing data storage operations with versioned artifacts."""
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     
     def save_data(
         self,
@@ -752,6 +760,65 @@ class DataStorageManager:
                 success = False,
                 message = f"Error saving data: {e}",
                 execution_time = time.time() - start_time,
+                errors=[str(e)]
+            )
+    
+    def save_data_versioned(
+        self,
+        data: Any,
+        base_name: str,
+        format: DataFormat = DataFormat.PARQUET,
+        directory: str = "artifacts",
+        compression: CompressionType = CompressionType.NONE,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> DataOperationResult:
+        """Save data with versioned filename."""
+        start_time = time.time()
+        
+        try:
+            # Determine extension based on format
+            extension_map = {
+                DataFormat.PARQUET: ".parquet",
+                DataFormat.CSV: ".csv",
+                DataFormat.JSON: ".json",
+                DataFormat.PICKLE: ".pkl"
+            }
+            extension = extension_map.get(format, ".parquet")
+            
+            # Use enhanced artifact manager to save with versioned filename
+            file_path = self.artifact_manager.save_artifact(
+                data,
+                base_name,
+                extension,
+                directory,
+                **({"compression": compression.value} if compression != CompressionType.NONE else {})
+            )
+            
+            duration = time.time() - start_time
+            
+            self.logger.info(f"✅ Saved versioned data: {Path(file_path).name}")
+            
+            return DataOperationResult(
+                success=True,
+                message=f"Versioned data saved successfully: {Path(file_path).name}",
+                metadata={
+                    "file_path": file_path,
+                    "base_name": base_name,
+                    "version": self.version_manager.get_ares_version(),
+                    "format": format.value,
+                    "file_size": Path(file_path).stat().st_size,
+                    "metadata_saved": metadata is not None
+                },
+                execution_time=duration
+            )
+            
+        except Exception as e:
+            duration = time.time() - start_time
+            self.logger.error(f"❌ Error saving versioned data: {e}")
+            return DataOperationResult(
+                success=False,
+                message=f"Error saving versioned data: {e}",
+                execution_time=duration,
                 errors=[str(e)]
             )
     

@@ -37,6 +37,7 @@ from .memory_optimization import *
 # Expose coordinator class but not its instance methods as globals
 from .parallel_processing import ParallelProcessingCoordinator
 from .model_registry import *
+from .model_explainability import *
 from .data_quality import *
 from .pipeline_orchestrator import *
 
@@ -113,6 +114,12 @@ __all__ = [
 
     # Model registry
     'ModelRegistry',
+
+    # Model explainability
+    'ModelExplainabilityManager',
+    'ModelExplanationResult',
+    'with_explainability',
+    'explain_model_quick',
 
     # Data quality utilities
     'DataQualityUtilities',

@@ -29,6 +29,7 @@ from datetime import datetime
 from .model_evaluation import ModelEvaluator
 from .confidence_metrics import calculate_confidence_metrics, log_confidence_metrics
 from .model_explanations import explain_model_with_shap_lime
+from .model_explainability import ModelExplainabilityManager, with_explainability
 from .hpo_utils import HPOptimizer
 from ..common_operations import create_fallback_logger
 
@@ -74,6 +75,12 @@ class EnhancedModelTrainer:
         
         # Initialize model evaluator
         self.evaluator = ModelEvaluator(self.config.get('evaluation', {}))
+        
+        # Initialize explainability manager
+        self.explainability_manager = ModelExplainabilityManager(
+            config=self.config.get('explainability', {}),
+            model_registry=None  # Will be set if model registry is provided
+        )
         
         # Training configuration
         self.enable_confidence_metrics = self.config.get('enable_confidence_metrics', True)
@@ -183,7 +190,7 @@ class EnhancedModelTrainer:
                 _LOGGER.debug('🔍 Extracting feature importance...')
                 feature_importance = self._extract_feature_importance(model, feature_names)
             
-            # Generate model explanations if enabled
+            # Generate model explanations if enabled using new explainability manager
             model_explanations = {}
             if self.enable_model_explanations:
                 _LOGGER.debug('🧠 Generating model explanations...')
@@ -195,19 +202,19 @@ class EnhancedModelTrainer:
                     
                     _LOGGER.debug(f'📊 Using sample size {sample_size} for explanations')
                     
-                    model_explanations = explain_model_with_shap_lime(
+                    # Generate comprehensive model explanation using new manager
+                    explanation_result = self.explainability_manager.explain_model(
                         model=model,
                         X_train=X_train[:100],  # Use small sample for background
                         X_test=X_test_sample,
+                        model_id=model_name,
+                        model_type=type(model).__name__,
                         feature_names=feature_names,
-                        model_name=model_name,
-                        config={
-                            'enable_shap': True,
-                            'enable_lime': True,
-                            'shap_sample_size': 20,
-                            'lime_sample_size': 5
-                        }
+                        cache_key=f"training_{model_name}_{hash(X_train.tobytes())}"
                     )
+                    
+                    # Convert to dictionary format for compatibility
+                    model_explanations = explanation_result.to_dict()
                     _LOGGER.info('✅ Model explanations generated successfully')
                 except Exception as e:
                     _LOGGER.warning(f'⚠️ Model explanations failed for {model_name}: {e}')

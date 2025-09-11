@@ -262,9 +262,9 @@ class ModelTrainingSubPipeline:
             artifacts['trained_models'] = ['general_model.pkl']
             return artifacts
         
-        # Import and use general model training
+        # Import and use enhanced general model training
         try:
-            from .simplified.general_model_training import GeneralModelTrainer
+            from .general_model_training import GeneralModelTrainer
             
             trainer = GeneralModelTrainer()
             training_result = await trainer.train_model(
@@ -313,9 +313,9 @@ class ModelTrainingSubPipeline:
             artifacts['analyst_models'] = ['analyst_model.pkl']
             return artifacts
         
-        # Import and use analyst model training
+        # Import and use enhanced analyst model training
         try:
-            from .simplified.analyst_model_training import AnalystModelTrainer
+            from .analyst_model_training import AnalystModelTrainer
             
             trainer = AnalystModelTrainer()
             training_result = await trainer.train_analyst_model(
@@ -364,9 +364,9 @@ class ModelTrainingSubPipeline:
             artifacts['tactician_models'] = ['tactician_model.pkl']
             return artifacts
         
-        # Import and use tactician model training
+        # Import and use enhanced tactician model training
         try:
-            from .simplified.tactician_model_training import TacticianModelTrainer
+            from .tactician_model_training import TacticianModelTrainer
             
             trainer = TacticianModelTrainer()
             training_result = await trainer.train_tactician_model(

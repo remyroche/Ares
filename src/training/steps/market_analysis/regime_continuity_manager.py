@@ -95,7 +95,7 @@ class RegimeContinuityManager:
         self.regime_metadata: Dict[int, RegimeMetadata] = {}
         self.step_contexts: Dict[str, Dict[int, StepRegimeContext]] = {}
         self.continuity_tracking: Dict[str, Any] = {}
-        self.regime_aware_steps = ['step05_labeling', 'step06_feature_engineering', 'step07_enhanced_matrix_operations', 'step08_advanced_feature_selection', 'step09_hmm_based_training', 'step10_unified_regime_intelligence', 'step11_analyst_creation', 'step12_analyst_enhancement', 'step13_analyst_ensemble_creation', 'step14_tactician_labeling', 'step15_tactician_specialist_training', 'step16_confidence_calibration', 'step17_final_parameters_optimization', 'step18_walk_forward_validation', 'step19_monte_carlo_validation', 'step20_ab_testing', 'step21_saving']
+        self.regime_aware_steps = ['step05_labeling', 'step06_feature_engineering', 'step08_advanced_feature_selection', 'step09_hmm_based_training', 'step10_unified_regime_intelligence', 'step11_analyst_creation', 'step12_analyst_enhancement', 'step13_analyst_ensemble_creation', 'step14_tactician_labeling', 'step15_tactician_specialist_training', 'step16_confidence_calibration', 'step17_final_parameters_optimization', 'step18_walk_forward_validation', 'step19_monte_carlo_validation', 'step20_ab_testing', 'step21_saving']
 
     @traced(span_name='initialize_regime_continuity')
     async def initialize_regime_continuity(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:

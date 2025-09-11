@@ -1483,8 +1483,8 @@ class FinalRegimeClusteringStep:
                 self.logger.info(f"📦 Large file detected ({file_size_mb:.1f}MB), using chunked loading")
                 df = self.data_manager.load_large_file(file_path, chunk_size=50000)
             else:
-                # Use parquet utils for safe loading
-                df = self.parquet_utils.safe_read_parquet(str(file_path))
+                # Use standardized parquet handler for safe loading
+                df = standardized_parquet_handler.read_parquet_standardized(str(file_path))
                 if df is None:
                     # Fallback to standardized handler
                     df = standardized_parquet_handler.read_parquet_standardized(file_path)
@@ -3393,7 +3393,7 @@ class FinalRegimeClusteringStep:
                 # Try to load with parquet utilities first
                 parquet_path = f"{data_dir}/{data_id}.parquet"
                 if self.utilities.get('safe_file_exists', safe_file_exists)(parquet_path):
-                    df = parquet_utils.safe_read_parquet(parquet_path)
+                    df = standardized_parquet_handler.read_parquet_standardized(parquet_path)
                     if df is not None and not df.empty:
                         self.logger.info(f"✅ Loaded data using parquet utilities: {len(df):,} rows")
                         return df

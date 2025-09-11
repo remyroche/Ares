@@ -81,7 +81,6 @@ async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: 
                 logging.warning(f"⚠️ Failed to initialize ML Common utilities: {e}")
         
         # Note: Optimization components removed as they don't exist
-        # TODO: Implement proper optimization components if needed
         
         # Check cache first (using simple in-memory cache)
         cache_key = f"hmm_analysis_{symbol}_{exchange}_{timeframe}"
@@ -280,8 +279,8 @@ def analyze_regime_discovery_statistics(symbol: str, exchange: str, timeframe: s
         with m1_memory_optimizer.memory_checkpoint('regime_analysis'):
             for file_path in labeled_files:
                 try:
-                    # Use parquet utils for safe data loading
-                    df = parquet_utils.safe_read_parquet(file_path)
+                    # Use standardized parquet handler for safe data loading
+                    df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     
                     # Use data processing utils for validation
                     validator = data_processing_utils.DataFrameValidator()
@@ -694,7 +693,6 @@ async def main():
         enhanced_logger.logger.info("=" * 80)
         
         # Note: Enhanced optimized version removed as it doesn't exist
-        # TODO: Implement proper optimized version if needed
         
         # Create basic configuration
         optimized_config = {
@@ -717,7 +715,6 @@ async def main():
         
         try:
             # Note: Using fallback since optimized version doesn't exist
-            # TODO: Implement proper optimized version
             enhanced_logger.logger.warning("⚠️ Optimized version not available, using standard version")
             results = await run_enhanced_step(
                 symbol=symbol,

@@ -124,6 +124,13 @@ class FeatureSelectionFramework:
                 'stability_threshold': 0.6,
                 'alpha_range': (0.001, 1.0),
                 'cv_folds': 5
+            },
+            'tree_ensemble': {
+                'n_estimators': 100,
+                'max_depth': 10,
+                'cv_folds': 5,
+                'permutation_importance_repeats': 10,
+                'random_state': 42
             }
         }
 
@@ -1309,6 +1316,304 @@ class FeatureSelectionFramework:
         except Exception as e:
             execution_time = time.time() - start_time
             _LOGGER.error(f"❌ Comprehensive feature selection failed after {execution_time:.3f}s: {e}")
+            return {'error': str(e), 'selected_features': []}
+
+    def tree_based_ensemble_selection(self, X: np.ndarray, y: np.ndarray,
+                                    feature_names: List[str],
+                                    methods: List[str] = None,
+                                    weights: Optional[Dict[str, float]] = None,
+                                    n_features: Optional[int] = None,
+                                    cv_folds: int = 5,
+                                    n_estimators: int = 100,
+                                    max_depth: int = 10,
+                                    permutation_importance_repeats: int = 10) -> Dict[str, Any]:
+        """
+        Enhanced ensemble selection using tree-based permutation importance.
+        
+        This method implements a sophisticated multi-stage approach:
+        1. Collect candidate features from multiple methods
+        2. Train a fast tree-based model on all candidates
+        3. Use permutation importance to rank features
+        4. Cross-validate the final selection for generalization
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            methods: List of methods to use for candidate selection
+            weights: Weights for each method in initial voting
+            n_features: Target number of features (None for automatic)
+            cv_folds: Number of CV folds for final validation
+            n_estimators: Number of trees for the ensemble model
+            max_depth: Maximum depth of trees
+            permutation_importance_repeats: Number of repeats for permutation importance
+            
+        Returns:
+            Dictionary with final feature selection and validation results
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting tree-based ensemble selection...")
+        _LOGGER.info(f"📊 Data shape: {X.shape}, Methods: {methods}")
+        _LOGGER.info(f"📊 CV folds: {cv_folds}, Tree params: n_estimators={n_estimators}, max_depth={max_depth}")
+        
+        try:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn required for tree-based ensemble selection")
+            
+            if methods is None:
+                methods = ['correlation', 'mrmr', 'lasso_stability']
+            
+            if weights is None:
+                weights = {method: 1.0 / len(methods) for method in methods}
+            
+            ensemble_results = {
+                'selected_features': [],
+                'candidate_features': [],
+                'permutation_importance': {},
+                'cv_validation': {},
+                'method_results': {},
+                'selection_metadata': {
+                    'method': 'tree_based_ensemble_selection',
+                    'methods_used': methods,
+                    'method_weights': weights,
+                    'n_features_requested': n_features,
+                    'cv_folds': cv_folds,
+                    'tree_params': {'n_estimators': n_estimators, 'max_depth': max_depth}
+                }
+            }
+            
+            # Stage 1: Collect candidate features from multiple methods
+            _LOGGER.info("🔍 Stage 1: Collecting candidate features from multiple methods...")
+            candidate_features = set()
+            method_results = {}
+            
+            for method in methods:
+                try:
+                    if method == 'correlation':
+                        result = self.correlation_based_filtering(X, feature_names)
+                        if 'selected_features' in result:
+                            candidate_features.update(result['selected_features'])
+                            method_results['correlation'] = result
+                    
+                    elif method == 'mrmr':
+                        target_features = min(n_features or len(feature_names) // 2, len(feature_names))
+                        result = self.mrmr_selection(X, y, feature_names, target_features)
+                        if 'selected_features' in result:
+                            candidate_features.update(result['selected_features'])
+                            method_results['mrmr'] = result
+                    
+                    elif method == 'lasso_stability':
+                        result = self.lasso_stability_selection(X, y, feature_names)
+                        if 'selected_features' in result:
+                            candidate_features.update(result['selected_features'])
+                            method_results['lasso_stability'] = result
+                    
+                    elif method == 'lasso':
+                        result = self.lasso_feature_selection(X, y, feature_names)
+                        if 'selected_features' in result:
+                            candidate_features.update(result['selected_features'])
+                            method_results['lasso'] = result
+                    
+                    elif method == 'rfe':
+                        base_model = self._get_default_model(y)
+                        if base_model is not None:
+                            target_features = min(n_features or len(feature_names) // 2, len(feature_names))
+                            result = self.recursive_feature_elimination(base_model, X, y, feature_names, target_features)
+                            if 'selected_features' in result:
+                                candidate_features.update(result['selected_features'])
+                                method_results['rfe'] = result
+                
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Method {method} failed: {e}")
+                    continue
+            
+            candidate_features = list(candidate_features)
+            ensemble_results['candidate_features'] = candidate_features
+            ensemble_results['method_results'] = method_results
+            
+            _LOGGER.info(f"📊 Collected {len(candidate_features)} candidate features from {len(method_results)} methods")
+            
+            if len(candidate_features) == 0:
+                _LOGGER.warning("⚠️ No candidate features collected, returning empty selection")
+                return ensemble_results
+            
+            # Stage 2: Train tree-based model on all candidates
+            _LOGGER.info("🔍 Stage 2: Training tree-based model on candidate features...")
+            
+            # Get indices of candidate features
+            candidate_indices = [feature_names.index(f) for f in candidate_features if f in feature_names]
+            X_candidates = X[:, candidate_indices]
+            
+            # Determine if classification or regression
+            is_classification = len(np.unique(y)) <= 10 and not np.issubdtype(np.asarray(y).dtype, np.floating)
+            
+            # Train the tree-based model
+            if is_classification:
+                from sklearn.ensemble import RandomForestClassifier
+                tree_model = RandomForestClassifier(
+                    n_estimators=n_estimators,
+                    max_depth=max_depth,
+                    random_state=self.random_state,
+                    n_jobs=-1
+                )
+            else:
+                from sklearn.ensemble import RandomForestRegressor
+                tree_model = RandomForestRegressor(
+                    n_estimators=n_estimators,
+                    max_depth=max_depth,
+                    random_state=self.random_state,
+                    n_jobs=-1
+                )
+            
+            tree_model.fit(X_candidates, y)
+            baseline_score = tree_model.score(X_candidates, y)
+            
+            _LOGGER.info(f"📊 Tree model trained - Baseline score: {baseline_score:.3f}")
+            
+            # Stage 3: Calculate permutation importance
+            _LOGGER.info("🔍 Stage 3: Calculating permutation importance...")
+            
+            permutation_importance = {}
+            for i, feature in enumerate(candidate_features):
+                feature_importance_scores = []
+                
+                for repeat in range(permutation_importance_repeats):
+                    # Create permuted data
+                    X_permuted = X_candidates.copy()
+                    np.random.shuffle(X_permuted[:, i])
+                    
+                    # Calculate score with permuted feature
+                    permuted_score = tree_model.score(X_permuted, y)
+                    
+                    # Importance is the drop in score
+                    importance = baseline_score - permuted_score
+                    feature_importance_scores.append(importance)
+                
+                # Average importance across repeats
+                avg_importance = np.mean(feature_importance_scores)
+                std_importance = np.std(feature_importance_scores)
+                
+                permutation_importance[feature] = {
+                    'importance': avg_importance,
+                    'std_importance': std_importance,
+                    'scores': feature_importance_scores
+                }
+            
+            ensemble_results['permutation_importance'] = permutation_importance
+            
+            # Stage 4: Select features based on permutation importance
+            _LOGGER.info("🔍 Stage 4: Selecting features based on permutation importance...")
+            
+            # Sort features by importance
+            sorted_features = sorted(
+                permutation_importance.items(),
+                key=lambda x: x[1]['importance'],
+                reverse=True
+            )
+            
+            # Select top features
+            if n_features is None:
+                # Use threshold-based selection (features with positive importance)
+                selected_features = [feature for feature, importance_data in sorted_features 
+                                   if importance_data['importance'] > 0]
+            else:
+                # Use top-N selection
+                selected_features = [feature for feature, _ in sorted_features[:n_features]]
+            
+            ensemble_results['selected_features'] = selected_features
+            
+            _LOGGER.info(f"📊 Selected {len(selected_features)} features based on permutation importance")
+            
+            # Stage 5: Cross-validation validation
+            _LOGGER.info("🔍 Stage 5: Cross-validation validation of selected features...")
+            
+            if len(selected_features) > 0:
+                # Get indices of selected features
+                selected_indices = [feature_names.index(f) for f in selected_features if f in feature_names]
+                X_selected = X[:, selected_indices]
+                
+                # Cross-validation
+                cv_scores = []
+                cv_importances = []
+                
+                if is_classification:
+                    from sklearn.model_selection import StratifiedKFold
+                    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
+                else:
+                    from sklearn.model_selection import KFold
+                    cv = KFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
+                
+                for fold, (train_idx, val_idx) in enumerate(cv.split(X_selected, y)):
+                    X_train, X_val = X_selected[train_idx], X_selected[val_idx]
+                    y_train, y_val = y[train_idx], y[val_idx]
+                    
+                    # Train model on fold
+                    fold_model = tree_model.__class__(
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        random_state=self.random_state + fold,
+                        n_jobs=-1
+                    )
+                    fold_model.fit(X_train, y_train)
+                    
+                    # Validate on fold
+                    fold_score = fold_model.score(X_val, y_val)
+                    cv_scores.append(fold_score)
+                    
+                    # Store feature importances
+                    fold_importances = dict(zip(selected_features, fold_model.feature_importances_))
+                    cv_importances.append(fold_importances)
+                
+                # Calculate CV statistics
+                cv_mean = np.mean(cv_scores)
+                cv_std = np.std(cv_scores)
+                
+                # Calculate stability of feature importances across folds
+                feature_importance_stability = {}
+                for feature in selected_features:
+                    fold_importances = [fold_imp[feature] for fold_imp in cv_importances]
+                    feature_importance_stability[feature] = {
+                        'mean_importance': np.mean(fold_importances),
+                        'std_importance': np.std(fold_importances),
+                        'stability': 1.0 - (np.std(fold_importances) / (np.mean(fold_importances) + 1e-8))
+                    }
+                
+                ensemble_results['cv_validation'] = {
+                    'cv_scores': cv_scores,
+                    'cv_mean': cv_mean,
+                    'cv_std': cv_std,
+                    'feature_importance_stability': feature_importance_stability
+                }
+                
+                _LOGGER.info(f"📊 CV validation - Mean score: {cv_mean:.3f} ± {cv_std:.3f}")
+            else:
+                _LOGGER.warning("⚠️ No features selected for CV validation")
+                ensemble_results['cv_validation'] = {'error': 'No features selected'}
+            
+            # Final statistics
+            ensemble_results['selection_metadata'].update({
+                'n_candidate_features': len(candidate_features),
+                'n_features_selected': len(selected_features),
+                'n_methods_successful': len(method_results),
+                'baseline_score': baseline_score,
+                'permutation_importance_stats': {
+                    'mean_importance': np.mean([data['importance'] for data in permutation_importance.values()]),
+                    'std_importance': np.std([data['importance'] for data in permutation_importance.values()]),
+                    'max_importance': np.max([data['importance'] for data in permutation_importance.values()]),
+                    'min_importance': np.min([data['importance'] for data in permutation_importance.values()])
+                }
+            })
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Tree-based ensemble selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Results - Selected: {len(selected_features)} features")
+            _LOGGER.info(f"📊 Methods successful: {len(method_results)}/{len(methods)}")
+            _LOGGER.debug(f"📊 Selected features: {selected_features}")
+            return ensemble_results
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Tree-based ensemble selection failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'selected_features': []}
 
     def _get_default_model(self, y: np.ndarray):

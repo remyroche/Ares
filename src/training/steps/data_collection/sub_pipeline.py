@@ -19,12 +19,14 @@ Sub-pipelines:
 2. Data Conversion - Convert data formats and standardize
 3. Data Validation - Validate data quality and integrity
 4. Data Preparation - Prepare data for further processing
-5. Data Resampling - Resample to multiple timeframes
-6. Gap Filling - Detect and fill data gaps
-7. Data Quality Check - Comprehensive quality assessment
-8. Data Storage - Store processed data
-9. Data Monitoring - Monitor data collection process
-10. Data Export - Export data in various formats
+5. Feature Engineering - Limited feature engineering (price returns, volume returns)
+6. Data Resampling - Resample to multiple timeframes
+7. Gap Filling - Detect and fill data gaps
+8. Data Quality Check - Comprehensive quality assessment
+9. Data Integration - Integrate multiple data sources with backwards compatibility
+10. Data Storage - Store processed data
+11. Data Monitoring - Monitor data collection process
+12. Data Export - Export data in various formats
 """
 
 import asyncio
@@ -158,9 +160,11 @@ class DataCollectionSubPipeline:
             'data_conversion': self._data_conversion_pipeline,
             'data_validation': self._data_validation_pipeline,
             'data_preparation': self._data_preparation_pipeline,
+            'feature_engineering': self._feature_engineering_pipeline,
             'data_resampling': self._data_resampling_pipeline,
             'gap_filling': self._gap_filling_pipeline,
             'data_quality_check': self._data_quality_check_pipeline,
+            'data_integration': self._data_integration_pipeline,
             'data_storage': self._data_storage_pipeline,
             'data_monitoring': self._data_monitoring_pipeline,
             'data_export': self._data_export_pipeline
@@ -842,6 +846,83 @@ class DataCollectionSubPipeline:
         
         return artifacts
     
+    async def _feature_engineering_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Feature engineering sub-pipeline - limited to price returns and volume returns."""
+        self.logger.info("🔧 Executing feature engineering pipeline")
+        
+        artifacts = {
+            'feature_files': [],
+            'feature_stats': {},
+            'features_added': []
+        }
+        
+        if config.mode == ExecutionMode.BLANK:
+            self.logger.info("🔄 Blank mode: Skipping actual feature engineering")
+            artifacts['feature_files'] = ['features_data.parquet']
+            artifacts['features_added'] = ['price_returns', 'volume_returns']
+            return artifacts
+        
+        try:
+            # Load prepared data
+            prepared_file = os.path.join(config.data_dir, f"prepared_{config.exchange}_{config.symbol}_{config.timeframe}.parquet")
+            if not os.path.exists(prepared_file):
+                # Fallback to unified data if prepared data doesn't exist
+                prepared_file = os.path.join(config.data_dir, f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet")
+            
+            if os.path.exists(prepared_file):
+                df = standardized_parquet_handler.read_parquet_standardized(prepared_file)
+                
+                # Create features DataFrame
+                features_df = df.copy()
+                
+                # Add limited feature engineering: price returns and volume returns
+                features_added = []
+                
+                # Price returns (if close price exists)
+                if 'close' in df.columns:
+                    features_df['price_returns'] = df['close'].pct_change()
+                    features_added.append('price_returns')
+                    self.logger.info("✅ Added price returns feature")
+                
+                # Volume returns (if volume exists)
+                if 'volume' in df.columns:
+                    features_df['volume_returns'] = df['volume'].pct_change()
+                    features_added.append('volume_returns')
+                    self.logger.info("✅ Added volume returns feature")
+                
+                # Handle infinite values in returns
+                for feature in features_added:
+                    if feature in features_df.columns:
+                        # Replace infinite values with NaN
+                        features_df[feature] = features_df[feature].replace([np.inf, -np.inf], np.nan)
+                        # Fill NaN values with 0 (first row will be NaN due to pct_change)
+                        features_df[feature] = features_df[feature].fillna(0)
+                
+                # Save features data
+                features_file = f"features_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
+                features_path = os.path.join(config.data_dir, features_file)
+                standardized_parquet_handler.write_parquet_standardized(features_df, features_path, index=False)
+                
+                artifacts['feature_files'].append(features_file)
+                artifacts['features_added'] = features_added
+                artifacts['feature_stats'] = {
+                    'input_rows': len(df),
+                    'output_rows': len(features_df),
+                    'features_count': len(features_added),
+                    'columns_added': len(features_df.columns) - len(df.columns)
+                }
+                
+                self.logger.info(f"✅ Feature engineering completed: {len(features_added)} features added")
+            else:
+                self.logger.warning(f"⚠️ No prepared data found at {prepared_file}")
+                artifacts['feature_stats'] = {'error': 'No prepared data found'}
+        
+        except Exception as e:
+            self.logger.exception(f"❌ Error in feature engineering pipeline: {e}")
+            artifacts['feature_stats'] = {'error': str(e)}
+        
+        return artifacts
+    
     def _add_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add basic technical indicators to the dataframe."""
         try:
@@ -958,6 +1039,128 @@ class DataCollectionSubPipeline:
             return 0.5
     
     @log_important_calls
+    async def _data_integration_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Data integration sub-pipeline - integrates multiple data sources with backwards compatibility."""
+        self.logger.info("🔗 Executing data integration pipeline")
+        
+        artifacts = {
+            'integrated_files': [],
+            'integration_stats': {},
+            'sources_integrated': []
+        }
+        
+        if config.mode == ExecutionMode.BLANK:
+            self.logger.info("🔄 Blank mode: Skipping actual integration")
+            artifacts['integrated_files'] = ['integrated_data.parquet']
+            artifacts['sources_integrated'] = ['unified', 'features']
+            return artifacts
+        
+        try:
+            # Define data sources to integrate (backwards compatible)
+            data_sources = {
+                'unified': f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
+                'features': f"features_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
+                'prepared': f"prepared_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
+                'gap_filled': f"gap_filled_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
+            }
+            
+            # Load base data (unified data as primary source)
+            base_file = os.path.join(config.data_dir, data_sources['unified'])
+            if not os.path.exists(base_file):
+                self.logger.warning(f"⚠️ Base unified data not found at {base_file}")
+                artifacts['integration_stats'] = {'error': 'Base unified data not found'}
+                return artifacts
+            
+            # Load base DataFrame
+            integrated_df = standardized_parquet_handler.read_parquet_standardized(base_file)
+            sources_integrated = ['unified']
+            self.logger.info(f"📊 Loaded base data: {len(integrated_df)} rows, {len(integrated_df.columns)} columns")
+            
+            # Integrate additional data sources
+            for source_name, file_name in data_sources.items():
+                if source_name == 'unified':
+                    continue  # Skip base source
+                
+                source_file = os.path.join(config.data_dir, file_name)
+                if os.path.exists(source_file):
+                    try:
+                        source_df = standardized_parquet_handler.read_parquet_standardized(source_file)
+                        
+                        # Find common index/identifier for merging
+                        merge_key = None
+                        if 'datetime' in integrated_df.columns and 'datetime' in source_df.columns:
+                            merge_key = 'datetime'
+                        elif 'timestamp' in integrated_df.columns and 'timestamp' in source_df.columns:
+                            merge_key = 'timestamp'
+                        elif integrated_df.index.name and source_df.index.name:
+                            merge_key = None  # Use index
+                        
+                        if merge_key or (integrated_df.index.name and source_df.index.name):
+                            # Merge on common key
+                            if merge_key:
+                                # Merge on datetime/timestamp column
+                                integrated_df = pd.merge(
+                                    integrated_df, 
+                                    source_df, 
+                                    on=merge_key, 
+                                    how='left', 
+                                    suffixes=('', f'_{source_name}')
+                                )
+                            else:
+                                # Merge on index
+                                integrated_df = integrated_df.join(
+                                    source_df, 
+                                    how='left', 
+                                    rsuffix=f'_{source_name}'
+                                )
+                            
+                            sources_integrated.append(source_name)
+                            self.logger.info(f"✅ Integrated {source_name} data: {len(source_df)} rows")
+                        else:
+                            self.logger.warning(f"⚠️ No common key found for {source_name} integration")
+                    
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to integrate {source_name}: {e}")
+                        continue
+                else:
+                    self.logger.debug(f"📁 {source_name} data not found at {source_file}")
+            
+            # Clean up duplicate columns (keep original, remove suffixed versions)
+            columns_to_drop = []
+            for col in integrated_df.columns:
+                if '_' in col and any(col.endswith(f'_{source}') for source in sources_integrated if source != 'unified'):
+                    # Check if we have the original column
+                    original_col = col.rsplit('_', 1)[0]
+                    if original_col in integrated_df.columns:
+                        columns_to_drop.append(col)
+            
+            if columns_to_drop:
+                integrated_df = integrated_df.drop(columns=columns_to_drop)
+                self.logger.info(f"🧹 Cleaned up {len(columns_to_drop)} duplicate columns")
+            
+            # Save integrated data
+            integrated_file = f"integrated_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
+            integrated_path = os.path.join(config.data_dir, integrated_file)
+            standardized_parquet_handler.write_parquet_standardized(integrated_df, integrated_path, index=False)
+            
+            artifacts['integrated_files'].append(integrated_file)
+            artifacts['sources_integrated'] = sources_integrated
+            artifacts['integration_stats'] = {
+                'input_sources': len(sources_integrated),
+                'output_rows': len(integrated_df),
+                'output_columns': len(integrated_df.columns),
+                'columns_added': len(integrated_df.columns) - len(standardized_parquet_handler.read_parquet_standardized(base_file).columns)
+            }
+            
+            self.logger.info(f"✅ Data integration completed: {len(sources_integrated)} sources, {len(integrated_df)} rows, {len(integrated_df.columns)} columns")
+        
+        except Exception as e:
+            self.logger.exception(f"❌ Error in data integration pipeline: {e}")
+            artifacts['integration_stats'] = {'error': str(e)}
+        
+        return artifacts
+    
+    @log_important_calls
     async def _data_storage_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data storage sub-pipeline."""
         self.logger.info("💾 Executing data storage pipeline")
@@ -982,7 +1185,9 @@ class DataCollectionSubPipeline:
             processed_files = [
                 f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
                 f"prepared_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
-                f"gap_filled_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
+                f"features_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
+                f"gap_filled_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
+                f"integrated_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
             ]
             
             stored_count = 0
@@ -1186,9 +1391,11 @@ async def execute_full_data_collection_pipeline(
         'data_conversion', 
         'data_validation',
         'data_preparation',
+        'feature_engineering',
         'data_resampling',
         'gap_filling',
         'data_quality_check',
+        'data_integration',
         'data_storage',
         'data_monitoring',
         'data_export'

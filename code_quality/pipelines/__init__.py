@@ -18,6 +18,7 @@ from .code_graph_pipeline import CodeGraphPipeline, run_code_graph_analysis
 from .complexity_analysis_pipeline import ComplexityAnalysisPipeline, run_complexity_analysis
 from .auto_fixer_pipeline import AutoFixerPipeline, run_auto_fixer
 from .function_import_analysis_pipeline import FunctionImportAnalysisPipeline, run_function_import_analysis
+from .simple_plugin_pipeline import SimplePluginPipeline, run_simple_plugin_discovery
 
 __all__ = [
     # Base classes
@@ -37,6 +38,7 @@ __all__ = [
     "ComplexityAnalysisPipeline",
     "AutoFixerPipeline",
     "FunctionImportAnalysisPipeline",
+    "SimplePluginPipeline",
     
     # Convenience functions
     "run_syntax_validation",
@@ -46,5 +48,6 @@ __all__ = [
     "run_code_graph_analysis",
     "run_complexity_analysis",
     "run_auto_fixer",
-    "run_function_import_analysis"
+    "run_function_import_analysis",
+    "run_simple_plugin_discovery"
 ]

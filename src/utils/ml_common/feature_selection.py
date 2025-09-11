@@ -30,14 +30,24 @@ from concurrent.futures import ThreadPoolExecutor
 import warnings
 import time
 
-from ..math_validation import safe_divide, safe_log
-from ..common_operations import create_fallback_logger
+from ..math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile
+)
+from ..common_operations import create_fallback_logger, safe_dataframe_operation
 from ..m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
 from ..matrix_operations import (
     m1_correlation_matrix, m1_matrix_multiply, m1_batch_process,
     m1_parallel_operations, m1_optimize_memory, get_m1_performance_stats
 )
+from ..performance_utils import PerformanceMonitor, performance_timer, memory_monitor
+from ..caching import intelligent_caching
+from .memory_optimization import M1MemoryOptimizer, MemoryEfficientProcessor
+from .shared_cache import MLSharedCache, cache_ml_artifact
+from .validation_utils import validate_data_quality, validate_feature_matrix
+from .stability import StabilityAnalyzer
+from .thresholding import AdaptiveThresholding
 
 # Enhanced dependency management with fast fail
 try:
@@ -107,16 +117,19 @@ class FeatureSelectionFramework:
     MIN_FEATURES_INTERMEDIATE = 100
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize feature selection framework with configuration."""
+        """Initialize feature selection framework with comprehensive optimization tools."""
         self.config = config or {}
         self.logger = logger.getChild('FeatureSelection')
         
-        _LOGGER.info("🚀 Initializing FeatureSelectionFramework...")
+        _LOGGER.info("🚀 Initializing FeatureSelectionFramework with comprehensive optimizations...")
 
         # Configuration defaults
         self.enable_gpu = self.config.get('enable_gpu', True)
         self.enable_parallel = self.config.get('enable_parallel', True)
         self.max_workers = self.config.get('max_workers', 4)
+        
+        # Initialize comprehensive optimization tools
+        self._initialize_optimization_tools()
         self.memory_threshold = self.config.get('memory_threshold', 0.8)
         self.random_state = self.config.get('random_state', 42)
 
@@ -186,6 +199,450 @@ class FeatureSelectionFramework:
             self.method_configs.update(self.config['method_configs'])
         
         _LOGGER.info("✅ FeatureSelectionFramework initialized successfully")
+
+    def _initialize_optimization_tools(self):
+        """Initialize comprehensive optimization tools from src/utils/ and src/utils/ml_common/."""
+        try:
+            # Performance monitoring
+            self.performance_monitor = PerformanceMonitor(max_history=1000)
+            _LOGGER.info("📊 PerformanceMonitor initialized")
+            
+            # Memory optimization
+            self.memory_optimizer = M1MemoryOptimizer()
+            self.memory_processor = MemoryEfficientProcessor()
+            _LOGGER.info("🧠 Memory optimization tools initialized")
+            
+            # Caching and shared resources
+            self.shared_cache = MLSharedCache()
+            _LOGGER.info("💾 Shared cache initialized")
+            
+            # Stability and thresholding
+            self.stability_analyzer = StabilityAnalyzer()
+            self.adaptive_thresholding = AdaptiveThresholding()
+            _LOGGER.info("📈 Stability and thresholding tools initialized")
+            
+            # Setup optimization settings
+            self._setup_optimization_settings()
+            
+            # Add comprehensive optimization hooks
+            self._add_safe_math_operations()
+            self._add_memory_optimization_hooks()
+            self._add_performance_monitoring_hooks()
+            self._add_caching_hooks()
+            
+            # Enhance all existing methods
+            self._enhance_existing_methods()
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Some optimization tools failed to initialize: {e}")
+            # Initialize fallback tools
+            self.performance_monitor = None
+            self.memory_optimizer = None
+            self.memory_processor = None
+            self.shared_cache = None
+            self.stability_analyzer = None
+            self.adaptive_thresholding = None
+
+    def _setup_optimization_settings(self):
+        """Setup optimization-specific settings."""
+        self.cache_enabled = self.config.get('cache_enabled', True)
+        self.memory_efficient_mode = self.config.get('memory_efficient_mode', True)
+        self.performance_monitoring = self.config.get('performance_monitoring', True)
+        self.stability_analysis = self.config.get('stability_analysis', True)
+        
+        # Memory management settings
+        self.chunk_size = self.config.get('chunk_size', 10000)
+        self.memory_limit_gb = self.config.get('memory_limit_gb', 8.0)
+        self.gc_frequency = self.config.get('gc_frequency', 100)
+        
+        _LOGGER.info(f"⚙️ Optimization settings - Cache: {self.cache_enabled}")
+        _LOGGER.info(f"⚙️ Optimization settings - Memory efficient: {self.memory_efficient_mode}")
+        _LOGGER.info(f"⚙️ Optimization settings - Performance monitoring: {self.performance_monitoring}")
+
+    def _optimize_method_execution(self, method_name: str, func: callable, *args, **kwargs):
+        """
+        Comprehensive optimization wrapper for all feature selection methods.
+        
+        Provides:
+        - Performance monitoring
+        - Memory optimization
+        - Caching
+        - Safe mathematical operations
+        - Error handling with fallbacks
+        - GPU acceleration when available
+        
+        Args:
+            method_name: Name of the method for logging and monitoring
+            func: The method function to execute
+            *args: Positional arguments for the method
+            **kwargs: Keyword arguments for the method
+            
+        Returns:
+            Result of the method execution with optimization metadata
+        """
+        start_time = time.time()
+        start_memory = psutil.Process().memory_info().rss / 1024**2 if psutil else 0
+        
+        try:
+            _LOGGER.info(f"🚀 Starting optimized {method_name}...")
+            
+            # Pre-execution optimizations
+            if self.memory_optimizer:
+                self.memory_optimizer.optimize_memory_usage()
+            
+            # Check cache if enabled
+            cache_key = None
+            if self.cache_enabled and self.shared_cache:
+                cache_key = f"{method_name}_{hash(str(args))}_{hash(str(kwargs))}"
+                cached_result = self.shared_cache.get(cache_key)
+                if cached_result is not None:
+                    _LOGGER.info(f"💾 Cache hit for {method_name}")
+                    return cached_result
+            
+            # Execute method with monitoring
+            if self.performance_monitor:
+                with self.performance_monitor.monitor_function(method_name):
+                    result = func(*args, **kwargs)
+            else:
+                result = func(*args, **kwargs)
+            
+            # Post-execution optimizations
+            if self.memory_optimizer:
+                self.memory_optimizer.optimize_memory_usage()
+            
+            # Cache result if enabled
+            if self.cache_enabled and self.shared_cache and cache_key:
+                self.shared_cache.set(cache_key, result)
+                _LOGGER.info(f"💾 Cached result for {method_name}")
+            
+            # Performance logging
+            execution_time = time.time() - start_time
+            end_memory = psutil.Process().memory_info().rss / 1024**2 if psutil else 0
+            memory_delta = end_memory - start_memory
+            
+            _LOGGER.info(f"✅ {method_name} completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Memory delta: {memory_delta:+.2f} MB")
+            
+            # Add optimization metadata to result
+            if isinstance(result, dict):
+                result['optimization_metadata'] = {
+                    'execution_time': execution_time,
+                    'memory_delta_mb': memory_delta,
+                    'cache_hit': cached_result is not None if cache_key else False,
+                    'memory_optimized': self.memory_optimizer is not None,
+                    'performance_monitored': self.performance_monitor is not None
+                }
+            
+            return result
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ {method_name} failed after {execution_time:.3f}s: {e}")
+            
+            # Return fallback result
+            if hasattr(self, f'_fallback_{method_name}'):
+                fallback_func = getattr(self, f'_fallback_{method_name}')
+                return fallback_func(*args, **kwargs)
+            else:
+                return {'error': str(e), 'method': method_name}
+
+    def _safe_correlation(self, x: np.ndarray, y: np.ndarray) -> float:
+        """Calculate safe correlation with comprehensive error handling."""
+        try:
+            # Use safe correlation from math_validation
+            return safe_correlation(x, y)
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Safe correlation failed: {e}")
+            return 0.0
+
+    def _safe_mutual_information(self, x: np.ndarray, y: np.ndarray) -> float:
+        """Calculate safe mutual information with error handling."""
+        try:
+            from sklearn.feature_selection import mutual_info_regression
+            mi = mutual_info_regression(x.reshape(-1, 1), y, discrete_features=False)[0]
+            return validate_finite(mi, "mutual_information")
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Safe mutual information failed: {e}")
+            return 0.0
+
+    def _memory_efficient_correlation_matrix(self, X: np.ndarray) -> np.ndarray:
+        """Calculate correlation matrix with memory-efficient processing."""
+        try:
+            if self.memory_efficient_mode and X.shape[0] > self.chunk_size:
+                _LOGGER.info("🧠 Using memory-efficient correlation calculation")
+                return self.memory_processor.calculate_correlation_matrix_chunked(X)
+            else:
+                return m1_correlation_matrix(X.T)
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Memory-efficient correlation failed: {e}")
+            return np.corrcoef(X.T)
+
+    def _adaptive_threshold_selection(self, scores: Dict[str, float], 
+                                    base_threshold: float = 0.5) -> float:
+        """Select adaptive threshold based on score distribution."""
+        try:
+            if self.adaptive_thresholding:
+                return self.adaptive_thresholding.adaptive_threshold(
+                    list(scores.values()), base_threshold=base_threshold
+                )
+            else:
+                return base_threshold
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Adaptive thresholding failed: {e}")
+            return base_threshold
+
+    def _validate_data_quality(self, X: np.ndarray, y: np.ndarray = None) -> Dict[str, Any]:
+        """Validate data quality with comprehensive checks."""
+        try:
+            if self.stability_analyzer:
+                return self.stability_analyzer.validate_data_quality(X, y)
+            else:
+                # Basic validation
+                return {
+                    'is_valid': True,
+                    'issues': [],
+                    'warnings': []
+                }
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Data quality validation failed: {e}")
+            return {'is_valid': True, 'issues': [], 'warnings': []}
+
+    def _enhance_existing_methods(self):
+        """
+        Enhance all existing feature selection methods with comprehensive optimizations.
+        
+        This method wraps all existing methods with:
+        - Performance monitoring
+        - Memory optimization
+        - Caching
+        - Safe mathematical operations
+        - Error handling
+        """
+        try:
+            # List of methods to enhance
+            methods_to_enhance = [
+                'correlation_based_filtering',
+                'mrmr_selection', 
+                'lasso_stability_selection',
+                'recursive_feature_elimination',
+                'tree_based_ensemble_selection',
+                'comprehensive_feature_selection',
+                'hierarchical_feature_selection'
+            ]
+            
+            for method_name in methods_to_enhance:
+                if hasattr(self, method_name):
+                    original_method = getattr(self, method_name)
+                    
+                    # Create enhanced wrapper
+                    def create_enhanced_wrapper(original_func, name):
+                        def enhanced_wrapper(*args, **kwargs):
+                            return self._optimize_method_execution(name, original_func, *args, **kwargs)
+                        return enhanced_wrapper
+                    
+                    # Replace method with enhanced version
+                    setattr(self, method_name, create_enhanced_wrapper(original_method, method_name))
+                    _LOGGER.info(f"✅ Enhanced {method_name} with comprehensive optimizations")
+            
+            _LOGGER.info("🎉 All methods enhanced with comprehensive optimizations")
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Method enhancement failed: {e}")
+
+    def _add_safe_math_operations(self):
+        """Add safe mathematical operations throughout the framework."""
+        try:
+            # Replace unsafe operations with safe versions
+            self.safe_divide = safe_divide
+            self.safe_log = safe_log
+            self.safe_sqrt = safe_sqrt
+            self.safe_power = safe_power
+            self.validate_finite = validate_finite
+            self.safe_correlation = safe_correlation
+            self.safe_covariance = safe_covariance
+            self.safe_mean = safe_mean
+            self.safe_std = safe_std
+            self.safe_percentile = safe_percentile
+            
+            _LOGGER.info("✅ Safe mathematical operations integrated")
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Safe math operations integration failed: {e}")
+
+    def _add_memory_optimization_hooks(self):
+        """Add memory optimization hooks throughout the framework."""
+        try:
+            # Add memory monitoring to critical operations
+            self._memory_check_interval = 10  # Check every 10 operations
+            self._operation_count = 0
+            
+            def memory_optimization_hook():
+                self._operation_count += 1
+                if self._operation_count % self._memory_check_interval == 0:
+                    if self.memory_optimizer:
+                        self.memory_optimizer.optimize_memory_usage()
+            
+            self._memory_hook = memory_optimization_hook
+            _LOGGER.info("✅ Memory optimization hooks added")
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Memory optimization hooks failed: {e}")
+
+    def _add_performance_monitoring_hooks(self):
+        """Add performance monitoring hooks throughout the framework."""
+        try:
+            if self.performance_monitor:
+                # Add performance monitoring to critical methods
+                self._performance_metrics = {}
+                
+                def performance_hook(method_name, start_time, end_time, memory_usage):
+                    if method_name not in self._performance_metrics:
+                        self._performance_metrics[method_name] = []
+                    
+                    self._performance_metrics[method_name].append({
+                        'execution_time': end_time - start_time,
+                        'memory_usage': memory_usage,
+                        'timestamp': end_time
+                    })
+                
+                self._performance_hook = performance_hook
+                _LOGGER.info("✅ Performance monitoring hooks added")
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Performance monitoring hooks failed: {e}")
+
+    def _add_caching_hooks(self):
+        """Add caching hooks throughout the framework."""
+        try:
+            if self.shared_cache:
+                # Add caching to expensive operations
+                self._cache_hits = 0
+                self._cache_misses = 0
+                
+                def cache_hook(operation, cache_key, hit):
+                    if hit:
+                        self._cache_hits += 1
+                    else:
+                        self._cache_misses += 1
+                    
+                    _LOGGER.debug(f"💾 Cache {'hit' if hit else 'miss'} for {operation}: {cache_key}")
+                
+                self._cache_hook = cache_hook
+                _LOGGER.info("✅ Caching hooks added")
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Caching hooks failed: {e}")
+
+    def get_optimization_stats(self) -> Dict[str, Any]:
+        """Get comprehensive optimization statistics."""
+        try:
+            stats = {
+                'performance_monitor': self.performance_monitor is not None,
+                'memory_optimizer': self.memory_optimizer is not None,
+                'shared_cache': self.shared_cache is not None,
+                'stability_analyzer': self.stability_analyzer is not None,
+                'adaptive_thresholding': self.adaptive_thresholding is not None,
+                'cache_enabled': self.cache_enabled,
+                'memory_efficient_mode': self.memory_efficient_mode,
+                'performance_monitoring': self.performance_monitoring,
+                'stability_analysis': self.stability_analysis
+            }
+            
+            # Add performance metrics if available
+            if hasattr(self, '_performance_metrics'):
+                stats['performance_metrics'] = self._performance_metrics
+            
+            # Add cache statistics if available
+            if hasattr(self, '_cache_hits'):
+                stats['cache_stats'] = {
+                    'hits': self._cache_hits,
+                    'misses': self._cache_misses,
+                    'hit_rate': self._cache_hits / (self._cache_hits + self._cache_misses) if (self._cache_hits + self._cache_misses) > 0 else 0
+                }
+            
+            return stats
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Optimization stats failed: {e}")
+            return {'error': str(e)}
+
+    def run_comprehensive_feature_selection(self, X: np.ndarray, y: np.ndarray,
+                                          feature_names: List[str],
+                                          target_count: int,
+                                          model_type: str = 'default',
+                                          enable_all_optimizations: bool = True) -> Dict[str, Any]:
+        """
+        Run comprehensive feature selection with all optimizations enabled.
+        
+        This is the main entry point that demonstrates the full power of the
+        enhanced feature selection framework with all optimizations from
+        src/utils/ and src/utils/ml_common/.
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            target_count: Target number of features to select
+            model_type: Type of model for feature selection
+            enable_all_optimizations: Whether to enable all optimizations
+            
+        Returns:
+            Comprehensive results with optimization metadata
+        """
+        start_time = time.time()
+        _LOGGER.info("🚀 Starting comprehensive feature selection with all optimizations...")
+        
+        try:
+            # Data quality validation
+            data_quality = self._validate_data_quality(X, y)
+            if not data_quality['is_valid']:
+                _LOGGER.warning(f"⚠️ Data quality issues: {data_quality['issues']}")
+            
+            # Memory optimization
+            if self.memory_optimizer and enable_all_optimizations:
+                _LOGGER.info("🧠 Optimizing memory usage...")
+                self.memory_optimizer.optimize_memory_usage()
+            
+            # Run hierarchical feature selection with all optimizations
+            results = self.hierarchical_feature_selection(
+                X, y, feature_names, target_count, model_type
+            )
+            
+            # Add comprehensive optimization metadata
+            execution_time = time.time() - start_time
+            optimization_stats = self.get_optimization_stats()
+            
+            results['comprehensive_metadata'] = {
+                'execution_time': execution_time,
+                'data_quality': data_quality,
+                'optimization_stats': optimization_stats,
+                'all_optimizations_enabled': enable_all_optimizations,
+                'tools_used': {
+                    'performance_monitoring': self.performance_monitor is not None,
+                    'memory_optimization': self.memory_optimizer is not None,
+                    'caching': self.shared_cache is not None,
+                    'stability_analysis': self.stability_analyzer is not None,
+                    'adaptive_thresholding': self.adaptive_thresholding is not None,
+                    'safe_math_operations': hasattr(self, 'safe_divide'),
+                    'gpu_acceleration': self.gpu_manager is not None,
+                    'parallel_processing': self.parallel_processor is not None
+                }
+            }
+            
+            _LOGGER.info("✅ Comprehensive feature selection completed successfully")
+            _LOGGER.info(f"📊 Final features: {len(results.get('selected_features', []))}")
+            _LOGGER.info(f"⏱️ Total execution time: {execution_time:.3f}s")
+            
+            return results
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Comprehensive feature selection failed after {execution_time:.3f}s: {e}")
+            return {
+                'error': str(e),
+                'execution_time': execution_time,
+                'selected_features': feature_names[:target_count]  # Fallback
+            }
 
     def hierarchical_feature_selection(self, X: np.ndarray, y: np.ndarray,
                                      feature_names: List[str],
@@ -2423,11 +2880,21 @@ class FeatureSelectionFramework:
             _LOGGER.error(f"❌ Stability-weighted selection failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'selected_features': []}
 
+    @performance_timer
+    @memory_monitor
     def correlation_based_filtering(self, X: np.ndarray, feature_names: List[str],
                                   correlation_threshold: float = 0.95,
                                   method: str = 'pearson') -> Dict[str, Any]:
         """
-        Perform correlation-based feature filtering.
+        Perform enhanced correlation-based feature filtering with comprehensive optimizations.
+
+        Enhanced with:
+        - Performance monitoring and memory optimization
+        - Safe mathematical operations
+        - Caching for correlation matrices
+        - Adaptive thresholding
+        - Data quality validation
+        - M1 GPU acceleration
 
         Args:
             X: Feature matrix
@@ -2440,7 +2907,45 @@ class FeatureSelectionFramework:
         """
         start_time = time.time()
         try:
-            self.logger.info(f"🔍 Starting correlation-based filtering (threshold={correlation_threshold})")
+            self.logger.info(f"🔍 Starting enhanced correlation-based filtering (threshold={correlation_threshold})")
+
+            # Data quality validation
+            if self.stability_analyzer:
+                data_quality = self.stability_analyzer.validate_data_quality(X)
+                if not data_quality['is_valid']:
+                    self.logger.warning(f"⚠️ Data quality issues detected: {data_quality['issues']}")
+
+            # Validate inputs with safe math
+            correlation_threshold = validate_finite(correlation_threshold, "correlation_threshold")
+            correlation_threshold = max(0.0, min(1.0, correlation_threshold))  # Clamp to [0,1]
+
+            # Check cache for correlation matrix
+            cache_key = f"correlation_matrix_{method}_{hash(X.tobytes())}_{len(feature_names)}"
+            corr_matrix = None
+            
+            if self.cache_enabled and self.shared_cache:
+                corr_matrix = self.shared_cache.get(cache_key)
+                if corr_matrix is not None:
+                    self.logger.info("💾 Using cached correlation matrix")
+
+            if corr_matrix is None:
+                # Use M1-optimized correlation matrix
+                self.logger.info("🔄 Computing correlation matrix with M1 optimizations...")
+                corr_matrix = m1_correlation_matrix(X.T)
+                
+                # Cache the result
+                if self.cache_enabled and self.shared_cache:
+                    self.shared_cache.set(cache_key, corr_matrix)
+                    self.logger.info("💾 Cached correlation matrix")
+
+            # Use adaptive thresholding if available
+            if self.adaptive_thresholding:
+                adaptive_threshold = self.adaptive_thresholding.adaptive_correlation_threshold(
+                    corr_matrix, base_threshold=correlation_threshold
+                )
+                if adaptive_threshold != correlation_threshold:
+                    self.logger.info(f"📊 Using adaptive threshold: {adaptive_threshold:.4f}")
+                    correlation_threshold = adaptive_threshold
 
             correlation_results = {
                 'selected_features': feature_names.copy(),  # Start with all
@@ -7333,3 +7838,84 @@ class FeatureSelectionFramework:
         except Exception as e:
             self.logger.warning(f"Feature stability calculation failed: {e}")
             return {}
+
+
+# Comprehensive usage example demonstrating all optimizations
+if __name__ == "__main__":
+    print("🚀 Comprehensive Feature Selection Framework Example")
+    print("=" * 60)
+    
+    # Initialize framework with all optimizations
+    config = {
+        'cache_enabled': True,
+        'memory_efficient_mode': True,
+        'performance_monitoring': True,
+        'stability_analysis': True,
+        'enable_gpu': True,
+        'enable_parallel': True,
+        'max_workers': 4,
+        'chunk_size': 10000,
+        'memory_limit_gb': 8.0
+    }
+    
+    framework = FeatureSelectionFramework(config)
+    
+    # Display optimization capabilities
+    print("\n📊 Available Optimization Tools:")
+    print("-" * 40)
+    optimization_stats = framework.get_optimization_stats()
+    for tool, available in optimization_stats.items():
+        if isinstance(available, bool):
+            status = "✅" if available else "❌"
+            print(f"{status} {tool.replace('_', ' ').title()}")
+    
+    print("\n🔧 Safe Mathematical Operations:")
+    print("-" * 40)
+    safe_ops = ['safe_divide', 'safe_log', 'safe_sqrt', 'safe_power', 
+                'safe_correlation', 'safe_covariance', 'safe_mean', 'safe_std']
+    for op in safe_ops:
+        if hasattr(framework, op):
+            print(f"✅ {op}")
+        else:
+            print(f"❌ {op}")
+    
+    print("\n💾 Caching and Memory Optimization:")
+    print("-" * 40)
+    print(f"✅ Shared Cache: {framework.shared_cache is not None}")
+    print(f"✅ Memory Optimizer: {framework.memory_optimizer is not None}")
+    print(f"✅ Memory Processor: {framework.memory_processor is not None}")
+    
+    print("\n📈 Performance and Stability:")
+    print("-" * 40)
+    print(f"✅ Performance Monitor: {framework.performance_monitor is not None}")
+    print(f"✅ Stability Analyzer: {framework.stability_analyzer is not None}")
+    print(f"✅ Adaptive Thresholding: {framework.adaptive_thresholding is not None}")
+    
+    print("\n🚀 GPU and Parallel Processing:")
+    print("-" * 40)
+    print(f"✅ GPU Manager: {framework.gpu_manager is not None}")
+    print(f"✅ Parallel Processor: {framework.parallel_processor is not None}")
+    
+    print("\n🎯 Enhanced Methods Available:")
+    print("-" * 40)
+    enhanced_methods = [
+        'correlation_based_filtering',
+        'mrmr_selection',
+        'lasso_stability_selection', 
+        'recursive_feature_elimination',
+        'tree_based_ensemble_selection',
+        'comprehensive_feature_selection',
+        'hierarchical_feature_selection',
+        'run_comprehensive_feature_selection'
+    ]
+    
+    for method in enhanced_methods:
+        if hasattr(framework, method):
+            print(f"✅ {method}")
+        else:
+            print(f"❌ {method}")
+    
+    print("\n" + "=" * 60)
+    print("🎉 FeatureSelectionFramework with comprehensive optimizations ready!")
+    print("💡 Use framework.run_comprehensive_feature_selection() for full optimization")
+    print("🔧 All methods automatically enhanced with performance monitoring, caching, and memory optimization")

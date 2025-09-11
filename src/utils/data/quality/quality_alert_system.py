@@ -19,7 +19,6 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 from ..advanced_ml_validation import Alert, AlertConfig, MLValidationResult
-from ..logger import system_logger
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText

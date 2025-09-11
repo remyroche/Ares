@@ -257,8 +257,9 @@ Examples:
     )
     
     parser.add_argument(
-        'path',
-        help='File or directory to process'
+        'paths',
+        nargs='+',
+        help='File(s) or directory to process'
     )
     
     parser.add_argument(
@@ -274,11 +275,12 @@ Examples:
     
     args = parser.parse_args()
     
-    # Validate path
-    path = Path(args.path)
-    if not path.exists():
-        print(f"❌ Path does not exist: {path}")
-        sys.exit(1)
+    # Validate paths
+    paths = [Path(p) for p in args.paths]
+    for path in paths:
+        if not path.exists():
+            print(f"❌ Path does not exist: {path}")
+            sys.exit(1)
     
     # Create migrator
     migrator = PrintToTPrintMigrator(
@@ -297,8 +299,9 @@ Examples:
     
     print()
     
-    # Process the path
-    migrator.process_path(path)
+    # Process all paths
+    for path in paths:
+        migrator.process_path(path)
     
     # Print summary
     migrator.print_summary()

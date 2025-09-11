@@ -96,6 +96,15 @@ from .fractional_differentiation_pipeline import (
     FractionalDiffConfig
 )
 
+from .feature_generation_optimization import (
+    FeatureGenerationOptimizer,
+    FeatureOptimizationConfig,
+    FeatureOptimizationResult,
+    OptimizationMethod,
+    get_feature_optimizer,
+    optimize_feature_lookback
+)
+
 __all__ = [
     # Utility container
     'Step06UtilityContainer',
@@ -131,7 +140,15 @@ __all__ = [
     
     # Fractional differentiation
     'FractionalDifferentiationPipeline',
-    'FractionalDiffConfig'
+    'FractionalDiffConfig',
+    
+    # Feature generation optimization
+    'FeatureGenerationOptimizer',
+    'FeatureOptimizationConfig',
+    'FeatureOptimizationResult',
+    'OptimizationMethod',
+    'get_feature_optimizer',
+    'optimize_feature_lookback'
 ]
 
 __version__ = "1.0.0"

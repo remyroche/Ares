@@ -89,7 +89,7 @@ def test_configuration():
     configs = [
         ("Simple Format", TPrintConfig(timestamp_format=TimestampFormat.SIMPLE)),
         ("Detailed Format", TPrintConfig(timestamp_format=TimestampFormat.DETAILED)),
-        ("With Microseconds", TPrintConfig(timestamp_format=TimestampFormat.WITH_MICROSECONDS)),
+        ("With Microseconds (Default)", TPrintConfig(timestamp_format=TimestampFormat.WITH_MICROSECONDS)),
         ("ISO Format", TPrintConfig(timestamp_format=TimestampFormat.ISO)),
     ]
     
@@ -109,28 +109,32 @@ def test_file_logging():
     
     log_file = Path("test_tprint.log")
     
-    # Configure for file logging
+    # Configure for file logging with single file per run
     config = TPrintConfig(
         output_to_file=True,
         output_file=log_file,
         output_to_console=True,
-        timestamp_format=TimestampFormat.DETAILED
+        single_file_per_run=True,
+        timestamp_format=TimestampFormat.WITH_MICROSECONDS
     )
     
     with tprint_context(config):
         tprint("This message should appear in both console and file")
-        tprint_info("File logging test")
+        tprint_info("File logging test with single file per run")
         tprint_warning("Warning in file")
         tprint_error("Error in file")
     
     # Check if file was created and has content
-    if log_file.exists():
-        print(f"\nLog file created: {log_file}")
+    # The actual filename will have a run ID appended
+    log_files = list(Path(".").glob("test_tprint_*.log"))
+    if log_files:
+        actual_log_file = log_files[0]
+        print(f"\nLog file created: {actual_log_file}")
         print("File contents:")
-        with open(log_file, 'r') as f:
+        with open(actual_log_file, 'r') as f:
             print(f.read())
         # Clean up
-        log_file.unlink()
+        actual_log_file.unlink()
     else:
         print("Warning: Log file was not created")
 
@@ -207,27 +211,35 @@ def test_batch_logging():
     tprint_batch(messages)
 
 
-def test_thread_safety():
-    """Test thread safety."""
+def test_single_file_per_run():
+    """Test single file per run functionality."""
     print("\n" + "=" * 80)
-    print("Testing Thread Safety")
+    print("Testing Single File Per Run")
     print("=" * 80)
     
-    def worker(thread_id):
-        for i in range(3):
-            tprint(f"Thread {thread_id} - Message {i}")
-            time.sleep(0.01)
+    log_file = Path("single_run_test.log")
     
-    threads = []
-    for i in range(3):
-        thread = threading.Thread(target=worker, args=(i,))
-        threads.append(thread)
-        thread.start()
+    # Test multiple runs with single file per run
+    for run_num in range(2):
+        config = TPrintConfig(
+            output_to_file=True,
+            output_file=log_file,
+            output_to_console=True,
+            single_file_per_run=True,
+            run_id=f"run_{run_num}"
+        )
+        
+        with tprint_context(config):
+            tprint(f"Run {run_num} - This should go to a unique file")
+            tprint_info(f"Run {run_num} - Info message")
     
-    for thread in threads:
-        thread.join()
-    
-    tprint("All threads completed")
+    # Check that multiple files were created
+    log_files = list(Path(".").glob("single_run_test_*.log"))
+    print(f"\nCreated {len(log_files)} log files:")
+    for log_file_path in log_files:
+        print(f"  - {log_file_path}")
+        # Clean up
+        log_file_path.unlink()
 
 
 def test_numba_compatibility():
@@ -305,7 +317,7 @@ def main():
         test_timer_context()
         test_decorator()
         test_batch_logging()
-        test_thread_safety()
+        test_single_file_per_run()
         test_numba_compatibility()
         test_log_level_filtering()
         test_performance()

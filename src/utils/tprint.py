@@ -86,9 +86,9 @@ class TPrintConfig:
     """Configuration for tprint functionality."""
     
     # Timestamp configuration
-    timestamp_format: TimestampFormat = TimestampFormat.DETAILED
+    timestamp_format: TimestampFormat = TimestampFormat.WITH_MICROSECONDS
     timezone: Optional[timezone] = None
-    include_microseconds: bool = False
+    include_microseconds: bool = True
     
     # Output configuration
     use_colors: bool = COLORAMA_AVAILABLE
@@ -98,18 +98,15 @@ class TPrintConfig:
     
     # Logging configuration
     min_log_level: LogLevel = LogLevel.DEBUG
-    enable_thread_safety: bool = True
-    buffer_size: int = 1000
     
     # Performance configuration
     enable_lazy_evaluation: bool = True
     cache_timestamps: bool = True
     timestamp_cache_duration: float = 0.001  # 1ms
     
-    # File logging configuration
-    max_file_size: int = 10 * 1024 * 1024  # 10MB
-    backup_count: int = 5
-    rotate_on_startup: bool = False
+    # File logging configuration - single file per run
+    single_file_per_run: bool = True
+    run_id: Optional[str] = None
     
     # Structured logging
     enable_structured_logging: bool = False
@@ -132,11 +129,10 @@ class TPrintConfig:
 
 
 class TPrintManager:
-    """Thread-safe manager for tprint functionality."""
+    """Manager for tprint functionality."""
     
     def __init__(self, config: Optional[TPrintConfig] = None):
         self.config = config or TPrintConfig()
-        self._lock = threading.Lock() if self.config.enable_thread_safety else None
         self._timestamp_cache: Dict[str, str] = {}
         self._last_timestamp_time = 0.0
         self._file_handle: Optional[TextIO] = None
@@ -148,8 +144,21 @@ class TPrintManager:
         if self.config.output_to_file and self.config.output_file:
             try:
                 log_file = Path(self.config.output_file)
+                
+                # If single file per run is enabled, add run ID to filename
+                if self.config.single_file_per_run:
+                    if not self.config.run_id:
+                        # Generate a unique run ID based on timestamp
+                        self.config.run_id = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
+                    
+                    # Add run ID to filename before extension
+                    if log_file.suffix:
+                        log_file = log_file.parent / f"{log_file.stem}_{self.config.run_id}{log_file.suffix}"
+                    else:
+                        log_file = log_file.parent / f"{log_file.name}_{self.config.run_id}.log"
+                
                 log_file.parent.mkdir(parents=True, exist_ok=True)
-                self._file_handle = open(log_file, 'a', encoding='utf-8')
+                self._file_handle = open(log_file, 'w', encoding='utf-8')  # 'w' for single file per run
             except Exception as e:
                 print(f"Warning: Could not open log file {self.config.output_file}: {e}")
     
@@ -188,11 +197,11 @@ class TPrintManager:
         elif self.config.timestamp_format == TimestampFormat.DETAILED:
             return now.strftime('%Y-%m-%d %H:%M:%S')
         elif self.config.timestamp_format == TimestampFormat.WITH_MICROSECONDS:
-            return now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Remove last 3 digits
+            return now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Remove last 3 digits for milliseconds
         elif self.config.timestamp_format == TimestampFormat.ISO:
             return now.isoformat()
         else:
-            return now.strftime('%Y-%m-%d %H:%M:%S')
+            return now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Default to microseconds
     
     def _should_log(self, level: LogLevel) -> bool:
         """Check if message should be logged based on level."""
@@ -250,14 +259,6 @@ class TPrintManager:
         if not self._should_log(level):
             return
         
-        if self._lock:
-            with self._lock:
-                self._log_unsafe(level, *args, **kwargs)
-        else:
-            self._log_unsafe(level, *args, **kwargs)
-    
-    def _log_unsafe(self, level: LogLevel, *args, **kwargs):
-        """Unsafe logging method (assumes thread safety handled externally)."""
         message = self._format_message(level, *args, **kwargs)
         self._write_to_outputs(message, level, **kwargs)
     

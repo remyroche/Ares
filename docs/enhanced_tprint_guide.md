@@ -7,10 +7,9 @@ The Enhanced TPrint Utility is a production-ready, feature-rich logging system t
 ## Key Features
 
 ### 🚀 **Core Features**
-- **Configurable timestamp formats** - Simple, detailed, with microseconds, or ISO format
-- **Thread-safe logging** - Safe for concurrent applications
+- **Configurable timestamp formats** - Simple, detailed, with microseconds (default), or ISO format
 - **Color-coded output** - Visual distinction between log levels
-- **File logging** - Output to files with rotation support
+- **File logging** - Output to files with single file per run support
 - **Performance optimization** - Timestamp caching and lazy evaluation
 - **Structured logging** - JSON and custom format support
 
@@ -21,6 +20,7 @@ The Enhanced TPrint Utility is a production-ready, feature-rich logging system t
 - **Batch logging** - Efficient multiple message logging
 - **Numba compatibility** - Integration with existing numba timestamps
 - **Log level filtering** - Configurable minimum log levels
+- **Single file per run** - Unique log files for each application run
 
 ## Quick Start
 
@@ -129,9 +129,9 @@ Configuration class for tprint settings.
 ```python
 config = TPrintConfig(
     # Timestamp configuration
-    timestamp_format=TimestampFormat.DETAILED,
+    timestamp_format=TimestampFormat.WITH_MICROSECONDS,  # Default
     timezone=None,  # Use system timezone
-    include_microseconds=False,
+    include_microseconds=True,
     
     # Output configuration
     use_colors=True,
@@ -141,18 +141,15 @@ config = TPrintConfig(
     
     # Logging configuration
     min_log_level=LogLevel.DEBUG,
-    enable_thread_safety=True,
-    buffer_size=1000,
     
     # Performance configuration
     enable_lazy_evaluation=True,
     cache_timestamps=True,
     timestamp_cache_duration=0.001,  # 1ms
     
-    # File logging configuration
-    max_file_size=10 * 1024 * 1024,  # 10MB
-    backup_count=5,
-    rotate_on_startup=False,
+    # File logging configuration - single file per run
+    single_file_per_run=True,
+    run_id=None,  # Auto-generated if not provided
     
     # Structured logging
     enable_structured_logging=False,
@@ -311,37 +308,65 @@ configure_tprint(prod_config)
 ```python
 from src.utils.tprint import TPrintConfig, tprint_context
 
-# Enable file logging
+# Enable file logging with single file per run
 config = TPrintConfig(
     output_to_file=True,
     output_file="app.log",
-    output_to_console=True
+    output_to_console=True,
+    single_file_per_run=True
 )
 
 with tprint_context(config):
     tprint("This goes to both console and file")
     tprint_info("File logging enabled")
+    # Creates: app_20250111_143052_123.log
 ```
 
-### Thread Safety
+### Single File Per Run
+
+The single file per run feature ensures each application run gets a unique log file:
 
 ```python
-import threading
-from src.utils.tprint import tprint
+# Automatic run ID generation
+config = TPrintConfig(
+    output_to_file=True,
+    output_file="app.log",
+    single_file_per_run=True
+    # run_id will be auto-generated: 20250111_143052_123
+)
 
-def worker(thread_id):
-    for i in range(5):
-        tprint(f"Thread {thread_id} - Message {i}")
+# Manual run ID
+config = TPrintConfig(
+    output_to_file=True,
+    output_file="app.log",
+    single_file_per_run=True,
+    run_id="production_run_001"
+    # Creates: app_production_run_001.log
+)
+```
 
-# Create multiple threads
-threads = []
-for i in range(3):
-    thread = threading.Thread(target=worker, args=(i,))
-    threads.append(thread)
-    thread.start()
+### Performance Optimization
 
-for thread in threads:
-    thread.join()
+```python
+from src.utils.tprint import TPrintConfig
+
+# Optimize for high-frequency logging
+config = TPrintConfig(
+    cache_timestamps=True,
+    timestamp_cache_duration=0.001,  # 1ms cache
+    enable_lazy_evaluation=True
+)
+configure_tprint(config)
+
+# Use batch logging for multiple messages
+from src.utils.tprint import tprint_batch, LogLevel
+
+messages = [
+    (LogLevel.INFO, "Message 1"),
+    (LogLevel.WARNING, "Message 2"),
+    (LogLevel.ERROR, "Message 3"),
+]
+tprint_batch(messages)
 ```
 
 ### Integration with Existing Code

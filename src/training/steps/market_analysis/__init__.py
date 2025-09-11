@@ -1,20 +1,13 @@
-"""
-from .step06_feature_engineering import FeatureInteractionEngine
-Market Analysis Step06 Components
+"""Market Analysis Module: Contains SR optimization and related market analysis components."""
 
-This package contains market analysis components for step06 including:
-- Feature interaction engineering
-- Technical indicator extraction
-- Correlation analysis
-- Regime-aware feature engineering
-"""
-
-try:
-    FEATURE_ENGINEERING_AVAILABLE = True
-except ImportError:
-    FEATURE_ENGINEERING_AVAILABLE = False
+from .step02_5_sr_optimization import SROptimizationStep
+from .sr_detection import SRDetectionStep
+from .sr_clustering import SRClusteringStep
+from .sr_ml_learning import SRMLLearningStep
 
 __all__ = [
-    'FeatureInteractionEngine',
-    'FEATURE_ENGINEERING_AVAILABLE'
+    'SROptimizationStep',
+    'SRDetectionStep', 
+    'SRClusteringStep',
+    'SRMLLearningStep'
 ]

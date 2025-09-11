@@ -1473,32 +1473,29 @@ class MarketAnalysisSubPipeline:
                             'n_features': features.shape[1],
                             'model_type': 'RandomForestClassifier'
                         }
-                        # Get feature importance from ML enhancer if available
-                        feature_importance_data = model.feature_importances_.tolist()
+                        # Get selected features from ML enhancer (scientifically selected)
                         feature_names_data = feature_names if 'feature_names' in locals() else ['price_change', 'high_low_ratio', 'volume_change']
                         
-                        # Try to get enhanced feature importance from SR ML Enhancer
+                        # Get scientifically selected features from SR ML Enhancer
                         try:
                             from src.training.steps.model_training.sr_ml_enhancer import SRMLEnhancer
                             sr_enhancer = SRMLEnhancer(config)
                             
-                            # Check if we have enhanced feature importance data
+                            # Check if we have scientifically selected features
                             if hasattr(sr_enhancer, 'feature_importance') and sr_enhancer.feature_importance:
                                 enhanced_importance = sr_enhancer.feature_importance
-                                if 'shap_explanations' in enhanced_importance and 'feature_importance' in enhanced_importance['shap_explanations']:
-                                    feature_importance_data = list(enhanced_importance['shap_explanations']['feature_importance'].values())
-                                    feature_names_data = list(enhanced_importance['shap_explanations']['feature_importance'].keys())
-                                    print(f"   🧠 Using SHAP-based feature importance: {len(feature_names_data)} features")
-                                elif 'selected_features' in enhanced_importance:
+                                if 'selected_features' in enhanced_importance:
                                     feature_names_data = enhanced_importance['selected_features']
-                                    print(f"   🔍 Using selected features from ML enhancer: {len(feature_names_data)} features")
+                                    print(f"   🔍 Using scientifically selected features from ML enhancer: {len(feature_names_data)} features")
+                                    print(f"   📊 Feature selection method: mRMR (Minimum Redundancy Maximum Relevance)")
+                                    print(f"   🎯 Features selected based on: relevance to target + low redundancy")
                         except Exception as e:
-                            print(f"   ⚠️ Could not get enhanced feature importance: {e}")
+                            print(f"   ⚠️ Could not get scientifically selected features: {e}")
                         
                         artifacts['model_performance'] = {
                             'train_samples': X_train.shape[0],
                             'test_samples': X_test.shape[0],
-                            'feature_importance': feature_importance_data,
+                            'feature_importance': model.feature_importances_.tolist(),
                             'feature_names': feature_names_data
                         }
                     else:

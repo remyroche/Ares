@@ -124,7 +124,8 @@ class SRMLEnhancer:
             await self.optimize_target_weights(market_data, sr_levels, historical_performance)
             await self._train_sr_quality_model(training_data)
             await self._train_breakout_prediction_model(training_data)
-            await self._train_regime_classification_model(market_data)
+            # Skip regime classification ML model training at this stage
+            self.logger.info('⏭️ Skipping regime classification ML model training')
             self.logger.info('✅ ML model training completed')
             return True
         except Exception as e:
@@ -620,9 +621,9 @@ class SRMLEnhancer:
                 print(f"   📊 Correlation filtering: {len(filtered_features)} features retained from {len(feature_names)}")
                 
                 # 2. mRMR selection for top features
-                if len(filtered_features) > 50:
+                if len(filtered_features) > 70:
                     mrmr_results = feature_selector.mrmr_selection(
-                        X_filtered, y, feature_names_filtered, n_features=50
+                        X_filtered, y, feature_names_filtered, n_features=70
                     )
                     selected_features = mrmr_results['selected_features']
                     selected_indices = [i for i, name in enumerate(feature_names_filtered) if name in selected_features]
@@ -729,9 +730,9 @@ class SRMLEnhancer:
                 feature_names_filtered = filtered_features
                 
                 # 2. mRMR selection for top features
-                if len(filtered_features) > 30:
+                if len(filtered_features) > 50:
                     mrmr_results = feature_selector.mrmr_selection(
-                        X_filtered, y_breakout, feature_names_filtered, n_features=30
+                        X_filtered, y_breakout, feature_names_filtered, n_features=50
                     )
                     selected_features = mrmr_results['selected_features']
                     selected_indices = [i for i, name in enumerate(feature_names_filtered) if name in selected_features]
@@ -787,129 +788,7 @@ class SRMLEnhancer:
         except Exception as e:
             self.logger.error(f'Breakout prediction model training failed: {e}')
 
-    async def _train_regime_classification_model(self, market_data: pd.DataFrame) -> None:
-        """Use step03 regime detection with LGBM model instead of training new model."""
-        try:
-            self.logger.info('Using step03 regime detection with LGBM model')
-            try:
-                from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineeringRefactored
-                self.step03_engineer = VectorizedAdvancedFeatureEngineeringRefactored()
-                self.logger.info('✅ Step03 regime detection loaded successfully')
-            except ImportError as e:
-                self.logger.warning(f'Step03 regime detection not available: {e}')
-                self.step03_engineer = None
-            self.regime_classification_model = None
-            regime_features = await self._extract_regime_features(market_data)
-            regime_targets = await self._create_regime_targets(market_data)
-            if len(regime_features) > 10:
-                # Convert to numpy array for feature selection
-                regime_features_array = np.array(regime_features)
-                regime_targets_array = np.array(regime_targets)
-                
-                # Apply feature selection and SHAP/LIME for regime classification
-                if len(regime_features_array) > 20:
-                    feature_names = [f'regime_feature_{i}' for i in range(regime_features_array.shape[1])]
-                    
-                    # Use proper feature selection framework
-                    from src.utils.ml_common.feature_selection import FeatureSelectionFramework
-                    from src.utils.ml_common.model_explanations import ModelExplainer
-                    
-                    # Initialize feature selection framework
-                    feature_selection_config = {
-                        'enable_gpu': True,
-                        'enable_parallel': True,
-                        'max_workers': 4,
-                        'method_configs': {
-                            'mrmr': {'relevance_method': 'mutual_info', 'redundancy_method': 'correlation'},
-                            'importance': {'n_estimators': 100, 'max_depth': 10},
-                            'stability': {'n_bootstraps': 50, 'stability_threshold': 0.6}
-                        }
-                    }
-                    
-                    feature_selector = FeatureSelectionFramework(feature_selection_config)
-                    
-                    # Apply feature selection
-                    print("   🔍 Applying feature selection for regime classification...")
-                    
-                    # 1. Correlation-based filtering
-                    correlation_results = feature_selector.correlation_based_filtering(
-                        regime_features_array, feature_names, correlation_threshold=0.95
-                    )
-                    filtered_features = correlation_results['selected_features']
-                    filtered_indices = [i for i, name in enumerate(feature_names) if name in filtered_features]
-                    X_filtered = regime_features_array[:, filtered_indices]
-                    feature_names_filtered = filtered_features
-                    
-                    # 2. mRMR selection for top features
-                    if len(filtered_features) > 15:
-                        mrmr_results = feature_selector.mrmr_selection(
-                            X_filtered, regime_targets_array, feature_names_filtered, n_features=15
-                        )
-                        selected_features = mrmr_results['selected_features']
-                        selected_indices = [i for i, name in enumerate(feature_names_filtered) if name in selected_features]
-                        X = X_filtered[:, selected_indices]
-                        final_feature_names = selected_features
-                    else:
-                        X = X_filtered
-                        final_feature_names = feature_names_filtered
-                    
-                    # 3. Train model for SHAP/LIME explanations
-                    rf_selector = RandomForestClassifier(n_estimators=100, random_state=42)
-                    rf_selector.fit(X, regime_targets_array)
-                    
-                    # 4. Generate SHAP/LIME explanations
-                    print("   🧠 Generating SHAP/LIME explanations for regime classification...")
-                    explainer_config = {
-                        'enable_shap': True,
-                        'enable_lime': True,
-                        'shap_sample_size': 100,
-                        'lime_sample_size': 10
-                    }
-                    
-                    model_explainer = ModelExplainer(explainer_config)
-                    
-                    # Split data for explanations
-                    from sklearn.model_selection import train_test_split
-                    X_train_exp, X_test_exp, y_train_exp, y_test_exp = train_test_split(
-                        X, regime_targets_array, test_size=0.2, random_state=42, stratify=regime_targets_array
-                    )
-                    
-                    # Generate explanations
-                    explanation_results = model_explainer.explain_model(
-                        rf_selector, X_train_exp, X_test_exp, final_feature_names, "Regime_Classification_Model"
-                    )
-                    
-                    # Store comprehensive feature importance
-                    self.regime_feature_importance = {
-                        'selected_features': final_feature_names,
-                        'shap_explanations': explanation_results.get('shap_explanations', {}),
-                        'lime_explanations': explanation_results.get('lime_explanations', {}),
-                        'feature_importance': explanation_results.get('feature_importance', {}),
-                        'correlation_filtering': correlation_results,
-                        'mrmr_selection': mrmr_results if len(filtered_features) > 15 else {}
-                    }
-                    
-                    # Log explanations
-                    model_explainer.log_explanations(explanation_results, "Regime_Classification_Model")
-                    
-                    print(f"   ✅ Regime model feature selection complete: {len(final_feature_names)} features with SHAP/LIME analysis")
-                
-                accuracy = self._validate_regime_detection(regime_features, regime_targets)
-                self.logger.info(f'✅ Regime detection validation completed. Accuracy: {accuracy:.4f}')
-                if self.step03_engineer:
-                    try:
-                        step03_features = await self.step03_engineer.engineer_features(market_data)
-                        regime_features_step03 = step03_features.get('regime_features', [])
-                        if len(regime_features_step03) > 0:
-                            self.logger.info(f'✅ Step03 regime features extracted: {len(regime_features_step03)} features')
-                        else:
-                            self.logger.warning('Step03 regime features not found')
-                    except Exception as e:
-                        self.logger.warning(f'Step03 regime detection test failed: {e}')
-            else:
-                self.logger.warning('Insufficient data for regime validation')
-        except Exception as e:
-            self.logger.error(f'Regime classification setup failed: {e}')
+    # Regime classification ML model training removed - using step03 regime detection instead
     @log_all_calls
 
     def _validate_regime_detection(self, features: np.ndarray, targets: np.ndarray) -> float:

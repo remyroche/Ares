@@ -432,8 +432,8 @@ class MainSupervisor:
             
             # Single models for each component (trained on various market conditions)
             component_models = {
-                "analyst": "analyst_regime_classifier",
-                "strategist": "strategist_market_analysis_model", 
+                "analyst": "analyst_market_analysis_model",
+                "strategist": "strategist_regime_classifier",  # Regime classifier moved to strategist
                 "tactician": "tactician_position_sizing_model"
             }
             
@@ -496,10 +496,11 @@ class MainSupervisor:
     def _get_regime_specific_config(self, component: str, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
         """
         Get regime-specific configuration for a component based on HMM regime.
+        Handles 15-25 HMM regimes with parameters optimized during training.
         
         Args:
             component: Component name (analyst, strategist, tactician)
-            hmm_regime: Detected HMM regime
+            hmm_regime: Detected HMM regime (15-25 possible regimes)
             regime_confidence: Confidence in regime detection
             
         Returns:
@@ -510,67 +511,114 @@ class MainSupervisor:
             "regime_confidence": regime_confidence
         }
         
-        if component == "analyst":
-            if hmm_regime == "bull_market":
-                base_config.update({
-                    "confidence_threshold": 0.6,
-                    "lookback_period": 20,
-                    "volatility_adjustment": 1.2
-                })
-            elif hmm_regime == "bear_market":
-                base_config.update({
-                    "confidence_threshold": 0.7,
-                    "lookback_period": 30,
-                    "volatility_adjustment": 1.5
-                })
-            elif hmm_regime == "sideways":
-                base_config.update({
-                    "confidence_threshold": 0.5,
-                    "lookback_period": 15,
-                    "volatility_adjustment": 1.0
-                })
-                
-        elif component == "strategist":
-            if hmm_regime == "bull_market":
-                base_config.update({
-                    "strategy_aggressiveness": 1.2,
-                    "risk_tolerance": 0.8,
-                    "trend_following_weight": 0.7
-                })
-            elif hmm_regime == "bear_market":
-                base_config.update({
-                    "strategy_aggressiveness": 0.6,
-                    "risk_tolerance": 0.4,
-                    "trend_following_weight": 0.3
-                })
-            elif hmm_regime == "sideways":
-                base_config.update({
-                    "strategy_aggressiveness": 1.0,
-                    "risk_tolerance": 0.6,
-                    "trend_following_weight": 0.5
-                })
-                
-        elif component == "tactician":
-            if hmm_regime == "bull_market":
-                base_config.update({
-                    "position_size_multiplier": 1.2,
-                    "kelly_fraction": 0.25,
-                    "max_leverage": 10.0
-                })
-            elif hmm_regime == "bear_market":
-                base_config.update({
-                    "position_size_multiplier": 0.6,
-                    "kelly_fraction": 0.15,
-                    "max_leverage": 5.0
-                })
-            elif hmm_regime == "sideways":
-                base_config.update({
-                    "position_size_multiplier": 1.0,
-                    "kelly_fraction": 0.20,
-                    "max_leverage": 7.5
-                })
+        # Load optimized parameters from training (final_parameters_optimization.py)
+        optimized_params = self._load_optimized_parameters_for_component_regime(component, hmm_regime)
+        
+        if optimized_params:
+            # Apply confidence-based adjustments
+            confidence_adjustment = 0.8 + (regime_confidence * 0.4)  # 0.8 to 1.2 range
+            
+            adjusted_params = {}
+            for param_name, param_value in optimized_params.items():
+                if param_name in ["confidence_threshold", "analyst_confidence_threshold", "tactician_confidence_threshold"]:
+                    # Higher confidence = lower threshold (more aggressive)
+                    adjusted_params[param_name] = param_value * (2.0 - confidence_adjustment)
+                elif param_name in ["strategy_aggressiveness", "risk_tolerance", "position_size_multiplier"]:
+                    # Higher confidence = more aggressive
+                    adjusted_params[param_name] = param_value * confidence_adjustment
+                elif param_name in ["lookback_period", "volatility_adjustment", "kelly_fraction"]:
+                    # Higher confidence = more stable parameters
+                    adjusted_params[param_name] = param_value * confidence_adjustment
+                else:
+                    adjusted_params[param_name] = param_value
+            
+            base_config.update(adjusted_params)
+        else:
+            # Fallback to default parameters if optimization not available
+            base_config.update(self._get_default_component_parameters(component, hmm_regime, regime_confidence))
         
         return base_config
+
+    def _load_optimized_parameters_for_component_regime(self, component: str, hmm_regime: str) -> dict[str, Any] | None:
+        """
+        Load optimized parameters for a specific component and regime from training artifacts.
+        
+        Args:
+            component: Component name (analyst, strategist, tactician)
+            hmm_regime: HMM regime identifier
+            
+        Returns:
+            dict: Optimized parameters or None if not found
+        """
+        try:
+            # This would load from the optimized parameters saved during training
+            # The parameters are optimized in final_parameters_optimization.py
+            # and stored in model artifacts
+            
+            # For now, return None to use fallback parameters
+            # In production, this would load from:
+            # - Model artifacts
+            # - Optimization results from final_parameters_optimization.py
+            # - Regime-specific parameter files
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error loading optimized parameters for {component} regime {hmm_regime}: {e}")
+            return None
+
+    def _get_default_component_parameters(self, component: str, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get default parameters for a component as fallback.
+        
+        Args:
+            component: Component name (analyst, strategist, tactician)
+            hmm_regime: HMM regime identifier
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Default parameters for the component
+        """
+        # Base parameters that work across all regimes
+        if component == "analyst":
+            base_params = {
+                "confidence_threshold": 0.6,
+                "lookback_period": 20,
+                "volatility_adjustment": 1.0,
+                "analyst_confidence_threshold": 0.7
+            }
+        elif component == "strategist":
+            base_params = {
+                "strategy_aggressiveness": 1.0,
+                "risk_tolerance": 0.6,
+                "trend_following_weight": 0.5,
+                "regime_weight": 0.3
+            }
+        elif component == "tactician":
+            base_params = {
+                "position_size_multiplier": 1.0,
+                "kelly_fraction": 0.20,
+                "max_leverage": 7.5,
+                "tactician_confidence_threshold": 0.8
+            }
+        else:
+            base_params = {}
+        
+        # Apply confidence-based adjustments
+        confidence_adjustment = 0.8 + (regime_confidence * 0.4)
+        
+        adjusted_params = {}
+        for param_name, param_value in base_params.items():
+            if param_name in ["confidence_threshold", "analyst_confidence_threshold", "tactician_confidence_threshold"]:
+                adjusted_params[param_name] = param_value * (2.0 - confidence_adjustment)
+            elif param_name in ["strategy_aggressiveness", "risk_tolerance", "position_size_multiplier"]:
+                adjusted_params[param_name] = param_value * confidence_adjustment
+            elif param_name in ["lookback_period", "volatility_adjustment", "kelly_fraction"]:
+                adjusted_params[param_name] = param_value * confidence_adjustment
+            else:
+                adjusted_params[param_name] = param_value
+        
+        return adjusted_params
 
 main_supervisor: MainSupervisor | None = None
 

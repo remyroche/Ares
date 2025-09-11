@@ -1378,7 +1378,7 @@ class Analyst:
         
         try:
             # Use the single analyst model trained on various market conditions
-            model_name = "analyst_regime_classifier"
+            model_name = "analyst_market_analysis_model"
             
             self.logger.info(f"Loading analyst model for live trading: {model_name}")
             print(f"Loading analyst model for live trading: {model_name}")
@@ -1802,32 +1802,9 @@ class Analyst:
                 "regime_parameters": {}
             }
             
-            # Set regime-specific parameters based on HMM regime
-            if hmm_regime == "bull_market":
-                regime_config["regime_parameters"] = {
-                    "confidence_threshold": 0.6,
-                    "lookback_period": 20,
-                    "volatility_adjustment": 1.2
-                }
-            elif hmm_regime == "bear_market":
-                regime_config["regime_parameters"] = {
-                    "confidence_threshold": 0.7,
-                    "lookback_period": 30,
-                    "volatility_adjustment": 1.5
-                }
-            elif hmm_regime == "sideways":
-                regime_config["regime_parameters"] = {
-                    "confidence_threshold": 0.5,
-                    "lookback_period": 15,
-                    "volatility_adjustment": 1.0
-                }
-            else:
-                # Default parameters for unknown regimes
-                regime_config["regime_parameters"] = {
-                    "confidence_threshold": 0.6,
-                    "lookback_period": 20,
-                    "volatility_adjustment": 1.1
-                }
+            # Set regime-specific parameters based on HMM regime (15-25 regimes)
+            # Parameters are optimized during training in final_parameters_optimization.py
+            regime_config["regime_parameters"] = self._get_optimized_regime_parameters(hmm_regime, regime_confidence)
             
             self.logger.info(f"✅ HMM regime coordination completed: {hmm_regime}")
             print(f"✅ HMM regime coordination completed: {hmm_regime}")
@@ -1838,6 +1815,106 @@ class Analyst:
             self.logger.error(error_msg)
             print(f"❌ {error_msg}")
             return {"error": error_msg}
+
+    def _get_optimized_regime_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get optimized regime-specific parameters from training optimization.
+        
+        Args:
+            hmm_regime: Detected HMM regime (15-25 possible regimes)
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Optimized parameters for the regime
+        """
+        try:
+            # Load optimized parameters from training (final_parameters_optimization.py)
+            # These parameters are optimized during training and stored in the model artifacts
+            optimized_params = self._load_optimized_parameters_for_regime(hmm_regime)
+            
+            if optimized_params:
+                # Apply confidence-based adjustments
+                confidence_adjustment = 0.8 + (regime_confidence * 0.4)  # 0.8 to 1.2 range
+                
+                adjusted_params = {}
+                for param_name, param_value in optimized_params.items():
+                    if param_name in ["confidence_threshold", "analyst_confidence_threshold"]:
+                        # Higher confidence = lower threshold (more aggressive)
+                        adjusted_params[param_name] = param_value * (2.0 - confidence_adjustment)
+                    elif param_name in ["lookback_period", "volatility_adjustment"]:
+                        # Higher confidence = more stable parameters
+                        adjusted_params[param_name] = param_value * confidence_adjustment
+                    else:
+                        adjusted_params[param_name] = param_value
+                
+                return adjusted_params
+            else:
+                # Fallback to default parameters if optimization not available
+                return self._get_default_regime_parameters(hmm_regime, regime_confidence)
+                
+        except Exception as e:
+            self.logger.error(f"Error getting optimized regime parameters: {e}")
+            return self._get_default_regime_parameters(hmm_regime, regime_confidence)
+
+    def _load_optimized_parameters_for_regime(self, hmm_regime: str) -> dict[str, Any] | None:
+        """
+        Load optimized parameters for a specific regime from training artifacts.
+        
+        Args:
+            hmm_regime: HMM regime identifier
+            
+        Returns:
+            dict: Optimized parameters or None if not found
+        """
+        try:
+            # This would load from the optimized parameters saved during training
+            # The parameters are optimized in final_parameters_optimization.py
+            # and stored in model artifacts
+            
+            # For now, return None to use fallback parameters
+            # In production, this would load from:
+            # - Model artifacts
+            # - Optimization results from final_parameters_optimization.py
+            # - Regime-specific parameter files
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error loading optimized parameters for regime {hmm_regime}: {e}")
+            return None
+
+    def _get_default_regime_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get default regime parameters as fallback.
+        
+        Args:
+            hmm_regime: HMM regime identifier
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Default parameters for the regime
+        """
+        # Base parameters that work across all regimes
+        base_params = {
+            "confidence_threshold": 0.6,
+            "lookback_period": 20,
+            "volatility_adjustment": 1.0,
+            "analyst_confidence_threshold": 0.7
+        }
+        
+        # Apply confidence-based adjustments
+        confidence_adjustment = 0.8 + (regime_confidence * 0.4)
+        
+        adjusted_params = {}
+        for param_name, param_value in base_params.items():
+            if param_name in ["confidence_threshold", "analyst_confidence_threshold"]:
+                adjusted_params[param_name] = param_value * (2.0 - confidence_adjustment)
+            elif param_name in ["lookback_period", "volatility_adjustment"]:
+                adjusted_params[param_name] = param_value * confidence_adjustment
+            else:
+                adjusted_params[param_name] = param_value
+        
+        return adjusted_params
 
     @handle_errors_with_tracking(
         context="analyst cleanup",

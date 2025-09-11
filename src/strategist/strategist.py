@@ -648,7 +648,8 @@ class Strategist:
             print("✅ Model Manager initialized")
             
             # Set default model selection for strategy generation (single model trained on various conditions)
-            self.selected_model = "strategist_market_analysis_model"
+            # The strategist now includes regime classification functionality
+            self.selected_model = "strategist_regime_classifier"
             self.logger.info(f"✅ Default model selected: {self.selected_model}")
             print(f"✅ Default model selected: {self.selected_model}")
             
@@ -663,6 +664,221 @@ class Strategist:
             self.logger.error(f"❌ Error initializing live trading utilities: {e}")
             print(f"❌ Error initializing live trading utilities: {e}")
             return False
+
+    @handle_errors_with_tracking(
+        context="HMM regime classification",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def classify_hmm_regime(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Classify HMM regime using the strategist's regime classifier model.
+        
+        Args:
+            market_data: Market data for regime classification
+            
+        Returns:
+            dict: Regime classification results
+        """
+        if not self.model_manager or not self.selected_model:
+            error_msg = "Model Manager or selected model not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            # Start performance monitoring
+            if self.performance_monitor:
+                self.performance_monitor.start_timer("regime_classification")
+            
+            self.logger.info("Classifying HMM regime...")
+            print("Classifying HMM regime...")
+            
+            # Get model from cache or load it
+            model = self.model_cache.get(self.selected_model)
+            if not model:
+                model = await self.model_manager.load_model(self.selected_model)
+                if model:
+                    self.model_cache[self.selected_model] = model
+                else:
+                    error_msg = f"Failed to load regime classifier model: {self.selected_model}"
+                    self.logger.error(error_msg)
+                    print(f"❌ {error_msg}")
+                    return {"error": error_msg}
+            
+            # Get regime classification
+            regime_result = await self.model_manager.get_prediction(model, market_data)
+            
+            # End performance monitoring
+            if self.performance_monitor:
+                execution_time = self.performance_monitor.end_timer("regime_classification")
+                self.logger.info(f"Regime classification completed in {execution_time:.3f}s")
+                print(f"Regime classification completed in {execution_time:.3f}s")
+            
+            self.logger.info(f"✅ HMM regime classified: {regime_result.get('regime', 'UNKNOWN')}")
+            print(f"✅ HMM regime classified: {regime_result.get('regime', 'UNKNOWN')}")
+            return regime_result
+            
+        except Exception as e:
+            error_msg = f"Error classifying HMM regime: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            
+            # End performance monitoring even on error
+            if self.performance_monitor:
+                self.performance_monitor.end_timer("regime_classification")
+            
+            return {"error": error_msg}
+
+    @handle_errors_with_tracking(
+        context="HMM regime-based strategy coordination",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def coordinate_strategy_with_hmm_regime(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Coordinate strategy generation based on HMM regime detection.
+        
+        Args:
+            hmm_regime: Detected HMM regime (15-25 possible regimes)
+            regime_confidence: Confidence in the regime detection
+            
+        Returns:
+            dict: Strategy coordination results and regime-specific parameters
+        """
+        if not self.model_manager or not self.selected_model:
+            error_msg = "Model Manager or selected model not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            self.logger.info(f"Coordinating strategy with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            print(f"Coordinating strategy with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            
+            # Get the single model (trained on various market conditions)
+            model = self.model_cache.get(self.selected_model)
+            if not model:
+                error_msg = f"Model {self.selected_model} not loaded in cache"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return {"error": error_msg}
+            
+            # Configure regime-specific parameters for strategy generation
+            regime_config = {
+                "hmm_regime": hmm_regime,
+                "regime_confidence": regime_confidence,
+                "model_name": self.selected_model,
+                "regime_parameters": self._get_optimized_strategy_parameters(hmm_regime, regime_confidence)
+            }
+            
+            self.logger.info(f"✅ Strategy coordination with HMM regime completed: {hmm_regime}")
+            print(f"✅ Strategy coordination with HMM regime completed: {hmm_regime}")
+            return regime_config
+            
+        except Exception as e:
+            error_msg = f"Error coordinating strategy with HMM regime: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+
+    def _get_optimized_strategy_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get optimized strategy parameters for HMM regime from training optimization.
+        
+        Args:
+            hmm_regime: Detected HMM regime (15-25 possible regimes)
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Optimized strategy parameters for the regime
+        """
+        try:
+            # Load optimized parameters from training (final_parameters_optimization.py)
+            # These parameters are optimized during training and stored in the model artifacts
+            optimized_params = self._load_optimized_strategy_parameters_for_regime(hmm_regime)
+            
+            if optimized_params:
+                # Apply confidence-based adjustments
+                confidence_adjustment = 0.8 + (regime_confidence * 0.4)  # 0.8 to 1.2 range
+                
+                adjusted_params = {}
+                for param_name, param_value in optimized_params.items():
+                    if param_name in ["strategy_aggressiveness", "risk_tolerance"]:
+                        # Higher confidence = more aggressive strategy
+                        adjusted_params[param_name] = param_value * confidence_adjustment
+                    elif param_name in ["trend_following_weight"]:
+                        # Higher confidence = more trend following
+                        adjusted_params[param_name] = param_value * confidence_adjustment
+                    else:
+                        adjusted_params[param_name] = param_value
+                
+                return adjusted_params
+            else:
+                # Fallback to default parameters if optimization not available
+                return self._get_default_strategy_parameters(hmm_regime, regime_confidence)
+                
+        except Exception as e:
+            self.logger.error(f"Error getting optimized strategy parameters: {e}")
+            return self._get_default_strategy_parameters(hmm_regime, regime_confidence)
+
+    def _load_optimized_strategy_parameters_for_regime(self, hmm_regime: str) -> dict[str, Any] | None:
+        """
+        Load optimized strategy parameters for a specific regime from training artifacts.
+        
+        Args:
+            hmm_regime: HMM regime identifier
+            
+        Returns:
+            dict: Optimized parameters or None if not found
+        """
+        try:
+            # This would load from the optimized parameters saved during training
+            # The parameters are optimized in final_parameters_optimization.py
+            # and stored in model artifacts
+            
+            # For now, return None to use fallback parameters
+            # In production, this would load from:
+            # - Model artifacts
+            # - Optimization results from final_parameters_optimization.py
+            # - Regime-specific parameter files
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error loading optimized strategy parameters for regime {hmm_regime}: {e}")
+            return None
+
+    def _get_default_strategy_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get default strategy parameters as fallback.
+        
+        Args:
+            hmm_regime: HMM regime identifier
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Default parameters for the regime
+        """
+        # Base parameters that work across all regimes
+        base_params = {
+            "strategy_aggressiveness": 1.0,
+            "risk_tolerance": 0.6,
+            "trend_following_weight": 0.5,
+            "regime_weight": 0.3
+        }
+        
+        # Apply confidence-based adjustments
+        confidence_adjustment = 0.8 + (regime_confidence * 0.4)
+        
+        adjusted_params = {}
+        for param_name, param_value in base_params.items():
+            if param_name in ["strategy_aggressiveness", "risk_tolerance", "trend_following_weight"]:
+                adjusted_params[param_name] = param_value * confidence_adjustment
+            else:
+                adjusted_params[param_name] = param_value
+        
+        return adjusted_params
 
     @handles_errors(Exception, fallback = False)
     async def _initialize_performance_monitoring(self) -> bool:

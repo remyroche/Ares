@@ -98,8 +98,17 @@ class MarketAnalysisSubPipeline:
     """
     
     def __init__(self, config: Optional[SubPipelineConfig] = None):
-        """Initialize the market analysis sub-pipeline."""
-        self.config = config or SubPipelineConfig()
+        """Initialize the market analysis sub-pipeline with backward compatibility."""
+        # Handle both old dict config and new SubPipelineConfig
+        if isinstance(config, dict):
+            # Convert old config format to SubPipelineConfig
+            self.original_config = config
+            self.config = self._convert_old_config(config)
+        else:
+            # Use provided SubPipelineConfig or create default
+            self.config = config or SubPipelineConfig()
+            self.original_config = {}
+        
         self.logger = logger.getChild('MarketAnalysisSubPipeline')
         self.results: List[SubPipelineResult] = []
         
@@ -119,6 +128,167 @@ class MarketAnalysisSubPipeline:
             'feature_lookback_optimization': self._feature_lookback_optimization_pipeline,
             'fractional_differentiation': self._fractional_differentiation_pipeline,
             'cross_timeframe_analysis': self._cross_timeframe_analysis_pipeline
+        }
+    
+    def _convert_old_config(self, config: Dict[str, Any]) -> SubPipelineConfig:
+        """Convert old config format to SubPipelineConfig."""
+        # Extract relevant configuration
+        sr_config = config.get('sr_optimization', {})
+        training_mode = config.get('training_mode', 'full')
+        
+        # Determine execution mode
+        if training_mode == 'light':
+            mode = ExecutionMode.LIGHT
+        elif training_mode == 'blank':
+            mode = ExecutionMode.BLANK
+        else:
+            mode = ExecutionMode.FULL
+        
+        # Create SubPipelineConfig
+        sub_config = SubPipelineConfig(
+            mode=mode,
+            symbol=config.get('symbol', 'BTCUSDT'),
+            exchange=config.get('exchange', 'binance'),
+            timeframe=config.get('timeframe', '1m'),
+            data_dir=config.get('data_dir', './data'),
+            output_dir=config.get('output_dir', './output')
+        )
+        
+        return sub_config
+    
+    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the SR optimization pipeline with backward compatible interface.
+        
+        This method provides the same interface as the original SROptimizationStep
+        while orchestrating the three SR stages internally.
+        """
+        self.logger.info('🎯 Starting SROptimizationStep execution with backward compatibility')
+        
+        try:
+            # Extract data from pipeline state
+            data = pipeline_state.get('dataframe')
+            if data is None:
+                raise ValueError("No dataframe found in pipeline state")
+            
+            # Update config with data information
+            self.config.symbol = training_input.get('symbol', 'BTCUSDT')
+            self.config.exchange = training_input.get('exchange', 'binance')
+            self.config.timeframe = training_input.get('timeframe', '1m')
+            
+            # Execute the three SR stages in sequence
+            results = {}
+            
+            # Stage 1: SR Detection
+            self.logger.info('🎯 Executing Stage 1: SR Detection')
+            detection_result = await self.execute_sub_pipeline('sr_detection', self.config)
+            if detection_result.success:
+                results['sr_levels'] = detection_result.artifacts.get('sr_levels', [])
+                results['sr_metrics'] = detection_result.artifacts.get('sr_metrics', {})
+                self.logger.info(f"✅ SR Detection completed: {len(results['sr_levels'])} levels detected")
+            else:
+                self.logger.error(f"❌ SR Detection failed: {detection_result.error}")
+                return {
+                    'success': False,
+                    'error': f"SR Detection failed: {detection_result.error}",
+                    'stage': 'sr_detection'
+                }
+            
+            # Stage 2: SR Clustering
+            self.logger.info('🚀 Executing Stage 2: SR Clustering')
+            clustering_result = await self.execute_sub_pipeline('sr_clustering', self.config)
+            if clustering_result.success:
+                results['clustered_levels'] = clustering_result.artifacts.get('clustered_levels', [])
+                results['cluster_metrics'] = clustering_result.artifacts.get('cluster_metrics', {})
+                self.logger.info(f"✅ SR Clustering completed: {len(results['clustered_levels'])} clusters")
+            else:
+                self.logger.error(f"❌ SR Clustering failed: {clustering_result.error}")
+                return {
+                    'success': False,
+                    'error': f"SR Clustering failed: {clustering_result.error}",
+                    'stage': 'sr_clustering'
+                }
+            
+            # Stage 3: SR ML Learning
+            self.logger.info('🤖 Executing Stage 3: SR ML Learning')
+            ml_result = await self.execute_sub_pipeline('sr_ml_learning', self.config)
+            if ml_result.success:
+                results['ml_models'] = ml_result.artifacts.get('ml_models', [])
+                results['ml_metrics'] = ml_result.artifacts.get('ml_metrics', {})
+                self.logger.info(f"✅ SR ML Learning completed: {len(results['ml_models'])} models")
+            else:
+                self.logger.error(f"❌ SR ML Learning failed: {ml_result.error}")
+                return {
+                    'success': False,
+                    'error': f"SR ML Learning failed: {ml_result.error}",
+                    'stage': 'sr_ml_learning'
+                }
+            
+            # Calculate total execution time
+            total_time = (
+                detection_result.execution_time + 
+                clustering_result.execution_time + 
+                ml_result.execution_time
+            )
+            
+            self.logger.info('🎯 SROptimizationStep execution completed successfully')
+            self.logger.info(f"📊 Total execution time: {total_time:.2f} seconds")
+            
+            return {
+                'success': True,
+                'sr_levels': results['sr_levels'],
+                'clustered_levels': results['clustered_levels'],
+                'ml_models': results['ml_models'],
+                'sr_metrics': results['sr_metrics'],
+                'cluster_metrics': results['cluster_metrics'],
+                'ml_metrics': results['ml_metrics'],
+                'execution_time': total_time,
+                'stage_times': {
+                    'detection': detection_result.execution_time,
+                    'clustering': clustering_result.execution_time,
+                    'ml_learning': ml_result.execution_time
+                },
+                'stage': 'complete_sr_optimization'
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ SROptimizationStep execution failed: {e}')
+            import traceback
+            self.logger.error(f'❌ Error details: {traceback.format_exc()}')
+            return {
+                'success': False,
+                'error': str(e),
+                'stage': 'complete_sr_optimization'
+            }
+    
+    def validate_config(self):
+        """Validate configuration for backward compatibility."""
+        self.logger.info('🔍 Validating SROptimizationStep configuration...')
+        
+        # Validate required configuration
+        if hasattr(self, 'original_config') and self.original_config:
+            required_keys = ['sr_optimization']
+            for key in required_keys:
+                if key not in self.original_config:
+                    self.logger.warning(f"⚠️ Missing configuration key: {key}")
+            
+            # Validate SR optimization config
+            sr_config = self.original_config.get('sr_optimization', {})
+            required_sr_keys = ['min_touches', 'tolerance_pct', 'lookback_periods']
+            for key in required_sr_keys:
+                if key not in sr_config:
+                    self.logger.warning(f"⚠️ Missing SR optimization key: {key}")
+        
+        self.logger.info('✅ SROptimizationStep configuration validation completed')
+        return True
+    
+    def get_status(self):
+        """Get status for backward compatibility."""
+        return {
+            'stage': 'sr_optimization',
+            'status': 'ready',
+            'config': getattr(self, 'original_config', {}),
+            'sub_pipeline_status': 'initialized'
         }
     
     def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
@@ -338,7 +508,7 @@ class MarketAnalysisSubPipeline:
     
     # Sub-pipeline implementations
     async def _sr_detection_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """SR detection sub-pipeline."""
+        """SR detection sub-pipeline using the new SRDetectionStep."""
         print("📊 Executing SR detection pipeline")
         print(f"🔧 Configuration: mode={config.mode.value}, symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
         self.logger.info("📊 Executing SR detection pipeline")
@@ -355,538 +525,63 @@ class MarketAnalysisSubPipeline:
             artifacts['sr_levels'] = [{'level': 50000, 'type': 'support', 'strength': 0.8}]
             return artifacts
         
-        # Import and use existing SR levels manager
+        # Use the new SRDetectionStep
         try:
-            print("📦 Importing SRLevelsManager...")
-            self.logger.info("📦 Importing SRLevelsManager...")
-            from src.tactician.sr_levels.sr_levels_manager import SRLevelsManager
+            from .sr_detection import SRDetectionStep
             
-            # Create proper configuration for SR levels manager
+            # Create configuration for SR detection
             sr_config = {
-                'sr_levels_manager': {
-                    'storage_path': f"{config.data_dir}/sr_levels",
-                    'max_levels': 50,
-                    'min_strength': 0.3,
-                    'proximity_threshold': 0.005
+                'sr_optimization': {
+                    'min_touches': 2,
+                    'tolerance_pct': 0.5,
+                    'lookback_periods': 100 if config.mode == ExecutionMode.FULL else 10,
+                    'proximity_threshold': 0.002,
+                    'min_sr_ratio': 0.15,
+                    'max_sr_ratio': 0.30
+                },
+                'training_mode': 'light' if config.mode == ExecutionMode.LIGHT else 'full'
+            }
+            
+            # Create SR detection step
+            sr_detection_step = SRDetectionStep(sr_config)
+            
+            # Load market data
+            market_data = await self._load_market_data_for_sr_detection(config)
+            if market_data is None or market_data.empty:
+                self.logger.error("❌ No market data available for SR detection")
+                return artifacts
+            
+            # Prepare pipeline state
+            pipeline_state = {'dataframe': market_data}
+            training_input = {'training_mode': config.mode.value}
+            
+            # Execute SR detection
+            result = await sr_detection_step.execute(training_input, pipeline_state)
+            
+            if result.get('success', False):
+                sr_levels = result.get('sr_levels', {})
+                artifacts['sr_levels'] = sr_levels.get('all_levels', [])
+                artifacts['sr_metrics'] = {
+                    'detection_time': result.get('execution_time', 0),
+                    'support_count': len(sr_levels.get('support_levels', [])),
+                    'resistance_count': len(sr_levels.get('resistance_levels', [])),
+                    'total_levels': len(sr_levels.get('all_levels', []))
                 }
-            }
-            
-            print(f"🔧 Creating SRLevelsManager with config: {sr_config}")
-            self.logger.info(f"🔧 Creating SRLevelsManager with config: {sr_config}")
-            sr_manager = SRLevelsManager(sr_config)
-            
-            print("🚀 Initializing SRLevelsManager...")
-            self.logger.info("🚀 Initializing SRLevelsManager...")
-            await sr_manager.initialize()
-            print("✅ SRLevelsManager initialized successfully")
-            self.logger.info("✅ SRLevelsManager initialized successfully")
-            
-            # Try to load existing levels first
-            self.logger.info("📂 Attempting to load existing SR levels...")
-            try:
-                await sr_manager.load_levels()
-                existing_levels = sr_manager.support_levels + sr_manager.resistance_levels
-                self.logger.info(f"📂 Loaded {len(existing_levels)} existing SR levels")
-                self.logger.info(f"   - Support levels: {len(sr_manager.support_levels)}")
-                self.logger.info(f"   - Resistance levels: {len(sr_manager.resistance_levels)}")
-            except Exception as e:
-                self.logger.info(f"📊 No existing SR levels found, will perform detection: {e}")
-                existing_levels = []
-            
-            # If no existing levels or in full mode, perform actual SR detection
-            if not existing_levels or config.mode == ExecutionMode.FULL:
-                self.logger.info("🔍 Performing SR level detection from market data")
-                self.logger.info(f"   - Mode: {config.mode.value}")
-                self.logger.info(f"   - Existing levels: {len(existing_levels)}")
+                artifacts['detection_params'] = sr_levels.get('detection_config', {})
                 
-                # Load market data for SR detection
-                print("📊 Loading market data for SR detection...")
-                self.logger.info("📊 Loading market data for SR detection...")
-                market_data = await self._load_market_data_for_sr_detection(config)
+                self.logger.info(f"✅ SR detection completed successfully")
+                self.logger.info(f"   - Support levels: {artifacts['sr_metrics']['support_count']}")
+                self.logger.info(f"   - Resistance levels: {artifacts['sr_metrics']['resistance_count']}")
+                self.logger.info(f"   - Total levels: {artifacts['sr_metrics']['total_levels']}")
+            else:
+                self.logger.error(f"❌ SR detection failed: {result.get('error', 'Unknown error')}")
                 
-                if market_data is not None and not market_data.empty:
-                    print(f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns")
-                    print(f"   - Data range: {market_data.index.min()} to {market_data.index.max()}")
-                    print(f"   - Columns: {list(market_data.columns)}")
-                    self.logger.info(f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns")
-                    self.logger.info(f"   - Data range: {market_data.index.min()} to {market_data.index.max()}")
-                    self.logger.info(f"   - Columns: {list(market_data.columns)}")
-                    
-                    # Validate data quality using utilities
-                    print("🔍 Validating data quality...")
-                    self.logger.info("🔍 Validating data quality...")
-                    try:
-                        from src.utils.data.quality.enhanced_data_quality_validator import EnhancedDataQualityValidator
-                        validator = EnhancedDataQualityValidator()
-                        quality_result = validator.validate_dataframe_quality(market_data, f"SR detection for {config.symbol}")
-                        
-                        print(f"📊 Data Quality Results:")
-                        print(f"   - Passed: {quality_result.passed}")
-                        print(f"   - Issues: {len(quality_result.issues)}")
-                        print(f"   - Warnings: {len(quality_result.warnings)}")
-                        self.logger.info(f"📊 Data Quality Results:")
-                        self.logger.info(f"   - Passed: {quality_result.passed}")
-                        self.logger.info(f"   - Issues: {len(quality_result.issues)}")
-                        self.logger.info(f"   - Warnings: {len(quality_result.warnings)}")
-                        
-                        if quality_result.issues:
-                            print("⚠️ Data Quality Issues:")
-                            for issue in quality_result.issues:
-                                print(f"   - {issue}")
-                            self.logger.warning("⚠️ Data Quality Issues:")
-                            for issue in quality_result.issues:
-                                self.logger.warning(f"   - {issue}")
-                        
-                        if quality_result.warnings:
-                            print("⚠️ Data Quality Warnings:")
-                            for warning in quality_result.warnings:
-                                print(f"   - {warning}")
-                            self.logger.warning("⚠️ Data Quality Warnings:")
-                            for warning in quality_result.warnings:
-                                self.logger.warning(f"   - {warning}")
-                        
-                        # Check for price anomalies specifically
-                        if 'price_anomalies' in quality_result.metrics:
-                            anomalies = quality_result.metrics['price_anomalies']
-                            if anomalies:
-                                print(f"🚨 Price Anomalies Detected: {len(anomalies)}")
-                                self.logger.error(f"🚨 Price Anomalies Detected: {len(anomalies)}")
-                                for anomaly in anomalies[:5]:  # Show first 5
-                                    print(f"   - Row {anomaly.get('row', 'N/A')}: {anomaly.get('type', 'unknown')}")
-                                    self.logger.error(f"   - Row {anomaly.get('row', 'N/A')}: {anomaly.get('type', 'unknown')}")
-                        
-                        # Check for high NaN columns and suggest data cleaning
-                        if quality_result.warnings:
-                            for warning in quality_result.warnings:
-                                if 'high_nan_columns' in warning:
-                                    print("🔧 Data Quality Recommendation:")
-                                    print("   - High NaN columns detected - this may indicate mixed data sources")
-                                    print("   - Consider using only OHLC columns for SR analysis")
-                                    print("   - Non-essential columns can be dropped to improve data quality")
-                                    self.logger.info("🔧 Data Quality Recommendation:")
-                                    self.logger.info("   - High NaN columns detected - this may indicate mixed data sources")
-                                    self.logger.info("   - Consider using only OHLC columns for SR analysis")
-                                    self.logger.info("   - Non-essential columns can be dropped to improve data quality")
-                                
-                    except ImportError as e:
-                        print(f"⚠️ Could not import data quality validator: {e}")
-                        self.logger.warning(f"⚠️ Could not import data quality validator: {e}")
-                    except Exception as e:
-                        print(f"⚠️ Data quality validation failed: {e}")
-                        self.logger.warning(f"⚠️ Data quality validation failed: {e}")
-                    
-                    # Calculate SR levels using volume method first, then fractal
-                    print("🔍 Calculating SR levels using volume method first...")
-                    self.logger.info("🔍 Calculating SR levels using volume method first...")
-                    
-                    # Try volume-based method first
-                    try:
-                        print("🔍 Attempting Volume-Based SR Detection...")
-                        self.logger.info("🔍 Attempting Volume-Based SR Detection...")
-                        sr_results = await sr_manager.calculate_sr_levels_with_method(
-                            market_data,
-                            method='volume',
-                            level_type='both'
-                        )
-                        support_count = len(sr_results.get('support_levels', []))
-                        resistance_count = len(sr_results.get('resistance_levels', []))
-                        print(f"✅ Volume-based SR detection completed: {support_count} support, {resistance_count} resistance levels")
-                        self.logger.info(f"✅ Volume-based SR detection completed: {support_count} support, {resistance_count} resistance levels")
-                    except Exception as e:
-                        print(f"⚠️ Volume method failed: {e}, falling back to fractal method")
-                        self.logger.warning(f"⚠️ Volume method failed: {e}, falling back to fractal method")
-                        print("🔍 Attempting Fractal-Based SR Detection...")
-                        self.logger.info("🔍 Attempting Fractal-Based SR Detection...")
-                        sr_results = await sr_manager.calculate_sr_levels_with_method(
-                            market_data,
-                            method='fractal',
-                            level_type='both'
-                        )
-                        support_count = len(sr_results.get('support_levels', []))
-                        resistance_count = len(sr_results.get('resistance_levels', []))
-                        print(f"✅ Fractal-based SR detection completed: {support_count} support, {resistance_count} resistance levels")
-                        self.logger.info(f"✅ Fractal-based SR detection completed: {support_count} support, {resistance_count} resistance levels")
-                    
-                    # Update manager with detected levels
-                    sr_manager.support_levels = sr_results.get('support_levels', [])
-                    sr_manager.resistance_levels = sr_results.get('resistance_levels', [])
-                    
-                    print(f"✅ SR detection completed:")
-                    print(f"   - Support levels detected: {len(sr_manager.support_levels)}")
-                    print(f"   - Resistance levels detected: {len(sr_manager.resistance_levels)}")
-                    self.logger.info(f"✅ SR detection completed:")
-                    self.logger.info(f"   - Support levels detected: {len(sr_manager.support_levels)}")
-                    self.logger.info(f"   - Resistance levels detected: {len(sr_manager.resistance_levels)}")
-                    
-                    # Detailed analysis of detected levels
-                    if sr_manager.support_levels:
-                        support_prices = [level.price for level in sr_manager.support_levels]
-                        support_strengths = [level.strength for level in sr_manager.support_levels]
-                        print(f"📊 Support Level Analysis:")
-                        print(f"   - Price range: ${min(support_prices):.2f} - ${max(support_prices):.2f}")
-                        print(f"   - Average strength: {np.mean(support_strengths):.4f}")
-                        print(f"   - Strongest support: ${max(support_prices, key=lambda x: sr_manager.support_levels[support_prices.index(x)].strength):.2f} (strength: {max(support_strengths):.4f})")
-                        self.logger.info(f"📊 Support Level Analysis:")
-                        self.logger.info(f"   - Price range: ${min(support_prices):.2f} - ${max(support_prices):.2f}")
-                        self.logger.info(f"   - Average strength: {np.mean(support_strengths):.4f}")
-                        self.logger.info(f"   - Strongest support: ${max(support_prices, key=lambda x: sr_manager.support_levels[support_prices.index(x)].strength):.2f} (strength: {max(support_strengths):.4f})")
-                        
-                        # Show top 5 support levels
-                        print(f"   📊 Top 5 Support Levels:")
-                        self.logger.info(f"   📊 Top 5 Support Levels:")
-                        top_support = sorted(sr_manager.support_levels, key=lambda x: x.strength, reverse=True)[:5]
-                        for i, level in enumerate(top_support, 1):
-                            method = getattr(level, 'metadata', {}).get('method', 'unknown') if hasattr(level, 'metadata') else 'unknown'
-                            print(f"      {i}. ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
-                            self.logger.info(f"      {i}. ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
-                    
-                    if sr_manager.resistance_levels:
-                        resistance_prices = [level.price for level in sr_manager.resistance_levels]
-                        resistance_strengths = [level.strength for level in sr_manager.resistance_levels]
-                        print(f"📊 Resistance Level Analysis:")
-                        print(f"   - Price range: ${min(resistance_prices):.2f} - ${max(resistance_prices):.2f}")
-                        print(f"   - Average strength: {np.mean(resistance_strengths):.4f}")
-                        print(f"   - Strongest resistance: ${max(resistance_prices, key=lambda x: sr_manager.resistance_levels[resistance_prices.index(x)].strength):.2f} (strength: {max(resistance_strengths):.4f})")
-                        self.logger.info(f"📊 Resistance Level Analysis:")
-                        self.logger.info(f"   - Price range: ${min(resistance_prices):.2f} - ${max(resistance_prices):.2f}")
-                        self.logger.info(f"   - Average strength: {np.mean(resistance_strengths):.4f}")
-                        self.logger.info(f"   - Strongest resistance: ${max(resistance_prices, key=lambda x: sr_manager.resistance_levels[resistance_prices.index(x)].strength):.2f} (strength: {max(resistance_strengths):.4f})")
-                        
-                        # Show top 5 resistance levels
-                        print(f"   📊 Top 5 Resistance Levels:")
-                        self.logger.info(f"   📊 Top 5 Resistance Levels:")
-                        top_resistance = sorted(sr_manager.resistance_levels, key=lambda x: x.strength, reverse=True)[:5]
-                        for i, level in enumerate(top_resistance, 1):
-                            method = getattr(level, 'metadata', {}).get('method', 'unknown') if hasattr(level, 'metadata') else 'unknown'
-                            print(f"      {i}. ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
-                            self.logger.info(f"      {i}. ${level.price:.2f} (strength: {level.strength:.3f}, method: {method})")
-                    
-                    # Save the detected levels
-                    print("💾 Saving detected SR levels...")
-                    self.logger.info("💾 Saving detected SR levels...")
-                    await sr_manager.save_levels()
-                    print("✅ SR levels saved successfully")
-                    self.logger.info("✅ SR levels saved successfully")
-                else:
-                    print("⚠️ No market data available for SR detection")
-                    self.logger.warning("⚠️ No market data available for SR detection")
-            
-            # Get all levels (existing or newly detected)
-            all_levels = sr_manager.support_levels + sr_manager.resistance_levels
-            self.logger.info(f"📊 Final SR levels summary:")
-            self.logger.info(f"   - Total levels: {len(all_levels)}")
-            self.logger.info(f"   - Support levels: {len(sr_manager.support_levels)}")
-            self.logger.info(f"   - Resistance levels: {len(sr_manager.resistance_levels)}")
-            
-            # Convert SRLevel objects to dictionaries
-            self.logger.info("🔄 Converting SR levels to dictionary format...")
-            artifacts['sr_levels'] = [
-                {
-                    'level': level.price,
-                    'type': level.level_type,
-                    'strength': level.strength,
-                    'touches': level.touch_count,
-                    'confidence': level.confidence,
-                    'algorithm': level.method
-                }
-                for level in all_levels
-            ]
-            
-            # Calculate metrics
-            avg_strength = np.mean([l.strength for l in all_levels]) if all_levels else 0.0
-            artifacts['sr_metrics'] = {
-                'total_levels': len(all_levels),
-                'support_levels': len(sr_manager.support_levels),
-                'resistance_levels': len(sr_manager.resistance_levels),
-                'avg_strength': avg_strength
-            }
-            artifacts['detection_params'] = {
-                'method': 'sr_levels_manager', 
-                'version': 'detection',
-                'mode': config.mode.value
-            }
-            
-            self.logger.info(f"📈 SR metrics calculated:")
-            self.logger.info(f"   - Average strength: {avg_strength:.4f}")
-            self.logger.info(f"   - Detection method: {artifacts['detection_params']['method']}")
-            self.logger.info(f"   - Detection mode: {artifacts['detection_params']['mode']}")
-            
-        except ImportError as e:
-            self.logger.warning(f"⚠️ SR levels manager not available: {e}, using mock SR levels")
-            self.logger.info("🔄 Falling back to mock SR levels for testing")
-            artifacts['sr_levels'] = [
-                {'level': 50000, 'type': 'support', 'strength': 0.8},
-                {'level': 52000, 'type': 'resistance', 'strength': 0.7}
-            ]
-            artifacts['sr_metrics'] = {
-                'total_levels': 2,
-                'support_levels': 1,
-                'resistance_levels': 1,
-                'avg_strength': 0.75
-            }
-            artifacts['detection_params'] = {
-                'method': 'mock_fallback',
-                'version': 'fallback',
-                'mode': config.mode.value
-            }
         except Exception as e:
-            self.logger.error(f"❌ Error in SR detection: {e}")
+            self.logger.error(f"❌ SR detection pipeline failed: {e}")
             import traceback
-            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
-            # Fallback to mock levels
-            self.logger.info("🔄 Falling back to mock SR levels due to error")
-            artifacts['sr_levels'] = [
-                {'level': 50000, 'type': 'support', 'strength': 0.8},
-                {'level': 52000, 'type': 'resistance', 'strength': 0.7}
-            ]
-            artifacts['sr_metrics'] = {
-                'total_levels': 2,
-                'support_levels': 1,
-                'resistance_levels': 1,
-                'avg_strength': 0.75
-            }
-            artifacts['detection_params'] = {
-                'method': 'error_fallback',
-                'version': 'fallback',
-                'mode': config.mode.value,
-                'error': str(e)
-            }
-        
-        self.logger.info("🎯 SR detection pipeline completed")
-        self.logger.info(f"   - Final artifacts: {len(artifacts['sr_levels'])} levels")
-        self.logger.info(f"   - Detection method: {artifacts['detection_params']['method']}")
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("sr_detection", config, artifacts)
-        
-        # Automatically trigger the next sub-pipeline: sr_clustering
-        self.logger.info("🔄 SR detection completed, triggering next: sr_clustering")
-        try:
-            next_artifacts = await self._sr_clustering_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ SR clustering pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute SR clustering pipeline: {e}")
+            self.logger.error(f"❌ Error details: {traceback.format_exc()}")
         
         return artifacts
-    
-    async def _load_market_data_for_sr_detection(self, config: SubPipelineConfig) -> Optional[pd.DataFrame]:
-        """Load market data for SR detection using standardized utilities."""
-        try:
-            from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-            from src.utils.pipeline_standards import pipeline_standards
-            
-            symbol = config.symbol
-            exchange = config.exchange
-            timeframe = config.timeframe
-            
-            self.logger.info(f"🔍 Searching for market data: {exchange}_{symbol}_{timeframe}")
-            
-            # Skip pipeline state loading to avoid schema issues
-            print("🔍 Searching for clean klines data (bypassing pipeline state)...")
-            self.logger.info("🔍 Searching for clean klines data (bypassing pipeline state)...")
-            
-            # First, try the clean 30m consolidated klines data directly
-            clean_klines_path = f"/Users/remyroche/Documents/Ares/data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
-            if Path(clean_klines_path).exists():
-                print(f"📊 Loading clean klines data from: {clean_klines_path}")
-                self.logger.info(f"📊 Loading clean klines data from: {clean_klines_path}")
-                try:
-                    data = pd.read_parquet(clean_klines_path)
-                    if data is not None and not data.empty:
-                        print(f"✅ Loaded {len(data)} rows of clean klines data")
-                        self.logger.info(f"✅ Loaded {len(data)} rows of clean klines data")
-                        # Clean data for SR analysis
-                        data = self._clean_data_for_sr_analysis(data)
-                        return data
-                except Exception as e:
-                    print(f"⚠️ Error loading clean klines data: {e}")
-                    self.logger.warning(f"⚠️ Error loading clean klines data: {e}")
-            
-            # If 30m not available, try 1m clean klines data
-            if timeframe != "1m":
-                clean_1m_paths = [
-                    f"/Users/remyroche/Documents/Ares/data_cache/klines_{exchange}_{symbol}_1m_*.parquet"
-                ]
-                for path_pattern in clean_1m_paths:
-                    import glob
-                    matching_files = glob.glob(path_pattern)
-                    if matching_files:
-                        # Use the most recent file
-                        path = max(matching_files, key=lambda x: Path(x).stat().st_mtime)
-                        print(f"📊 Loading 1m klines data (fallback): {path}")
-                        self.logger.info(f"📊 Loading 1m klines data (fallback): {path}")
-                        try:
-                            data = pd.read_parquet(path)
-                            if data is not None and not data.empty:
-                                print(f"✅ Loaded {len(data)} rows of 1m klines data")
-                                self.logger.info(f"✅ Loaded {len(data)} rows of 1m klines data")
-                                # Clean data for SR analysis
-                                data = self._clean_data_for_sr_analysis(data)
-                                return data
-                        except Exception as e:
-                            print(f"⚠️ Error loading 1m klines data: {e}")
-                            self.logger.warning(f"⚠️ Error loading 1m klines data: {e}")
-                            continue
-            
-            # Try alternative parquet file locations using standardized handler
-            # Prioritize clean klines data over processed data to avoid NaN issues
-            parquet_paths = [
-                # First try clean klines data (no NaN issues)
-                f"/Users/remyroche/Documents/Ares/data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet",
-                f"/Users/remyroche/Documents/Ares/data_cache/klines_{exchange}_{symbol}_{timeframe}_*.parquet",
-                # Then try unified data (also clean)
-                f"/Users/remyroche/Documents/Ares/data_cache/unified/{exchange.lower()}/{symbol.lower()}/{timeframe}/exchange={exchange.upper()}/symbol={symbol.upper()}/timeframe={timeframe}/*.parquet",
-                # Then try processed data (may have NaN issues)
-                f"{config.data_dir}/training/{exchange}_{symbol}_{timeframe}_processed.parquet",
-                f"{config.data_dir}/{exchange}_{symbol}_{timeframe}_processed.parquet",
-                f"{config.data_dir}/training/{symbol}_{timeframe}_processed.parquet",
-                f"{config.data_dir}/{symbol}_{timeframe}_processed.parquet",
-                f"{config.data_dir}/training/{symbol}_processed.parquet",
-                f"{config.data_dir}/{symbol}_processed.parquet",
-                # Feature cache as last resort
-                f"/Users/remyroche/Documents/Ares/data_cache/feature_cache/{exchange}_{symbol}_{timeframe}_all_features_*.parquet"
-            ]
-            
-            for path in parquet_paths:
-                # Handle glob patterns
-                if '*' in path:
-                    import glob
-                    matching_files = glob.glob(path)
-                    if matching_files:
-                        # Use the most recent file
-                        path = max(matching_files, key=lambda x: Path(x).stat().st_mtime)
-                        print(f"📊 Found {len(matching_files)} matching files, using most recent: {path}")
-                        self.logger.info(f"📊 Found {len(matching_files)} matching files, using most recent: {path}")
-                
-                if Path(path).exists():
-                    print(f"📊 Loading parquet data from: {path}")
-                    self.logger.info(f"📊 Loading parquet data from: {path}")
-                    try:
-                        data = standardized_parquet_handler.read_parquet_standardized(path)
-                        if data is not None and not data.empty:
-                            print(f"✅ Loaded {len(data)} rows from parquet")
-                            self.logger.info(f"✅ Loaded {len(data)} rows from parquet")
-                            
-                            # Clean data for SR analysis - keep only essential OHLCV columns
-                            data = self._clean_data_for_sr_analysis(data)
-                            return data
-                    except Exception as e:
-                        print(f"⚠️ Error loading parquet from {path}: {e}")
-                        self.logger.warning(f"⚠️ Error loading parquet from {path}: {e}")
-                        continue
-            
-            # If no processed data found, try to load raw data
-            print("⚠️ No Parquet files found, falling back to raw data sources...")
-            self.logger.warning("⚠️ No Parquet files found, falling back to raw data sources...")
-            
-            raw_paths = [
-                f"{config.data_dir}/{symbol}_historical_data.pkl",
-                f"{config.data_dir}/training/{symbol}_historical_data.pkl",
-                f"{config.data_dir}/{symbol}.csv",
-                f"{config.data_dir}/training/{symbol}.csv"
-            ]
-            
-            for path in raw_paths:
-                if Path(path).exists():
-                    self.logger.info(f"📊 Loading raw market data from: {path}")
-                    if path.endswith('.pkl'):
-                        import pickle
-                        with open(path, 'rb') as f:
-                            data = pickle.load(f)
-                        if isinstance(data, pd.DataFrame) and not data.empty:
-                            self.logger.info(f"✅ Loaded {len(data)} rows from pickle DataFrame")
-                            # Clean data for SR analysis
-                            data = self._clean_data_for_sr_analysis(data)
-                            return data
-                        elif isinstance(data, dict) and 'klines' in data:
-                            # Handle dictionary format with klines data
-                            klines_data = data['klines']
-                            if isinstance(klines_data, pd.DataFrame) and not klines_data.empty:
-                                self.logger.info(f"✅ Loaded {len(klines_data)} rows from pickle klines")
-                                # Clean data for SR analysis
-                                klines_data = self._clean_data_for_sr_analysis(klines_data)
-                                return klines_data
-                    elif path.endswith('.csv'):
-                        data = pd.read_csv(path)
-                        if not data.empty:
-                            self.logger.info(f"✅ Loaded {len(data)} rows from CSV")
-                            return data
-            
-            self.logger.warning("⚠️ No market data found for SR detection")
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error loading market data: {e}")
-            import traceback
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            return None
-    
-    def _clean_data_for_sr_analysis(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Clean data for SR analysis by keeping only essential OHLCV columns and removing problematic ones."""
-        print("🧹 Cleaning data for SR analysis...")
-        self.logger.info("🧹 Cleaning data for SR analysis...")
-        
-        # Essential columns for SR analysis
-        essential_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        
-        # Check what columns we have
-        available_columns = list(data.columns)
-        print(f"   📊 Original columns: {len(available_columns)}")
-        print(f"   📋 Available: {available_columns}")
-        
-        # Find columns that match our essential list (case-insensitive)
-        clean_columns = []
-        for essential in essential_columns:
-            for col in available_columns:
-                if col.lower() == essential.lower():
-                    clean_columns.append(col)
-                    break
-        
-        # If we don't have all essential columns, try common variations
-        if len(clean_columns) < len(essential_columns):
-            print("   🔍 Searching for column variations...")
-            column_mapping = {
-                'timestamp': ['timestamp', 'time', 'datetime', 'date'],
-                'open': ['open', 'o'],
-                'high': ['high', 'h'],
-                'low': ['low', 'l'],
-                'close': ['close', 'c'],
-                'volume': ['volume', 'vol', 'v']
-            }
-            
-            for essential, variations in column_mapping.items():
-                if essential not in [col.lower() for col in clean_columns]:
-                    for col in available_columns:
-                        if col.lower() in variations:
-                            clean_columns.append(col)
-                            break
-        
-        # Keep only essential columns
-        if clean_columns:
-            cleaned_data = data[clean_columns].copy()
-            print(f"   ✅ Kept {len(clean_columns)} essential columns: {clean_columns}")
-            self.logger.info(f"   ✅ Kept {len(clean_columns)} essential columns: {clean_columns}")
-            
-            # Remove any rows with NaN values in essential columns
-            before_count = len(cleaned_data)
-            cleaned_data = cleaned_data.dropna()
-            after_count = len(cleaned_data)
-            
-            if before_count != after_count:
-                print(f"   🧹 Removed {before_count - after_count} rows with NaN values")
-                self.logger.info(f"   🧹 Removed {before_count - after_count} rows with NaN values")
-            
-            print(f"   📊 Final clean data: {len(cleaned_data)} rows × {len(cleaned_data.columns)} columns")
-            self.logger.info(f"   📊 Final clean data: {len(cleaned_data)} rows × {len(cleaned_data.columns)} columns")
-            
-            return cleaned_data
-        else:
-            print("   ⚠️ Could not find essential OHLCV columns, returning original data")
-            self.logger.warning("   ⚠️ Could not find essential OHLCV columns, returning original data")
-            return data
-    
     
     async def _sr_clustering_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """SR clustering sub-pipeline."""

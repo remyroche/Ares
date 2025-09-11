@@ -1,16 +1,18 @@
-from typing import Optional
-from typing import Dict
+"""
+Limited Market Microstructure Features Extraction
+Extracts maximum value from available market data without multi-level order book
+"""
+
+from typing import Optional, Dict, Any
 import pandas as pd
-from typing import Any
-from ..utils.logger import system_logger
-from src.core.decorators import handles_errors
-'\nLimited Market Microstructure Features Extraction\nExtracts maximum value from available market data without multi-level order book\n'
-from collections import deque
-from ..utils.logger import system_logger
 import numpy as np
 import datetime
 import logging
 import time
+from collections import deque
+
+from ..utils.logger import system_logger
+from ..core.decorators import handles_errors
 
 class LimitedMicrostructureFeatures:
     """

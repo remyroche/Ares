@@ -191,6 +191,7 @@ class FeatureSelectionFramework:
                                      feature_names: List[str],
                                      features_target_count: int,
                                      model_type: str = 'default',
+                                     model: Optional[Any] = None,
                                      config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Enhanced hierarchical feature selection pipeline with adaptive thresholds.
@@ -214,6 +215,13 @@ class FeatureSelectionFramework:
         """
         start_time = time.time()
         features_initial_count = len(feature_names)
+        
+        # Auto-detect model type if model object is provided
+        if model is not None:
+            detected_model_type = self._auto_detect_model_type(model)
+            if detected_model_type != 'default':
+                model_type = detected_model_type
+                _LOGGER.info(f"🎯 Auto-detected model type: {model_type}")
         
         # Validate and plan feature reduction
         validation_result = self.validate_feature_reduction_plan(
@@ -969,6 +977,829 @@ class FeatureSelectionFramework:
         except Exception as e:
             _LOGGER.warning(f"⚠️ Tree ensemble threshold determination failed: {e}")
             return 0.0, max(1, len(feature_names) // 20)
+
+    def _nested_bootstrap_stability_validation(self, X: np.ndarray, y: np.ndarray,
+                                             feature_names: List[str],
+                                             features_target_count: int,
+                                             config: Dict[str, Any],
+                                             n_outer_bootstrap: int = 5,
+                                             n_inner_bootstrap: int = 10,
+                                             bootstrap_fraction: float = 0.8,
+                                             stability_threshold: float = 0.6) -> Dict[str, Any]:
+        """
+        Nested bootstrap validation for enhanced feature selection stability.
+        
+        This method performs a two-level bootstrap:
+        1. Outer bootstrap: Multiple independent feature selection runs
+        2. Inner bootstrap: Within each outer run, multiple bootstrap samples
+        
+        This provides more robust stability assessment by testing consistency
+        across different data samples and different selection runs.
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            features_target_count: Target number of features
+            config: Pipeline configuration
+            n_outer_bootstrap: Number of outer bootstrap runs
+            n_inner_bootstrap: Number of inner bootstrap samples per outer run
+            bootstrap_fraction: Fraction of data to use in each bootstrap
+            stability_threshold: Minimum stability score for feature selection
+            
+        Returns:
+            Dictionary with nested bootstrap stability analysis
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting nested bootstrap stability validation...")
+        _LOGGER.info(f"📊 Outer bootstrap runs: {n_outer_bootstrap}")
+        _LOGGER.info(f"📊 Inner bootstrap samples: {n_inner_bootstrap}")
+        _LOGGER.info(f"📊 Total bootstrap samples: {n_outer_bootstrap * n_inner_bootstrap}")
+        
+        outer_results = []
+        all_feature_selections = []
+        feature_selection_counts = {feature: 0 for feature in feature_names}
+        
+        # Outer bootstrap loop
+        for outer_idx in range(n_outer_bootstrap):
+            _LOGGER.info(f"🔄 Outer bootstrap run {outer_idx + 1}/{n_outer_bootstrap}")
+            
+            # Inner bootstrap loop
+            inner_results = []
+            for inner_idx in range(n_inner_bootstrap):
+                try:
+                    # Bootstrap sampling
+                    bootstrap_size = int(len(X) * bootstrap_fraction)
+                    bootstrap_indices = np.random.choice(
+                        len(X), size=bootstrap_size, replace=True
+                    )
+                    X_bootstrap = X[bootstrap_indices]
+                    y_bootstrap = y[bootstrap_indices]
+                    
+                    # Run pipeline on bootstrap sample
+                    bootstrap_features = self._run_pipeline_to_consensus(
+                        X_bootstrap, y_bootstrap, feature_names, features_target_count, config
+                    )
+                    
+                    inner_results.append({
+                        'bootstrap_idx': inner_idx,
+                        'selected_features': bootstrap_features,
+                        'n_features': len(bootstrap_features)
+                    })
+                    
+                    # Track all feature selections
+                    all_feature_selections.append(bootstrap_features)
+                    for feature in bootstrap_features:
+                        if feature in feature_selection_counts:
+                            feature_selection_counts[feature] += 1
+                    
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Inner bootstrap {inner_idx + 1} failed: {e}")
+                    continue
+            
+            # Analyze inner bootstrap consistency for this outer run
+            if inner_results:
+                inner_consistency = self._analyze_inner_bootstrap_consistency(
+                    inner_results, feature_names
+                )
+                
+                outer_results.append({
+                    'outer_idx': outer_idx,
+                    'inner_results': inner_results,
+                    'inner_consistency': inner_consistency,
+                    'n_successful_inner': len(inner_results)
+                })
+        
+        # Calculate overall stability scores
+        total_bootstrap_samples = sum(len(outer['inner_results']) for outer in outer_results)
+        stability_scores = {}
+        for feature in feature_names:
+            selection_count = feature_selection_counts[feature]
+            stability_score = selection_count / total_bootstrap_samples if total_bootstrap_samples > 0 else 0.0
+            stability_scores[feature] = stability_score
+        
+        # Select stable features
+        stable_features = [
+            feature for feature, stability in stability_scores.items()
+            if stability >= stability_threshold
+        ]
+        
+        # If too few stable features, relax threshold
+        if len(stable_features) < features_target_count:
+            _LOGGER.warning(f"⚠️ Only {len(stable_features)} stable features found, relaxing criteria...")
+            sorted_features = sorted(
+                stability_scores.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            stable_features = [feature for feature, _ in sorted_features[:features_target_count]]
+            if stable_features:
+                min_stability = min(stability_scores[f] for f in stable_features)
+                _LOGGER.info(f"📊 Relaxed stability threshold: {min_stability:.3f}")
+        
+        # Nested bootstrap analysis
+        nested_analysis = {
+            'n_outer_bootstrap': n_outer_bootstrap,
+            'n_inner_bootstrap': n_inner_bootstrap,
+            'total_bootstrap_samples': total_bootstrap_samples,
+            'stability_threshold': stability_threshold,
+            'stable_features': stable_features,
+            'stability_scores': stability_scores,
+            'feature_selection_counts': feature_selection_counts,
+            'outer_results': outer_results,
+            'nested_stability_statistics': {
+                'mean_stability': np.mean(list(stability_scores.values())),
+                'std_stability': np.std(list(stability_scores.values())),
+                'max_stability': np.max(list(stability_scores.values())),
+                'min_stability': np.min(list(stability_scores.values())),
+                'features_above_threshold': sum(1 for s in stability_scores.values() if s >= stability_threshold),
+                'outer_run_consistency': np.mean([outer['inner_consistency']['mean_consistency'] for outer in outer_results])
+            }
+        }
+        
+        execution_time = time.time() - start_time
+        _LOGGER.info(f"✅ Nested bootstrap stability validation completed in {execution_time:.3f}s")
+        _LOGGER.info(f"📊 Stable features: {len(stable_features)}/{len(feature_names)}")
+        _LOGGER.info(f"📊 Mean stability: {nested_analysis['nested_stability_statistics']['mean_stability']:.3f}")
+        _LOGGER.info(f"📊 Outer run consistency: {nested_analysis['nested_stability_statistics']['outer_run_consistency']:.3f}")
+        
+        return {
+            'stable_features': stable_features,
+            'nested_analysis': nested_analysis,
+            'execution_time': execution_time
+        }
+
+    def _analyze_inner_bootstrap_consistency(self, inner_results: List[Dict[str, Any]], 
+                                           feature_names: List[str]) -> Dict[str, Any]:
+        """
+        Analyze consistency within a single outer bootstrap run.
+        
+        Args:
+            inner_results: Results from inner bootstrap samples
+            feature_names: List of all feature names
+            
+        Returns:
+            Dictionary with consistency analysis
+        """
+        if not inner_results:
+            return {'mean_consistency': 0.0, 'consistency_scores': {}}
+        
+        # Count feature selections within this outer run
+        feature_counts = {feature: 0 for feature in feature_names}
+        for result in inner_results:
+            for feature in result['selected_features']:
+                if feature in feature_counts:
+                    feature_counts[feature] += 1
+        
+        # Calculate consistency scores
+        n_inner = len(inner_results)
+        consistency_scores = {}
+        for feature in feature_names:
+            count = feature_counts[feature]
+            consistency = count / n_inner if n_inner > 0 else 0.0
+            consistency_scores[feature] = consistency
+        
+        mean_consistency = np.mean(list(consistency_scores.values()))
+        
+        return {
+            'mean_consistency': mean_consistency,
+            'consistency_scores': consistency_scores,
+            'feature_counts': feature_counts,
+            'n_inner_samples': n_inner
+        }
+
+    def _temporal_stability_validation(self, X: np.ndarray, y: np.ndarray,
+                                     feature_names: List[str],
+                                     features_target_count: int,
+                                     config: Dict[str, Any],
+                                     time_windows: List[int] = None,
+                                     overlap_ratio: float = 0.5) -> Dict[str, Any]:
+        """
+        Temporal stability validation for time-series data.
+        
+        This method evaluates feature selection stability across different time windows
+        to ensure selected features remain relevant over time and aren't just artifacts
+        of specific time periods.
+        
+        Args:
+            X: Feature matrix (time-series data)
+            y: Target array
+            feature_names: List of feature names
+            features_target_count: Target number of features
+            config: Pipeline configuration
+            time_windows: List of time window sizes (e.g., [100, 200, 300])
+            overlap_ratio: Ratio of overlap between consecutive windows
+            
+        Returns:
+            Dictionary with temporal stability analysis
+        """
+        start_time = time.time()
+        n_samples = len(X)
+        
+        # Default time windows if not provided
+        if time_windows is None:
+            time_windows = [
+                min(100, n_samples // 4),
+                min(200, n_samples // 2),
+                min(300, n_samples * 3 // 4)
+            ]
+            time_windows = [w for w in time_windows if w >= 50]  # Minimum window size
+        
+        _LOGGER.info(f"🔄 Starting temporal stability validation...")
+        _LOGGER.info(f"📊 Time windows: {time_windows}")
+        _LOGGER.info(f"📊 Overlap ratio: {overlap_ratio}")
+        
+        temporal_results = []
+        feature_selection_counts = {feature: 0 for feature in feature_names}
+        all_time_windows = []
+        
+        # Analyze each time window
+        for window_size in time_windows:
+            if window_size > n_samples:
+                _LOGGER.warning(f"⚠️ Window size {window_size} > data size {n_samples}, skipping")
+                continue
+            
+            _LOGGER.info(f"🔄 Analyzing time window: {window_size} samples")
+            
+            # Create overlapping windows
+            step_size = int(window_size * (1 - overlap_ratio))
+            if step_size == 0:
+                step_size = 1
+            
+            window_results = []
+            for start_idx in range(0, n_samples - window_size + 1, step_size):
+                end_idx = start_idx + window_size
+                
+                try:
+                    # Extract time window
+                    X_window = X[start_idx:end_idx]
+                    y_window = y[start_idx:end_idx]
+                    
+                    # Run feature selection on this time window
+                    window_features = self._run_pipeline_to_consensus(
+                        X_window, y_window, feature_names, features_target_count, config
+                    )
+                    
+                    window_results.append({
+                        'start_idx': start_idx,
+                        'end_idx': end_idx,
+                        'window_size': window_size,
+                        'selected_features': window_features,
+                        'n_features': len(window_features)
+                    })
+                    
+                    # Track feature selections
+                    for feature in window_features:
+                        if feature in feature_selection_counts:
+                            feature_selection_counts[feature] += 1
+                    
+                    all_time_windows.append({
+                        'window_size': window_size,
+                        'start_idx': start_idx,
+                        'end_idx': end_idx,
+                        'selected_features': window_features
+                    })
+                    
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Time window [{start_idx}:{end_idx}] failed: {e}")
+                    continue
+            
+            if window_results:
+                # Analyze stability within this window size
+                window_stability = self._analyze_temporal_window_stability(
+                    window_results, feature_names
+                )
+                
+                temporal_results.append({
+                    'window_size': window_size,
+                    'window_results': window_results,
+                    'window_stability': window_stability,
+                    'n_windows': len(window_results)
+                })
+        
+        # Calculate overall temporal stability scores
+        total_windows = sum(len(result['window_results']) for result in temporal_results)
+        temporal_stability_scores = {}
+        for feature in feature_names:
+            selection_count = feature_selection_counts[feature]
+            stability_score = selection_count / total_windows if total_windows > 0 else 0.0
+            temporal_stability_scores[feature] = stability_score
+        
+        # Select temporally stable features
+        stable_features = [
+            feature for feature, stability in temporal_stability_scores.items()
+            if stability >= 0.6  # 60% temporal stability threshold
+        ]
+        
+        # If too few stable features, relax criteria
+        if len(stable_features) < features_target_count:
+            _LOGGER.warning(f"⚠️ Only {len(stable_features)} temporally stable features found, relaxing criteria...")
+            sorted_features = sorted(
+                temporal_stability_scores.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            stable_features = [feature for feature, _ in sorted_features[:features_target_count]]
+        
+        # Temporal stability analysis
+        temporal_analysis = {
+            'time_windows': time_windows,
+            'overlap_ratio': overlap_ratio,
+            'total_windows': total_windows,
+            'stable_features': stable_features,
+            'temporal_stability_scores': temporal_stability_scores,
+            'feature_selection_counts': feature_selection_counts,
+            'temporal_results': temporal_results,
+            'all_time_windows': all_time_windows,
+            'temporal_stability_statistics': {
+                'mean_temporal_stability': np.mean(list(temporal_stability_scores.values())),
+                'std_temporal_stability': np.std(list(temporal_stability_scores.values())),
+                'max_temporal_stability': np.max(list(temporal_stability_scores.values())),
+                'min_temporal_stability': np.min(list(temporal_stability_scores.values())),
+                'features_above_threshold': sum(1 for s in temporal_stability_scores.values() if s >= 0.6),
+                'window_size_stability': {
+                    result['window_size']: result['window_stability']['mean_stability']
+                    for result in temporal_results
+                }
+            }
+        }
+        
+        execution_time = time.time() - start_time
+        _LOGGER.info(f"✅ Temporal stability validation completed in {execution_time:.3f}s")
+        _LOGGER.info(f"📊 Temporally stable features: {len(stable_features)}/{len(feature_names)}")
+        _LOGGER.info(f"📊 Mean temporal stability: {temporal_analysis['temporal_stability_statistics']['mean_temporal_stability']:.3f}")
+        
+        return {
+            'stable_features': stable_features,
+            'temporal_analysis': temporal_analysis,
+            'execution_time': execution_time
+        }
+
+    def _analyze_temporal_window_stability(self, window_results: List[Dict[str, Any]], 
+                                         feature_names: List[str]) -> Dict[str, Any]:
+        """
+        Analyze stability within a specific time window size.
+        
+        Args:
+            window_results: Results from different time windows of same size
+            feature_names: List of all feature names
+            
+        Returns:
+            Dictionary with window stability analysis
+        """
+        if not window_results:
+            return {'mean_stability': 0.0, 'stability_scores': {}}
+        
+        # Count feature selections across windows of this size
+        feature_counts = {feature: 0 for feature in feature_names}
+        for result in window_results:
+            for feature in result['selected_features']:
+                if feature in feature_counts:
+                    feature_counts[feature] += 1
+        
+        # Calculate stability scores
+        n_windows = len(window_results)
+        stability_scores = {}
+        for feature in feature_names:
+            count = feature_counts[feature]
+            stability = count / n_windows if n_windows > 0 else 0.0
+            stability_scores[feature] = stability
+        
+        mean_stability = np.mean(list(stability_scores.values()))
+        
+        return {
+            'mean_stability': mean_stability,
+            'stability_scores': stability_scores,
+            'feature_counts': feature_counts,
+            'n_windows': n_windows
+        }
+
+    def _cross_dataset_stability_validation(self, datasets: List[Dict[str, Any]],
+                                          features_target_count: int,
+                                          config: Dict[str, Any],
+                                          stability_threshold: float = 0.6) -> Dict[str, Any]:
+        """
+        Cross-dataset stability validation when multiple datasets are available.
+        
+        This method evaluates feature selection stability across different datasets
+        to ensure selected features are robust and not specific to a particular dataset.
+        This is particularly useful for transfer learning and domain adaptation scenarios.
+        
+        Args:
+            datasets: List of datasets, each containing 'X', 'y', 'feature_names', and optional 'dataset_name'
+            features_target_count: Target number of features
+            config: Pipeline configuration
+            stability_threshold: Minimum stability score for feature selection
+            
+        Returns:
+            Dictionary with cross-dataset stability analysis
+        """
+        start_time = time.time()
+        n_datasets = len(datasets)
+        
+        _LOGGER.info(f"🔄 Starting cross-dataset stability validation...")
+        _LOGGER.info(f"📊 Number of datasets: {n_datasets}")
+        
+        # Validate datasets
+        if n_datasets < 2:
+            _LOGGER.warning("⚠️ Need at least 2 datasets for cross-dataset stability validation")
+            return {
+                'stable_features': [],
+                'cross_dataset_analysis': {'error': 'Need at least 2 datasets'},
+                'execution_time': time.time() - start_time
+            }
+        
+        # Get common feature names across all datasets
+        all_feature_names = set()
+        for dataset in datasets:
+            all_feature_names.update(dataset['feature_names'])
+        
+        common_features = set(datasets[0]['feature_names'])
+        for dataset in datasets[1:]:
+            common_features = common_features.intersection(set(dataset['feature_names']))
+        
+        _LOGGER.info(f"📊 Common features across datasets: {len(common_features)}")
+        _LOGGER.info(f"📊 Total unique features: {len(all_feature_names)}")
+        
+        dataset_results = []
+        feature_selection_counts = {feature: 0 for feature in all_feature_names}
+        
+        # Run feature selection on each dataset
+        for dataset_idx, dataset in enumerate(datasets):
+            dataset_name = dataset.get('dataset_name', f'Dataset_{dataset_idx + 1}')
+            _LOGGER.info(f"🔄 Processing {dataset_name}...")
+            
+            try:
+                X = dataset['X']
+                y = dataset['y']
+                feature_names = dataset['feature_names']
+                
+                # Run feature selection pipeline
+                selected_features = self._run_pipeline_to_consensus(
+                    X, y, feature_names, features_target_count, config
+                )
+                
+                # Track feature selections
+                for feature in selected_features:
+                    if feature in feature_selection_counts:
+                        feature_selection_counts[feature] += 1
+                
+                dataset_results.append({
+                    'dataset_idx': dataset_idx,
+                    'dataset_name': dataset_name,
+                    'selected_features': selected_features,
+                    'n_features': len(selected_features),
+                    'n_samples': len(X),
+                    'n_original_features': len(feature_names)
+                })
+                
+                _LOGGER.info(f"✅ {dataset_name}: {len(selected_features)} features selected")
+                
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ {dataset_name} failed: {e}")
+                continue
+        
+        # Calculate cross-dataset stability scores
+        successful_datasets = len(dataset_results)
+        cross_dataset_stability_scores = {}
+        for feature in all_feature_names:
+            selection_count = feature_selection_counts[feature]
+            stability_score = selection_count / successful_datasets if successful_datasets > 0 else 0.0
+            cross_dataset_stability_scores[feature] = stability_score
+        
+        # Select cross-dataset stable features
+        stable_features = [
+            feature for feature, stability in cross_dataset_stability_scores.items()
+            if stability >= stability_threshold
+        ]
+        
+        # If too few stable features, relax criteria
+        if len(stable_features) < features_target_count:
+            _LOGGER.warning(f"⚠️ Only {len(stable_features)} cross-dataset stable features found, relaxing criteria...")
+            sorted_features = sorted(
+                cross_dataset_stability_scores.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            stable_features = [feature for feature, _ in sorted_features[:features_target_count]]
+        
+        # Analyze feature overlap between datasets
+        feature_overlap_analysis = self._analyze_feature_overlap(dataset_results, all_feature_names)
+        
+        # Cross-dataset stability analysis
+        cross_dataset_analysis = {
+            'n_datasets': n_datasets,
+            'successful_datasets': successful_datasets,
+            'common_features': list(common_features),
+            'n_common_features': len(common_features),
+            'n_total_features': len(all_feature_names),
+            'stable_features': stable_features,
+            'cross_dataset_stability_scores': cross_dataset_stability_scores,
+            'feature_selection_counts': feature_selection_counts,
+            'dataset_results': dataset_results,
+            'feature_overlap_analysis': feature_overlap_analysis,
+            'cross_dataset_stability_statistics': {
+                'mean_cross_dataset_stability': np.mean(list(cross_dataset_stability_scores.values())),
+                'std_cross_dataset_stability': np.std(list(cross_dataset_stability_scores.values())),
+                'max_cross_dataset_stability': np.max(list(cross_dataset_stability_scores.values())),
+                'min_cross_dataset_stability': np.min(list(cross_dataset_stability_scores.values())),
+                'features_above_threshold': sum(1 for s in cross_dataset_stability_scores.values() if s >= stability_threshold),
+                'dataset_consistency': np.mean([len(result['selected_features']) for result in dataset_results])
+            }
+        }
+        
+        execution_time = time.time() - start_time
+        _LOGGER.info(f"✅ Cross-dataset stability validation completed in {execution_time:.3f}s")
+        _LOGGER.info(f"📊 Cross-dataset stable features: {len(stable_features)}/{len(all_feature_names)}")
+        _LOGGER.info(f"📊 Mean cross-dataset stability: {cross_dataset_analysis['cross_dataset_stability_statistics']['mean_cross_dataset_stability']:.3f}")
+        
+        return {
+            'stable_features': stable_features,
+            'cross_dataset_analysis': cross_dataset_analysis,
+            'execution_time': execution_time
+        }
+
+    def _analyze_feature_overlap(self, dataset_results: List[Dict[str, Any]], 
+                               all_feature_names: set) -> Dict[str, Any]:
+        """
+        Analyze feature overlap between different datasets.
+        
+        Args:
+            dataset_results: Results from feature selection on each dataset
+            all_feature_names: Set of all unique feature names
+            
+        Returns:
+            Dictionary with feature overlap analysis
+        """
+        if len(dataset_results) < 2:
+            return {'overlap_matrix': {}, 'pairwise_overlaps': {}}
+        
+        # Create feature selection matrix
+        feature_selection_matrix = {}
+        for feature in all_feature_names:
+            feature_selection_matrix[feature] = []
+            for result in dataset_results:
+                is_selected = 1 if feature in result['selected_features'] else 0
+                feature_selection_matrix[feature].append(is_selected)
+        
+        # Calculate pairwise overlaps between datasets
+        pairwise_overlaps = {}
+        for i in range(len(dataset_results)):
+            for j in range(i + 1, len(dataset_results)):
+                dataset_i_features = set(dataset_results[i]['selected_features'])
+                dataset_j_features = set(dataset_results[j]['selected_features'])
+                
+                intersection = dataset_i_features.intersection(dataset_j_features)
+                union = dataset_i_features.union(dataset_j_features)
+                
+                jaccard_similarity = len(intersection) / len(union) if len(union) > 0 else 0.0
+                
+                pairwise_overlaps[f"{dataset_results[i]['dataset_name']}_vs_{dataset_results[j]['dataset_name']}"] = {
+                    'intersection_size': len(intersection),
+                    'union_size': len(union),
+                    'jaccard_similarity': jaccard_similarity,
+                    'dataset_i_size': len(dataset_i_features),
+                    'dataset_j_size': len(dataset_j_features)
+                }
+        
+        # Calculate overall overlap statistics
+        overlap_scores = []
+        for feature, selections in feature_selection_matrix.items():
+            overlap_score = sum(selections) / len(selections)
+            overlap_scores.append(overlap_score)
+        
+        return {
+            'feature_selection_matrix': feature_selection_matrix,
+            'pairwise_overlaps': pairwise_overlaps,
+            'overlap_statistics': {
+                'mean_overlap': np.mean(overlap_scores),
+                'std_overlap': np.std(overlap_scores),
+                'max_overlap': np.max(overlap_scores),
+                'min_overlap': np.min(overlap_scores)
+            }
+        }
+
+    def _feature_interaction_stability_validation(self, X: np.ndarray, y: np.ndarray,
+                                                feature_names: List[str],
+                                                features_target_count: int,
+                                                config: Dict[str, Any],
+                                                n_bootstrap: int = 10,
+                                                max_interaction_order: int = 3) -> Dict[str, Any]:
+        """
+        Feature interaction stability validation to detect stable feature combinations.
+        
+        This method identifies feature combinations that are consistently selected together
+        across bootstrap samples, indicating synergistic relationships between features.
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            features_target_count: Target number of features
+            config: Pipeline configuration
+            n_bootstrap: Number of bootstrap samples
+            max_interaction_order: Maximum order of feature interactions to analyze (2, 3, etc.)
+            
+        Returns:
+            Dictionary with feature interaction stability analysis
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting feature interaction stability validation...")
+        _LOGGER.info(f"📊 Bootstrap samples: {n_bootstrap}")
+        _LOGGER.info(f"📊 Max interaction order: {max_interaction_order}")
+        
+        bootstrap_results = []
+        feature_combination_counts = {}
+        
+        # Run bootstrap sampling
+        for bootstrap_idx in range(n_bootstrap):
+            try:
+                # Bootstrap sampling
+                bootstrap_size = int(len(X) * 0.8)
+                bootstrap_indices = np.random.choice(
+                    len(X), size=bootstrap_size, replace=True
+                )
+                X_bootstrap = X[bootstrap_indices]
+                y_bootstrap = y[bootstrap_indices]
+                
+                # Run feature selection on bootstrap sample
+                selected_features = self._run_pipeline_to_consensus(
+                    X_bootstrap, y_bootstrap, feature_names, features_target_count, config
+                )
+                
+                bootstrap_results.append({
+                    'bootstrap_idx': bootstrap_idx,
+                    'selected_features': selected_features
+                })
+                
+                # Analyze feature combinations in this bootstrap sample
+                combinations = self._extract_feature_combinations(
+                    selected_features, max_interaction_order
+                )
+                
+                for combination in combinations:
+                    combination_key = tuple(sorted(combination))
+                    if combination_key not in feature_combination_counts:
+                        feature_combination_counts[combination_key] = 0
+                    feature_combination_counts[combination_key] += 1
+                
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ Bootstrap {bootstrap_idx + 1} failed: {e}")
+                continue
+        
+        # Calculate interaction stability scores
+        interaction_stability_scores = {}
+        for combination, count in feature_combination_counts.items():
+            stability_score = count / len(bootstrap_results) if bootstrap_results else 0.0
+            interaction_stability_scores[combination] = {
+                'stability_score': stability_score,
+                'selection_count': count,
+                'combination_size': len(combination)
+            }
+        
+        # Identify stable feature interactions
+        stable_interactions = {
+            order: [] for order in range(2, max_interaction_order + 1)
+        }
+        
+        for combination, data in interaction_stability_scores.items():
+            if data['stability_score'] >= 0.6:  # 60% stability threshold
+                order = data['combination_size']
+                if order <= max_interaction_order:
+                    stable_interactions[order].append({
+                        'features': list(combination),
+                        'stability_score': data['stability_score'],
+                        'selection_count': data['selection_count']
+                    })
+        
+        # Sort interactions by stability score
+        for order in stable_interactions:
+            stable_interactions[order].sort(
+                key=lambda x: x['stability_score'], reverse=True
+            )
+        
+        # Analyze interaction patterns
+        interaction_analysis = self._analyze_interaction_patterns(
+            interaction_stability_scores, feature_names
+        )
+        
+        # Feature interaction stability analysis
+        interaction_stability_analysis = {
+            'n_bootstrap_samples': len(bootstrap_results),
+            'max_interaction_order': max_interaction_order,
+            'stable_interactions': stable_interactions,
+            'interaction_stability_scores': interaction_stability_scores,
+            'feature_combination_counts': feature_combination_counts,
+            'interaction_analysis': interaction_analysis,
+            'interaction_stability_statistics': {
+                'total_combinations': len(interaction_stability_scores),
+                'stable_combinations': sum(len(interactions) for interactions in stable_interactions.values()),
+                'mean_stability': np.mean([data['stability_score'] for data in interaction_stability_scores.values()]),
+                'max_stability': np.max([data['stability_score'] for data in interaction_stability_scores.values()]),
+                'interactions_by_order': {
+                    order: len(interactions) for order, interactions in stable_interactions.items()
+                }
+            }
+        }
+        
+        execution_time = time.time() - start_time
+        _LOGGER.info(f"✅ Feature interaction stability validation completed in {execution_time:.3f}s")
+        _LOGGER.info(f"📊 Total combinations analyzed: {len(interaction_stability_scores)}")
+        _LOGGER.info(f"📊 Stable combinations: {interaction_stability_analysis['interaction_stability_statistics']['stable_combinations']}")
+        
+        for order in range(2, max_interaction_order + 1):
+            n_interactions = len(stable_interactions[order])
+            if n_interactions > 0:
+                _LOGGER.info(f"📊 Order {order} interactions: {n_interactions}")
+        
+        return {
+            'stable_interactions': stable_interactions,
+            'interaction_stability_analysis': interaction_stability_analysis,
+            'execution_time': execution_time
+        }
+
+    def _extract_feature_combinations(self, selected_features: List[str], 
+                                    max_order: int) -> List[List[str]]:
+        """
+        Extract feature combinations of different orders from selected features.
+        
+        Args:
+            selected_features: List of selected feature names
+            max_order: Maximum order of combinations to extract
+            
+        Returns:
+            List of feature combinations
+        """
+        from itertools import combinations
+        
+        combinations_list = []
+        
+        for order in range(2, min(max_order + 1, len(selected_features) + 1)):
+            for combination in combinations(selected_features, order):
+                combinations_list.append(list(combination))
+        
+        return combinations_list
+
+    def _analyze_interaction_patterns(self, interaction_stability_scores: Dict[tuple, Dict[str, Any]], 
+                                    feature_names: List[str]) -> Dict[str, Any]:
+        """
+        Analyze patterns in feature interactions.
+        
+        Args:
+            interaction_stability_scores: Dictionary of interaction stability scores
+            feature_names: List of all feature names
+            
+        Returns:
+            Dictionary with interaction pattern analysis
+        """
+        # Feature co-occurrence analysis
+        feature_cooccurrence = {feature: {} for feature in feature_names}
+        
+        for combination, data in interaction_stability_scores.items():
+            if data['stability_score'] >= 0.3:  # Lower threshold for co-occurrence
+                for i, feature1 in enumerate(combination):
+                    for j, feature2 in enumerate(combination):
+                        if i != j:
+                            if feature2 not in feature_cooccurrence[feature1]:
+                                feature_cooccurrence[feature1][feature2] = 0
+                            feature_cooccurrence[feature1][feature2] += data['selection_count']
+        
+        # Calculate co-occurrence scores
+        cooccurrence_scores = {}
+        for feature1, cooccurrences in feature_cooccurrence.items():
+            for feature2, count in cooccurrences.items():
+                pair_key = tuple(sorted([feature1, feature2]))
+                if pair_key not in cooccurrence_scores:
+                    cooccurrence_scores[pair_key] = 0
+                cooccurrence_scores[pair_key] += count
+        
+        # Identify most frequent co-occurring pairs
+        frequent_pairs = sorted(
+            cooccurrence_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:20]  # Top 20 pairs
+        
+        # Feature centrality analysis
+        feature_centrality = {}
+        for feature in feature_names:
+            centrality = sum(
+                cooccurrence_scores.get(tuple(sorted([feature, other])), 0)
+                for other in feature_names if other != feature
+            )
+            feature_centrality[feature] = centrality
+        
+        return {
+            'feature_cooccurrence': feature_cooccurrence,
+            'cooccurrence_scores': cooccurrence_scores,
+            'frequent_pairs': frequent_pairs,
+            'feature_centrality': feature_centrality,
+            'centrality_ranking': sorted(
+                feature_centrality.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+        }
 
     def _bootstrap_pipeline_stability_validation(self, X: np.ndarray, y: np.ndarray,
                                                feature_names: List[str],
@@ -3208,6 +4039,669 @@ class FeatureSelectionFramework:
             Optimal feature count for the model
         """
         return self.MODEL_FEATURE_TARGETS.get(model_type, self.MODEL_FEATURE_TARGETS['default'])
+
+    def _auto_detect_model_type(self, model: Any) -> str:
+        """
+        Auto-detect model type from sklearn model object or configuration.
+        
+        Args:
+            model: Sklearn model object or model configuration dictionary
+            
+        Returns:
+            Detected model type string
+        """
+        try:
+            # Handle model objects
+            if hasattr(model, '__class__'):
+                model_class_name = model.__class__.__name__.lower()
+                
+                # Linear models
+                if 'linearregression' in model_class_name:
+                    return 'linear_regression'
+                elif 'ridge' in model_class_name:
+                    return 'ridge_regression'
+                elif 'lasso' in model_class_name:
+                    return 'lasso_regression'
+                elif 'elasticnet' in model_class_name:
+                    return 'elastic_net'
+                elif 'logisticregression' in model_class_name:
+                    return 'logistic_regression'
+                
+                # Tree-based models
+                elif 'randomforest' in model_class_name:
+                    return 'random_forest'
+                elif 'gradientboosting' in model_class_name:
+                    return 'gradient_boosting'
+                elif 'xgboost' in model_class_name:
+                    return 'xgboost'
+                elif 'lightgbm' in model_class_name:
+                    return 'lightgbm'
+                elif 'catboost' in model_class_name:
+                    return 'catboost'
+                elif 'extratrees' in model_class_name:
+                    return 'extra_trees'
+                
+                # SVM models
+                elif 'svc' in model_class_name or 'svr' in model_class_name:
+                    if hasattr(model, 'kernel'):
+                        kernel = getattr(model.kernel, '__name__', str(model.kernel))
+                        if kernel == 'linear':
+                            return 'svm_linear'
+                        elif kernel == 'rbf':
+                            return 'svm_rbf'
+                        elif kernel == 'poly':
+                            return 'svm_poly'
+                    return 'svm_rbf'  # Default SVM
+                
+                # Neural networks
+                elif 'mlp' in model_class_name or 'neural' in model_class_name:
+                    return 'neural_network'
+                
+                # Ensemble methods
+                elif 'voting' in model_class_name:
+                    return 'voting_classifier'
+                elif 'stacking' in model_class_name:
+                    return 'stacking_classifier'
+                elif 'bagging' in model_class_name:
+                    return 'bagging_classifier'
+            
+            # Handle configuration dictionaries
+            elif isinstance(model, dict):
+                model_name = model.get('name', '').lower()
+                model_type = model.get('type', '').lower()
+                
+                if model_name or model_type:
+                    # Check against known model types
+                    for key, value in self.MODEL_FEATURE_TARGETS.items():
+                        if key in model_name or key in model_type:
+                            return key
+                
+                # Check for specific parameters that indicate model type
+                if 'n_estimators' in model and 'max_depth' in model:
+                    return 'random_forest'
+                elif 'alpha' in model and 'l1_ratio' in model:
+                    return 'elastic_net'
+                elif 'alpha' in model:
+                    return 'ridge_regression'
+                elif 'C' in model and 'kernel' in model:
+                    kernel = model['kernel']
+                    if kernel == 'linear':
+                        return 'svm_linear'
+                    elif kernel == 'rbf':
+                        return 'svm_rbf'
+                    elif kernel == 'poly':
+                        return 'svm_poly'
+            
+            _LOGGER.warning(f"⚠️ Could not auto-detect model type from: {type(model)}")
+            return 'default'
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Model auto-detection failed: {e}")
+            return 'default'
+
+    def _create_feature_dependency_graph(self, X: np.ndarray, feature_names: List[str],
+                                       correlation_threshold: float = 0.3,
+                                       mutual_info_threshold: float = 0.1) -> Dict[str, Any]:
+        """
+        Create feature dependency graph to understand relationships between features.
+        
+        This method analyzes various types of dependencies between features including
+        correlation, mutual information, and conditional dependencies to build a
+        comprehensive dependency graph.
+        
+        Args:
+            X: Feature matrix
+            feature_names: List of feature names
+            correlation_threshold: Minimum correlation for edge creation
+            mutual_info_threshold: Minimum mutual information for edge creation
+            
+        Returns:
+            Dictionary with dependency graph analysis
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Creating feature dependency graph...")
+        _LOGGER.info(f"📊 Features: {len(feature_names)}")
+        _LOGGER.info(f"📊 Correlation threshold: {correlation_threshold}")
+        _LOGGER.info(f"📊 Mutual info threshold: {mutual_info_threshold}")
+        
+        try:
+            # Calculate correlation matrix
+            if self.enable_gpu and self.gpu_manager is not None:
+                corr_matrix = self.gpu_manager.m1_correlation_matrix(X.T)
+            else:
+                corr_matrix = np.corrcoef(X.T)
+            
+            # Calculate mutual information matrix
+            mi_matrix = self._calculate_mutual_information_matrix(X, feature_names)
+            
+            # Build dependency graph
+            dependency_graph = {
+                'nodes': feature_names,
+                'edges': [],
+                'node_properties': {},
+                'edge_properties': {}
+            }
+            
+            # Add nodes with properties
+            for i, feature in enumerate(feature_names):
+                dependency_graph['node_properties'][feature] = {
+                    'index': i,
+                    'variance': np.var(X[:, i]),
+                    'mean': np.mean(X[:, i]),
+                    'std': np.std(X[:, i])
+                }
+            
+            # Add edges based on correlation
+            correlation_edges = []
+            for i in range(len(feature_names)):
+                for j in range(i + 1, len(feature_names)):
+                    corr_value = abs(corr_matrix[i, j])
+                    if corr_value >= correlation_threshold:
+                        edge = {
+                            'source': feature_names[i],
+                            'target': feature_names[j],
+                            'type': 'correlation',
+                            'weight': corr_value,
+                            'direction': 'undirected'
+                        }
+                        correlation_edges.append(edge)
+                        dependency_graph['edges'].append(edge)
+            
+            # Add edges based on mutual information
+            mi_edges = []
+            for i in range(len(feature_names)):
+                for j in range(i + 1, len(feature_names)):
+                    mi_value = mi_matrix[i, j]
+                    if mi_value >= mutual_info_threshold:
+                        edge = {
+                            'source': feature_names[i],
+                            'target': feature_names[j],
+                            'type': 'mutual_information',
+                            'weight': mi_value,
+                            'direction': 'undirected'
+                        }
+                        mi_edges.append(edge)
+                        dependency_graph['edges'].append(edge)
+            
+            # Analyze graph properties
+            graph_analysis = self._analyze_dependency_graph(dependency_graph, feature_names)
+            
+            # Create feature clusters based on dependencies
+            feature_clusters = self._cluster_features_by_dependencies(
+                dependency_graph, feature_names
+            )
+            
+            # Calculate feature centrality measures
+            centrality_measures = self._calculate_feature_centrality(
+                dependency_graph, feature_names
+            )
+            
+            dependency_analysis = {
+                'correlation_matrix': corr_matrix,
+                'mutual_information_matrix': mi_matrix,
+                'dependency_graph': dependency_graph,
+                'graph_analysis': graph_analysis,
+                'feature_clusters': feature_clusters,
+                'centrality_measures': centrality_measures,
+                'correlation_edges': correlation_edges,
+                'mutual_info_edges': mi_edges,
+                'statistics': {
+                    'n_nodes': len(feature_names),
+                    'n_correlation_edges': len(correlation_edges),
+                    'n_mi_edges': len(mi_edges),
+                    'n_total_edges': len(dependency_graph['edges']),
+                    'graph_density': len(dependency_graph['edges']) / (len(feature_names) * (len(feature_names) - 1) / 2),
+                    'n_clusters': len(feature_clusters),
+                    'max_cluster_size': max(len(cluster) for cluster in feature_clusters.values()) if feature_clusters else 0
+                }
+            }
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Feature dependency graph created in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Nodes: {len(feature_names)}")
+            _LOGGER.info(f"📊 Edges: {len(dependency_graph['edges'])}")
+            _LOGGER.info(f"📊 Clusters: {len(feature_clusters)}")
+            _LOGGER.info(f"📊 Graph density: {dependency_analysis['statistics']['graph_density']:.3f}")
+            
+            return dependency_analysis
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Feature dependency graph creation failed: {e}")
+            return {
+                'error': str(e),
+                'dependency_graph': {'nodes': feature_names, 'edges': []},
+                'statistics': {'n_nodes': len(feature_names), 'n_edges': 0}
+            }
+
+    def _calculate_feature_selection_quality_metrics(self, X: np.ndarray, y: np.ndarray,
+                                                   feature_names: List[str],
+                                                   selected_features: List[str],
+                                                   pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calculate comprehensive feature selection quality metrics for final report.
+        
+        This method provides a comprehensive assessment of feature selection quality
+        including redundancy, relevance, stability, and interpretability metrics.
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of all feature names
+            selected_features: List of selected feature names
+            pipeline_results: Results from the feature selection pipeline
+            
+        Returns:
+            Dictionary with comprehensive quality metrics
+        """
+        start_time = time.time()
+        _LOGGER.info(f"📊 Calculating feature selection quality metrics...")
+        
+        try:
+            # Get selected feature indices
+            selected_indices = [feature_names.index(f) for f in selected_features if f in feature_names]
+            X_selected = X[:, selected_indices]
+            
+            quality_metrics = {}
+            
+            # 1. Redundancy Metrics
+            quality_metrics['redundancy'] = self._calculate_redundancy_metrics(X_selected, selected_features)
+            
+            # 2. Relevance Metrics
+            quality_metrics['relevance'] = self._calculate_relevance_metrics(X_selected, y, selected_features)
+            
+            # 3. Stability Metrics
+            quality_metrics['stability'] = self._calculate_stability_metrics(pipeline_results)
+            
+            # 4. Interpretability Metrics
+            quality_metrics['interpretability'] = self._calculate_interpretability_metrics(selected_features)
+            
+            # 5. Performance Metrics
+            quality_metrics['performance'] = self._calculate_performance_metrics(X_selected, y, selected_features)
+            
+            # 6. Diversity Metrics
+            quality_metrics['diversity'] = self._calculate_diversity_metrics(X_selected, selected_features)
+            
+            # 7. Efficiency Metrics
+            quality_metrics['efficiency'] = self._calculate_efficiency_metrics(pipeline_results)
+            
+            # 8. Overall Quality Score
+            quality_metrics['overall_quality'] = self._calculate_overall_quality_score(quality_metrics)
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Quality metrics calculated in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Overall quality score: {quality_metrics['overall_quality']:.3f}")
+            
+            return quality_metrics
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Quality metrics calculation failed: {e}")
+            return {
+                'error': str(e),
+                'overall_quality': 0.0
+            }
+
+    def _calculate_redundancy_metrics(self, X_selected: np.ndarray, selected_features: List[str]) -> Dict[str, float]:
+        """Calculate redundancy metrics for selected features."""
+        try:
+            # Correlation-based redundancy
+            corr_matrix = np.corrcoef(X_selected.T)
+            upper_tri = corr_matrix[np.triu_indices_from(corr_matrix, k=1)]
+            
+            # Average correlation
+            avg_correlation = np.mean(np.abs(upper_tri))
+            
+            # Maximum correlation
+            max_correlation = np.max(np.abs(upper_tri))
+            
+            # Correlation variance (lower is better - more uniform redundancy)
+            corr_variance = np.var(np.abs(upper_tri))
+            
+            # Redundancy ratio (features with high correlation)
+            high_corr_ratio = np.mean(np.abs(upper_tri) > 0.8)
+            
+            # Mutual information redundancy
+            mi_redundancy = 0.0
+            if len(selected_features) > 1:
+                try:
+                    from sklearn.feature_selection import mutual_info_regression
+                    for i in range(len(selected_features)):
+                        for j in range(i + 1, len(selected_features)):
+                            mi = mutual_info_regression(
+                                X_selected[:, i].reshape(-1, 1), 
+                                X_selected[:, j], 
+                                discrete_features=False
+                            )[0]
+                            mi_redundancy += mi
+                    mi_redundancy /= (len(selected_features) * (len(selected_features) - 1) / 2)
+                except:
+                    mi_redundancy = 0.0
+            
+            return {
+                'average_correlation': avg_correlation,
+                'maximum_correlation': max_correlation,
+                'correlation_variance': corr_variance,
+                'high_correlation_ratio': high_corr_ratio,
+                'mutual_information_redundancy': mi_redundancy,
+                'redundancy_score': 1.0 - avg_correlation  # Lower correlation = better
+            }
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Redundancy metrics calculation failed: {e}")
+            return {'redundancy_score': 0.5}
+
+    def _calculate_relevance_metrics(self, X_selected: np.ndarray, y: np.ndarray, 
+                                   selected_features: List[str]) -> Dict[str, float]:
+        """Calculate relevance metrics for selected features."""
+        try:
+            # Individual feature relevance
+            individual_relevance = []
+            for i in range(len(selected_features)):
+                try:
+                    from sklearn.feature_selection import mutual_info_regression, f_regression
+                    
+                    # Mutual information with target
+                    mi = mutual_info_regression(
+                        X_selected[:, i].reshape(-1, 1), y, 
+                        discrete_features=False
+                    )[0]
+                    
+                    # F-statistic
+                    f_stat, _ = f_regression(X_selected[:, i].reshape(-1, 1), y)
+                    f_stat = f_stat[0] if len(f_stat) > 0 else 0.0
+                    
+                    individual_relevance.append({
+                        'mutual_information': mi,
+                        'f_statistic': f_stat,
+                        'combined_relevance': (mi + f_stat / 100) / 2  # Normalize F-stat
+                    })
+                except:
+                    individual_relevance.append({
+                        'mutual_information': 0.0,
+                        'f_statistic': 0.0,
+                        'combined_relevance': 0.0
+                    })
+            
+            # Aggregate relevance metrics
+            avg_mi = np.mean([r['mutual_information'] for r in individual_relevance])
+            avg_f_stat = np.mean([r['f_statistic'] for r in individual_relevance])
+            avg_combined = np.mean([r['combined_relevance'] for r in individual_relevance])
+            
+            # Relevance variance (higher is better - more diverse relevance)
+            relevance_variance = np.var([r['combined_relevance'] for r in individual_relevance])
+            
+            # Minimum relevance (worst feature)
+            min_relevance = np.min([r['combined_relevance'] for r in individual_relevance])
+            
+            return {
+                'average_mutual_information': avg_mi,
+                'average_f_statistic': avg_f_stat,
+                'average_combined_relevance': avg_combined,
+                'relevance_variance': relevance_variance,
+                'minimum_relevance': min_relevance,
+                'relevance_score': avg_combined
+            }
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Relevance metrics calculation failed: {e}")
+            return {'relevance_score': 0.5}
+
+    def _calculate_stability_metrics(self, pipeline_results: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate stability metrics from pipeline results."""
+        try:
+            stability_metrics = {}
+            
+            # Bootstrap stability
+            if 'bootstrap_stability' in pipeline_results.get('pipeline_stages', {}):
+                bootstrap_stage = pipeline_results['pipeline_stages']['bootstrap_stability']
+                if 'stability_analysis' in bootstrap_stage:
+                    stability_stats = bootstrap_stage['stability_analysis']['stability_statistics']
+                    stability_metrics['bootstrap_stability'] = stability_stats.get('mean_stability', 0.0)
+                    stability_metrics['bootstrap_consistency'] = stability_stats.get('features_above_threshold', 0) / len(pipeline_results.get('final_selected_features', []))
+            
+            # Nested bootstrap stability
+            if 'nested_bootstrap' in pipeline_results.get('pipeline_stages', {}):
+                nested_stage = pipeline_results['pipeline_stages']['nested_bootstrap']
+                if 'nested_analysis' in nested_stage:
+                    nested_stats = nested_stage['nested_analysis']['nested_stability_statistics']
+                    stability_metrics['nested_bootstrap_stability'] = nested_stats.get('mean_stability', 0.0)
+                    stability_metrics['outer_run_consistency'] = nested_stats.get('outer_run_consistency', 0.0)
+            
+            # Temporal stability
+            if 'temporal_stability' in pipeline_results.get('pipeline_stages', {}):
+                temporal_stage = pipeline_results['pipeline_stages']['temporal_stability']
+                if 'temporal_analysis' in temporal_stage:
+                    temporal_stats = temporal_stage['temporal_analysis']['temporal_stability_statistics']
+                    stability_metrics['temporal_stability'] = temporal_stats.get('mean_temporal_stability', 0.0)
+            
+            # Cross-dataset stability
+            if 'cross_dataset_stability' in pipeline_results.get('pipeline_stages', {}):
+                cross_dataset_stage = pipeline_results['pipeline_stages']['cross_dataset_stability']
+                if 'cross_dataset_analysis' in cross_dataset_stage:
+                    cross_dataset_stats = cross_dataset_stage['cross_dataset_analysis']['cross_dataset_stability_statistics']
+                    stability_metrics['cross_dataset_stability'] = cross_dataset_stats.get('mean_cross_dataset_stability', 0.0)
+            
+            # Overall stability score
+            stability_scores = [score for score in stability_metrics.values() if score > 0]
+            overall_stability = np.mean(stability_scores) if stability_scores else 0.0
+            
+            stability_metrics['overall_stability'] = overall_stability
+            
+            return stability_metrics
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Stability metrics calculation failed: {e}")
+            return {'overall_stability': 0.5}
+
+    def _calculate_interpretability_metrics(self, selected_features: List[str]) -> Dict[str, float]:
+        """Calculate interpretability metrics for selected features."""
+        try:
+            # Feature name interpretability
+            interpretable_names = 0
+            for feature in selected_features:
+                # Simple heuristic: features with descriptive names are more interpretable
+                if (len(feature.split('_')) <= 3 and  # Not too many underscores
+                    not feature.isdigit() and  # Not just numbers
+                    len(feature) < 50):  # Not too long
+                    interpretable_names += 1
+            
+            name_interpretability = interpretable_names / len(selected_features) if selected_features else 0.0
+            
+            # Feature count interpretability (fewer features = more interpretable)
+            count_interpretability = max(0, 1.0 - len(selected_features) / 100)  # Penalty for >100 features
+            
+            # Feature diversity interpretability
+            feature_types = set()
+            for feature in selected_features:
+                # Categorize features by type (simple heuristic)
+                if any(word in feature.lower() for word in ['price', 'cost', 'value']):
+                    feature_types.add('financial')
+                elif any(word in feature.lower() for word in ['time', 'date', 'hour']):
+                    feature_types.add('temporal')
+                elif any(word in feature.lower() for word in ['count', 'num', 'total']):
+                    feature_types.add('count')
+                else:
+                    feature_types.add('other')
+            
+            diversity_interpretability = len(feature_types) / 4.0  # Normalize by max expected types
+            
+            overall_interpretability = (name_interpretability + count_interpretability + diversity_interpretability) / 3.0
+            
+            return {
+                'name_interpretability': name_interpretability,
+                'count_interpretability': count_interpretability,
+                'diversity_interpretability': diversity_interpretability,
+                'feature_types': list(feature_types),
+                'interpretability_score': overall_interpretability
+            }
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Interpretability metrics calculation failed: {e}")
+            return {'interpretability_score': 0.5}
+
+    def _calculate_performance_metrics(self, X_selected: np.ndarray, y: np.ndarray, 
+                                     selected_features: List[str]) -> Dict[str, float]:
+        """Calculate performance-related metrics."""
+        try:
+            # Feature variance (higher variance = more informative)
+            feature_variances = np.var(X_selected, axis=0)
+            avg_variance = np.mean(feature_variances)
+            variance_ratio = np.mean(feature_variances > np.percentile(feature_variances, 25))
+            
+            # Feature range (wider range = more informative)
+            feature_ranges = np.max(X_selected, axis=0) - np.min(X_selected, axis=0)
+            avg_range = np.mean(feature_ranges)
+            
+            # Feature skewness (normal distribution is often better)
+            feature_skewness = []
+            for i in range(X_selected.shape[1]):
+                from scipy import stats
+                skewness = abs(stats.skew(X_selected[:, i]))
+                feature_skewness.append(skewness)
+            
+            avg_skewness = np.mean(feature_skewness)
+            skewness_score = max(0, 1.0 - avg_skewness / 2.0)  # Penalty for high skewness
+            
+            # Feature completeness (no missing values)
+            completeness = 1.0  # Assuming no missing values in selected features
+            
+            overall_performance = (variance_ratio + skewness_score + completeness) / 3.0
+            
+            return {
+                'average_variance': avg_variance,
+                'variance_ratio': variance_ratio,
+                'average_range': avg_range,
+                'average_skewness': avg_skewness,
+                'skewness_score': skewness_score,
+                'completeness': completeness,
+                'performance_score': overall_performance
+            }
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Performance metrics calculation failed: {e}")
+            return {'performance_score': 0.5}
+
+    def _calculate_diversity_metrics(self, X_selected: np.ndarray, selected_features: List[str]) -> Dict[str, float]:
+        """Calculate diversity metrics for selected features."""
+        try:
+            # Statistical diversity
+            feature_means = np.mean(X_selected, axis=0)
+            feature_stds = np.std(X_selected, axis=0)
+            
+            mean_diversity = 1.0 - np.corrcoef(feature_means.reshape(1, -1))[0, 1] if len(feature_means) > 1 else 1.0
+            std_diversity = 1.0 - np.corrcoef(feature_stds.reshape(1, -1))[0, 1] if len(feature_stds) > 1 else 1.0
+            
+            # Distribution diversity (using Kolmogorov-Smirnov test)
+            distribution_diversity = 0.0
+            if len(selected_features) > 1:
+                from scipy import stats
+                ks_scores = []
+                for i in range(len(selected_features)):
+                    for j in range(i + 1, len(selected_features)):
+                        ks_stat, _ = stats.ks_2samp(X_selected[:, i], X_selected[:, j])
+                        ks_scores.append(ks_stat)
+                distribution_diversity = np.mean(ks_scores)
+            
+            # Feature space coverage
+            feature_space_volume = np.linalg.det(np.cov(X_selected.T))
+            coverage_score = min(1.0, feature_space_volume / 1000.0)  # Normalize
+            
+            overall_diversity = (mean_diversity + std_diversity + distribution_diversity + coverage_score) / 4.0
+            
+            return {
+                'mean_diversity': mean_diversity,
+                'std_diversity': std_diversity,
+                'distribution_diversity': distribution_diversity,
+                'feature_space_volume': feature_space_volume,
+                'coverage_score': coverage_score,
+                'diversity_score': overall_diversity
+            }
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Diversity metrics calculation failed: {e}")
+            return {'diversity_score': 0.5}
+
+    def _calculate_efficiency_metrics(self, pipeline_results: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate efficiency metrics from pipeline results."""
+        try:
+            # Execution time efficiency
+            total_time = pipeline_results.get('execution_time', 0)
+            n_features_processed = pipeline_results.get('pipeline_summary', {}).get('initial_count', 1)
+            time_per_feature = total_time / n_features_processed
+            
+            # Memory efficiency (if available)
+            memory_efficiency = 1.0  # Placeholder - would need memory monitoring
+            
+            # Pipeline stage efficiency
+            pipeline_stages = pipeline_results.get('pipeline_stages', {})
+            successful_stages = sum(1 for stage in pipeline_stages.values() 
+                                  if 'error' not in stage and not stage.get('skipped', False))
+            total_stages = len(pipeline_stages)
+            stage_efficiency = successful_stages / total_stages if total_stages > 0 else 1.0
+            
+            # Feature reduction efficiency
+            initial_count = pipeline_results.get('pipeline_summary', {}).get('initial_count', 1)
+            final_count = pipeline_results.get('pipeline_summary', {}).get('final_count', 1)
+            reduction_efficiency = (initial_count - final_count) / initial_count
+            
+            overall_efficiency = (stage_efficiency + reduction_efficiency + memory_efficiency) / 3.0
+            
+            return {
+                'total_execution_time': total_time,
+                'time_per_feature': time_per_feature,
+                'stage_efficiency': stage_efficiency,
+                'reduction_efficiency': reduction_efficiency,
+                'memory_efficiency': memory_efficiency,
+                'efficiency_score': overall_efficiency
+            }
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Efficiency metrics calculation failed: {e}")
+            return {'efficiency_score': 0.5}
+
+    def _calculate_overall_quality_score(self, quality_metrics: Dict[str, Any]) -> float:
+        """Calculate overall quality score from all metrics."""
+        try:
+            # Weighted combination of all quality aspects
+            weights = {
+                'redundancy': 0.20,      # Low redundancy is important
+                'relevance': 0.25,       # High relevance is crucial
+                'stability': 0.20,       # Stability is important for reliability
+                'interpretability': 0.15, # Interpretability is valuable
+                'performance': 0.10,     # Performance characteristics matter
+                'diversity': 0.05,       # Diversity is nice to have
+                'efficiency': 0.05       # Efficiency is nice to have
+            }
+            
+            weighted_score = 0.0
+            total_weight = 0.0
+            
+            for metric_type, weight in weights.items():
+                if metric_type in quality_metrics:
+                    metric_data = quality_metrics[metric_type]
+                    if isinstance(metric_data, dict):
+                        # Get the main score for this metric type
+                        score_key = f"{metric_type}_score"
+                        if score_key in metric_data:
+                            score = metric_data[score_key]
+                        elif 'overall_stability' in metric_data:
+                            score = metric_data['overall_stability']
+                        else:
+                            # Use first available score
+                            scores = [v for v in metric_data.values() if isinstance(v, (int, float))]
+                            score = scores[0] if scores else 0.5
+                    else:
+                        score = metric_data
+                    
+                    weighted_score += weight * score
+                    total_weight += weight
+            
+            overall_score = weighted_score / total_weight if total_weight > 0 else 0.5
+            
+            return min(1.0, max(0.0, overall_score))  # Clamp to [0, 1]
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Overall quality score calculation failed: {e}")
+            return 0.5
 
     def validate_feature_reduction_plan(self, initial_count: int, target_count: int, 
                                       model_type: str) -> Dict[str, Any]:

@@ -197,6 +197,12 @@ class ModelRegistry:
 
             execution_time = time.time() - start_time
             _LOGGER.info(f"✅ Model loaded successfully in {execution_time:.3f}s")
+            # Try to load explanation if available
+            explanation = self._load_model_explanation(model_id, actual_version)
+            if explanation:
+                result['explanation'] = explanation
+                _LOGGER.info(f"📊 Loaded explanation for model {model_id}")
+
             _LOGGER.info(f"📊 Results - Model: {model_id} v{actual_version}, Validation: {validation_result.get('status', 'unknown')}")
             return result
 
@@ -786,3 +792,29 @@ class ModelRegistry:
 
         except Exception:
             return {'error': 'Environment capture failed'}
+
+    def _load_model_explanation(self, model_id: str, version: str) -> Optional[Dict[str, Any]]:
+        """
+        Load model explanation from registry.
+        
+        Args:
+            model_id: Model identifier
+            version: Model version
+            
+        Returns:
+            Explanation data if found, None otherwise
+        """
+        try:
+            explanation_path = self.registry_path / model_id / version / "explanation.json"
+            
+            if explanation_path.exists():
+                _LOGGER.debug(f"📂 Loading explanation from: {explanation_path}")
+                explanation_data = safe_json_load(explanation_path)
+                return explanation_data
+            else:
+                _LOGGER.debug(f"📂 No explanation found for model {model_id} version {version}")
+                return None
+                
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Could not load explanation for {model_id}: {e}")
+            return None

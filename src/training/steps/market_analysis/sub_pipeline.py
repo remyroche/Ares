@@ -665,77 +665,6 @@ class MarketAnalysisSubPipeline:
         
         return artifacts
     
-    async def _filter_meaningful_features(self, features_df: pd.DataFrame, labels: np.ndarray, max_features: int = 150) -> pd.DataFrame:
-        """
-        Filter features to select the most meaningful ones using multiple criteria.
-        
-        Args:
-            features_df: DataFrame with all features
-            labels: Target labels
-            max_features: Maximum number of features to select
-            
-        Returns:
-            DataFrame with filtered features
-        """
-        try:
-            print(f"   🔍 Filtering {len(features_df.columns)} features down to {max_features}...")
-            
-            # Calculate feature importance using multiple methods
-            feature_scores = {}
-            
-            # 1. Correlation with target
-            for col in features_df.columns:
-                try:
-                    corr = np.corrcoef(features_df[col].fillna(0), labels)[0, 1]
-                    feature_scores[col] = abs(corr) if not np.isnan(corr) else 0
-                except:
-                    feature_scores[col] = 0
-            
-            # 2. Variance (remove low-variance features)
-            variances = features_df.var()
-            high_variance_features = variances[variances > variances.quantile(0.1)].index
-            
-            # 3. SR-specific feature prioritization
-            sr_feature_patterns = [
-                'touch_count', 'strength', 'age_bars', 'bounce_ratio', 'volume_confirmation',
-                'consistency_score', 'failure_count', 'proximity', 'level_density', 'confluence',
-                'hvn_', 'fib_', 'pivot_', 'trendline_', 'psychological_', 'sr_'
-            ]
-            
-            # Boost scores for SR-specific features
-            for col in features_df.columns:
-                if any(pattern in col.lower() for pattern in sr_feature_patterns):
-                    feature_scores[col] *= 1.2  # 20% boost for SR features
-            
-            # 4. Technical indicator prioritization (no boost)
-            technical_patterns = ['rsi_', 'macd_', 'bb_', 'sma_', 'ema_', 'atr_', 'stoch_', 'adx_', 'obv_', 'mfi_']
-            # No boost for technical indicators - they compete on merit alone
-            
-            # 5. Remove highly correlated features
-            corr_matrix = features_df[high_variance_features].corr().abs()
-            upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-            to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > 0.95)]
-            
-            # Filter features
-            available_features = [f for f in high_variance_features if f not in to_drop]
-            
-            # Sort by score and select top features
-            sorted_features = sorted(available_features, key=lambda x: feature_scores.get(x, 0), reverse=True)
-            selected_features = sorted_features[:max_features]
-            
-            print(f"   ✅ Selected {len(selected_features)} features from {len(features_df.columns)}")
-            print(f"   📊 Removed {len(to_drop)} highly correlated features")
-            print(f"   📊 Removed {len(features_df.columns) - len(high_variance_features)} low-variance features")
-            
-            return features_df[selected_features]
-            
-        except Exception as e:
-            print(f"   ⚠️ Feature filtering failed: {e}")
-            # Return top features by variance as fallback
-            variances = features_df.var()
-            top_features = variances.nlargest(max_features).index
-            return features_df[top_features]
-    
     async def _load_market_data_for_sr_detection(self, config: SubPipelineConfig) -> Optional[pd.DataFrame]:
         """Load market data for SR detection using standardized utilities."""
         try:
@@ -1391,14 +1320,11 @@ class MarketAnalysisSubPipeline:
                         # Clean and prepare features
                         all_features = all_features.fillna(0).replace([np.inf, -np.inf], 0)
                         
-                        # Feature filtering - select most meaningful features
-                        print("   🔍 Applying feature filtering...")
-                        filtered_features = await self._filter_meaningful_features(all_features, labels, max_features=150)
+                        # Use all features - filtering will be done in ML training module
+                        features = all_features.values
+                        feature_names = list(all_features.columns)
                         
-                        features = filtered_features.values
-                        feature_names = list(filtered_features.columns)
-                        
-                        print(f"   ✅ Feature filtering complete: {len(feature_names)} features selected")
+                        print(f"   ✅ Feature preparation complete: {len(feature_names)} features available")
                         print(f"   📊 Feature categories:")
                         sr_count = len([f for f in feature_names if any(pattern in f.lower() for pattern in ['touch', 'bounce', 'strength', 'level', 'hvn', 'fib', 'pivot', 'trendline'])])
                         technical_count = len([f for f in feature_names if any(pattern in f.lower() for pattern in ['rsi', 'macd', 'bb_', 'sma', 'ema', 'atr', 'stoch', 'adx', 'obv', 'mfi'])])
@@ -1547,11 +1473,33 @@ class MarketAnalysisSubPipeline:
                             'n_features': features.shape[1],
                             'model_type': 'RandomForestClassifier'
                         }
+                        # Get feature importance from ML enhancer if available
+                        feature_importance_data = model.feature_importances_.tolist()
+                        feature_names_data = feature_names if 'feature_names' in locals() else ['price_change', 'high_low_ratio', 'volume_change']
+                        
+                        # Try to get enhanced feature importance from SR ML Enhancer
+                        try:
+                            from src.training.steps.model_training.sr_ml_enhancer import SRMLEnhancer
+                            sr_enhancer = SRMLEnhancer(config)
+                            
+                            # Check if we have enhanced feature importance data
+                            if hasattr(sr_enhancer, 'feature_importance') and sr_enhancer.feature_importance:
+                                enhanced_importance = sr_enhancer.feature_importance
+                                if 'shap_explanations' in enhanced_importance and 'feature_importance' in enhanced_importance['shap_explanations']:
+                                    feature_importance_data = list(enhanced_importance['shap_explanations']['feature_importance'].values())
+                                    feature_names_data = list(enhanced_importance['shap_explanations']['feature_importance'].keys())
+                                    print(f"   🧠 Using SHAP-based feature importance: {len(feature_names_data)} features")
+                                elif 'selected_features' in enhanced_importance:
+                                    feature_names_data = enhanced_importance['selected_features']
+                                    print(f"   🔍 Using selected features from ML enhancer: {len(feature_names_data)} features")
+                        except Exception as e:
+                            print(f"   ⚠️ Could not get enhanced feature importance: {e}")
+                        
                         artifacts['model_performance'] = {
                             'train_samples': X_train.shape[0],
                             'test_samples': X_test.shape[0],
-                            'feature_importance': model.feature_importances_.tolist(),
-                            'feature_names': feature_names if 'feature_names' in locals() else ['price_change', 'high_low_ratio', 'volume_change']
+                            'feature_importance': feature_importance_data,
+                            'feature_names': feature_names_data
                         }
                     else:
                         print("⚠️ Insufficient data for training (need >100 samples)")

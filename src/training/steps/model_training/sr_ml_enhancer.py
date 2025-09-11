@@ -586,20 +586,94 @@ class SRMLEnhancer:
             y = training_data.target
             if len(X) > 50:
                 feature_names = await self._get_feature_names()
-                rf_selector = RandomForestRegressor(n_estimators = 100, random_state = 42)
+                
+                # Use proper feature selection framework
+                from src.utils.ml_common.feature_selection import FeatureSelectionFramework
+                from src.utils.ml_common.model_explanations import ModelExplainer
+                
+                # Initialize feature selection framework
+                feature_selection_config = {
+                    'enable_gpu': True,
+                    'enable_parallel': True,
+                    'max_workers': 4,
+                    'method_configs': {
+                        'mrmr': {'relevance_method': 'mutual_info', 'redundancy_method': 'correlation'},
+                        'importance': {'n_estimators': 100, 'max_depth': 10},
+                        'stability': {'n_bootstraps': 50, 'stability_threshold': 0.6}
+                    }
+                }
+                
+                feature_selector = FeatureSelectionFramework(feature_selection_config)
+                
+                # Apply comprehensive feature selection
+                print("   🔍 Applying comprehensive feature selection...")
+                
+                # 1. Correlation-based filtering
+                correlation_results = feature_selector.correlation_based_filtering(
+                    X, feature_names, correlation_threshold=0.95
+                )
+                filtered_features = correlation_results['selected_features']
+                filtered_indices = [i for i, name in enumerate(feature_names) if name in filtered_features]
+                X_filtered = X[:, filtered_indices]
+                feature_names_filtered = filtered_features
+                
+                print(f"   📊 Correlation filtering: {len(filtered_features)} features retained from {len(feature_names)}")
+                
+                # 2. mRMR selection for top features
+                if len(filtered_features) > 50:
+                    mrmr_results = feature_selector.mrmr_selection(
+                        X_filtered, y, feature_names_filtered, n_features=50
+                    )
+                    selected_features = mrmr_results['selected_features']
+                    selected_indices = [i for i, name in enumerate(feature_names_filtered) if name in selected_features]
+                    X = X_filtered[:, selected_indices]
+                    final_feature_names = selected_features
+                else:
+                    X = X_filtered
+                    final_feature_names = feature_names_filtered
+                
+                print(f"   📊 mRMR selection: {len(final_feature_names)} features selected")
+                
+                # 3. Train model for SHAP/LIME explanations
+                rf_selector = RandomForestRegressor(n_estimators=100, random_state=42)
                 rf_selector.fit(X, y)
-                rf_importance = rf_selector.feature_importances_
-                from sklearn.inspection import permutation_importance
-                perm_importance = permutation_importance(rf_selector, X, y, n_repeats = 10, random_state = 42)
-                perm_scores = perm_importance.importances_mean
-                correlation_scores = self._calculate_feature_correlations(X, y)
-                shap_scores = await self._calculate_shap_importance(rf_selector, X, feature_names)
-                combined_scores = self._combine_feature_scores(rf_importance, perm_scores, correlation_scores, shap_scores)
-                top_features = self._select_top_features_with_sr_priority(combined_scores, feature_names, top_k = 50)
-                self.feature_importance = {'rf_importance': dict(zip(feature_names, rf_importance)), 'permutation_importance': dict(zip(feature_names, perm_scores)), 'correlation_scores': dict(zip(feature_names, correlation_scores)), 'shap_scores': shap_scores, 'combined_scores': dict(zip(feature_names, combined_scores)), 'selected_features': top_features}
-                self._log_feature_analysis()
-                feature_indices = [i for i, name in enumerate(feature_names) if name in top_features]
-                X = X[:, feature_indices]
+                
+                # 4. Generate SHAP/LIME explanations
+                print("   🧠 Generating SHAP/LIME explanations...")
+                explainer_config = {
+                    'enable_shap': True,
+                    'enable_lime': True,
+                    'shap_sample_size': 100,
+                    'lime_sample_size': 10
+                }
+                
+                model_explainer = ModelExplainer(explainer_config)
+                
+                # Split data for explanations
+                from sklearn.model_selection import train_test_split
+                X_train_exp, X_test_exp, y_train_exp, y_test_exp = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+                
+                # Generate explanations
+                explanation_results = model_explainer.explain_model(
+                    rf_selector, X_train_exp, X_test_exp, final_feature_names, "SR_Quality_Model"
+                )
+                
+                # Store comprehensive feature importance
+                self.feature_importance = {
+                    'selected_features': final_feature_names,
+                    'shap_explanations': explanation_results.get('shap_explanations', {}),
+                    'lime_explanations': explanation_results.get('lime_explanations', {}),
+                    'feature_importance': explanation_results.get('feature_importance', {}),
+                    'correlation_filtering': correlation_results,
+                    'mrmr_selection': mrmr_results if len(filtered_features) > 50 else {}
+                }
+                
+                # Log explanations
+                model_explainer.log_explanations(explanation_results, "SR_Quality_Model")
+                
+                print(f"   ✅ Feature selection complete: {len(final_feature_names)} features with SHAP/LIME analysis")
             X_scaled = self.feature_scaler.fit_transform(X)
             self.sr_quality_model.fit(X_scaled, y)
             if len(X) > 20:
@@ -614,12 +688,100 @@ class SRMLEnhancer:
             self.logger.error(f'S/R quality model training failed: {e}')
 
     async def _train_breakout_prediction_model(self, training_data: MLFeatureSet) -> None:
-        """Train breakout prediction model."""
+        """Train breakout prediction model with feature selection and SHAP/LIME."""
         try:
             model_config = self.ml_config.get('models', {}).get('breakout_prediction_model', {})
             self.breakout_prediction_model = RandomForestClassifier(n_estimators = model_config.get('parameters', {}).get('n_estimators', 200), max_depth = model_config.get('parameters', {}).get('max_depth', 8), min_samples_split = model_config.get('parameters', {}).get('min_samples_split', 10), min_samples_leaf = model_config.get('parameters', {}).get('min_samples_leaf', 5), random_state = 42)
             X = training_data.features
             y_breakout = np.random.choice([0, 1], size = len(training_data.target), p=[0.7, 0.3])
+            
+            if len(X) > 50:
+                feature_names = await self._get_feature_names()
+                
+                # Use proper feature selection framework
+                from src.utils.ml_common.feature_selection import FeatureSelectionFramework
+                from src.utils.ml_common.model_explanations import ModelExplainer
+                
+                # Initialize feature selection framework
+                feature_selection_config = {
+                    'enable_gpu': True,
+                    'enable_parallel': True,
+                    'max_workers': 4,
+                    'method_configs': {
+                        'mrmr': {'relevance_method': 'mutual_info', 'redundancy_method': 'correlation'},
+                        'importance': {'n_estimators': 100, 'max_depth': 10},
+                        'stability': {'n_bootstraps': 50, 'stability_threshold': 0.6}
+                    }
+                }
+                
+                feature_selector = FeatureSelectionFramework(feature_selection_config)
+                
+                # Apply comprehensive feature selection
+                print("   🔍 Applying feature selection for breakout prediction...")
+                
+                # 1. Correlation-based filtering
+                correlation_results = feature_selector.correlation_based_filtering(
+                    X, feature_names, correlation_threshold=0.95
+                )
+                filtered_features = correlation_results['selected_features']
+                filtered_indices = [i for i, name in enumerate(feature_names) if name in filtered_features]
+                X_filtered = X[:, filtered_indices]
+                feature_names_filtered = filtered_features
+                
+                # 2. mRMR selection for top features
+                if len(filtered_features) > 30:
+                    mrmr_results = feature_selector.mrmr_selection(
+                        X_filtered, y_breakout, feature_names_filtered, n_features=30
+                    )
+                    selected_features = mrmr_results['selected_features']
+                    selected_indices = [i for i, name in enumerate(feature_names_filtered) if name in selected_features]
+                    X = X_filtered[:, selected_indices]
+                    final_feature_names = selected_features
+                else:
+                    X = X_filtered
+                    final_feature_names = feature_names_filtered
+                
+                # 3. Train model for SHAP/LIME explanations
+                rf_selector = RandomForestClassifier(n_estimators=100, random_state=42)
+                rf_selector.fit(X, y_breakout)
+                
+                # 4. Generate SHAP/LIME explanations
+                print("   🧠 Generating SHAP/LIME explanations for breakout prediction...")
+                explainer_config = {
+                    'enable_shap': True,
+                    'enable_lime': True,
+                    'shap_sample_size': 100,
+                    'lime_sample_size': 10
+                }
+                
+                model_explainer = ModelExplainer(explainer_config)
+                
+                # Split data for explanations
+                from sklearn.model_selection import train_test_split
+                X_train_exp, X_test_exp, y_train_exp, y_test_exp = train_test_split(
+                    X, y_breakout, test_size=0.2, random_state=42, stratify=y_breakout
+                )
+                
+                # Generate explanations
+                explanation_results = model_explainer.explain_model(
+                    rf_selector, X_train_exp, X_test_exp, final_feature_names, "Breakout_Prediction_Model"
+                )
+                
+                # Store comprehensive feature importance
+                self.breakout_feature_importance = {
+                    'selected_features': final_feature_names,
+                    'shap_explanations': explanation_results.get('shap_explanations', {}),
+                    'lime_explanations': explanation_results.get('lime_explanations', {}),
+                    'feature_importance': explanation_results.get('feature_importance', {}),
+                    'correlation_filtering': correlation_results,
+                    'mrmr_selection': mrmr_results if len(filtered_features) > 30 else {}
+                }
+                
+                # Log explanations
+                model_explainer.log_explanations(explanation_results, "Breakout_Prediction_Model")
+                
+                print(f"   ✅ Breakout model feature selection complete: {len(final_feature_names)} features with SHAP/LIME analysis")
+            
             self.breakout_prediction_model.fit(X, y_breakout)
             self.logger.info('✅ Breakout prediction model trained')
         except Exception as e:
@@ -640,6 +802,98 @@ class SRMLEnhancer:
             regime_features = await self._extract_regime_features(market_data)
             regime_targets = await self._create_regime_targets(market_data)
             if len(regime_features) > 10:
+                # Convert to numpy array for feature selection
+                regime_features_array = np.array(regime_features)
+                regime_targets_array = np.array(regime_targets)
+                
+                # Apply feature selection and SHAP/LIME for regime classification
+                if len(regime_features_array) > 20:
+                    feature_names = [f'regime_feature_{i}' for i in range(regime_features_array.shape[1])]
+                    
+                    # Use proper feature selection framework
+                    from src.utils.ml_common.feature_selection import FeatureSelectionFramework
+                    from src.utils.ml_common.model_explanations import ModelExplainer
+                    
+                    # Initialize feature selection framework
+                    feature_selection_config = {
+                        'enable_gpu': True,
+                        'enable_parallel': True,
+                        'max_workers': 4,
+                        'method_configs': {
+                            'mrmr': {'relevance_method': 'mutual_info', 'redundancy_method': 'correlation'},
+                            'importance': {'n_estimators': 100, 'max_depth': 10},
+                            'stability': {'n_bootstraps': 50, 'stability_threshold': 0.6}
+                        }
+                    }
+                    
+                    feature_selector = FeatureSelectionFramework(feature_selection_config)
+                    
+                    # Apply feature selection
+                    print("   🔍 Applying feature selection for regime classification...")
+                    
+                    # 1. Correlation-based filtering
+                    correlation_results = feature_selector.correlation_based_filtering(
+                        regime_features_array, feature_names, correlation_threshold=0.95
+                    )
+                    filtered_features = correlation_results['selected_features']
+                    filtered_indices = [i for i, name in enumerate(feature_names) if name in filtered_features]
+                    X_filtered = regime_features_array[:, filtered_indices]
+                    feature_names_filtered = filtered_features
+                    
+                    # 2. mRMR selection for top features
+                    if len(filtered_features) > 15:
+                        mrmr_results = feature_selector.mrmr_selection(
+                            X_filtered, regime_targets_array, feature_names_filtered, n_features=15
+                        )
+                        selected_features = mrmr_results['selected_features']
+                        selected_indices = [i for i, name in enumerate(feature_names_filtered) if name in selected_features]
+                        X = X_filtered[:, selected_indices]
+                        final_feature_names = selected_features
+                    else:
+                        X = X_filtered
+                        final_feature_names = feature_names_filtered
+                    
+                    # 3. Train model for SHAP/LIME explanations
+                    rf_selector = RandomForestClassifier(n_estimators=100, random_state=42)
+                    rf_selector.fit(X, regime_targets_array)
+                    
+                    # 4. Generate SHAP/LIME explanations
+                    print("   🧠 Generating SHAP/LIME explanations for regime classification...")
+                    explainer_config = {
+                        'enable_shap': True,
+                        'enable_lime': True,
+                        'shap_sample_size': 100,
+                        'lime_sample_size': 10
+                    }
+                    
+                    model_explainer = ModelExplainer(explainer_config)
+                    
+                    # Split data for explanations
+                    from sklearn.model_selection import train_test_split
+                    X_train_exp, X_test_exp, y_train_exp, y_test_exp = train_test_split(
+                        X, regime_targets_array, test_size=0.2, random_state=42, stratify=regime_targets_array
+                    )
+                    
+                    # Generate explanations
+                    explanation_results = model_explainer.explain_model(
+                        rf_selector, X_train_exp, X_test_exp, final_feature_names, "Regime_Classification_Model"
+                    )
+                    
+                    # Store comprehensive feature importance
+                    self.regime_feature_importance = {
+                        'selected_features': final_feature_names,
+                        'shap_explanations': explanation_results.get('shap_explanations', {}),
+                        'lime_explanations': explanation_results.get('lime_explanations', {}),
+                        'feature_importance': explanation_results.get('feature_importance', {}),
+                        'correlation_filtering': correlation_results,
+                        'mrmr_selection': mrmr_results if len(filtered_features) > 15 else {}
+                    }
+                    
+                    # Log explanations
+                    model_explainer.log_explanations(explanation_results, "Regime_Classification_Model")
+                    
+                    print(f"   ✅ Regime model feature selection complete: {len(final_feature_names)} features with SHAP/LIME analysis")
+                
                 accuracy = self._validate_regime_detection(regime_features, regime_targets)
                 self.logger.info(f'✅ Regime detection validation completed. Accuracy: {accuracy:.4f}')
                 if self.step03_engineer:

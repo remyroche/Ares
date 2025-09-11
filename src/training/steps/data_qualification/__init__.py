@@ -20,11 +20,14 @@ Enhanced Features:
 """
 
 # Import legacy steps for backward compatibility
-from ..market_analysis.sr_optimization_compatibility import SROptimizationStep
+from ..market_analysis.sub_pipeline import MarketAnalysisSubPipeline
 from .step03_hmm_regime_discovery import Step03HMMRegimeDiscovery
 from .step04_regime_data_splitting import RegimeDataSplittingStep
 from .step05_labeling import LabelingStep
 from .step05_labeling_updated import EnhancedLabelingStep
+
+# Backward compatibility alias
+SROptimizationStep = MarketAnalysisSubPipeline
 
 # Import enhanced utilities
 from src.utils.data_quality.data_qualification_base import (

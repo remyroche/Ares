@@ -27,7 +27,7 @@ class StepValidationInitializer:
         self.logger.info('🚀 Initializing all pipeline steps with validation...')
         steps_config = {
             'step02_data_reading': {'module': 'src.training.steps.data_collection.step02_data_reading', 'class': 'DataReadingStep', 'priority': 1},
-            'step2_5_sr_optimization': {'module': 'src.training.steps.market_analysis.sr_optimization_compatibility', 'class': 'SROptimizationStep', 'priority': 2},
+            'step2_5_sr_optimization': {'module': 'src.training.steps.market_analysis.sub_pipeline', 'class': 'MarketAnalysisSubPipeline', 'priority': 2},
             'step03_hmm_regime_discovery': {'module': 'src.training.steps.data_collection.data_preparation.step03_hmm_regime_discovery', 'class': 'Step03HMMRegimeDiscovery', 'priority': 3},
             'step04_regime_data_splitting': {'module': 'src.training.steps.step08_regime_data_splitting', 'class': 'RegimeDataSplittingStep', 'priority': 4},
             'step05_labeling': {'module': 'src.training.steps.step5_labeling', 'class': 'LabelingStep', 'priority': 5},

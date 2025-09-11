@@ -1,6 +1,0 @@
-metric_type,category,total_levels,average_strength,strongest_level,accuracy,precision,recall,f1_score,mae,feature_count,total_rows,total_columns,completeness_score,missing_values_percent
-sr_levels,support,1.0,1.0,1748.8378427254554,,,,,,,,,,
-sr_levels,resistance,0.0,0.0,0.0,,,,,,,,,,
-ml_performance,direction,,,,1.0,0.0,0.0,0.0,,,,,,
-ml_performance,volatility,,,,,,,,7.177950263754646e-05,20.0,,,,
-data_quality,completeness,,,,,,,,,,499059.0,125.0,99.89753836720709,0.10246163279291627

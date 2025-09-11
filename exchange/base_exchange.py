@@ -105,10 +105,22 @@ class BaseExchange(IExchangeClient, ABC):
         self,
         symbol: str,
         interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
+        start_time: int | datetime,
+        end_time: int | datetime,
         limit: int = 1000,
+        **kwargs  # Accept additional parameters for backwards compatibility
     ) -> list[MarketData]:
+        # Handle both datetime and milliseconds parameters for backwards compatibility
+        if isinstance(start_time, datetime):
+            start_time_ms = int(start_time.timestamp() * 1000)
+        else:
+            start_time_ms = start_time
+            
+        if isinstance(end_time, datetime):
+            end_time_ms = int(end_time.timestamp() * 1000)
+        else:
+            end_time_ms = end_time
+            
         raw_data = await self._get_historical_klines_raw(
             symbol,
             interval,
@@ -132,10 +144,22 @@ class BaseExchange(IExchangeClient, ABC):
     async def get_historical_agg_trades(
         self,
         symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
+        start_time: int | datetime,
+        end_time: int | datetime,
         limit: int = 1000,
+        **kwargs  # Accept additional parameters for backwards compatibility
     ) -> list[dict[str, Any]]:
+        # Handle both datetime and milliseconds parameters for backwards compatibility
+        if isinstance(start_time, datetime):
+            start_time_ms = int(start_time.timestamp() * 1000)
+        else:
+            start_time_ms = start_time
+            
+        if isinstance(end_time, datetime):
+            end_time_ms = int(end_time.timestamp() * 1000)
+        else:
+            end_time_ms = end_time
+            
         return await self._get_historical_agg_trades_raw(
             symbol,
             start_time_ms,

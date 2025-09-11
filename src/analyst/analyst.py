@@ -35,6 +35,13 @@ from src.utils.lookahead_bias_detector import get_global_detector
 from src.utils.lookahead_bias_detector import validate_no_future_data
 from src.utils.warning_symbols import failed
 from src.utils.warning_symbols import initialization_error
+# Live trading utilities
+from src.utils.model_manager import ModelManager
+from src.utils.performance_utils import PerformanceMonitor, global_monitor
+from src.utils.caching import intelligent_caching
+# Live trading validation
+from src.utils.trading_decorators import validate_trading_inputs
+from src.utils.error_handler import handle_trading_errors
 
 try:
 except Exception:  # pragma: no cover - optional at runtime
@@ -141,6 +148,16 @@ class Analyst:
             True,
         )
 
+        # Live trading utilities
+        self.model_manager: ModelManager | None = None
+        self.selected_model: str | None = None
+        self.model_cache: dict[str, Any] = {}
+        
+        # Performance monitoring for live trading
+        self.performance_monitor: PerformanceMonitor | None = None
+        self.global_monitor = global_monitor
+        self.prediction_cache: dict[str, Any] = {}
+
         # ML Confidence Predictor integration
         self.ml_confidence_predictor = None
         self.enable_ml_predictions: bool = self.analyst_config.get(
@@ -216,6 +233,12 @@ class Analyst:
         # Initialize Unified Regime Classifier
         if self.enable_regime_classification:
             await self._initialize_regime_classifier()
+
+        # Initialize live trading utilities
+        await self._initialize_live_trading_utilities()
+        
+        # Initialize performance monitoring
+        await self._initialize_performance_monitoring()
 
         self.logger.info("✅ Analyst initialization completed successfully")
         return True
@@ -1279,13 +1302,24 @@ class Analyst:
         default_return=None,
         context="SR analysis",
     )
+    @intelligent_caching(ttl=60, key_func=lambda self, features_df: f"regime_analysis_{hash(str(features_df.values.tolist()))}")
+    @global_monitor.track_function
     async def analyze_regime(self, features_df: pd.DataFrame) -> dict[str, Any]:
         """
         Analyze location using fractal classification.
         This method is called by supervisor for regime info.
         """
         if not self.regime_classifier:
+            self.logger.warning("Regime classifier not available")
+            print("⚠️ Regime classifier not available")
             return {"regime": "UNKNOWN", "confidence": 0.0}
+        
+        # Start performance monitoring
+        if self.performance_monitor:
+            self.performance_monitor.start_timer("regime_analysis")
+        
+        self.logger.info("Starting regime analysis...")
+        print("Starting regime analysis...")
         
         try:
             # Get fractal location classification
@@ -1303,11 +1337,153 @@ class Analyst:
                 "fractal_analysis": location_result.get("fractal_analysis", {})
             }
             
+            # End performance monitoring
+            if self.performance_monitor:
+                execution_time = self.performance_monitor.end_timer("regime_analysis")
+                self.logger.info(f"Regime analysis completed in {execution_time:.3f}s")
+                print(f"Regime analysis completed in {execution_time:.3f}s")
+            
+            self.logger.info(f"✅ Regime analysis completed: {regime_info.get('regime', 'UNKNOWN')}")
+            print(f"✅ Regime analysis completed: {regime_info.get('regime', 'UNKNOWN')}")
             return regime_info
             
         except Exception as e:
-            self.logger.error(f"Error in fractal location analysis: {e}")
+            error_msg = f"Error in fractal location analysis: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            
+            # End performance monitoring even on error
+            if self.performance_monitor:
+                self.performance_monitor.end_timer("regime_analysis")
+            
             return {"regime": "UNKNOWN", "confidence": 0.0}
+
+    @handle_errors_with_tracking(
+        context="model loading for live trading",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def load_analyst_model(self) -> bool:
+        """
+        Load the single analyst model trained on various market conditions.
+        
+        Returns:
+            bool: True if model loading successful
+        """
+        if not self.model_manager:
+            error_msg = "Model Manager not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return False
+        
+        try:
+            # Use the single analyst model trained on various market conditions
+            model_name = "analyst_market_analysis_model"
+            
+            self.logger.info(f"Loading analyst model for live trading: {model_name}")
+            print(f"Loading analyst model for live trading: {model_name}")
+            
+            # Check if model is available
+            available_models = await self.model_manager.list_available_models()
+            if model_name not in available_models:
+                error_msg = f"Analyst model {model_name} not available for live trading"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return False
+            
+            # Load and cache the model
+            model = await self.model_manager.load_model(model_name)
+            if model:
+                self.selected_model = model_name
+                self.model_cache[model_name] = model
+                self.logger.info(f"✅ Analyst model loaded and cached: {model_name}")
+                print(f"✅ Analyst model loaded and cached: {model_name}")
+                return True
+            else:
+                error_msg = f"Failed to load analyst model: {model_name}"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return False
+            
+        except Exception as e:
+            error_msg = f"Error loading analyst model: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return False
+
+    @intelligent_caching(ttl=60, key_func=lambda self, data, model_name: f"prediction_{model_name}_{hash(str(data.tail(5).values.tolist()))}")
+    @handle_errors_with_tracking(
+        context="live trading prediction",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def get_model_prediction(self, data: pd.DataFrame, model_name: str = None) -> dict[str, Any]:
+        """
+        Get prediction from selected pre-trained model for live trading.
+        
+        Args:
+            data: Input data for prediction
+            model_name: Specific model to use (defaults to selected model)
+            
+        Returns:
+            dict: Model prediction results
+        """
+        if not self.model_manager:
+            error_msg = "Model Manager not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        model_name = model_name or self.selected_model
+        if not model_name:
+            error_msg = "No model selected for prediction"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            # Start performance monitoring
+            if self.performance_monitor:
+                self.performance_monitor.start_timer("model_prediction")
+            
+            self.logger.info(f"Getting prediction from model: {model_name}")
+            print(f"Getting prediction from model: {model_name}")
+            
+            # Get model from cache or load it
+            model = self.model_cache.get(model_name)
+            if not model:
+                model = await self.model_manager.load_model(model_name)
+                if model:
+                    self.model_cache[model_name] = model
+                else:
+                    error_msg = f"Failed to load model: {model_name}"
+                    self.logger.error(error_msg)
+                    print(f"❌ {error_msg}")
+                    return {"error": error_msg}
+            
+            # Get prediction
+            prediction = await self.model_manager.get_prediction(model, data)
+            
+            # End performance monitoring
+            if self.performance_monitor:
+                execution_time = self.performance_monitor.end_timer("model_prediction")
+                self.logger.info(f"Model prediction completed in {execution_time:.3f}s")
+                print(f"Model prediction completed in {execution_time:.3f}s")
+            
+            self.logger.info(f"✅ Prediction obtained from model: {model_name}")
+            print(f"✅ Prediction obtained from model: {model_name}")
+            return prediction
+            
+        except Exception as e:
+            error_msg = f"Error getting prediction from model {model_name}: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            
+            # End performance monitoring even on error
+            if self.performance_monitor:
+                self.performance_monitor.end_timer("model_prediction")
+            
+            return {"error": error_msg}
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -1467,10 +1643,283 @@ class Analyst:
     # Enhanced predictions are now handled by the supervisor
     # No local methods needed
 
+    @handle_errors_with_tracking(
+        context="live trading utilities initialization",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def _initialize_live_trading_utilities(self) -> bool:
+        """Initialize live trading utilities."""
+        try:
+            self.logger.info("Initializing live trading utilities...")
+            print("Initializing live trading utilities...")
+            
+            # Initialize Model Manager for model selection and loading
+            self.model_manager = ModelManager()
+            self.logger.info("✅ Model Manager initialized")
+            print("✅ Model Manager initialized")
+            
+            # Load the single analyst model
+            success = await self.load_analyst_model()
+            if not success:
+                self.logger.warning("⚠️ Failed to load analyst model during initialization")
+                print("⚠️ Failed to load analyst model during initialization")
+            
+            # Initialize model cache
+            self.model_cache = {}
+            self.prediction_cache = {}
+            self.logger.info("✅ Model and prediction caches initialized")
+            print("✅ Model and prediction caches initialized")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing live trading utilities: {e}")
+            print(f"❌ Error initializing live trading utilities: {e}")
+            return False
+
     @handles_errors(
         exceptions=(Exception,),
-        default_return=None,
+        default_return=False,
+        context="performance monitoring initialization",
+    )
+    async def _initialize_performance_monitoring(self) -> bool:
+        """Initialize performance monitoring."""
+        try:
+            self.logger.info("Initializing performance monitoring...")
+            
+            # Initialize Performance Monitor
+            self.performance_monitor = PerformanceMonitor()
+            self.logger.info("✅ Performance Monitor initialized")
+            
+            # Enable global monitoring
+            self.global_monitor.enable()
+            self.logger.info("✅ Global monitoring enabled")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing performance monitoring: {e}")
+            return False
+
+    @validate_trading_inputs(required_columns=["timestamp", "price", "volume"])
+    @handle_errors_with_tracking(
+        context="live trading data validation",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def validate_trading_data(self, data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Validate live trading data for real-time analysis.
+        
+        Args:
+            data: Live trading data to validate
+            
+        Returns:
+            dict: Validation results
+        """
+        try:
+            self.logger.info("Validating live trading data...")
+            print("Validating live trading data...")
+            
+            validation_results = {
+                "is_valid": True,
+                "errors": [],
+                "warnings": []
+            }
+            
+            # Check for required columns
+            required_columns = ["timestamp", "price", "volume"]
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                validation_results["is_valid"] = False
+                validation_results["errors"].append(f"Missing required columns: {missing_columns}")
+            
+            # Check for recent data (within last 5 minutes)
+            if "timestamp" in data.columns and not data.empty:
+                latest_timestamp = data["timestamp"].max()
+                current_time = pd.Timestamp.now()
+                time_diff = (current_time - latest_timestamp).total_seconds()
+                if time_diff > 300:  # 5 minutes
+                    validation_results["warnings"].append(f"Data is {time_diff:.0f} seconds old")
+            
+            # Check for valid price data
+            if "price" in data.columns:
+                if data["price"].isna().any():
+                    validation_results["is_valid"] = False
+                    validation_results["errors"].append("Price data contains NaN values")
+                if (data["price"] <= 0).any():
+                    validation_results["is_valid"] = False
+                    validation_results["errors"].append("Price data contains non-positive values")
+            
+            self.logger.info(f"✅ Live trading data validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
+            print(f"✅ Live trading data validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
+            return validation_results
+            
+        except Exception as e:
+            error_msg = f"Error validating live trading data: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+
+    @handle_errors_with_tracking(
+        context="HMM regime-based model coordination",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def coordinate_with_hmm_regime(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Coordinate model usage based on HMM regime detection.
+        
+        Args:
+            hmm_regime: Detected HMM regime (e.g., "bull_market", "bear_market", "sideways")
+            regime_confidence: Confidence in the regime detection
+            
+        Returns:
+            dict: Coordination results and regime-specific parameters
+        """
+        if not self.model_manager or not self.selected_model:
+            error_msg = "Model Manager or selected model not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            self.logger.info(f"Coordinating with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            print(f"Coordinating with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            
+            # Get the single model (trained on various market conditions)
+            model = self.model_cache.get(self.selected_model)
+            if not model:
+                error_msg = f"Model {self.selected_model} not loaded in cache"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return {"error": error_msg}
+            
+            # Configure regime-specific parameters for the same model
+            regime_config = {
+                "hmm_regime": hmm_regime,
+                "regime_confidence": regime_confidence,
+                "model_name": self.selected_model,
+                "regime_parameters": {}
+            }
+            
+            # Set regime-specific parameters based on HMM regime (15-25 regimes)
+            # Parameters are optimized during training in final_parameters_optimization.py
+            regime_config["regime_parameters"] = self._get_optimized_regime_parameters(hmm_regime, regime_confidence)
+            
+            self.logger.info(f"✅ HMM regime coordination completed: {hmm_regime}")
+            print(f"✅ HMM regime coordination completed: {hmm_regime}")
+            return regime_config
+            
+        except Exception as e:
+            error_msg = f"Error coordinating with HMM regime: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+
+    def _get_optimized_regime_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get optimized regime-specific parameters from training optimization.
+        
+        Args:
+            hmm_regime: Detected HMM regime (15-25 possible regimes)
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Optimized parameters for the regime
+        """
+        try:
+            # Load optimized parameters from training (final_parameters_optimization.py)
+            # These parameters are optimized during training and stored in the model artifacts
+            optimized_params = self._load_optimized_parameters_for_regime(hmm_regime)
+            
+            if optimized_params:
+                # Apply confidence-based adjustments
+                confidence_adjustment = 0.8 + (regime_confidence * 0.4)  # 0.8 to 1.2 range
+                
+                adjusted_params = {}
+                for param_name, param_value in optimized_params.items():
+                    if param_name in ["confidence_threshold", "analyst_confidence_threshold"]:
+                        # Higher confidence = lower threshold (more aggressive)
+                        adjusted_params[param_name] = param_value * (2.0 - confidence_adjustment)
+                    elif param_name in ["lookback_period", "volatility_adjustment"]:
+                        # Higher confidence = more stable parameters
+                        adjusted_params[param_name] = param_value * confidence_adjustment
+                    else:
+                        adjusted_params[param_name] = param_value
+                
+                return adjusted_params
+            else:
+                # Fallback to default parameters if optimization not available
+                return self._get_default_regime_parameters(hmm_regime, regime_confidence)
+                
+        except Exception as e:
+            self.logger.error(f"Error getting optimized regime parameters: {e}")
+            return self._get_default_regime_parameters(hmm_regime, regime_confidence)
+
+    def _load_optimized_parameters_for_regime(self, hmm_regime: str) -> dict[str, Any] | None:
+        """
+        Load optimized parameters for a specific regime from training artifacts.
+        
+        Args:
+            hmm_regime: HMM regime identifier
+            
+        Returns:
+            dict: Optimized parameters or None if not found
+        """
+        try:
+            # This would load from the optimized parameters saved during training
+            # The parameters are optimized in final_parameters_optimization.py
+            # and stored in model artifacts
+            
+            # For now, return None to use fallback parameters
+            # In production, this would load from:
+            # - Model artifacts
+            # - Optimization results from final_parameters_optimization.py
+            # - Regime-specific parameter files
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error loading optimized parameters for regime {hmm_regime}: {e}")
+            return None
+
+    def _get_default_regime_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get default regime parameters as fallback.
+        
+        Args:
+            hmm_regime: HMM regime identifier
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Default parameters for the regime
+        """
+        # Base parameters that work across all regimes
+        base_params = {
+            "confidence_threshold": 0.6,
+            "lookback_period": 20,
+            "volatility_adjustment": 1.0,
+            "analyst_confidence_threshold": 0.7
+        }
+        
+        # Apply confidence-based adjustments
+        confidence_adjustment = 0.8 + (regime_confidence * 0.4)
+        
+        adjusted_params = {}
+        for param_name, param_value in base_params.items():
+            if param_name in ["confidence_threshold", "analyst_confidence_threshold"]:
+                adjusted_params[param_name] = param_value * (2.0 - confidence_adjustment)
+            elif param_name in ["lookback_period", "volatility_adjustment"]:
+                adjusted_params[param_name] = param_value * confidence_adjustment
+            else:
+                adjusted_params[param_name] = param_value
+        
+        return adjusted_params
+
+    @handle_errors_with_tracking(
         context="analyst cleanup",
+        log_level="INFO",
+        print_errors=True
     )
     async def stop(self) -> None:
         """Clean up analyst resources."""
@@ -1478,19 +1927,57 @@ class Analyst:
             self.logger.info("Stopping Analyst...")
             self.is_analyzing = False
 
-            # Stop sub-components
+            # Stop sub-components with enhanced error handling
             if self.dual_model_system:
-                await self.dual_model_system.stop()
+                try:
+                    await self.dual_model_system.stop()
+                    self.logger.info("✅ Dual model system stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping dual model system: {e}")
+                    print(f"❌ Error stopping dual model system: {e}")
 
             if self.market_health_analyzer:
-                await self.market_health_analyzer.stop()
+                try:
+                    await self.market_health_analyzer.stop()
+                    self.logger.info("✅ Market health analyzer stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping market health analyzer: {e}")
+                    print(f"❌ Error stopping market health analyzer: {e}")
 
             if self.liquidation_risk_model:
-                await self.liquidation_risk_model.stop()
+                try:
+                    await self.liquidation_risk_model.stop()
+                    self.logger.info("✅ Liquidation risk model stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping liquidation risk model: {e}")
+                    print(f"❌ Error stopping liquidation risk model: {e}")
+
+            # Clean up live trading utilities
+            if self.model_manager:
+                try:
+                    # Clear model cache
+                    self.model_cache.clear()
+                    self.prediction_cache.clear()
+                    self.logger.info("✅ Model and prediction caches cleared")
+                    print("✅ Model and prediction caches cleared")
+                except Exception as e:
+                    self.logger.error(f"❌ Error cleaning up model caches: {e}")
+                    print(f"❌ Error cleaning up model caches: {e}")
+
+            if self.performance_monitor:
+                try:
+                    self.performance_monitor.stop()
+                    self.logger.info("✅ Performance monitor stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping performance monitor: {e}")
+                    print(f"❌ Error stopping performance monitor: {e}")
 
             self.analysis_results = {}
             self.analysis_history = []
 
             self.logger.info("✅ Analyst stopped successfully")
-        except Exception:
-            self.logger.error("❌ Error stopping Analyst: {e}")
+            print("✅ Analyst stopped successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Error stopping Analyst: {e}")
+            print(f"❌ Error stopping Analyst: {e}")
+            raise

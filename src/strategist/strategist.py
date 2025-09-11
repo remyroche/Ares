@@ -5,8 +5,17 @@ from typing import Any, TYPE_CHECKING
 # Note: compat module has been refactored, using enhanced_error_handler instead
 from ..utils.enhanced_error_handler import handle_errors_with_tracking
 from ..utils.logger import system_logger
+from ..utils.warning_symbols import failed, initialization_error, warning
 from ..core.error_classes import ValidationError
 from ..core.decorators import handles_errors
+# Live trading utilities
+from src.utils.model_manager import ModelManager
+# Performance monitoring
+from src.utils.performance_utils import PerformanceMonitor, global_monitor
+from src.utils.caching import intelligent_caching
+# Live trading validation
+from src.utils.trading_decorators import validate_trading_inputs
+from src.utils.error_handler import handle_trading_errors
 import numpy as np
 import pandas as pd
 
@@ -87,6 +96,16 @@ class Strategist:
         # Enhanced regime classifier (lazily imported during initialize)
         self.regime_classifier: "EnhancedRegimeClassifier" | None = None
         self.enable_regime_detection = self.strategist_config.dict().get("enable_regime_detection", True)
+        
+        # Live trading utilities
+        self.model_manager: ModelManager | None = None
+        self.selected_model: str | None = None
+        self.model_cache: dict[str, Any] = {}
+        
+        # Performance monitoring for live trading
+        self.performance_monitor: PerformanceMonitor | None = None
+        self.global_monitor = global_monitor
+        self.strategy_cache: dict[str, Any] = {}
 
     @handle_specific_errors(
         error_handlers={
@@ -127,6 +146,12 @@ class Strategist:
                     )
                     self.enable_regime_detection = False
                     self.regime_classifier = None
+            
+            # Initialize live trading utilities
+            await self._initialize_live_trading_utilities()
+            
+            # Initialize performance monitoring
+            await self._initialize_performance_monitoring()
 
             self.logger.info("✅ Strategist initialized successfully")
             return True
@@ -159,6 +184,8 @@ class Strategist:
         context="strategy generation",
     )
     @create_strategy_validator(min_confidence = 0.0, max_confidence = 1.0)
+    @intelligent_caching(ttl=120, key_func=lambda self, market_data, current_price, analysis_results: f"strategy_{current_price}_{hash(str(market_data.tail(10).values.tolist()))}")
+    @global_monitor.track_function
     async def generate_strategy(
         self,
         market_data: pd.DataFrame,
@@ -177,10 +204,15 @@ class Strategist:
             Generated strategy or None if failed
         """
         try:
+            # Start performance monitoring
+            if self.performance_monitor:
+                self.performance_monitor.start_timer("strategy_generation")
+            
             # Validate market data
             self._validate_market_data(market_data)
 
             self.logger.info("🎯 Generating trading strategy...")
+            print("🎯 Generating trading strategy...")
 
             # Extract market indicators using performance optimizer
             market_indicators = await self._extract_market_indicators_optimized(
@@ -232,13 +264,37 @@ class Strategist:
             # Store results
             self._store_strategy_results(base_strategy)
 
+            # End performance monitoring
+            if self.performance_monitor:
+                execution_time = self.performance_monitor.end_timer("strategy_generation")
+                self.logger.info(f"Strategy generation completed in {execution_time:.3f}s")
+                print(f"Strategy generation completed in {execution_time:.3f}s")
+            
+            self.logger.info(f"✅ Strategy generated: {base_strategy.get('direction', 'UNKNOWN')} with confidence {base_strategy.get('confidence', 0.0):.3f}")
+            print(f"✅ Strategy generated: {base_strategy.get('direction', 'UNKNOWN')} with confidence {base_strategy.get('confidence', 0.0):.3f}")
             return base_strategy
 
         except ValidationError as e:
+            error_msg = f"Validation error in strategy generation: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
             log_error(self.logger, "Validation error in strategy generation", e)
+            
+            # End performance monitoring even on error
+            if self.performance_monitor:
+                self.performance_monitor.end_timer("strategy_generation")
+            
             return None
         except Exception as e:
+            error_msg = f"Error generating strategy: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
             log_error(self.logger, "Error generating strategy", e)
+            
+            # End performance monitoring even on error
+            if self.performance_monitor:
+                self.performance_monitor.end_timer("strategy_generation")
+            
             return None
 
     def _validate_market_data(self, market_data: pd.DataFrame) -> None:
@@ -575,21 +631,324 @@ class Strategist:
             self.logger.error(f"Failed to apply regime adjustments: {e}")
             return strategy
 
-    @handles_errors(Exception, fallback = False)
+    @handle_errors_with_tracking(
+        context="live trading utilities initialization",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def _initialize_live_trading_utilities(self) -> bool:
+        """Initialize live trading utilities."""
+        try:
+            self.logger.info("Initializing live trading utilities...")
+            print("Initializing live trading utilities...")
+            
+            # Initialize Model Manager for model selection and loading
+            self.model_manager = ModelManager()
+            self.logger.info("✅ Model Manager initialized")
+            print("✅ Model Manager initialized")
+            
+            # Set default model selection for strategy generation (single model trained on various conditions)
+            # The strategist now includes regime classification functionality
+            self.selected_model = "strategist_regime_classifier"
+            self.logger.info(f"✅ Default model selected: {self.selected_model}")
+            print(f"✅ Default model selected: {self.selected_model}")
+            
+            # Initialize caches
+            self.model_cache = {}
+            self.strategy_cache = {}
+            self.logger.info("✅ Model and strategy caches initialized")
+            print("✅ Model and strategy caches initialized")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing live trading utilities: {e}")
+            print(f"❌ Error initializing live trading utilities: {e}")
+            return False
 
+    @handle_errors_with_tracking(
+        context="HMM regime classification",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def classify_hmm_regime(self, market_data: pd.DataFrame) -> dict[str, Any]:
+        """
+        Classify HMM regime using the strategist's regime classifier model.
+        
+        Args:
+            market_data: Market data for regime classification
+            
+        Returns:
+            dict: Regime classification results
+        """
+        if not self.model_manager or not self.selected_model:
+            error_msg = "Model Manager or selected model not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            # Start performance monitoring
+            if self.performance_monitor:
+                self.performance_monitor.start_timer("regime_classification")
+            
+            self.logger.info("Classifying HMM regime...")
+            print("Classifying HMM regime...")
+            
+            # Get model from cache or load it
+            model = self.model_cache.get(self.selected_model)
+            if not model:
+                model = await self.model_manager.load_model(self.selected_model)
+                if model:
+                    self.model_cache[self.selected_model] = model
+                else:
+                    error_msg = f"Failed to load regime classifier model: {self.selected_model}"
+                    self.logger.error(error_msg)
+                    print(f"❌ {error_msg}")
+                    return {"error": error_msg}
+            
+            # Get regime classification
+            regime_result = await self.model_manager.get_prediction(model, market_data)
+            
+            # End performance monitoring
+            if self.performance_monitor:
+                execution_time = self.performance_monitor.end_timer("regime_classification")
+                self.logger.info(f"Regime classification completed in {execution_time:.3f}s")
+                print(f"Regime classification completed in {execution_time:.3f}s")
+            
+            self.logger.info(f"✅ HMM regime classified: {regime_result.get('regime', 'UNKNOWN')}")
+            print(f"✅ HMM regime classified: {regime_result.get('regime', 'UNKNOWN')}")
+            return regime_result
+            
+        except Exception as e:
+            error_msg = f"Error classifying HMM regime: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            
+            # End performance monitoring even on error
+            if self.performance_monitor:
+                self.performance_monitor.end_timer("regime_classification")
+            
+            return {"error": error_msg}
+
+    @handle_errors_with_tracking(
+        context="HMM regime-based strategy coordination",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def coordinate_strategy_with_hmm_regime(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Coordinate strategy generation based on HMM regime detection.
+        
+        Args:
+            hmm_regime: Detected HMM regime (15-25 possible regimes)
+            regime_confidence: Confidence in the regime detection
+            
+        Returns:
+            dict: Strategy coordination results and regime-specific parameters
+        """
+        if not self.model_manager or not self.selected_model:
+            error_msg = "Model Manager or selected model not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            self.logger.info(f"Coordinating strategy with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            print(f"Coordinating strategy with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            
+            # Get the single model (trained on various market conditions)
+            model = self.model_cache.get(self.selected_model)
+            if not model:
+                error_msg = f"Model {self.selected_model} not loaded in cache"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return {"error": error_msg}
+            
+            # Configure regime-specific parameters for strategy generation
+            regime_config = {
+                "hmm_regime": hmm_regime,
+                "regime_confidence": regime_confidence,
+                "model_name": self.selected_model,
+                "regime_parameters": self._get_optimized_strategy_parameters(hmm_regime, regime_confidence)
+            }
+            
+            self.logger.info(f"✅ Strategy coordination with HMM regime completed: {hmm_regime}")
+            print(f"✅ Strategy coordination with HMM regime completed: {hmm_regime}")
+            return regime_config
+            
+        except Exception as e:
+            error_msg = f"Error coordinating strategy with HMM regime: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+
+    def _get_optimized_strategy_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get optimized strategy parameters for HMM regime from training optimization.
+        
+        Args:
+            hmm_regime: Detected HMM regime (15-25 possible regimes)
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Optimized strategy parameters for the regime
+        """
+        try:
+            # Load optimized parameters from training (final_parameters_optimization.py)
+            # These parameters are optimized during training and stored in the model artifacts
+            optimized_params = self._load_optimized_strategy_parameters_for_regime(hmm_regime)
+            
+            if optimized_params:
+                # Apply confidence-based adjustments
+                confidence_adjustment = 0.8 + (regime_confidence * 0.4)  # 0.8 to 1.2 range
+                
+                adjusted_params = {}
+                for param_name, param_value in optimized_params.items():
+                    if param_name in ["strategy_aggressiveness", "risk_tolerance"]:
+                        # Higher confidence = more aggressive strategy
+                        adjusted_params[param_name] = param_value * confidence_adjustment
+                    elif param_name in ["trend_following_weight"]:
+                        # Higher confidence = more trend following
+                        adjusted_params[param_name] = param_value * confidence_adjustment
+                    else:
+                        adjusted_params[param_name] = param_value
+                
+                return adjusted_params
+            else:
+                # Fallback to default parameters if optimization not available
+                return self._get_default_strategy_parameters(hmm_regime, regime_confidence)
+                
+        except Exception as e:
+            self.logger.error(f"Error getting optimized strategy parameters: {e}")
+            return self._get_default_strategy_parameters(hmm_regime, regime_confidence)
+
+    def _load_optimized_strategy_parameters_for_regime(self, hmm_regime: str) -> dict[str, Any] | None:
+        """
+        Load optimized strategy parameters for a specific regime from training artifacts.
+        
+        Args:
+            hmm_regime: HMM regime identifier
+            
+        Returns:
+            dict: Optimized parameters or None if not found
+        """
+        try:
+            # This would load from the optimized parameters saved during training
+            # The parameters are optimized in final_parameters_optimization.py
+            # and stored in model artifacts
+            
+            # For now, return None to use fallback parameters
+            # In production, this would load from:
+            # - Model artifacts
+            # - Optimization results from final_parameters_optimization.py
+            # - Regime-specific parameter files
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error loading optimized strategy parameters for regime {hmm_regime}: {e}")
+            return None
+
+    def _get_default_strategy_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
+        """
+        Get default strategy parameters as fallback.
+        
+        Args:
+            hmm_regime: HMM regime identifier
+            regime_confidence: Confidence in regime detection
+            
+        Returns:
+            dict: Default parameters for the regime
+        """
+        # Base parameters that work across all regimes
+        base_params = {
+            "strategy_aggressiveness": 1.0,
+            "risk_tolerance": 0.6,
+            "trend_following_weight": 0.5,
+            "regime_weight": 0.3
+        }
+        
+        # Apply confidence-based adjustments
+        confidence_adjustment = 0.8 + (regime_confidence * 0.4)
+        
+        adjusted_params = {}
+        for param_name, param_value in base_params.items():
+            if param_name in ["strategy_aggressiveness", "risk_tolerance", "trend_following_weight"]:
+                adjusted_params[param_name] = param_value * confidence_adjustment
+            else:
+                adjusted_params[param_name] = param_value
+        
+        return adjusted_params
+
+    @handles_errors(Exception, fallback = False)
+    async def _initialize_performance_monitoring(self) -> bool:
+        """Initialize performance monitoring."""
+        try:
+            self.logger.info("Initializing performance monitoring...")
+            
+            # Initialize Performance Monitor
+            self.performance_monitor = PerformanceMonitor()
+            self.logger.info("✅ Performance Monitor initialized")
+            
+            # Enable global monitoring
+            self.global_monitor.enable()
+            self.logger.info("✅ Global monitoring enabled")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing performance monitoring: {e}")
+            return False
+
+    @handle_errors_with_tracking(
+        context="strategist cleanup",
+        log_level="INFO",
+        print_errors=True
+    )
     async def stop(self) -> bool:
         """Stop the strategist component."""
         try:
             self.logger.info("Stopping Strategist...")
+            print("Stopping Strategist...")
             self.is_running = False
 
-            # Cleanup optimizer resources
+            # Cleanup optimizer resources with enhanced error handling
             if hasattr(self, "optimizer") and self.optimizer._executor:
-                self.optimizer._executor.shutdown(wait = True)
+                try:
+                    self.optimizer._executor.shutdown(wait = True)
+                    self.logger.info("✅ Optimizer executor shutdown successfully")
+                    print("✅ Optimizer executor shutdown successfully")
+                except Exception as e:
+                    self.logger.error(f"❌ Error shutting down optimizer executor: {e}")
+                    print(f"❌ Error shutting down optimizer executor: {e}")
+
+            # Clean up live trading utilities
+            if self.model_manager:
+                try:
+                    # Clear model cache
+                    self.model_cache.clear()
+                    self.strategy_cache.clear()
+                    self.logger.info("✅ Model and strategy caches cleared")
+                    print("✅ Model and strategy caches cleared")
+                except Exception as e:
+                    self.logger.error(f"❌ Error cleaning up model caches: {e}")
+                    print(f"❌ Error cleaning up model caches: {e}")
+
+            if self.performance_monitor:
+                try:
+                    self.performance_monitor.stop()
+                    self.logger.info("✅ Performance monitor stopped")
+                    print("✅ Performance monitor stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping performance monitor: {e}")
+                    print(f"❌ Error stopping performance monitor: {e}")
 
             self.logger.info("✅ Strategist stopped successfully")
+            print("✅ Strategist stopped successfully")
             return True
 
         except Exception as e:
+            error_msg = f"❌ Failed to stop Strategist: {e}"
+            self.logger.error(error_msg)
+            print(error_msg)
             log_error(self.logger, "❌ Failed to stop Strategist", e)
             return False

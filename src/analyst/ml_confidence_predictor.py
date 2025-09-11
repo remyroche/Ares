@@ -1,4 +1,5 @@
-from src.utils.compat import handle_specific_errors
+# Note: compat module has been refactored, using enhanced_error_handler instead
+from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from ..config_optuna import get_parameter_value
 import contextlib
 import os
@@ -552,10 +553,11 @@ class MLConfidencePredictor:
         try:
             from src.analyst.multi_timeframe_feature_engineering import MultiTimeframeFeatureEngineering
             from .meta_labeling_system import MetaLabelingSystem
-            from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
+            # Use existing feature engineering from src.feature_engineering
+            from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
             from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
             feature_config = self.config.get('feature_engineering', {'enable_advanced_features': True, 'enable_multi_timeframe_features': True, 'enable_autoencoder_features': True, 'enable_legacy_features': True, 'feature_cache_duration': 300, 'enable_feature_selection': True, 'max_features': 500, 'multi_timeframe_feature_engineering': {'enable_mtf_features': True, 'enable_timeframe_adaptation': True}})
-            self.advanced_feature_engineering = AdvancedFeatureEngineering(feature_config)
+            self.advanced_feature_engineering = EnhancedFeatureEngineeringStep(feature_config)
             await self.advanced_feature_engineering.initialize()
             self.multi_timeframe_feature_engineering = MultiTimeframeFeatureEngineering(feature_config)
             self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(feature_config)

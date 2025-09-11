@@ -18,7 +18,8 @@ import yaml
 from scipy import stats
 
 try:
-    from src.utils.compat import handle_specific_errors
+    # Note: compat module has been refactored, using enhanced_error_handler instead
+from src.utils.enhanced_error_handler import handle_errors_with_tracking
 except ImportError:
     # Fallback decorator for handle_specific_errors
     def handle_specific_errors(*args, **kwargs):

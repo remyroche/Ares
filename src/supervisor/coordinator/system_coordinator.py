@@ -11,7 +11,8 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.utils.compat import handle_specific_errors
+# Note: compat module has been refactored, using enhanced_error_handler instead
+from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from ...utils.logger import system_logger
 from .utils.warning_symbols import error, failed
 from .supervisor.enhanced_prediction_service import EnhancedPredictionService

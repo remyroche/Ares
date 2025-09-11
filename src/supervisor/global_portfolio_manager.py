@@ -11,7 +11,8 @@ portfolio optimization, dynamic rebalancing, and risk-adjusted position sizing.
 from datetime import datetime
 from typing import Any
 
-from src.utils.compat import handle_specific_errors
+# Note: compat module has been refactored, using enhanced_error_handler instead
+from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from ..utils.logger import system_logger
 from ..utils.warning_symbols import initialization_error, invalid
 import time

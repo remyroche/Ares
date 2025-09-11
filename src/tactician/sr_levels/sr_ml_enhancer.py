@@ -15,10 +15,10 @@ from ...core.sr_error_handlers import sr_error_handler, SROptimizationError, SRD
 
 # ML Common utilities
 from ...utils.ml_common.model_training import ModelTrainingManager
-from ...utils.ml_common.feature_selection import FeatureSelector
-from ...utils.ml_common.model_evaluation import ModelEvaluator
+from ...utils.ml_common.feature_selection import FeatureSelectionFramework
+from ...utils.ml_common.model_evaluation import ModelEvaluationUtilities
 from ...utils.ml_common.ensemble_manager import EnsembleManager
-from ...utils.ml_common.hpo_utils import HPOptimizer
+from ...utils.ml_common.hpo_utils import HyperparameterOptimization
 from ...utils.ml_common.validation_utils import ValidationUtils
 from ...utils.ml_common.confidence_metrics import calculate_confidence_metrics
 from ...utils.ml_common.model_explanations import explain_model_with_shap_lime
@@ -265,8 +265,9 @@ class SRMLEnhancer:
         """Extract step06 features (200+ features)."""
         try:
             try:
-                from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineeringRefactored
-                step06_engineer = VectorizedAdvancedFeatureEngineeringRefactored()
+                # Use existing feature engineering from src.feature_engineering
+                from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
+                step06_engineer = EnhancedFeatureEngineeringStep(self.config)
                 step06_result = await step06_engineer.engineer_features(market_data)
                 all_features = []
                 price_features = step06_result.get('price_features', {})
@@ -791,8 +792,9 @@ class SRMLEnhancer:
         try:
             self.logger.info('Using step03 regime detection with LGBM model')
             try:
-                from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineeringRefactored
-                self.step03_engineer = VectorizedAdvancedFeatureEngineeringRefactored()
+                # Use existing feature engineering from src.feature_engineering
+                from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
+                self.step03_engineer = EnhancedFeatureEngineeringStep(self.config)
                 self.logger.info('✅ Step03 regime detection loaded successfully')
             except ImportError as e:
                 self.logger.warning(f'Step03 regime detection not available: {e}')

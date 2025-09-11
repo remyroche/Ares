@@ -5,7 +5,8 @@ import pywt
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
-from .advanced_feature_engineering import AdvancedFeatureEngineering
+# Use existing feature engineering from src.feature_engineering
+from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
 from .autoencoder_feature_generator import AutoencoderFeatureGenerator
 from ..feature_engineering.limited_microstructure_features import LimitedMicrostructureFeatures
 from ..training.steps.data_collection.feature_engineering.feature_components import EntropyFeatureEngine
@@ -32,7 +33,7 @@ class FeatureEngineeringOrchestrator:
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild('FeatureEngineeringOrchestrator')
-        self.advanced_feature_engineering = AdvancedFeatureEngineering(config)
+        self.advanced_feature_engineering = EnhancedFeatureEngineeringStep(config)
         self.autoencoder_generator = AutoencoderFeatureGenerator(config)
         self.microstructure_features = LimitedMicrostructureFeatures(config)
         self.entropy_engine = EntropyFeatureEngine(config)
@@ -197,8 +198,9 @@ class FeatureEngineeringOrchestrator:
     async def _calculate_multi_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None) -> pd.DataFrame:
         """Calculate multi-timeframe features."""
         try:
-            from .advanced_feature_engineering import AdvancedFeatureEngineering
-            advanced_fe = AdvancedFeatureEngineering(self.config)
+            # Use existing feature engineering from src.feature_engineering
+from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
+            advanced_fe = EnhancedFeatureEngineeringStep(self.config)
             await advanced_fe.initialize()
             multi_timeframe_features = await advanced_fe._engineer_multi_timeframe_features(price_data, volume_data, order_flow_data)
 

@@ -18,9 +18,17 @@ from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 from src.core.decorators import handles_errors
 from src.core.error_classes import execution_error
 from src.core.error_classes import initialization_error
-from src.training.dual_model_system import DualModelSystem
-from src.training.dual_model_system import setup_dual_model_system
-from src.utils.compat import handle_specific_errors
+# Note: dual_model_system has been refactored into training steps
+# Using training steps components instead
+try:
+    from src.training.steps.model_training import GeneralModelTrainer, AnalystModelTrainer
+    TRAINING_STEPS_AVAILABLE = True
+except ImportError:
+    TRAINING_STEPS_AVAILABLE = False
+    GeneralModelTrainer = None
+    AnalystModelTrainer = None
+# Note: compat module has been refactored, using enhanced_error_handler instead
+from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.logger import system_logger
 from src.utils.lookahead_bias_detector import LookaheadBiasError
 from src.utils.lookahead_bias_detector import get_global_detector
@@ -288,14 +296,15 @@ class Analyst:
         context="dual model system initialization",
     )
     async def _initialize_dual_model_system(self) -> None:
-        """Initialize Dual Model System."""
+        """Initialize Training Steps System."""
         try:
-
-            self.dual_model_system = await setup_dual_model_system(self.config)
-            if self.dual_model_system:
-                self.logger.info("✅ Dual Model System initialized successfully")
+            if TRAINING_STEPS_AVAILABLE:
+                # Initialize the new training steps components
+                self.dual_model_system = GeneralModelTrainer(self.config)
+                self.logger.info("✅ Training Steps System initialized successfully")
+                self.logger.info("   📊 Using new training steps architecture")
             else:
-                self.logger.error(failed("❌ Failed to initialize Dual Model System"))
+                self.logger.error(failed("❌ Failed to initialize Training Steps System"))
 
         except Exception as e:
             self.logger.error(

@@ -40,6 +40,7 @@ from .model_registry import *
 from .model_explainability import *
 from .data_quality import *
 from .pipeline_orchestrator import *
+from .model_interpretability import *
 
 __version__ = "1.0.0"
 __all__ = [
@@ -131,4 +132,11 @@ __all__ = [
     # Pipeline orchestration
     'MLPipelineOrchestrator',
     '_to_jsonable',
+    
+    # Model interpretability
+    'ModelInterpretabilityEngine',
+    'ExplanationResult',
+    'InterpretabilityReport',
+    'InterpretabilityMethod',
+    'ExplanationType',
 ]

@@ -23,7 +23,7 @@ import json
 
 from src.utils.logger import system_logger
 # Import data quality utilities from data_quality
-from src.utils.data.quality.enhanced_data_quality_validator import QualityResult, EnhancedDataQualityValidator
+from src.utils.data.quality.data_quality import QualityResult, DataQualityFramework as EnhancedDataQualityValidator
 
 # Simple placeholder classes for missing functionality
 class DataQualityUtilities:

@@ -24,7 +24,7 @@ import pickle
 
 from src.utils.logger import system_logger
 from src.utils.data.processing.transformers import DataFrameValidator, DataQualityReport
-from src.utils.data.quality.enhanced_data_quality_validator import EnhancedDataQualityValidator, QualityResult
+from src.utils.data.quality.data_quality import DataQualityFramework as EnhancedDataQualityValidator, QualityResult
 
 from src.utils.ml_common.data_quality import DataQualityUtilities
 from src.utils.ml_common.feature_selection import FeatureSelectionFramework

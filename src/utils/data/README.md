@@ -147,15 +147,15 @@ All existing imports continue to work through backwards compatibility aliases:
 ```python
 # These old imports still work:
 from src.utils.data import (
-    DataFrameValidator,
-    DataFrameCleaner,
-    DataFrameTransformer,
+    DataProcessor,
+    DataCleaner,
+    DataQualityFramework,
     validate_dataframe,
     clean_dataframe,
     transform_dataframe
 )
 
-# They now redirect to the new consolidated modules
+# These functions now use the new consolidated modules internally
 ```
 
 ## Benefits of Consolidation

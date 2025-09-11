@@ -146,6 +146,7 @@ except ImportError:
     analyze_fallback_patterns = None
 
 try:
+    import numpy as np
 except ImportError:
     np = None
 

@@ -38,8 +38,8 @@ from analyzers.dependency_analyzer import DependencyAnalyzer
 # Import core components
 from core.config import AnalysisConfig
 
-# Import standardized base pipeline
-from pipelines.base_pipeline import BasePipeline
+# Import simple base pipeline
+from .simple_base import SimplePipeline, SimplePipelineConfig
 import logging
 
 
@@ -204,14 +204,13 @@ class InteractionAwareDeadCodeAnalyzer:
         return enhanced_results
 
 
-class DeadCodePipeline(BasePipeline):
+class DeadCodePipeline(SimplePipeline):
     """Specialized pipeline for dead code analysis with standardized initialization."""
 
-    def __init__(self, project_root: str = None, enable_plugins: bool = True,
+    def __init__(self, project_root: str = None, config: Optional[SimplePipelineConfig] = None,
                  use_interaction_mapping: bool = True):
-        # Use standardized initialization from base class
-        super().__init__(project_root=project_root, enable_plugins=enable_plugins,
-                        pipeline_name="dead_code")
+        # Use simple initialization from base class
+        super().__init__(project_root=project_root, config=config, pipeline_name="dead_code")
 
         # Setup pipeline-specific paths
         self.setup_pipeline_paths()

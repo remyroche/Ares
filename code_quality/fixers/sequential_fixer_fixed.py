@@ -36,14 +36,14 @@ try:
 except ImportError:
     find_python_files = None
 
-# Import base pipeline for common functionality
-from pipelines.base_pipeline import BasePipeline
+# Import simple base pipeline for common functionality
+from pipelines.simple_base import SimplePipeline, SimplePipelineConfig
 import json
 import logging
 import time
 
 
-class SequentialFixer(BasePipeline):
+class SequentialFixer(SimplePipeline):
     """
     Sequential auto-fix pipeline that runs multiple quality tools in sequence.
 

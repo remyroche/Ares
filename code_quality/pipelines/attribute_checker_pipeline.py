@@ -37,17 +37,16 @@ from attribute_checker import AttributeChecker, check_file
 from core.config import get_default_config
 
 # Import standardized base pipeline
-from base_pipeline import BasePipeline
+from .simple_base import SimplePipeline, SimplePipelineConfig
 import logging
 
 
-class AttributeCheckerPipeline(BasePipeline):
+class AttributeCheckerPipeline(SimplePipeline):
     """Specialized pipeline for attribute access analysis with standardized initialization."""
 
-    def __init__(self, project_root: str = None, enable_plugins: bool = True):
-        # Use standardized initialization from base class
-        super().__init__(project_root=project_root, enable_plugins=enable_plugins,
-                        pipeline_name="attribute_checker")
+    def __init__(self, project_root: str = None, config: Optional[SimplePipelineConfig] = None):
+        # Use simple initialization from base class
+        super().__init__(project_root=project_root, config=config, pipeline_name="attribute_checker")
 
         # Setup pipeline-specific paths
         self.setup_pipeline_paths()

@@ -118,10 +118,10 @@ html_file = visualizer.create_interactive_import_network(import_results)
 Build custom pipelines that leverage import verification:
 
 ```python
-from pipelines.base_pipeline import BasePipeline
+from pipelines.simple_base import SimplePipeline
 from analyzers.import_verifier_analyzer import ImportVerifierAnalyzer
 
-class CustomImportPipeline(BasePipeline):
+class CustomImportPipeline(SimplePipeline):
     def __init__(self, project_root=None, config=None):
         super().__init__(project_root, config)
         self.import_verifier = ImportVerifierAnalyzer()

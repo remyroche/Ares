@@ -42,7 +42,7 @@ from scripts.detect_circular_imports import ImportAnalyzer
 from core.config import get_default_config
 
 # Import standardized base pipeline
-from .base_pipeline import BasePipeline
+from .simple_base import SimplePipeline, SimplePipelineConfig
 import numpy as np
 
 
@@ -398,13 +398,12 @@ class PatternAnalyzer(ImportFreeAnalyzer):
         }
 
 
-class ImportFreeAnalysisPipeline(BasePipeline):
+class ImportFreeAnalysisPipeline(SimplePipeline):
     """Specialized pipeline for import-free code analysis with standardized initialization."""
 
-    def __init__(self, project_root: str = None):
-        # Use standardized initialization from base class (no plugins for import-free)
-        super().__init__(project_root=project_root, enable_plugins=False,
-                        pipeline_name="import_free_analysis")
+    def __init__(self, project_root: str = None, config: Optional[SimplePipelineConfig] = None):
+        # Use simple initialization from base class
+        super().__init__(project_root=project_root, config=config, pipeline_name="import_free_analysis")
 
         # Setup pipeline-specific paths
         self.setup_pipeline_paths()

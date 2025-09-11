@@ -17,7 +17,7 @@ parent_dir = Path(__file__).parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-from pipelines.base_pipeline import BasePipeline, PipelineConfig
+from .simple_base import SimplePipeline, SimplePipelineConfig
 from analyzers.import_verifier_analyzer import ImportVerifierAnalyzer
 from analyzers.dependency_analyzer import DependencyAnalyzer
 from analyzers.complexity_analyzer import ComplexityAnalyzer
@@ -27,21 +27,20 @@ from visualizers.dependency_graph import DependencyGraphVisualizer
 from visualizers.interaction_network import InteractionNetworkVisualizer
 
 
-class EnhancedImportAnalysisPipeline(BasePipeline):
+class EnhancedImportAnalysisPipeline(SimplePipeline):
     """Enhanced pipeline for comprehensive import analysis and code detection."""
     
     def __init__(self, project_root: Optional[Union[str, Path]] = None, 
-                 config: Optional[PipelineConfig] = None,
-                 enable_plugins: bool = True,
+                 config: Optional[SimplePipelineConfig] = None,
                  pipeline_name: str = "enhanced_import_analysis") -> None:
         """Initialize the enhanced import analysis pipeline."""
-        super().__init__(project_root, config, enable_plugins, pipeline_name)
+        super().__init__(project_root, config, pipeline_name)
         
         # Initialize analyzers
-        self.import_verifier = ImportVerifierAnalyzer(self.config.__dict__)
-        self.dependency_analyzer = DependencyAnalyzer(self.config.__dict__)
-        self.complexity_analyzer = ComplexityAnalyzer(self.config.__dict__)
-        self.dead_code_analyzer = DeadCodeAnalyzer(self.config.__dict__)
+        self.import_verifier = ImportVerifierAnalyzer(self.config.__dict__())
+        self.dependency_analyzer = DependencyAnalyzer(self.config.__dict__())
+        self.complexity_analyzer = ComplexityAnalyzer(self.config.__dict__())
+        self.dead_code_analyzer = DeadCodeAnalyzer(self.config.__dict__())
         
         # Initialize visualizers
         self.import_visualizer = ImportNetworkVisualizer(str(self.reports_dir / "import_networks"))

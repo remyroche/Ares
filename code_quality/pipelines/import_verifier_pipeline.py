@@ -16,30 +16,27 @@ parent_dir = Path(__file__).parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-from pipelines.base_pipeline import BasePipeline, PipelineConfig
+from .simple_base import SimplePipeline, SimplePipelineConfig
 from analyzers.import_verifier_analyzer import ImportVerifierAnalyzer
 from visualizers.dependency_graph import DependencyGraphVisualizer
 from visualizers.interaction_network import InteractionNetworkVisualizer
 
 
-class ImportVerifierPipeline(BasePipeline):
+class ImportVerifierPipeline(SimplePipeline):
     """Pipeline for verifying file import status."""
     
     def __init__(self, project_root: Optional[Union[str, Path]] = None, 
-                 config: Optional[PipelineConfig] = None,
-                 enable_plugins: bool = False,  # Disable plugins for this simple pipeline
+                 config: Optional[SimplePipelineConfig] = None,
                  pipeline_name: str = "import_verifier") -> None:
         """Initialize the import verifier pipeline."""
-        super().__init__(project_root, config, enable_plugins, pipeline_name)
+        super().__init__(project_root, config, pipeline_name)
         
         # Initialize the analyzer
-        self.analyzer = ImportVerifierAnalyzer(self.config.__dict__)
+        self.analyzer = ImportVerifierAnalyzer(self.config.__dict__())
         
         # Initialize visualizers for enhanced analysis
         self.dependency_visualizer = DependencyGraphVisualizer(str(self.reports_dir / "dependency_graphs"))
         self.interaction_visualizer = InteractionNetworkVisualizer(str(self.reports_dir / "interaction_networks"))
-        
-        self.logger.info(f"Initialized ImportVerifierPipeline for project: {self.project_root}")
     
     def run(self, target_directory: Optional[str] = None, 
             save_report: bool = True, 

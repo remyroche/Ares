@@ -68,17 +68,16 @@ from ..plugins.yesqa_fixer import YesqaFixer
 from ..core.config import load_config
 
 # Import standardized base pipeline
-from .base_pipeline import BasePipeline
+from .simple_base import SimplePipeline, SimplePipelineConfig
 
 
-class AutoFixerPipeline(BasePipeline):
+class AutoFixerPipeline(SimplePipeline):
     """Specialized pipeline for automated code fixing with standardized initialization."""
 
-    def __init__(self, project_root: str = None, enable_plugins: bool = True,
+    def __init__(self, project_root: str = None, config: Optional[SimplePipelineConfig] = None,
                  conservative: bool = False, balanced: bool = False):
-        # Use standardized initialization from base class
-        super().__init__(project_root=project_root, enable_plugins=enable_plugins,
-                        pipeline_name="auto_fixer")
+        # Use simple initialization from base class
+        super().__init__(project_root=project_root, config=config, pipeline_name="auto_fixer")
 
         # Setup pipeline-specific paths
         self.setup_pipeline_paths()

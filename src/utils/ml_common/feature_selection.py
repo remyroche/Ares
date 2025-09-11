@@ -188,7 +188,12 @@ class FeatureSelectionFramework:
             'verbose': True,
             'cv_folds': 5,                     # CV folds for RFE optimization
             'min_features_ratio': 0.05,        # Minimum 5% of features at each stage
-            'max_features_ratio': 0.5          # Maximum 50% of features at each stage
+            'max_features_ratio': 0.5,         # Maximum 50% of features at each stage
+            # Bootstrap stability validation parameters
+            'enable_bootstrap_stability': True, # Enable bootstrap stability validation
+            'n_bootstrap_samples': 10,         # Number of bootstrap samples
+            'bootstrap_fraction': 0.8,         # Fraction of data in each bootstrap
+            'bootstrap_stability_threshold': 0.6  # Stability threshold for bootstrap validation
         }
         
         config = {**default_config, **(config or {})}
@@ -405,6 +410,51 @@ class FeatureSelectionFramework:
             
             _LOGGER.info(f"✅ Stage 3 complete: {len(current_features)} features remaining")
             
+            # Stage 3.5: Bootstrap Stability Validation (NEW STAGE)
+            if config['enable_bootstrap_stability']:
+                _LOGGER.info("🔍 Stage 3.5: Bootstrap stability validation...")
+                
+                # Run bootstrap stability validation on the consensus features
+                bootstrap_stability_result = self._bootstrap_pipeline_stability_validation(
+                    X, y, feature_names, features_target_count, config,
+                    n_bootstrap=config['n_bootstrap_samples'],
+                    bootstrap_fraction=config['bootstrap_fraction'],
+                    stability_threshold=config['bootstrap_stability_threshold']
+                )
+                
+                # Update current features with stable features
+                stable_features = bootstrap_stability_result['stable_features']
+                if stable_features:
+                    current_features = stable_features
+                    selected_indices = [feature_names.index(f) for f in current_features if f in feature_names]
+                    current_X = X[:, selected_indices]
+                    
+                    pipeline_results['pipeline_stages']['bootstrap_stability'] = {
+                        'input_count': len(consensus_features),
+                        'output_count': len(current_features),
+                        'stability_analysis': bootstrap_stability_result['stability_analysis'],
+                        'bootstrap_results': bootstrap_stability_result['bootstrap_results'],
+                        'execution_time': bootstrap_stability_result['execution_time']
+                    }
+                    
+                    _LOGGER.info(f"✅ Stage 3.5 complete: {len(current_features)} stable features remaining")
+                else:
+                    _LOGGER.warning("⚠️ No stable features found in bootstrap validation, using consensus features")
+                    pipeline_results['pipeline_stages']['bootstrap_stability'] = {
+                        'error': 'No stable features found',
+                        'input_count': len(consensus_features),
+                        'output_count': len(consensus_features),
+                        'stability_analysis': bootstrap_stability_result['stability_analysis']
+                    }
+            else:
+                _LOGGER.info("⏭️ Stage 3.5 skipped: Bootstrap stability validation disabled")
+                pipeline_results['pipeline_stages']['bootstrap_stability'] = {
+                    'skipped': True,
+                    'reason': 'Bootstrap stability validation disabled',
+                    'input_count': len(current_features),
+                    'output_count': len(current_features)
+                }
+            
             # Stage 4: Tree-based ensemble selection with dynamic threshold (final)
             _LOGGER.info("🔍 Stage 4: Tree-based ensemble selection with dynamic threshold (final)...")
             
@@ -490,15 +540,28 @@ class FeatureSelectionFramework:
                 'reduction_percentage': safe_divide(features_initial_count - len(final_features), features_initial_count) * 100
             })
             
-            # Enhanced reporting with dynamic threshold information
+            # Enhanced reporting with dynamic threshold and stability information
             additional_stats = {
                 'Pipeline stages': len(pipeline_results['pipeline_stages']),
                 'Target achieved': len(final_features) == features_target_count,
                 'Final vs target': f"{len(final_features)}/{features_target_count}",
                 'Total reduction': f"{features_initial_count - len(final_features)} ({pipeline_results['pipeline_summary']['reduction_percentage']:.1f}%)",
                 'Dynamic thresholds': config['use_dynamic_thresholds'],
-                'CV folds': config['cv_folds']
+                'CV folds': config['cv_folds'],
+                'Bootstrap stability': config['enable_bootstrap_stability']
             }
+            
+            # Add bootstrap stability information
+            if 'bootstrap_stability' in pipeline_results['pipeline_stages']:
+                bootstrap_stage = pipeline_results['pipeline_stages']['bootstrap_stability']
+                if 'stability_analysis' in bootstrap_stage:
+                    stability_stats = bootstrap_stage['stability_analysis']['stability_statistics']
+                    additional_stats.update({
+                        'Bootstrap samples': bootstrap_stage['stability_analysis']['n_bootstrap_samples'],
+                        'Mean stability': f"{stability_stats['mean_stability']:.3f}",
+                        'Stable features found': stability_stats['features_above_threshold'],
+                        'Bootstrap threshold': bootstrap_stage['stability_analysis']['stability_threshold']
+                    })
             
             # Add threshold information for each stage
             for stage_name, stage_data in pipeline_results['pipeline_stages'].items():
@@ -795,6 +858,326 @@ class FeatureSelectionFramework:
         except Exception as e:
             _LOGGER.warning(f"⚠️ Tree ensemble threshold determination failed: {e}")
             return 0.0, max(1, len(feature_names) // 20)
+
+    def _bootstrap_pipeline_stability_validation(self, X: np.ndarray, y: np.ndarray,
+                                               feature_names: List[str],
+                                               features_target_count: int,
+                                               config: Dict[str, Any],
+                                               n_bootstrap: int = 10,
+                                               bootstrap_fraction: float = 0.8,
+                                               stability_threshold: float = 0.6) -> Dict[str, Any]:
+        """
+        Run the entire pipeline on multiple bootstrap samples to validate feature stability.
+        
+        This is a crucial validation step to ensure features aren't just a result of chance correlations.
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            features_target_count: Target number of features
+            config: Pipeline configuration
+            n_bootstrap: Number of bootstrap samples
+            bootstrap_fraction: Fraction of data to use in each bootstrap
+            stability_threshold: Minimum stability score for feature selection
+            
+        Returns:
+            Dictionary with stability analysis and stable features
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting bootstrap stability validation...")
+        _LOGGER.info(f"📊 Bootstrap samples: {n_bootstrap}, Fraction: {bootstrap_fraction}")
+        _LOGGER.info(f"📊 Stability threshold: {stability_threshold}")
+        
+        bootstrap_results = []
+        feature_selection_counts = {feature: 0 for feature in feature_names}
+        bootstrap_size = int(len(X) * bootstrap_fraction)
+        
+        # Run pipeline on multiple bootstrap samples
+        for bootstrap_idx in range(n_bootstrap):
+            try:
+                _LOGGER.info(f"🔄 Bootstrap sample {bootstrap_idx + 1}/{n_bootstrap}")
+                
+                # Bootstrap sampling
+                bootstrap_indices = np.random.choice(
+                    len(X), size=bootstrap_size, replace=True
+                )
+                X_bootstrap = X[bootstrap_indices]
+                y_bootstrap = y[bootstrap_indices]
+                
+                # Run the pipeline up to consensus stage on bootstrap sample
+                bootstrap_features = self._run_pipeline_to_consensus(
+                    X_bootstrap, y_bootstrap, feature_names, features_target_count, config
+                )
+                
+                # Count feature selections
+                for feature in bootstrap_features:
+                    if feature in feature_selection_counts:
+                        feature_selection_counts[feature] += 1
+                
+                bootstrap_results.append({
+                    'bootstrap_idx': bootstrap_idx,
+                    'selected_features': bootstrap_features,
+                    'n_features': len(bootstrap_features),
+                    'bootstrap_indices': bootstrap_indices
+                })
+                
+                _LOGGER.info(f"✅ Bootstrap {bootstrap_idx + 1}: {len(bootstrap_features)} features selected")
+                
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ Bootstrap {bootstrap_idx + 1} failed: {e}")
+                continue
+        
+        # Calculate stability scores
+        stability_scores = {}
+        for feature in feature_names:
+            selection_count = feature_selection_counts[feature]
+            stability_score = selection_count / len(bootstrap_results) if bootstrap_results else 0.0
+            stability_scores[feature] = stability_score
+        
+        # Select stable features
+        stable_features = [
+            feature for feature, stability in stability_scores.items()
+            if stability >= stability_threshold
+        ]
+        
+        # If too few stable features, relax threshold or take top features
+        if len(stable_features) < features_target_count:
+            _LOGGER.warning(f"⚠️ Only {len(stable_features)} stable features found, relaxing criteria...")
+            
+            # Sort by stability score and take top features
+            sorted_features = sorted(
+                stability_scores.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            stable_features = [feature for feature, _ in sorted_features[:features_target_count]]
+            
+            # Update stability threshold to the minimum of selected features
+            if stable_features:
+                min_stability = min(stability_scores[f] for f in stable_features)
+                _LOGGER.info(f"📊 Relaxed stability threshold: {min_stability:.3f}")
+        
+        # Stability analysis
+        stability_analysis = {
+            'n_bootstrap_samples': len(bootstrap_results),
+            'stability_threshold': stability_threshold,
+            'stable_features': stable_features,
+            'stability_scores': stability_scores,
+            'feature_selection_counts': feature_selection_counts,
+            'stability_statistics': {
+                'mean_stability': np.mean(list(stability_scores.values())),
+                'std_stability': np.std(list(stability_scores.values())),
+                'max_stability': np.max(list(stability_scores.values())),
+                'min_stability': np.min(list(stability_scores.values())),
+                'features_above_threshold': sum(1 for s in stability_scores.values() if s >= stability_threshold)
+            }
+        }
+        
+        execution_time = time.time() - start_time
+        _LOGGER.info(f"✅ Bootstrap stability validation completed in {execution_time:.3f}s")
+        _LOGGER.info(f"📊 Stable features: {len(stable_features)}/{len(feature_names)}")
+        _LOGGER.info(f"📊 Mean stability: {stability_analysis['stability_statistics']['mean_stability']:.3f}")
+        _LOGGER.info(f"📊 Features above threshold: {stability_analysis['stability_statistics']['features_above_threshold']}")
+        
+        return {
+            'stable_features': stable_features,
+            'stability_analysis': stability_analysis,
+            'bootstrap_results': bootstrap_results,
+            'execution_time': execution_time
+        }
+
+    def _run_pipeline_to_consensus(self, X: np.ndarray, y: np.ndarray,
+                                 feature_names: List[str],
+                                 features_target_count: int,
+                                 config: Dict[str, Any]) -> List[str]:
+        """
+        Run the pipeline stages 1-3 (up to consensus) on a single bootstrap sample.
+        
+        This is a helper method for bootstrap stability validation.
+        """
+        try:
+            current_features = feature_names.copy()
+            current_X = X.copy()
+            
+            # Stage 1: Correlation-based filtering
+            if config['use_dynamic_thresholds'] and config['correlation_threshold'] is None:
+                correlation_threshold = self._determine_adaptive_correlation_threshold(current_X, current_features)
+            else:
+                correlation_threshold = config['correlation_threshold'] or 0.95
+            
+            correlation_result = self.correlation_based_filtering(
+                current_X, current_features, 
+                correlation_threshold=correlation_threshold
+            )
+            
+            if 'selected_features' in correlation_result:
+                current_features = correlation_result['selected_features']
+                selected_indices = [feature_names.index(f) for f in current_features if f in feature_names]
+                current_X = X[:, selected_indices]
+            
+            # Stage 2: mRMR selection (if applicable)
+            if len(current_features) >= config['mrmr_skip_threshold']:
+                mrmr_result = self.mrmr_selection(current_X, y, current_features, len(current_features))
+                
+                if 'mrmr_scores' in mrmr_result and config['use_dynamic_thresholds']:
+                    mrmr_threshold, _ = self._determine_mrmr_threshold(
+                        mrmr_result['mrmr_scores'], current_features
+                    )
+                    
+                    features_above_threshold = [
+                        feature for feature, score in mrmr_result['mrmr_scores'].items()
+                        if score >= mrmr_threshold
+                    ]
+                    
+                    if len(features_above_threshold) < features_target_count:
+                        sorted_features = sorted(
+                            mrmr_result['mrmr_scores'].items(),
+                            key=lambda x: x[1],
+                            reverse=True
+                        )
+                        features_above_threshold = [f for f, _ in sorted_features[:features_target_count]]
+                    
+                    current_features = features_above_threshold
+                    selected_indices = [feature_names.index(f) for f in current_features if f in feature_names]
+                    current_X = X[:, selected_indices]
+                else:
+                    mrmr_target = max(features_target_count * 2, len(current_features) // 2)
+                    mrmr_target = min(mrmr_target, len(current_features))
+                    mrmr_result = self.mrmr_selection(current_X, y, current_features, mrmr_target)
+                    if 'selected_features' in mrmr_result:
+                        current_features = mrmr_result['selected_features']
+                        selected_indices = [feature_names.index(f) for f in current_features if f in feature_names]
+                        current_X = X[:, selected_indices]
+            
+            # Stage 3: LASSO stability + RFE consensus
+            lasso_result = self.lasso_stability_selection(
+                current_X, y, current_features,
+                stability_threshold=config['stability_threshold'] or 0.6
+            )
+            
+            base_model = self._get_default_model(y)
+            rfe_result = None
+            if base_model is not None:
+                if config['use_dynamic_thresholds']:
+                    optimal_rfe_features = self._determine_optimal_rfe_features(
+                        current_X, y, current_features, base_model, config['cv_folds']
+                    )
+                else:
+                    optimal_rfe_features = max(features_target_count, 
+                                             int(len(current_features) * config['consensus_reduction_factor']))
+                    optimal_rfe_features = min(optimal_rfe_features, len(current_features))
+                
+                rfe_result = self.recursive_feature_elimination(
+                    base_model, current_X, y, current_features, optimal_rfe_features
+                )
+            
+            # Compute consensus
+            lasso_features = lasso_result.get('selected_features', [])
+            rfe_features = rfe_result.get('selected_features', []) if rfe_result else []
+            
+            if config['use_dynamic_thresholds']:
+                consensus_target = max(features_target_count, min(len(lasso_features), len(rfe_features)))
+            else:
+                consensus_target = max(features_target_count, 
+                                     int(len(current_features) * config['consensus_reduction_factor']))
+            
+            consensus_target = min(consensus_target, len(current_features))
+            
+            consensus_features = self._compute_lasso_rfe_consensus(
+                lasso_features, rfe_features, consensus_target
+            )
+            
+            return consensus_features
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Pipeline to consensus failed: {e}")
+            return current_features
+
+    def _analyze_bootstrap_stability(self, bootstrap_results: List[Dict[str, Any]], 
+                                   feature_names: List[str]) -> Dict[str, Any]:
+        """
+        Analyze the stability of feature selection across bootstrap samples.
+        
+        Args:
+            bootstrap_results: List of bootstrap results
+            feature_names: List of all feature names
+            
+        Returns:
+            Dictionary with detailed stability analysis
+        """
+        try:
+            # Count feature selections across bootstrap samples
+            feature_selection_counts = {feature: 0 for feature in feature_names}
+            feature_selection_frequency = {}
+            
+            for bootstrap_result in bootstrap_results:
+                selected_features = bootstrap_result.get('selected_features', [])
+                for feature in selected_features:
+                    if feature in feature_selection_counts:
+                        feature_selection_counts[feature] += 1
+            
+            # Calculate selection frequencies
+            n_bootstrap = len(bootstrap_results)
+            for feature in feature_names:
+                count = feature_selection_counts[feature]
+                frequency = count / n_bootstrap if n_bootstrap > 0 else 0
+                feature_selection_frequency[feature] = frequency
+            
+            # Analyze stability patterns
+            frequencies = list(feature_selection_frequency.values())
+            
+            stability_analysis = {
+                'feature_selection_counts': feature_selection_counts,
+                'feature_selection_frequencies': feature_selection_frequency,
+                'stability_statistics': {
+                    'n_bootstrap_samples': n_bootstrap,
+                    'mean_frequency': np.mean(frequencies),
+                    'std_frequency': np.std(frequencies),
+                    'max_frequency': np.max(frequencies),
+                    'min_frequency': np.min(frequencies),
+                    'median_frequency': np.median(frequencies),
+                    'q75_frequency': np.percentile(frequencies, 75),
+                    'q90_frequency': np.percentile(frequencies, 90)
+                },
+                'stability_categories': {
+                    'highly_stable': [f for f, freq in feature_selection_frequency.items() if freq >= 0.8],
+                    'moderately_stable': [f for f, freq in feature_selection_frequency.items() if 0.5 <= freq < 0.8],
+                    'unstable': [f for f, freq in feature_selection_frequency.items() if freq < 0.5]
+                }
+            }
+            
+            # Feature consistency analysis
+            consistency_analysis = {}
+            for feature in feature_names:
+                frequency = feature_selection_frequency[feature]
+                if frequency >= 0.8:
+                    consistency_analysis[feature] = 'highly_stable'
+                elif frequency >= 0.5:
+                    consistency_analysis[feature] = 'moderately_stable'
+                else:
+                    consistency_analysis[feature] = 'unstable'
+            
+            stability_analysis['feature_consistency'] = consistency_analysis
+            
+            _LOGGER.info(f"📊 Bootstrap stability analysis:")
+            _LOGGER.info(f"   Highly stable features (≥80%): {len(stability_analysis['stability_categories']['highly_stable'])}")
+            _LOGGER.info(f"   Moderately stable features (50-80%): {len(stability_analysis['stability_categories']['moderately_stable'])}")
+            _LOGGER.info(f"   Unstable features (<50%): {len(stability_analysis['stability_categories']['unstable'])}")
+            _LOGGER.info(f"   Mean selection frequency: {stability_analysis['stability_statistics']['mean_frequency']:.3f}")
+            
+            return stability_analysis
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Bootstrap stability analysis failed: {e}")
+            return {
+                'error': str(e),
+                'feature_selection_counts': {},
+                'feature_selection_frequencies': {},
+                'stability_statistics': {},
+                'stability_categories': {'highly_stable': [], 'moderately_stable': [], 'unstable': []},
+                'feature_consistency': {}
+            }
 
     def _log_feature_reduction_stats(self, method_name: str, original_count: int, 
                                    selected_count: int, execution_time: float,

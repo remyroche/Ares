@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Consolidated Common Operations Utility Module
 
@@ -73,7 +75,7 @@ def safe_json_dump(data: Union[pd.DataFrame, Dict[str, Any]], path: Union[str, P
             json.dump(data, f, indent=indent)
         return True
     except Exception as e:
-        print(f'Error saving JSON to {path}: {e}')
+        tprint(f'Error saving JSON to {path}: {e}')
         return False
 
 def safe_read_parquet(path: Union[str, Path]) -> pd.DataFrame:
@@ -82,10 +84,10 @@ def safe_read_parquet(path: Union[str, Path]) -> pd.DataFrame:
         if os.path.exists(path):
             return pd.read_parquet(path)
         else:
-            print(f'Parquet file not found: {path}')
+            tprint(f'Parquet file not found: {path}')
             return pd.DataFrame()
     except Exception as e:
-        print(f'Error reading parquet file {path}: {e}')
+        tprint(f'Error reading parquet file {path}: {e}')
         return pd.DataFrame()
 
 def ensure_directory(path: Union[str, Path]) -> None:
@@ -190,10 +192,17 @@ def safe_convert(value: Any, target_type: type, default: Any = None) -> Any:
 # LOGGING UTILITIES
 # =============================================================================
 
-def create_fallback_logger():
-    """Create a fallback logger when the main logging system is unavailable."""
+def create_fallback_logger(name: str = 'fallback'):
+    """Create a fallback logger when the main logging system is unavailable.
+
+    Args:
+        name: Name for the logger (default: 'fallback')
+
+    Returns:
+        logging.Logger: Configured fallback logger
+    """
     import logging
-    logger = logging.getLogger('fallback')
+    logger = logging.getLogger(name)
     if not logger.handlers:
         handler = logging.StreamHandler()
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -201,6 +210,14 @@ def create_fallback_logger():
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
     return logger
+
+def create_fallback_decorator():
+    """Create a fallback decorator that accepts keyword arguments like fallback."""
+    def decorator(*args, **kwargs):
+        def inner_decorator(func):
+            return func
+        return inner_decorator
+    return decorator
 
 # =============================================================================
 # MAIN COMMON OPERATIONS CLASS

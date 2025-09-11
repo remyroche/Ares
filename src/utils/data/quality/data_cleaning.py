@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from ..logger import system_logger
+from src.utils.logger import system_logger
 
 logger = logging.getLogger(__name__)
 

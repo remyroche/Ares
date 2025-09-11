@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Import standardization utilities for consistent import patterns.
 """
@@ -274,6 +276,6 @@ def standardize_imports_in_directory(directory: str) -> Dict[str, int]:
 if __name__ == "__main__":
     # Standardize imports in src directory
     stats = standardize_imports_in_directory("src")
-    print(f"Processed {stats['total_files']} files")
-    print(f"Modified {stats['modified_files']} files")
-    print(f"Errors: {stats['errors']}")
+    tprint(f"Processed {stats['total_files']} files")
+    tprint(f"Modified {stats['modified_files']} files")
+    tprint(f"Errors: {stats['errors']}")

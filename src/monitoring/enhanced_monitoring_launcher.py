@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Monitoring Launcher
 
@@ -227,53 +229,53 @@ async def main():
     try:
         # Initialize system
         if not await launcher.initialize():
-            print("❌ Failed to initialize enhanced monitoring system")
+            tprint("❌ Failed to initialize enhanced monitoring system")
             sys.exit(1)
         
-        print("✅ Enhanced monitoring system initialized")
+        tprint("✅ Enhanced monitoring system initialized")
         
         if args.init_only:
-            print("Initialization completed. System ready for integration.")
+            tprint("Initialization completed. System ready for integration.")
             return
         
         # Run example if requested
         if args.example:
-            print("🚀 Running enhanced monitoring example...")
+            tprint("🚀 Running enhanced monitoring example...")
             if await launcher.run_example():
-                print("✅ Example completed successfully")
+                tprint("✅ Example completed successfully")
             else:
-                print("❌ Example failed")
+                tprint("❌ Example failed")
                 sys.exit(1)
         
         # Export data if requested
         if args.export:
-            print("📊 Exporting monitoring data...")
+            tprint("📊 Exporting monitoring data...")
             if await launcher.export_data():
-                print("✅ Data exported successfully")
+                tprint("✅ Data exported successfully")
             else:
-                print("❌ Export failed")
+                tprint("❌ Export failed")
                 sys.exit(1)
         
         # Show stats if requested
         if args.stats:
-            print("📈 Monitoring Statistics:")
+            tprint("📈 Monitoring Statistics:")
             stats = launcher.get_stats()
             for key, value in stats.items():
-                print(f"  {key}: {value}")
+                tprint(f"  {key}: {value}")
         
         # If no specific action requested, show help
         if not any([args.example, args.export, args.stats]):
-            print("Enhanced Monitoring System ready!")
-            print("Use --help for available options")
-            print("Use --example to run the example usage")
-            print("Use --export to export monitoring data")
-            print("Use --stats to show monitoring statistics")
+            tprint("Enhanced Monitoring System ready!")
+            tprint("Use --help for available options")
+            tprint("Use --example to run the example usage")
+            tprint("Use --export to export monitoring data")
+            tprint("Use --stats to show monitoring statistics")
     
     except KeyboardInterrupt:
-        print("\n🛑 Interrupted by user")
+        tprint("\n🛑 Interrupted by user")
     
     except Exception as e:
-        print(f"❌ Error: {e}")
+        tprint(f"❌ Error: {e}")
         sys.exit(1)
     
     finally:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Test script for Tree-Based Ensemble Feature Selection.
 
@@ -22,7 +24,7 @@ from utils.ml_common.feature_selection import FeatureSelectionFramework
 
 def create_sample_data(n_samples=1000, n_features=50, n_informative=10, noise=0.1):
     """Create sample data for testing feature selection methods."""
-    print("🔧 Creating sample data...")
+    tprint("🔧 Creating sample data...")
     
     # Generate random features
     np.random.seed(42)
@@ -39,18 +41,18 @@ def create_sample_data(n_samples=1000, n_features=50, n_informative=10, noise=0.
     # Create feature names
     feature_names = [f"feature_{i:02d}" for i in range(n_features)]
     
-    print(f"📊 Data created: {n_samples} samples, {n_features} features")
-    print(f"📊 Informative features: {n_informative} (features 0-{n_informative-1})")
-    print(f"📊 Target correlation with informative features: {np.corrcoef(y, np.dot(informative_features, coefficients))[0,1]:.3f}")
+    tprint(f"📊 Data created: {n_samples} samples, {n_features} features")
+    tprint(f"📊 Informative features: {n_informative} (features 0-{n_informative-1})")
+    tprint(f"📊 Target correlation with informative features: {np.corrcoef(y, np.dot(informative_features, coefficients))[0,1]:.3f}")
     
     return X, y, feature_names
 
 
 def test_tree_ensemble_selection():
     """Test the tree-based ensemble selection method."""
-    print("\n" + "="*60)
-    print("🧪 TESTING TREE-BASED ENSEMBLE SELECTION")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🧪 TESTING TREE-BASED ENSEMBLE SELECTION")
+    tprint("="*60)
     
     # Create sample data
     X, y, feature_names = create_sample_data()
@@ -63,7 +65,7 @@ def test_tree_ensemble_selection():
     })
     
     # Test tree-based ensemble selection
-    print("\n🔍 Testing tree-based ensemble selection...")
+    tprint("\n🔍 Testing tree-based ensemble selection...")
     ensemble_result = framework.tree_based_ensemble_selection(
         X, y, feature_names,
         methods=['correlation', 'mrmr', 'lasso_stability'],
@@ -75,14 +77,14 @@ def test_tree_ensemble_selection():
     )
     
     if 'error' not in ensemble_result:
-        print(f"✅ Tree-based ensemble selection successful!")
-        print(f"📊 Candidate features: {len(ensemble_result['candidate_features'])}")
-        print(f"📊 Selected features: {len(ensemble_result['selected_features'])}")
-        print(f"📊 Methods successful: {ensemble_result['selection_metadata']['n_methods_successful']}")
-        print(f"📊 Baseline score: {ensemble_result['selection_metadata']['baseline_score']:.3f}")
+        tprint(f"✅ Tree-based ensemble selection successful!")
+        tprint(f"📊 Candidate features: {len(ensemble_result['candidate_features'])}")
+        tprint(f"📊 Selected features: {len(ensemble_result['selected_features'])}")
+        tprint(f"📊 Methods successful: {ensemble_result['selection_metadata']['n_methods_successful']}")
+        tprint(f"📊 Baseline score: {ensemble_result['selection_metadata']['baseline_score']:.3f}")
         
         # Show permutation importance results
-        print(f"\n📊 Permutation Importance (top 10):")
+        tprint(f"\n📊 Permutation Importance (top 10):")
         sorted_importance = sorted(
             ensemble_result['permutation_importance'].items(),
             key=lambda x: x[1]['importance'],
@@ -91,17 +93,17 @@ def test_tree_ensemble_selection():
         for feature, importance_data in sorted_importance[:10]:
             importance = importance_data['importance']
             std_importance = importance_data['std_importance']
-            print(f"  - {feature}: {importance:.4f} ± {std_importance:.4f}")
+            tprint(f"  - {feature}: {importance:.4f} ± {std_importance:.4f}")
         
         # Show CV validation results
         if 'cv_validation' in ensemble_result and 'error' not in ensemble_result['cv_validation']:
             cv_data = ensemble_result['cv_validation']
-            print(f"\n📊 Cross-Validation Results:")
-            print(f"  - Mean CV score: {cv_data['cv_mean']:.3f} ± {cv_data['cv_std']:.3f}")
-            print(f"  - CV scores: {[f'{score:.3f}' for score in cv_data['cv_scores']]}")
+            tprint(f"\n📊 Cross-Validation Results:")
+            tprint(f"  - Mean CV score: {cv_data['cv_mean']:.3f} ± {cv_data['cv_std']:.3f}")
+            tprint(f"  - CV scores: {[f'{score:.3f}' for score in cv_data['cv_scores']]}")
             
             # Show feature importance stability
-            print(f"\n📊 Feature Importance Stability (top 5):")
+            tprint(f"\n📊 Feature Importance Stability (top 5):")
             stability_data = cv_data['feature_importance_stability']
             sorted_stability = sorted(
                 stability_data.items(),
@@ -111,23 +113,23 @@ def test_tree_ensemble_selection():
             for feature, stability_info in sorted_stability[:5]:
                 stability = stability_info['stability']
                 mean_imp = stability_info['mean_importance']
-                print(f"  - {feature}: stability={stability:.3f}, mean_importance={mean_imp:.3f}")
+                tprint(f"  - {feature}: stability={stability:.3f}, mean_importance={mean_imp:.3f}")
         
         # Check if informative features were selected
         informative_selected = [f for f in ensemble_result['selected_features'] 
                                if f.startswith('feature_0') or f.startswith('feature_0')]
-        print(f"\n📊 Informative features selected: {len(informative_selected)}/10")
-        print(f"📊 Selected features: {ensemble_result['selected_features']}")
+        tprint(f"\n📊 Informative features selected: {len(informative_selected)}/10")
+        tprint(f"📊 Selected features: {ensemble_result['selected_features']}")
         
     else:
-        print(f"❌ Tree-based ensemble selection failed: {ensemble_result['error']}")
+        tprint(f"❌ Tree-based ensemble selection failed: {ensemble_result['error']}")
 
 
 def test_ensemble_vs_individual_methods():
     """Compare tree-based ensemble with individual methods."""
-    print("\n" + "="*60)
-    print("🧪 COMPARING ENSEMBLE VS INDIVIDUAL METHODS")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🧪 COMPARING ENSEMBLE VS INDIVIDUAL METHODS")
+    tprint("="*60)
     
     # Create sample data
     X, y, feature_names = create_sample_data()
@@ -155,22 +157,22 @@ def test_ensemble_vs_individual_methods():
     
     results = {}
     for method_name, method_func in methods.items():
-        print(f"\n🔍 Testing {method_name}...")
+        tprint(f"\n🔍 Testing {method_name}...")
         try:
             result = method_func()
             if 'error' not in result:
                 results[method_name] = result
-                print(f"✅ {method_name}: {len(result['selected_features'])} features selected")
+                tprint(f"✅ {method_name}: {len(result['selected_features'])} features selected")
             else:
-                print(f"❌ {method_name}: {result['error']}")
+                tprint(f"❌ {method_name}: {result['error']}")
         except Exception as e:
-            print(f"❌ {method_name}: {e}")
+            tprint(f"❌ {method_name}: {e}")
     
     # Compare results
     if results:
-        print(f"\n📊 METHOD COMPARISON:")
-        print(f"{'Method':<20} {'Features':<10} {'Overlap with informative':<25} {'CV Score':<15}")
-        print("-" * 80)
+        tprint(f"\n📊 METHOD COMPARISON:")
+        tprint(f"{'Method':<20} {'Features':<10} {'Overlap with informative':<25} {'CV Score':<15}")
+        tprint("-" * 80)
         
         for method_name, result in results.items():
             selected = set(result['selected_features'])
@@ -184,14 +186,14 @@ def test_ensemble_vs_individual_methods():
             elif 'selection_metadata' in result and 'baseline_score' in result['selection_metadata']:
                 cv_score = f"{result['selection_metadata']['baseline_score']:.3f}"
             
-            print(f"{method_name:<20} {len(selected):<10} {overlap}/10 ({overlap/10*100:.1f}%){'':<10} {cv_score:<15}")
+            tprint(f"{method_name:<20} {len(selected):<10} {overlap}/10 ({overlap/10*100:.1f}%){'':<10} {cv_score:<15}")
 
 
 def test_permutation_importance_analysis():
     """Test the permutation importance analysis in detail."""
-    print("\n" + "="*60)
-    print("🧪 TESTING PERMUTATION IMPORTANCE ANALYSIS")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🧪 TESTING PERMUTATION IMPORTANCE ANALYSIS")
+    tprint("="*60)
     
     # Create sample data with known feature importance
     X, y, feature_names = create_sample_data(n_features=20, n_informative=5)
@@ -204,7 +206,7 @@ def test_permutation_importance_analysis():
     })
     
     # Test with detailed permutation importance
-    print("\n🔍 Testing detailed permutation importance analysis...")
+    tprint("\n🔍 Testing detailed permutation importance analysis...")
     result = framework.tree_based_ensemble_selection(
         X, y, feature_names,
         methods=['correlation', 'mrmr'],
@@ -215,22 +217,22 @@ def test_permutation_importance_analysis():
     )
     
     if 'error' not in result:
-        print(f"✅ Permutation importance analysis successful!")
+        tprint(f"✅ Permutation importance analysis successful!")
         
         # Analyze permutation importance distribution
         importance_data = result['permutation_importance']
         importances = [data['importance'] for data in importance_data.values()]
         stds = [data['std_importance'] for data in importance_data.values()]
         
-        print(f"\n📊 Permutation Importance Statistics:")
-        print(f"  - Mean importance: {np.mean(importances):.4f}")
-        print(f"  - Std importance: {np.std(importances):.4f}")
-        print(f"  - Max importance: {np.max(importances):.4f}")
-        print(f"  - Min importance: {np.min(importances):.4f}")
-        print(f"  - Mean std: {np.mean(stds):.4f}")
+        tprint(f"\n📊 Permutation Importance Statistics:")
+        tprint(f"  - Mean importance: {np.mean(importances):.4f}")
+        tprint(f"  - Std importance: {np.std(importances):.4f}")
+        tprint(f"  - Max importance: {np.max(importances):.4f}")
+        tprint(f"  - Min importance: {np.min(importances):.4f}")
+        tprint(f"  - Mean std: {np.mean(stds):.4f}")
         
         # Show detailed importance for each feature
-        print(f"\n📊 Detailed Permutation Importance:")
+        tprint(f"\n📊 Detailed Permutation Importance:")
         sorted_importance = sorted(
             importance_data.items(),
             key=lambda x: x[1]['importance'],
@@ -240,22 +242,22 @@ def test_permutation_importance_analysis():
             importance = data['importance']
             std_importance = data['std_importance']
             scores = data['scores']
-            print(f"  - {feature}: {importance:.4f} ± {std_importance:.4f} (scores: {[f'{s:.3f}' for s in scores[:5]]}...)")
+            tprint(f"  - {feature}: {importance:.4f} ± {std_importance:.4f} (scores: {[f'{s:.3f}' for s in scores[:5]]}...)")
         
         # Check if the most important features are the informative ones
         top_features = [feature for feature, _ in sorted_importance[:5]]
         informative_features = [f"feature_{i:02d}" for i in range(5)]
         overlap = len(set(top_features).intersection(set(informative_features)))
-        print(f"\n📊 Top 5 features overlap with informative features: {overlap}/5")
+        tprint(f"\n📊 Top 5 features overlap with informative features: {overlap}/5")
         
     else:
-        print(f"❌ Permutation importance analysis failed: {result['error']}")
+        tprint(f"❌ Permutation importance analysis failed: {result['error']}")
 
 
 def main():
     """Run all tests."""
-    print("🚀 TREE-BASED ENSEMBLE FEATURE SELECTION TESTING")
-    print("="*60)
+    tprint("🚀 TREE-BASED ENSEMBLE FEATURE SELECTION TESTING")
+    tprint("="*60)
     
     try:
         # Test individual methods
@@ -263,12 +265,12 @@ def main():
         test_ensemble_vs_individual_methods()
         test_permutation_importance_analysis()
         
-        print("\n" + "="*60)
-        print("✅ ALL TESTS COMPLETED SUCCESSFULLY!")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("✅ ALL TESTS COMPLETED SUCCESSFULLY!")
+        tprint("="*60)
         
     except Exception as e:
-        print(f"\n❌ Test failed with error: {e}")
+        tprint(f"\n❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
 

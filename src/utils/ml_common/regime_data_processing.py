@@ -36,17 +36,17 @@ import gc
 
 # Import comprehensive utility infrastructure
 from ..math_validation import (
-    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
-    validate_positive, validate_range, MathValidationError
+    safe_divide, safe_log, safe_sqrt,
+    validate_positive, validate_range
 )
-from ..common_operations import create_fallback_logger, create_fallback_decorator
-from ..common_utilities import CommonUtilities
+from ..core.common import create_fallback_logger, create_fallback_decorator
 from ..parquet_utils import ParquetUtils
 from ..serialization_utils import UniversalSerializer
 from ..data_processing_utils import DataProcessingUtils
-from ..m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
-from ..m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from ..m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+from ..hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+from ..common_utilities import CommonUtilities
 
 # Import ML Common utilities
 from .cv_utils import TemporalCrossValidator, PurgedKFold
@@ -117,7 +117,7 @@ class AsyncFileProcessor:
     """High-performance async file processor for regime data."""
     
     def __init__(self, config: Optional[AsyncFileProcessorConfig] = None):
-        self.logger = create_fallback_logger("AsyncFileProcessor")
+        self.logger = create_fallback_logger()
         self.logger.info("🚀 Initializing AsyncFileProcessor...")
         start_time = time.time()
         
@@ -240,7 +240,7 @@ class MemoryPoolManager:
     
     def __init__(self, config: Optional[MemoryPoolConfig] = None):
         self.config = config or MemoryPoolConfig()
-        self.logger = create_fallback_logger("MemoryPoolManager")
+        self.logger = create_fallback_logger()
         
         # Initialize memory optimizer
         self.memory_optimizer = get_m1_memory_optimizer() if get_m1_memory_optimizer else None
@@ -329,19 +329,21 @@ class MemoryPoolManager:
         try:
             # Check memory usage
             if self.memory_optimizer:
-                memory_usage = self.memory_optimizer.get_memory_usage()
-                if memory_usage > self.config.memory_threshold:
+                memory_stats = self.memory_optimizer.get_memory_usage()
+                # Extract memory percentage and convert to 0-1 range for comparison
+                memory_usage_percent = memory_stats.get('memory_percent', 0) / 100.0
+                if memory_usage_percent > self.config.memory_threshold:
                     # Clear half of the pool
                     for _ in range(self.config.max_pool_size // 2):
                         try:
                             self.memory_pool.get_nowait()
                         except Empty:
                             break
-                    
+
                     # Force garbage collection
                     gc.collect()
                     self.memory_stats['gc_runs'] += 1
-                    
+
         except Exception as e:
             self.logger.error(f"❌ Memory pool cleanup failed: {e}")
 
@@ -365,7 +367,7 @@ class DataTypeOptimizer:
     
     def __init__(self, config: Optional[DataTypeOptimizerConfig] = None):
         self.config = config or DataTypeOptimizerConfig()
-        self.logger = create_fallback_logger("DataTypeOptimizer")
+        self.logger = create_fallback_logger()
         
         # Initialize memory optimizer
         self.memory_optimizer = get_m1_memory_optimizer() if get_m1_memory_optimizer else None
@@ -494,7 +496,7 @@ class RegimeContinuityValidator:
     
     def __init__(self, config: Optional[RegimeContinuityConfig] = None):
         self.config = config or RegimeContinuityConfig()
-        self.logger = create_fallback_logger("RegimeContinuityValidator")
+        self.logger = create_fallback_logger()
 
     def validate_regime_continuity(
         self, 
@@ -632,7 +634,7 @@ class EnhancedRegimeDataProcessor:
     
     def __init__(self, processing_mode: ProcessingMode = ProcessingMode.SYNC):
         self.processing_mode = processing_mode
-        self.logger = create_fallback_logger("EnhancedRegimeDataProcessor")
+        self.logger = create_fallback_logger()
         
         # Initialize components
         self.async_processor = AsyncFileProcessor()
@@ -842,6 +844,17 @@ class EnhancedRegimeDataProcessor:
             ),
             'memory_pool_stats': self.memory_pool.get_memory_stats()
         }
+
+@dataclass
+class RegimeProcessingConfig:
+    """Configuration for regime processing operations."""
+    processing_mode: ProcessingMode = ProcessingMode.SYNC
+    validate_continuity: bool = True
+    memory_optimization: bool = True
+    parallel_processing: bool = False
+    max_workers: int = 4
+    chunk_size: int = 10000
+    economic_significance_threshold: float = 0.05
 
 # Global instance for backward compatibility
 enhanced_regime_data_processor = EnhancedRegimeDataProcessor()

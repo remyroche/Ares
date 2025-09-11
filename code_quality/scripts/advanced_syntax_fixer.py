@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Advanced syntax fixer for Python files with complex syntax errors.
 This script attempts to fix common syntax errors that prevent files from being parsed.
@@ -237,8 +239,8 @@ class AdvancedSyntaxFixer:
         content = re.sub(r"(\s+)if\s+(\w+)\s+!=\s+None:", r"\1if \2 is not None:", content)
 
         # Fix print statements (Python 2 to 3)
-        content = re.sub(r'print\s+"([^"]*)"$', r'print("\1")', content, flags=re.MULTILINE)
-        content = re.sub(r"print\s+\'([^\']*)\'$", r"print(\'\1\')", content, flags=re.MULTILINE)
+        content = re.sub(r'print\s+"([^"]*)"$', r'tprint("\1")', content, flags=re.MULTILINE)
+        content = re.sub(r"print\s+\'([^\']*)\'$", r"tprint(\'\1\')", content, flags=re.MULTILINE)
 
         # Fix except statements
         return re.sub(r"except\s+(\w+),\s*(\w+):", r"except \1 as \2:", content)
@@ -256,7 +258,7 @@ class AdvancedSyntaxFixer:
                "venv" not in str(f)
         ]
 
-        print(f"Checking {len(python_files)} Python files for syntax errors...")
+        tprint(f"Checking {len(python_files)} Python files for syntax errors...")
 
         # First, identify files with syntax errors
         files_with_errors = []
@@ -265,7 +267,7 @@ class AdvancedSyntaxFixer:
             if error:
                 files_with_errors.append((file_path, error))
 
-        print(f"Found {len(files_with_errors)} files with syntax errors")
+        tprint(f"Found {len(files_with_errors)} files with syntax errors")
 
         if dry_run:
             # Show error types
@@ -273,13 +275,13 @@ class AdvancedSyntaxFixer:
             for _, error in files_with_errors:
                 error_types[error["msg"]] += 1
 
-            print("\nError types found:")
+            tprint("\nError types found:")
             for error_msg, count in sorted(error_types.items(), key=lambda x: x[1], reverse=True):
-                print(f"  {error_msg}: {count} files")
+                tprint(f"  {error_msg}: {count} files")
 
-            print("\nSample files with errors:")
+            tprint("\nSample files with errors:")
             for file_path, error in files_with_errors[:10]:
-                print(f"  {file_path.name}: {error['msg']} (line {error.get('line', '?')})")
+                tprint(f"  {file_path.name}: {error['msg']} (line {error.get('line', '?')})")
 
             return {
                 "dry_run": True,
@@ -290,15 +292,15 @@ class AdvancedSyntaxFixer:
         for file_path, _ in files_with_errors:
             self.fix_common_syntax_errors(str(file_path))
 
-        print(f"\nFixed {len(self.fixed_files)} files")
-        print(f"Failed to fix {len(self.failed_files)} files")
+        tprint(f"\nFixed {len(self.fixed_files)} files")
+        tprint(f"Failed to fix {len(self.failed_files)} files")
 
         # Show common error patterns that couldn't be fixed
         if self.syntax_errors:
-            print("\nCommon unfixed error patterns:")
+            tprint("\nCommon unfixed error patterns:")
             for error_msg, files in sorted(self.syntax_errors.items(),
                                          key=lambda x: len(x[1]), reverse=True)[:5]:
-                print(f"  {error_msg}: {len(files)} files")
+                tprint(f"  {error_msg}: {len(files)} files")
 
         return {
             "fixed": len(self.fixed_files),
@@ -331,7 +333,7 @@ def main():
     with open(report_file, "w") as f:
         json.dump(result, f, indent=2, default=str)
 
-    print(f"\nReport saved to: {report_file}")
+    tprint(f"\nReport saved to: {report_file}")
 
 
 if __name__ == "__main__":

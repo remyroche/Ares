@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 ML Training Safeguards Utility
 
@@ -26,9 +28,9 @@ import time
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.BaseSafeguards")
-    print("✅ Custom logger available for MLCommon.BaseSafeguards")
+    tprint("✅ Custom logger available for MLCommon.BaseSafeguards")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.BaseSafeguards")
     _LOGGER.setLevel(logging.INFO)
 

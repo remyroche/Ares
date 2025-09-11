@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Test script for numba-friendly timestamps
 
@@ -15,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def test_basic_functionality():
     """Test basic timestamp functionality."""
-    print("Testing basic numba-friendly timestamp functionality...")
+    tprint("Testing basic numba-friendly timestamp functionality...")
     
     try:
         from src.utils.numba_timestamps import (
@@ -27,7 +29,7 @@ def test_basic_functionality():
             NUMBA_AVAILABLE
         )
         
-        print(f"Numba available: {NUMBA_AVAILABLE}")
+        tprint(f"Numba available: {NUMBA_AVAILABLE}")
         
         # Test basic printing
         numba_print_with_timestamp("This is a test message")
@@ -37,19 +39,19 @@ def test_basic_functionality():
         
         # Test timestamp generation
         timestamp = get_numba_timestamp()
-        print(f"Generated timestamp: {timestamp}")
+        tprint(f"Generated timestamp: {timestamp}")
         
-        print("✅ Basic functionality test passed!")
+        tprint("✅ Basic functionality test passed!")
         return True
         
     except Exception as e:
-        print(f"❌ Basic functionality test failed: {e}")
+        tprint(f"❌ Basic functionality test failed: {e}")
         return False
 
 
 def test_numba_compilation():
     """Test numba compilation with timestamps."""
-    print("\nTesting numba compilation with timestamps...")
+    tprint("\nTesting numba compilation with timestamps...")
     
     try:
         from src.utils.numba_timestamps import (
@@ -86,22 +88,22 @@ def test_numba_compilation():
             # Test the function
             test_data = [1.0, 2.0, 3.0, 4.0, 5.0]
             result = test_numba_function(test_data)
-            print(f"Numba function result: {result}")
-            print("✅ Numba compilation test passed!")
+            tprint(f"Numba function result: {result}")
+            tprint("✅ Numba compilation test passed!")
             return True
             
         except ImportError:
-            print("⚠️ Numba not available, skipping compilation test")
+            tprint("⚠️ Numba not available, skipping compilation test")
             return True
             
     except Exception as e:
-        print(f"❌ Numba compilation test failed: {e}")
+        tprint(f"❌ Numba compilation test failed: {e}")
         return False
 
 
 def test_logger_integration():
     """Test integration with the logger module."""
-    print("\nTesting logger integration...")
+    tprint("\nTesting logger integration...")
     
     try:
         from src.utils.logger import (
@@ -111,26 +113,26 @@ def test_logger_integration():
             NUMBA_TIMESTAMPS_AVAILABLE
         )
         
-        print(f"Numba timestamps available in logger: {NUMBA_TIMESTAMPS_AVAILABLE}")
+        tprint(f"Numba timestamps available in logger: {NUMBA_TIMESTAMPS_AVAILABLE}")
         
         # Test logger integration
         numba_print_with_timestamp("Logger integration test")
         numba_print_info("Logger integration info")
         
         timestamp = get_numba_timestamp()
-        print(f"Logger timestamp: {timestamp}")
+        tprint(f"Logger timestamp: {timestamp}")
         
-        print("✅ Logger integration test passed!")
+        tprint("✅ Logger integration test passed!")
         return True
         
     except Exception as e:
-        print(f"❌ Logger integration test failed: {e}")
+        tprint(f"❌ Logger integration test failed: {e}")
         return False
 
 
 def test_performance():
     """Test performance of timestamp functions."""
-    print("\nTesting performance...")
+    tprint("\nTesting performance...")
     
     try:
         from src.utils.numba_timestamps import (
@@ -147,8 +149,8 @@ def test_performance():
             timestamp = get_numba_timestamp()
         
         elapsed = numba_timer_elapsed(start_time)
-        print(f"Generated 1000 timestamps in {elapsed:.4f} seconds")
-        print(f"Average time per timestamp: {elapsed/1000*1000:.4f} ms")
+        tprint(f"Generated 1000 timestamps in {elapsed:.4f} seconds")
+        tprint(f"Average time per timestamp: {elapsed/1000*1000:.4f} ms")
         
         # Test printing performance
         start_time = numba_timer_start()
@@ -157,21 +159,21 @@ def test_performance():
             numba_print_with_timestamp(f"Performance test message {i}")
         
         elapsed = numba_timer_elapsed(start_time)
-        print(f"Printed 100 messages in {elapsed:.4f} seconds")
-        print(f"Average time per print: {elapsed/100*1000:.4f} ms")
+        tprint(f"Printed 100 messages in {elapsed:.4f} seconds")
+        tprint(f"Average time per print: {elapsed/100*1000:.4f} ms")
         
-        print("✅ Performance test passed!")
+        tprint("✅ Performance test passed!")
         return True
         
     except Exception as e:
-        print(f"❌ Performance test failed: {e}")
+        tprint(f"❌ Performance test failed: {e}")
         return False
 
 
 def main():
     """Run all tests."""
-    print("Numba-Friendly Timestamps Test Suite")
-    print("=" * 50)
+    tprint("Numba-Friendly Timestamps Test Suite")
+    tprint("=" * 50)
     
     tests = [
         test_basic_functionality,
@@ -187,13 +189,13 @@ def main():
         if test():
             passed += 1
     
-    print(f"\nTest Results: {passed}/{total} tests passed")
+    tprint(f"\nTest Results: {passed}/{total} tests passed")
     
     if passed == total:
-        print("🎉 All tests passed!")
+        tprint("🎉 All tests passed!")
         return True
     else:
-        print("❌ Some tests failed!")
+        tprint("❌ Some tests failed!")
         return False
 
 

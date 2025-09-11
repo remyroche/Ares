@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """Gitignore pattern parser and matcher for code analysis pipelines."""
 
 import fnmatch
@@ -56,7 +58,7 @@ class GitignoreParser:
                     self.patterns.append((pattern, is_negation, is_directory))
                     
         except Exception as e:
-            print(f"Warning: Could not read .gitignore file: {e}")
+            tprint(f"Warning: Could not read .gitignore file: {e}")
     
     def should_ignore(self, file_path: Path) -> bool:
         """

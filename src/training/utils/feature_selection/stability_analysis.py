@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Stability Analysis Component
 
@@ -18,9 +20,9 @@ import warnings
 try:
     from ...utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.StabilityAnalysis")
-    print("✅ Custom logger available for FeatureSelection.StabilityAnalysis")
+    tprint("✅ Custom logger available for FeatureSelection.StabilityAnalysis")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("FeatureSelection.StabilityAnalysis")
     _LOGGER.setLevel(logging.INFO)
 

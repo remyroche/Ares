@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import sys
 import os
@@ -18,7 +20,7 @@ try:
     from ..step06_enhanced_validation_framework import step06_function_validator, step06_function_tracker, step06_validation_context, get_step06_validation_summary, ValidationLevel, FunctionStatus
     VALIDATION_AVAILABLE = True
 except ImportError as e:
-    print(f'Warning: Step06 validation framework not available: {e}')
+    tprint(f'Warning: Step06 validation framework not available: {e}')
 
     def step06_function_validator(*args, **kwargs) -> None:
         def decorator(func: Callable) -> None:
@@ -759,9 +761,9 @@ if __name__ == '__main__':
     labeled_data = optimizer.apply_triple_barrier_labeling_vectorized(data)
     results = benchmark_improved_triple_barrier_methods(data)
     
-    print(f'Improved benchmark results: {results}')
-    print(f'\nImproved profit tracking results:')
+    tprint(f'Improved benchmark results: {results}')
+    tprint(f'\nImproved profit tracking results:')
     if len(labeled_data) > 0:
-        print(f"LONG signals: {labeled_data[labeled_data['label'] == 1]['net_profit_pct'].describe()}")
-        print(f"SHORT signals: {labeled_data[labeled_data['label'] == -1]['net_profit_pct'].describe()}")
-        print(f"Transaction costs: {labeled_data['transaction_cost'].sum():.4f}")
+        tprint(f"LONG signals: {labeled_data[labeled_data['label'] == 1]['net_profit_pct'].describe()}")
+        tprint(f"SHORT signals: {labeled_data[labeled_data['label'] == -1]['net_profit_pct'].describe()}")
+        tprint(f"Transaction costs: {labeled_data['transaction_cost'].sum():.4f}")

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """Warning symbols and constants.
 
 Provide both string symbols and callable helpers expected by logger and other modules.
@@ -15,9 +17,9 @@ critical_symbol = "🔥"
 # Callable helpers used by logger fallback pattern
 def _print_with(label: str, msg: object) -> None:
     try:
-        print(f"{label}: {msg}")
+        tprint(f"{label}: {msg}")
     except Exception:
-        print(f"{label}")
+        tprint(f"{label}")
 
 def warning(msg: object) -> None:  # type: ignore[func-assign]
     _print_with("WARNING", msg)

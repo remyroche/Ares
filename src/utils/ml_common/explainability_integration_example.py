@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Example: Model Explainability Integration with ML Commons
 
@@ -32,7 +34,7 @@ try:
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
-    print("⚠️ Scikit-learn not available - using mock data for demonstration")
+    tprint("⚠️ Scikit-learn not available - using mock data for demonstration")
 
 
 def create_sample_data(n_samples: int = 1000, n_features: int = 20) -> tuple:
@@ -59,15 +61,15 @@ def create_sample_data(n_samples: int = 1000, n_features: int = 20) -> tuple:
 
 def demonstrate_automatic_explainability():
     """Demonstrate automatic explainability integration during training."""
-    print("🚀 Demonstrating Automatic Explainability Integration")
-    print("=" * 60)
+    tprint("🚀 Demonstrating Automatic Explainability Integration")
+    tprint("=" * 60)
     
     # Create sample data
     X, y, feature_names = create_sample_data()
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
-    print(f"📊 Data shapes - Train: {X_train.shape}, Test: {X_test.shape}")
-    print(f"📊 Features: {len(feature_names)}")
+    tprint(f"📊 Data shapes - Train: {X_train.shape}, Test: {X_test.shape}")
+    tprint(f"📊 Features: {len(feature_names)}")
     
     # Initialize enhanced model trainer with explainability enabled
     config = {
@@ -85,7 +87,7 @@ def demonstrate_automatic_explainability():
         # Train a model with automatic explainability
         model = RandomForestClassifier(n_estimators=100, random_state=42)
         
-        print("\n🔄 Training model with automatic explainability...")
+        tprint("\n🔄 Training model with automatic explainability...")
         results = trainer.train_and_evaluate_model(
             model=model,
             model_name="demo_random_forest",
@@ -97,30 +99,30 @@ def demonstrate_automatic_explainability():
         )
         
         if results['success']:
-            print("✅ Model training completed successfully!")
-            print(f"📊 Accuracy: {results['basic_metrics'].get('accuracy', 'N/A'):.3f}")
+            tprint("✅ Model training completed successfully!")
+            tprint(f"📊 Accuracy: {results['basic_metrics'].get('accuracy', 'N/A'):.3f}")
             
             # Check if explanations were generated
             if 'model_explanations' in results and 'error' not in results['model_explanations']:
                 explanations = results['model_explanations']
-                print(f"🧠 Model explanations generated:")
-                print(f"   - Explanation confidence: {explanations.get('explanation_confidence', 0):.3f}")
-                print(f"   - Processing time: {explanations.get('processing_time_ms', 0):.1f}ms")
-                print(f"   - Feature importance available: {'feature_importance' in explanations}")
-                print(f"   - SHAP values available: {explanations.get('shap_values') is not None}")
-                print(f"   - LIME explanation available: {explanations.get('lime_explanation') is not None}")
+                tprint(f"🧠 Model explanations generated:")
+                tprint(f"   - Explanation confidence: {explanations.get('explanation_confidence', 0):.3f}")
+                tprint(f"   - Processing time: {explanations.get('processing_time_ms', 0):.1f}ms")
+                tprint(f"   - Feature importance available: {'feature_importance' in explanations}")
+                tprint(f"   - SHAP values available: {explanations.get('shap_values') is not None}")
+                tprint(f"   - LIME explanation available: {explanations.get('lime_explanation') is not None}")
             else:
-                print("⚠️ Model explanations not generated or failed")
+                tprint("⚠️ Model explanations not generated or failed")
         else:
-            print(f"❌ Model training failed: {results.get('error', 'Unknown error')}")
+            tprint(f"❌ Model training failed: {results.get('error', 'Unknown error')}")
     else:
-        print("⚠️ Skipping model training - scikit-learn not available")
+        tprint("⚠️ Skipping model training - scikit-learn not available")
 
 
 def demonstrate_model_registry_integration():
     """Demonstrate model registry integration with explanations."""
-    print("\n🚀 Demonstrating Model Registry Integration")
-    print("=" * 60)
+    tprint("\n🚀 Demonstrating Model Registry Integration")
+    tprint("=" * 60)
     
     # Initialize model registry
     registry = ModelRegistry(registry_path="./demo_model_registry")
@@ -140,7 +142,7 @@ def demonstrate_model_registry_integration():
         model.fit(X_train, y_train)
         
         # Generate explanations
-        print("🔄 Generating model explanations...")
+        tprint("🔄 Generating model explanations...")
         explanation = explainability_manager.explain_model(
             model=model,
             X_train=X_train,
@@ -150,11 +152,11 @@ def demonstrate_model_registry_integration():
             feature_names=feature_names
         )
         
-        print(f"✅ Explanation generated:")
-        print(f"   - Model ID: {explanation.model_id}")
-        print(f"   - Model type: {explanation.model_type}")
-        print(f"   - Explanation confidence: {explanation.explanation_confidence:.3f}")
-        print(f"   - Processing time: {explanation.processing_time_ms:.1f}ms")
+        tprint(f"✅ Explanation generated:")
+        tprint(f"   - Model ID: {explanation.model_id}")
+        tprint(f"   - Model type: {explanation.model_type}")
+        tprint(f"   - Explanation confidence: {explanation.explanation_confidence:.3f}")
+        tprint(f"   - Processing time: {explanation.processing_time_ms:.1f}ms")
         
         # Save model with metadata to registry
         metadata = {
@@ -166,7 +168,7 @@ def demonstrate_model_registry_integration():
             'explanation_available': True
         }
         
-        print("\n💾 Saving model to registry...")
+        tprint("\n💾 Saving model to registry...")
         save_result = registry.save_model_with_metadata(
             model=model,
             metadata=metadata,
@@ -174,36 +176,36 @@ def demonstrate_model_registry_integration():
         )
         
         if save_result['success']:
-            print(f"✅ Model saved successfully: {save_result['model_id']}")
+            tprint(f"✅ Model saved successfully: {save_result['model_id']}")
             
             # Load model back with explanations
-            print("\n📂 Loading model with explanations...")
+            tprint("\n📂 Loading model with explanations...")
             load_result = registry.load_model_with_validation(
                 model_id=save_result['model_id'],
                 version='latest'
             )
             
             if load_result['success']:
-                print("✅ Model loaded successfully!")
+                tprint("✅ Model loaded successfully!")
                 if 'explanation' in load_result:
                     explanation_data = load_result['explanation']
-                    print(f"🧠 Explanation loaded:")
-                    print(f"   - Model ID: {explanation_data.get('model_id', 'N/A')}")
-                    print(f"   - Explanation confidence: {explanation_data.get('explanation_confidence', 0):.3f}")
+                    tprint(f"🧠 Explanation loaded:")
+                    tprint(f"   - Model ID: {explanation_data.get('model_id', 'N/A')}")
+                    tprint(f"   - Explanation confidence: {explanation_data.get('explanation_confidence', 0):.3f}")
                 else:
-                    print("⚠️ No explanation found in loaded model")
+                    tprint("⚠️ No explanation found in loaded model")
             else:
-                print(f"❌ Model loading failed: {load_result.get('error', 'Unknown error')}")
+                tprint(f"❌ Model loading failed: {load_result.get('error', 'Unknown error')}")
         else:
-            print(f"❌ Model saving failed: {save_result.get('error', 'Unknown error')}")
+            tprint(f"❌ Model saving failed: {save_result.get('error', 'Unknown error')}")
     else:
-        print("⚠️ Skipping registry demonstration - scikit-learn not available")
+        tprint("⚠️ Skipping registry demonstration - scikit-learn not available")
 
 
 def demonstrate_quick_explanations():
     """Demonstrate quick explanation generation."""
-    print("\n🚀 Demonstrating Quick Explanation Generation")
-    print("=" * 60)
+    tprint("\n🚀 Demonstrating Quick Explanation Generation")
+    tprint("=" * 60)
     
     if SKLEARN_AVAILABLE:
         # Create sample data
@@ -214,7 +216,7 @@ def demonstrate_quick_explanations():
         model = RandomForestClassifier(n_estimators=30, random_state=42)
         model.fit(X_train, y_train)
         
-        print("🔄 Generating quick explanation...")
+        tprint("🔄 Generating quick explanation...")
         
         # Use the convenience function for quick explanations
         explanation = explain_model_quick(
@@ -224,43 +226,43 @@ def demonstrate_quick_explanations():
             model_id="quick_demo_model"
         )
         
-        print(f"✅ Quick explanation generated:")
-        print(f"   - Model ID: {explanation.model_id}")
-        print(f"   - Model type: {explanation.model_type}")
-        print(f"   - Explanation confidence: {explanation.explanation_confidence:.3f}")
-        print(f"   - Processing time: {explanation.processing_time_ms:.1f}ms")
-        print(f"   - Features explained: {len(explanation.feature_names)}")
+        tprint(f"✅ Quick explanation generated:")
+        tprint(f"   - Model ID: {explanation.model_id}")
+        tprint(f"   - Model type: {explanation.model_type}")
+        tprint(f"   - Explanation confidence: {explanation.explanation_confidence:.3f}")
+        tprint(f"   - Processing time: {explanation.processing_time_ms:.1f}ms")
+        tprint(f"   - Features explained: {len(explanation.feature_names)}")
         
         # Show cache statistics
         manager = ModelExplainabilityManager()
         cache_stats = manager.get_cache_stats()
-        print(f"\n📊 Cache statistics:")
-        print(f"   - Cache size: {cache_stats['cache_size']}")
-        print(f"   - Cache hits: {cache_stats['cache_hits']}")
-        print(f"   - Cache misses: {cache_stats['cache_misses']}")
-        print(f"   - Hit rate: {cache_stats['hit_rate']:.3f}")
+        tprint(f"\n📊 Cache statistics:")
+        tprint(f"   - Cache size: {cache_stats['cache_size']}")
+        tprint(f"   - Cache hits: {cache_stats['cache_hits']}")
+        tprint(f"   - Cache misses: {cache_stats['cache_misses']}")
+        tprint(f"   - Hit rate: {cache_stats['hit_rate']:.3f}")
     else:
-        print("⚠️ Skipping quick explanation demonstration - scikit-learn not available")
+        tprint("⚠️ Skipping quick explanation demonstration - scikit-learn not available")
 
 
 def demonstrate_model_focused_approach():
     """Demonstrate the model-focused approach vs component-specific approach."""
-    print("\n🚀 Demonstrating Model-Focused Approach")
-    print("=" * 60)
+    tprint("\n🚀 Demonstrating Model-Focused Approach")
+    tprint("=" * 60)
     
-    print("📋 Key Differences:")
-    print("   OLD (Component-specific):")
-    print("   - TacticianExplainer, AnalystExplainer, SRExplainer, HMMExplainer")
-    print("   - Separate explainers for each trading component")
-    print("   - Manual integration required")
-    print("   - Component-specific explanation formats")
+    tprint("📋 Key Differences:")
+    tprint("   OLD (Component-specific):")
+    tprint("   - TacticianExplainer, AnalystExplainer, SRExplainer, HMMExplainer")
+    tprint("   - Separate explainers for each trading component")
+    tprint("   - Manual integration required")
+    tprint("   - Component-specific explanation formats")
     
-    print("\n   NEW (Model-focused):")
-    print("   - ModelExplainabilityManager handles all model types")
-    print("   - Automatic integration with ML commons")
-    print("   - Model-specific explanations (RandomForest, Neural Network, etc.)")
-    print("   - Unified explanation format")
-    print("   - Automatic caching and persistence")
+    tprint("\n   NEW (Model-focused):")
+    tprint("   - ModelExplainabilityManager handles all model types")
+    tprint("   - Automatic integration with ML commons")
+    tprint("   - Model-specific explanations (RandomForest, Neural Network, etc.)")
+    tprint("   - Unified explanation format")
+    tprint("   - Automatic caching and persistence")
     
     if SKLEARN_AVAILABLE:
         # Demonstrate different model types
@@ -275,7 +277,7 @@ def demonstrate_model_focused_approach():
         ]
         
         for model_name, model in model_types:
-            print(f"\n🔄 Testing {model_name}...")
+            tprint(f"\n🔄 Testing {model_name}...")
             model.fit(X_train, y_train)
             
             explanation = manager.explain_model(
@@ -287,20 +289,20 @@ def demonstrate_model_focused_approach():
                 feature_names=feature_names
             )
             
-            print(f"   ✅ {model_name} explanation generated")
-            print(f"   📊 Confidence: {explanation.explanation_confidence:.3f}")
-            print(f"   ⏱️ Time: {explanation.processing_time_ms:.1f}ms")
+            tprint(f"   ✅ {model_name} explanation generated")
+            tprint(f"   📊 Confidence: {explanation.explanation_confidence:.3f}")
+            tprint(f"   ⏱️ Time: {explanation.processing_time_ms:.1f}ms")
     else:
-        print("⚠️ Skipping model type demonstration - scikit-learn not available")
+        tprint("⚠️ Skipping model type demonstration - scikit-learn not available")
 
 
 def main():
     """Run all demonstrations."""
-    print("🧠 Model Explainability Integration Demonstration")
-    print("=" * 80)
-    print("This demonstration shows how the new model-focused explainability")
-    print("system integrates with ML commons training and model registry.")
-    print("=" * 80)
+    tprint("🧠 Model Explainability Integration Demonstration")
+    tprint("=" * 80)
+    tprint("This demonstration shows how the new model-focused explainability")
+    tprint("system integrates with ML commons training and model registry.")
+    tprint("=" * 80)
     
     try:
         # Run all demonstrations
@@ -309,20 +311,20 @@ def main():
         demonstrate_quick_explanations()
         demonstrate_model_focused_approach()
         
-        print("\n" + "=" * 80)
-        print("✅ All demonstrations completed successfully!")
-        print("=" * 80)
+        tprint("\n" + "=" * 80)
+        tprint("✅ All demonstrations completed successfully!")
+        tprint("=" * 80)
         
-        print("\n📋 Summary of Integration Benefits:")
-        print("   ✅ Automatic explainability during model training")
-        print("   ✅ Model registry integration with explanations")
-        print("   ✅ Model-focused approach (not component-specific)")
-        print("   ✅ Explanation caching and retrieval")
-        print("   ✅ Integration with existing ML commons utilities")
-        print("   ✅ Unified explanation format across all model types")
+        tprint("\n📋 Summary of Integration Benefits:")
+        tprint("   ✅ Automatic explainability during model training")
+        tprint("   ✅ Model registry integration with explanations")
+        tprint("   ✅ Model-focused approach (not component-specific)")
+        tprint("   ✅ Explanation caching and retrieval")
+        tprint("   ✅ Integration with existing ML commons utilities")
+        tprint("   ✅ Unified explanation format across all model types")
         
     except Exception as e:
-        print(f"\n❌ Demonstration failed: {e}")
+        tprint(f"\n❌ Demonstration failed: {e}")
         import traceback
         traceback.print_exc()
 

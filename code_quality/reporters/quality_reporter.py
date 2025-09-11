@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Main Quality Reporter - Orchestrates all code quality analysis tools and generates comprehensive reports.
 """
@@ -44,71 +46,71 @@ class QualityReporter:
             Comprehensive quality report
         """
         self.start_time = time.time()
-        print("="*60)
-        print("CODE QUALITY COMPREHENSIVE ANALYSIS")
-        print("="*60)
-        print(f"Analyzing directory: {directory}")
-        print(f"Configuration: {self.config.reporting.output_format}")
-        print(f"Auto-fix enabled: {run_auto_fix}")
+        tprint("="*60)
+        tprint("CODE QUALITY COMPREHENSIVE ANALYSIS")
+        tprint("="*60)
+        tprint(f"Analyzing directory: {directory}")
+        tprint(f"Configuration: {self.config.reporting.output_format}")
+        tprint(f"Auto-fix enabled: {run_auto_fix}")
 
         # Step 1: Run auto-fixer if requested
         if run_auto_fix and self.config.auto_fix.enabled:
-            print("\n" + "-"*40)
-            print("STEP 1: AUTO-FIXING")
-            print("-"*40)
+            tprint("\n" + "-"*40)
+            tprint("STEP 1: AUTO-FIXING")
+            tprint("-"*40)
             fixer = AutoFixer(self.config)
             fix_results = fixer.fix_all(directory)
             self.results["auto_fix"] = fix_results
-            print("Auto-fixing completed.")
+            tprint("Auto-fixing completed.")
 
         # Step 2: Syntax validation
-        print("\n" + "-"*40)
-        print("STEP 2: SYNTAX VALIDATION")
-        print("-"*40)
+        tprint("\n" + "-"*40)
+        tprint("STEP 2: SYNTAX VALIDATION")
+        tprint("-"*40)
         syntax_validator = SyntaxValidator(self.config)
         syntax_results = syntax_validator.validate_directory(directory)
         self.results["syntax_validation"] = syntax_results
-        print("Syntax validation completed.")
+        tprint("Syntax validation completed.")
 
         # Step 3: Linter analysis
-        print("\n" + "-"*40)
-        print("STEP 3: LINTER ANALYSIS")
-        print("-"*40)
+        tprint("\n" + "-"*40)
+        tprint("STEP 3: LINTER ANALYSIS")
+        tprint("-"*40)
         linter_analyzer = LinterAnalyzer(self.config)
         linter_results = linter_analyzer.analyze_directory(directory)
         self.results["linter_analysis"] = linter_results
-        print("Linter analysis completed.")
+        tprint("Linter analysis completed.")
 
         # Step 4: Call graph analysis
-        print("\n" + "-"*40)
-        print("STEP 4: CALL GRAPH ANALYSIS")
-        print("-"*40)
+        tprint("\n" + "-"*40)
+        tprint("STEP 4: CALL GRAPH ANALYSIS")
+        tprint("-"*40)
         call_graph_analyzer = CallGraphAnalyzer(self.config)
         call_graph_results = call_graph_analyzer.analyze_directory(directory)
         self.results["call_graph_analysis"] = call_graph_results
-        print("Call graph analysis completed.")
+        tprint("Call graph analysis completed.")
 
         # Step 5: Dependency analysis
-        print("\n" + "-"*40)
-        print("STEP 5: DEPENDENCY ANALYSIS")
-        print("-"*40)
+        tprint("\n" + "-"*40)
+        tprint("STEP 5: DEPENDENCY ANALYSIS")
+        tprint("-"*40)
         dependency_analyzer = DependencyAnalyzer(self.config)
         dependency_results = dependency_analyzer.analyze_directory(directory)
         self.results["dependency_analysis"] = dependency_results
-        print("Dependency analysis completed.")
+        tprint("Dependency analysis completed.")
 
         # Step 6: File statistics
-        print("\n" + "-"*40)
-        print("STEP 6: FILE STATISTICS")
-        print("-"*40)
+        tprint("\n" + "-"*40)
+        tprint("STEP 6: FILE STATISTICS")
+        tprint("-"*40)
         file_stats = get_directory_stats(directory, self.config.analysis.exclude_patterns)
         self.results["file_statistics"] = file_stats
-        print("File statistics completed.")
+        tprint("File statistics completed.")
 
         # Step 7: Generate comprehensive report
-        print("\n" + "-"*40)
-        print("STEP 7: GENERATING COMPREHENSIVE REPORT")
-        print("-"*40)
+        tprint("\n" + "-"*40)
+        tprint("STEP 7: GENERATING COMPREHENSIVE REPORT")
+        tprint("-"*40)
 
         self.end_time = time.time()
         comprehensive_report = self._generate_comprehensive_report(directory)
@@ -363,44 +365,44 @@ class QualityReporter:
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True)
 
-        print(f"\nSaving reports to: {output_path}")
+        tprint(f"\nSaving reports to: {output_path}")
 
         # Save comprehensive report
         comprehensive_file = output_path / "comprehensive_quality_report.json"
         with open(comprehensive_file, "w") as f:
             json.dump(self.results, f, indent=2)
-        print(f"Comprehensive report saved: {comprehensive_file}")
+        tprint(f"Comprehensive report saved: {comprehensive_file}")
 
         # Save individual reports
         if "syntax_validation" in self.results:
             syntax_file = output_path / "syntax_validation_report.json"
             with open(syntax_file, "w") as f:
                 json.dump(self.results["syntax_validation"], f, indent=2)
-            print(f"Syntax validation report saved: {syntax_file}")
+            tprint(f"Syntax validation report saved: {syntax_file}")
 
         if "linter_analysis" in self.results:
             linter_file = output_path / "linter_analysis_report.json"
             with open(linter_file, "w") as f:
                 json.dump(self.results["linter_analysis"], f, indent=2)
-            print(f"Linter analysis report saved: {linter_file}")
+            tprint(f"Linter analysis report saved: {linter_file}")
 
         if "call_graph_analysis" in self.results:
             call_graph_file = output_path / "call_graph_analysis_report.json"
             with open(call_graph_file, "w") as f:
                 json.dump(self.results["call_graph_analysis"], f, indent=2)
-            print(f"Call graph analysis report saved: {call_graph_file}")
+            tprint(f"Call graph analysis report saved: {call_graph_file}")
 
         if "dependency_analysis" in self.results:
             dependency_file = output_path / "dependency_analysis_report.json"
             with open(dependency_file, "w") as f:
                 json.dump(self.results["dependency_analysis"], f, indent=2)
-            print(f"Dependency analysis report saved: {dependency_file}")
+            tprint(f"Dependency analysis report saved: {dependency_file}")
 
         # Generate HTML report if requested
         if "html" in self.config.reporting.output_format:
             html_file = output_path / "quality_report.html"
             self._generate_html_report(html_file)
-            print(f"HTML report saved: {html_file}")
+            tprint(f"HTML report saved: {html_file}")
 
     def _generate_html_report(self, output_path: str) -> None:
         """Generate an HTML version of the quality report."""
@@ -492,41 +494,41 @@ class QualityReporter:
         """Print a comprehensive summary of all analysis results."""
         comprehensive = self.results.get("comprehensive_report", {})
 
-        print("\n" + "="*60)
-        print("COMPREHENSIVE QUALITY REPORT SUMMARY")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("COMPREHENSIVE QUALITY REPORT SUMMARY")
+        tprint("="*60)
 
         # Quality score
         quality_score = comprehensive.get("quality_score", {})
-        print(f"Overall Quality Score: {quality_score.get('overall_score', 0)}/100")
-        print(f"Grade: {quality_score.get('grade', 'N/A')}")
+        tprint(f"Overall Quality Score: {quality_score.get('overall_score', 0)}/100")
+        tprint(f"Grade: {quality_score.get('grade', 'N/A')}")
 
         # Category scores
-        print("\nCategory Scores:")
+        tprint("\nCategory Scores:")
         for category, score in quality_score.get("category_scores", {}).items():
-            print(f"  {category.title()}: {score:.1f}/100")
+            tprint(f"  {category.title()}: {score:.1f}/100")
 
         # Summary metrics
         summary = comprehensive.get("summary", {})
-        print("\nSummary:")
-        print(f"  Total files: {summary.get('total_files', 0)}")
-        print(f"  Total errors: {summary.get('total_errors', 0)}")
-        print(f"  Syntax errors: {summary.get('syntax_errors', 0)}")
-        print(f"  Potential dead code: {summary.get('potential_dead_code', 0)}")
-        print(f"  Missing dependencies: {summary.get('missing_dependencies', 0)}")
-        print(f"  Unused dependencies: {summary.get('unused_dependencies', 0)}")
+        tprint("\nSummary:")
+        tprint(f"  Total files: {summary.get('total_files', 0)}")
+        tprint(f"  Total errors: {summary.get('total_errors', 0)}")
+        tprint(f"  Syntax errors: {summary.get('syntax_errors', 0)}")
+        tprint(f"  Potential dead code: {summary.get('potential_dead_code', 0)}")
+        tprint(f"  Missing dependencies: {summary.get('missing_dependencies', 0)}")
+        tprint(f"  Unused dependencies: {summary.get('unused_dependencies', 0)}")
 
         # Top recommendations
         recommendations = comprehensive.get("recommendations", [])
         if recommendations:
-            print("\nTop Recommendations:")
+            tprint("\nTop Recommendations:")
             for i, rec in enumerate(recommendations[:3], 1):
-                print(f"  {i}. [{rec['priority'].upper()}] {rec['title']}")
-                print(f"     {rec['description']}")
+                tprint(f"  {i}. [{rec['priority'].upper()}] {rec['title']}")
+                tprint(f"     {rec['description']}")
 
         # Analysis duration
         duration = comprehensive.get("analysis_info", {}).get("analysis_duration", 0)
-        print(f"\nAnalysis completed in {duration:.2f} seconds")
+        tprint(f"\nAnalysis completed in {duration:.2f} seconds")
 
 
 def main():

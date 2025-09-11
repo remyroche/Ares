@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Data Validation Component
 
@@ -19,7 +21,7 @@ try:
     )
     from ...utils.common_operations import create_fallback_logger, safe_dataframe_operation
 except ImportError as e:
-    print(f"⚠️ Some utilities not available: {e}")
+    tprint(f"⚠️ Some utilities not available: {e}")
     # Create fallback implementations
     def safe_divide(a, b): return a / b if b != 0 else 0
     def safe_log(x): return np.log(np.maximum(x, 1e-10))
@@ -36,9 +38,9 @@ except ImportError as e:
 try:
     from ...utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.DataValidation")
-    print("✅ Custom logger available for FeatureSelection.DataValidation")
+    tprint("✅ Custom logger available for FeatureSelection.DataValidation")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("FeatureSelection.DataValidation")
     _LOGGER.setLevel(logging.INFO)
 

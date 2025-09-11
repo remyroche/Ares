@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.core.decorators import handles_errors
 """Utility functions and classes for advanced feature engineering."""
 
@@ -479,4 +481,4 @@ def initialization_error(message: str) -> str:
 
 def print_message(message: str) -> None:
     """Print message with proper formatting."""
-    print(message)
+    tprint(message)

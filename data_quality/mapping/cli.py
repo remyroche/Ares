@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Command Line Interface for Dead Code Mapping Tools
 
@@ -99,16 +101,16 @@ def main():
         elif args.command == "comprehensive":
             return handle_comprehensive_command(args)
         else:
-            print(f"Unknown command: {args.command}")
+            tprint(f"Unknown command: {args.command}")
             return 1
     except Exception as e:
-        print(f"Error: {e}")
+        tprint(f"Error: {e}")
         return 1
 
 
 def handle_dead_code_command(args) -> int:
     """Handle dead code analysis command."""
-    print(f"Analyzing dead code in: {args.path}")
+    tprint(f"Analyzing dead code in: {args.path}")
     
     # Run dead code analysis
     result = map_dead_code(
@@ -121,35 +123,35 @@ def handle_dead_code_command(args) -> int:
     
     # Print summary
     summary = result.get("summary", {})
-    print(f"\nDead Code Analysis Summary:")
-    print(f"  Total Issues: {summary.get('total_issues', 0)}")
-    print(f"  Deprecated Code: {summary.get('deprecated_count', 0)}")
-    print(f"  High Impact: {summary.get('high_impact_count', 0)}")
-    print(f"  Medium Impact: {summary.get('medium_impact_count', 0)}")
-    print(f"  Low Impact: {summary.get('low_impact_count', 0)}")
-    print(f"  Potential Lines Removed: {summary.get('potential_lines_removed', 0)}")
+    tprint(f"\nDead Code Analysis Summary:")
+    tprint(f"  Total Issues: {summary.get('total_issues', 0)}")
+    tprint(f"  Deprecated Code: {summary.get('deprecated_count', 0)}")
+    tprint(f"  High Impact: {summary.get('high_impact_count', 0)}")
+    tprint(f"  Medium Impact: {summary.get('medium_impact_count', 0)}")
+    tprint(f"  Low Impact: {summary.get('low_impact_count', 0)}")
+    tprint(f"  Potential Lines Removed: {summary.get('potential_lines_removed', 0)}")
     
     # Show recommendations if requested
     if args.recommendations:
-        print(f"\nRemoval Recommendations:")
+        tprint(f"\nRemoval Recommendations:")
         recommendations = get_removal_recommendations(args.path, args.config)
         for i, rec in enumerate(recommendations, 1):
-            print(f"  {i}. {rec['priority'].upper()}: {rec['description']}")
-            print(f"     File: {rec['file_path']}:{rec['line_number']}")
-            print(f"     Action: {rec['action']}")
-            print()
+            tprint(f"  {i}. {rec['priority'].upper()}: {rec['description']}")
+            tprint(f"     File: {rec['file_path']}:{rec['line_number']}")
+            tprint(f"     Action: {rec['action']}")
+            tprint()
     
     # Export if output specified
     if args.output:
         export_dead_code_mapping(args.path, args.output, args.config, args.format)
-        print(f"Results exported to: {args.output}")
+        tprint(f"Results exported to: {args.output}")
     
     return 0
 
 
 def handle_call_graph_command(args) -> int:
     """Handle call graph analysis command."""
-    print(f"Analyzing call graph in: {args.path}")
+    tprint(f"Analyzing call graph in: {args.path}")
     
     # Run call graph analysis
     result = map_call_graph(
@@ -161,52 +163,52 @@ def handle_call_graph_command(args) -> int:
     
     # Print summary
     summary = result.get("summary", {})
-    print(f"\nCall Graph Analysis Summary:")
-    print(f"  Total Functions: {summary.get('total_functions', 0)}")
-    print(f"  Total Calls: {summary.get('total_calls', 0)}")
-    print(f"  Total Imports: {summary.get('total_imports', 0)}")
-    print(f"  Circular Dependencies: {summary.get('circular_dependencies_count', 0)}")
-    print(f"  Dead Functions: {summary.get('dead_functions_count', 0)}")
-    print(f"  Unused Imports: {summary.get('unused_imports_count', 0)}")
-    print(f"  Graph Density: {summary.get('graph_density', 0):.3f}")
-    print(f"  Is DAG: {summary.get('is_dag', True)}")
+    tprint(f"\nCall Graph Analysis Summary:")
+    tprint(f"  Total Functions: {summary.get('total_functions', 0)}")
+    tprint(f"  Total Calls: {summary.get('total_calls', 0)}")
+    tprint(f"  Total Imports: {summary.get('total_imports', 0)}")
+    tprint(f"  Circular Dependencies: {summary.get('circular_dependencies_count', 0)}")
+    tprint(f"  Dead Functions: {summary.get('dead_functions_count', 0)}")
+    tprint(f"  Unused Imports: {summary.get('unused_imports_count', 0)}")
+    tprint(f"  Graph Density: {summary.get('graph_density', 0):.3f}")
+    tprint(f"  Is DAG: {summary.get('is_dag', True)}")
     
     # Additional analyses if requested
     if args.orphaned:
-        print(f"\nOrphaned Functions:")
+        tprint(f"\nOrphaned Functions:")
         orphaned = find_orphaned_functions(args.path, args.config)
         for func in orphaned[:10]:  # Show top 10
-            print(f"  {func['name']} in {func['file_path']}:{func['line']}")
+            tprint(f"  {func['name']} in {func['file_path']}:{func['line']}")
         if len(orphaned) > 10:
-            print(f"  ... and {len(orphaned) - 10} more")
+            tprint(f"  ... and {len(orphaned) - 10} more")
     
     if args.complexity:
-        print(f"\nCall Complexity Analysis:")
+        tprint(f"\nCall Complexity Analysis:")
         complexity = analyze_call_complexity(args.path, args.config)
         high_complexity = complexity.get("high_complexity_functions", [])
-        print(f"  High Complexity Functions: {len(high_complexity)}")
+        tprint(f"  High Complexity Functions: {len(high_complexity)}")
         for func in high_complexity[:5]:  # Show top 5
-            print(f"    {func}")
+            tprint(f"    {func}")
     
     if args.usage:
-        print(f"\nFunction Usage Analysis:")
+        tprint(f"\nFunction Usage Analysis:")
         usage = get_function_usage_analysis(args.path, args.config)
         patterns = usage.get("patterns", {})
-        print(f"  Unused Functions: {len(patterns.get('unused_functions', []))}")
-        print(f"  Highly Used Functions: {len(patterns.get('highly_used_functions', []))}")
-        print(f"  Complex Unused Functions: {len(patterns.get('complex_unused_functions', []))}")
+        tprint(f"  Unused Functions: {len(patterns.get('unused_functions', []))}")
+        tprint(f"  Highly Used Functions: {len(patterns.get('highly_used_functions', []))}")
+        tprint(f"  Complex Unused Functions: {len(patterns.get('complex_unused_functions', []))}")
     
     # Export if output specified
     if args.output:
         export_call_graph_mapping(args.path, args.output, args.config, args.format)
-        print(f"Results exported to: {args.output}")
+        tprint(f"Results exported to: {args.output}")
     
     return 0
 
 
 def handle_data_flow_command(args) -> int:
     """Handle data flow analysis command."""
-    print(f"Analyzing data flow in: {args.path}")
+    tprint(f"Analyzing data flow in: {args.path}")
     
     # Run data flow analysis
     result = map_data_flow(
@@ -219,75 +221,75 @@ def handle_data_flow_command(args) -> int:
     
     # Print summary
     summary = result.get("summary", {})
-    print(f"\nData Flow Analysis Summary:")
-    print(f"  Total Variables: {summary.get('total_variables', 0)}")
-    print(f"  Total Functions: {summary.get('total_functions', 0)}")
-    print(f"  Total Classes: {summary.get('total_classes', 0)}")
-    print(f"  Dead Variables: {summary.get('dead_variables_count', 0)}")
-    print(f"  Unused Parameters: {summary.get('unused_parameters_count', 0)}")
-    print(f"  Data Flow Complexity: {summary.get('data_flow_complexity', 0):.3f}")
+    tprint(f"\nData Flow Analysis Summary:")
+    tprint(f"  Total Variables: {summary.get('total_variables', 0)}")
+    tprint(f"  Total Functions: {summary.get('total_functions', 0)}")
+    tprint(f"  Total Classes: {summary.get('total_classes', 0)}")
+    tprint(f"  Dead Variables: {summary.get('dead_variables_count', 0)}")
+    tprint(f"  Unused Parameters: {summary.get('unused_parameters_count', 0)}")
+    tprint(f"  Data Flow Complexity: {summary.get('data_flow_complexity', 0):.3f}")
     
     # Additional analyses if requested
     if args.lifecycle:
-        print(f"\nVariable Lifecycle Analysis:")
+        tprint(f"\nVariable Lifecycle Analysis:")
         lifecycle = analyze_variable_lifecycle(args.path, args.config)
         patterns = lifecycle.get("lifecycle_patterns", {})
-        print(f"  Immediate Death: {len(patterns.get('immediate_death', []))}")
-        print(f"  Single Use: {len(patterns.get('single_use', []))}")
-        print(f"  Multiple Assignments: {len(patterns.get('multiple_assignments', []))}")
+        tprint(f"  Immediate Death: {len(patterns.get('immediate_death', []))}")
+        tprint(f"  Single Use: {len(patterns.get('single_use', []))}")
+        tprint(f"  Multiple Assignments: {len(patterns.get('multiple_assignments', []))}")
     
     if args.bottlenecks:
-        print(f"\nData Flow Bottlenecks:")
+        tprint(f"\nData Flow Bottlenecks:")
         bottlenecks = find_data_flow_bottlenecks(args.path, args.config)
         for bottleneck in bottlenecks[:5]:  # Show top 5
-            print(f"  {bottleneck['function_name']}: {bottleneck['unused_parameters_count']} unused parameters")
+            tprint(f"  {bottleneck['function_name']}: {bottleneck['unused_parameters_count']} unused parameters")
     
     if args.dependencies:
-        print(f"\nData Dependencies:")
+        tprint(f"\nData Dependencies:")
         dependencies = track_data_dependencies(args.path, args.config)
         dep_summary = dependencies.get("summary", {})
-        print(f"  Total Dependencies: {dep_summary.get('total_dependencies', 0)}")
-        print(f"  Unused Dependencies: {dep_summary.get('unused_dependencies_count', 0)}")
+        tprint(f"  Total Dependencies: {dep_summary.get('total_dependencies', 0)}")
+        tprint(f"  Unused Dependencies: {dep_summary.get('unused_dependencies_count', 0)}")
     
     # Export if output specified
     if args.output:
         export_data_flow_mapping(args.path, args.output, args.config, args.format)
-        print(f"Results exported to: {args.output}")
+        tprint(f"Results exported to: {args.output}")
     
     return 0
 
 
 def handle_comprehensive_command(args) -> int:
     """Handle comprehensive analysis command."""
-    print(f"Running comprehensive analysis on: {args.path}")
+    tprint(f"Running comprehensive analysis on: {args.path}")
     
     output_dir = Path(args.output_dir) if args.output_dir else Path("dead_code_analysis")
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Run all analyses
-    print("\n1. Dead Code Analysis...")
+    tprint("\n1. Dead Code Analysis...")
     dead_code_file = output_dir / f"dead_code_analysis.{args.format}"
     export_dead_code_mapping(args.path, str(dead_code_file), args.config, args.format)
     
-    print("2. Call Graph Analysis...")
+    tprint("2. Call Graph Analysis...")
     call_graph_file = output_dir / f"call_graph_analysis.{args.format}"
     export_call_graph_mapping(args.path, str(call_graph_file), args.config, args.format)
     
-    print("3. Data Flow Analysis...")
+    tprint("3. Data Flow Analysis...")
     data_flow_file = output_dir / f"data_flow_analysis.{args.format}"
     export_data_flow_mapping(args.path, str(data_flow_file), args.config, args.format)
     
     # Generate summary report
-    print("4. Generating Summary Report...")
+    tprint("4. Generating Summary Report...")
     summary_file = output_dir / "analysis_summary.txt"
     generate_summary_report(args.path, str(summary_file), args.config)
     
-    print(f"\nComprehensive analysis complete!")
-    print(f"Results saved to: {output_dir}")
-    print(f"  - Dead Code: {dead_code_file}")
-    print(f"  - Call Graph: {call_graph_file}")
-    print(f"  - Data Flow: {data_flow_file}")
-    print(f"  - Summary: {summary_file}")
+    tprint(f"\nComprehensive analysis complete!")
+    tprint(f"Results saved to: {output_dir}")
+    tprint(f"  - Dead Code: {dead_code_file}")
+    tprint(f"  - Call Graph: {call_graph_file}")
+    tprint(f"  - Data Flow: {data_flow_file}")
+    tprint(f"  - Summary: {summary_file}")
     
     return 0
 

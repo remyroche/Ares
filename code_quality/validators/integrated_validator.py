@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Integrated Validator - Combines function_validator.py with enhanced_validator.py
 
@@ -293,18 +295,18 @@ def main():
     # Generate reports
     report_files = validator.generate_report(args.output_dir)
 
-    print("\nIntegrated validation completed!")
-    print("\nGenerated reports:")
-    print(f"  - JSON report: {report_files['json']}")
-    print(f"  - Summary: {report_files['summary']}")
-    print(f"  - Markdown report: {report_files['markdown']}")
+    tprint("\nIntegrated validation completed!")
+    tprint("\nGenerated reports:")
+    tprint(f"  - JSON report: {report_files['json']}")
+    tprint(f"  - Summary: {report_files['summary']}")
+    tprint(f"  - Markdown report: {report_files['markdown']}")
 
     # Show brief summary
     with open(report_files["summary"]) as f:
         summary_lines = f.readlines()[:20]  # Show first 20 lines
-        print("\n" + "".join(summary_lines))
+        tprint("\n" + "".join(summary_lines))
         if len(f.readlines()) > 20:
-            print("... (see full report for details)")
+            tprint("... (see full report for details)")
 
 
 if __name__ == "__main__":

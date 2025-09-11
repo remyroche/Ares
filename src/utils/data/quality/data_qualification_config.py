@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Unified Configuration System for Data Qualification Pipeline
 
@@ -176,7 +178,7 @@ class DataQualificationConfig:
         ... )
         >>> validation_result = config.validate()
         >>> if validation_result.is_valid:
-        ...     print("Configuration is valid")
+        ...     tprint("Configuration is valid")
     """
     
     # Core identification
@@ -222,7 +224,7 @@ class DataQualificationConfig:
             >>> config = DataQualificationConfig(symbol="AAPL", exchange="NASDAQ", timeframe="1m", data_dir="/data")
             >>> result = config.validate()
             >>> if not result.is_valid:
-            ...     print(f"Validation errors: {result.errors}")
+            ...     tprint(f"Validation errors: {result.errors}")
         """
         errors = []
         warnings = []

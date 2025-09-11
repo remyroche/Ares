@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Example Usage of Enhanced ML Monitoring System
 
@@ -62,17 +64,17 @@ async def example_enhanced_monitoring():
     }
     
     # Create and initialize monitoring orchestrator
-    print("🚀 Initializing Enhanced ML Monitoring System...")
+    tprint("🚀 Initializing Enhanced ML Monitoring System...")
     orchestrator = await create_monitoring_orchestrator(config)
     
     if not orchestrator:
-        print("❌ Failed to initialize monitoring orchestrator")
+        tprint("❌ Failed to initialize monitoring orchestrator")
         return
     
-    print("✅ Enhanced ML Monitoring System initialized successfully!")
+    tprint("✅ Enhanced ML Monitoring System initialized successfully!")
     
     # Example 1: Record a trade decision
-    print("\n📊 Recording example trade decision...")
+    tprint("\n📊 Recording example trade decision...")
     
     # Create trade context
     context = TradeContext(
@@ -201,10 +203,10 @@ async def example_enhanced_monitoring():
     
     # Record the trade decision
     await orchestrator.record_trade_decision(trade_decision)
-    print("✅ Trade decision recorded successfully!")
+    tprint("✅ Trade decision recorded successfully!")
     
     # Example 2: Record model performance metrics
-    print("\n📈 Recording model performance metrics...")
+    tprint("\n📈 Recording model performance metrics...")
     
     model_performance = ModelPerformanceMetrics(
         model_id="hmm_model_1",
@@ -226,10 +228,10 @@ async def example_enhanced_monitoring():
     )
     
     await orchestrator.enhanced_monitor.record_model_performance(model_performance)
-    print("✅ Model performance metrics recorded!")
+    tprint("✅ Model performance metrics recorded!")
     
     # Example 3: Update ensemble weights
-    print("\n⚖️ Updating ensemble weights...")
+    tprint("\n⚖️ Updating ensemble weights...")
     
     model_performances = {
         "hmm_model_1": {
@@ -262,31 +264,31 @@ async def example_enhanced_monitoring():
         "main_ensemble", model_performances, current_weights
     )
     
-    print(f"✅ Ensemble weights updated: {new_weights}")
+    tprint(f"✅ Ensemble weights updated: {new_weights}")
     
     # Example 4: Get ensemble analysis
-    print("\n🔍 Getting ensemble analysis...")
+    tprint("\n🔍 Getting ensemble analysis...")
     
     analysis = await orchestrator.get_ensemble_analysis("main_ensemble")
-    print(f"✅ Ensemble analysis: {json.dumps(analysis, indent = 2, default = str)}")
+    tprint(f"✅ Ensemble analysis: {json.dumps(analysis, indent = 2, default = str)}")
     
     # Example 5: Force export monitoring data
-    print("\n📤 Exporting monitoring data...")
+    tprint("\n📤 Exporting monitoring data...")
     
     export_success = await orchestrator.export_monitoring_data()
     if export_success:
-        print("✅ Monitoring data exported successfully!")
+        tprint("✅ Monitoring data exported successfully!")
     else:
-        print("❌ Failed to export monitoring data")
+        tprint("❌ Failed to export monitoring data")
     
     # Example 6: Get comprehensive statistics
-    print("\n📊 Getting comprehensive monitoring statistics...")
+    tprint("\n📊 Getting comprehensive monitoring statistics...")
     
     stats = orchestrator.get_comprehensive_stats()
-    print(f"✅ Monitoring statistics: {json.dumps(stats, indent = 2, default = str)}")
+    tprint(f"✅ Monitoring statistics: {json.dumps(stats, indent = 2, default = str)}")
     
     # Example 7: Simulate multiple trade decisions
-    print("\n🔄 Simulating multiple trade decisions...")
+    tprint("\n🔄 Simulating multiple trade decisions...")
     
     for i in range(5):
         # Create a simple trade decision
@@ -326,41 +328,41 @@ async def example_enhanced_monitoring():
         
         await orchestrator.record_trade_decision(simple_decision)
     
-    print("✅ Multiple trade decisions recorded!")
+    tprint("✅ Multiple trade decisions recorded!")
     
     # Final export
-    print("\n📤 Final export of all monitoring data...")
+    tprint("\n📤 Final export of all monitoring data...")
     await orchestrator.export_monitoring_data()
     
     # Shutdown
-    print("\n🛑 Shutting down monitoring system...")
+    tprint("\n🛑 Shutting down monitoring system...")
     await orchestrator.shutdown()
     
-    print("✅ Enhanced ML Monitoring example completed successfully!")
+    tprint("✅ Enhanced ML Monitoring example completed successfully!")
 
 async def example_trading_system_integration():
     """Example of integrating monitoring with trading systems."""
     
-    print("\n🔗 Trading System Integration Example")
+    tprint("\n🔗 Trading System Integration Example")
     
     # Mock trading system classes
     class MockBacktestingSystem:
         async def execute_trade(self, **kwargs):
-            print(f"Backtesting: Executing trade with {kwargs}")
+            tprint(f"Backtesting: Executing trade with {kwargs}")
             return {"profit_loss": 100.0, "execution_price": 45000.0}
         
         async def get_prediction(self, **kwargs):
-            print(f"Backtesting: Getting prediction with {kwargs}")
+            tprint(f"Backtesting: Getting prediction with {kwargs}")
             return 0.75
     
     class MockPaperTradingSystem:
         async def execute_trade(self, **kwargs):
-            print(f"Paper Trading: Executing trade with {kwargs}")
+            tprint(f"Paper Trading: Executing trade with {kwargs}")
             return {"profit_loss": 50.0, "execution_price": 45000.0}
     
     class MockLiveTradingSystem:
         async def execute_trade(self, **kwargs):
-            print(f"Live Trading: Executing trade with {kwargs}")
+            tprint(f"Live Trading: Executing trade with {kwargs}")
             return {"profit_loss": 200.0, "execution_price": 45000.0}
     
     # Create monitoring orchestrator
@@ -375,7 +377,7 @@ async def example_trading_system_integration():
     
     orchestrator = await create_monitoring_orchestrator(config)
     if not orchestrator:
-        print("❌ Failed to initialize monitoring orchestrator")
+        tprint("❌ Failed to initialize monitoring orchestrator")
         return
     
     # Integrate with trading systems
@@ -388,10 +390,10 @@ async def example_trading_system_integration():
     await orchestrator.integrate_trading_system(paper_trading_system, "paper_trading")
     await orchestrator.integrate_trading_system(live_trading_system, "live_trading")
     
-    print("✅ Trading systems integrated with monitoring!")
+    tprint("✅ Trading systems integrated with monitoring!")
     
     # Simulate trades (these will be automatically monitored)
-    print("\n🔄 Simulating monitored trades...")
+    tprint("\n🔄 Simulating monitored trades...")
     
     # Backtesting trade
     await backtesting_system.execute_trade(
@@ -426,23 +428,23 @@ async def example_trading_system_integration():
         confidence = 0.9
     )
     
-    print("✅ Monitored trades executed!")
+    tprint("✅ Monitored trades executed!")
     
     # Get integration statistics
     stats = orchestrator.get_comprehensive_stats()
-    print(f"📊 Integration stats: {json.dumps(stats['trading_integrator'], indent = 2)}")
+    tprint(f"📊 Integration stats: {json.dumps(stats['trading_integrator'], indent = 2)}")
     
     # Shutdown
     await orchestrator.shutdown()
-    print("✅ Trading system integration example completed!")
+    tprint("✅ Trading system integration example completed!")
 
 if __name__ == "__main__":
-    print("🚀 Enhanced ML Monitoring System Examples")
-    print("=" * 50)
+    tprint("🚀 Enhanced ML Monitoring System Examples")
+    tprint("=" * 50)
     
     # Run examples
     asyncio.run(example_enhanced_monitoring())
     asyncio.run(example_trading_system_integration())
     
-    print("\n🎉 All examples completed successfully!")
-    print("\n📁 Check the 'example_monitoring_exports' directory for exported CSV files")
+    tprint("\n🎉 All examples completed successfully!")
+    tprint("\n📁 Check the 'example_monitoring_exports' directory for exported CSV files")

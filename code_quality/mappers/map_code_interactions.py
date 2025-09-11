@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Code Interaction Mapping Script
 
@@ -70,65 +72,65 @@ class CodeInteractionMapper:
 
     def analyze_dependencies(self):
         """Analyze module dependencies."""
-        print("\n[1/5] Analyzing module dependencies...")
+        tprint("\n[1/5] Analyzing module dependencies...")
         analyzer = DependencyAnalyzer(self.config)
         self.results["dependencies"] = analyzer.analyze_directory(str(self.project_root))
 
         # Print summary
         deps = self.results["dependencies"]
-        print(f"  - Found {len(deps.get('modules', {}))} modules")
-        print(f"  - Total dependencies: {sum(len(m.get('dependencies', [])) for m in deps.get('modules', {}).values())}")
+        tprint(f"  - Found {len(deps.get('modules', {}))} modules")
+        tprint(f"  - Total dependencies: {sum(len(m.get('dependencies', [])) for m in deps.get('modules', {}).values())}")
 
     def analyze_call_graph(self):
         """Analyze function call relationships."""
-        print("\n[2/5] Analyzing function call graph...")
+        tprint("\n[2/5] Analyzing function call graph...")
         analyzer = CallGraphAnalyzer(self.config)
         self.results["call_graph"] = analyzer.analyze_directory(str(self.project_root))
 
         # Print summary
         cg = self.results["call_graph"]
-        print(f"  - Found {len(cg.get('functions', {}))} functions")
-        print(f"  - Total function calls: {sum(len(f.get('calls', [])) for f in cg.get('functions', {}).values())}")
+        tprint(f"  - Found {len(cg.get('functions', {}))} functions")
+        tprint(f"  - Total function calls: {sum(len(f.get('calls', [])) for f in cg.get('functions', {}).values())}")
 
     def analyze_architecture(self):
         """Analyze system architecture."""
-        print("\n[3/5] Analyzing system architecture...")
+        tprint("\n[3/5] Analyzing system architecture...")
         analyzer = ArchitectureAnalyzer(self.config)
         self.results["architecture"] = analyzer.analyze_directory(str(self.project_root))
 
         # Print summary
         arch = self.results["architecture"]
-        print(f"  - Identified {len(arch.get('layers', []))} architectural layers")
-        print(f"  - Found {len(arch.get('components', {}))} components")
+        tprint(f"  - Identified {len(arch.get('layers', []))} architectural layers")
+        tprint(f"  - Found {len(arch.get('components', {}))} components")
 
     def analyze_imports(self):
         """Analyze import relationships."""
-        print("\n[4/5] Analyzing import relationships...")
+        tprint("\n[4/5] Analyzing import relationships...")
         analyzer = ImportAnalyzer(self.config)
         self.results["imports"] = analyzer.analyze_directory(str(self.project_root))
 
         # Print summary
         imps = self.results["imports"]
-        print(f"  - Total imports: {sum(len(f.get('imports', [])) for f in imps.get('files', {}).values())}")
-        print(f"  - Circular imports: {len(imps.get('circular_imports', []))}")
+        tprint(f"  - Total imports: {sum(len(f.get('imports', [])) for f in imps.get('files', {}).values())}")
+        tprint(f"  - Circular imports: {len(imps.get('circular_imports', []))}")
 
     def analyze_complexity(self):
         """Analyze code complexity for context."""
-        print("\n[5/6] Analyzing code complexity...")
+        tprint("\n[5/6] Analyzing code complexity...")
         analyzer = ComplexityAnalyzer(self.config)
         self.results["complexity"] = analyzer.analyze_directory(str(self.project_root))
 
         # Print summary
         comp = self.results["complexity"]
-        print(f"  - Average cyclomatic complexity: {comp.get('average_complexity', 0):.2f}")
-        print(f"  - Files with high complexity: {len([f for f in comp.get('files', {}).values() if f.get('complexity', 0) > 10])}")
+        tprint(f"  - Average cyclomatic complexity: {comp.get('average_complexity', 0):.2f}")
+        tprint(f"  - Files with high complexity: {len([f for f in comp.get('files', {}).values() if f.get('complexity', 0) > 10])}")
         
         # Note about enhanced complexity analysis
-        print("  - Note: For comprehensive complexity analysis, use: python code_complexity/cli.py")
+        tprint("  - Note: For comprehensive complexity analysis, use: python code_complexity/cli.py")
 
     def analyze_dead_code(self):
         """Analyze dead code using enhanced analyzer with robust error handling."""
-        print("\n[1/4] Analyzing dead code and deprecated patterns...")
+        tprint("\n[1/4] Analyzing dead code and deprecated patterns...")
         
         try:
             # Use our enhanced dead code analyzer
@@ -155,21 +157,21 @@ class CodeInteractionMapper:
             self.stats["call_graph_nodes"] = len(report.call_graph_nodes)
             
             # Print summary
-            print(f"  ✅ Enhanced analysis complete:")
-            print(f"     - Total issues found: {report.total_issues}")
-            print(f"     - Dead code functions: {report.issues_by_type.get('dead_code', 0)}")
-            print(f"     - Unused imports: {report.issues_by_type.get('unused_import', 0)}")
-            print(f"     - Call graph nodes: {len(report.call_graph_nodes)}")
-            print(f"     - False positives filtered: {report.false_positives_filtered}")
+            tprint(f"  ✅ Enhanced analysis complete:")
+            tprint(f"     - Total issues found: {report.total_issues}")
+            tprint(f"     - Dead code functions: {report.issues_by_type.get('dead_code', 0)}")
+            tprint(f"     - Unused imports: {report.issues_by_type.get('unused_import', 0)}")
+            tprint(f"     - Call graph nodes: {len(report.call_graph_nodes)}")
+            tprint(f"     - False positives filtered: {report.false_positives_filtered}")
             
         except Exception as e:
-            print(f"  ❌ Dead code analysis failed: {e}")
+            tprint(f"  ❌ Dead code analysis failed: {e}")
             self.results["dead_code"] = {"error": str(e)}
             self.stats["files_failed"] += 1
 
     def generate_summary_report(self):
         """Generate a simple summary report."""
-        print("\n[2/4] Generating summary report...")
+        tprint("\n[2/4] Generating summary report...")
         
         try:
             # Create output directory
@@ -183,27 +185,27 @@ class CodeInteractionMapper:
             with open(json_file, 'w') as f:
                 json.dump(self.results, f, indent=2, default=str)
             
-            print(f"  📁 Results exported to: {json_file}")
+            tprint(f"  📁 Results exported to: {json_file}")
             
         except Exception as e:
-            print(f"  ❌ Report generation failed: {e}")
+            tprint(f"  ❌ Report generation failed: {e}")
 
     def generate_interaction_report(self):
         """Generate comprehensive interaction report."""
-        print("\n[7/7] Generating interaction reports...")
+        tprint("\n[7/7] Generating interaction reports...")
 
         # Create reports directory with datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         reports_dir = Path("code_quality/visualizers/reports") / f"report_{timestamp}"
         reports_dir.mkdir(parents=True, exist_ok=True)
         
-        print(f"  - Output directory: {reports_dir}")
+        tprint(f"  - Output directory: {reports_dir}")
 
         # Save raw JSON data
         json_file = reports_dir / f"interactions_{timestamp}.json"
         with open(json_file, "w") as f:
             json.dump(self.results, f, indent=2, default=str)
-        print(f"  - Saved raw data: {json_file}")
+        tprint(f"  - Saved raw data: {json_file}")
 
         # Generate text summary
         summary_file = reports_dir / f"interactions_summary_{timestamp}.txt"
@@ -315,7 +317,7 @@ class CodeInteractionMapper:
                     f.write(f"    Medium Risk: {risk_assessment.get('medium_risk_count', 0)}\n")
                     f.write(f"    Recommended Approach: {risk_assessment.get('recommended_approach', 'unknown')}\n")
 
-        print(f"  - Saved summary: {summary_file}")
+        tprint(f"  - Saved summary: {summary_file}")
 
         # Generate HTML report
         html_reporter = HTMLReporter()
@@ -326,35 +328,35 @@ class CodeInteractionMapper:
         )
         with open(html_file, "w") as f:
             f.write(html_content)
-        print(f"  - Saved HTML report: {html_file}")
+        tprint(f"  - Saved HTML report: {html_file}")
         
         # Generate enhanced HTML report with dead code analysis
         enhanced_html_file = reports_dir / f"enhanced_interactions_{timestamp}.html"
         enhanced_html_content = self._generate_enhanced_html_report()
         with open(enhanced_html_file, "w") as f:
             f.write(enhanced_html_content)
-        print(f"  - Saved enhanced HTML report: {enhanced_html_file}")
+        tprint(f"  - Saved enhanced HTML report: {enhanced_html_file}")
         
         # Generate dependency map visualization
         dependency_map_file = reports_dir / f"dependency_map_{timestamp}.json"
         dependency_map = self.results.get("dependency_map", {})
         with open(dependency_map_file, "w") as f:
             json.dump(dependency_map, f, indent=2, default=str)
-        print(f"  - Saved dependency map: {dependency_map_file}")
+        tprint(f"  - Saved dependency map: {dependency_map_file}")
 
         # Generate visual diagrams
         try:
             visual_files = self._generate_visual_diagrams(reports_dir, timestamp)
             if visual_files:
-                print(f"  - Generated {len(visual_files)} visual diagrams")
+                tprint(f"  - Generated {len(visual_files)} visual diagrams")
             else:
-                print(f"  - No visual diagrams generated (check dependencies)")
+                tprint(f"  - No visual diagrams generated (check dependencies)")
         except ImportError as e:
-            print(f"  - Visual diagrams skipped: Missing dependencies ({e})")
-            print(f"  - Install matplotlib for visualizations: pip install matplotlib")
+            tprint(f"  - Visual diagrams skipped: Missing dependencies ({e})")
+            tprint(f"  - Install matplotlib for visualizations: pip install matplotlib")
         except Exception as e:
-            print(f"  - Could not generate visual diagrams: {e}")
-            print(f"  - HTML reports are still available")
+            tprint(f"  - Could not generate visual diagrams: {e}")
+            tprint(f"  - HTML reports are still available")
 
         return {
             "json": str(json_file),
@@ -399,7 +401,7 @@ class CodeInteractionMapper:
                     files = dep_viz.save_figure(fig, f"circular_deps_{timestamp}")
                     generated_files.extend(files)
                 
-                print(f"  - Generated dependency visualizations")
+                tprint(f"  - Generated dependency visualizations")
         
         # Generate complexity visualizations
         if 'complexity' in self.results:
@@ -410,7 +412,7 @@ class CodeInteractionMapper:
                 files = complexity_viz.save_figure(fig, f"complexity_heatmap_{timestamp}")
                 generated_files.extend(files)
                 
-                print(f"  - Generated complexity visualizations")
+                tprint(f"  - Generated complexity visualizations")
         
         # Generate function call network
         if 'call_graph' in self.results:
@@ -428,7 +430,7 @@ class CodeInteractionMapper:
                 )
                 generated_files.append(html_file)
                 
-                print(f"  - Generated function network visualizations")
+                tprint(f"  - Generated function network visualizations")
         
         # Generate dead code visualizations
         if 'dead_code' in self.results:
@@ -473,7 +475,7 @@ class CodeInteractionMapper:
                     files = dep_viz.save_figure(fig, f"function_usage_map_{timestamp}")
                     generated_files.extend(files)
                 
-                print(f"  - Generated dead code visualizations")
+                tprint(f"  - Generated dead code visualizations")
 
         # Generate comprehensive dashboard
         dashboard_file = dashboard_gen.generate_quality_dashboard(
@@ -481,7 +483,7 @@ class CodeInteractionMapper:
             "Code Interaction Analysis Dashboard"
         )
         generated_files.append(dashboard_file)
-        print(f"  - Generated interactive dashboard: {Path(dashboard_file).name}")
+        tprint(f"  - Generated interactive dashboard: {Path(dashboard_file).name}")
         
         return generated_files
 
@@ -1270,10 +1272,10 @@ class CodeInteractionMapper:
             return fig
             
         except ImportError:
-            print("  - Matplotlib not available for dead code type chart")
+            tprint("  - Matplotlib not available for dead code type chart")
             return None
         except Exception as e:
-            print(f"  - Error creating dead code type chart: {e}")
+            tprint(f"  - Error creating dead code type chart: {e}")
             return None
 
     def _create_dead_code_severity_chart(self, dead_code_report):
@@ -1316,10 +1318,10 @@ class CodeInteractionMapper:
             return fig
             
         except ImportError:
-            print("  - Matplotlib not available for dead code severity chart")
+            tprint("  - Matplotlib not available for dead code severity chart")
             return None
         except Exception as e:
-            print(f"  - Error creating dead code severity chart: {e}")
+            tprint(f"  - Error creating dead code severity chart: {e}")
             return None
 
     def _create_deprecated_code_chart(self, deprecated_issues):
@@ -1366,10 +1368,10 @@ class CodeInteractionMapper:
             return fig
             
         except ImportError:
-            print("  - Matplotlib not available for deprecated code chart")
+            tprint("  - Matplotlib not available for deprecated code chart")
             return None
         except Exception as e:
-            print(f"  - Error creating deprecated code chart: {e}")
+            tprint(f"  - Error creating deprecated code chart: {e}")
             return None
 
     def _create_impact_analysis_chart(self, impact_analysis):
@@ -1419,10 +1421,10 @@ class CodeInteractionMapper:
             return fig
             
         except ImportError:
-            print("  - Matplotlib not available for impact analysis chart")
+            tprint("  - Matplotlib not available for impact analysis chart")
             return None
         except Exception as e:
-            print(f"  - Error creating impact analysis chart: {e}")
+            tprint(f"  - Error creating impact analysis chart: {e}")
             return None
 
     def _create_removal_plan_chart(self, removal_plan):
@@ -1524,10 +1526,10 @@ class CodeInteractionMapper:
             return fig
             
         except ImportError:
-            print("  - Matplotlib not available for removal plan chart")
+            tprint("  - Matplotlib not available for removal plan chart")
             return None
         except Exception as e:
-            print(f"  - Error creating removal plan chart: {e}")
+            tprint(f"  - Error creating removal plan chart: {e}")
             return None
 
     def _create_function_usage_map(self):
@@ -1612,10 +1614,10 @@ class CodeInteractionMapper:
             return fig
             
         except ImportError:
-            print("  - Matplotlib not available for function usage map")
+            tprint("  - Matplotlib not available for function usage map")
             return None
         except Exception as e:
-            print(f"  - Error creating function usage map: {e}")
+            tprint(f"  - Error creating function usage map: {e}")
             return None
 
     def _extract_function_name_from_issue(self, issue):
@@ -1816,15 +1818,15 @@ class CodeInteractionMapper:
 
     def run(self):
         """Run the enhanced interaction mapping with simplified approach."""
-        print(f"Starting enhanced code interaction mapping for: {self.project_root}")
-        print("=" * 80)
+        tprint(f"Starting enhanced code interaction mapping for: {self.project_root}")
+        tprint("=" * 80)
         
-        print("\n" + "=" * 50)
-        print("NEXT STEPS")
-        print("=" * 50)
-        print("For comprehensive complexity analysis, run:")
-        print("  python code_complexity/cli.py analyze /path/to/your/project")
-        print("=" * 50)
+        tprint("\n" + "=" * 50)
+        tprint("NEXT STEPS")
+        tprint("=" * 50)
+        tprint("For comprehensive complexity analysis, run:")
+        tprint("  python code_complexity/cli.py analyze /path/to/your/project")
+        tprint("=" * 50)
 
         try:
             # Run enhanced dead code analysis (our main focus)
@@ -1833,15 +1835,15 @@ class CodeInteractionMapper:
             # Generate summary report
             self.generate_summary_report()
 
-            print("\n" + "=" * 80)
-            print("ENHANCED CODE INTERACTION MAPPING COMPLETE!")
-            print("=" * 80)
-            print(f"\n📊 Analysis Summary:")
-            print(f"   - Total issues found: {self.stats['total_issues']}")
-            print(f"   - Dead code functions: {self.stats['dead_code_functions']}")
-            print(f"   - Unused imports: {self.stats['unused_imports']}")
-            print(f"   - Call graph nodes: {self.stats['call_graph_nodes']}")
-            print(f"   - Files analyzed: {self.stats['files_analyzed']}")
+            tprint("\n" + "=" * 80)
+            tprint("ENHANCED CODE INTERACTION MAPPING COMPLETE!")
+            tprint("=" * 80)
+            tprint(f"\n📊 Analysis Summary:")
+            tprint(f"   - Total issues found: {self.stats['total_issues']}")
+            tprint(f"   - Dead code functions: {self.stats['dead_code_functions']}")
+            tprint(f"   - Unused imports: {self.stats['unused_imports']}")
+            tprint(f"   - Call graph nodes: {self.stats['call_graph_nodes']}")
+            tprint(f"   - Files analyzed: {self.stats['files_analyzed']}")
             
             # Return results for JSON export
             return {
@@ -1852,7 +1854,7 @@ class CodeInteractionMapper:
             }
             
         except Exception as e:
-            print(f"❌ Analysis failed: {e}")
+            tprint(f"❌ Analysis failed: {e}")
             return {
                 "project_root": str(self.project_root),
                 "stats": self.stats,
@@ -1888,7 +1890,7 @@ class CodeInteractionMapper:
                 continue
             python_files.append(py_file)
         
-        print(f"  - Found {len(python_files)} Python files to analyze")
+        tprint(f"  - Found {len(python_files)} Python files to analyze")
         
         successful_files = 0
         failed_files = 0
@@ -1915,13 +1917,13 @@ class CodeInteractionMapper:
                     # Skip files with syntax errors
                     failed_files += 1
                     if failed_files <= 5:  # Only show first 5 syntax errors
-                        print(f"  Warning: Syntax error in {file_path}: {e}")
+                        tprint(f"  Warning: Syntax error in {file_path}: {e}")
                     continue
                 except Exception as e:
                     # Skip files that can't be parsed
                     failed_files += 1
                     if failed_files <= 5:
-                        print(f"  Warning: Could not parse {file_path}: {e}")
+                        tprint(f"  Warning: Could not parse {file_path}: {e}")
                     continue
                 
                 lines = content.split('\n')
@@ -1939,17 +1941,17 @@ class CodeInteractionMapper:
                 except Exception as e:
                     failed_files += 1
                     if failed_files <= 5:
-                        print(f"  Warning: Error analyzing {file_path}: {e}")
+                        tprint(f"  Warning: Error analyzing {file_path}: {e}")
                     continue
                 
             except Exception as e:
                 failed_files += 1
                 if failed_files <= 5:
-                    print(f"  Warning: Could not read {file_path}: {e}")
+                    tprint(f"  Warning: Could not read {file_path}: {e}")
                 continue
         
-        print(f"  - Successfully analyzed: {successful_files} files")
-        print(f"  - Failed to analyze: {failed_files} files")
+        tprint(f"  - Successfully analyzed: {successful_files} files")
+        tprint(f"  - Failed to analyze: {failed_files} files")
         
         # Ensure we have some data before proceeding
         total_items = (len(dependency_map['function_definitions']) + 
@@ -1959,7 +1961,7 @@ class CodeInteractionMapper:
                       len(dependency_map['import_statements']))
         
         if total_items == 0:
-            print("  ⚠️  Warning: No dependencies found - this may indicate parsing issues")
+            tprint("  ⚠️  Warning: No dependencies found - this may indicate parsing issues")
             # Return a minimal valid structure
             dependency_map['function_definitions']['dummy'] = ('dummy', 1)
         
@@ -2236,14 +2238,14 @@ class CodeInteractionMapper:
         if name in dependency_map['function_calls']:
             for file_path, line_num in dependency_map['function_calls'][name]:
                 if str(file_path) != str(issue_file):
-                    print(f"    ✅ Found cross-file usage: {name} called from {file_path}:{line_num}")
+                    tprint(f"    ✅ Found cross-file usage: {name} called from {file_path}:{line_num}")
                     return True
         
         # Check if the class is used in other files
         if name in dependency_map['class_usage']:
             for file_path, line_num in dependency_map['class_usage'][name]:
                 if str(file_path) != str(issue_file):
-                    print(f"    ✅ Found cross-file usage: {name} used from {file_path}:{line_num}")
+                    tprint(f"    ✅ Found cross-file usage: {name} used from {file_path}:{line_num}")
                     return True
         
         # Check for import statements that might reference this function/class
@@ -2254,7 +2256,7 @@ class CodeInteractionMapper:
                 if issue_module in module_name or module_name in issue_module:
                     for file_path, line_num in imports:
                         if str(file_path) != str(issue_file):
-                            print(f"    ✅ Found cross-file import: {module_name} imported in {file_path}:{line_num}")
+                            tprint(f"    ✅ Found cross-file import: {module_name} imported in {file_path}:{line_num}")
                             return True
         
         return False
@@ -2434,10 +2436,10 @@ class CodeInteractionMapper:
 
     def map_interactions(self, project_root: str) -> dict:
         """Map code interactions across the project."""
-        print(f"\n{'='*60}")
-        print("MAPPING CODE INTERACTIONS")
-        print(f"{'='*60}")
-        print(f"Project root: {project_root}")
+        tprint(f"\n{'='*60}")
+        tprint("MAPPING CODE INTERACTIONS")
+        tprint(f"{'='*60}")
+        tprint(f"Project root: {project_root}")
         
         # Initialize results
         interactions = {
@@ -2471,15 +2473,15 @@ class CodeInteractionMapper:
             arch_analyzer = ArchitectureAnalyzer(config)
             
             # Run call graph analysis
-            print("Running call graph analysis...")
+            tprint("Running call graph analysis...")
             call_results = call_analyzer.analyze_directory(project_root)
             
             # Run dependency analysis
-            print("Running dependency analysis...")
+            tprint("Running dependency analysis...")
             dep_results = dep_analyzer.analyze_directory(project_root)
             
             # Run architecture analysis
-            print("Running architecture analysis...")
+            tprint("Running architecture analysis...")
             arch_results = arch_analyzer.analyze_directory(project_root)
             
             # Extract function calls from call graph
@@ -2530,17 +2532,17 @@ class CodeInteractionMapper:
             interactions["statistics"]["module_dependencies"] = len(interactions["module_dependencies"])
             interactions["statistics"]["files_analyzed"] = call_results.get("files_analyzed", 0)
             
-            print(f"\n✅ Interaction mapping completed:")
-            print(f"   - Total interactions: {interactions['statistics']['total_interactions']}")
-            print(f"   - Function calls: {interactions['statistics']['function_calls']}")
-            print(f"   - Class interactions: {interactions['statistics']['class_interactions']}")
-            print(f"   - Module dependencies: {interactions['statistics']['module_dependencies']}")
-            print(f"   - Files analyzed: {interactions['statistics']['files_analyzed']}")
+            tprint(f"\n✅ Interaction mapping completed:")
+            tprint(f"   - Total interactions: {interactions['statistics']['total_interactions']}")
+            tprint(f"   - Function calls: {interactions['statistics']['function_calls']}")
+            tprint(f"   - Class interactions: {interactions['statistics']['class_interactions']}")
+            tprint(f"   - Module dependencies: {interactions['statistics']['module_dependencies']}")
+            tprint(f"   - Files analyzed: {interactions['statistics']['files_analyzed']}")
             
             return interactions
             
         except Exception as e:
-            print(f"❌ Error in interaction mapping: {e}")
+            tprint(f"❌ Error in interaction mapping: {e}")
             return {
                 "error": str(e),
                 "interactions": [],
@@ -2588,7 +2590,7 @@ For comprehensive complexity analysis, use the separate complexity pipeline:
     with open(args.output, 'w') as f:
         json.dump(results, f, indent=2)
     
-    print(f"📊 Analysis complete! Report saved to: {args.output}")
+    tprint(f"📊 Analysis complete! Report saved to: {args.output}")
 
 
 if __name__ == "__main__":

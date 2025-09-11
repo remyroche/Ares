@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Base Pipeline Architecture for Code Quality Analysis
 
@@ -320,28 +322,28 @@ class BasePipeline(ABC):
     
     def print_summary(self):
         """Print pipeline execution summary."""
-        print(f"\n{'='*80}")
-        print(f"PIPELINE EXECUTION SUMMARY: {self.pipeline_name}")
-        print(f"{'='*80}")
-        print(f"Status: {self.result.status.value}")
-        print(f"Duration: {self.result.duration_seconds:.2f}s" if self.result.duration_seconds else "N/A")
-        print(f"Stages: {len(self.result.stages)}")
+        tprint(f"\n{'='*80}")
+        tprint(f"PIPELINE EXECUTION SUMMARY: {self.pipeline_name}")
+        tprint(f"{'='*80}")
+        tprint(f"Status: {self.result.status.value}")
+        tprint(f"Duration: {self.result.duration_seconds:.2f}s" if self.result.duration_seconds else "N/A")
+        tprint(f"Stages: {len(self.result.stages)}")
         
         if self.result.errors:
-            print(f"Errors: {len(self.result.errors)}")
+            tprint(f"Errors: {len(self.result.errors)}")
             for error in self.result.errors:
-                print(f"  - {error}")
+                tprint(f"  - {error}")
         
         if self.result.warnings:
-            print(f"Warnings: {len(self.result.warnings)}")
+            tprint(f"Warnings: {len(self.result.warnings)}")
             for warning in self.result.warnings:
-                print(f"  - {warning}")
+                tprint(f"  - {warning}")
         
-        print(f"\nStage Details:")
+        tprint(f"\nStage Details:")
         for stage in self.result.stages:
-            print(f"  {stage.stage.value}: {stage.status.value} ({stage.duration_seconds:.2f}s)")
+            tprint(f"  {stage.stage.value}: {stage.status.value} ({stage.duration_seconds:.2f}s)")
             if stage.errors:
                 for error in stage.errors:
-                    print(f"    - {error}")
+                    tprint(f"    - {error}")
         
-        print(f"{'='*80}")
+        tprint(f"{'='*80}")

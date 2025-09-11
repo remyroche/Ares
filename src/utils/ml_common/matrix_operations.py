@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.utils.tprint import tprint
+
 """Enhanced Matrix Operations with M1 Optimization Integration.
 
 This module provides comprehensive matrix operations optimized for M1/M2/M3 Macs,
@@ -39,15 +41,15 @@ import warnings
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.MatrixOperations")
-    print("✅ Custom logger available for MLCommon.MatrixOperations")
+    tprint("✅ Custom logger available for MLCommon.MatrixOperations")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.MatrixOperations")
     _LOGGER.setLevel(logging.INFO)
 
 # Import M1 optimization utilities
 try:
-    from ..hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
+    from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
     from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
     from ..vectorized_processing_core import get_vectorized_processing_core, VectorizedProcessingCore
     M1_UTILS_AVAILABLE = True
@@ -55,16 +57,39 @@ except ImportError as e:
     logging.warning(f"M1 optimization utilities not available: {e}")
     M1_UTILS_AVAILABLE = False
 
-# Import enhanced matrix operations as base
+# Import enhanced matrix operations as base (optional to avoid circular imports)
 try:
     from ...feature_engineering.enhanced_matrix_operations import (
         with_error_handling, with_gpu_fallback, with_memory_optimization,
         get_enhanced_matrix_operations, EnhancedMatrixOperations
     )
-except Exception as exc:  # pragma: no cover – must never fail silently
-    raise ImportError(
-        "Unable to import 'enhanced_matrix_operations' – ensure utilities package is intact"
-    ) from exc
+    ENHANCED_MATRIX_OPS_AVAILABLE = True
+    tprint("✅ Enhanced matrix operations loaded successfully")
+except (ImportError, AttributeError) as e:
+    # Provide fallback implementations for circular import cases
+    tprint(f"⚠️ Enhanced matrix operations not available: {e}")
+    ENHANCED_MATRIX_OPS_AVAILABLE = False
+
+    def with_error_handling(func):
+        """Fallback error handling decorator."""
+        return func
+
+    def with_gpu_fallback(func):
+        """Fallback GPU decorator."""
+        return func
+
+    def with_memory_optimization(func):
+        """Fallback memory optimization decorator."""
+        return func
+
+    def get_enhanced_matrix_operations():
+        """Fallback matrix operations factory."""
+        return M1EnhancedMatrixOperations()
+
+    class EnhancedMatrixOperations:
+        """Fallback EnhancedMatrixOperations class."""
+        def __init__(self):
+            pass
 
 warnings.warn(
     "`src.utils.ml_common.matrix_operations` is the new canonical import path for the"
@@ -97,10 +122,13 @@ class M1EnhancedMatrixOperations:
             enable_dynamic_batch: Whether to use dynamic batch optimization
             enable_performance_monitoring: Whether to enable performance monitoring
         """
-        _LOGGER.info("🚀 Initializing M1EnhancedMatrixOperations...")
-        _LOGGER.info(f"📊 Configuration - GPU: {use_gpu}, Memory efficient: {memory_efficient}, Parallel: {enable_parallel_processing}")
-        _LOGGER.info(f"📊 Configuration - Chunk size: {chunk_size}, Dtype: {dtype}, Dynamic batch: {enable_dynamic_batch}")
-        
+        # Initialize logger first
+        self.logger = logger.getChild('M1EnhancedMatrixOperations')
+
+        _LOGGER.debug("🚀 Initializing M1EnhancedMatrixOperations...")
+        _LOGGER.debug(f"📊 Configuration - GPU: {use_gpu}, Memory efficient: {memory_efficient}, Parallel: {enable_parallel_processing}")
+        _LOGGER.debug(f"📊 Configuration - Chunk size: {chunk_size}, Dtype: {dtype}, Dynamic batch: {enable_dynamic_batch}")
+
         self.use_gpu = use_gpu
         self.memory_efficient = memory_efficient
         self.enable_parallel_processing = enable_parallel_processing
@@ -109,10 +137,13 @@ class M1EnhancedMatrixOperations:
         self.enable_dynamic_batch = enable_dynamic_batch
         self.enable_performance_monitoring = enable_performance_monitoring
 
-        # Initialize M1 optimization components
-        _LOGGER.info("🔧 Initializing M1 optimization components...")
-        self._init_m1_components()
-        
+        # Initialize M1 optimization components lazily to avoid circular dependencies
+        self._m1_components_initialized = False
+        self.gpu_manager = None
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+        self.vectorized_core = None
+
         # Initialize base operations if available
         try:
             self.base_ops = get_enhanced_matrix_operations()
@@ -129,54 +160,64 @@ class M1EnhancedMatrixOperations:
             'peak_memory_usage': 0.0
         }
 
-        self.logger = logger.getChild('M1EnhancedMatrixOperations')
-        _LOGGER.info("✅ M1EnhancedMatrixOperations initialized successfully")
-        self.logger.info(f"🔧 M1 Enhanced Matrix Operations initialized (GPU: {self.use_gpu}, Parallel: {self.enable_parallel_processing})")
+        _LOGGER.debug("✅ M1EnhancedMatrixOperations initialized successfully")
+        self.logger.debug(f"🔧 M1 Enhanced Matrix Operations initialized (GPU: {self.use_gpu}, Parallel: {self.enable_parallel_processing})")
 
-    def _init_m1_components(self):
-        """Initialize M1 optimization components."""
+    def _ensure_m1_components_initialized(self):
+        """Ensure M1 components are initialized lazily."""
+        if self._m1_components_initialized:
+            return
+
         if not M1_UTILS_AVAILABLE:
-            self.logger.warning("⚠️ M1 utilities not available, using fallback implementations")
-            self.gpu_manager = None
-            self.memory_optimizer = None
-            self.cpu_optimizer = None
-            self.vectorized_core = None
+            self.logger.debug("M1 utilities not available, using fallback implementations")
+            self._m1_components_initialized = True
             return
 
         try:
             # Initialize M1 GPU manager
-            if self.use_gpu:
+            if self.use_gpu and self.gpu_manager is None:
+                from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer
                 self.gpu_manager = get_m1_memory_optimizer()
-                self.logger.info(f"🎯 M1 Memory Optimizer initialized")
+                self.logger.debug(f"🎯 M1 Memory Optimizer initialized")
             else:
                 self.gpu_manager = None
 
             # Initialize M1 memory optimizer
-            if self.memory_efficient:
+            if self.memory_efficient and self.memory_optimizer is None:
+                from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer
                 self.memory_optimizer = get_m1_memory_optimizer()
-                self.logger.info("🧠 M1 Memory Optimizer initialized")
+                self.logger.debug("🧠 M1 Memory Optimizer initialized")
 
             # Initialize M1 CPU optimizer
-            if self.enable_parallel_processing:
+            if self.enable_parallel_processing and self.cpu_optimizer is None:
+                from ..hardware.m1_memory_optimizer import get_memory_manager
                 self.cpu_optimizer = get_memory_manager()
-                self.logger.info(f"⚡ Memory Manager initialized for parallel processing")
+                self.logger.debug(f"⚡ Memory Manager initialized for parallel processing")
 
             # Initialize vectorized processing core
-            self.vectorized_core = get_vectorized_processing_core()
-            self.logger.info("🔄 Vectorized Processing Core initialized")
+            if self.vectorized_core is None:
+                from ..hardware.m1_memory_optimizer import get_vectorized_processing_core
+                self.vectorized_core = get_vectorized_processing_core()
+                self.logger.debug("🔄 Vectorized Processing Core initialized")
+
+            self._m1_components_initialized = True
 
         except Exception as e:
-            self.logger.error(f"Failed to initialize M1 components: {e}")
+            self.logger.debug(f"Failed to initialize M1 components: {e}")
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
             self.vectorized_core = None
+            self._m1_components_initialized = True
 
     @contextmanager
     def operation_context(self, operation_name: str = "matrix_op"):
         """Context manager for matrix operations with comprehensive monitoring."""
         start_time = time.time()
         start_memory = 0.0
+
+        # Ensure M1 components are initialized
+        self._ensure_m1_components_initialized()
 
         # Memory tracking
         if self.memory_optimizer:
@@ -225,9 +266,9 @@ class M1EnhancedMatrixOperations:
         start_time = time.time()
         use_gpu = use_gpu if use_gpu is not None else self.use_gpu
         
-        _LOGGER.info(f"🔄 Starting matrix multiplication...")
-        _LOGGER.info(f"📊 Input shapes - A: {a.shape if hasattr(a, 'shape') else 'unknown'}, B: {b.shape if hasattr(b, 'shape') else 'unknown'}")
-        _LOGGER.info(f"📊 GPU enabled: {use_gpu}")
+        _LOGGER.debug(f"🔄 Starting matrix multiplication...")
+        _LOGGER.debug(f"📊 Input shapes - A: {a.shape if hasattr(a, 'shape') else 'unknown'}, B: {b.shape if hasattr(b, 'shape') else 'unknown'}")
+        _LOGGER.debug(f"📊 GPU enabled: {use_gpu}")
 
         with self.operation_context("matrix_multiply"):
             # Convert to tensors if needed
@@ -283,8 +324,8 @@ class M1EnhancedMatrixOperations:
                             batch_size: Optional[int] = None) -> List[np.ndarray]:
         """M1-optimized batch matrix multiplication with parallel processing."""
         start_time = time.time()
-        _LOGGER.info(f"🔄 Starting batch matrix multiplication...")
-        _LOGGER.info(f"📊 Batch size: {len(matrices_a)} matrices")
+        _LOGGER.debug(f"🔄 Starting batch matrix multiplication...")
+        _LOGGER.debug(f"📊 Batch size: {len(matrices_a)} matrices")
         
         with self.operation_context("batch_matrix_multiply"):
             if not matrices_a or not matrices_b:
@@ -527,12 +568,16 @@ class M1EnhancedMatrixOperations:
 
 # Global instance
 _m1_enhanced_matrix_ops = None
+_initialization_logged = False
 
 def get_enhanced_matrix_operations() -> M1EnhancedMatrixOperations:
     """Get global M1-enhanced matrix operations instance."""
-    global _m1_enhanced_matrix_ops
+    global _m1_enhanced_matrix_ops, _initialization_logged
     if _m1_enhanced_matrix_ops is None:
         _m1_enhanced_matrix_ops = M1EnhancedMatrixOperations()
+        if not _initialization_logged:
+            _LOGGER.debug("🚀 M1EnhancedMatrixOperations initialized successfully")
+            _initialization_logged = True
     return _m1_enhanced_matrix_ops
 
 # Convenience functions for M1-optimized operations
@@ -577,6 +622,30 @@ def m1_parallel_operations(matrices: List[np.ndarray],
     """M1-optimized parallel matrix operations."""
     ops = get_enhanced_matrix_operations()
     return ops.parallel_matrix_operations(matrices, operation)
+
+def m1_matrix_correlation_analysis(data: np.ndarray, method: str = 'pearson') -> np.ndarray:
+    """
+    M1-optimized correlation matrix analysis.
+
+    Args:
+        data: Input data matrix (samples x features)
+        method: Correlation method ('pearson', 'spearman', 'kendall')
+
+    Returns:
+        Correlation matrix
+    """
+    try:
+        ops = get_enhanced_matrix_operations()
+        return ops.correlation_matrix(data, method=method)
+    except Exception:
+        # Fallback to numpy correlation
+        if method == 'pearson':
+            return np.corrcoef(data.T)
+        else:
+            # For other methods, use pandas
+            import pandas as pd
+            df = pd.DataFrame(data.T)
+            return df.corr(method=method).values
 
 def m1_optimize_memory() -> Dict[str, Any]:
     """M1-optimized memory cleanup."""

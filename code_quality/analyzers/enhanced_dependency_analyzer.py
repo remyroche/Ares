@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Any, Optional
 """
 Enhanced Dependency Analyzer
@@ -51,9 +53,9 @@ class EnhancedDependencyAnalyzer:
         Returns:
             Dict containing comprehensive dependency analysis results
         """
-        print("\n" + "="*60)
-        print("Running Enhanced Dependency Analysis")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("Running Enhanced Dependency Analysis")
+        tprint("="*60)
         
         start_time = time.time()
         
@@ -62,18 +64,18 @@ class EnhancedDependencyAnalyzer:
         
         # Run FawltyDeps analysis
         if self.fawltydeps_plugin.is_available():
-            print("Running FawltyDeps analysis...")
+            tprint("Running FawltyDeps analysis...")
             self.results["fawltydeps"] = self.fawltydeps_plugin.execute(context)
         else:
-            print("Warning: FawltyDeps not available, skipping...")
+            tprint("Warning: FawltyDeps not available, skipping...")
             self.results["fawltydeps"] = self._create_unavailable_result("fawltydeps")
         
         # Run Creosote analysis
         if self.creosote_plugin.is_available():
-            print("Running Creosote analysis...")
+            tprint("Running Creosote analysis...")
             self.results["creosote"] = self.creosote_plugin.execute(context)
         else:
-            print("Warning: Creosote not available, skipping...")
+            tprint("Warning: Creosote not available, skipping...")
             self.results["creosote"] = self._create_unavailable_result("creosote")
         
         # Combine results

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 from src.utils.logger import system_logger
@@ -34,7 +36,7 @@ try:
 import typing
 
 except ImportError as e:
-    print(f'Warning: Could not import enhanced utilities: {e}')
+    tprint(f'Warning: Could not import enhanced utilities: {e}')
     system_logger = logging.getLogger('EnhancedStep1')
     download_all_data_with_consolidation = None
     _dl = None
@@ -286,12 +288,12 @@ if __name__ == '__main__':
         pipeline_state = {'data_collection_completed': False, 'quality_check_passed': False}
         try:
             result = await step01.execute(training_input, pipeline_state)
-            print('=' * 60)
-            print('ENHANCED STEP1 EXECUTION RESULTS')
-            print('=' * 60)
-            print(f"Data collection completed: {result['data_collection_completed']}")
-            print(f"Quality check passed: {result['quality_check_passed']}")
-            print('=' * 60)
+            tprint('=' * 60)
+            tprint('ENHANCED STEP1 EXECUTION RESULTS')
+            tprint('=' * 60)
+            tprint(f"Data collection completed: {result['data_collection_completed']}")
+            tprint(f"Quality check passed: {result['quality_check_passed']}")
+            tprint('=' * 60)
         except Exception as e:
-            print(f'❌ Enhanced Step1 execution failed: {e}')
+            tprint(f'❌ Enhanced Step1 execution failed: {e}')
     asyncio.run(main())

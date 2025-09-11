@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 '\nRegime-Specific Optimization Configuration\n\nThis module extends the existing Optuna configuration to include regime-specific\ntriple barrier thresholds and TPSL parameters optimization. It provides a comprehensive\nconfiguration system for regime-aware parameter tuning.\n'
 from dataclasses import dataclass, field
 from enum import Enum
@@ -142,36 +144,36 @@ def validate_regime_optimization_config(config: RegimeSpecificOptimizationConfig
     """Validate regime-specific optimization configuration."""
     try:
         if not config.objectives:
-            print('❌ No objectives specified')
+            tprint('❌ No objectives specified')
             return False
         weight_sum = sum(config.objective_weights.values())
         if abs(weight_sum - 1.0) > 0.01:
-            print(f'❌ Objective weights must sum to 1.0, got {weight_sum}')
+            tprint(f'❌ Objective weights must sum to 1.0, got {weight_sum}')
             return False
         if not config.regime_constraints:
-            print('❌ No regime constraints specified')
+            tprint('❌ No regime constraints specified')
             return False
         for regime_name, constraints in config.regime_constraints.items():
             if constraints.tp_multiplier_range[0] >= constraints.tp_multiplier_range[1]:
-                print(f'❌ Invalid TP multiplier range for {regime_name}')
+                tprint(f'❌ Invalid TP multiplier range for {regime_name}')
                 return False
             if constraints.sl_multiplier_range[0] >= constraints.sl_multiplier_range[1]:
-                print(f'❌ Invalid SL multiplier range for {regime_name}')
+                tprint(f'❌ Invalid SL multiplier range for {regime_name}')
                 return False
             if constraints.position_size_range[0] >= constraints.position_size_range[1]:
-                print(f'❌ Invalid position size range for {regime_name}')
+                tprint(f'❌ Invalid position size range for {regime_name}')
                 return False
         if config.n_trials_per_regime < 10:
-            print('❌ n_trials_per_regime must be at least 10')
+            tprint('❌ n_trials_per_regime must be at least 10')
             return False
         if config.cv_folds < 2:
-            print('❌ cv_folds must be at least 2')
+            tprint('❌ cv_folds must be at least 2')
             return False
         if config.min_sample_size < 10:
-            print('❌ min_sample_size must be at least 10')
+            tprint('❌ min_sample_size must be at least 10')
             return False
-        print('✅ Regime-specific optimization configuration is valid')
+        tprint('✅ Regime-specific optimization configuration is valid')
         return True
     except Exception as e:
-        print(f'❌ Configuration validation error: {e}')
+        tprint(f'❌ Configuration validation error: {e}')
         return False

@@ -21,7 +21,7 @@ import joblib
 from pathlib import Path
 
 # M1 Optimization imports
-from ..hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
+from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
 from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
 
 # Common utilities
@@ -29,7 +29,7 @@ from src.utils.common_operations import (
     safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
     safe_mean, safe_std, safe_float, safe_int, get_current_datetime,
     safe_append, safe_extend, safe_dict_get, safe_lower, safe_upper,
-    format_datetime, validate_file_path, get_file_size, check_disk_space
+    format_datetime, validate_file_path, get_file_size
 )
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
@@ -38,13 +38,11 @@ from src.utils.math_validation import (
 )
 from src.utils.parquet_utils import get_parquet_utils, ParquetUtils
 from src.core.decorators import (
-    handles_errors, validates, traced, log_execution_time, 
-    timeout, error_boundary, compose, validate_data_quality, 
-    monitor_step_execution, ensure_data_integrity, validate_pipeline_step
+    handles_errors, validates, traced, log_execution_time,
+    timeout, error_boundary, compose
 )
 from src.core.errors import (
-    ValidationError, DataIntegrityError, FileOperationError,
-    MathValidationError, TimeoutError
+    ValidationError, DataIntegrityError, TimeoutError
 )
 
 logger = logging.getLogger(__name__)
@@ -219,8 +217,6 @@ class EnsembleManager:
         self.logger.info(f"📊 Max models: {config.max_models}, Min models: {config.min_models}")
         self.logger.info(f"💾 Output directory: {config.output_dir}")
     
-    @traced(span_name='add_model')
-    @log_execution_time
     async def add_model(
         self, 
         model_name: str, 
@@ -282,8 +278,6 @@ class EnsembleManager:
             self.logger.error(f"📊 Performance metrics: {performance_metrics}")
             return False
     
-    @traced(span_name='create_ensemble')
-    @log_execution_time
     async def create_ensemble(
         self, 
         X_train: pd.DataFrame, 
@@ -987,7 +981,6 @@ class EnsembleManager:
         return optimizations
     
     @traced(span_name='predict')
-    @log_execution_time
     async def predict(self, X: pd.DataFrame) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """Make predictions using ensemble."""
         

@@ -53,19 +53,14 @@ from src.utils.logger import system_logger
 # Initialize logger early to avoid usage before definition
 logger = system_logger.getChild('SRMLLearning')
 
-# Required utility modules - Comprehensive Integration
+# Required utility modules - Simplified imports
 from src.utils.common_operations import (
-    safe_json_load, safe_json_dump, safe_read_parquet, safe_to_parquet,
+    safe_json_load, safe_json_dump,
     ensure_directory, create_fallback_logger, create_fallback_decorator,
-    safe_mean, safe_std, safe_float, safe_int, safe_append, safe_extend,
-    safe_dict_get, safe_dict_items, safe_lower, safe_upper, safe_join,
     get_current_datetime, format_datetime, create_empty_dataframe,
-    safe_fillna, safe_rolling, safe_copy, safe_deepcopy, safe_sleep,
-    safe_gather, create_async_task, get_logger, setup_basic_logging,
-    safe_exception_handler, suggest_float_uniform, suggest_int_uniform,
-    validate_dataframe, validate_numeric_range, optimize_dataframe_dtypes,
-    timed_operation, format_bytes, chunked_iterable, parallel_map,
-    safe_log_metric, safe_log_params, safe_log_artifact, get_common_operations_health_status
+    safe_fillna, get_logger, setup_basic_logging,
+    validate_dataframe, optimize_dataframe_dtypes,
+    safe_log_metric, safe_log_params, safe_log_artifact
 )
 
 # Core decorators and errors

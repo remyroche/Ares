@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Test Script for Enhanced Monitoring System
 
@@ -87,33 +89,33 @@ class TestEnhancedMonitoring:
     
     async def test_initialization(self):
         """Test system initialization."""
-        print("🧪 Testing system initialization...")
+        tprint("🧪 Testing system initialization...")
         
         try:
             # Initialize orchestrator
             self.orchestrator = EnhancedMonitoringOrchestrator(self.config)
             assert self.orchestrator is not None
-            print("✅ Orchestrator initialized")
+            tprint("✅ Orchestrator initialized")
             
             # Initialize context capture
             self.context_capture = TradeDecisionContextCapture(self.config)
             assert self.context_capture is not None
-            print("✅ Context capture initialized")
+            tprint("✅ Context capture initialized")
             
             # Initialize explainability integrator
             self.explainability_integrator = ExplainabilityIntegrator(self.config)
             assert self.explainability_integrator is not None
-            print("✅ Explainability integrator initialized")
+            tprint("✅ Explainability integrator initialized")
             
             return True
             
         except Exception as e:
-            print(f"❌ Initialization failed: {e}")
+            tprint(f"❌ Initialization failed: {e}")
             return False
     
     async def test_context_capture(self):
         """Test trade decision context capture."""
-        print("🧪 Testing context capture...")
+        tprint("🧪 Testing context capture...")
         
         try:
             # Create mock market data
@@ -145,17 +147,17 @@ class TestEnhancedMonitoring:
             assert context.exchange == "test_exchange"
             assert context.symbol == "TESTUSDT"
             assert context.current_price == 104.0
-            print("✅ Context capture successful")
+            tprint("✅ Context capture successful")
             
             return True
             
         except Exception as e:
-            print(f"❌ Context capture failed: {e}")
+            tprint(f"❌ Context capture failed: {e}")
             return False
     
     async def test_decision_recording(self):
         """Test comprehensive decision recording."""
-        print("🧪 Testing decision recording...")
+        tprint("🧪 Testing decision recording...")
         
         try:
             # Create test data
@@ -245,33 +247,33 @@ class TestEnhancedMonitoring:
             assert decision.action == "buy"
             assert decision.position_size == 0.1
             assert len(decision.individual_model_decisions) == 2
-            print("✅ Decision recording successful")
+            tprint("✅ Decision recording successful")
             
             return True
             
         except Exception as e:
-            print(f"❌ Decision recording failed: {e}")
+            tprint(f"❌ Decision recording failed: {e}")
             return False
     
     async def test_export_functionality(self):
         """Test export functionality."""
-        print("🧪 Testing export functionality...")
+        tprint("🧪 Testing export functionality...")
         
         try:
             # Test daily ongoing CSV export
             daily_success = await self.orchestrator.export_daily_ongoing_csv()
             assert daily_success
-            print("✅ Daily ongoing CSV export successful")
+            tprint("✅ Daily ongoing CSV export successful")
             
             # Test monthly report export
             monthly_success = await self.orchestrator.export_monthly_report()
             assert monthly_success
-            print("✅ Monthly report export successful")
+            tprint("✅ Monthly report export successful")
             
             # Test force export all
             export_success = await self.orchestrator.force_export_all()
             assert export_success
-            print("✅ Force export all successful")
+            tprint("✅ Force export all successful")
             
             # Check if files were created
             export_dir = Path(self.config["enhanced_monitoring"]["export_directory"])
@@ -280,22 +282,22 @@ class TestEnhancedMonitoring:
             # Check for ongoing CSV
             ongoing_csv = export_dir / "ongoing_daily_metrics.csv"
             if ongoing_csv.exists():
-                print("✅ Ongoing daily metrics CSV created")
+                tprint("✅ Ongoing daily metrics CSV created")
             
             # Check for monthly report directory
             monthly_dirs = list(export_dir.glob("monthly_reports_*"))
             if monthly_dirs:
-                print("✅ Monthly report directory created")
+                tprint("✅ Monthly report directory created")
             
             return True
             
         except Exception as e:
-            print(f"❌ Export functionality failed: {e}")
+            tprint(f"❌ Export functionality failed: {e}")
             return False
     
     async def test_statistics(self):
         """Test statistics functionality."""
-        print("🧪 Testing statistics...")
+        tprint("🧪 Testing statistics...")
         
         try:
             stats = self.orchestrator.get_monitoring_stats()
@@ -303,49 +305,49 @@ class TestEnhancedMonitoring:
             assert "orchestrator_stats" in stats
             assert "enhanced_ml_monitor_stats" in stats
             
-            print(f"✅ Statistics retrieved: {len(stats)} categories")
+            tprint(f"✅ Statistics retrieved: {len(stats)} categories")
             
             # Test context capture stats
             context_stats = self.context_capture.get_capture_stats()
             assert context_stats is not None
-            print(f"✅ Context capture stats: {context_stats['total_contexts_captured']} contexts")
+            tprint(f"✅ Context capture stats: {context_stats['total_contexts_captured']} contexts")
             
             # Test explainability stats
             explainability_stats = self.explainability_integrator.get_explanation_stats()
             assert explainability_stats is not None
-            print(f"✅ Explainability stats: {len(explainability_stats)} metrics")
+            tprint(f"✅ Explainability stats: {len(explainability_stats)} metrics")
             
             return True
             
         except Exception as e:
-            print(f"❌ Statistics test failed: {e}")
+            tprint(f"❌ Statistics test failed: {e}")
             return False
     
     async def test_cleanup(self):
         """Test cleanup functionality."""
-        print("🧪 Testing cleanup...")
+        tprint("🧪 Testing cleanup...")
         
         try:
             # Test cleanup
             await self.orchestrator._cleanup_old_data()
-            print("✅ Cleanup successful")
+            tprint("✅ Cleanup successful")
             
             return True
             
         except Exception as e:
-            print(f"❌ Cleanup test failed: {e}")
+            tprint(f"❌ Cleanup test failed: {e}")
             return False
     
     def teardown(self):
         """Cleanup test environment."""
         if self.temp_dir and self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
-            print("🧹 Test environment cleaned up")
+            tprint("🧹 Test environment cleaned up")
     
     async def run_all_tests(self):
         """Run all tests."""
-        print("🚀 Starting Enhanced Monitoring System Tests")
-        print("=" * 50)
+        tprint("🚀 Starting Enhanced Monitoring System Tests")
+        tprint("=" * 50)
         
         self.setup()
         
@@ -363,25 +365,25 @@ class TestEnhancedMonitoring:
             total = len(tests)
             
             for test_name, test_func in tests:
-                print(f"\n📋 Running {test_name} test...")
+                tprint(f"\n📋 Running {test_name} test...")
                 try:
                     success = await test_func()
                     if success:
                         passed += 1
-                        print(f"✅ {test_name} test passed")
+                        tprint(f"✅ {test_name} test passed")
                     else:
-                        print(f"❌ {test_name} test failed")
+                        tprint(f"❌ {test_name} test failed")
                 except Exception as e:
-                    print(f"❌ {test_name} test failed with exception: {e}")
+                    tprint(f"❌ {test_name} test failed with exception: {e}")
             
-            print("\n" + "=" * 50)
-            print(f"📊 Test Results: {passed}/{total} tests passed")
+            tprint("\n" + "=" * 50)
+            tprint(f"📊 Test Results: {passed}/{total} tests passed")
             
             if passed == total:
-                print("🎉 All tests passed! Enhanced monitoring system is working correctly.")
+                tprint("🎉 All tests passed! Enhanced monitoring system is working correctly.")
                 return True
             else:
-                print("⚠️ Some tests failed. Please check the implementation.")
+                tprint("⚠️ Some tests failed. Please check the implementation.")
                 return False
                 
         finally:
@@ -394,9 +396,9 @@ async def main():
     success = await tester.run_all_tests()
     
     if success:
-        print("\n✅ Enhanced Monitoring System is ready for use!")
+        tprint("\n✅ Enhanced Monitoring System is ready for use!")
     else:
-        print("\n❌ Enhanced Monitoring System has issues that need to be addressed.")
+        tprint("\n❌ Enhanced Monitoring System has issues that need to be addressed.")
         return 1
     
     return 0

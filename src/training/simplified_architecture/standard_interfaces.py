@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import pandas as pd
 import numpy as np
@@ -333,15 +335,15 @@ async def example_usage() -> None:
     labeling_step = StepFactory.create_step(labeling_config)
     data_result = await data_step.execute(source='data/raw/prices.parquet')
     if not data_result.is_success:
-        print(f'Data loading failed: {data_result.error}')
+        tprint(f'Data loading failed: {data_result.error}')
         return
     label_result = await labeling_step.execute(data = data_result.data)
     if not label_result.is_success:
-        print(f'Labeling failed: {label_result.error}')
+        tprint(f'Labeling failed: {label_result.error}')
         return
-    print(f'Pipeline completed successfully!')
-    print(f'Data metrics: {data_result.metrics}')
-    print(f'Label metrics: {label_result.metrics}')
+    tprint(f'Pipeline completed successfully!')
+    tprint(f'Data metrics: {data_result.metrics}')
+    tprint(f'Label metrics: {label_result.metrics}')
     await data_step.cleanup()
     await labeling_step.cleanup()
 if __name__ == '__main__':

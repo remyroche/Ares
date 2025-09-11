@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Any, Optional
 """
 Type Checker - Comprehensive Python type checking and analysis using mypy and advanced type inference.
@@ -388,7 +390,7 @@ strict_equality = True
             Dictionary containing validation results
         """
         python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
-        print(f"Validating types for {len(python_files)} Python files...")
+        tprint(f"Validating types for {len(python_files)} Python files...")
 
         # Clear previous results
         self.type_issues.clear()

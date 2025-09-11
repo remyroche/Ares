@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from ....core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
@@ -30,41 +32,41 @@ class ModelPersistenceStep(BaseStep):
             config: Configuration dictionary
         """
         # 🖨️ THOROUGH PRINTING: Model Persistence Step Initialization
-        print("🔧 INITIALIZING MODEL PERSISTENCE STEP")
-        print(f"   📋 Configuration: {config}")
+        tprint("🔧 INITIALIZING MODEL PERSISTENCE STEP")
+        tprint(f"   📋 Configuration: {config}")
         
         super().__init__(config, '21', 'model_persistence')
-        print("   ✅ Base step initialized")
+        tprint("   ✅ Base step initialized")
     @log_step_functions
 
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
-        print("   🔧 Initializing step-specific components...")
+        tprint("   🔧 Initializing step-specific components...")
         
         self.model_serializer = ModelSerializer(self.config)
-        print("   ✅ Model serializer initialized")
+        tprint("   ✅ Model serializer initialized")
         
         self.version_manager = VersionManager(self.config)
-        print("   ✅ Version manager initialized")
+        tprint("   ✅ Version manager initialized")
         
         self.metadata_tracker = MetadataTracker(self.config)
-        print("   ✅ Metadata tracker initialized")
+        tprint("   ✅ Metadata tracker initialized")
         
         self.model_registry = ModelRegistry(self.config)
-        print("   ✅ Model registry initialized")
+        tprint("   ✅ Model registry initialized")
         
         self.persistence_config = self._initialize_persistence_config()
-        print("   ✅ Persistence configuration initialized")
+        tprint("   ✅ Persistence configuration initialized")
         
         self.saved_artifacts: Dict[str, str] = {}
         self.artifact_metadata: Dict[str, Any] = {}
-        print("   ✅ Artifact tracking initialized")
-        print("   🎉 Model persistence step components initialized")
+        tprint("   ✅ Artifact tracking initialized")
+        tprint("   🎉 Model persistence step components initialized")
     @log_all_calls
 
     def _initialize_persistence_config(self) -> Dict[str, Any]:
         """Initialize persistence configuration."""
-        print("   📋 Initializing persistence configuration...")
+        tprint("   📋 Initializing persistence configuration...")
         
         config = {
             'base_dir': self.config.get('model_storage_dir', 'models'),
@@ -83,13 +85,13 @@ class ModelPersistenceStep(BaseStep):
             'max_backups': self.config.get('max_backups', 5)
         }
         
-        print(f"   📁 Base directory: {config['base_dir']}")
-        print(f"   🔢 Versioning enabled: {config['enable_versioning']}")
-        print(f"   📦 Compression enabled: {config['compression']}")
-        print(f"   💾 Save formats: {config['save_formats']}")
-        print(f"   📊 Track lineage: {config['track_lineage']}")
-        print(f"   🏪 Use model registry: {config['use_model_registry']}")
-        print(f"   🔄 MLflow enabled: {config['enable_mlflow']}")
+        tprint(f"   📁 Base directory: {config['base_dir']}")
+        tprint(f"   🔢 Versioning enabled: {config['enable_versioning']}")
+        tprint(f"   📦 Compression enabled: {config['compression']}")
+        tprint(f"   💾 Save formats: {config['save_formats']}")
+        tprint(f"   📊 Track lineage: {config['track_lineage']}")
+        tprint(f"   🏪 Use model registry: {config['use_model_registry']}")
+        tprint(f"   🔄 MLflow enabled: {config['enable_mlflow']}")
         
         return config
     @log_step_functions

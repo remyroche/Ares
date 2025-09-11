@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from .logger import system_logger
 from src.utils.decorators import handles_errors
@@ -18,12 +20,11 @@ from typing import Any
 from .logger import system_logger
 
 from src.utils.warning_symbols import (
-import logging
-import time
-
     error,
     invalid,
 )
+import logging
+import time
 
 class StateManager:
     """Enhanced state manager with comprehensive error handling and type safety."""
@@ -237,7 +238,7 @@ class StateManager:
 
     def print_message(self, message: str) -> None:
         """Print message to console."""
-        print(message)
+        tprint(message)
 
 # Global state manager instance
 state_manager: StateManager | None = None

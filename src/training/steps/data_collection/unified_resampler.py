@@ -65,7 +65,7 @@ class UnifiedResampler:
             'start_time': None
         }
         
-    @handles_errors(fallback=None, context="resample_to_timeframe")
+    @handles_errors(context="resample_to_timeframe")
     @log_all_calls
     def resample_to_timeframe(
         self, 
@@ -146,7 +146,7 @@ class UnifiedResampler:
             self.resample_stats['failed_resamples'] += 1
             return None
     
-    @handles_errors(fallback={}, context="resample_all_timeframes")
+    @handles_errors(context="resample_all_timeframes")
     @log_all_calls
     async def resample_all_timeframes(
         self, 
@@ -221,7 +221,7 @@ class UnifiedResampler:
             self.logger.exception(f"❌ Error in resample_all_timeframes: {e}")
             return results
     
-    @handles_errors(fallback=None, context="create_partitioned_data")
+    @handles_errors(context="create_partitioned_data")
     @log_all_calls
     async def create_partitioned_data(
         self, 
@@ -334,7 +334,7 @@ class UnifiedResampler:
             self.logger.exception(f"❌ Error in resampling operation: {e}")
             return None
     
-    @handles_errors(fallback=None, context="load_source_data")
+    @handles_errors(context="load_source_data")
     async def _load_source_data(
         self, 
         symbol: str, 
@@ -390,7 +390,7 @@ class UnifiedResampler:
             self.logger.exception(f"❌ Error loading source data: {e}")
             return None
     
-    @handles_errors(fallback=False, context="save_resampled_data")
+    @handles_errors(context="save_resampled_data")
     async def _save_resampled_data(
         self, 
         df: pd.DataFrame, 
@@ -444,19 +444,19 @@ class UnifiedResampler:
         }
 
 # Convenience functions for backward compatibility
-@handles_errors(fallback=None)
+@handles_errors()
 def resample_to_timeframe(df: pd.DataFrame, timeframe: str, symbol: str, exchange: str) -> Optional[pd.DataFrame]:
     """Convenience function for resampling to a specific timeframe."""
     resampler = UnifiedResampler()
     return resampler.resample_to_timeframe(df, timeframe, symbol, exchange)
 
-@handles_errors(fallback={})
+@handles_errors()
 async def resample_all_timeframes(symbol: str, exchange: str, **kwargs) -> Dict[str, Any]:
     """Convenience function for resampling to all timeframes."""
     resampler = UnifiedResampler()
     return await resampler.resample_all_timeframes(symbol, exchange, **kwargs)
 
-@handles_errors(fallback=None)
+@handles_errors()
 async def create_partitioned_data(df: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[Dict[str, Any]]:
     """Convenience function for creating partitioned data."""
     resampler = UnifiedResampler()

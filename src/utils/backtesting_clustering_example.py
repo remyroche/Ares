@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Example demonstrating backtesting-enhanced clustering for SR levels.
 
@@ -96,14 +98,14 @@ def create_sample_sr_levels() -> list:
 
 def demonstrate_backtesting_engine():
     """Demonstrate the backtesting engine."""
-    print("🔬 Demonstrating SR Backtesting Engine")
-    print("=" * 50)
+    tprint("🔬 Demonstrating SR Backtesting Engine")
+    tprint("=" * 50)
     
     # Create sample data
     data = create_sample_data(30)
     levels = create_sample_sr_levels()
     
-    print(f"Created {len(data)} data points and {len(levels)} SR levels")
+    tprint(f"Created {len(data)} data points and {len(levels)} SR levels")
     
     # Initialize backtesting engine
     config = BacktestConfig(
@@ -133,47 +135,47 @@ def demonstrate_backtesting_engine():
         sr_levels.append(sr_level)
     
     # Backtest levels
-    print("\n📊 Backtesting SR levels...")
+    tprint("\n📊 Backtesting SR levels...")
     results = engine.backtest_multiple_levels(sr_levels, data)
     
     # Display results
-    print(f"\n📈 Backtesting Results:")
-    print(f"Total levels tested: {len(results)}")
-    print(f"Average quality score: {np.mean([r.quality_score for r in results]):.3f}")
-    print(f"Average success rate: {np.mean([r.success_rate for r in results]):.3f}")
-    print(f"Average bounce strength: {np.mean([r.avg_bounce_strength for r in results]):.3f}")
+    tprint(f"\n📈 Backtesting Results:")
+    tprint(f"Total levels tested: {len(results)}")
+    tprint(f"Average quality score: {np.mean([r.quality_score for r in results]):.3f}")
+    tprint(f"Average success rate: {np.mean([r.success_rate for r in results]):.3f}")
+    tprint(f"Average bounce strength: {np.mean([r.avg_bounce_strength for r in results]):.3f}")
     
     # Show individual results
-    print(f"\n📋 Individual Level Results:")
+    tprint(f"\n📋 Individual Level Results:")
     for i, result in enumerate(results[:5]):  # Show first 5
-        print(f"Level {i+1}: ${result.level.price:.2f} ({result.level.level_type})")
-        print(f"  Quality: {result.quality_score:.3f}")
-        print(f"  Success Rate: {result.success_rate:.3f}")
-        print(f"  Touches: {result.total_touches}")
-        print(f"  Bounce Strength: {result.avg_bounce_strength:.3f}")
-        print()
+        tprint(f"Level {i+1}: ${result.level.price:.2f} ({result.level.level_type})")
+        tprint(f"  Quality: {result.quality_score:.3f}")
+        tprint(f"  Success Rate: {result.success_rate:.3f}")
+        tprint(f"  Touches: {result.total_touches}")
+        tprint(f"  Bounce Strength: {result.avg_bounce_strength:.3f}")
+        tprint()
     
     # Learn quality rules
-    print("🧠 Learning quality rules...")
+    tprint("🧠 Learning quality rules...")
     rules = engine.learn_quality_rules(results)
     
     if rules:
-        print(f"✅ Learned rules with {len(rules.get('discriminative_features', {}))} key features")
-        print(f"Quality threshold: {rules.get('quality_threshold', 0.0):.3f}")
+        tprint(f"✅ Learned rules with {len(rules.get('discriminative_features', {}))} key features")
+        tprint(f"Quality threshold: {rules.get('quality_threshold', 0.0):.3f}")
         
         # Show discriminative features
         features = rules.get('discriminative_features', {})
         if features:
-            print(f"\n🔍 Key discriminative features:")
+            tprint(f"\n🔍 Key discriminative features:")
             for feature, info in features.items():
-                print(f"  {feature}: discriminative power = {info['discriminative_power']:.3f}")
+                tprint(f"  {feature}: discriminative power = {info['discriminative_power']:.3f}")
     
     return engine, results
 
 def demonstrate_enhanced_clustering():
     """Demonstrate backtesting-enhanced clustering."""
-    print("\n🔗 Demonstrating Backtesting-Enhanced Clustering")
-    print("=" * 50)
+    tprint("\n🔗 Demonstrating Backtesting-Enhanced Clustering")
+    tprint("=" * 50)
     
     # Create sample data
     data = create_sample_data(30)
@@ -194,48 +196,48 @@ def demonstrate_enhanced_clustering():
     prices = [level['price'] for level in levels]
     price_range = (min(prices), max(prices))
     
-    print(f"Clustering {len(levels)} levels in price range ${price_range[0]:.2f} - ${price_range[1]:.2f}")
+    tprint(f"Clustering {len(levels)} levels in price range ${price_range[0]:.2f} - ${price_range[1]:.2f}")
     
     # Perform clustering
     result = clustering.cluster_with_backtesting(levels, data, price_range)
     
     # Display results
-    print(f"\n📊 Clustering Results:")
-    print(f"Algorithm used: {result.algorithm_used}")
-    print(f"Quality score: {result.quality_score:.3f}")
-    print(f"Total clusters: {len(result.clusters)}")
-    print(f"Quality enhanced: {getattr(result, 'quality_enhanced', False)}")
+    tprint(f"\n📊 Clustering Results:")
+    tprint(f"Algorithm used: {result.algorithm_used}")
+    tprint(f"Quality score: {result.quality_score:.3f}")
+    tprint(f"Total clusters: {len(result.clusters)}")
+    tprint(f"Quality enhanced: {getattr(result, 'quality_enhanced', False)}")
     
     # Show cluster details
-    print(f"\n🔍 Cluster Details:")
+    tprint(f"\n🔍 Cluster Details:")
     for i, cluster in enumerate(result.clusters):
         if len(cluster) > 1:
             cluster_levels = [levels[j] for j in cluster]
             cluster_prices = [level['price'] for level in cluster_levels]
             cluster_types = [level['type'] for level in cluster_levels]
             
-            print(f"Cluster {i+1}: {len(cluster)} levels")
-            print(f"  Prices: {[f'${p:.2f}' for p in cluster_prices]}")
-            print(f"  Types: {cluster_types}")
-            print(f"  Price spread: ${max(cluster_prices) - min(cluster_prices):.2f}")
-            print()
+            tprint(f"Cluster {i+1}: {len(cluster)} levels")
+            tprint(f"  Prices: {[f'${p:.2f}' for p in cluster_prices]}")
+            tprint(f"  Types: {cluster_types}")
+            tprint(f"  Price spread: ${max(cluster_prices) - min(cluster_prices):.2f}")
+            tprint()
         else:
             level = levels[cluster[0]]
-            print(f"Single level: ${level['price']:.2f} ({level['type']})")
+            tprint(f"Single level: ${level['price']:.2f} ({level['type']})")
     
     # Show learning summary
     learning_summary = clustering.get_learning_summary()
-    print(f"\n🧠 Learning Summary:")
-    print(f"Levels processed: {learning_summary['levels_processed']}")
-    print(f"Rules learned: {learning_summary['rules_learned']}")
-    print(f"Learned features: {learning_summary['learned_features']}")
+    tprint(f"\n🧠 Learning Summary:")
+    tprint(f"Levels processed: {learning_summary['levels_processed']}")
+    tprint(f"Rules learned: {learning_summary['rules_learned']}")
+    tprint(f"Learned features: {learning_summary['learned_features']}")
     
     return clustering, result
 
 def main():
     """Main demonstration function."""
-    print("🚀 SR Backtesting-Enhanced Clustering Demonstration")
-    print("=" * 60)
+    tprint("🚀 SR Backtesting-Enhanced Clustering Demonstration")
+    tprint("=" * 60)
     
     try:
         # Demonstrate backtesting engine
@@ -244,15 +246,15 @@ def main():
         # Demonstrate enhanced clustering
         clustering, clustering_result = demonstrate_enhanced_clustering()
         
-        print("\n✅ Demonstration completed successfully!")
-        print("\nKey Benefits:")
-        print("• Data-driven quality assessment through backtesting")
-        print("• Adaptive clustering based on learned quality rules")
-        print("• Improved SR level selection and grouping")
-        print("• Continuous learning from historical performance")
+        tprint("\n✅ Demonstration completed successfully!")
+        tprint("\nKey Benefits:")
+        tprint("• Data-driven quality assessment through backtesting")
+        tprint("• Adaptive clustering based on learned quality rules")
+        tprint("• Improved SR level selection and grouping")
+        tprint("• Continuous learning from historical performance")
         
     except Exception as e:
-        print(f"❌ Demonstration failed: {e}")
+        tprint(f"❌ Demonstration failed: {e}")
         import traceback
         traceback.print_exc()
 

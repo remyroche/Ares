@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Comprehensive Code Quality Review Script
 
@@ -669,13 +671,13 @@ def main():
     # Generate report
     output_file = reviewer.generate_report(args.output)
 
-    print("\nCode quality review completed!")
-    print(f"Report saved to: {output_file}")
-    print(f"Summary saved to: {output_file.replace('.json', '_summary.txt')}")
+    tprint("\nCode quality review completed!")
+    tprint(f"Report saved to: {output_file}")
+    tprint(f"Summary saved to: {output_file.replace('.json', '_summary.txt')}")
 
     # Print summary to console
     with open(output_file.replace(".json", "_summary.txt")) as f:
-        print(f.read())
+        tprint(f.read())
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from ...utils.logger import system_logger
 from src.core.decorators import handles_errors
@@ -1502,5 +1504,5 @@ async def setup_dynamic_weighter(
         return None
 
     except Exception as e:
-        print(f"Error setting up dynamic weighter: {e}")
+        tprint(f"Error setting up dynamic weighter: {e}")
         return None

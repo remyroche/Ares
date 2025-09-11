@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Centralized logging configuration with Standardized Import Management.
 
@@ -202,11 +204,11 @@ def create_timestamped_print(include_relative=True, include_session=True):
                 timestamped_args = (timestamp_prefix,)
             
             # Call the original print function
-            return builtins.print(*timestamped_args, **kwargs)
+            return builtins.tprint(*timestamped_args, **kwargs)
             
         except Exception:
             # Fallback to original print if anything goes wrong
-            return builtins.print(*args, **kwargs)
+            return builtins.tprint(*args, **kwargs)
     
     return timestamped_print
 
@@ -242,7 +244,7 @@ def enable_timestamped_prints(include_relative=True, include_session=True):
         builtins.print = create_timestamped_print(include_relative, include_session)
         return True
     except Exception as e:
-        print(f"Failed to enable timestamped prints: {e}")
+        tprint(f"Failed to enable timestamped prints: {e}")
         return False
 
 def disable_timestamped_prints():
@@ -253,7 +255,7 @@ def disable_timestamped_prints():
             delattr(builtins, '_original_print')
             return True
     except Exception as e:
-        print(f"Failed to disable timestamped prints: {e}")
+        tprint(f"Failed to disable timestamped prints: {e}")
     return False
 def _get_correlation_filter():
     """Get the correlation filter, initializing dependencies if needed."""
@@ -276,19 +278,19 @@ def _get_warning_symbols():
     _lazy_initialize_dependencies()
     if warning_symbols is None:
         def critical(msg: Any) -> None:
-            return print(f'CRITICAL: {msg}')
+            return tprint(f'CRITICAL: {msg}')
 
         def error(msg: Any) -> None:
-            return print(f'ERROR: {msg}')
+            return tprint(f'ERROR: {msg}')
 
         def info(msg: Any) -> None:
-            return print(f'INFO: {msg}')
+            return tprint(f'INFO: {msg}')
 
         def failed(msg: Any) -> None:
-            return print(f'FAILED: {msg}')
+            return tprint(f'FAILED: {msg}')
 
         def warning(msg: Any) -> None:
-            return print(f'WARNING: {msg}')
+            return tprint(f'WARNING: {msg}')
         
         return type('WarningSymbols', (), {
             'critical': critical,
@@ -389,15 +391,15 @@ class EnhancedLogger:
         try:
             self._load_logger_configuration()
             if not self._validate_configuration():
-                print('Invalid configuration for logger')
+                tprint('Invalid configuration for logger')
                 return False
             if not self._setup_logger():
-                print('Failed to setup logger')
+                tprint('Failed to setup logger')
                 return False
             self.logger.info('✅ Enhanced Logger initialization completed successfully')
             return True
         except Exception as e:
-            print(failed(f'Enhanced Logger initialization failed: {e}'))
+            tprint(failed(f'Enhanced Logger initialization failed: {e}'))
             return False
 
     def _load_logger_configuration(self) -> None:
@@ -422,9 +424,9 @@ class EnhancedLogger:
             self.enable_json = bool(self.log_config.get('json', True))
             self.enable_correlation = bool(self.log_config.get('correlation', True))
             self.enable_warning_symbols = bool(self.log_config.get('warning_symbols', True))
-            print('Logger configuration loaded successfully')
+            tprint('Logger configuration loaded successfully')
         except Exception as e:
-            print(f'Error loading logger configuration: {e}')
+            tprint(f'Error loading logger configuration: {e}')
 
     def _validate_configuration(self) -> bool:
         """
@@ -436,21 +438,21 @@ class EnhancedLogger:
         try:
             valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
             if self.log_level not in valid_levels:
-                print(f'Invalid log level: {self.log_level}')
+                tprint(f'Invalid log level: {self.log_level}')
                 return False
             if not self.log_format or '%' not in self.log_format:
-                print('Invalid log format')
+                tprint('Invalid log format')
                 return False
             if self.max_file_size <= 0:
-                print('Invalid max file size')
+                tprint('Invalid max file size')
                 return False
             if self.backup_count < 0:
-                print('Invalid backup count')
+                tprint('Invalid backup count')
                 return False
-            print('Configuration validation successful')
+            tprint('Configuration validation successful')
             return True
         except Exception as e:
-            print(f'Error validating configuration: {e}')
+            tprint(f'Error validating configuration: {e}')
             return False
 
     def _setup_logger(self) -> bool:
@@ -518,10 +520,10 @@ class EnhancedLogger:
                 logging.getLogger('hmmlearn.hmm').setLevel(logging.ERROR)
             except Exception:
                 pass
-            print('Logger setup completed successfully')
+            tprint('Logger setup completed successfully')
             return True
         except Exception as e:
-            print(f'Error setting up logger: {e}')
+            tprint(f'Error setting up logger: {e}')
             return False
 
     def get_logger(self, name: str) -> logging.Logger:
@@ -640,7 +642,7 @@ class EnhancedLogger:
             self.logger.setLevel(getattr(logging, level))
             return True
         except Exception as e:
-            print(f'Error setting log level: {e}')
+            tprint(f'Error setting log level: {e}')
             return False
 
     def get_log_status(self) -> dict[str, Any]:
@@ -654,16 +656,16 @@ class EnhancedLogger:
 
     async def stop(self) -> None:
         """Stop the enhanced logger."""
-        print(error('Stopping Enhanced Logger...'))
+        tprint(error('Stopping Enhanced Logger...'))
         try:
             if self.logger:
                 for handler in self.logger.handlers[:]:
                     handler.close()
                     self.logger.removeHandler(handler)
                 self.logger = None
-            print('✅ Enhanced Logger stopped successfully')
+            tprint('✅ Enhanced Logger stopped successfully')
         except Exception as e:
-            print(f'Error stopping enhanced logger: {e}')
+            tprint(f'Error stopping enhanced logger: {e}')
 system_logger: logging.Logger | None = None
 
 def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None:
@@ -705,7 +707,7 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
             # enable_timestamped_prints(include_relative=True, include_session=True)
             return system_logger
     except Exception as e:
-        print(f'Error in logger initialization: {e}')
+        tprint(f'Error in logger initialization: {e}')
         system_logger = logging.getLogger('System')
         system_logger.setLevel(logging.INFO)
         _configure_tensorflow_logging_suppression(system_logger)
@@ -713,7 +715,7 @@ def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None
         # enable_timestamped_prints(include_relative=True, include_session=True)
         return system_logger
     except Exception as e:
-        print(f'Error setting up logging: {e}')
+        tprint(f'Error setting up logging: {e}')
         system_logger = logging.getLogger('System')
         system_logger.setLevel(logging.INFO)
         _configure_tensorflow_logging_suppression(system_logger)
@@ -756,12 +758,12 @@ def timestamped_print(*args, **kwargs):
         # Format the message with timestamp
         if args:
             message = ' '.join(str(arg) for arg in args)
-            print(f"[{timestamp}] {message}", **kwargs)
+            tprint(f"[{timestamp}] {message}", **kwargs)
         else:
-            print(**kwargs)
+            tprint(**kwargs)
     except Exception:
         # Fallback to regular print
-        print(*args, **kwargs)
+        tprint(*args, **kwargs)
 
 # Make it available as a module function
 import sys
@@ -772,9 +774,9 @@ def enable_timestamped_prints_after_numba():
     """Enable timestamped prints after numba is loaded to avoid conflicts."""
     try:
         enable_timestamped_prints(include_relative=True, include_session=True)
-        print("✅ Timestamped prints enabled after numba loading")
+        tprint("✅ Timestamped prints enabled after numba loading")
     except Exception as e:
-        print(f"⚠️ Failed to enable timestamped prints: {e}")
+        tprint(f"⚠️ Failed to enable timestamped prints: {e}")
 
 def ensure_logging_setup() -> logging.Logger | None:
     """

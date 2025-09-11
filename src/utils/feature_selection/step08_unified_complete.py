@@ -46,9 +46,9 @@ from src.utils.lookahead_bias_detector import (
 
 # Enhanced optimization imports
 try:
-    from src.utils.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
-    from src.utils.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-    from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
     from src.utils.vectorized_processing_core import OptimizedPipelineExecutor, PipelineStage, PipelineExecutionMode
     from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations, ErrorHandler
     from src.utils.enhanced_step_optimizations import IntelligentOptimizationSelector, OptimizationStrategy, WorkloadType, OptimizationProfile

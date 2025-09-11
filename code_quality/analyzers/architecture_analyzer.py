@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Architecture Analyzer - Code architecture analysis, coupling, cohesion, and design pattern detection.
 """
@@ -497,7 +499,7 @@ class ArchitectureAnalyzer:
             Dictionary containing analysis results
         """
         python_files = find_python_files(directory, self.config.exclude_directories)
-        print(f"Analyzing architecture for {len(python_files)} Python files...")
+        tprint(f"Analyzing architecture for {len(python_files)} Python files...")
 
         # Clear previous results
         self.architecture_issues.clear()
@@ -542,7 +544,7 @@ class ArchitectureAnalyzer:
                     successful_files += 1
                     
             except Exception as e:
-                print(f"Error analyzing {file_path}: {e}")
+                tprint(f"Error analyzing {file_path}: {e}")
                 continue
 
         # Calculate overall metrics

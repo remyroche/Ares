@@ -24,6 +24,7 @@ Built on existing utilities:
 
 import pandas as pd
 import numpy as np
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union, Set, Iterator
 from datetime import datetime, timedelta
 import logging
@@ -33,17 +34,17 @@ import warnings
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
 from ..common_utilities import safe_dataframe_operation
-from ..datetime_utils import get_current_datetime, format_datetime
+from ..datetime_utils import get_current_datetime, format_datetime  # type: ignore
 
 # Enhanced imports for new functionality
 try:
-    from ..m1_gpu_utils import M1GPUManager
+    from ..hardware.m1_gpu_utils import M1GPUManager
     GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from ..m1_memory_optimizer import M1MemoryOptimizer
+    from ..hardware.m1_memory_optimizer import M1MemoryOptimizer  # type: ignore
     MEMORY_OPTIMIZER_AVAILABLE = True
 except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False

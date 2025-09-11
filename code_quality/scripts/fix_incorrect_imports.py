@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Script to fix incorrectly placed imports that were added in the middle of functions.
 """
@@ -69,7 +71,7 @@ def find_incorrect_imports(file_path: str) -> List[Tuple[int, str]]:
                             incorrect_imports.append((i, stripped))
     
     except Exception as e:
-        print(f"Error analyzing {file_path}: {e}")
+        tprint(f"Error analyzing {file_path}: {e}")
     
     return incorrect_imports
 
@@ -86,7 +88,7 @@ def fix_incorrect_imports(file_path: str) -> bool:
         if not incorrect_imports:
             return False
         
-        print(f"Found {len(incorrect_imports)} incorrect imports in {file_path}")
+        tprint(f"Found {len(incorrect_imports)} incorrect imports in {file_path}")
         
         # Collect the imports to move and fix incomplete imports
         imports_to_move = []
@@ -196,7 +198,7 @@ def fix_incorrect_imports(file_path: str) -> bool:
         return True
         
     except Exception as e:
-        print(f"Error fixing {file_path}: {e}")
+        tprint(f"Error fixing {file_path}: {e}")
         return False
 
 
@@ -214,7 +216,7 @@ def main():
     project_root = Path(args.project_root)
     file_paths = list(project_root.glob(args.file_pattern))
     
-    print(f"Analyzing {len(file_paths)} Python files...")
+    tprint(f"Analyzing {len(file_paths)} Python files...")
     
     files_with_issues = []
     for file_path in file_paths:
@@ -222,24 +224,24 @@ def main():
         if incorrect_imports:
             files_with_issues.append((str(file_path), incorrect_imports))
     
-    print(f"\nFound {len(files_with_issues)} files with incorrect imports:")
+    tprint(f"\nFound {len(files_with_issues)} files with incorrect imports:")
     
     for file_path, imports in files_with_issues:
-        print(f"\n{file_path}:")
+        tprint(f"\n{file_path}:")
         for line_num, import_stmt in imports:
-            print(f"  Line {line_num + 1}: {import_stmt}")
+            tprint(f"  Line {line_num + 1}: {import_stmt}")
     
     if args.fix and files_with_issues:
-        print(f"\nFixing {len(files_with_issues)} files...")
+        tprint(f"\nFixing {len(files_with_issues)} files...")
         fixed = 0
         for file_path, _ in files_with_issues:
             if fix_incorrect_imports(file_path):
                 fixed += 1
-                print(f"✓ Fixed {file_path}")
+                tprint(f"✓ Fixed {file_path}")
         
-        print(f"\nFixed {fixed} files")
+        tprint(f"\nFixed {fixed} files")
     elif not args.fix:
-        print(f"\nRun with --fix to actually fix the files")
+        tprint(f"\nRun with --fix to actually fix the files")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Step04 Dependency Injection Container
 
@@ -388,7 +390,7 @@ class Step04UtilityProvider(UtilityProvider):
     def _init_m1_gpu_utils(self) -> None:
         """Initialize M1 GPU utilities."""
         try:
-            from src.utils.m1_gpu_utils import (
+            from src.utils.hardware.m1_gpu_utils import (
                 get_m1_gpu_manager, M1GPUManager, M1PerformanceOptimizer,
                 create_m1_optimized_config, initialize_m1_gpu, m1_tensor_multiply,
                 m1_batch_process, m1_monte_carlo_simulate
@@ -683,6 +685,6 @@ if __name__ == '__main__':
     
     with get_step04_utilities() as utils:
         summary = container.get_utility_summary()
-        print("Step04 Utility Summary:")
+        tprint("Step04 Utility Summary:")
         for utility_type, info in summary.items():
-            print(f"  {utility_type}: {info}")
+            tprint(f"  {utility_type}: {info}")

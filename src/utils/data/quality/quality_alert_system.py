@@ -1,5 +1,5 @@
 """
-from ..logger import system_logger
+from src.utils.logger import system_logger
 Quality Alert System for Data Quality Monitoring
 
 This module provides an alert system that can send notifications when data quality

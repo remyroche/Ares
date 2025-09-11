@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Comprehensive Syntax Validator
 
@@ -189,7 +191,7 @@ class ComprehensiveSyntaxValidator:
         python_files = list(search_path.glob(pattern))
         self.results["total_files"] = len(python_files)
         
-        print(f"🔍 Validating {len(python_files)} Python files...")
+        tprint(f"🔍 Validating {len(python_files)} Python files...")
         
         for file_path in python_files:
             result = self.validate_file(str(file_path))
@@ -221,11 +223,11 @@ class ComprehensiveSyntaxValidator:
     
     def print_summary(self):
         """Print a comprehensive summary of validation results."""
-        print("\n" + "="*80)
-        print("🔍 COMPREHENSIVE SYNTAX VALIDATION RESULTS")
-        print("="*80)
-        print(f"Total files analyzed: {self.results['total_files']}")
-        print()
+        tprint("\n" + "="*80)
+        tprint("🔍 COMPREHENSIVE SYNTAX VALIDATION RESULTS")
+        tprint("="*80)
+        tprint(f"Total files analyzed: {self.results['total_files']}")
+        tprint()
         
         # Print each category
         categories = [
@@ -241,8 +243,8 @@ class ComprehensiveSyntaxValidator:
         for category, title, description in categories:
             count = self.results["error_counts"][category]
             if count > 0:
-                print(f"{title}: {count} files")
-                print(f"  {description}")
+                tprint(f"{title}: {count} files")
+                tprint(f"  {description}")
                 
                 # Show first few examples
                 if category in self.results and self.results[category]:
@@ -252,22 +254,22 @@ class ComprehensiveSyntaxValidator:
                             file_path = example["file_path"]
                             if "error_message" in example and example["error_message"]:
                                 line_info = f" (line {example['line_number']})" if example.get('line_number') else ""
-                                print(f"    - {file_path}: {example['error_message']}{line_info}")
+                                tprint(f"    - {file_path}: {example['error_message']}{line_info}")
                             else:
-                                print(f"    - {file_path}")
-                print()
+                                tprint(f"    - {file_path}")
+                tprint()
         
         # Summary statistics
         total_errors = sum(self.results["error_counts"][cat] for cat in 
                           ["syntax_errors", "indentation_errors", "import_errors", "runtime_errors", 
                            "file_not_found", "permission_errors"])
         
-        print(f"📈 SUMMARY STATISTICS:")
-        print(f"  ✅ Valid files: {self.results['error_counts']['valid_files']} ({self.results['error_counts']['valid_files']/self.results['total_files']*100:.1f}%)")
-        print(f"  ❌ Files with issues: {total_errors} ({total_errors/self.results['total_files']*100:.1f}%)")
-        print(f"  🔴 Real syntax errors: {self.results['error_counts']['syntax_errors'] + self.results['error_counts']['indentation_errors']}")
-        print(f"  🟡 Import/dependency issues: {self.results['error_counts']['import_errors']}")
-        print(f"  🟣 Runtime issues: {self.results['error_counts']['runtime_errors']}")
+        tprint(f"📈 SUMMARY STATISTICS:")
+        tprint(f"  ✅ Valid files: {self.results['error_counts']['valid_files']} ({self.results['error_counts']['valid_files']/self.results['total_files']*100:.1f}%)")
+        tprint(f"  ❌ Files with issues: {total_errors} ({total_errors/self.results['total_files']*100:.1f}%)")
+        tprint(f"  🔴 Real syntax errors: {self.results['error_counts']['syntax_errors'] + self.results['error_counts']['indentation_errors']}")
+        tprint(f"  🟡 Import/dependency issues: {self.results['error_counts']['import_errors']}")
+        tprint(f"  🟣 Runtime issues: {self.results['error_counts']['runtime_errors']}")
     
     def save_results(self, output_file: str = None):
         """Save validation results to a JSON file."""
@@ -281,7 +283,7 @@ class ComprehensiveSyntaxValidator:
         with open(output_file, 'w') as f:
             json.dump(self.results, f, indent=2)
         
-        print(f"📄 Results saved to: {output_file}")
+        tprint(f"📄 Results saved to: {output_file}")
         return output_file
 
 def main():

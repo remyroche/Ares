@@ -6,9 +6,9 @@ This script automatically converts all print statements to tprint statements
 and adds the necessary import at the top of Python files.
 
 Features:
-- Converts print() calls to tprint() calls
+- Converts tprint() calls to tprint() calls
 - Adds import statement at the top of files
-- Handles various print formats (print("text"), print(var), print("text", var), etc.)
+- Handles various print formats (tprint("text"), tprint(var), tprint("text", var), etc.)
 - Preserves all arguments and formatting
 - Creates backup files before modification
 - Supports batch processing of multiple files
@@ -48,7 +48,7 @@ class PrintToTPrintMigrator:
         
         # Regex patterns for different print statement formats
         self.print_patterns = [
-            # Simple print("text")
+            # Simple tprint("text")
             (r'\bprint\s*\(\s*([^)]+)\s*\)', r'tprint(\1)'),
             # Print with multiple arguments
             (r'\bprint\s*\(\s*([^)]+)\s*\)', r'tprint(\1)'),
@@ -121,7 +121,7 @@ class PrintToTPrintMigrator:
         converted_count = len(print_matches)
         
         # Pattern to match print statements
-        # This handles various formats: print("text"), print(var), print("text", var), etc.
+        # This handles various formats: tprint("text"), tprint(var), tprint("text", var), etc.
         print_pattern = r'\bprint\s*\(([^)]*)\)'
         
         def replace_print(match):
@@ -142,7 +142,7 @@ class PrintToTPrintMigrator:
             
             # Check if file has print statements
             if not self.has_print_statements(original_content):
-                print(f"  ⏭️  No print statements found in {file_path}")
+                tprint(f"  ⏭️  No print statements found in {file_path}")
                 return False
             
             # Check if already has tprint import
@@ -157,36 +157,36 @@ class PrintToTPrintMigrator:
             
             # Check if any changes were made
             if modified_content == original_content:
-                print(f"  ⏭️  No changes needed for {file_path}")
+                tprint(f"  ⏭️  No changes needed for {file_path}")
                 return False
             
             if self.dry_run:
-                print(f"  🔍 [DRY RUN] Would modify {file_path}")
-                print(f"     - Convert {converted_count} print statements to tprint")
+                tprint(f"  🔍 [DRY RUN] Would modify {file_path}")
+                tprint(f"     - Convert {converted_count} print statements to tprint")
                 if not has_import:
-                    print(f"     - Add tprint import statement")
+                    tprint(f"     - Add tprint import statement")
                 self.print_statements_converted += converted_count
                 return True
             
             # Create backup if requested
             if self.backup_dir:
                 backup_path = self.create_backup(file_path)
-                print(f"  💾 Backup created: {backup_path}")
+                tprint(f"  💾 Backup created: {backup_path}")
             
             # Write the modified content
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(modified_content)
             
-            print(f"  ✅ Modified {file_path}")
-            print(f"     - Converted {converted_count} print statements to tprint")
+            tprint(f"  ✅ Modified {file_path}")
+            tprint(f"     - Converted {converted_count} print statements to tprint")
             if not has_import:
-                print(f"     - Added tprint import statement")
+                tprint(f"     - Added tprint import statement")
             
             self.print_statements_converted += converted_count
             return True
             
         except Exception as e:
-            print(f"  ❌ Error processing {file_path}: {e}")
+            tprint(f"  ❌ Error processing {file_path}: {e}")
             return False
     
     def process_directory(self, directory_path: Path) -> None:
@@ -194,13 +194,13 @@ class PrintToTPrintMigrator:
         python_files = list(directory_path.rglob('*.py'))
         
         if not python_files:
-            print(f"No Python files found in {directory_path}")
+            tprint(f"No Python files found in {directory_path}")
             return
         
-        print(f"Found {len(python_files)} Python files in {directory_path}")
+        tprint(f"Found {len(python_files)} Python files in {directory_path}")
         
         for file_path in python_files:
-            print(f"\n📄 Processing {file_path}")
+            tprint(f"\n📄 Processing {file_path}")
             self.files_processed += 1
             
             if self.process_file(file_path):
@@ -210,10 +210,10 @@ class PrintToTPrintMigrator:
         """Process a file or directory."""
         if path.is_file():
             if path.suffix != '.py':
-                print(f"❌ {path} is not a Python file")
+                tprint(f"❌ {path} is not a Python file")
                 return
             
-            print(f"📄 Processing {path}")
+            tprint(f"📄 Processing {path}")
             self.files_processed += 1
             
             if self.process_file(path):
@@ -222,24 +222,24 @@ class PrintToTPrintMigrator:
         elif path.is_dir():
             self.process_directory(path)
         else:
-            print(f"❌ {path} does not exist")
+            tprint(f"❌ {path} does not exist")
     
     def print_summary(self) -> None:
         """Print migration summary."""
-        print("\n" + "="*60)
-        print("MIGRATION SUMMARY")
-        print("="*60)
-        print(f"Files processed: {self.files_processed}")
-        print(f"Files modified: {self.files_modified}")
-        print(f"Print statements converted: {self.print_statements_converted}")
+        tprint("\n" + "="*60)
+        tprint("MIGRATION SUMMARY")
+        tprint("="*60)
+        tprint(f"Files processed: {self.files_processed}")
+        tprint(f"Files modified: {self.files_modified}")
+        tprint(f"Print statements converted: {self.print_statements_converted}")
         
         if self.dry_run:
-            print("\n🔍 This was a DRY RUN - no files were actually modified")
-            print("Run without --dry-run to apply changes")
+            tprint("\n🔍 This was a DRY RUN - no files were actually modified")
+            tprint("Run without --dry-run to apply changes")
         else:
-            print(f"\n✅ Migration completed successfully!")
+            tprint(f"\n✅ Migration completed successfully!")
             if self.backup_dir:
-                print(f"💾 Backups saved in: {self.backup_dir}")
+                tprint(f"💾 Backups saved in: {self.backup_dir}")
 
 
 def main():
@@ -279,7 +279,7 @@ Examples:
     paths = [Path(p) for p in args.paths]
     for path in paths:
         if not path.exists():
-            print(f"❌ Path does not exist: {path}")
+            tprint(f"❌ Path does not exist: {path}")
             sys.exit(1)
     
     # Create migrator
@@ -288,16 +288,16 @@ Examples:
         dry_run=args.dry_run
     )
     
-    print("🔄 Print to TPrint Migration Tool")
-    print("="*60)
+    tprint("🔄 Print to TPrint Migration Tool")
+    tprint("="*60)
     
     if args.dry_run:
-        print("🔍 DRY RUN MODE - No files will be modified")
+        tprint("🔍 DRY RUN MODE - No files will be modified")
     
     if args.backup_dir:
-        print(f"💾 Backups will be saved to: {args.backup_dir}")
+        tprint(f"💾 Backups will be saved to: {args.backup_dir}")
     
-    print()
+    tprint()
     
     # Process all paths
     for path in paths:

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Step 1: Data Collection - Refactored to use BaseStep.
 
@@ -160,34 +162,6 @@ class DataCollectionStep(BaseStep):
         return (len(errors) == 0, errors)
     @log_all_calls
 
-    def _generate_mock_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
-        """Generate mock market data for testing.
-        
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Data timeframe
-            
-        Returns:
-            Mock DataFrame with OHLCV data
-        """
-        from src.core.decorators.errors import handles_errors
-
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days = 30)
-        freq_map = {'1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '1h': '1H', '4h': '4H', '1d': '1D'}
-        freq = freq_map.get(timeframe, '1min')
-        timestamps = pd.date_range(start = start_date, end = end_date, freq = freq)
-        np.random.seed(42)
-        n_points = len(timestamps)
-        returns = np.random.normal(0.0001, 0.01, n_points)
-        price = 50000 * np.exp(np.cumsum(returns))
-        data = pd.DataFrame({'timestamp': timestamps, 'open': price * (1 + np.random.uniform(-0.001, 0.001, n_points)), 'high': price * (1 + np.random.uniform(0, 0.005, n_points)), 'low': price * (1 - np.random.uniform(0, 0.005, n_points)), 'close': price, 'volume': np.random.uniform(100, 1000, n_points)})
-        data['high'] = data[['open', 'high', 'close']].max(axis = 1)
-        data['low'] = data[['open', 'low', 'close']].min(axis = 1)
-        data.set_index('timestamp', inplace = True)
-        self.logger.info(f'📊 Generated {len(data)} rows of mock data')
-        return data
 
     def get_required_inputs(self) -> list:
         """Get list of required inputs for this step."""
@@ -219,18 +193,18 @@ async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: 
     import time
     from datetime import datetime
 
-    print('\n' + '=' * 80)
-    print('🚀 STEP 1: DATA COLLECTION - STARTING EXECUTION')
-    print('=' * 80)
-    print(f'🎯 Symbol: {symbol}')
-    print(f'🏢 Exchange: {exchange}')
-    print(f'📊 Timeframe: {timeframe}')
+    tprint('\n' + '=' * 80)
+    tprint('🚀 STEP 1: DATA COLLECTION - STARTING EXECUTION')
+    tprint('=' * 80)
+    tprint(f'🎯 Symbol: {symbol}')
+    tprint(f'🏢 Exchange: {exchange}')
+    tprint(f'📊 Timeframe: {timeframe}')
     if data_dir is None:
         data_dir = 'data_cache'
-    print(f'📁 Data directory: {data_dir}')
-    print(f'🔄 Force rerun: {force_rerun}')
-    print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print('=' * 80)
+    tprint(f'📁 Data directory: {data_dir}')
+    tprint(f'🔄 Force rerun: {force_rerun}')
+    tprint(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    tprint('=' * 80)
 
     start_time = time.time()
 
@@ -264,24 +238,24 @@ async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: 
         elapsed_time = time.time() - start_time
 
         if result.get('data_collection_completed', False):
-            print('✅ Step 1: Data Collection completed successfully')
-            print(f'⏱️ Total execution time: {elapsed_time:.2f} seconds')
-            print(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print('=' * 80)
+            tprint('✅ Step 1: Data Collection completed successfully')
+            tprint(f'⏱️ Total execution time: {elapsed_time:.2f} seconds')
+            tprint(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            tprint('=' * 80)
             return True
         else:
-            print('❌ Step 1: Data Collection failed')
+            tprint('❌ Step 1: Data Collection failed')
             error = result.get('data_collection_error', 'Unknown error')
-            print(f'   Error: {error}')
-            print(f'⏱️ Total execution time: {elapsed_time:.2f} seconds')
-            print('=' * 80)
+            tprint(f'   Error: {error}')
+            tprint(f'⏱️ Total execution time: {elapsed_time:.2f} seconds')
+            tprint('=' * 80)
             return False
 
     except Exception as e:
         elapsed_time = time.time() - start_time
-        print('💥 STEP 1 EXECUTION ERROR')
-        print('=' * 80)
-        print(f'❌ Error: {str(e)}')
-        print(f'⏱️ Total execution time: {elapsed_time:.2f} seconds')
-        print('=' * 80)
+        tprint('💥 STEP 1 EXECUTION ERROR')
+        tprint('=' * 80)
+        tprint(f'❌ Error: {str(e)}')
+        tprint(f'⏱️ Total execution time: {elapsed_time:.2f} seconds')
+        tprint('=' * 80)
         return False

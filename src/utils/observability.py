@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import logging
 import os
 from typing import Any
@@ -65,7 +67,7 @@ def init_sentry() -> None:
             )
             logger.info("Sentry initialized")
     except Exception as exc:  # pragma: no cover
-        print(failed(f"Failed to initialize Sentry: {exc}"))
+        tprint(failed(f"Failed to initialize Sentry: {exc}"))
 
 
 def init_otlp_logging() -> None:
@@ -90,7 +92,7 @@ def init_otlp_logging() -> None:
         otel_logs.set_logger_provider(provider)
         logger.info("OpenTelemetry logging exporter initialized")
     except Exception:  # pragma: no cover
-        print(failed("Failed to initialize OTLP logging: {exc}"))
+        tprint(failed("Failed to initialize OTLP logging: {exc}"))
 
 
 def init_observability(_: dict[str, Any] | None = None) -> None:

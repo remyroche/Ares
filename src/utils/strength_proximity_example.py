@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Example demonstrating Strength-Proximity Clustering for SR Levels
 
@@ -45,23 +47,23 @@ def create_sample_sr_levels() -> List[Dict]:
 def demonstrate_strength_proximity_clustering():
     """Demonstrate how strength-proximity clustering works."""
     
-    print("🎯 Strength-Proximity Clustering Demo")
-    print("=" * 50)
+    tprint("🎯 Strength-Proximity Clustering Demo")
+    tprint("=" * 50)
     
     # Create sample data
     levels = create_sample_sr_levels()
     price_range = (min(level['price'] for level in levels), 
                    max(level['price'] for level in levels))
     
-    print(f"📊 Input: {len(levels)} SR levels")
-    print(f"💰 Price range: ${price_range[0]:.2f} - ${price_range[1]:.2f}")
-    print()
+    tprint(f"📊 Input: {len(levels)} SR levels")
+    tprint(f"💰 Price range: ${price_range[0]:.2f} - ${price_range[1]:.2f}")
+    tprint()
     
     # Show original levels
-    print("📋 Original SR Levels:")
+    tprint("📋 Original SR Levels:")
     for i, level in enumerate(levels):
-        print(f"  {i+1:2d}. ${level['price']:8.2f} | Strength: {level['strength']:.3f} | {level['type']:10s} | Touches: {level['touches']}")
-    print()
+        tprint(f"  {i+1:2d}. ${level['price']:8.2f} | Strength: {level['strength']:.3f} | {level['type']:10s} | Touches: {level['touches']}")
+    tprint()
     
     # Test different proximity thresholds
     proximity_thresholds = [0.005, 0.01, 0.02, 0.05]  # 0.5%, 1%, 2%, 5% of price range
@@ -71,7 +73,7 @@ def demonstrate_strength_proximity_clustering():
     
     for prox_thresh in proximity_thresholds:
         for str_thresh in strength_thresholds:
-            print(f"🔍 Testing: Proximity={prox_thresh:.1%}, Strength={str_thresh:.1%}")
+            tprint(f"🔍 Testing: Proximity={prox_thresh:.1%}, Strength={str_thresh:.1%}")
             
             try:
                 result = clustering_manager.cluster_with_fallback(
@@ -82,7 +84,7 @@ def demonstrate_strength_proximity_clustering():
                     preferred_algorithm='strength_proximity'
                 )
                 
-                print(f"   ✅ Result: {len(result.clusters)} clusters, Quality: {result.quality_score:.3f}")
+                tprint(f"   ✅ Result: {len(result.clusters)} clusters, Quality: {result.quality_score:.3f}")
                 
                 # Show cluster details
                 for i, cluster in enumerate(result.clusters):
@@ -91,23 +93,23 @@ def demonstrate_strength_proximity_clustering():
                         cluster_strengths = [levels[idx]['strength'] for idx in cluster]
                         cluster_center = result.cluster_centers[i]
                         
-                        print(f"      Cluster {i+1}: {len(cluster)} levels, Center: ${cluster_center:.2f}")
-                        print(f"        Prices: {[f'${p:.2f}' for p in cluster_prices]}")
-                        print(f"        Strengths: {[f'{s:.3f}' for s in cluster_strengths]}")
-                        print(f"        Price spread: ${max(cluster_prices) - min(cluster_prices):.2f}")
-                        print(f"        Strength spread: {max(cluster_strengths) - min(cluster_strengths):.3f}")
+                        tprint(f"      Cluster {i+1}: {len(cluster)} levels, Center: ${cluster_center:.2f}")
+                        tprint(f"        Prices: {[f'${p:.2f}' for p in cluster_prices]}")
+                        tprint(f"        Strengths: {[f'{s:.3f}' for s in cluster_strengths]}")
+                        tprint(f"        Price spread: ${max(cluster_prices) - min(cluster_prices):.2f}")
+                        tprint(f"        Strength spread: {max(cluster_strengths) - min(cluster_strengths):.3f}")
                 
-                print()
+                tprint()
                 
             except Exception as e:
-                print(f"   ❌ Failed: {e}")
-                print()
+                tprint(f"   ❌ Failed: {e}")
+                tprint()
 
 def demonstrate_vs_dbscan():
     """Compare strength-proximity clustering with DBSCAN approach."""
     
-    print("🆚 Strength-Proximity vs DBSCAN Comparison")
-    print("=" * 50)
+    tprint("🆚 Strength-Proximity vs DBSCAN Comparison")
+    tprint("=" * 50)
     
     levels = create_sample_sr_levels()
     price_range = (min(level['price'] for level in levels), 
@@ -116,7 +118,7 @@ def demonstrate_vs_dbscan():
     clustering_manager = get_clustering_manager()
     
     # Strength-proximity approach
-    print("🎯 Strength-Proximity Clustering:")
+    tprint("🎯 Strength-Proximity Clustering:")
     result_sp = clustering_manager.cluster_with_fallback(
         levels=levels,
         price_range=price_range,
@@ -125,53 +127,53 @@ def demonstrate_vs_dbscan():
         preferred_algorithm='strength_proximity'
     )
     
-    print(f"   Clusters: {len(result_sp.clusters)}")
-    print(f"   Quality: {result_sp.quality_score:.3f}")
-    print(f"   All levels preserved: {result_sp.total_levels == len(levels)}")
-    print(f"   Noise points: {len(result_sp.noise_points)}")
+    tprint(f"   Clusters: {len(result_sp.clusters)}")
+    tprint(f"   Quality: {result_sp.quality_score:.3f}")
+    tprint(f"   All levels preserved: {result_sp.total_levels == len(levels)}")
+    tprint(f"   Noise points: {len(result_sp.noise_points)}")
     
     # Show meaningful clusters
     meaningful_clusters = [c for c in result_sp.clusters if len(c) > 1]
-    print(f"   Meaningful clusters (>1 level): {len(meaningful_clusters)}")
+    tprint(f"   Meaningful clusters (>1 level): {len(meaningful_clusters)}")
     
     for i, cluster in enumerate(meaningful_clusters):
         cluster_prices = [levels[idx]['price'] for idx in cluster]
         cluster_strengths = [levels[idx]['strength'] for idx in cluster]
-        print(f"     Cluster {i+1}: {len(cluster)} levels at ${min(cluster_prices):.2f}-${max(cluster_prices):.2f}")
-        print(f"       Strengths: {min(cluster_strengths):.3f}-{max(cluster_strengths):.3f}")
+        tprint(f"     Cluster {i+1}: {len(cluster)} levels at ${min(cluster_prices):.2f}-${max(cluster_prices):.2f}")
+        tprint(f"       Strengths: {min(cluster_strengths):.3f}-{max(cluster_strengths):.3f}")
     
-    print()
+    tprint()
     
     # Simulate DBSCAN problems (based on your logs)
-    print("❌ DBSCAN Problems (from your logs):")
-    print("   Attempt 1: eps=184.007281 → 2 clusters, 12 noise (14 total levels)")
-    print("   Attempt 2: eps=73.602912 → 6 clusters, 17 noise (28 total levels)")
-    print("   Attempt 3: eps=29.441165 → 12 clusters, 23 noise (49 total levels)")
-    print("   Attempt 4: eps=11.776466 → 14 clusters, 41 noise (81 total levels)")
-    print("   Attempt 5: eps=4.710586 → 4 clusters, 72 noise (81 total levels)")
-    print("   Attempt 6: eps=1.884235 → 0 clusters, 81 noise (81 total levels)")
-    print()
-    print("   Problems:")
-    print("   - Unpredictable cluster count")
-    print("   - Many levels lost as 'noise'")
-    print("   - Sensitive to parameter tuning")
-    print("   - No consideration of level strength")
-    print("   - Hard to achieve target level count")
+    tprint("❌ DBSCAN Problems (from your logs):")
+    tprint("   Attempt 1: eps=184.007281 → 2 clusters, 12 noise (14 total levels)")
+    tprint("   Attempt 2: eps=73.602912 → 6 clusters, 17 noise (28 total levels)")
+    tprint("   Attempt 3: eps=29.441165 → 12 clusters, 23 noise (49 total levels)")
+    tprint("   Attempt 4: eps=11.776466 → 14 clusters, 41 noise (81 total levels)")
+    tprint("   Attempt 5: eps=4.710586 → 4 clusters, 72 noise (81 total levels)")
+    tprint("   Attempt 6: eps=1.884235 → 0 clusters, 81 noise (81 total levels)")
+    tprint()
+    tprint("   Problems:")
+    tprint("   - Unpredictable cluster count")
+    tprint("   - Many levels lost as 'noise'")
+    tprint("   - Sensitive to parameter tuning")
+    tprint("   - No consideration of level strength")
+    tprint("   - Hard to achieve target level count")
     
-    print()
-    print("✅ Strength-Proximity Advantages:")
-    print("   - All levels preserved (no noise)")
-    print("   - Natural cluster formation based on data")
-    print("   - Considers both price proximity AND strength similarity")
-    print("   - Deterministic results")
-    print("   - No parameter sensitivity issues")
-    print("   - Quality scoring for cluster evaluation")
+    tprint()
+    tprint("✅ Strength-Proximity Advantages:")
+    tprint("   - All levels preserved (no noise)")
+    tprint("   - Natural cluster formation based on data")
+    tprint("   - Considers both price proximity AND strength similarity")
+    tprint("   - Deterministic results")
+    tprint("   - No parameter sensitivity issues")
+    tprint("   - Quality scoring for cluster evaluation")
 
 def demonstrate_adaptive_clustering():
     """Show how clustering adapts to different data characteristics."""
     
-    print("🔄 Adaptive Clustering Examples")
-    print("=" * 50)
+    tprint("🔄 Adaptive Clustering Examples")
+    tprint("=" * 50)
     
     # Scenario 1: Dense price levels (many levels close together)
     dense_levels = [
@@ -194,7 +196,7 @@ def demonstrate_adaptive_clustering():
     clustering_manager = get_clustering_manager()
     
     for scenario_name, scenario_levels in [("Dense Levels", dense_levels), ("Sparse Levels", sparse_levels)]:
-        print(f"📊 {scenario_name}:")
+        tprint(f"📊 {scenario_name}:")
         
         price_range = (min(level['price'] for level in scenario_levels), 
                        max(level['price'] for level in scenario_levels))
@@ -207,29 +209,29 @@ def demonstrate_adaptive_clustering():
             preferred_algorithm='strength_proximity'
         )
         
-        print(f"   Input: {len(scenario_levels)} levels")
-        print(f"   Price range: ${price_range[0]:.2f} - ${price_range[1]:.2f}")
-        print(f"   Result: {len(result.clusters)} clusters")
-        print(f"   Quality: {result.quality_score:.3f}")
+        tprint(f"   Input: {len(scenario_levels)} levels")
+        tprint(f"   Price range: ${price_range[0]:.2f} - ${price_range[1]:.2f}")
+        tprint(f"   Result: {len(result.clusters)} clusters")
+        tprint(f"   Quality: {result.quality_score:.3f}")
         
         # Show how clustering adapts
         meaningful_clusters = [c for c in result.clusters if len(c) > 1]
         single_clusters = [c for c in result.clusters if len(c) == 1]
         
-        print(f"   Grouped levels: {sum(len(c) for c in meaningful_clusters)}")
-        print(f"   Isolated levels: {len(single_clusters)}")
+        tprint(f"   Grouped levels: {sum(len(c) for c in meaningful_clusters)}")
+        tprint(f"   Isolated levels: {len(single_clusters)}")
         
         if meaningful_clusters:
-            print("   Clustered groups:")
+            tprint("   Clustered groups:")
             for i, cluster in enumerate(meaningful_clusters):
                 cluster_prices = [scenario_levels[idx]['price'] for idx in cluster]
-                print(f"     Group {i+1}: {[f'${p:.2f}' for p in cluster_prices]}")
+                tprint(f"     Group {i+1}: {[f'${p:.2f}' for p in cluster_prices]}")
         
-        print()
+        tprint()
 
 if __name__ == "__main__":
     demonstrate_strength_proximity_clustering()
-    print("\n" + "="*80 + "\n")
+    tprint("\n" + "="*80 + "\n")
     demonstrate_vs_dbscan()
-    print("\n" + "="*80 + "\n")
+    tprint("\n" + "="*80 + "\n")
     demonstrate_adaptive_clustering()

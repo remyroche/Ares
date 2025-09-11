@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 """Error handling decorators with async/sync support and flexible signature.
 
@@ -58,7 +60,7 @@ def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optio
         except Exception:
             pass
         ctx = f' (context: {context})' if context else ''
-        print(f'Error in {fn_name}{ctx}: {err}\n{traceback.format_exc()}')
+        tprint(f'Error in {fn_name}{ctx}: {err}\n{traceback.format_exc()}')
 
     def _handle_with_mapping(err: BaseException, *args: Any, **kwargs: Any) -> Any:
         for exc_type, ret in handlers.items():

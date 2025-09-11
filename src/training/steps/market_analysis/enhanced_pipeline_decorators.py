@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 import pandas as pd
 from src.core.decorators import (
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
@@ -631,8 +633,8 @@ if __name__ == "__main__":
     @data_access_protection(allowed_paths=['data_cache/*'])
     async def example_function(data, output_path):
         """Example function with comprehensive protection."""
-        print(f"Processing data with shape: {data.shape}")
-        print(f"Output path: {output_path}")
+        tprint(f"Processing data with shape: {data.shape}")
+        tprint(f"Output path: {output_path}")
         return True
     
     # Test the decorators

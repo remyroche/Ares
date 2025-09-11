@@ -26,7 +26,7 @@ except ImportError:
     ds = None
     pq = None
 from src.core.decorators import traced, validates
-from src.utils.file_operations import ensure_directory, safe_json_dump, safe_json_load
+from src.utils.core.file_operations import ensure_directory, safe_json_dump, safe_json_load
 
 import logging
 import json

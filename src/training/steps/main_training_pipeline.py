@@ -501,22 +501,31 @@ class MainTrainingPipeline:
         sub_pipeline_names: List[str],
         config: MarketAnalysisConfig
     ) -> List[MarketAnalysisResult]:
-        """Execute market analysis stage."""
+        """Execute market analysis stage with automatic sequential progression."""
         self.logger.info(f"📊 Executing market analysis stage with {len(sub_pipeline_names)} sub-pipelines")
-        
+        self.logger.info("🔄 MARKET_ANALYSIS stage configured for automatic sequential execution")
+
         # Update pipeline configuration
         self.market_analysis_pipeline.config = config
-        
-        # Execute sub-pipelines
-        if config.parallel_processing:
-            results = await self.market_analysis_pipeline.execute_multiple_sub_pipelines(
-                sub_pipeline_names, config, sequential=False
+
+        # For MARKET_ANALYSIS, always use sequential execution with automatic progression
+        # Start with the first sub-pipeline and let it trigger the next ones
+        self.logger.info("🚀 Starting automatic sequential execution: sr_detection -> sr_clustering -> sr_ml_learning -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> fractional_differentiation -> cross_timeframe_analysis")
+
+        results = []
+        if sub_pipeline_names:
+            # Execute the first sub-pipeline with automatic next triggering
+            first_result = await self.market_analysis_pipeline.execute_sub_pipeline_with_next(
+                sub_pipeline_names[0], config
             )
-        else:
-            results = await self.market_analysis_pipeline.execute_multiple_sub_pipelines(
-                sub_pipeline_names, config, sequential=True
-            )
-        
+            results.append(first_result)
+
+            # The first sub-pipeline will have automatically triggered all subsequent ones
+            # Add their results to our results list
+            for result in self.market_analysis_pipeline.results:
+                if result not in results:  # Avoid duplicates
+                    results.append(result)
+
         return results
     
     async def _execute_model_training_stage(

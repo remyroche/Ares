@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from typing import Dict
 import pandas as pd
@@ -379,4 +381,4 @@ if __name__ == "__main__":
     test_state = {}
     
     result = asyncio.run(run_validator(test_input, test_state))
-    print(json.dumps(result, indent = 2))
+    tprint(json.dumps(result, indent = 2))

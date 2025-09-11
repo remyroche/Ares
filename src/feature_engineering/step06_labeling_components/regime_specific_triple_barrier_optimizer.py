@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import pandas as pd
 import numpy as np
@@ -368,12 +370,12 @@ def create_regime_specific_triple_barrier_optimizer(config: dict[str, Any], trai
 if __name__ == '__main__':
     config = {'regime_optimization': {'n_trials': 100, 'timeout': 3600, 'early_stopping_patience': 20}}
     optimizer = create_regime_specific_triple_barrier_optimizer(config)
-    print('✅ Regime-Specific Triple Barrier Optimizer created successfully!')
-    print(f'Total regimes supported: {len(optimizer.regime_configs)}')
-    print('This optimizer integrates with the triple barrier labeler')
-    print('and should be used BEFORE ML training begins.')
+    tprint('✅ Regime-Specific Triple Barrier Optimizer created successfully!')
+    tprint(f'Total regimes supported: {len(optimizer.regime_configs)}')
+    tprint('This optimizer integrates with the triple barrier labeler')
+    tprint('and should be used BEFORE ML training begins.')
     for regime_name, regime_config in optimizer.regime_configs.items():
-        print(f'\n{regime_name}:')
-        print(f"  Description: {regime_config['description']}")
+        tprint(f'\n{regime_name}:')
+        tprint(f"  Description: {regime_config['description']}")
         total_params = sum((len(category) for category in regime_config.values() if isinstance(category, dict)))
-        print(f'  Total parameters: {total_params}')
+        tprint(f'  Total parameters: {total_params}')

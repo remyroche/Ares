@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 
 """
 Enhanced Reporting Configuration
@@ -398,7 +400,7 @@ def validate_enhanced_reporting_config(config: dict[str, Any]) -> bool:
 
         for section in required_sections:
             if section not in config:
-                print(f"Missing required configuration section: {section}")
+                tprint(f"Missing required configuration section: {section}")
                 return False
 
         # Validate specific settings
@@ -410,13 +412,13 @@ def validate_enhanced_reporting_config(config: dict[str, Any]) -> bool:
                 launcher_config.get("enable_backtesting", False),
             ],
         ):
-            print("At least one trading mode must be enabled")
+            tprint("At least one trading mode must be enabled")
             return False
 
         return True
 
     except Exception as e:
-        print(f"Error validating configuration: {e}")
+        tprint(f"Error validating configuration: {e}")
         return False
 
 

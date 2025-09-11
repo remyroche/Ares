@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Function Validator - Focused Code Quality Checker
 
@@ -573,13 +575,13 @@ def main():
     # Generate report
     output_file = validator.generate_report(args.output)
 
-    print("\nFunction validation completed!")
-    print(f"Report saved to: {output_file}")
-    print(f"Summary saved to: {output_file.replace('.json', '_summary.txt')}")
+    tprint("\nFunction validation completed!")
+    tprint(f"Report saved to: {output_file}")
+    tprint(f"Summary saved to: {output_file.replace('.json', '_summary.txt')}")
 
     # Print summary to console
     with open(output_file.replace(".json", "_summary.txt")) as f:
-        print(f.read())
+        tprint(f.read())
 
 
 if __name__ == "__main__":

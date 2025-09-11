@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Auto Dependency Installer
 
@@ -77,7 +79,7 @@ class AutoDependencyInstaller:
                         imports.add(node.module.split('.')[0])
                         
         except Exception as e:
-            print(f"Warning: Could not parse {file_path}: {e}")
+            tprint(f"Warning: Could not parse {file_path}: {e}")
             
         return imports
     
@@ -86,7 +88,7 @@ class AutoDependencyInstaller:
         all_imports = set()
         python_files = list(self.project_root.glob(pattern))
         
-        print(f"🔍 Scanning {len(python_files)} Python files for imports...")
+        tprint(f"🔍 Scanning {len(python_files)} Python files for imports...")
         
         for file_path in python_files:
             imports = self.extract_imports_from_file(str(file_path))
@@ -106,7 +108,7 @@ class AutoDependencyInstaller:
                     installed.add(package)
             return installed
         except Exception as e:
-            print(f"Warning: Could not check installed packages: {e}")
+            tprint(f"Warning: Could not check installed packages: {e}")
             return set()
     
     def identify_missing_dependencies(self) -> Set[str]:
@@ -138,22 +140,22 @@ class AutoDependencyInstaller:
     def install_dependency(self, package: str) -> bool:
         """Install a single dependency."""
         try:
-            print(f"📦 Installing {package}...")
+            tprint(f"📦 Installing {package}...")
             result = subprocess.run([sys.executable, '-m', 'pip', 'install', 
                                    '--break-system-packages', package], 
                                   capture_output=True, text=True)
             
             if result.returncode == 0:
-                print(f"✅ Successfully installed {package}")
+                tprint(f"✅ Successfully installed {package}")
                 self.installed_dependencies.add(package)
                 return True
             else:
-                print(f"❌ Failed to install {package}: {result.stderr}")
+                tprint(f"❌ Failed to install {package}: {result.stderr}")
                 self.failed_installations.add(package)
                 return False
                 
         except Exception as e:
-            print(f"❌ Error installing {package}: {e}")
+            tprint(f"❌ Error installing {package}: {e}")
             self.failed_installations.add(package)
             return False
     
@@ -162,20 +164,20 @@ class AutoDependencyInstaller:
         missing = self.identify_missing_dependencies()
         
         if not missing:
-            print("✅ No missing dependencies found!")
+            tprint("✅ No missing dependencies found!")
             return {"status": "success", "installed": [], "failed": []}
         
-        print(f"🔍 Found {len(missing)} missing dependencies:")
+        tprint(f"🔍 Found {len(missing)} missing dependencies:")
         for dep in sorted(missing):
-            print(f"  - {dep}")
+            tprint(f"  - {dep}")
         
         if dry_run:
-            print("\n🔍 DRY RUN - Would install:")
+            tprint("\n🔍 DRY RUN - Would install:")
             for dep in sorted(missing):
-                print(f"  pip install {dep}")
+                tprint(f"  pip install {dep}")
             return {"status": "dry_run", "would_install": list(missing)}
         
-        print(f"\n📦 Installing {len(missing)} dependencies...")
+        tprint(f"\n📦 Installing {len(missing)} dependencies...")
         
         for package in sorted(missing):
             self.install_dependency(package)
@@ -203,7 +205,7 @@ class AutoDependencyInstaller:
             for req in sorted(requirements):
                 f.write(f"{req}\n")
         
-        print(f"📄 Generated requirements file: {output_file}")
+        tprint(f"📄 Generated requirements file: {output_file}")
         return output_file
 
 def main():
@@ -225,14 +227,14 @@ def main():
     
     result = installer.install_all_missing_dependencies(args.dry_run)
     
-    print(f"\n📊 SUMMARY:")
-    print(f"  Status: {result['status']}")
+    tprint(f"\n📊 SUMMARY:")
+    tprint(f"  Status: {result['status']}")
     if 'installed' in result:
-        print(f"  Installed: {len(result['installed'])} packages")
+        tprint(f"  Installed: {len(result['installed'])} packages")
     if 'failed' in result:
-        print(f"  Failed: {len(result['failed'])} packages")
+        tprint(f"  Failed: {len(result['failed'])} packages")
     if 'total_missing' in result:
-        print(f"  Total missing: {result['total_missing']} packages")
+        tprint(f"  Total missing: {result['total_missing']} packages")
 
 if __name__ == "__main__":
     main()

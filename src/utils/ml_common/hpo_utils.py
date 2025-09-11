@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Advanced Hyperparameter Optimization Utilities
 
@@ -41,9 +43,9 @@ from .memory_optimization import MemoryEfficientTraining
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.HPOUtils")
-    print("✅ Custom logger available for MLCommon.HPOUtils")
+    tprint("✅ Custom logger available for MLCommon.HPOUtils")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.HPOUtils")
     _LOGGER.setLevel(logging.INFO)
 

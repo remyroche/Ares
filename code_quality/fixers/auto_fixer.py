@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Main auto-fixer module that orchestrates all code fixing operations.
 """
@@ -15,7 +17,7 @@ try:
     import toml
 except Exception:  # pragma: no cover
     toml = None
-    print("Warning: toml not available")
+    tprint("Warning: toml not available")
 
 from core.config import AnalysisConfig, CodeQualityConfig, get_default_config
 from core.plugins import PluginManager
@@ -60,11 +62,11 @@ class AutoFixer:
             Dictionary containing fix results
         """
         if not self.config.auto_fix.enabled:
-            print("Auto-fixing is disabled in configuration.")
+            tprint("Auto-fixing is disabled in configuration.")
             return {}
 
         python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
-        print(f"Found {len(python_files)} Python files to process.")
+        tprint(f"Found {len(python_files)} Python files to process.")
 
         # Create backups
         self._create_backups(python_files)
@@ -93,7 +95,7 @@ class AutoFixer:
             self._validate_fixes(python_files)
 
         except Exception as e:
-            print(f"Error during fixing: {e}")
+            tprint(f"Error during fixing: {e}")
             self._restore_backups()
             raise
 
@@ -220,7 +222,7 @@ class AutoFixer:
                 self.plugin_manager.register_plugin("future_annotations", FutureAnnotationsFixer({"enabled": True}))
 
         except ImportError as e:
-            print(f"Warning: Could not import built-in plugins: {e}")
+            tprint(f"Warning: Could not import built-in plugins: {e}")
 
     def _fix_single_file(self, file_path: str) -> dict[str, Any]:
         """Fix a single file using available plugins."""
@@ -270,14 +272,14 @@ class AutoFixer:
             Dictionary containing fix results
         """
         if not self.config.auto_fix.enabled:
-            print("Auto-fixing is disabled in configuration.")
+            tprint("Auto-fixing is disabled in configuration.")
             return {}
 
         if not file_path.endswith(".py"):
-            print(f"Warning: {file_path} is not a Python file.")
+            tprint(f"Warning: {file_path} is not a Python file.")
             return {}
 
-        print(f"Fixing single file: {file_path}")
+        tprint(f"Fixing single file: {file_path}")
 
         # Create backup
         self._create_backups([file_path])
@@ -296,13 +298,13 @@ class AutoFixer:
                 elif tool == "ruff":
                     self._run_ruff([file_path])
                 else:
-                    print(f"Warning: Unknown tool '{tool}' configured.")
+                    tprint(f"Warning: Unknown tool '{tool}' configured.")
 
             # Validate fixes
             self._validate_fixes([file_path])
 
         except Exception as e:
-            print(f"Error during fixing: {e}")
+            tprint(f"Error during fixing: {e}")
             self._restore_backups()
             raise
 
@@ -310,27 +312,27 @@ class AutoFixer:
 
     def _create_backups(self, files: list[str]) -> None:
         """Create backups of all files before fixing."""
-        print("Creating backups...")
+        tprint("Creating backups...")
         for file_path in files:
             try:
                 backup_path = backup_file(file_path)
                 self.backup_files[file_path] = backup_path
             except Exception as e:
-                print(f"Warning: Could not backup {file_path}: {e}")
+                tprint(f"Warning: Could not backup {file_path}: {e}")
 
     def _restore_backups(self) -> None:
         """Restore all files from backups."""
-        print("Restoring from backups...")
+        tprint("Restoring from backups...")
         for original_path, backup_path in self.backup_files.items():
             try:
                 restore_file(backup_path, original_path)
                 os.remove(backup_path)
             except Exception as e:
-                print(f"Warning: Could not restore {original_path}: {e}")
+                tprint(f"Warning: Could not restore {original_path}: {e}")
 
     def _run_black(self, files: list[str]) -> None:
         """Run Black code formatter."""
-        print("Running Black formatter...")
+        tprint("Running Black formatter...")
         try:
             cmd = [
                 sys.executable, "-m", "black",
@@ -346,19 +348,19 @@ class AutoFixer:
             result = subprocess.run(cmd, check=False, capture_output=True, text=True)
 
             if result.returncode == 0:
-                print("Black formatting completed successfully.")
+                tprint("Black formatting completed successfully.")
                 self.fix_results["black"] = {"status": "success", "files_processed": len(files)}
             else:
-                print(f"Black formatting failed: {result.stderr}")
+                tprint(f"Black formatting failed: {result.stderr}")
                 self.fix_results["black"] = {"status": "failed", "error": result.stderr}
 
         except Exception as e:
-            print(f"Error running Black: {e}")
+            tprint(f"Error running Black: {e}")
             self.fix_results["black"] = {"status": "error", "error": str(e)}
 
     def _run_isort(self, files: list[str]) -> None:
         """Run isort import organizer."""
-        print("Running isort...")
+        tprint("Running isort...")
         try:
             cmd = [
                 sys.executable, "-m", "isort",
@@ -372,19 +374,19 @@ class AutoFixer:
             result = subprocess.run(cmd, check=False, capture_output=True, text=True)
 
             if result.returncode == 0:
-                print("isort completed successfully.")
+                tprint("isort completed successfully.")
                 self.fix_results["isort"] = {"status": "success", "files_processed": len(files)}
             else:
-                print(f"isort failed: {result.stderr}")
+                tprint(f"isort failed: {result.stderr}")
                 self.fix_results["isort"] = {"status": "failed", "error": result.stderr}
 
         except Exception as e:
-            print(f"Error running isort: {e}")
+            tprint(f"Error running isort: {e}")
             self.fix_results["isort"] = {"status": "error", "error": str(e)}
 
     def _run_autopep8(self, files: list[str]) -> None:
         """Run autopep8 code formatter."""
-        print("Running autopep8...")
+        tprint("Running autopep8...")
         try:
             cmd = [
                 sys.executable, "-m", "autopep8",
@@ -398,19 +400,19 @@ class AutoFixer:
             result = subprocess.run(cmd, check=False, capture_output=True, text=True)
 
             if result.returncode == 0:
-                print("autopep8 completed successfully.")
+                tprint("autopep8 completed successfully.")
                 self.fix_results["autopep8"] = {"status": "success", "files_processed": len(files)}
             else:
-                print(f"autopep8 failed: {result.stderr}")
+                tprint(f"autopep8 failed: {result.stderr}")
                 self.fix_results["autopep8"] = {"status": "failed", "error": result.stderr}
 
         except Exception as e:
-            print(f"Error running autopep8: {e}")
+            tprint(f"Error running autopep8: {e}")
             self.fix_results["autopep8"] = {"status": "error", "error": str(e)}
 
     def _run_yapf(self, files: list[str]) -> None:
         """Run yapf code formatter."""
-        print("Running yapf...")
+        tprint("Running yapf...")
         try:
             # Create temporary style configuration
             style_config = f"""
@@ -436,29 +438,29 @@ USE_TABS = False
                 result = subprocess.run(cmd, check=False, capture_output=True, text=True)
 
                 if result.returncode == 0:
-                    print("yapf completed successfully.")
+                    tprint("yapf completed successfully.")
                     self.fix_results["yapf"] = {"status": "success", "files_processed": len(files)}
                 else:
-                    print(f"yapf failed: {result.stderr}")
+                    tprint(f"yapf failed: {result.stderr}")
                     self.fix_results["yapf"] = {"status": "failed", "error": result.stderr}
 
             finally:
                 os.unlink(style_file)
 
         except Exception as e:
-            print(f"Error running yapf: {e}")
+            tprint(f"Error running yapf: {e}")
             self.fix_results["yapf"] = {"status": "error", "error": str(e)}
 
     def _run_ruff(self, files: list[str]) -> None:
         """Run Ruff linter and formatter."""
-        print("Running Ruff...")
+        tprint("Running Ruff...")
         try:
             # First, check if ruff is available
             try:
                 subprocess.run([sys.executable, "-m", "ruff", "--version"],
                              capture_output=True, check=True)
             except (subprocess.CalledProcessError, FileNotFoundError):
-                print("Warning: Ruff not available, skipping...")
+                tprint("Warning: Ruff not available, skipping...")
                 self.fix_results["ruff"] = {"status": "skipped", "error": "Ruff not installed"}
                 return
 
@@ -473,10 +475,10 @@ USE_TABS = False
             format_result = subprocess.run(format_cmd, check=False, capture_output=True, text=True)
 
             if format_result.returncode == 0:
-                print("Ruff formatting completed successfully.")
+                tprint("Ruff formatting completed successfully.")
                 format_status = "success"
             else:
-                print(f"Ruff formatting failed: {format_result.stderr}")
+                tprint(f"Ruff formatting failed: {format_result.stderr}")
                 format_status = "failed"
 
             # Run ruff check and auto-fix
@@ -491,10 +493,10 @@ USE_TABS = False
             check_result = subprocess.run(check_cmd, check=False, capture_output=True, text=True)
 
             if check_result.returncode in [0, 1]:  # ruff returns 1 when issues are found and fixed
-                print("Ruff checking and auto-fixing completed successfully.")
+                tprint("Ruff checking and auto-fixing completed successfully.")
                 check_status = "success"
             else:
-                print(f"Ruff checking failed: {check_result.stderr}")
+                tprint(f"Ruff checking failed: {check_result.stderr}")
                 check_status = "failed"
 
             # Overall ruff status
@@ -515,12 +517,12 @@ USE_TABS = False
             }
 
         except Exception as e:
-            print(f"Error running Ruff: {e}")
+            tprint(f"Error running Ruff: {e}")
             self.fix_results["ruff"] = {"status": "error", "error": str(e)}
 
     def _validate_fixes(self, files: list[str]) -> None:
         """Validate that fixes didn't break syntax."""
-        print("Validating fixes...")
+        tprint("Validating fixes...")
         invalid_files = []
 
         for file_path in files:
@@ -528,14 +530,14 @@ USE_TABS = False
                 invalid_files.append(file_path)
 
         if invalid_files:
-            print(f"Warning: {len(invalid_files)} files have syntax errors after fixing:")
+            tprint(f"Warning: {len(invalid_files)} files have syntax errors after fixing:")
             for file_path in invalid_files:
-                print(f"  - {file_path}")
+                tprint(f"  - {file_path}")
 
             # Restore backups for invalid files
             self._restore_invalid_files(invalid_files)
         else:
-            print("All files have valid syntax after fixing.")
+            tprint("All files have valid syntax after fixing.")
             # Clean up backups
             self._cleanup_backups()
 
@@ -545,9 +547,9 @@ USE_TABS = False
             if file_path in self.backup_files:
                 try:
                     restore_file(self.backup_files[file_path], file_path)
-                    print(f"Restored {file_path} from backup.")
+                    tprint(f"Restored {file_path} from backup.")
                 except Exception as e:
-                    print(f"Warning: Could not restore {file_path}: {e}")
+                    tprint(f"Warning: Could not restore {file_path}: {e}")
 
     def _cleanup_backups(self) -> None:
         """Clean up backup files."""
@@ -555,7 +557,7 @@ USE_TABS = False
             try:
                 os.remove(backup_path)
             except Exception as e:
-                print(f"Warning: Could not remove backup {backup_path}: {e}")
+                tprint(f"Warning: Could not remove backup {backup_path}: {e}")
 
         self.backup_files.clear()
 
@@ -607,19 +609,19 @@ def main():
 
     # Print summary
     summary = fixer.get_fix_summary()
-    print("\n" + "="*50)
-    print("AUTO-FIX SUMMARY")
-    print("="*50)
-    print(f"Tools configured: {summary['total_tools']}")
-    print(f"Tools run: {', '.join(summary['tools_run'])}")
-    print(f"Successful: {', '.join(summary['successful_tools'])}")
-    print(f"Failed: {', '.join(summary['failed_tools'])}")
+    tprint("\n" + "="*50)
+    tprint("AUTO-FIX SUMMARY")
+    tprint("="*50)
+    tprint(f"Tools configured: {summary['total_tools']}")
+    tprint(f"Tools run: {', '.join(summary['tools_run'])}")
+    tprint(f"Successful: {', '.join(summary['successful_tools'])}")
+    tprint(f"Failed: {', '.join(summary['failed_tools'])}")
 
     if summary["failed_tools"]:
-        print("\nFailed tool details:")
+        tprint("\nFailed tool details:")
         for tool in summary["failed_tools"]:
             error = summary["details"][tool].get("error", "Unknown error")
-            print(f"  {tool}: {error}")
+            tprint(f"  {tool}: {error}")
 
 
 if __name__ == "__main__":

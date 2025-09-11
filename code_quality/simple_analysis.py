@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Simple analysis script to demonstrate pipeline findings.
 """
@@ -94,8 +96,8 @@ def find_dead_imports(file_path):
 
 def main():
     """Run simple analysis on the codebase."""
-    print("🔍 SIMPLE CODE QUALITY ANALYSIS")
-    print("=" * 50)
+    tprint("🔍 SIMPLE CODE QUALITY ANALYSIS")
+    tprint("=" * 50)
     
     # Analyze some key files
     files_to_analyze = [
@@ -106,8 +108,8 @@ def main():
         '/workspace/code_quality/core/config.py'
     ]
     
-    print("\n📊 COMPLEXITY ANALYSIS")
-    print("-" * 30)
+    tprint("\n📊 COMPLEXITY ANALYSIS")
+    tprint("-" * 30)
     
     complexity_results = []
     for file_path in files_to_analyze:
@@ -115,21 +117,21 @@ def main():
             result = analyze_file_complexity(file_path)
             if 'error' not in result:
                 complexity_results.append(result)
-                print(f"📁 {os.path.basename(file_path)}")
-                print(f"   Total Complexity: {result['total_complexity']}")
-                print(f"   Lines of Code: {result['lines_of_code']}")
-                print(f"   Functions: {len(result['functions'])}")
+                tprint(f"📁 {os.path.basename(file_path)}")
+                tprint(f"   Total Complexity: {result['total_complexity']}")
+                tprint(f"   Lines of Code: {result['lines_of_code']}")
+                tprint(f"   Functions: {len(result['functions'])}")
                 
                 # Show most complex functions
                 if result['functions']:
                     complex_funcs = sorted(result['functions'], key=lambda x: x['complexity'], reverse=True)[:3]
                     for func in complex_funcs:
                         if func['complexity'] > 5:  # Only show complex functions
-                            print(f"   ⚠️  {func['name']} (line {func['line']}): complexity {func['complexity']}")
-                print()
+                            tprint(f"   ⚠️  {func['name']} (line {func['line']}): complexity {func['complexity']}")
+                tprint()
     
-    print("\n🔍 DEAD IMPORT ANALYSIS")
-    print("-" * 30)
+    tprint("\n🔍 DEAD IMPORT ANALYSIS")
+    tprint("-" * 30)
     
     dead_imports_found = 0
     for file_path in files_to_analyze:
@@ -137,23 +139,23 @@ def main():
             unused = find_dead_imports(file_path)
             if unused and not any('error' in item for item in unused):
                 dead_imports_found += len(unused)
-                print(f"📁 {os.path.basename(file_path)}: {len(unused)} unused imports")
+                tprint(f"📁 {os.path.basename(file_path)}: {len(unused)} unused imports")
                 for imp in unused[:3]:  # Show first 3
-                    print(f"   - Line {imp['line']}: {imp['name']}")
+                    tprint(f"   - Line {imp['line']}: {imp['name']}")
     
-    print(f"\n📈 SUMMARY")
-    print("-" * 30)
-    print(f"Files analyzed: {len(complexity_results)}")
-    print(f"Total unused imports found: {dead_imports_found}")
+    tprint(f"\n📈 SUMMARY")
+    tprint("-" * 30)
+    tprint(f"Files analyzed: {len(complexity_results)}")
+    tprint(f"Total unused imports found: {dead_imports_found}")
     
     # Find most complex files
     if complexity_results:
         most_complex = max(complexity_results, key=lambda x: x['total_complexity'])
-        print(f"Most complex file: {os.path.basename(most_complex['file'])} (complexity: {most_complex['total_complexity']})")
+        tprint(f"Most complex file: {os.path.basename(most_complex['file'])} (complexity: {most_complex['total_complexity']})")
         
         # Find files with many functions
         most_functions = max(complexity_results, key=lambda x: len(x['functions']))
-        print(f"File with most functions: {os.path.basename(most_functions['file'])} ({len(most_functions['functions'])} functions)")
+        tprint(f"File with most functions: {os.path.basename(most_functions['file'])} ({len(most_functions['functions'])} functions)")
 
 if __name__ == "__main__":
     main()

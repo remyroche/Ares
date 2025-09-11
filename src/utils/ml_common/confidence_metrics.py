@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """Prediction confidence and calibration metrics for ML models."""
 
 import numpy as np
@@ -16,9 +18,9 @@ from datetime import datetime
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.ConfidenceMetrics")
-    print("✅ Custom logger available for MLCommon.ConfidenceMetrics")
+    tprint("✅ Custom logger available for MLCommon.ConfidenceMetrics")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.ConfidenceMetrics")
     _LOGGER.setLevel(logging.INFO)
 

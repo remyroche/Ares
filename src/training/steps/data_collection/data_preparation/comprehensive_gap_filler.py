@@ -48,8 +48,15 @@ class ComprehensiveGapFiller:
     async def _ensure_session(self) -> None:
         """Ensure aiohttp session is available."""
         if self.session is None:
+            # Create connector with SSL configuration to handle certificate issues
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
             timeout = aiohttp.ClientTimeout(total = 60)
-            self.session = aiohttp.ClientSession(timeout = timeout)
+            self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
 
     async def close_session(self) -> None:
         """Close aiohttp session."""

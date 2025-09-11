@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Model-Focused Explainability Integration for ML Commons
 
@@ -40,9 +42,9 @@ from ..common_operations import create_fallback_logger, safe_json_dump, safe_jso
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.ModelExplainability")
-    print("✅ Custom logger available for MLCommon.ModelExplainability")
+    tprint("✅ Custom logger available for MLCommon.ModelExplainability")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.ModelExplainability")
     _LOGGER.setLevel(logging.INFO)
 
@@ -111,7 +113,7 @@ class ModelExplainabilityManager:
             model_registry: Optional ModelRegistry instance for persistence
         """
         self.config = config or {}
-        self.logger = create_fallback_logger(__name__)
+        self.logger = create_fallback_logger()
         
         _LOGGER.info("🚀 Initializing ModelExplainabilityManager...")
         

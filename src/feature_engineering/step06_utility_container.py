@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Step06 Utility Container with Dependency Injection
 
@@ -983,11 +985,11 @@ async def test_utility_container():
         
         # Test health
         health_report = container.get_health_report()
-        print(f"Health Report: {health_report}")
+        tprint(f"Health Report: {health_report}")
         
         # Test operations
         current_time = common_ops.get_operation('datetime', 'get_current_datetime')()
-        print(f"Current time: {current_time}")
+        tprint(f"Current time: {current_time}")
         
         return health_report
 

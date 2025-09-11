@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Cross-validation helpers with purged/embargoed time series splits and integrity checks.
 """
@@ -18,9 +20,9 @@ except Exception:
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.CV")
-    print("✅ Custom logger available for MLCommon.CV")
+    tprint("✅ Custom logger available for MLCommon.CV")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     import logging
     _LOGGER = logging.getLogger("MLCommon.CV")
     _LOGGER.setLevel(logging.INFO)

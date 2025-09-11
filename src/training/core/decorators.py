@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """Training core decorators for the Ares project."""
 
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
@@ -34,7 +36,7 @@ def handles_errors(exceptions: tuple = (Exception,), default_return: Any = None,
 
                     except ImportError:
                         # Fallback to simple logging if error classes not available
-                        print(f'Error in {func.__name__}: {e}')
+                        tprint(f'Error in {func.__name__}: {e}')
                         if default_return is not None:
                             return default_return
                         raise
@@ -66,7 +68,7 @@ def handles_errors(exceptions: tuple = (Exception,), default_return: Any = None,
 
                     except ImportError:
                         # Fallback to simple logging if error classes not available
-                        print(f'Error in {func.__name__}: {e}')
+                        tprint(f'Error in {func.__name__}: {e}')
                         if default_return is not None:
                             return default_return
                         raise
@@ -122,7 +124,7 @@ def validates(validation_func: Callable = None) -> Callable:
 
                 except ImportError:
                     # Fallback to simple error handling
-                    print(f'Validation error in {func.__name__}: {e}')
+                    tprint(f'Validation error in {func.__name__}: {e}')
                     raise
         return wrapper
     return decorator
@@ -164,7 +166,7 @@ def log_execution_time(log_level: str = "info") -> Callable:
                 start_time = time.time()
                 result = func(*args, **kwargs)
                 end_time = time.time()
-                print(f"{func.__name__} executed in {end_time - start_time:.3f}s")
+                tprint(f"{func.__name__} executed in {end_time - start_time:.3f}s")
                 return result
         return wrapper
     return decorator
@@ -182,7 +184,7 @@ def log_call(log_level: str = "debug") -> Callable:
                 return func(*args, **kwargs)
             except ImportError:
                 # Fallback if logger not available
-                print(f"Calling {func.__name__}")
+                tprint(f"Calling {func.__name__}")
                 return func(*args, **kwargs)
         return wrapper
     return decorator
@@ -211,7 +213,7 @@ def circuit_breaker(failure_threshold: int = 5, recovery_timeout: int = 60) -> C
                     from src.utils.logger import system_logger
                     system_logger.warning(f"Circuit breaker open for {func.__name__}")
                 except ImportError:
-                    print(f"Circuit breaker open for {func.__name__}")
+                    tprint(f"Circuit breaker open for {func.__name__}")
                 raise Exception(f"Circuit breaker is open for {func.__name__}")
 
             try:
@@ -228,7 +230,7 @@ def circuit_breaker(failure_threshold: int = 5, recovery_timeout: int = 60) -> C
                         from src.utils.logger import system_logger
                         system_logger.warning(f"Circuit breaker opened for {func.__name__} after {failure_count} failures")
                     except ImportError:
-                        print(f"Circuit breaker opened for {func.__name__} after {failure_count} failures")
+                        tprint(f"Circuit breaker opened for {func.__name__} after {failure_count} failures")
 
                 raise
         return wrapper

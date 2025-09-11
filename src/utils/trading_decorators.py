@@ -134,11 +134,11 @@ def monitor_step_execution(step_name: str = None):
             try:
                 result = func(*args, **kwargs)
                 execution_time = time.time() - start_time
-                logger.info(".2f")
+                logger.info(f"✅ Step completed: {step} in {execution_time:.2f}s")
                 return result
             except Exception as e:
                 execution_time = time.time() - start_time
-                logger.error(".2f")
+                logger.error(f"❌ Step failed: {step} after {execution_time:.2f}s - {e}")
                 raise
         return wrapper
     return decorator
@@ -186,7 +186,7 @@ def quality_gate(min_quality_score: float = 0.8):
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs) -> Any:
-            logger.info(".2f")
+            logger.info(f"🔍 Quality gate check: minimum score {min_quality_score:.2f}")
             # Quality gate logic can be added here
             return func(*args, **kwargs)
         return wrapper

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Complexity Heatmap Visualizer
 
@@ -15,7 +17,7 @@ try:
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
-    print("Warning: matplotlib not available - heatmap visualization will be limited")
+    tprint("Warning: matplotlib not available - heatmap visualization will be limited")
 
 
 class ComplexityHeatmapVisualizer(CodeVisualizer):

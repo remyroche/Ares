@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Example usage of the enhanced validation tools.
 
@@ -19,9 +21,9 @@ from integrated_validator import IntegratedValidator
 
 def example_enhanced_validator():
     """Example of using the enhanced validator directly."""
-    print("=" * 60)
-    print("ENHANCED VALIDATOR EXAMPLE")
-    print("=" * 60)
+    tprint("=" * 60)
+    tprint("ENHANCED VALIDATOR EXAMPLE")
+    tprint("=" * 60)
 
     # Initialize validator
     validator = EnhancedValidator(
@@ -30,36 +32,36 @@ def example_enhanced_validator():
     )
 
     # Run validation
-    print("\nRunning enhanced validation...")
+    tprint("\nRunning enhanced validation...")
     report = validator.validate_project()
 
     # Display summary
     summary = report["summary"]
-    print("\nValidation Summary:")
-    print(f"  Files processed: {summary['files_processed']}")
-    print(f"  Total issues: {summary['total_issues']}")
-    print(f"  - Argument mismatches: {summary['argument_mismatches']}")
-    print(f"  - Unsafe data access: {summary['unsafe_data_access']}")
-    print(f"  - Missing null checks: {summary['missing_null_checks']}")
-    print(f"  - Type inconsistencies: {summary['type_inconsistencies']}")
+    tprint("\nValidation Summary:")
+    tprint(f"  Files processed: {summary['files_processed']}")
+    tprint(f"  Total issues: {summary['total_issues']}")
+    tprint(f"  - Argument mismatches: {summary['argument_mismatches']}")
+    tprint(f"  - Unsafe data access: {summary['unsafe_data_access']}")
+    tprint(f"  - Missing null checks: {summary['missing_null_checks']}")
+    tprint(f"  - Type inconsistencies: {summary['type_inconsistencies']}")
 
     # Show top issues
     if report["issues"]:
-        print("\nTop Issues Found:")
+        tprint("\nTop Issues Found:")
         for issue in report["issues"][:5]:
-            print(f"  {issue['severity'].upper()}: {issue['file_path']}:{issue['line_number']}")
-            print(f"    {issue['message']}")
+            tprint(f"  {issue['severity'].upper()}: {issue['file_path']}:{issue['line_number']}")
+            tprint(f"    {issue['message']}")
             if issue.get("suggestion"):
-                print(f"    → {issue['suggestion']}")
+                tprint(f"    → {issue['suggestion']}")
 
     return report
 
 
 def example_integrated_validator():
     """Example of using the integrated validator."""
-    print("\n" + "=" * 60)
-    print("INTEGRATED VALIDATOR EXAMPLE")
-    print("=" * 60)
+    tprint("\n" + "=" * 60)
+    tprint("INTEGRATED VALIDATOR EXAMPLE")
+    tprint("=" * 60)
 
     # Initialize integrated validator
     validator = IntegratedValidator(
@@ -68,32 +70,32 @@ def example_integrated_validator():
     )
 
     # Generate comprehensive reports
-    print("\nGenerating integrated validation reports...")
+    tprint("\nGenerating integrated validation reports...")
     report_files = validator.generate_report(output_dir="code_quality/reports")
 
-    print("\nGenerated reports:")
+    tprint("\nGenerated reports:")
     for report_type, file_path in report_files.items():
-        print(f"  - {report_type.capitalize()}: {file_path}")
+        tprint(f"  - {report_type.capitalize()}: {file_path}")
 
     # Read and display summary
     with open(report_files["summary"]) as f:
         summary_content = f.read()
 
-    print("\n" + "-" * 40)
-    print("SUMMARY PREVIEW:")
-    print("-" * 40)
+    tprint("\n" + "-" * 40)
+    tprint("SUMMARY PREVIEW:")
+    tprint("-" * 40)
     # Show first 30 lines of summary
     summary_lines = summary_content.split("\n")[:30]
-    print("\n".join(summary_lines))
+    tprint("\n".join(summary_lines))
     if len(summary_content.split("\n")) > 30:
-        print("... (truncated)")
+        tprint("... (truncated)")
 
 
 def example_code_with_issues():
     """Create example code files with various issues for testing."""
-    print("\n" + "=" * 60)
-    print("CREATING TEST FILES WITH ISSUES")
-    print("=" * 60)
+    tprint("\n" + "=" * 60)
+    tprint("CREATING TEST FILES WITH ISSUES")
+    tprint("=" * 60)
 
     test_dir = Path("code_quality/test_examples")
     test_dir.mkdir(exist_ok = True)
@@ -220,24 +222,24 @@ def use_processor():
     result = processor.process({"value": 10})  # Missing 'options'
 
     # Accessing result unsafely
-    print(result.value)  # result might be None
+    tprint(result.value)  # result might be None
 '''
 
     with open(test_dir / "mixed_issues.py", "w") as f:
         f.write(example3)
 
-    print(f"\nCreated test files in {test_dir}:")
+    tprint(f"\nCreated test files in {test_dir}:")
     for file in test_dir.glob("*.py"):
-        print(f"  - {file.name}")
+        tprint(f"  - {file.name}")
 
     return test_dir
 
 
 def validate_test_files(test_dir):
     """Run validation on the test files."""
-    print("\n" + "=" * 60)
-    print("VALIDATING TEST FILES")
-    print("=" * 60)
+    tprint("\n" + "=" * 60)
+    tprint("VALIDATING TEST FILES")
+    tprint("=" * 60)
 
     # Use enhanced validator on test directory
     validator = EnhancedValidator(
@@ -245,11 +247,11 @@ def validate_test_files(test_dir):
         exclude_patterns=["__pycache__", "*.pyc"],
     )
 
-    print(f"\nValidating test directory: {test_dir}")
+    tprint(f"\nValidating test directory: {test_dir}")
     report = validator.validate_project()
 
     # Display all issues found
-    print(f"\nFound {len(report['issues'])} issues:")
+    tprint(f"\nFound {len(report['issues'])} issues:")
 
     # Group by file
     from collections import defaultdict
@@ -259,21 +261,21 @@ def validate_test_files(test_dir):
         issues_by_file[file_name].append(issue)
 
     for file_name, issues in sorted(issues_by_file.items()):
-        print(f"\n{file_name}:")
+        tprint(f"\n{file_name}:")
         for issue in issues:
-            print(f"  Line {issue['line_number']}: {issue['message']}")
+            tprint(f"  Line {issue['line_number']}: {issue['message']}")
             if issue.get("suggestion"):
-                print(f"    → {issue['suggestion']}")
+                tprint(f"    → {issue['suggestion']}")
 
 
 def main():
     """Run all examples."""
-    print("Enhanced Validation Examples")
-    print("=" * 60)
-    print("\nThis script demonstrates the enhanced validation capabilities:")
-    print("1. Function argument validation")
-    print("2. Data access validation")
-    print("3. Integrated validation with multiple checkers")
+    tprint("Enhanced Validation Examples")
+    tprint("=" * 60)
+    tprint("\nThis script demonstrates the enhanced validation capabilities:")
+    tprint("1. Function argument validation")
+    tprint("2. Data access validation")
+    tprint("3. Integrated validation with multiple checkers")
 
     # Run enhanced validator example
     example_enhanced_validator()
@@ -285,11 +287,11 @@ def main():
     test_dir = example_code_with_issues()
     validate_test_files(test_dir)
 
-    print("\n" + "=" * 60)
-    print("Examples completed!")
-    print("\nTo use these validators in your project:")
-    print("1. Enhanced Validator: python code_quality/enhanced_validator.py --project-root /path/to/project")
-    print("2. Integrated Validator: python code_quality/integrated_validator.py --project-root /path/to/project")
+    tprint("\n" + "=" * 60)
+    tprint("Examples completed!")
+    tprint("\nTo use these validators in your project:")
+    tprint("1. Enhanced Validator: python code_quality/enhanced_validator.py --project-root /path/to/project")
+    tprint("2. Integrated Validator: python code_quality/integrated_validator.py --project-root /path/to/project")
 
 
 if __name__ == "__main__":

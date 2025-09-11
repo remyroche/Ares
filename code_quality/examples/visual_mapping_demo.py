@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Visual Mapping Demo
 
@@ -23,9 +25,9 @@ from visualizers import (
 
 def demonstrate_visual_mapping():
     """Demonstrate all visual mapping capabilities."""
-    print("CODE QUALITY VISUAL MAPPING DEMONSTRATION")
-    print("=" * 80)
-    print()
+    tprint("CODE QUALITY VISUAL MAPPING DEMONSTRATION")
+    tprint("=" * 80)
+    tprint()
     
     # Create output directory
     output_dir = Path("code_quality/demo_visualizations")
@@ -239,7 +241,7 @@ def demonstrate_visual_mapping():
     }
     
     # Initialize visualizers
-    print("Initializing visualizers...")
+    tprint("Initializing visualizers...")
     dep_viz = DependencyGraphVisualizer(str(output_dir))
     complexity_viz = ComplexityHeatmapVisualizer(str(output_dir))
     network_viz = InteractionNetworkVisualizer(str(output_dir))
@@ -248,35 +250,35 @@ def demonstrate_visual_mapping():
     generated_files = []
     
     # 1. Dependency Visualizations
-    print("\n[1/6] Creating dependency visualizations...")
+    tprint("\n[1/6] Creating dependency visualizations...")
     
     deps = sample_data["dependencies"]["modules"]
     fig, metadata = dep_viz.create_dependency_graph(deps, "Module Dependencies")
     files = dep_viz.save_figure(fig, "dependency_graph")
     generated_files.extend(files)
-    print(f"  ✓ Generated dependency graph: {files[0]}")
+    tprint(f"  ✓ Generated dependency graph: {files[0]}")
     
     # Circular dependencies
     circular = sample_data["dependencies"]["circular_imports"]
     fig = dep_viz.create_circular_dependency_visualization(circular, "Circular Dependencies")
     files = dep_viz.save_figure(fig, "circular_dependencies")
     generated_files.extend(files)
-    print(f"  ✓ Generated circular dependency visualization: {files[0]}")
+    tprint(f"  ✓ Generated circular dependency visualization: {files[0]}")
     
     # Module hierarchy
     fig = dep_viz.create_module_hierarchy(deps, "Module Hierarchy")
     files = dep_viz.save_figure(fig, "module_hierarchy")
     generated_files.extend(files)
-    print(f"  ✓ Generated module hierarchy: {files[0]}")
+    tprint(f"  ✓ Generated module hierarchy: {files[0]}")
     
     # 2. Complexity Visualizations
-    print("\n[2/6] Creating complexity visualizations...")
+    tprint("\n[2/6] Creating complexity visualizations...")
     
     complexity_data = sample_data["complexity"]["files"]
     fig, metadata = complexity_viz.create_complexity_heatmap(complexity_data, "Code Complexity Heatmap")
     files = complexity_viz.save_figure(fig, "complexity_heatmap")
     generated_files.extend(files)
-    print(f"  ✓ Generated complexity heatmap: {files[0]}")
+    tprint(f"  ✓ Generated complexity heatmap: {files[0]}")
     
     # Treemap
     fig = complexity_viz.create_treemap_visualization(
@@ -286,7 +288,7 @@ def demonstrate_visual_mapping():
     )
     files = complexity_viz.save_figure(fig, "complexity_treemap")
     generated_files.extend(files)
-    print(f"  ✓ Generated complexity treemap: {files[0]}")
+    tprint(f"  ✓ Generated complexity treemap: {files[0]}")
     
     # Bubble chart
     fig = complexity_viz.create_module_complexity_bubble_chart(
@@ -295,29 +297,29 @@ def demonstrate_visual_mapping():
     )
     files = complexity_viz.save_figure(fig, "complexity_bubble")
     generated_files.extend(files)
-    print(f"  ✓ Generated complexity bubble chart: {files[0]}")
+    tprint(f"  ✓ Generated complexity bubble chart: {files[0]}")
     
     # 3. Function Call Network
-    print("\n[3/6] Creating function call network...")
+    tprint("\n[3/6] Creating function call network...")
     
     call_graph = sample_data["call_graph"]["functions"]
     fig, metadata = network_viz.create_function_call_network(call_graph, "Function Call Network")
     files = network_viz.save_figure(fig, "function_network")
     generated_files.extend(files)
-    print(f"  ✓ Generated function call network: {files[0]}")
+    tprint(f"  ✓ Generated function call network: {files[0]}")
     
     # 4. Interactive Network
-    print("\n[4/6] Creating interactive network...")
+    tprint("\n[4/6] Creating interactive network...")
     
     html_file = network_viz.create_interactive_network(
         call_graph,
         title="Interactive Function Network"
     )
     generated_files.append(html_file)
-    print(f"  ✓ Generated interactive network: {html_file}")
+    tprint(f"  ✓ Generated interactive network: {html_file}")
     
     # 5. Module Interaction Matrix
-    print("\n[5/6] Creating module interaction matrix...")
+    tprint("\n[5/6] Creating module interaction matrix...")
     
     # Convert dependencies to interactions format
     interactions = {}
@@ -327,50 +329,50 @@ def demonstrate_visual_mapping():
     fig = network_viz.create_module_interaction_matrix(interactions, "Module Interaction Matrix")
     files = network_viz.save_figure(fig, "interaction_matrix")
     generated_files.extend(files)
-    print(f"  ✓ Generated interaction matrix: {files[0]}")
+    tprint(f"  ✓ Generated interaction matrix: {files[0]}")
     
     # 6. Interactive Dashboard
-    print("\n[6/6] Creating interactive dashboard...")
+    tprint("\n[6/6] Creating interactive dashboard...")
     
     dashboard_file = dashboard_gen.generate_quality_dashboard(
         sample_data,
         "Code Quality Dashboard - Demo Project"
     )
     generated_files.append(dashboard_file)
-    print(f"  ✓ Generated interactive dashboard: {dashboard_file}")
+    tprint(f"  ✓ Generated interactive dashboard: {dashboard_file}")
     
     # Summary
-    print("\n" + "=" * 80)
-    print("VISUAL MAPPING DEMONSTRATION COMPLETE!")
-    print("=" * 80)
-    print()
-    print(f"Generated {len(generated_files)} visualization files in {output_dir}/")
-    print()
-    print("The visualizations include:")
-    print("  • Dependency graphs showing module relationships")
-    print("  • Circular dependency detection and visualization")
-    print("  • Module hierarchy views")
-    print("  • Code complexity heatmaps")
-    print("  • Complexity treemaps for easy identification of complex files")
-    print("  • Bubble charts showing multiple complexity dimensions")
-    print("  • Function call networks")
-    print("  • Interactive network visualizations")
-    print("  • Module interaction matrices")
-    print("  • Comprehensive HTML dashboards with all metrics")
-    print()
-    print("Each visualization provides different insights:")
-    print("  - Dependency graphs: Understand module coupling")
-    print("  - Complexity heatmaps: Identify maintenance hotspots")
-    print("  - Function networks: Trace execution flow")
-    print("  - Interactive dashboards: Explore metrics dynamically")
-    print()
-    print("Open the HTML files in a web browser for interactive exploration!")
+    tprint("\n" + "=" * 80)
+    tprint("VISUAL MAPPING DEMONSTRATION COMPLETE!")
+    tprint("=" * 80)
+    tprint()
+    tprint(f"Generated {len(generated_files)} visualization files in {output_dir}/")
+    tprint()
+    tprint("The visualizations include:")
+    tprint("  • Dependency graphs showing module relationships")
+    tprint("  • Circular dependency detection and visualization")
+    tprint("  • Module hierarchy views")
+    tprint("  • Code complexity heatmaps")
+    tprint("  • Complexity treemaps for easy identification of complex files")
+    tprint("  • Bubble charts showing multiple complexity dimensions")
+    tprint("  • Function call networks")
+    tprint("  • Interactive network visualizations")
+    tprint("  • Module interaction matrices")
+    tprint("  • Comprehensive HTML dashboards with all metrics")
+    tprint()
+    tprint("Each visualization provides different insights:")
+    tprint("  - Dependency graphs: Understand module coupling")
+    tprint("  - Complexity heatmaps: Identify maintenance hotspots")
+    tprint("  - Function networks: Trace execution flow")
+    tprint("  - Interactive dashboards: Explore metrics dynamically")
+    tprint()
+    tprint("Open the HTML files in a web browser for interactive exploration!")
     
     # Save the sample data for reference
     sample_data_file = output_dir / "sample_data.json"
     with open(sample_data_file, 'w') as f:
         json.dump(sample_data, f, indent = 2)
-    print(f"\nSample data saved to: {sample_data_file}")
+    tprint(f"\nSample data saved to: {sample_data_file}")
     
     return generated_files
 

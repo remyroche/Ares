@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import logging
 from typing import Any
@@ -69,7 +71,7 @@ class MetaLabelingSystem:
             return True
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.print(
+            self.tprint(
                 initialization_error("❌ Error initializing meta-labeling system: {e}")
             )
             return False

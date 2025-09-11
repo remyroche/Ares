@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Cross-Validation Utilities
 
@@ -20,7 +22,7 @@ Built on existing utilities:
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Iterator
 from datetime import datetime, timedelta
 import logging
 import time
@@ -37,11 +39,111 @@ import warnings
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.CVUtils")
-    print("✅ Custom logger available for MLCommon.CVUtils")
+    tprint("✅ Custom logger available for MLCommon.CVUtils")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.CVUtils")
     _LOGGER.setLevel(logging.INFO)
+
+# ---------------------------------------------------------------------------
+# Temporal Cross-Validator
+# ---------------------------------------------------------------------------
+
+class TemporalCrossValidator:
+    """Temporal cross-validator for time series data with purged splits."""
+
+    def __init__(self, n_splits: int = 5, purged_pct: float = 0.01):
+        """Initialize temporal cross-validator.
+
+        Args:
+            n_splits: Number of CV splits
+            purged_pct: Percentage of data to purge between train/test sets
+        """
+        self.n_splits = n_splits
+        self.purged_pct = purged_pct
+        self.logger = logger.getChild('TemporalCrossValidator')
+
+    def cross_validate(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Perform temporal cross-validation.
+
+        Args:
+            X: Feature matrix
+            y: Target array
+
+        Returns:
+            Array of CV scores
+        """
+        try:
+            from sklearn.model_selection import TimeSeriesSplit
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.metrics import accuracy_score
+
+            tscv = TimeSeriesSplit(n_splits=self.n_splits)
+            scores = []
+
+            for train_idx, test_idx in tscv.split(X):
+                # Split data
+                X_train, X_test = X[train_idx], X[test_idx]
+                y_train, y_test = y[train_idx], y[test_idx]
+
+                # Apply purging if requested
+                if self.purged_pct > 0:
+                    purge_size = int(len(train_idx) * self.purged_pct)
+                    if purge_size > 0 and len(train_idx) > purge_size:
+                        X_train = X_train[:-purge_size]
+                        y_train = y_train[:-purge_size]
+
+                # Simple model for demonstration
+                model = RandomForestClassifier(n_estimators=10, random_state=42)
+                model.fit(X_train, y_train)
+
+                # Predict and score
+                y_pred = model.predict(X_test)
+                score = accuracy_score(y_test, y_pred)
+                scores.append(score)
+
+            return np.array(scores)
+
+        except Exception as e:
+            self.logger.error(f"Temporal CV failed: {e}")
+            return np.array([])
+
+
+class PurgedKFold:
+    """Purged K-Fold cross-validator for financial time series."""
+
+    def __init__(self, n_splits: int = 5, purge_pct: float = 0.01):
+        """Initialize purged K-fold CV.
+
+        Args:
+            n_splits: Number of CV splits
+            purge_pct: Percentage of data to purge between folds
+        """
+        self.n_splits = n_splits
+        self.purge_pct = purge_pct
+        self.logger = logger.getChild('PurgedKFold')
+
+    def split(self, X: np.ndarray, y: np.ndarray = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        """Generate train/test splits with purging."""
+        n_samples = len(X)
+        fold_size = n_samples // self.n_splits
+        purge_size = int(fold_size * self.purge_pct)
+
+        for i in range(self.n_splits):
+            # Define test set
+            test_start = i * fold_size
+            test_end = min((i + 1) * fold_size, n_samples)
+
+            # Define train set with purging
+            train_end = max(0, test_start - purge_size)
+            train_start = max(0, train_end - (n_samples - fold_size))
+
+            train_idx = np.arange(train_start, train_end)
+            test_idx = np.arange(test_start, test_end)
+
+            if len(train_idx) > 0 and len(test_idx) > 0:
+                yield train_idx, test_idx
+
 
 # ---------------------------------------------------------------------------
 # Utility helpers
@@ -78,7 +180,7 @@ def _to_jsonable(obj):  # pylint: disable=too-many-return-statements
 
 from ..math_validation import safe_divide, safe_log  # noqa: F401 relative one-level up is correct (utils)
 from ..common_operations import create_fallback_logger
-from ..m1_gpu_utils import M1GPUManager
+from ..hardware.m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
 
 logger = _LOGGER

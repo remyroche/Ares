@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Quick verification of unused files to identify truly dead code.
 Focuses on the most important checks for efficiency.
@@ -49,7 +51,7 @@ def verify_file_is_dead(unused_file: Dict) -> Dict:
     module_name = unused_file['module_name']
     file_name = Path(file_path).name
 
-    print(f"🔍 Checking: {Path(file_path).name}")
+    tprint(f"🔍 Checking: {Path(file_path).name}")
 
     # Check 1: Direct imports
     direct_import_pattern = f"import {module_name}"
@@ -120,20 +122,20 @@ def verify_file_is_dead(unused_file: Dict) -> Dict:
     }
 
     if is_dead:
-        print("   ✅ DEAD - No references found")
+        tprint("   ✅ DEAD - No references found")
     else:
-        print(f"   ⚠️  NOT DEAD - {len(all_references)} references found")
+        tprint(f"   ⚠️  NOT DEAD - {len(all_references)} references found")
 
     return result
 
 def main():
     """Main verification process."""
-    print("🔬 QUICK DEAD CODE VERIFICATION")
-    print("=" * 80)
+    tprint("🔬 QUICK DEAD CODE VERIFICATION")
+    tprint("=" * 80)
 
     # Get list of unused files
     unused_files = extract_unused_files()
-    print(f"Found {len(unused_files)} unused files to verify")
+    tprint(f"Found {len(unused_files)} unused files to verify")
 
     # Quick verification
     results = []
@@ -141,7 +143,7 @@ def main():
     not_dead_files = []
 
     for i, unused_file in enumerate(unused_files, 1):
-        print(f"\n[{i:3d}/{len(unused_files)}] ", end="")
+        tprint(f"\n[{i:3d}/{len(unused_files)}] ", end="")
         result = verify_file_is_dead(unused_file)
         results.append(result)
 
@@ -151,11 +153,11 @@ def main():
             not_dead_files.append(result)
 
     # Generate summary
-    print("\n📊 VERIFICATION SUMMARY")
-    print("=" * 80)
-    print(f"Total files verified: {len(results)}")
-    print(f"Truly dead files: {len(dead_files)}")
-    print(f"Files with references: {len(not_dead_files)}")
+    tprint("\n📊 VERIFICATION SUMMARY")
+    tprint("=" * 80)
+    tprint(f"Total files verified: {len(results)}")
+    tprint(f"Truly dead files: {len(dead_files)}")
+    tprint(f"Files with references: {len(not_dead_files)}")
 
     # Save results
     output_file = Path("/Users/remyroche/Documents/Ares/quick_verification_results.json")
@@ -171,37 +173,37 @@ def main():
             'not_dead_files': [{'file': f['file'], 'module_name': f['module_name'], 'references': f['total_references']} for f in not_dead_files]
         }, f, indent=2)
 
-    print(f"\n📁 Results saved to: {output_file}")
+    tprint(f"\n📁 Results saved to: {output_file}")
 
     # Print dead files (limit to first 30)
     if dead_files:
-        print("\n✅ TRULY DEAD FILES:")
+        tprint("\n✅ TRULY DEAD FILES:")
         for file in dead_files[:30]:
-            print(f"  • {Path(file['file']).name} ({file['module_name']})")
+            tprint(f"  • {Path(file['file']).name} ({file['module_name']})")
 
         if len(dead_files) > 30:
-            print(f"  ... and {len(dead_files) - 30} more")
+            tprint(f"  ... and {len(dead_files) - 30} more")
 
     # Print files with references (limit to first 20)
     if not_dead_files:
-        print("\n⚠️  FILES WITH REFERENCES:")
+        tprint("\n⚠️  FILES WITH REFERENCES:")
         for file in not_dead_files[:20]:
-            print(f"  • {Path(file['file']).name} ({file['module_name']}) - {file['total_references']} refs")
+            tprint(f"  • {Path(file['file']).name} ({file['module_name']}) - {file['total_references']} refs")
 
         if len(not_dead_files) > 20:
-            print(f"  ... and {len(not_dead_files) - 20} more")
+            tprint(f"  ... and {len(not_dead_files) - 20} more")
 
-    print("\n🎯 RECOMMENDATIONS:")
-    print("=" * 50)
+    tprint("\n🎯 RECOMMENDATIONS:")
+    tprint("=" * 50)
     if dead_files:
-        print("• Safe to remove dead files after backup")
-        print("• Consider git history before deletion")
-        print("• Check if files are needed for future features")
+        tprint("• Safe to remove dead files after backup")
+        tprint("• Consider git history before deletion")
+        tprint("• Check if files are needed for future features")
 
     if not_dead_files:
-        print("• Files with references should be kept")
-        print("• Review references to understand dependencies")
-        print("• Some may be conditionally imported")
+        tprint("• Files with references should be kept")
+        tprint("• Review references to understand dependencies")
+        tprint("• Some may be conditionally imported")
 
 if __name__ == "__main__":
     main()

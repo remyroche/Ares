@@ -21,9 +21,9 @@ import optuna
 from pathlib import Path
 
 # M1 Optimization imports
-from src.utils.m1_gpu_utils import get_m1_gpu_manager
-from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
-from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
 # ML Commons utilities - Enhanced integration
 from src.utils.ml_common import (

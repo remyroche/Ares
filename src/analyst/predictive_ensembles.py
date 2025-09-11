@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import logging
 from datetime import datetime
@@ -292,7 +294,7 @@ class PredictiveEnsembles:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.print(
+            self.tprint(
                 initialization_error("Error initializing stacking ensemble: {e}"),
             )
 
@@ -338,7 +340,7 @@ class PredictiveEnsembles:
 
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
-            self.print(
+            self.tprint(
                 initialization_error("Error initializing boosting ensemble: {e}"),
             )
 
@@ -427,7 +429,7 @@ class PredictiveEnsembles:
             required_fields = ["ensemble_type", "data_source", "timestamp"]
             for field in required_fields:
                 if field not in ensemble_input:
-                    self.print(
+                    self.tprint(
                         missing("Missing required ensemble input field: {field}"),
                     )
                     return False

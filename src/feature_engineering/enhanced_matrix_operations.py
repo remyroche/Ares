@@ -791,8 +791,8 @@ class EnhancedMatrixOperations:
     def _init_accelerators(self):
         """Initialize GPU and optimization accelerators."""
         try:
-            from .m1_gpu_utils import get_m1_gpu_manager
-            from .m1_memory_optimizer import get_m1_memory_optimizer
+            from .hardware.m1_gpu_utils import get_m1_gpu_manager
+            from .hardware.m1_memory_optimizer import get_m1_memory_optimizer
             from .vectorized_processing_core import get_vectorized_processing_core
 
             self.gpu_manager = get_m1_gpu_manager() if self.use_gpu else None

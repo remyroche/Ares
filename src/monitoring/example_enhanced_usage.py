@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Example Usage with HMM Regime and Daily Summary Features
 
@@ -69,17 +71,17 @@ async def example_enhanced_monitoring_with_hmm():
     }
     
     # Create and initialize monitoring orchestrator
-    print("🚀 Initializing Enhanced ML Monitoring System with HMM Regime Support...")
+    tprint("🚀 Initializing Enhanced ML Monitoring System with HMM Regime Support...")
     orchestrator = await create_monitoring_orchestrator(config)
     
     if not orchestrator:
-        print("❌ Failed to initialize monitoring orchestrator")
+        tprint("❌ Failed to initialize monitoring orchestrator")
         return
     
-    print("✅ Enhanced ML Monitoring System initialized successfully!")
+    tprint("✅ Enhanced ML Monitoring System initialized successfully!")
     
     # Example 1: Record trade decisions with HMM regime information
-    print("\n📊 Recording trade decisions with HMM regime information...")
+    tprint("\n📊 Recording trade decisions with HMM regime information...")
     
     # Simulate multiple days of trading
     base_date = datetime.now() - timedelta(days = 5)
@@ -229,85 +231,85 @@ async def example_enhanced_monitoring_with_hmm():
             # Record the trade decision
             await orchestrator.record_trade_decision(trade_decision)
         
-        print(f"✅ Recorded {num_trades} trades for {current_date.date()}")
+        tprint(f"✅ Recorded {num_trades} trades for {current_date.date()}")
     
     # Example 2: Get daily summary for a specific date
-    print("\n📈 Getting daily summary...")
+    tprint("\n📈 Getting daily summary...")
     
     summary_date = date.today() - timedelta(days = 1)
     daily_summary = await orchestrator.daily_summary_tracker.get_daily_summary(summary_date)
     
     if daily_summary:
-        print(f"Daily Summary for {summary_date}:")
-        print(f"  Total Trades: {daily_summary.total_trades}")
-        print(f"  Long Trades: {daily_summary.long_trades}")
-        print(f"  Short Trades: {daily_summary.short_trades}")
-        print(f"  Dominant Regime: {daily_summary.dominant_regime}")
-        print(f"  Total PnL: {daily_summary.total_pnl:.2f}")
-        print(f"  Win Rate: {daily_summary.win_rate:.3f}")
-        print(f"  Profit Factor: {daily_summary.profit_factor:.2f}")
-        print(f"  Regime Distribution: {daily_summary.regime_distribution}")
+        tprint(f"Daily Summary for {summary_date}:")
+        tprint(f"  Total Trades: {daily_summary.total_trades}")
+        tprint(f"  Long Trades: {daily_summary.long_trades}")
+        tprint(f"  Short Trades: {daily_summary.short_trades}")
+        tprint(f"  Dominant Regime: {daily_summary.dominant_regime}")
+        tprint(f"  Total PnL: {daily_summary.total_pnl:.2f}")
+        tprint(f"  Win Rate: {daily_summary.win_rate:.3f}")
+        tprint(f"  Profit Factor: {daily_summary.profit_factor:.2f}")
+        tprint(f"  Regime Distribution: {daily_summary.regime_distribution}")
     
     # Example 3: Get regime performance analysis
-    print("\n🔍 Getting regime performance analysis...")
+    tprint("\n🔍 Getting regime performance analysis...")
     
     regime_analysis = await orchestrator.get_ensemble_analysis("main_ensemble")
     if regime_analysis and 'current_state' in regime_analysis:
-        print("Ensemble Analysis:")
-        print(f"  Total Models: {regime_analysis['current_state']['total_models']}")
-        print(f"  Active Models: {regime_analysis['current_state']['active_models']}")
-        print(f"  Weight Stability: {regime_analysis['current_state']['weight_stability']:.3f}")
-        print(f"  Performance Trend: {regime_analysis['current_state']['performance_trend']}")
+        tprint("Ensemble Analysis:")
+        tprint(f"  Total Models: {regime_analysis['current_state']['total_models']}")
+        tprint(f"  Active Models: {regime_analysis['current_state']['active_models']}")
+        tprint(f"  Weight Stability: {regime_analysis['current_state']['weight_stability']:.3f}")
+        tprint(f"  Performance Trend: {regime_analysis['current_state']['performance_trend']}")
     
     # Example 4: Export all monitoring data
-    print("\n📤 Exporting comprehensive monitoring data...")
+    tprint("\n📤 Exporting comprehensive monitoring data...")
     
     export_success = await orchestrator.export_monitoring_data()
     if export_success:
-        print("✅ Monitoring data exported successfully!")
-        print("📁 Check the 'enhanced_monitoring_exports' directory for CSV files")
-        print("📁 Check the 'daily_summaries' directory for daily summary files")
+        tprint("✅ Monitoring data exported successfully!")
+        tprint("📁 Check the 'enhanced_monitoring_exports' directory for CSV files")
+        tprint("📁 Check the 'daily_summaries' directory for daily summary files")
     else:
-        print("❌ Failed to export monitoring data")
+        tprint("❌ Failed to export monitoring data")
     
     # Example 5: Get comprehensive statistics
-    print("\n📊 Getting comprehensive monitoring statistics...")
+    tprint("\n📊 Getting comprehensive monitoring statistics...")
     
     stats = orchestrator.get_comprehensive_stats()
-    print("Monitoring Statistics:")
-    print(f"  Total Decisions Processed: {stats['orchestrator']['total_decisions_processed']}")
-    print(f"  Total Exports Performed: {stats['orchestrator']['total_exports_performed']}")
-    print(f"  Uptime Hours: {stats['orchestrator']['uptime_hours']:.2f}")
+    tprint("Monitoring Statistics:")
+    tprint(f"  Total Decisions Processed: {stats['orchestrator']['total_decisions_processed']}")
+    tprint(f"  Total Exports Performed: {stats['orchestrator']['total_exports_performed']}")
+    tprint(f"  Uptime Hours: {stats['orchestrator']['uptime_hours']:.2f}")
     
     if 'daily_summary_tracker' in stats:
-        print(f"  Days Tracked: {stats['daily_summary_tracker']['total_days_tracked']}")
-        print(f"  Regimes Tracked: {stats['daily_summary_tracker']['regimes_tracked']}")
+        tprint(f"  Days Tracked: {stats['daily_summary_tracker']['total_days_tracked']}")
+        tprint(f"  Regimes Tracked: {stats['daily_summary_tracker']['regimes_tracked']}")
     
     # Example 6: Export daily summaries CSV
-    print("\n📊 Exporting daily summaries CSV...")
+    tprint("\n📊 Exporting daily summaries CSV...")
     
     if orchestrator.daily_summary_tracker:
         csv_success = await orchestrator.daily_summary_tracker.export_summary_csv()
         if csv_success:
-            print("✅ Daily summaries CSV exported successfully!")
+            tprint("✅ Daily summaries CSV exported successfully!")
         else:
-            print("❌ Failed to export daily summaries CSV")
+            tprint("❌ Failed to export daily summaries CSV")
     
     # Shutdown
-    print("\n🛑 Shutting down monitoring system...")
+    tprint("\n🛑 Shutting down monitoring system...")
     await orchestrator.shutdown()
     
-    print("✅ Enhanced ML Monitoring example completed successfully!")
-    print("\n🎯 Key Features Demonstrated:")
-    print("  ✅ HMM regime information in trade decisions")
-    print("  ✅ Daily summary tracking with regime analysis")
-    print("  ✅ Comprehensive CSV exports with regime data")
-    print("  ✅ Real-time monitoring and statistics")
-    print("  ✅ Ensemble performance tracking")
+    tprint("✅ Enhanced ML Monitoring example completed successfully!")
+    tprint("\n🎯 Key Features Demonstrated:")
+    tprint("  ✅ HMM regime information in trade decisions")
+    tprint("  ✅ Daily summary tracking with regime analysis")
+    tprint("  ✅ Comprehensive CSV exports with regime data")
+    tprint("  ✅ Real-time monitoring and statistics")
+    tprint("  ✅ Ensemble performance tracking")
 
 async def example_gui_launch():
     """Example of launching the GUI dashboard."""
-    print("\n🖥️ Launching Enhanced Monitoring Dashboard GUI...")
+    tprint("\n🖥️ Launching Enhanced Monitoring Dashboard GUI...")
     
     try:
         from .monitoring.gui import launch_dashboard
@@ -316,19 +318,19 @@ async def example_gui_launch():
         exit_code = launch_dashboard()
         
         if exit_code == 0:
-            print("✅ GUI dashboard closed successfully")
+            tprint("✅ GUI dashboard closed successfully")
         else:
-            print(f"❌ GUI dashboard exited with code {exit_code}")
+            tprint(f"❌ GUI dashboard exited with code {exit_code}")
             
     except ImportError as e:
-        print(f"❌ Could not import GUI components: {e}")
-        print("Make sure matplotlib, seaborn, and tkinter are installed")
+        tprint(f"❌ Could not import GUI components: {e}")
+        tprint("Make sure matplotlib, seaborn, and tkinter are installed")
     except Exception as e:
-        print(f"❌ Error launching GUI: {e}")
+        tprint(f"❌ Error launching GUI: {e}")
 
 if __name__ == "__main__":
-    print("🚀 Enhanced ML Monitoring System Examples")
-    print("=" * 60)
+    tprint("🚀 Enhanced ML Monitoring System Examples")
+    tprint("=" * 60)
     
     # Run enhanced monitoring example
     asyncio.run(example_enhanced_monitoring_with_hmm())
@@ -339,10 +341,10 @@ if __name__ == "__main__":
         if response.lower() in ['y', 'yes']:
             asyncio.run(example_gui_launch())
     except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
+        tprint("\n👋 Goodbye!")
     
-    print("\n🎉 All examples completed!")
-    print("\n📁 Generated Files:")
-    print("  📊 enhanced_monitoring_exports/ - Trade decisions with HMM regime data")
-    print("  📈 daily_summaries/ - Daily summary CSV files")
-    print("  📋 monitoring_exports/ - Comprehensive monitoring reports")
+    tprint("\n🎉 All examples completed!")
+    tprint("\n📁 Generated Files:")
+    tprint("  📊 enhanced_monitoring_exports/ - Trade decisions with HMM regime data")
+    tprint("  📈 daily_summaries/ - Daily summary CSV files")
+    tprint("  📋 monitoring_exports/ - Comprehensive monitoring reports")

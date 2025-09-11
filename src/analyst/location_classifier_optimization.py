@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from functools import lru_cache
 import numba
 import numpy as np
@@ -110,7 +112,7 @@ class LocationClassifierOptimized:
                 try:
                     results[tf] = future.result(timeout = 5)
                 except Exception as e:
-                    print(f'Error analyzing {tf}: {e}')
+                    tprint(f'Error analyzing {tf}: {e}')
                     results[tf] = None
         return self._aggregate_parallel_results(results)
 

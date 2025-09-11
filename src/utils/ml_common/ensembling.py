@@ -25,7 +25,7 @@ except Exception:
 
 # Import memory skimming utilities
 try:
-    from ..m1_memory_optimizer import (
+    from ..hardware.m1_memory_optimizer import (  # type: ignore
         auto_skim_memory, smart_memory_allocation,
         memory_skim_decorator, auto_memory_skim_decorator,
         auto_memory_skim_context, smart_memory_context
@@ -36,14 +36,14 @@ except ImportError:
 
 # Import GPU utilities
 try:
-    from ..m1_gpu_utils import M1GPUManager
+    from ..hardware.m1_gpu_utils import M1GPUManager
     GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 # Import CPU optimizer
 try:
-    from ..m1_cpu_optimizer import get_m1_cpu_optimizer
+    from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer  # type: ignore
     CPU_OPTIMIZER_AVAILABLE = True
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False

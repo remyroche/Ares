@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from .core.decorators import handles_errors
 """Candlestick pattern analyzer for advanced feature engineering."""
 
@@ -659,7 +661,7 @@ class CandlestickPatternAnalyzer:
 
     def print_message(self, message: str) -> None:
         """Print message with proper formatting."""
-        print(message)
+        tprint(message)
 
 def initialization_error(message: str) -> str:
     """Format initialization error message."""

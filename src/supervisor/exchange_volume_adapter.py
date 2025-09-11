@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 from ...utils.logger import system_logger
 from src.core.decorators import handles_errors
 
@@ -191,7 +193,7 @@ class ExchangeVolumeAdapter:
             self.logger.info("Volume metrics initialized successfully")
 
         except Exception:
-            self.print(initialization_error("Error initializing volume metrics: {e}"))
+            self.tprint(initialization_error("Error initializing volume metrics: {e}"))
 
     def get_volume_profile(self, exchange: str) -> dict[str, Any]:
         """Get volume profile for a specific exchange."""
@@ -265,7 +267,7 @@ class ExchangeVolumeAdapter:
             return adjusted_size
 
         except Exception:
-            self.print(error("Error calculating position size adjustment: {e}"))
+            self.tprint(error("Error calculating position size adjustment: {e}"))
             return base_position_size * 0.5  # Conservative fallback
 
     def calculate_spread_adjustment(self, exchange: str, base_spread: float) -> float:
@@ -276,7 +278,7 @@ class ExchangeVolumeAdapter:
             return base_spread * spread_multiplier
 
         except Exception:
-            self.print(error("Error calculating spread adjustment: {e}"))
+            self.tprint(error("Error calculating spread adjustment: {e}"))
             return base_spread * 2.0  # Conservative fallback
 
     def calculate_slippage_adjustment(
@@ -289,7 +291,7 @@ class ExchangeVolumeAdapter:
             return base_slippage * slippage_multiplier
 
         except Exception:
-            self.print(error("Error calculating slippage adjustment: {e}"))
+            self.tprint(error("Error calculating slippage adjustment: {e}"))
             return base_slippage * 2.5  # Conservative fallback
 
     def adjust_model_confidence(
@@ -336,7 +338,7 @@ class ExchangeVolumeAdapter:
             return adjusted_confidence
 
         except Exception:
-            self.print(error("Error adjusting model confidence: {e}"))
+            self.tprint(error("Error adjusting model confidence: {e}"))
             return base_confidence * 0.8  # Conservative fallback
 
     def should_execute_trade(
@@ -382,7 +384,7 @@ class ExchangeVolumeAdapter:
             return (True, "Trade execution approved")
 
         except Exception as e:
-            self.print(execution_error(f"Error checking trade execution: {e}"))
+            self.tprint(execution_error(f"Error checking trade execution: {e}"))
             return (False, f"Error: {e}")
 
     @handles_errors(
@@ -443,7 +445,7 @@ class ExchangeVolumeAdapter:
             }
 
         except Exception as e:
-            self.print(error("Error getting adaptation summary: {e}"))
+            self.tprint(error("Error getting adaptation summary: {e}"))
             return {"error": str(e)}
 
     async def update_volume_metrics(
@@ -456,7 +458,7 @@ class ExchangeVolumeAdapter:
         """Update volume metrics for an exchange."""
         try:
             if exchange.upper() not in self.current_volume_metrics:
-                self.print(warning("No metrics tracking for {exchange}"))
+                self.tprint(warning("No metrics tracking for {exchange}"))
                 return
 
             metrics = self.current_volume_metrics[exchange.upper()]
@@ -485,7 +487,7 @@ class ExchangeVolumeAdapter:
                 self.adaptation_history = self.adaptation_history[-max_history:]
 
         except Exception:
-            self.print(error("Error updating volume metrics: {e}"))
+            self.tprint(error("Error updating volume metrics: {e}"))
 
     async def cleanup(self) -> None:
         """Cleanup resources."""
@@ -497,7 +499,7 @@ class ExchangeVolumeAdapter:
             self.logger.info("✅ Exchange Volume Adapter cleanup completed")
 
         except Exception:
-            self.print(error("Error during cleanup: {e}"))
+            self.tprint(error("Error during cleanup: {e}"))
 
 @handles_errors(
     exceptions=(Exception,),

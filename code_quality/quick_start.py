@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Quick Start Script for Code Quality Validation
 
@@ -21,17 +23,17 @@ sys.path.insert(0, str(current_dir))
 def quick_validate():
     """Run a quick validation on the current project."""
 
-    print("🚀 Code Quality Validation - Quick Start")
-    print("=" * 50)
+    tprint("🚀 Code Quality Validation - Quick Start")
+    tprint("=" * 50)
 
     # Check if we're in a Python project
     if not any(Path().glob("*.py")):
-        print("❌ No Python files found in current directory.")
-        print("   Please run this script from your project root.")
+        tprint("❌ No Python files found in current directory.")
+        tprint("   Please run this script from your project root.")
         return False
 
-    print("✅ Python project detected!")
-    print(f"📁 Current directory: {os.getcwd()}")
+    tprint("✅ Python project detected!")
+    tprint(f"📁 Current directory: {os.getcwd()}")
 
     # Create reports directory
     reports_dir = Path("./reports")
@@ -40,43 +42,43 @@ def quick_validate():
     try:
         # Import the function validator
 
-        print("\n🔍 Running function validation...")
+        tprint("\n🔍 Running function validation...")
         validator = FunctionValidator(".")
         output_file = validator.generate_report(str(reports_dir / "quick_validation.json"))
 
-        print("✅ Function validation completed!")
-        print(f"📊 Report: {output_file}")
+        tprint("✅ Function validation completed!")
+        tprint(f"📊 Report: {output_file}")
 
         # Show summary
         summary_file = output_file.replace(".json", "_summary.txt")
         if os.path.exists(summary_file):
-            print(f"📋 Summary: {summary_file}")
+            tprint(f"📋 Summary: {summary_file}")
 
             # Display key findings
             with open(summary_file) as f:
                 lines = f.readlines()
                 for line in lines[:20]:  # Show first 20 lines
                     if line.strip():
-                        print(f"   {line.rstrip()}")
+                        tprint(f"   {line.rstrip()}")
 
-        print("\n🎯 Quick validation completed!")
-        print(f"📁 Reports saved to: {reports_dir}")
-        print("🔧 For comprehensive analysis, run: python code_quality/run_validation.py")
+        tprint("\n🎯 Quick validation completed!")
+        tprint(f"📁 Reports saved to: {reports_dir}")
+        tprint("🔧 For comprehensive analysis, run: python code_quality/run_validation.py")
 
         return True
 
     except ImportError as e:
-        print(f"❌ Error importing validation tools: {e}")
-        print("   Make sure you're running from the project root.")
+        tprint(f"❌ Error importing validation tools: {e}")
+        tprint("   Make sure you're running from the project root.")
         return False
     except Exception as e:
-        print(f"❌ Error during validation: {e}")
+        tprint(f"❌ Error during validation: {e}")
         return False
 
 
 def show_help():
     """Show help information."""
-    print("""
+    tprint("""
 Code Quality Validation - Quick Start
 
 Usage:

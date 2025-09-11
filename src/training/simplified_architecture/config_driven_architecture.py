@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Configuration-Driven Architecture for ML Pipeline
 
@@ -256,7 +258,7 @@ class ConfigDrivenPipeline:
 def example_usage() -> None:
     """Examples of configuration-driven architecture."""
     config = ConfigLoader.load_from_file('config/pipeline.yaml')
-    print(f'Loaded pipeline: {config.name} v{config.version}')
+    tprint(f'Loaded pipeline: {config.name} v{config.version}')
     builder = ConfigBuilder('MyPipeline', '1.0.0')
     config = builder.with_description('Example trading pipeline').add_step('data_loader', 'src.steps.DataLoader', parameters={'symbol': 'BTCUSDT', 'timeframe': '1h'}, outputs=['data']).add_step('feature_extractor', 'src.steps.FeatureExtractor', inputs={'data': 'data_loader.data'}, parameters={'indicators': ['RSI', 'MACD']}, outputs=['features']).add_dependency('logger', 'ConsoleLogger', 'src.logging', type='singleton').with_global_setting('debug', True).build()
     builder.save('config/generated_pipeline.yaml', ConfigFormat.YAML)

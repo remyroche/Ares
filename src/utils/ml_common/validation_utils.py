@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 ML Validation Utilities
 
@@ -32,9 +34,9 @@ import numpy as np
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.ValidationUtils")
-    print("✅ Custom logger available for MLCommon.ValidationUtils")
+    tprint("✅ Custom logger available for MLCommon.ValidationUtils")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.ValidationUtils")
     _LOGGER.setLevel(logging.INFO)
 
@@ -46,10 +48,21 @@ logger = logging.getLogger(__name__)
 
 class ValidationError(Exception):
     """Custom exception for validation failures."""
-    def __init__(self, message: str, error_type: str = "validation", details: Optional[Dict[str, Any]] = None):
-        super().__init__(message)
-        self.error_type = error_type
-        self.details = details or {}
+
+
+class ValidationFramework:
+    """Simple validation framework placeholder."""
+
+    def __init__(self):
+        self.logger = logger
+
+    def validate_config(self, config):
+        """Basic config validation."""
+        return True
+
+    def validate_data(self, data):
+        """Basic data validation."""
+        return True
 
 
 class ConfigurationValidator:

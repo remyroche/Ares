@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Demonstration Script: Enhanced Import Analysis
 
@@ -36,8 +38,8 @@ class ImportAnalysisDemo:
         
     def run_basic_demo(self) -> Dict[str, Any]:
         """Run basic import verification demonstration."""
-        print("🔍 Running Basic Import Verification Demo")
-        print("=" * 60)
+        tprint("🔍 Running Basic Import Verification Demo")
+        tprint("=" * 60)
         
         # Run import verification using simple function
         results = run_import_verification(
@@ -63,16 +65,16 @@ class ImportAnalysisDemo:
         # Show top 5 most imported files
         top_imported = pipeline.get_most_imported_files(results, 5)
         
-        print(f"\n📊 Key Insights:")
-        print(f"  • Total files analyzed: {insights['total_files']}")
-        print(f"  • Files imported by others: {insights['imported_files']}")
-        print(f"  • Files NOT imported: {insights['unimported_files']}")
-        print(f"  • Import percentage: {insights['import_percentage']:.1f}%")
+        tprint(f"\n📊 Key Insights:")
+        tprint(f"  • Total files analyzed: {insights['total_files']}")
+        tprint(f"  • Files imported by others: {insights['imported_files']}")
+        tprint(f"  • Files NOT imported: {insights['unimported_files']}")
+        tprint(f"  • Import percentage: {insights['import_percentage']:.1f}%")
         
         if top_imported:
-            print(f"\n🏆 Top 5 Most Imported Files:")
+            tprint(f"\n🏆 Top 5 Most Imported Files:")
             for i, file_info in enumerate(top_imported, 1):
-                print(f"  {i}. {Path(file_info['file_path']).name} ({file_info['import_count']} imports)")
+                tprint(f"  {i}. {Path(file_info['file_path']).name} ({file_info['import_count']} imports)")
         
         self.demo_results["basic_demo"] = {
             "results": results,
@@ -84,8 +86,8 @@ class ImportAnalysisDemo:
     
     def run_advanced_demo(self) -> Dict[str, Any]:
         """Run advanced enhanced import analysis demonstration."""
-        print("\n🚀 Running Advanced Enhanced Import Analysis Demo")
-        print("=" * 60)
+        tprint("\n🚀 Running Advanced Enhanced Import Analysis Demo")
+        tprint("=" * 60)
         
         # Run comprehensive analysis using simple function
         results = run_enhanced_import_analysis(
@@ -101,29 +103,29 @@ class ImportAnalysisDemo:
         issues = enhanced_detection.get("issues", {})
         recommendations = enhanced_detection.get("recommendations", [])
         
-        print(f"\n🔍 Enhanced Code Detection Results:")
-        print(f"  • Unused modules: {len(issues.get('unused_modules', []))}")
-        print(f"  • Orphaned files: {len(issues.get('orphaned_files', []))}")
-        print(f"  • Circular dependencies: {len(issues.get('circular_dependencies', []))}")
-        print(f"  • High coupling modules: {len(issues.get('high_coupling_modules', []))}")
-        print(f"  • Critical dependencies: {len(issues.get('critical_dependencies', []))}")
+        tprint(f"\n🔍 Enhanced Code Detection Results:")
+        tprint(f"  • Unused modules: {len(issues.get('unused_modules', []))}")
+        tprint(f"  • Orphaned files: {len(issues.get('orphaned_files', []))}")
+        tprint(f"  • Circular dependencies: {len(issues.get('circular_dependencies', []))}")
+        tprint(f"  • High coupling modules: {len(issues.get('high_coupling_modules', []))}")
+        tprint(f"  • Critical dependencies: {len(issues.get('critical_dependencies', []))}")
         
         if recommendations:
-            print(f"\n💡 Top Recommendations:")
+            tprint(f"\n💡 Top Recommendations:")
             for i, rec in enumerate(recommendations[:3], 1):
                 priority_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(rec.get("priority", ""), "⚪")
-                print(f"  {i}. {priority_emoji} {rec.get('title', 'Unknown')}")
-                print(f"     {rec.get('description', '')}")
+                tprint(f"  {i}. {priority_emoji} {rec.get('title', 'Unknown')}")
+                tprint(f"     {rec.get('description', '')}")
         
         # Show visualizations created
         visualizations = results.get("visualizations", {})
         if visualizations:
-            print(f"\n📊 Visualizations Created:")
+            tprint(f"\n📊 Visualizations Created:")
             for viz_name, viz_info in visualizations.items():
                 if isinstance(viz_info, dict) and "files" in viz_info:
-                    print(f"  • {viz_name}: {len(viz_info['files'])} files")
+                    tprint(f"  • {viz_name}: {len(viz_info['files'])} files")
                 elif isinstance(viz_info, dict) and "html_file" in viz_info:
-                    print(f"  • {viz_name}: Interactive HTML")
+                    tprint(f"  • {viz_name}: Interactive HTML")
         
         self.demo_results["advanced_demo"] = {
             "results": results,
@@ -136,8 +138,8 @@ class ImportAnalysisDemo:
     
     def run_visualization_demo(self) -> Dict[str, Any]:
         """Run visualization demonstration."""
-        print("\n🎨 Running Visualization Demo")
-        print("=" * 60)
+        tprint("\n🎨 Running Visualization Demo")
+        tprint("=" * 60)
         
         # First get import verification data
         results = run_import_verification(
@@ -150,47 +152,47 @@ class ImportAnalysisDemo:
         # Create visualizations
         visualizer = ImportNetworkVisualizer()
         
-        print("Creating import network visualization...")
+        tprint("Creating import network visualization...")
         try:
             fig, metadata = visualizer.create_import_network_from_verifier_data(
                 results, "Demo Import Network Analysis"
             )
             if fig:
                 saved_files = visualizer.save_figure(fig, "demo_import_network")
-                print(f"  ✅ Import network saved to: {saved_files[0] if saved_files else 'N/A'}")
+                tprint(f"  ✅ Import network saved to: {saved_files[0] if saved_files else 'N/A'}")
         except Exception as e:
-            print(f"  ❌ Error creating import network: {e}")
+            tprint(f"  ❌ Error creating import network: {e}")
         
-        print("Creating import heatmap...")
+        tprint("Creating import heatmap...")
         try:
             heatmap_fig = visualizer.create_import_heatmap(
                 results, "Demo Import Heatmap"
             )
             if heatmap_fig:
                 saved_files = visualizer.save_figure(heatmap_fig, "demo_import_heatmap")
-                print(f"  ✅ Import heatmap saved to: {saved_files[0] if saved_files else 'N/A'}")
+                tprint(f"  ✅ Import heatmap saved to: {saved_files[0] if saved_files else 'N/A'}")
         except Exception as e:
-            print(f"  ❌ Error creating heatmap: {e}")
+            tprint(f"  ❌ Error creating heatmap: {e}")
         
-        print("Creating circular dependency analysis...")
+        tprint("Creating circular dependency analysis...")
         try:
             circular_fig = visualizer.create_circular_dependency_analysis(
                 results, "Demo Circular Dependency Analysis"
             )
             if circular_fig:
                 saved_files = visualizer.save_figure(circular_fig, "demo_circular_dependencies")
-                print(f"  ✅ Circular dependency analysis saved to: {saved_files[0] if saved_files else 'N/A'}")
+                tprint(f"  ✅ Circular dependency analysis saved to: {saved_files[0] if saved_files else 'N/A'}")
         except Exception as e:
-            print(f"  ❌ Error creating circular dependency analysis: {e}")
+            tprint(f"  ❌ Error creating circular dependency analysis: {e}")
         
-        print("Creating interactive network...")
+        tprint("Creating interactive network...")
         try:
             html_file = visualizer.create_interactive_import_network(
                 results, "Demo Interactive Import Network"
             )
-            print(f"  ✅ Interactive network saved to: {html_file}")
+            tprint(f"  ✅ Interactive network saved to: {html_file}")
         except Exception as e:
-            print(f"  ❌ Error creating interactive network: {e}")
+            tprint(f"  ❌ Error creating interactive network: {e}")
         
         self.demo_results["visualization_demo"] = {
             "results": results,
@@ -201,8 +203,8 @@ class ImportAnalysisDemo:
     
     def run_custom_analysis_demo(self) -> Dict[str, Any]:
         """Run custom analysis demonstration."""
-        print("\n🔧 Running Custom Analysis Demo")
-        print("=" * 60)
+        tprint("\n🔧 Running Custom Analysis Demo")
+        tprint("=" * 60)
         
         # Get import verification data
         results = run_import_verification(
@@ -244,23 +246,23 @@ class ImportAnalysisDemo:
                     "reason": "Imported by many files - potential utility module"
                 })
         
-        print(f"🔍 Custom Analysis Results:")
-        print(f"  • Potential refactoring candidates: {len(refactoring_candidates)}")
-        print(f"  • Potential utility modules: {len(utility_modules)}")
+        tprint(f"🔍 Custom Analysis Results:")
+        tprint(f"  • Potential refactoring candidates: {len(refactoring_candidates)}")
+        tprint(f"  • Potential utility modules: {len(utility_modules)}")
         
         if refactoring_candidates:
-            print(f"\n📝 Top Refactoring Candidates:")
+            tprint(f"\n📝 Top Refactoring Candidates:")
             for i, candidate in enumerate(refactoring_candidates[:3], 1):
-                print(f"  {i}. {Path(candidate['file']).name}")
-                print(f"     Import count: {candidate['import_count']}")
-                print(f"     Reason: {candidate['reason']}")
+                tprint(f"  {i}. {Path(candidate['file']).name}")
+                tprint(f"     Import count: {candidate['import_count']}")
+                tprint(f"     Reason: {candidate['reason']}")
         
         if utility_modules:
-            print(f"\n🛠️  Top Utility Modules:")
+            tprint(f"\n🛠️  Top Utility Modules:")
             for i, module in enumerate(utility_modules[:3], 1):
-                print(f"  {i}. {Path(module['file']).name}")
-                print(f"     Import count: {module['import_count']}")
-                print(f"     Reason: {module['reason']}")
+                tprint(f"  {i}. {Path(module['file']).name}")
+                tprint(f"     Import count: {module['import_count']}")
+                tprint(f"     Reason: {module['reason']}")
         
         self.demo_results["custom_analysis_demo"] = {
             "results": results,
@@ -333,10 +335,10 @@ class ImportAnalysisDemo:
     
     def run_all_demos(self) -> Dict[str, Any]:
         """Run all demonstration types."""
-        print("🎯 Enhanced Import Analysis - Complete Demo")
-        print("=" * 80)
-        print(f"Project Root: {self.project_root}")
-        print("=" * 80)
+        tprint("🎯 Enhanced Import Analysis - Complete Demo")
+        tprint("=" * 80)
+        tprint(f"Project Root: {self.project_root}")
+        tprint("=" * 80)
         
         all_results = {}
         
@@ -344,35 +346,35 @@ class ImportAnalysisDemo:
         try:
             all_results["basic"] = self.run_basic_demo()
         except Exception as e:
-            print(f"❌ Basic demo failed: {e}")
+            tprint(f"❌ Basic demo failed: {e}")
             all_results["basic"] = {"error": str(e)}
         
         try:
             all_results["advanced"] = self.run_advanced_demo()
         except Exception as e:
-            print(f"❌ Advanced demo failed: {e}")
+            tprint(f"❌ Advanced demo failed: {e}")
             all_results["advanced"] = {"error": str(e)}
         
         try:
             all_results["visualization"] = self.run_visualization_demo()
         except Exception as e:
-            print(f"❌ Visualization demo failed: {e}")
+            tprint(f"❌ Visualization demo failed: {e}")
             all_results["visualization"] = {"error": str(e)}
         
         try:
             all_results["custom_analysis"] = self.run_custom_analysis_demo()
         except Exception as e:
-            print(f"❌ Custom analysis demo failed: {e}")
+            tprint(f"❌ Custom analysis demo failed: {e}")
             all_results["custom_analysis"] = {"error": str(e)}
         
         # Generate report
         try:
             report_file = self.generate_demo_report()
-            print(f"\n📄 Demo report saved to: {report_file}")
+            tprint(f"\n📄 Demo report saved to: {report_file}")
         except Exception as e:
-            print(f"❌ Failed to generate report: {e}")
+            tprint(f"❌ Failed to generate report: {e}")
         
-        print("\n🎉 Demo completed!")
+        tprint("\n🎉 Demo completed!")
         return all_results
 
 
@@ -425,7 +427,7 @@ Examples:
         json.dump(results, f, indent=2, default=str)
     
     if args.verbose:
-        print(f"\n📊 Results saved to: {results_file}")
+        tprint(f"\n📊 Results saved to: {results_file}")
     
     return 0
 

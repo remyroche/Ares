@@ -21,9 +21,9 @@ from scipy.stats import ttest_ind, chi2_contingency, mannwhitneyu
 import warnings
 
 # M1 Optimization imports
-from src.utils.m1_gpu_utils import get_m1_gpu_manager
-from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
-from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
 # Common utilities
 from src.utils.common_operations import (

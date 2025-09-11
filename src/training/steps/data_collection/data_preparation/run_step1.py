@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 from src.utils.logger import system_logger
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
@@ -101,7 +103,7 @@ def main() -> None:
 
         # Print report
         if "report" in results:
-            print(results["report"])
+            tprint(results["report"])
 
         # Print summary
         end_time = datetime.now()
@@ -115,13 +117,13 @@ def main() -> None:
 
         if results["success"]:
             logger.info("✅ STEP1 COMPLETED SUCCESSFULLY!")
-            print("✅ Step1 completed successfully!")
+            tprint("✅ Step1 completed successfully!")
         else:
             logger.error("❌ STEP1 COMPLETED WITH ERRORS!")
-            print("❌ Step1 completed with errors:")
+            tprint("❌ Step1 completed with errors:")
             for error in results["errors"]:
                 logger.error(f"  - {error}")
-                print(f"  - {error}")
+                tprint(f"  - {error}")
 
         logger.info("=" * 80)
 
@@ -142,11 +144,11 @@ def main() -> None:
 
         # Print gap details
         if aggtrades_gaps:
-            print(f"Found {len(aggtrades_gaps)} gaps in aggtrades data:")
+            tprint(f"Found {len(aggtrades_gaps)} gaps in aggtrades data:")
             for gap in aggtrades_gaps[:10]:  # Show first 10
-                print(f"  - {gap['file']}: {gap['gap_start']} to {gap['gap_end']}")
+                tprint(f"  - {gap['file']}: {gap['gap_start']} to {gap['gap_end']}")
             if len(aggtrades_gaps) > 10:
-                print(f"  ... and {len(aggtrades_gaps) - 10} more gaps")
+                tprint(f"  ... and {len(aggtrades_gaps) - 10} more gaps")
 
     elif args.mode == "validation":
         # Run validation only
@@ -163,7 +165,7 @@ def main() -> None:
         validator.generate_validation_report(args.symbol, args.exchange)
 
         # Print summary
-        print(
+        tprint(
             f"Validation completed: {validation_results['valid_files']} valid, {validation_results['invalid_files']} invalid"
         )
 
@@ -177,36 +179,36 @@ def main() -> None:
         )
 
         if preparation_results["ready"]:
-            print("✅ Data preparation completed successfully")
+            tprint("✅ Data preparation completed successfully")
         else:
-            print("❌ Data preparation encountered issues:")
+            tprint("❌ Data preparation encountered issues:")
             for issue in preparation_results["issues"]:
-                print(f"  - {issue}")
+                tprint(f"  - {issue}")
 
     elif args.mode == "health-check":
         # Run health check only
         health_result = orchestrator.quick_health_check(args.symbol, args.exchange)
 
         if health_result["healthy"]:
-            print("✅ Health check passed")
+            tprint("✅ Health check passed")
         else:
-            print("❌ Health check found issues:")
+            tprint("❌ Health check found issues:")
             for issue in health_result["issues"]:
-                print(f"  - {issue}")
+                tprint(f"  - {issue}")
 
         for recommendation in health_result["recommendations"]:
-            print(f"  💡 {recommendation}")
+            tprint(f"  💡 {recommendation}")
 
     elif args.mode == "status":
         # Show current status
         status = orchestrator.get_step1_status(args.symbol, args.exchange)
 
-        print(f"Status: {status['overall_status']}")
-        print(f"Aggtrades files: {status['data_available']['aggtrades']}")
-        print(f"Klines files: {status['data_available']['klines']}")
-        print("Resampled data:")
+        tprint(f"Status: {status['overall_status']}")
+        tprint(f"Aggtrades files: {status['data_available']['aggtrades']}")
+        tprint(f"Klines files: {status['data_available']['klines']}")
+        tprint("Resampled data:")
         for timeframe, available in status["resampled_data"].items():
-            print(f"  - {timeframe}: {'✅' if available else '❌'}")
+            tprint(f"  - {timeframe}: {'✅' if available else '❌'}")
 
     elif args.mode == "download-missing":
         # Run missing data download only
@@ -219,15 +221,15 @@ def main() -> None:
 
         # Print report
         if "report" in download_results:
-            print(download_results["report"])
+            tprint(download_results["report"])
 
         # Print summary
         if download_results["success"]:
-            print("✅ Download completed successfully!")
+            tprint("✅ Download completed successfully!")
         else:
-            print("❌ Download completed with errors:")
+            tprint("❌ Download completed with errors:")
             for error in download_results["errors"]:
-                print(f"  - {error}")
+                tprint(f"  - {error}")
 
 if __name__ == "__main__":
     asyncio.run(main())

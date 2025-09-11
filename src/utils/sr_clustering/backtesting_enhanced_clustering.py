@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Backtesting-Enhanced Clustering for SR Levels
 
@@ -46,24 +48,26 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
                 proximity_threshold: float = 0.01, strength_similarity_threshold: float = 0.2) -> 'ClusteringResult':
         """Cluster levels based on strength and proximity using adaptive thresholds."""
         
-        print(f"🎯 Starting strength-proximity clustering with {len(levels)} levels...")
-        print(f"📊 Price range: ${price_range[0]:.2f} - ${price_range[1]:.2f}")
-        print(f"⚙️ Proximity threshold: {proximity_threshold:.3f} ({proximity_threshold*100:.1f}% of price range)")
-        print(f"⚙️ Strength similarity threshold: {strength_similarity_threshold:.3f}")
+        tprint(f"🎯 Starting strength-proximity clustering with {len(levels)} levels...")
+        tprint(f"📊 Price range: ${price_range[0]:.2f} - ${price_range[1]:.2f}")
+        tprint(f"⚙️ Proximity threshold: {proximity_threshold:.3f} ({proximity_threshold*100:.1f}% of price range)")
+        tprint(f"⚙️ Strength similarity threshold: {strength_similarity_threshold:.3f}")
         
         self.logger.info(f"Starting strength-proximity clustering with {len(levels)} levels")
         self.logger.info(f"Price range: {price_range[0]:.2f} - {price_range[1]:.2f}")
         self.logger.info(f"Proximity threshold: {proximity_threshold:.3f}, Strength threshold: {strength_similarity_threshold:.3f}")
         
         if not levels:
-            print("⚠️ No levels provided for clustering, returning empty result")
+            tprint("⚠️ No levels provided for clustering, returning empty result")
             self.logger.warning("No levels provided for clustering, returning empty result")
             return ClusteringResult(
                 clusters=[],
                 cluster_centers=[],
                 quality_score=0.0,
                 quality_enhanced=False,
-                quality_metrics={'algorithm_used': 'StrengthProximity', 'total_levels': 0}
+                quality_metrics={'total_levels': 0},
+                algorithm_used='StrengthProximity',
+                parameters={}
             )
         
         try:
@@ -72,12 +76,12 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
             price_range_size = max_price - min_price
             absolute_proximity_threshold = proximity_threshold * price_range_size
             
-            print(f"🔢 Calculated absolute proximity threshold: ${absolute_proximity_threshold:.2f}")
+            tprint(f"🔢 Calculated absolute proximity threshold: ${absolute_proximity_threshold:.2f}")
             self.logger.info(f"Clustering {len(levels)} levels with proximity threshold: {absolute_proximity_threshold:.2f} ({proximity_threshold:.1%} of price range)")
             self.logger.info(f"Strength similarity threshold: {strength_similarity_threshold:.2f}")
             
             # Log level distribution
-            print("📊 Analyzing level distribution...")
+            tprint("📊 Analyzing level distribution...")
             level_types = {}
             strength_ranges = {'low': 0, 'medium': 0, 'high': 0}
             for level in levels:
@@ -92,20 +96,20 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
                 else:
                     strength_ranges['high'] += 1
             
-            print(f"📈 Level type distribution: {level_types}")
-            print(f"💪 Strength distribution: {strength_ranges}")
+            tprint(f"📈 Level type distribution: {level_types}")
+            tprint(f"💪 Strength distribution: {strength_ranges}")
             self.logger.info(f"Level type distribution: {level_types}")
             self.logger.info(f"Strength distribution: {strength_ranges}")
             
             # Initialize clusters
-            print("🔄 Starting clustering process...")
+            tprint("🔄 Starting clustering process...")
             clusters = []
             unassigned_levels = list(range(len(levels)))
             cluster_count = 0
             
             while unassigned_levels:
                 cluster_count += 1
-                print(f"   Creating cluster {cluster_count}...")
+                tprint(f"   Creating cluster {cluster_count}...")
                 
                 # Start new cluster with strongest unassigned level
                 current_cluster = []
@@ -113,7 +117,7 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
                 current_cluster.append(seed_idx)
                 unassigned_levels.remove(seed_idx)
                 
-                print(f"   Seed level: ${levels[seed_idx].get('price', 0.0):.2f} (strength: {levels[seed_idx].get('strength', 0.5):.3f})")
+                tprint(f"   Seed level: ${levels[seed_idx].get('price', 0.0):.2f} (strength: {levels[seed_idx].get('strength', 0.5):.3f})")
                 
                 # Find all levels that should be in this cluster
                 initial_unassigned_count = len(unassigned_levels)
@@ -121,7 +125,7 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
                                  absolute_proximity_threshold, strength_similarity_threshold)
                 levels_added = initial_unassigned_count - len(unassigned_levels)
                 
-                print(f"   Cluster {cluster_count} created with {len(current_cluster)} levels ({levels_added} levels added)")
+                tprint(f"   Cluster {cluster_count} created with {len(current_cluster)} levels ({levels_added} levels added)")
                 
                 clusters.append(current_cluster)
                 
@@ -130,10 +134,10 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
                     if idx in unassigned_levels:
                         unassigned_levels.remove(idx)
             
-            print(f"✅ Clustering process completed: {len(clusters)} clusters created")
+            tprint(f"✅ Clustering process completed: {len(clusters)} clusters created")
             
             # Calculate cluster centers and quality
-            print("📊 Calculating cluster centers and quality scores...")
+            tprint("📊 Calculating cluster centers and quality scores...")
             cluster_centers = []
             total_quality = 0.0
             
@@ -156,17 +160,17 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
                     cluster_quality = self._calculate_cluster_quality(levels, cluster, weighted_center)
                     total_quality += cluster_quality
                     
-                    print(f"   Cluster {i+1}: {len(cluster)} levels, center: ${weighted_center:.2f}, quality: {cluster_quality:.3f}")
+                    tprint(f"   Cluster {i+1}: {len(cluster)} levels, center: ${weighted_center:.2f}, quality: {cluster_quality:.3f}")
             
             # Overall quality score
             quality_score = total_quality / len(clusters) if clusters else 0.0
             
-            print(f"🎉 Strength-proximity clustering completed!")
-            print(f"📊 Final Results:")
-            print(f"   - Input levels: {len(levels)}")
-            print(f"   - Clusters created: {len(clusters)}")
-            print(f"   - Average cluster size: {len(levels) / len(clusters):.1f} levels")
-            print(f"   - Overall quality score: {quality_score:.3f}")
+            tprint(f"🎉 Strength-proximity clustering completed!")
+            tprint(f"📊 Final Results:")
+            tprint(f"   - Input levels: {len(levels)}")
+            tprint(f"   - Clusters created: {len(clusters)}")
+            tprint(f"   - Average cluster size: {len(levels) / len(clusters):.1f} levels")
+            tprint(f"   - Overall quality score: {quality_score:.3f}")
             
             self.logger.info(f"Strength-proximity clustering: {len(levels)} levels -> {len(clusters)} clusters")
             self.logger.info(f"Average cluster size: {len(levels) / len(clusters):.1f} levels")
@@ -184,17 +188,22 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
                 quality_score=quality_score,
                 quality_enhanced=True,
                 quality_metrics={
-                    'algorithm_used': 'StrengthProximity',
                     'proximity_threshold': proximity_threshold,
                     'strength_similarity_threshold': strength_similarity_threshold,
                     'absolute_proximity_threshold': absolute_proximity_threshold,
                     'total_levels': len(levels),
                     'avg_cluster_size': len(levels) / len(clusters) if clusters else 0
+                },
+                algorithm_used='StrengthProximity',
+                parameters={
+                    'proximity_threshold': proximity_threshold,
+                    'strength_similarity_threshold': strength_similarity_threshold,
+                    'absolute_proximity_threshold': absolute_proximity_threshold
                 }
             )
             
         except Exception as e:
-            print(f"❌ Strength-proximity clustering failed: {e}")
+            tprint(f"❌ Strength-proximity clustering failed: {e}")
             self.logger.error(f"Strength-proximity clustering failed: {e}")
             raise
     
@@ -223,7 +232,7 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
                      strength_similarity_threshold: float) -> None:
         """Grow cluster by adding nearby levels with similar strength."""
         
-        print(f"      Growing cluster with {len(current_cluster)} levels, checking {len(unassigned_levels)} unassigned levels...")
+        tprint(f"      Growing cluster with {len(current_cluster)} levels, checking {len(unassigned_levels)} unassigned levels...")
         self.logger.debug(f"Growing cluster with {len(current_cluster)} levels, checking {len(unassigned_levels)} unassigned levels")
         
         # Get cluster characteristics
@@ -232,7 +241,7 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
         cluster_center_price = sum(cluster_prices) / len(cluster_prices)
         cluster_avg_strength = sum(cluster_strengths) / len(cluster_strengths)
         
-        print(f"      Cluster center: ${cluster_center_price:.2f}, avg strength: {cluster_avg_strength:.3f}")
+        tprint(f"      Cluster center: ${cluster_center_price:.2f}, avg strength: {cluster_avg_strength:.3f}")
         self.logger.debug(f"Cluster center: {cluster_center_price:.2f}, avg strength: {cluster_avg_strength:.3f}")
         
         # Find levels to add to cluster
@@ -258,10 +267,10 @@ class StrengthProximityClustering(BaseClusteringAlgorithm):
             
             # Level qualifies for this cluster
             levels_to_add.append(idx)
-            print(f"         Adding level ${level_price:.2f} (strength: {level_strength:.3f}) to cluster")
+            tprint(f"         Adding level ${level_price:.2f} (strength: {level_strength:.3f}) to cluster")
             self.logger.debug(f"Adding level {idx} (price: {level_price:.2f}, strength: {level_strength:.3f}) to cluster")
         
-        print(f"      Cluster growth: {len(levels_to_add)} levels added, {proximity_rejected} rejected by proximity, {strength_rejected} rejected by strength")
+        tprint(f"      Cluster growth: {len(levels_to_add)} levels added, {proximity_rejected} rejected by proximity, {strength_rejected} rejected by strength")
         self.logger.debug(f"Cluster growth: {len(levels_to_add)} levels added, {proximity_rejected} rejected by proximity, {strength_rejected} rejected by strength")
         
         # Add qualifying levels
@@ -303,6 +312,8 @@ class ClusteringResult:
     quality_score: float = 0.0  # Overall quality score
     quality_enhanced: bool = False  # Whether quality enhancement was used
     quality_metrics: Dict[str, Any] = None  # Additional quality metrics
+    algorithm_used: str = "unknown"  # Algorithm used for clustering
+    parameters: Dict[str, Any] = None  # Parameters used for clustering
     
     def __post_init__(self):
         if self.quality_metrics is None:
@@ -315,11 +326,11 @@ class BacktestingEnhancedConfig:
     backtest_config: BacktestConfig = None
     
     # Clustering parameters
-    proximity_threshold: float = 0.01  # 1% of price range
-    strength_similarity_threshold: float = 0.2  # 20% strength difference
+    proximity_threshold: float = 0.005  # 0.5% of price range (HARD RULE: no merging beyond 0.5%)
+    strength_similarity_threshold: float = 0.15  # 15% strength difference (stricter)
     
     # Quality filtering
-    min_quality_score: float = 0.3  # Minimum quality score to keep level
+    min_quality_score: float = 0.01  # Minimum quality score to keep level (extremely lenient filtering)
     quality_weight_in_clustering: float = 0.4  # Weight of quality in clustering decisions
     
     # Learning parameters
@@ -337,18 +348,18 @@ class BacktestingEnhancedClustering:
         self.config = config or BacktestingEnhancedConfig()
         self.logger = system_logger.getChild('BacktestingEnhancedClustering')
         
-        print("🚀 Initializing BacktestingEnhancedClustering system...")
+        tprint("🚀 Initializing BacktestingEnhancedClustering system...")
         self.logger.info("🚀 Initializing BacktestingEnhancedClustering system...")
         
-        print(f"📋 Configuration loaded:")
-        print(f"   - Proximity threshold: {self.config.proximity_threshold:.3f} ({self.config.proximity_threshold*100:.1f}% of price range)")
-        print(f"   - Strength similarity threshold: {self.config.strength_similarity_threshold:.3f}")
-        print(f"   - Min quality score: {self.config.min_quality_score:.3f}")
-        print(f"   - Quality weight in clustering: {self.config.quality_weight_in_clustering:.3f}")
-        print(f"   - Min levels for learning: {self.config.min_levels_for_learning}")
-        print(f"   - Learning update frequency: {self.config.learning_update_frequency}")
-        print(f"   - Min success rate: {self.config.min_success_rate:.3f}")
-        print(f"   - Min bounce strength: {self.config.min_bounce_strength:.3f}")
+        tprint(f"📋 Configuration loaded:")
+        tprint(f"   - Proximity threshold: {self.config.proximity_threshold:.3f} ({self.config.proximity_threshold*100:.1f}% of price range)")
+        tprint(f"   - Strength similarity threshold: {self.config.strength_similarity_threshold:.3f}")
+        tprint(f"   - Min quality score: {self.config.min_quality_score:.3f}")
+        tprint(f"   - Quality weight in clustering: {self.config.quality_weight_in_clustering:.3f}")
+        tprint(f"   - Min levels for learning: {self.config.min_levels_for_learning}")
+        tprint(f"   - Learning update frequency: {self.config.learning_update_frequency}")
+        tprint(f"   - Min success rate: {self.config.min_success_rate:.3f}")
+        tprint(f"   - Min bounce strength: {self.config.min_bounce_strength:.3f}")
         
         self.logger.info("📋 Configuration loaded:")
         self.logger.info(f"   - Proximity threshold: {self.config.proximity_threshold:.3f} ({self.config.proximity_threshold*100:.1f}% of price range)")
@@ -361,58 +372,59 @@ class BacktestingEnhancedClustering:
         self.logger.info(f"   - Min bounce strength: {self.config.min_bounce_strength:.3f}")
         
         # Initialize components
-        print("🔧 Initializing backtesting engine...")
+        tprint("🔧 Initializing backtesting engine...")
         self.logger.info("🔧 Initializing backtesting engine...")
         self.backtesting_engine = SRBacktestingEngine(self.config.backtest_config)
-        print("✅ Backtesting engine initialized successfully")
+        tprint("✅ Backtesting engine initialized successfully")
         self.logger.info("✅ Backtesting engine initialized successfully")
         
         # Initialize extensive clustering system if available
-        print("🔍 Checking for enhanced SR detector...")
+        tprint("🔍 Checking for enhanced SR detector...")
         self.logger.info("🔍 Checking for enhanced SR detector...")
         if EXTENSIVE_CLUSTERING_AVAILABLE:
-            print("✅ Enhanced SR detector available, initializing...")
+            tprint("✅ Enhanced SR detector available, initializing...")
             self.logger.info("✅ Enhanced SR detector available, initializing...")
             self.enhanced_sr_detector = EnhancedSRDetector({})
-            print("✅ Enhanced SR detector initialized successfully")
+            tprint("✅ Enhanced SR detector initialized successfully")
             self.logger.info("✅ Enhanced SR detector initialized successfully")
         else:
-            print("⚠️ Enhanced SR detector not available, using fallback methods")
-            self.logger.warning("⚠️ Enhanced SR detector not available, using fallback methods")
-            self.enhanced_sr_detector = None
+            error_msg = "❌ Enhanced SR detector not available - required for backtesting-enhanced clustering"
+            tprint(error_msg)
+            self.logger.error(error_msg)
+            raise ImportError("Enhanced SR detector is required for backtesting-enhanced clustering")
         
         # Initialize strength-proximity clustering algorithm
-        print("🎯 Initializing strength-proximity clustering algorithm...")
+        tprint("🎯 Initializing strength-proximity clustering algorithm...")
         self.logger.info("🎯 Initializing strength-proximity clustering algorithm...")
         self.strength_proximity_clustering = StrengthProximityClustering()
-        print("✅ Strength-proximity clustering algorithm initialized")
+        tprint("✅ Strength-proximity clustering algorithm initialized")
         self.logger.info("✅ Strength-proximity clustering algorithm initialized")
         
         # Learning state
-        print("🧠 Initializing learning state...")
+        tprint("🧠 Initializing learning state...")
         self.logger.info("🧠 Initializing learning state...")
         self.learned_rules = {}
         self.quality_predictions = {}
         self.levels_processed = 0
-        print("✅ Learning state initialized")
+        tprint("✅ Learning state initialized")
         self.logger.info("✅ Learning state initialized")
         
-        print("🎉 BacktestingEnhancedClustering initialization completed successfully!")
+        tprint("🎉 BacktestingEnhancedClustering initialization completed successfully!")
         self.logger.info("🎉 BacktestingEnhancedClustering initialization completed successfully!")
         
     def cluster_with_backtesting(self, levels: List[Dict], data: pd.DataFrame, 
                                 price_range: Tuple[float, float]) -> ClusteringResult:
         """Cluster levels using backtesting-enhanced approach."""
         try:
-            print("=" * 80)
-            print("🚀 STARTING BACKTESTING-ENHANCED CLUSTERING")
-            print("=" * 80)
-            print(f"📊 Input Summary:")
-            print(f"   - Levels to cluster: {len(levels)}")
-            print(f"   - Price range: ${price_range[0]:.2f} - ${price_range[1]:.2f}")
-            print(f"   - Price range size: ${price_range[1] - price_range[0]:.2f}")
-            print(f"   - Data shape: {data.shape[0]} rows × {data.shape[1]} columns")
-            print(f"   - Data time range: {data.index.min()} to {data.index.max()}")
+            tprint("=" * 80)
+            tprint("🚀 STARTING BACKTESTING-ENHANCED CLUSTERING")
+            tprint("=" * 80)
+            tprint(f"📊 Input Summary:")
+            tprint(f"   - Levels to cluster: {len(levels)}")
+            tprint(f"   - Price range: ${price_range[0]:.2f} - ${price_range[1]:.2f}")
+            tprint(f"   - Price range size: ${price_range[1] - price_range[0]:.2f}")
+            tprint(f"   - Data shape: {data.shape[0]} rows × {data.shape[1]} columns")
+            tprint(f"   - Data time range: {data.index.min()} to {data.index.max()}")
             
             self.logger.info("=" * 80)
             self.logger.info("🚀 STARTING BACKTESTING-ENHANCED CLUSTERING")
@@ -425,65 +437,65 @@ class BacktestingEnhancedClustering:
             self.logger.info(f"   - Data time range: {data.index.min()} to {data.index.max()}")
             
             # Step 1: Backtest levels to assess quality
-            print("\n" + "=" * 60)
-            print("📊 STEP 1: BACKTESTING LEVELS TO ASSESS QUALITY")
-            print("=" * 60)
+            tprint("\n" + "=" * 60)
+            tprint("📊 STEP 1: BACKTESTING LEVELS TO ASSESS QUALITY")
+            tprint("=" * 60)
             self.logger.info("📊 STEP 1: BACKTESTING LEVELS TO ASSESS QUALITY")
             backtest_results = self._backtest_levels(levels, data)
             
             # Step 2: Learn/update quality rules
-            print("\n" + "=" * 60)
-            print("🧠 STEP 2: LEARNING/UPDATING QUALITY RULES")
-            print("=" * 60)
+            tprint("\n" + "=" * 60)
+            tprint("🧠 STEP 2: LEARNING/UPDATING QUALITY RULES")
+            tprint("=" * 60)
             self.logger.info("🧠 STEP 2: LEARNING/UPDATING QUALITY RULES")
             if len(backtest_results) >= self.config.min_levels_for_learning:
-                print(f"✅ Sufficient levels for learning: {len(backtest_results)} >= {self.config.min_levels_for_learning}")
+                tprint(f"✅ Sufficient levels for learning: {len(backtest_results)} >= {self.config.min_levels_for_learning}")
                 self.logger.info(f"✅ Sufficient levels for learning: {len(backtest_results)} >= {self.config.min_levels_for_learning}")
                 self._update_quality_rules(backtest_results, data)
             else:
-                print(f"⚠️ Insufficient levels for learning: {len(backtest_results)} < {self.config.min_levels_for_learning}")
+                tprint(f"⚠️ Insufficient levels for learning: {len(backtest_results)} < {self.config.min_levels_for_learning}")
                 self.logger.warning(f"⚠️ Insufficient levels for learning: {len(backtest_results)} < {self.config.min_levels_for_learning}")
             
             # Step 3: Filter levels based on quality
-            print("\n" + "=" * 60)
-            print("🔍 STEP 3: FILTERING LEVELS BASED ON QUALITY")
-            print("=" * 60)
+            tprint("\n" + "=" * 60)
+            tprint("🔍 STEP 3: FILTERING LEVELS BASED ON QUALITY")
+            tprint("=" * 60)
             self.logger.info("🔍 STEP 3: FILTERING LEVELS BASED ON QUALITY")
             quality_filtered_levels = self._filter_by_quality(levels, backtest_results)
             
             # Step 4: Enhance level data with quality scores
-            print("\n" + "=" * 60)
-            print("✨ STEP 4: ENHANCING LEVEL DATA WITH QUALITY SCORES")
-            print("=" * 60)
+            tprint("\n" + "=" * 60)
+            tprint("✨ STEP 4: ENHANCING LEVEL DATA WITH QUALITY SCORES")
+            tprint("=" * 60)
             self.logger.info("✨ STEP 4: ENHANCING LEVEL DATA WITH QUALITY SCORES")
             enhanced_levels = self._enhance_levels_with_quality(quality_filtered_levels, backtest_results)
             
             # Step 5: Cluster using quality-enhanced approach
-            print("\n" + "=" * 60)
-            print("🎯 STEP 5: CLUSTERING USING QUALITY-ENHANCED APPROACH")
-            print("=" * 60)
+            tprint("\n" + "=" * 60)
+            tprint("🎯 STEP 5: CLUSTERING USING QUALITY-ENHANCED APPROACH")
+            tprint("=" * 60)
             self.logger.info("🎯 STEP 5: CLUSTERING USING QUALITY-ENHANCED APPROACH")
             clustering_result = self._cluster_quality_enhanced(enhanced_levels, price_range, data)
             
             # Step 6: Post-process clusters with quality validation
-            print("\n" + "=" * 60)
-            print("✅ STEP 6: POST-PROCESSING CLUSTERS WITH QUALITY VALIDATION")
-            print("=" * 60)
+            tprint("\n" + "=" * 60)
+            tprint("✅ STEP 6: POST-PROCESSING CLUSTERS WITH QUALITY VALIDATION")
+            tprint("=" * 60)
             self.logger.info("✅ STEP 6: POST-PROCESSING CLUSTERS WITH QUALITY VALIDATION")
             final_result = self._validate_clusters_with_backtesting(clustering_result, data)
             
             self.levels_processed += len(levels)
             
-            print("\n" + "=" * 80)
-            print("🎉 BACKTESTING-ENHANCED CLUSTERING COMPLETED!")
-            print("=" * 80)
-            print(f"📈 Final Results:")
-            print(f"   - Input levels: {len(levels)}")
-            print(f"   - Final clusters: {len(final_result.clusters)}")
-            print(f"   - Quality score: {final_result.quality_score:.3f}")
-            print(f"   - Quality enhanced: {final_result.quality_enhanced}")
-            print(f"   - Total levels processed: {self.levels_processed}")
-            print("=" * 80)
+            tprint("\n" + "=" * 80)
+            tprint("🎉 BACKTESTING-ENHANCED CLUSTERING COMPLETED!")
+            tprint("=" * 80)
+            tprint(f"📈 Final Results:")
+            tprint(f"   - Input levels: {len(levels)}")
+            tprint(f"   - Final clusters: {len(final_result.clusters)}")
+            tprint(f"   - Quality score: {final_result.quality_score:.3f}")
+            tprint(f"   - Quality enhanced: {final_result.quality_enhanced}")
+            tprint(f"   - Total levels processed: {self.levels_processed}")
+            tprint("=" * 80)
             
             self.logger.info("=" * 80)
             self.logger.info("🎉 BACKTESTING-ENHANCED CLUSTERING COMPLETED!")
@@ -499,8 +511,8 @@ class BacktestingEnhancedClustering:
             return final_result
             
         except Exception as e:
-            print(f"\n❌ BACKTESTING-ENHANCED CLUSTERING FAILED: {e}")
-            print("🔄 Falling back to standard clustering...")
+            tprint(f"\n❌ BACKTESTING-ENHANCED CLUSTERING FAILED: {e}")
+            tprint("🔄 Falling back to standard clustering...")
             self.logger.error(f"❌ Backtesting-enhanced clustering failed: {e}")
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
@@ -510,11 +522,11 @@ class BacktestingEnhancedClustering:
     
     def _backtest_levels(self, levels: List[Dict], data: pd.DataFrame) -> List[Any]:
         """Backtest all levels to assess their quality."""
-        print(f"📈 Starting backtesting of {len(levels)} levels for quality assessment...")
+        tprint(f"📈 Starting backtesting of {len(levels)} levels for quality assessment...")
         self.logger.info(f"📈 Starting backtesting of {len(levels)} levels for quality assessment...")
         
         # Convert to SRLevel objects
-        print("🔄 Converting level dictionaries to SRLevel objects...")
+        tprint("🔄 Converting level dictionaries to SRLevel objects...")
         self.logger.info("🔄 Converting level dictionaries to SRLevel objects...")
         sr_levels = []
         conversion_errors = 0
@@ -523,19 +535,19 @@ class BacktestingEnhancedClustering:
                 sr_level = create_sr_level_from_dict(level_dict)
                 sr_levels.append(sr_level)
                 if i % 10 == 0:  # Log progress every 10 levels
-                    print(f"   Converted {i+1}/{len(levels)} levels to SRLevel objects...")
+                    tprint(f"   Converted {i+1}/{len(levels)} levels to SRLevel objects...")
                     self.logger.debug(f"Converted {i+1}/{len(levels)} levels to SRLevel objects")
             except Exception as e:
-                print(f"   ⚠️ Failed to create SRLevel from level {i+1}: {e}")
+                tprint(f"   ⚠️ Failed to create SRLevel from level {i+1}: {e}")
                 self.logger.warning(f"Failed to create SRLevel from {level_dict}: {e}")
                 conversion_errors += 1
                 continue
         
-        print(f"✅ Conversion completed: {len(sr_levels)} levels converted ({conversion_errors} errors)")
+        tprint(f"✅ Conversion completed: {len(sr_levels)} levels converted ({conversion_errors} errors)")
         self.logger.info(f"✅ Conversion completed: {len(sr_levels)} levels converted ({conversion_errors} errors)")
         
         if not sr_levels:
-            print("❌ No valid SRLevel objects created, cannot proceed with backtesting")
+            tprint("❌ No valid SRLevel objects created, cannot proceed with backtesting")
             self.logger.error("No valid SRLevel objects created, cannot proceed with backtesting")
             return []
         
@@ -546,11 +558,11 @@ class BacktestingEnhancedClustering:
             avg_strength = np.mean([level.strength for level in sr_levels])
             avg_touches = np.mean([level.touches for level in sr_levels])
             
-            print(f"📊 Level distribution:")
-            print(f"   - Support levels: {support_count}")
-            print(f"   - Resistance levels: {resistance_count}")
-            print(f"   - Average strength: {avg_strength:.3f}")
-            print(f"   - Average touches: {avg_touches:.1f}")
+            tprint(f"📊 Level distribution:")
+            tprint(f"   - Support levels: {support_count}")
+            tprint(f"   - Resistance levels: {resistance_count}")
+            tprint(f"   - Average strength: {avg_strength:.3f}")
+            tprint(f"   - Average touches: {avg_touches:.1f}")
             
             self.logger.info(f"📊 Level distribution:")
             self.logger.info(f"   - Support levels: {support_count}")
@@ -559,7 +571,7 @@ class BacktestingEnhancedClustering:
             self.logger.info(f"   - Average touches: {avg_touches:.1f}")
         
         # Backtest levels
-        print("🚀 Running backtesting engine on SRLevel objects...")
+        tprint("🚀 Running backtesting engine on SRLevel objects...")
         self.logger.info("🚀 Running backtesting engine on SRLevel objects...")
         backtest_results = self.backtesting_engine.backtest_multiple_levels(sr_levels, data)
         
@@ -568,13 +580,13 @@ class BacktestingEnhancedClustering:
             success_rates = [r.success_rate for r in backtest_results]
             bounce_strengths = [r.avg_bounce_strength for r in backtest_results]
             
-            print(f"✅ Backtesting completed successfully!")
-            print(f"📊 Backtesting Results Summary:")
-            print(f"   - Levels backtested: {len(backtest_results)}")
-            print(f"   - Quality scores - mean: {np.mean(quality_scores):.3f}, std: {np.std(quality_scores):.3f}")
-            print(f"   - Quality scores - min: {np.min(quality_scores):.3f}, max: {np.max(quality_scores):.3f}")
-            print(f"   - Success rates - mean: {np.mean(success_rates):.3f}, std: {np.std(success_rates):.3f}")
-            print(f"   - Bounce strengths - mean: {np.mean(bounce_strengths):.3f}, std: {np.std(bounce_strengths):.3f}")
+            tprint(f"✅ Backtesting completed successfully!")
+            tprint(f"📊 Backtesting Results Summary:")
+            tprint(f"   - Levels backtested: {len(backtest_results)}")
+            tprint(f"   - Quality scores - mean: {np.mean(quality_scores):.3f}, std: {np.std(quality_scores):.3f}")
+            tprint(f"   - Quality scores - min: {np.min(quality_scores):.3f}, max: {np.max(quality_scores):.3f}")
+            tprint(f"   - Success rates - mean: {np.mean(success_rates):.3f}, std: {np.std(success_rates):.3f}")
+            tprint(f"   - Bounce strengths - mean: {np.mean(bounce_strengths):.3f}, std: {np.std(bounce_strengths):.3f}")
             
             self.logger.info(f"✅ Backtesting completed successfully!")
             self.logger.info(f"📊 Backtesting Results Summary:")
@@ -584,7 +596,7 @@ class BacktestingEnhancedClustering:
             self.logger.info(f"   - Success rates - mean: {np.mean(success_rates):.3f}, std: {np.std(success_rates):.3f}")
             self.logger.info(f"   - Bounce strengths - mean: {np.mean(bounce_strengths):.3f}, std: {np.std(bounce_strengths):.3f}")
         else:
-            print("⚠️ Backtesting completed but no results returned")
+            tprint("⚠️ Backtesting completed but no results returned")
             self.logger.warning("⚠️ Backtesting completed but no results returned")
         
         return backtest_results
@@ -592,12 +604,12 @@ class BacktestingEnhancedClustering:
     def _update_quality_rules(self, backtest_results: List[Any], market_data: Optional[pd.DataFrame] = None) -> None:
         """Update quality rules based on backtesting results."""
         try:
-            print(f"🧠 Updating quality rules from {len(backtest_results)} backtest results...")
+            tprint(f"🧠 Updating quality rules from {len(backtest_results)} backtest results...")
             self.logger.info("🧠 Updating quality rules from backtesting results")
             self.logger.info(f"Processing {len(backtest_results)} backtest results")
             
             # Learn new rules with weight optimization
-            print("🔬 Learning new quality rules with weight optimization...")
+            tprint("🔬 Learning new quality rules with weight optimization...")
             self.logger.info("Learning new quality rules with weight optimization")
             new_rules = self.backtesting_engine.learn_quality_rules(
                 backtest_results, 
@@ -606,17 +618,17 @@ class BacktestingEnhancedClustering:
             )
             
             if new_rules:
-                print("✅ Successfully learned new quality rules!")
+                tprint("✅ Successfully learned new quality rules!")
                 self.logger.info(f"✅ Successfully learned new quality rules")
                 
                 # Merge with existing rules (weighted average)
                 if self.learned_rules:
-                    print("🔄 Merging new rules with existing learned rules...")
+                    tprint("🔄 Merging new rules with existing learned rules...")
                     self.logger.info("Merging new rules with existing learned rules")
                     self.learned_rules = self._merge_rules(self.learned_rules, new_rules)
-                    print("✅ Rules merged successfully")
+                    tprint("✅ Rules merged successfully")
                 else:
-                    print("📝 No existing rules found, using new rules as base")
+                    tprint("📝 No existing rules found, using new rules as base")
                     self.logger.info("No existing rules found, using new rules as base")
                     self.learned_rules = new_rules
                 
@@ -624,34 +636,34 @@ class BacktestingEnhancedClustering:
                 if new_rules.get('weight_optimization_enabled', False):
                     optimized_weights = new_rules.get('optimized_weights', {})
                     if optimized_weights:
-                        print("🎯 Weight optimization completed successfully!")
-                        print(f"📊 Optimized weights summary:")
+                        tprint("🎯 Weight optimization completed successfully!")
+                        tprint(f"📊 Optimized weights summary:")
                         self.logger.info(f"🎯 Weight optimization completed successfully")
                         self.logger.info(f"Optimized weights: {optimized_weights}")
                         
                         # Log top weights
                         sorted_weights = sorted(optimized_weights.items(), key=lambda x: x[1], reverse=True)
-                        print("   Top 5 optimized weights:")
+                        tprint("   Top 5 optimized weights:")
                         self.logger.info("Top 5 optimized weights:")
                         for i, (feature, weight) in enumerate(sorted_weights[:5], 1):
-                            print(f"   {i}. {feature}: {weight:.3f}")
+                            tprint(f"   {i}. {feature}: {weight:.3f}")
                             self.logger.info(f"  {feature}: {weight:.3f}")
                     else:
-                        print("⚠️ Weight optimization attempted but no optimized weights available")
+                        tprint("⚠️ Weight optimization attempted but no optimized weights available")
                         self.logger.warning("⚠️ Weight optimization attempted but no optimized weights available")
                 
                 # Log quality predictors
                 quality_predictors = new_rules.get('quality_predictors', {})
                 if quality_predictors:
-                    print(f"📊 Quality predictors identified: {len(quality_predictors)} features")
+                    tprint(f"📊 Quality predictors identified: {len(quality_predictors)} features")
                     top_predictors = sorted(quality_predictors.items(), key=lambda x: abs(x[1].get('correlation', 0)), reverse=True)[:5]
-                    print("   Top 5 quality predictors:")
+                    tprint("   Top 5 quality predictors:")
                     self.logger.info(f"📊 Quality predictors identified: {len(quality_predictors)} features")
                     self.logger.info("Top 5 quality predictors:")
                     for i, (feature, info) in enumerate(top_predictors, 1):
                         corr = info.get('correlation', 0)
                         direction = "📈" if corr > 0 else "📉"
-                        print(f"   {i}. {direction} {feature}: correlation={corr:.3f}")
+                        tprint(f"   {i}. {direction} {feature}: correlation={corr:.3f}")
                         self.logger.info(f"  {feature}: correlation={corr:.3f}")
                 
                 # Log model performance if available
@@ -660,20 +672,20 @@ class BacktestingEnhancedClustering:
                     model_type = strength_model.get('model_type', 'Unknown')
                     r_squared = strength_model.get('r_squared', 0.0)
                     cv_r_squared = strength_model.get('cv_r_squared_mean', 0.0)
-                    print(f"🤖 ML Model Performance:")
-                    print(f"   - Model type: {model_type}")
-                    print(f"   - R² score: {r_squared:.3f}")
-                    print(f"   - CV R² score: {cv_r_squared:.3f}")
+                    tprint(f"🤖 ML Model Performance:")
+                    tprint(f"   - Model type: {model_type}")
+                    tprint(f"   - R² score: {r_squared:.3f}")
+                    tprint(f"   - CV R² score: {cv_r_squared:.3f}")
                     self.logger.info(f"🤖 ML Model Performance: {model_type}, R²={r_squared:.3f}, CV R²={cv_r_squared:.3f}")
                 
-                print("✅ Quality rules update completed successfully!")
+                tprint("✅ Quality rules update completed successfully!")
                 self.logger.info(f"✅ Quality rules update completed successfully")
             else:
-                print("⚠️ No new quality rules learned from backtesting results")
+                tprint("⚠️ No new quality rules learned from backtesting results")
                 self.logger.warning("⚠️ No new quality rules learned from backtesting results")
             
         except Exception as e:
-            print(f"❌ Failed to update quality rules: {e}")
+            tprint(f"❌ Failed to update quality rules: {e}")
             self.logger.error(f"❌ Failed to update quality rules: {e}")
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
@@ -681,13 +693,13 @@ class BacktestingEnhancedClustering:
     def _filter_by_quality(self, levels: List[Dict], backtest_results: List[Any]) -> List[Dict]:
         """Filter levels based on quality assessment - only filter out VERY low quality levels."""
         try:
-            print(f"🔍 Filtering {len(levels)} levels based on quality assessment...")
+            tprint(f"🔍 Filtering {len(levels)} levels based on quality assessment...")
             self.logger.info(f"🔍 Filtering {len(levels)} levels based on quality assessment")
             
             # Create quality mapping
-            print("📊 Creating quality mapping from backtest results...")
+            tprint("📊 Creating quality mapping from backtest results...")
             quality_map = {r.level.price: r.quality_score for r in backtest_results}
-            print(f"✅ Quality mapping created for {len(quality_map)} levels")
+            tprint(f"✅ Quality mapping created for {len(quality_map)} levels")
             self.logger.debug(f"Created quality mapping for {len(quality_map)} levels")
             
             # Calculate quality statistics to determine very low threshold
@@ -699,26 +711,27 @@ class BacktestingEnhancedClustering:
                 quality_max = np.max(quality_scores)
                 quality_median = np.median(quality_scores)
                 
-                print(f"📈 Quality statistics:")
-                print(f"   - Mean: {quality_mean:.3f}")
-                print(f"   - Median: {quality_median:.3f}")
-                print(f"   - Std: {quality_std:.3f}")
-                print(f"   - Min: {quality_min:.3f}")
-                print(f"   - Max: {quality_max:.3f}")
+                tprint(f"📈 Quality statistics:")
+                tprint(f"   - Mean: {quality_mean:.3f}")
+                tprint(f"   - Median: {quality_median:.3f}")
+                tprint(f"   - Std: {quality_std:.3f}")
+                tprint(f"   - Min: {quality_min:.3f}")
+                tprint(f"   - Max: {quality_max:.3f}")
                 
                 self.logger.info(f"Quality statistics: mean={quality_mean:.3f}, std={quality_std:.3f}, min={quality_min:.3f}, max={quality_max:.3f}")
                 
-                # Only filter out levels that are significantly below average (more than 2 standard deviations)
-                very_low_threshold = max(0.1, quality_mean - 2 * quality_std)
-                print(f"🎯 Calculated very low quality threshold: {very_low_threshold:.3f} (mean - 2*std)")
-                self.logger.info(f"Calculated very low quality threshold: {very_low_threshold:.3f} (mean - 2*std)")
+                # DISABLED: Quality filtering temporarily disabled to let hard 0.5% rule work
+                # very_low_threshold = max(0.01, quality_mean - 3 * quality_std)
+                very_low_threshold = 0.0  # Allow all levels through for now
+                tprint(f"🎯 Quality filtering DISABLED - threshold: {very_low_threshold:.3f} (all levels allowed)")
+                self.logger.info(f"Quality filtering DISABLED - threshold: {very_low_threshold:.3f} (all levels allowed)")
             else:
-                very_low_threshold = 0.1  # Very conservative threshold
-                print("⚠️ No quality scores available, using conservative threshold: 0.1")
-                self.logger.warning("No quality scores available, using conservative threshold: 0.1")
+                very_low_threshold = 0.01  # Very lenient threshold to keep more levels
+                tprint("⚠️ No quality scores available, using lenient threshold: 0.01")
+                self.logger.warning("No quality scores available, using lenient threshold: 0.01")
             
             # Filter levels - only remove very low quality
-            print("🔍 Applying quality filter...")
+            tprint("🔍 Applying quality filter...")
             filtered_levels = []
             filtered_count = 0
             kept_count = 0
@@ -734,36 +747,36 @@ class BacktestingEnhancedClustering:
                     filtered_levels.append(level)
                     kept_count += 1
                     if i % 10 == 0:  # Log progress every 10 levels
-                        print(f"   Processed {i+1}/{len(levels)} levels...")
+                        tprint(f"   Processed {i+1}/{len(levels)} levels...")
                 else:
                     filtered_count += 1
                     if filtered_count <= 5:  # Log first 5 filtered levels
-                        print(f"   🗑️ Filtered out level ${level['price']:.2f} (quality: {quality_score:.3f} < {very_low_threshold:.3f})")
+                        tprint(f"   🗑️ Filtered out level ${level['price']:.2f} (quality: {quality_score:.3f} < {very_low_threshold:.3f})")
                     self.logger.debug(f"Filtered out very low quality level ${level['price']:.2f} (quality: {quality_score:.3f}, threshold: {very_low_threshold:.3f})")
             
-            print(f"✅ Quality filtering completed!")
-            print(f"📊 Filtering Results:")
-            print(f"   - Input levels: {len(levels)}")
-            print(f"   - Kept levels: {kept_count}")
-            print(f"   - Filtered out: {filtered_count}")
-            print(f"   - Filter rate: {filtered_count/len(levels)*100:.1f}%")
-            print(f"   - Threshold used: {very_low_threshold:.3f}")
+            tprint(f"✅ Quality filtering completed!")
+            tprint(f"📊 Filtering Results:")
+            tprint(f"   - Input levels: {len(levels)}")
+            tprint(f"   - Kept levels: {kept_count}")
+            tprint(f"   - Filtered out: {filtered_count}")
+            tprint(f"   - Filter rate: {filtered_count/len(levels)*100:.1f}%")
+            tprint(f"   - Threshold used: {very_low_threshold:.3f}")
             
             self.logger.info(f"✅ Quality filtering completed: {len(levels)} -> {len(filtered_levels)} levels")
             self.logger.info(f"Filtered out {filtered_count} very low quality levels (threshold: {very_low_threshold:.3f})")
             
             if filtered_levels:
                 filtered_qualities = [level['backtest_quality'] for level in filtered_levels]
-                print(f"📈 Filtered level quality stats:")
-                print(f"   - Mean: {np.mean(filtered_qualities):.3f}")
-                print(f"   - Min: {np.min(filtered_qualities):.3f}")
-                print(f"   - Max: {np.max(filtered_qualities):.3f}")
+                tprint(f"📈 Filtered level quality stats:")
+                tprint(f"   - Mean: {np.mean(filtered_qualities):.3f}")
+                tprint(f"   - Min: {np.min(filtered_qualities):.3f}")
+                tprint(f"   - Max: {np.max(filtered_qualities):.3f}")
                 self.logger.info(f"Filtered level quality stats: mean={np.mean(filtered_qualities):.3f}, min={np.min(filtered_qualities):.3f}, max={np.max(filtered_qualities):.3f}")
             
             return filtered_levels
             
         except Exception as e:
-            print(f"❌ Quality filtering failed: {e}")
+            tprint(f"❌ Quality filtering failed: {e}")
             self.logger.error(f"❌ Quality filtering failed: {e}")
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
@@ -772,20 +785,20 @@ class BacktestingEnhancedClustering:
     def _enhance_levels_with_quality(self, levels: List[Dict], backtest_results: List[Any]) -> List[Dict]:
         """Enhance level data with quality information."""
         try:
-            print(f"✨ Enhancing {len(levels)} levels with quality information...")
+            tprint(f"✨ Enhancing {len(levels)} levels with quality information...")
             self.logger.info(f"✨ Enhancing {len(levels)} levels with quality information")
             
             # Create quality mapping
-            print("📊 Creating quality mapping from backtest results...")
+            tprint("📊 Creating quality mapping from backtest results...")
             quality_map = {r.level.price: r for r in backtest_results}
-            print(f"✅ Quality mapping created for {len(quality_map)} backtest results")
+            tprint(f"✅ Quality mapping created for {len(quality_map)} backtest results")
             self.logger.debug(f"Created quality mapping for {len(quality_map)} backtest results")
             
             enhanced_levels = []
             enhancement_errors = 0
             enhancement_successes = 0
             
-            print("🔄 Processing levels for enhancement...")
+            tprint("🔄 Processing levels for enhancement...")
             for i, level in enumerate(levels):
                 try:
                     enhanced_level = level.copy()
@@ -804,11 +817,11 @@ class BacktestingEnhancedClustering:
                         enhancement_successes += 1
                         
                         if i % 10 == 0:  # Log progress every 10 levels
-                            print(f"   Enhanced level {i+1}/{len(levels)}: ${level['price']:.2f}, quality={backtest_result.quality_score:.3f}")
+                            tprint(f"   Enhanced level {i+1}/{len(levels)}: ${level['price']:.2f}, quality={backtest_result.quality_score:.3f}")
                             self.logger.debug(f"Enhanced level {i+1}/{len(levels)}: price={level['price']:.2f}, quality={backtest_result.quality_score:.3f}")
                     else:
                         if enhancement_errors < 5:  # Log first 5 missing results
-                            print(f"   ⚠️ No backtest result found for level at ${level['price']:.2f}")
+                            tprint(f"   ⚠️ No backtest result found for level at ${level['price']:.2f}")
                         self.logger.warning(f"No backtest result found for level at price {level['price']:.2f}")
                         enhancement_errors += 1
                     
@@ -816,17 +829,17 @@ class BacktestingEnhancedClustering:
                     
                 except Exception as e:
                     if enhancement_errors < 5:  # Log first 5 errors
-                        print(f"   ❌ Failed to enhance level {i+1}: {e}")
+                        tprint(f"   ❌ Failed to enhance level {i+1}: {e}")
                     self.logger.warning(f"Failed to enhance level {i+1}: {e}")
                     enhancement_errors += 1
                     enhanced_levels.append(level)  # Add original level as fallback
             
-            print(f"✅ Level enhancement completed!")
-            print(f"📊 Enhancement Results:")
-            print(f"   - Levels processed: {len(levels)}")
-            print(f"   - Successfully enhanced: {enhancement_successes}")
-            print(f"   - Enhancement errors: {enhancement_errors}")
-            print(f"   - Success rate: {enhancement_successes/len(levels)*100:.1f}%")
+            tprint(f"✅ Level enhancement completed!")
+            tprint(f"📊 Enhancement Results:")
+            tprint(f"   - Levels processed: {len(levels)}")
+            tprint(f"   - Successfully enhanced: {enhancement_successes}")
+            tprint(f"   - Enhancement errors: {enhancement_errors}")
+            tprint(f"   - Success rate: {enhancement_successes/len(levels)*100:.1f}%")
             
             self.logger.info(f"✅ Level enhancement completed: {len(enhanced_levels)} levels enhanced ({enhancement_errors} errors)")
             
@@ -836,10 +849,10 @@ class BacktestingEnhancedClustering:
                 enhanced_success_rates = [level.get('success_rate', 0.0) for level in enhanced_levels]
                 enhanced_bounce_strengths = [level.get('avg_bounce_strength', 0.0) for level in enhanced_levels]
                 
-                print(f"📈 Enhanced level statistics:")
-                print(f"   - Quality scores - mean: {np.mean(enhanced_qualities):.3f}, std: {np.std(enhanced_qualities):.3f}")
-                print(f"   - Success rates - mean: {np.mean(enhanced_success_rates):.3f}, std: {np.std(enhanced_success_rates):.3f}")
-                print(f"   - Bounce strengths - mean: {np.mean(enhanced_bounce_strengths):.3f}, std: {np.std(enhanced_bounce_strengths):.3f}")
+                tprint(f"📈 Enhanced level statistics:")
+                tprint(f"   - Quality scores - mean: {np.mean(enhanced_qualities):.3f}, std: {np.std(enhanced_qualities):.3f}")
+                tprint(f"   - Success rates - mean: {np.mean(enhanced_success_rates):.3f}, std: {np.std(enhanced_success_rates):.3f}")
+                tprint(f"   - Bounce strengths - mean: {np.mean(enhanced_bounce_strengths):.3f}, std: {np.std(enhanced_bounce_strengths):.3f}")
                 
                 self.logger.info(f"Enhanced level quality stats: mean={np.mean(enhanced_qualities):.3f}, std={np.std(enhanced_qualities):.3f}")
                 self.logger.info(f"Enhanced level success rates: mean={np.mean(enhanced_success_rates):.3f}, std={np.std(enhanced_success_rates):.3f}")
@@ -848,7 +861,7 @@ class BacktestingEnhancedClustering:
             return enhanced_levels
             
         except Exception as e:
-            print(f"❌ Level enhancement failed: {e}")
+            tprint(f"❌ Level enhancement failed: {e}")
             self.logger.error(f"❌ Level enhancement failed: {e}")
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
@@ -857,24 +870,26 @@ class BacktestingEnhancedClustering:
     def _cluster_quality_enhanced(self, levels: List[Dict], price_range: Tuple[float, float], data: pd.DataFrame = None) -> ClusteringResult:
         """Cluster levels using quality-enhanced approach."""
         try:
-            print(f"🎯 Starting quality-enhanced clustering for {len(levels)} levels...")
+            tprint(f"🎯 Starting quality-enhanced clustering for {len(levels)} levels...")
             self.logger.info(f"🎯 Starting quality-enhanced clustering for {len(levels)} levels")
             
-            # Adjust clustering parameters based on quality
-            print("🔧 Adjusting clustering parameters based on level quality...")
-            self.logger.info("Adjusting clustering parameters based on level quality")
-            adjusted_proximity = self._adjust_proximity_by_quality(levels)
-            adjusted_strength_threshold = self._adjust_strength_threshold_by_quality(levels)
-            
-            print(f"📊 Quality-adjusted parameters:")
-            print(f"   - Proximity: {adjusted_proximity:.3f} (original: {self.config.proximity_threshold:.3f})")
-            print(f"   - Strength threshold: {adjusted_strength_threshold:.3f} (original: {self.config.strength_similarity_threshold:.3f})")
-            
-            self.logger.info(f"Quality-adjusted parameters: proximity={adjusted_proximity:.3f} (original: {self.config.proximity_threshold:.3f}), strength={adjusted_strength_threshold:.3f} (original: {self.config.strength_similarity_threshold:.3f})")
-            
+            # Use configured clustering parameters (disable automatic quality adjustment for now)
+            tprint("🔧 Using configured clustering parameters...")
+            self.logger.info("Using configured clustering parameters")
+
+            # HARD RULE: Never merge levels more than 0.5% price apart
+            adjusted_proximity = min(self.config.proximity_threshold, 0.005)
+            adjusted_strength_threshold = self.config.strength_similarity_threshold
+
+            tprint(f"📊 Clustering parameters (HARD RULE: max 0.5% proximity):")
+            tprint(f"   - Proximity: {adjusted_proximity:.3f} (capped at 0.5%)")
+            tprint(f"   - Strength threshold: {adjusted_strength_threshold:.3f}")
+
+            self.logger.info(f"Clustering parameters: proximity={adjusted_proximity:.3f} (HARD RULE: max 0.5%), strength={adjusted_strength_threshold:.3f}")
+
             # Use extensive clustering system
-            print("🚀 Running extensive clustering with quality-enhanced parameters...")
-            self.logger.info("Running extensive clustering with quality-enhanced parameters")
+            tprint("🚀 Running extensive clustering with configured parameters...")
+            self.logger.info("Running extensive clustering with configured parameters")
             result = self._cluster_levels_extensive(
                 levels=levels,
                 price_range=price_range,
@@ -884,16 +899,16 @@ class BacktestingEnhancedClustering:
             )
             
             # Add quality information to result
-            print("✨ Adding quality information to clustering result...")
+            tprint("✨ Adding quality information to clustering result...")
             result.quality_enhanced = True
             result.quality_metrics = self._calculate_cluster_quality_metrics(result, levels)
             
-            print(f"✅ Quality-enhanced clustering completed!")
-            print(f"📊 Quality-Enhanced Clustering Results:")
-            print(f"   - Clusters created: {len(result.clusters)}")
-            print(f"   - Quality score: {result.quality_score:.3f}")
-            print(f"   - Quality enhanced: {result.quality_enhanced}")
-            print(f"   - Quality metrics: {len(result.quality_metrics)} metrics calculated")
+            tprint(f"✅ Quality-enhanced clustering completed!")
+            tprint(f"📊 Quality-Enhanced Clustering Results:")
+            tprint(f"   - Clusters created: {len(result.clusters)}")
+            tprint(f"   - Quality score: {result.quality_score:.3f}")
+            tprint(f"   - Quality enhanced: {result.quality_enhanced}")
+            tprint(f"   - Quality metrics: {len(result.quality_metrics)} metrics calculated")
             
             self.logger.info(f"✅ Quality-enhanced clustering completed: {len(result.clusters)} clusters")
             self.logger.info(f"Quality metrics: {result.quality_metrics}")
@@ -901,8 +916,8 @@ class BacktestingEnhancedClustering:
             return result
             
         except Exception as e:
-            print(f"❌ Quality-enhanced clustering failed: {e}")
-            print("🔄 Falling back to standard clustering...")
+            tprint(f"❌ Quality-enhanced clustering failed: {e}")
+            tprint("🔄 Falling back to standard clustering...")
             self.logger.error(f"❌ Quality-enhanced clustering failed: {e}")
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
@@ -1166,7 +1181,9 @@ class BacktestingEnhancedClustering:
                 clusters=[[i] for i in range(len(levels))],
                 cluster_centers=[level.get('price', 0.0) for level in levels],
                 quality_score=0.5,
-                quality_enhanced=False
+                quality_enhanced=False,
+                algorithm_used='fallback_individual',
+                parameters={}
             )
     
     def _cluster_levels_extensive(self, levels: List[Dict], price_range: Tuple[float, float], 
@@ -1178,7 +1195,7 @@ class BacktestingEnhancedClustering:
             
             if not levels:
                 self.logger.warning("No levels provided for extensive clustering")
-                return ClusteringResult(clusters=[], cluster_centers=[], quality_score=0.0)
+                return ClusteringResult(clusters=[], cluster_centers=[], quality_score=0.0, algorithm_used='extensive_clustering', parameters={})
             
             # Use the new StrengthProximityClustering algorithm
             self.logger.info("Using StrengthProximityClustering algorithm")
@@ -1208,7 +1225,7 @@ class BacktestingEnhancedClustering:
             
             if not levels:
                 self.logger.warning("No levels provided for simple fallback clustering")
-                return ClusteringResult(clusters=[], cluster_centers=[], quality_score=0.0)
+                return ClusteringResult(clusters=[], cluster_centers=[], quality_score=0.0, algorithm_used='extensive_clustering', parameters={})
             
             # Sort levels by price
             sorted_levels = sorted(enumerate(levels), key=lambda x: x[1]['price'])
@@ -1255,7 +1272,9 @@ class BacktestingEnhancedClustering:
             return ClusteringResult(
                 clusters=clusters,
                 cluster_centers=cluster_centers,
-                quality_score=quality_score
+                quality_score=quality_score,
+                algorithm_used='simple_fallback',
+                parameters={}
             )
             
         except Exception as e:
@@ -1267,7 +1286,9 @@ class BacktestingEnhancedClustering:
             return ClusteringResult(
                 clusters=[[i] for i in range(len(levels))],
                 cluster_centers=[level['price'] for level in levels],
-                quality_score=0.5
+                quality_score=0.5,
+                algorithm_used='final_fallback',
+                parameters={}
             )
     
     def _calculate_overall_quality_score(self, clusters: List[List[int]], levels: List[Dict]) -> float:

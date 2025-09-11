@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import contextlib
 import sys
 import os
@@ -17,7 +19,7 @@ try:
     from ..step06_enhanced_validation_framework import step06_function_validator, step06_function_tracker, step06_validation_context, get_step06_validation_summary, ValidationLevel, FunctionStatus
     VALIDATION_AVAILABLE = True
 except ImportError as e:
-    print(f'Warning: Step06 validation framework not available: {e}')
+    tprint(f'Warning: Step06 validation framework not available: {e}')
 
     def step06_function_validator(*args, **kwargs) -> None:
 
@@ -631,7 +633,7 @@ if __name__ == '__main__':
     optimizer = OptimizedTripleBarrierLabeling()
     labeled_data = optimizer.apply_triple_barrier_labeling_vectorized(data)
     results = benchmark_triple_barrier_methods(data)
-    print(f'Benchmark results: {results}')
-    print(f'\nProfit tracking results:')
-    print(f"LONG signals: {labeled_data[labeled_data['label'] == 1]['potential_profit_pct'].describe()}")
-    print(f"SHORT signals: {labeled_data[labeled_data['label'] == -1]['potential_profit_pct'].describe()}")
+    tprint(f'Benchmark results: {results}')
+    tprint(f'\nProfit tracking results:')
+    tprint(f"LONG signals: {labeled_data[labeled_data['label'] == 1]['potential_profit_pct'].describe()}")
+    tprint(f"SHORT signals: {labeled_data[labeled_data['label'] == -1]['potential_profit_pct'].describe()}")

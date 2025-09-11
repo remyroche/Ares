@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Visualization Demo
 
@@ -65,13 +67,13 @@ def load_with_importlib(module_name):
 def unreachable_example():
     """Function with unreachable code."""
     return "done"
-    print("This will never execute")  # Unreachable
+    tprint("This will never execute")  # Unreachable
 
 # Function with conditional dead code
 def conditional_dead():
     """Function with conditional dead code."""
     if False:  # Always false
-        print("This code is dead")
+        tprint("This code is dead")
     return "alive"
 
 # Used function
@@ -125,7 +127,7 @@ def get_config():
 # Function that doesn't use return value
 def setup():
     """Setup function."""
-    print("Setup complete")
+    tprint("Setup complete")
 
 # Used function
 def format_output(data):
@@ -171,74 +173,74 @@ def create_processor():
 
 def run_enhanced_visualization_demo():
     """Run the enhanced visualization demo."""
-    print("ENHANCED VISUALIZATION DEMO")
-    print("=" * 50)
+    tprint("ENHANCED VISUALIZATION DEMO")
+    tprint("=" * 50)
     
     # Create demo codebase
     demo_dir = create_demo_codebase()
-    print(f"Created demo codebase in: {demo_dir}")
+    tprint(f"Created demo codebase in: {demo_dir}")
     
     # Initialize mapper
     mapper = CodeInteractionMapper(str(demo_dir))
     
-    print(f"\nRunning enhanced code interaction analysis...")
-    print("-" * 50)
+    tprint(f"\nRunning enhanced code interaction analysis...")
+    tprint("-" * 50)
     
     # Run the complete analysis
     report_files = mapper.run()
     
-    print(f"\nANALYSIS COMPLETE!")
-    print("=" * 30)
-    print(f"Report directory: {report_files['report_dir']}")
-    print(f"\nGenerated files:")
-    print(f"  📄 JSON Report: {Path(report_files['json']).name}")
-    print(f"  📄 Summary Report: {Path(report_files['summary']).name}")
-    print(f"  🌐 HTML Report: {Path(report_files['html']).name}")
-    print(f"  🌐 Enhanced HTML Report: {Path(report_files['enhanced_html']).name}")
+    tprint(f"\nANALYSIS COMPLETE!")
+    tprint("=" * 30)
+    tprint(f"Report directory: {report_files['report_dir']}")
+    tprint(f"\nGenerated files:")
+    tprint(f"  📄 JSON Report: {Path(report_files['json']).name}")
+    tprint(f"  📄 Summary Report: {Path(report_files['summary']).name}")
+    tprint(f"  🌐 HTML Report: {Path(report_files['html']).name}")
+    tprint(f"  🌐 Enhanced HTML Report: {Path(report_files['enhanced_html']).name}")
     
     # List visual files
     report_dir = Path(report_files['report_dir'])
     visual_files = list(report_dir.glob("*.png"))
     if visual_files:
-        print(f"\n📊 Generated Visualizations:")
+        tprint(f"\n📊 Generated Visualizations:")
         for visual_file in visual_files:
-            print(f"  📈 {visual_file.name}")
+            tprint(f"  📈 {visual_file.name}")
     
-    print(f"\n🎯 Key Features Demonstrated:")
-    print(f"  ✅ Dead code detection with Vulture integration")
-    print(f"  ✅ Deprecated code detection (@deprecated decorators)")
-    print(f"  ✅ Dynamic import analysis (__import__, importlib)")
-    print(f"  ✅ Conditional dead code detection")
-    print(f"  ✅ Impact analysis and prioritization")
-    print(f"  ✅ Dependency-aware removal planning")
-    print(f"  ✅ Risk assessment and phased removal")
-    print(f"  ✅ Enhanced HTML reports with visualizations")
-    print(f"  ✅ Multiple chart types (bar, pie, timeline)")
-    print(f"  ✅ Interactive dashboards")
+    tprint(f"\n🎯 Key Features Demonstrated:")
+    tprint(f"  ✅ Dead code detection with Vulture integration")
+    tprint(f"  ✅ Deprecated code detection (@deprecated decorators)")
+    tprint(f"  ✅ Dynamic import analysis (__import__, importlib)")
+    tprint(f"  ✅ Conditional dead code detection")
+    tprint(f"  ✅ Impact analysis and prioritization")
+    tprint(f"  ✅ Dependency-aware removal planning")
+    tprint(f"  ✅ Risk assessment and phased removal")
+    tprint(f"  ✅ Enhanced HTML reports with visualizations")
+    tprint(f"  ✅ Multiple chart types (bar, pie, timeline)")
+    tprint(f"  ✅ Interactive dashboards")
     
-    print(f"\n📋 What to Check:")
-    print(f"  1. Open the enhanced HTML report for interactive analysis")
-    print(f"  2. Review the visual charts for dead code patterns")
-    print(f"  3. Check the removal plan and recommendations")
-    print(f"  4. Examine the impact analysis and risk assessment")
+    tprint(f"\n📋 What to Check:")
+    tprint(f"  1. Open the enhanced HTML report for interactive analysis")
+    tprint(f"  2. Review the visual charts for dead code patterns")
+    tprint(f"  3. Check the removal plan and recommendations")
+    tprint(f"  4. Examine the impact analysis and risk assessment")
     
-    print(f"\n🔍 Sample Analysis Results:")
+    tprint(f"\n🔍 Sample Analysis Results:")
     
     # Show some sample results
     if 'dead_code' in mapper.results:
         dead_code = mapper.results['dead_code']
-        print(f"  📊 Total Dead Code Issues: {dead_code.total_issues}")
-        print(f"  ⚠️  Deprecated Code Items: {len(dead_code.deprecated_issues or [])}")
-        print(f"  🔴 High Impact Issues: {len(dead_code.issues_by_severity.get('high', []))}")
-        print(f"  📏 Potential Lines Removed: {dead_code.potential_savings.get('total_lines', 0)}")
+        tprint(f"  📊 Total Dead Code Issues: {dead_code.total_issues}")
+        tprint(f"  ⚠️  Deprecated Code Items: {len(dead_code.deprecated_issues or [])}")
+        tprint(f"  🔴 High Impact Issues: {len(dead_code.issues_by_severity.get('high', []))}")
+        tprint(f"  📏 Potential Lines Removed: {dead_code.potential_savings.get('total_lines', 0)}")
         
         if dead_code.impact_analysis and "removal_plan" in dead_code.impact_analysis:
             removal_plan = dead_code.impact_analysis["removal_plan"]
             time_savings = removal_plan.get('estimated_time_savings', {})
-            print(f"  ⏱️  Estimated Time Savings: {time_savings.get('estimated_hours_saved', 0):.1f} hours")
-            print(f"  📅 Removal Phases: {len(removal_plan.get('removal_phases', []))}")
+            tprint(f"  ⏱️  Estimated Time Savings: {time_savings.get('estimated_hours_saved', 0):.1f} hours")
+            tprint(f"  📅 Removal Phases: {len(removal_plan.get('removal_phases', []))}")
     
-    print(f"\n✨ Demo complete! Check the generated reports for detailed analysis.")
+    tprint(f"\n✨ Demo complete! Check the generated reports for detailed analysis.")
 
 
 if __name__ == "__main__":

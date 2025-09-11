@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Comprehensive test script for the enhanced tprint functionality.
 """
@@ -22,9 +24,9 @@ from utils.tprint import (
 
 def test_basic_functionality():
     """Test basic tprint functionality."""
-    print("=" * 80)
-    print("Testing Basic TPrint Functionality")
-    print("=" * 80)
+    tprint("=" * 80)
+    tprint("Testing Basic TPrint Functionality")
+    tprint("=" * 80)
     
     tprint("Basic message (no level prefix)")
     tprint_debug("Debug message")
@@ -33,15 +35,15 @@ def test_basic_functionality():
     tprint_error("Error message")
     tprint_success("Success message")
     
-    print("\nTesting with multiple arguments:")
+    tprint("\nTesting with multiple arguments:")
     tprint("Multiple", "arguments", "test", 42, [1, 2, 3])
 
 
 def test_progress_and_performance():
     """Test progress and performance logging."""
-    print("\n" + "=" * 80)
-    print("Testing Progress and Performance Logging")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Progress and Performance Logging")
+    tprint("=" * 80)
     
     # Test progress
     for i in range(1, 6):
@@ -55,9 +57,9 @@ def test_progress_and_performance():
 
 def test_structured_logging():
     """Test structured logging."""
-    print("\n" + "=" * 80)
-    print("Testing Structured Logging")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Structured Logging")
+    tprint("=" * 80)
     
     # Test structured data
     user_data = {
@@ -81,9 +83,9 @@ def test_structured_logging():
 
 def test_configuration():
     """Test configuration options."""
-    print("\n" + "=" * 80)
-    print("Testing Configuration Options")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Configuration Options")
+    tprint("=" * 80)
     
     # Test different timestamp formats
     configs = [
@@ -94,7 +96,7 @@ def test_configuration():
     ]
     
     for name, config in configs:
-        print(f"\n{name}:")
+        tprint(f"\n{name}:")
         with tprint_context(config):
             tprint(f"Testing {name}")
             tprint_info("Info message")
@@ -103,9 +105,9 @@ def test_configuration():
 
 def test_file_logging():
     """Test file logging functionality."""
-    print("\n" + "=" * 80)
-    print("Testing File Logging")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing File Logging")
+    tprint("=" * 80)
     
     log_file = Path("test_tprint.log")
     
@@ -129,39 +131,39 @@ def test_file_logging():
     log_files = list(Path(".").glob("test_tprint_*.log"))
     if log_files:
         actual_log_file = log_files[0]
-        print(f"\nLog file created: {actual_log_file}")
-        print("File contents:")
+        tprint(f"\nLog file created: {actual_log_file}")
+        tprint("File contents:")
         with open(actual_log_file, 'r') as f:
-            print(f.read())
+            tprint(f.read())
         # Clean up
         actual_log_file.unlink()
     else:
-        print("Warning: Log file was not created")
+        tprint("Warning: Log file was not created")
 
 
 def test_context_manager():
     """Test context manager functionality."""
-    print("\n" + "=" * 80)
-    print("Testing Context Manager")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Context Manager")
+    tprint("=" * 80)
     
-    print("Before context:")
+    tprint("Before context:")
     tprint("Regular message")
     
     with tprint_context(TPrintConfig(timestamp_format=TimestampFormat.SIMPLE)):
-        print("Inside context:")
+        tprint("Inside context:")
         tprint("Context message")
         tprint_info("Context info")
     
-    print("After context:")
+    tprint("After context:")
     tprint("Back to regular")
 
 
 def test_timer_context():
     """Test timer context manager."""
-    print("\n" + "=" * 80)
-    print("Testing Timer Context Manager")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Timer Context Manager")
+    tprint("=" * 80)
     
     with tprint_timer("Test operation"):
         time.sleep(0.5)
@@ -174,9 +176,9 @@ def test_timer_context():
 
 def test_decorator():
     """Test logging decorator."""
-    print("\n" + "=" * 80)
-    print("Testing Logging Decorator")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Logging Decorator")
+    tprint("=" * 80)
     
     @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def test_function(x, y, name="test"):
@@ -196,9 +198,9 @@ def test_decorator():
 
 def test_batch_logging():
     """Test batch logging for performance."""
-    print("\n" + "=" * 80)
-    print("Testing Batch Logging")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Batch Logging")
+    tprint("=" * 80)
     
     messages = [
         (LogLevel.INFO, "Batch message 1"),
@@ -213,9 +215,9 @@ def test_batch_logging():
 
 def test_single_file_per_run():
     """Test single file per run functionality."""
-    print("\n" + "=" * 80)
-    print("Testing Single File Per Run")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Single File Per Run")
+    tprint("=" * 80)
     
     log_file = Path("single_run_test.log")
     
@@ -235,18 +237,18 @@ def test_single_file_per_run():
     
     # Check that multiple files were created
     log_files = list(Path(".").glob("single_run_test_*.log"))
-    print(f"\nCreated {len(log_files)} log files:")
+    tprint(f"\nCreated {len(log_files)} log files:")
     for log_file_path in log_files:
-        print(f"  - {log_file_path}")
+        tprint(f"  - {log_file_path}")
         # Clean up
         log_file_path.unlink()
 
 
 def test_numba_compatibility():
     """Test numba compatibility."""
-    print("\n" + "=" * 80)
-    print("Testing Numba Compatibility")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Numba Compatibility")
+    tprint("=" * 80)
     
     tprint_numba_compatible("Numba compatible message")
     tprint_numba_compatible("Multiple", "arguments", "test")
@@ -254,15 +256,15 @@ def test_numba_compatibility():
 
 def test_log_level_filtering():
     """Test log level filtering."""
-    print("\n" + "=" * 80)
-    print("Testing Log Level Filtering")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Log Level Filtering")
+    tprint("=" * 80)
     
     # Test with different minimum log levels
     levels = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARNING, LogLevel.ERROR]
     
     for min_level in levels:
-        print(f"\nMinimum log level: {min_level.value}")
+        tprint(f"\nMinimum log level: {min_level.value}")
         config = TPrintConfig(min_log_level=min_level)
         with tprint_context(config):
             tprint_debug("Debug message")
@@ -273,24 +275,24 @@ def test_log_level_filtering():
 
 def test_performance():
     """Test performance with many messages."""
-    print("\n" + "=" * 80)
-    print("Testing Performance")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Testing Performance")
+    tprint("=" * 80)
     
     num_messages = 1000
     
     # Test with caching enabled
-    print(f"Testing with {num_messages} messages (caching enabled):")
+    tprint(f"Testing with {num_messages} messages (caching enabled):")
     start_time = time.perf_counter()
     
     for i in range(num_messages):
         tprint(f"Performance test message {i}")
     
     end_time = time.perf_counter()
-    print(f"Time taken: {end_time - start_time:.3f}s")
+    tprint(f"Time taken: {end_time - start_time:.3f}s")
     
     # Test with caching disabled
-    print(f"\nTesting with {num_messages} messages (caching disabled):")
+    tprint(f"\nTesting with {num_messages} messages (caching disabled):")
     config = TPrintConfig(cache_timestamps=False)
     with tprint_context(config):
         start_time = time.perf_counter()
@@ -299,13 +301,13 @@ def test_performance():
             tprint(f"Performance test message {i}")
         
         end_time = time.perf_counter()
-        print(f"Time taken: {end_time - start_time:.3f}s")
+        tprint(f"Time taken: {end_time - start_time:.3f}s")
 
 
 def main():
     """Run all tests."""
-    print("Enhanced TPrint Test Suite")
-    print("=" * 80)
+    tprint("Enhanced TPrint Test Suite")
+    tprint("=" * 80)
     
     try:
         test_basic_functionality()
@@ -322,12 +324,12 @@ def main():
         test_log_level_filtering()
         test_performance()
         
-        print("\n" + "=" * 80)
-        print("All tests completed successfully!")
-        print("=" * 80)
+        tprint("\n" + "=" * 80)
+        tprint("All tests completed successfully!")
+        tprint("=" * 80)
         
     except Exception as e:
-        print(f"\nTest failed with error: {e}")
+        tprint(f"\nTest failed with error: {e}")
         import traceback
         traceback.print_exc()
     

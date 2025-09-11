@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Dependency management for optional packages.
 """
@@ -293,17 +295,17 @@ _register_fallback_implementations()
 if __name__ == "__main__":
     manager = get_dependency_manager()
     
-    print("Available packages:", manager.get_available_packages())
+    tprint("Available packages:", manager.get_available_packages())
     
     # Check if numpy is available
     if manager.is_available('numpy'):
-        print("numpy is available")
+        tprint("numpy is available")
     else:
-        print("numpy is not available")
+        tprint("numpy is not available")
     
     # Try to import with fallback
     try:
         np = safe_import('numpy')
-        print("Successfully imported numpy or fallback")
+        tprint("Successfully imported numpy or fallback")
     except ImportError as e:
-        print(f"Failed to import numpy: {e}")
+        tprint(f"Failed to import numpy: {e}")

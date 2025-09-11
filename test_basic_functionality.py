@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Basic functionality test for artifact versioning system.
 """
@@ -14,7 +16,7 @@ sys.path.insert(0, '/workspace')
 
 def test_version_manager():
     """Test version manager functionality."""
-    print("🧪 Testing Version Manager...")
+    tprint("🧪 Testing Version Manager...")
     
     try:
         from src.utils.version_manager import VersionManager
@@ -35,18 +37,18 @@ def test_version_manager():
             assert len(timestamp) == 15
             assert timestamp.count("_") == 1
             
-            print("✅ Version Manager tests passed")
+            tprint("✅ Version Manager tests passed")
             return True
         finally:
             os.unlink(config_path)
             
     except Exception as e:
-        print(f"❌ Version Manager test failed: {e}")
+        tprint(f"❌ Version Manager test failed: {e}")
         return False
 
 def test_artifact_manager():
     """Test artifact manager functionality."""
-    print("🧪 Testing Artifact Manager...")
+    tprint("🧪 Testing Artifact Manager...")
     
     try:
         from src.utils.enhanced_artifact_manager import EnhancedArtifactManager
@@ -83,16 +85,16 @@ def test_artifact_manager():
             assert metadata.base_name == "test_artifact"
             assert metadata.version == "v1"
             
-            print("✅ Artifact Manager tests passed")
+            tprint("✅ Artifact Manager tests passed")
             return True
             
     except Exception as e:
-        print(f"❌ Artifact Manager test failed: {e}")
+        tprint(f"❌ Artifact Manager test failed: {e}")
         return False
 
 def test_artifact_pickup():
     """Test artifact pickup functionality."""
-    print("🧪 Testing Artifact Pickup...")
+    tprint("🧪 Testing Artifact Pickup...")
     
     try:
         from src.utils.enhanced_artifact_manager import EnhancedArtifactManager
@@ -124,17 +126,17 @@ def test_artifact_pickup():
             assert loaded_data is not None
             assert metadata is not None
             
-            print("✅ Artifact Pickup tests passed")
+            tprint("✅ Artifact Pickup tests passed")
             return True
             
     except Exception as e:
-        print(f"❌ Artifact Pickup test failed: {e}")
+        tprint(f"❌ Artifact Pickup test failed: {e}")
         return False
 
 def main():
     """Run all tests."""
-    print("🚀 Basic Functionality Test for Artifact Versioning System")
-    print("=" * 60)
+    tprint("🚀 Basic Functionality Test for Artifact Versioning System")
+    tprint("=" * 60)
     
     tests = [
         test_version_manager,
@@ -148,17 +150,17 @@ def main():
     for test in tests:
         if test():
             passed += 1
-        print()
+        tprint()
     
-    print("📊 Test Results:")
-    print(f"✅ Passed: {passed}/{total}")
-    print(f"❌ Failed: {total - passed}/{total}")
+    tprint("📊 Test Results:")
+    tprint(f"✅ Passed: {passed}/{total}")
+    tprint(f"❌ Failed: {total - passed}/{total}")
     
     if passed == total:
-        print("🎉 All tests passed! The artifact versioning system is working correctly.")
+        tprint("🎉 All tests passed! The artifact versioning system is working correctly.")
         return 0
     else:
-        print("⚠️ Some tests failed. Please check the implementation.")
+        tprint("⚠️ Some tests failed. Please check the implementation.")
         return 1
 
 if __name__ == "__main__":

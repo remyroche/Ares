@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Parallel Processing Coordinator
 
@@ -41,9 +43,9 @@ from ..common_utilities import safe_dataframe_operation
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.ParallelProcessing")
-    print("✅ Custom logger available for MLCommon.ParallelProcessing")
+    tprint("✅ Custom logger available for MLCommon.ParallelProcessing")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.ParallelProcessing")
     _LOGGER.setLevel(logging.INFO)
 

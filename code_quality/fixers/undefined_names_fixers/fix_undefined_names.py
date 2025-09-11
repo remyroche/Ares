@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Script to fix common undefined names and variables issues found in the repository.
 This script analyzes the undefined names report and applies common fixes.
@@ -98,13 +100,13 @@ class UndefinedNamesFixer:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
-            print(f"❌ Could not read {file_path}: {e}")
+            tprint(f"❌ Could not read {file_path}: {e}")
             return False
 
         # Check if file has syntax errors first
         if any(error.get('error_type') == 'syntax_error' 
                for error in self.report_data.get('files', {}).get(file_path, {}).get('errors', [])):
-            print(f"⚠️  Skipping {file_path} due to syntax errors")
+            tprint(f"⚠️  Skipping {file_path} due to syntax errors")
             return False
 
         lines = content.split('\n')
@@ -152,10 +154,10 @@ class UndefinedNamesFixer:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(new_content)
-                print(f"✅ Fixed imports in {file_path}: {', '.join(needed_imports)}")
+                tprint(f"✅ Fixed imports in {file_path}: {', '.join(needed_imports)}")
                 return True
             except Exception as e:
-                print(f"❌ Could not write {file_path}: {e}")
+                tprint(f"❌ Could not write {file_path}: {e}")
                 return False
         
         return False
@@ -181,7 +183,7 @@ class UndefinedNamesFixer:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
-            print(f"❌ Could not read {file_path}: {e}")
+            tprint(f"❌ Could not read {file_path}: {e}")
             return False
 
         original_content = content
@@ -214,41 +216,41 @@ class UndefinedNamesFixer:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(content)
-                print(f"✅ Fixed syntax errors in {file_path}")
+                tprint(f"✅ Fixed syntax errors in {file_path}")
                 return True
             except Exception as e:
-                print(f"❌ Could not write {file_path}: {e}")
+                tprint(f"❌ Could not write {file_path}: {e}")
                 return False
         
         return False
 
     def run_fixes(self) -> Dict[str, int]:
         """Run all fixes and return statistics."""
-        print("="*70)
-        print("FIXING UNDEFINED NAMES AND VARIABLES")
-        print("="*70)
+        tprint("="*70)
+        tprint("FIXING UNDEFINED NAMES AND VARIABLES")
+        tprint("="*70)
         
         # Analyze undefined names
-        print("\n📊 Analyzing undefined names...")
+        tprint("\n📊 Analyzing undefined names...")
         name_counts = self.analyze_undefined_names()
-        print(f"Top undefined names:")
+        tprint(f"Top undefined names:")
         for name, count in list(name_counts.items())[:20]:
-            print(f"  {name}: {count} occurrences")
+            tprint(f"  {name}: {count} occurrences")
         
         # Get files needing imports
-        print("\n🔍 Finding files needing imports...")
+        tprint("\n🔍 Finding files needing imports...")
         files_needing_imports = self.get_files_needing_imports()
-        print(f"Found {len(files_needing_imports)} files needing imports")
+        tprint(f"Found {len(files_needing_imports)} files needing imports")
         
         # Fix imports
-        print("\n🔧 Fixing imports...")
+        tprint("\n🔧 Fixing imports...")
         import_fixes = 0
         for file_path, needed_imports in files_needing_imports.items():
             if self.fix_file_imports(file_path, needed_imports):
                 import_fixes += 1
         
         # Fix syntax errors
-        print("\n🔧 Fixing syntax errors...")
+        tprint("\n🔧 Fixing syntax errors...")
         syntax_fixes = self.fix_syntax_errors()
         
         return {
@@ -275,41 +277,41 @@ def main():
     args = parser.parse_args()
     
     if not os.path.exists(args.report):
-        print(f"❌ Report file not found: {args.report}")
-        print("Run the undefined names checker first:")
-        print("python code_quality/check_undefined_names_standalone.py --target . --output code_quality/reports/undefined_names_report.json")
+        tprint(f"❌ Report file not found: {args.report}")
+        tprint("Run the undefined names checker first:")
+        tprint("python code_quality/check_undefined_names_standalone.py --target . --output code_quality/reports/undefined_names_report.json")
         return 1
     
     fixer = UndefinedNamesFixer(args.report)
     
     if args.dry_run:
-        print("🔍 DRY RUN - No changes will be made")
+        tprint("🔍 DRY RUN - No changes will be made")
         name_counts = fixer.analyze_undefined_names()
         files_needing_imports = fixer.get_files_needing_imports()
         
-        print(f"\nTop undefined names:")
+        tprint(f"\nTop undefined names:")
         for name, count in list(name_counts.items())[:20]:
-            print(f"  {name}: {count} occurrences")
+            tprint(f"  {name}: {count} occurrences")
         
-        print(f"\nFiles needing imports: {len(files_needing_imports)}")
+        tprint(f"\nFiles needing imports: {len(files_needing_imports)}")
         for file_path, imports in list(files_needing_imports.items())[:10]:
-            print(f"  {file_path}: {', '.join(imports)}")
+            tprint(f"  {file_path}: {', '.join(imports)}")
         
         return 0
     
     # Run fixes
     results = fixer.run_fixes()
     
-    print("\n" + "="*70)
-    print("FIXING COMPLETED")
-    print("="*70)
-    print(f"✅ Import fixes applied: {results['import_fixes']}")
-    print(f"✅ Syntax fixes applied: {results['syntax_fixes']}")
-    print(f"📁 Total files processed: {results['total_files_processed']}")
+    tprint("\n" + "="*70)
+    tprint("FIXING COMPLETED")
+    tprint("="*70)
+    tprint(f"✅ Import fixes applied: {results['import_fixes']}")
+    tprint(f"✅ Syntax fixes applied: {results['syntax_fixes']}")
+    tprint(f"📁 Total files processed: {results['total_files_processed']}")
     
     if results['import_fixes'] > 0 or results['syntax_fixes'] > 0:
-        print(f"\n🔄 Run the checker again to verify fixes:")
-        print(f"python code_quality/check_undefined_names_standalone.py --target . --output code_quality/reports/undefined_names_report_after_fixes.json")
+        tprint(f"\n🔄 Run the checker again to verify fixes:")
+        tprint(f"python code_quality/check_undefined_names_standalone.py --target . --output code_quality/reports/undefined_names_report_after_fixes.json")
     
     return 0
 

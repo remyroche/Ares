@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 """Error handling utilities for the Ares project."""
 
@@ -11,7 +13,7 @@ def handles_errors(fallback: Any = True, *args, **kwargs) -> None:
                 return func(*args, **kwargs)
             except Exception as e:
                 if fallback:
-                    print(f'Error in {func.__name__}: {e}')
+                    tprint(f'Error in {func.__name__}: {e}')
                     return None
                 else:
                     raise

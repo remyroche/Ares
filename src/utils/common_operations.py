@@ -11,12 +11,140 @@ import os
 import logging
 import asyncio
 import time
+import functools
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Callable
 import pandas as pd
 import numpy as np
 from datetime import datetime, date
 import concurrent.futures
+
+# Import core utilities
+from .core.common import create_fallback_logger, create_fallback_decorator
+
+def get_m1_gpu_manager():
+    """Get the M1 GPU manager instance."""
+    try:
+        from .hardware.m1_gpu_utils import get_m1_gpu_manager as _get_m1_gpu_manager
+        return _get_m1_gpu_manager()
+    except ImportError:
+        logger.warning("⚠️ M1 GPU utilities not available")
+        return None
+
+
+def get_m1_memory_optimizer():
+    """Get the M1 memory optimizer instance."""
+    try:
+        from .hardware.m1_memory_optimizer import get_m1_memory_optimizer as _get_m1_memory_optimizer
+        return _get_m1_memory_optimizer()
+    except ImportError:
+        logger.warning("⚠️ M1 memory optimizer not available")
+        return None
+
+
+def get_m1_cpu_optimizer():
+    """Get the M1 CPU optimizer instance."""
+    try:
+        from .hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as _get_m1_cpu_optimizer
+        return _get_m1_cpu_optimizer()
+    except ImportError:
+        logger.warning("⚠️ M1 CPU optimizer not available")
+        return None
+
+
+def cleanup_m1_optimizers():
+    """Clean up M1 optimizers and release resources."""
+    try:
+        # Import optimizers
+        from .hardware.m1_gpu_utils import get_m1_gpu_manager
+        from .hardware.m1_memory_optimizer import get_m1_memory_optimizer
+        from .hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+
+        # Get instances
+        gpu_manager = get_m1_gpu_manager()
+        memory_optimizer = get_m1_memory_optimizer()
+        cpu_optimizer = get_m1_cpu_optimizer()
+
+        # Clean up resources
+        if memory_optimizer and hasattr(memory_optimizer, 'stop_monitoring'):
+            memory_optimizer.stop_monitoring()
+
+        # Log cleanup
+        logger.info("🧠 M1 optimizers cleaned up successfully")
+
+        return True
+
+    except ImportError:
+        logger.warning("⚠️ M1 optimizers not available for cleanup")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Error during M1 optimizer cleanup: {e}")
+        return False
+
+
+def integrate_with_m1_optimizers() -> dict:
+    """Integrate with M1 GPU and CPU optimizers.
+
+    Returns:
+        Dictionary with integration status and component information
+    """
+    try:
+        # Import M1 utilities
+        from .hardware.m1_gpu_utils import get_m1_gpu_manager, is_m1_available, is_mps_available
+        from .hardware.m1_memory_optimizer import get_m1_memory_optimizer, start_m1_memory_monitoring
+        from .hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+
+        # Initialize components
+        gpu_manager = get_m1_gpu_manager()
+        memory_optimizer = get_m1_memory_optimizer()
+        cpu_optimizer = get_m1_cpu_optimizer()
+
+        # Start memory monitoring
+        memory_optimizer.start_monitoring()
+
+        # Optimize numpy for M1
+        cpu_optimizer.optimize_numpy_operations()
+
+        # Log integration status
+        gpu_info = gpu_manager.get_gpu_info()
+        cpu_info = cpu_optimizer.get_cpu_info()
+
+        logger.info("🧠 M1 Integration Status:")
+        logger.info(f"   - M1 Hardware: {'✅ Available' if is_m1_available() else '❌ Not available'}")
+        logger.info(f"   - MPS (GPU): {'✅ Available' if is_mps_available() else '❌ Not available'}")
+        logger.info(f"   - Performance Cores: {cpu_info.get('performance_cores', 'Unknown')}")
+        logger.info(f"   - Memory Monitoring: ✅ Active")
+
+        return {
+            'integration_status': 'success',
+            'gpu_manager': is_mps_available(),
+            'memory_optimizer': True,
+            'cpu_optimizer': True,
+            'gpu_info': gpu_info,
+            'cpu_info': cpu_info,
+            'success': True
+        }
+
+    except ImportError as e:
+        logger.warning(f"⚠️ M1 utilities not available: {e}")
+        return {
+            'integration_status': 'failed',
+            'error': str(e),
+            'gpu_manager': False,
+            'memory_optimizer': False,
+            'cpu_optimizer': False,
+            'success': False
+        }
+    except Exception as e:
+        logger.error(f"❌ M1 integration failed: {e}")
+        return {
+            'integration_status': 'failed',
+            'error': str(e),
+            'gpu_manager': False,
+            'memory_optimizer': False,
+            'cpu_optimizer': False,
+            'success': False
+        }
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -639,3 +767,378 @@ def create_summary_statistics(df: pd.DataFrame) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"❌ Error creating summary statistics: {e}")
         return {}
+
+def safe_to_parquet(df: pd.DataFrame, file_path: Union[str, Path], **kwargs) -> bool:
+    """Safely save DataFrame to parquet format."""
+    try:
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+        
+        # Ensure directory exists
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save to parquet
+        df.to_parquet(file_path, **kwargs)
+        logger.info(f"✅ Successfully saved DataFrame to {file_path}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error saving DataFrame to parquet {file_path}: {e}")
+        return False
+
+def safe_read_parquet(file_path: Union[str, Path], **kwargs) -> Optional[pd.DataFrame]:
+    """Safely read DataFrame from parquet format."""
+    try:
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+
+        if not file_path.exists():
+            logger.warning(f"⚠️ Parquet file does not exist: {file_path}")
+            return None
+
+        df = pd.read_parquet(file_path, **kwargs)
+        logger.info(f"✅ Successfully read DataFrame from {file_path}")
+        return df
+    except Exception as e:
+        logger.error(f"❌ Error reading DataFrame from parquet {file_path}: {e}")
+        return None
+
+def list_parquet_files(directory: Union[str, Path]) -> List[Path]:
+    """List all parquet files in a directory."""
+    try:
+        if isinstance(directory, str):
+            directory = Path(directory)
+
+        if not directory.exists():
+            logger.warning(f"⚠️ Directory does not exist: {directory}")
+            return []
+
+        parquet_files = list(directory.glob("**/*.parquet"))
+        logger.info(f"✅ Found {len(parquet_files)} parquet files in {directory}")
+        return parquet_files
+    except Exception as e:
+        logger.error(f"❌ Error listing parquet files in {directory}: {e}")
+        return []
+
+def safe_copy(src: Union[str, Path], dst: Union[str, Path]) -> bool:
+    """Safely copy a file from source to destination."""
+    try:
+        import shutil
+
+        if isinstance(src, str):
+            src = Path(src)
+        if isinstance(dst, str):
+            dst = Path(dst)
+
+        if not src.exists():
+            logger.warning(f"⚠️ Source file does not exist: {src}")
+            return False
+
+        # Ensure destination directory exists
+        dst.parent.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy2(src, dst)
+        logger.info(f"✅ Successfully copied {src} to {dst}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error copying {src} to {dst}: {e}")
+        return False
+
+def validate_dataframe_schema(df: pd.DataFrame, required_columns: List[str]) -> bool:
+    """Validate that DataFrame has required columns."""
+    try:
+        missing_columns = set(required_columns) - set(df.columns)
+        if missing_columns:
+            logger.error(f"❌ Missing required columns: {missing_columns}")
+            return False
+
+        logger.info(f"✅ DataFrame schema validation passed for {len(required_columns)} required columns")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error validating DataFrame schema: {e}")
+        return False
+
+def validate_file_size(max_size_mb: int = 100):
+    """Decorator to validate file size."""
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Get file_path from kwargs if available
+            file_path = kwargs.get('file_path')
+            if file_path:
+                if isinstance(file_path, str):
+                    file_path = Path(file_path)
+
+                if not file_path.exists():
+                    logger.warning(f"⚠️ File does not exist: {file_path}")
+                    raise ValueError(f"File does not exist: {file_path}")
+
+                file_size_mb_actual = file_path.stat().st_size / (1024 * 1024)
+                if file_size_mb_actual > max_size_mb:
+                    logger.warning(f"⚠️ File too large: {file_size_mb_actual:.2f}MB (max: {max_size_mb}MB)")
+                    raise ValueError(f"File too large: {file_size_mb_actual:.2f}MB (max: {max_size_mb}MB)")
+
+                logger.info(f"✅ File size validation passed: {file_size_mb_actual:.2f}MB")
+
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+def guard_dataframe_nulls(df: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
+    """Guard against excessive null values in DataFrame."""
+    try:
+        if df is None:
+            logger.warning("⚠️ DataFrame is None")
+            return df
+
+        null_ratio = df.isnull().mean().mean()
+        if null_ratio > threshold:
+            logger.warning(f"⚠️ High null ratio: {null_ratio:.2%} (threshold: {threshold:.2%})")
+            # Fill with appropriate defaults
+            for col in df.columns:
+                if df[col].dtype in ['int64', 'float64']:
+                    df[col] = df[col].fillna(df[col].median() if not df[col].median() != df[col].median() else 0)
+                else:
+                    df[col] = df[col].fillna('')
+
+        logger.info(f"✅ DataFrame null guard passed with ratio: {null_ratio:.2%}")
+        return df
+    except Exception as e:
+        logger.error(f"❌ Error in null guard: {e}")
+        return df
+
+def secure_file_path(allowed_dirs: List[str] = None):
+    """Decorator to secure file paths."""
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Basic path security check
+            if 'file_path' in kwargs:
+                file_path = kwargs['file_path']
+                if isinstance(file_path, str):
+                    file_path = Path(file_path)
+                # Basic security - prevent access to parent directories
+                if '..' in str(file_path):
+                    logger.warning(f"⚠️ Potential path traversal attempt: {file_path}")
+                    raise ValueError("Path traversal not allowed")
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+def with_tracing_span(span_name: str = None):
+    """Decorator for tracing spans."""
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Basic tracing - just log the function call
+            logger.info(f"🔍 Tracing span: {span_name or func.__name__}")
+            try:
+                result = func(*args, **kwargs)
+                logger.info(f"✅ Tracing span completed: {span_name or func.__name__}")
+                return result
+            except Exception as e:
+                logger.error(f"❌ Tracing span failed: {span_name or func.__name__}: {e}")
+                raise
+        return wrapper
+    return decorator
+
+def sanitize_string(s: str, max_length: int = 255) -> str:
+    """Sanitize string input."""
+    try:
+        if not isinstance(s, str):
+            s = str(s)
+
+        # Remove potentially dangerous characters
+        import re
+        s = re.sub(r'[^\w\s\-_.]', '', s)
+
+        # Truncate if too long
+        if len(s) > max_length:
+            s = s[:max_length]
+
+        return s.strip()
+    except Exception as e:
+        logger.error(f"❌ Error sanitizing string: {e}")
+        return ""
+
+
+# =============================================================================
+# M1 OPTIMIZATION UTILITIES
+# =============================================================================
+
+def memory_checkpoint(name: str):
+    """Create a memory checkpoint context manager.
+
+    Args:
+        name: Name of the checkpoint for logging
+
+    Returns:
+        Context manager for memory checkpointing
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _memory_checkpoint():
+        try:
+            # Try to get M1 memory optimizer
+            memory_optimizer = get_m1_memory_optimizer()
+            if memory_optimizer and hasattr(memory_optimizer, 'memory_checkpoint'):
+                with memory_optimizer.memory_checkpoint(name):
+                    yield
+            else:
+                # Fallback: just yield without checkpointing
+                yield
+        except Exception:
+            # If anything fails, just yield without checkpointing
+            yield
+
+    return _memory_checkpoint()
+
+
+def gpu_context(name: str):
+    """Create a GPU context manager.
+
+    Args:
+        name: Name of the context for logging
+
+    Returns:
+        Context manager for GPU operations
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _gpu_context():
+        try:
+            # Try to get M1 GPU manager
+            gpu_manager = get_m1_gpu_manager()
+            if gpu_manager and hasattr(gpu_manager, 'gpu_context'):
+                with gpu_manager.gpu_context(name):
+                    yield
+            else:
+                # Fallback: just yield without GPU context
+                yield
+        except Exception:
+            # If anything fails, just yield without GPU context
+            yield
+
+    return _gpu_context()
+
+
+def optimize_memory() -> Dict[str, Any]:
+    """Optimize memory usage across the system.
+
+    Returns:
+        Dictionary with memory optimization results
+    """
+    try:
+        # Try to get M1 memory optimizer
+        memory_optimizer = get_m1_memory_optimizer()
+        if memory_optimizer and hasattr(memory_optimizer, 'optimize_memory'):
+            return memory_optimizer.optimize_memory()
+        else:
+            # Fallback: basic garbage collection
+            import gc
+            collected = gc.collect()
+            return {
+                'objects_collected': collected,
+                'method': 'fallback_gc',
+                'success': True
+            }
+    except Exception as e:
+        logger.warning(f"⚠️ Memory optimization failed: {e}")
+        return {
+            'error': str(e),
+            'method': 'failed',
+            'success': False
+        }
+
+
+def get_memory_usage() -> float:
+    """Get current memory usage in bytes.
+
+    Returns:
+        Current memory usage in bytes
+    """
+    try:
+        import psutil
+        return psutil.Process().memory_info().rss
+    except ImportError:
+        logger.warning("⚠️ psutil not available for memory monitoring")
+        return 0.0
+
+
+def validate_file_path(file_path: Union[str, Path]) -> bool:
+    """Validate if a file path exists and is accessible.
+
+    Args:
+        file_path: Path to validate
+
+    Returns:
+        True if file exists and is accessible, False otherwise
+    """
+    try:
+        path = Path(file_path)
+        return path.exists() and path.is_file()
+    except Exception:
+        return False
+
+
+def get_file_size(file_path: Union[str, Path]) -> int:
+    """Get the size of a file in bytes.
+
+    Args:
+        file_path: Path to the file
+
+    Returns:
+        File size in bytes, or 0 if file doesn't exist or can't be accessed
+    """
+    try:
+        path = Path(file_path)
+        if path.exists() and path.is_file():
+            return path.stat().st_size
+        return 0
+    except Exception:
+        return 0
+
+
+def check_disk_space(path: Union[str, Path], required_gb: float = 1.0) -> Dict[str, Any]:
+    """Check if there's sufficient disk space available.
+
+    Args:
+        path: Path to check disk space for
+        required_gb: Required disk space in GB
+
+    Returns:
+        Dictionary with disk space information and availability status
+    """
+    try:
+        import shutil
+        path_obj = Path(path)
+        if not path_obj.exists():
+            path_obj = path_obj.parent if path_obj.parent.exists() else Path.home()
+
+        stat = shutil.disk_usage(str(path_obj))
+        total_gb = stat.total / (1024 ** 3)
+        free_gb = stat.free / (1024 ** 3)
+        used_gb = stat.used / (1024 ** 3)
+
+        sufficient = free_gb >= required_gb
+
+        return {
+            'total_gb': round(total_gb, 2),
+            'free_gb': round(free_gb, 2),
+            'used_gb': round(used_gb, 2),
+            'required_gb': required_gb,
+            'sufficient': sufficient,
+            'available_percentage': round((free_gb / total_gb) * 100, 2)
+        }
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to check disk space: {e}")
+        return {
+            'error': str(e),
+            'sufficient': False,
+            'total_gb': 0.0,
+            'free_gb': 0.0,
+            'used_gb': 0.0,
+            'required_gb': required_gb,
+            'available_percentage': 0.0
+        }

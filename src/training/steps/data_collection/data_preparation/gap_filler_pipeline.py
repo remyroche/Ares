@@ -38,7 +38,14 @@ class GapFillerPipeline:
     async def _ensure_session(self) -> None:
         """Ensure aiohttp session is available."""
         if self.session is None:
-            self.session = aiohttp.ClientSession()
+            # Create connector with SSL configuration to handle certificate issues
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            self.session = aiohttp.ClientSession(connector=connector)
 
     async def close_session(self) -> None:
         """Close aiohttp session."""

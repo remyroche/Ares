@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Weight Optimization Engine for SR Quality Score Parameters
 
@@ -22,7 +24,7 @@ from .sr_backtesting_engine import SRBacktestingEngine, BacktestResult, SRLevel
 
 # Import M1 optimization utilities
 try:
-    from ..hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
+    from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
     from ..ml_common.matrix_operations import get_enhanced_matrix_operations, M1EnhancedMatrixOperations
     from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
     M1_OPTIMIZATIONS_AVAILABLE = True
@@ -31,7 +33,7 @@ except ImportError as e:
     get_m1_memory_optimizer = None
     get_enhanced_matrix_operations = None
     get_memory_manager = None
-    print(f"⚠️ M1 optimizations not available: {e}")
+    tprint(f"⚠️ M1 optimizations not available: {e}")
 
 # Import PyTorch for MPS acceleration
 try:

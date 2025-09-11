@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 #!/usr/bin/env python3
@@ -680,6 +682,6 @@ if __name__ == "__main__":
             data_dir="data_cache"
         )
         
-        print(f"Validation result: {result}")
+        tprint(f"Validation result: {result}")
     
     asyncio.run(main())

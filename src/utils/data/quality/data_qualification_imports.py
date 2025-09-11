@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Unified Import Manager for Data Qualification Pipeline
 
@@ -97,7 +99,7 @@ class DataQualificationImportManager:
             >>> manager = DataQualificationImportManager()
             >>> suite = manager.get_utility_suite()
             >>> if suite.ml_common:
-            ...     print("ML Commons available")
+            ...     tprint("ML Commons available")
         """
         if self.utility_suite is None or force_refresh:
             self.utility_suite = self._build_utility_suite()
@@ -249,7 +251,7 @@ class DataQualificationImportManager:
             
             # M1 GPU Utils
             try:
-                from src.utils.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+                from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
                 optimizers['gpu_manager'] = get_m1_gpu_manager
                 optimizers['gpu_manager_class'] = M1GPUManager
                 self.logger.debug("✅ M1 GPU utilities imported")
@@ -260,7 +262,7 @@ class DataQualificationImportManager:
             
             # M1 Memory Optimizer
             try:
-                from src.utils.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
                 optimizers['memory_optimizer'] = get_m1_memory_optimizer
                 optimizers['memory_optimizer_class'] = M1MemoryOptimizer
                 self.logger.debug("✅ M1 Memory optimizer imported")
@@ -271,7 +273,7 @@ class DataQualificationImportManager:
             
             # M1 CPU Optimizer
             try:
-                from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+                from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
                 optimizers['cpu_optimizer'] = get_m1_cpu_optimizer
                 optimizers['cpu_optimizer_class'] = M1CPUOptimizer
                 self.logger.debug("✅ M1 CPU optimizer imported")

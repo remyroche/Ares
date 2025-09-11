@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Sequential Auto-Fix - Simple Function-Based Version
 
@@ -60,7 +62,7 @@ def run_sequential_fixes(
     Returns:
         Dict containing fix results
     """
-    print("Starting sequential auto-fix pipeline...")
+    tprint("Starting sequential auto-fix pipeline...")
     
     # Get config with fallback
     if config is None:
@@ -92,9 +94,9 @@ def run_sequential_fixes(
     
     try:
         # Step 1: Auto-fix syntax and style issues
-        print("\n" + "="*60)
-        print("Step 1: Auto-fix syntax and style issues")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("Step 1: Auto-fix syntax and style issues")
+        tprint("="*60)
         
         if AutoFixer:
             fixer = AutoFixer(config)
@@ -105,9 +107,9 @@ def run_sequential_fixes(
             results["steps"]["auto_fix"] = {"status": "skipped", "reason": "AutoFixer not available"}
         
         # Step 2: Run linter analysis
-        print("\n" + "="*60)
-        print("Step 2: Linter analysis and error reporting")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("Step 2: Linter analysis and error reporting")
+        tprint("="*60)
         
         if LinterAnalyzer:
             linter = LinterAnalyzer(config)
@@ -118,9 +120,9 @@ def run_sequential_fixes(
             results["steps"]["linter_analysis"] = {"status": "skipped", "reason": "LinterAnalyzer not available"}
         
         # Step 3: Validate AST parsing and compilation
-        print("\n" + "="*60)
-        print("Step 3: AST parsing and compilation validation")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("Step 3: AST parsing and compilation validation")
+        tprint("="*60)
         
         if SyntaxValidator:
             validator = SyntaxValidator(config)
@@ -130,9 +132,9 @@ def run_sequential_fixes(
             results["steps"]["syntax_validation"] = {"status": "skipped", "reason": "SyntaxValidator not available"}
         
         # Step 4: Analyze imports
-        print("\n" + "="*60)
-        print("Step 4: Import analysis")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("Step 4: Import analysis")
+        tprint("="*60)
         
         if ImportAnalyzer:
             import_analyzer = ImportAnalyzer(config)
@@ -142,9 +144,9 @@ def run_sequential_fixes(
             results["steps"]["import_analysis"] = {"status": "skipped", "reason": "ImportAnalyzer not available"}
         
         # Step 5: Analyze function signatures
-        print("\n" + "="*60)
-        print("Step 5: Function signature analysis")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("Step 5: Function signature analysis")
+        tprint("="*60)
         
         if SignatureAnalyzer:
             signature_analyzer = SignatureAnalyzer(config)
@@ -166,11 +168,11 @@ def run_sequential_fixes(
             report_path = _save_fix_report(results, output_dir)
             results["report_path"] = str(report_path)
         
-        print(f"\nSequential auto-fix pipeline completed in {execution_time:.2f} seconds")
+        tprint(f"\nSequential auto-fix pipeline completed in {execution_time:.2f} seconds")
         return results
         
     except Exception as e:
-        print(f"Error during sequential auto-fix: {e}")
+        tprint(f"Error during sequential auto-fix: {e}")
         results["error"] = str(e)
         results["summary"]["execution_time_seconds"] = time.time() - start_time
         return results
@@ -199,22 +201,22 @@ def _create_fallback_config():
 
 def _print_fix_summary(results: Dict[str, Any]):
     """Print a summary of the fix results."""
-    print(f"\n{'='*60}")
-    print("SEQUENTIAL AUTO-FIX SUMMARY")
-    print(f"{'='*60}")
+    tprint(f"\n{'='*60}")
+    tprint("SEQUENTIAL AUTO-FIX SUMMARY")
+    tprint(f"{'='*60}")
     
     summary = results.get("summary", {})
-    print(f"Total files processed: {summary.get('total_files_processed', 0)}")
-    print(f"Total issues found: {summary.get('total_issues_found', 0)}")
-    print(f"Total issues fixed: {summary.get('total_issues_fixed', 0)}")
-    print(f"Execution time: {summary.get('execution_time_seconds', 0):.2f} seconds")
+    tprint(f"Total files processed: {summary.get('total_files_processed', 0)}")
+    tprint(f"Total issues found: {summary.get('total_issues_found', 0)}")
+    tprint(f"Total issues fixed: {summary.get('total_issues_fixed', 0)}")
+    tprint(f"Execution time: {summary.get('execution_time_seconds', 0):.2f} seconds")
     
-    print(f"\nStep Results:")
+    tprint(f"\nStep Results:")
     for step_name, step_result in results.get("steps", {}).items():
         status = step_result.get("status", "completed")
-        print(f"  {step_name}: {status}")
+        tprint(f"  {step_name}: {status}")
     
-    print(f"{'='*60}")
+    tprint(f"{'='*60}")
 
 
 def _save_fix_report(results: Dict[str, Any], output_dir: Optional[str] = None) -> Path:
@@ -231,7 +233,7 @@ def _save_fix_report(results: Dict[str, Any], output_dir: Optional[str] = None) 
     with open(report_path, 'w') as f:
         json.dump(results, f, indent=2, default=str)
     
-    print(f"Fix report saved to: {report_path}")
+    tprint(f"Fix report saved to: {report_path}")
     return report_path
 
 

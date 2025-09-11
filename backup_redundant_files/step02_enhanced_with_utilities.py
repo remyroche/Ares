@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Enhanced Step 2: Data Reading with Comprehensive Utility Integration
 
@@ -897,6 +899,6 @@ if __name__ == '__main__':
         test_exchange = 'BINANCE'
         test_timeframe = '1m'
         result = await run_step_enhanced(symbol=test_symbol, exchange=test_exchange, timeframe=test_timeframe, data_dir='data_cache')
-        print(f'Result: {result}')
+        tprint(f'Result: {result}')
     
     asyncio.run(test())

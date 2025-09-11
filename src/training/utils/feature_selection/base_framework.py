@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Base Feature Selection Framework
 
@@ -23,9 +25,9 @@ try:
         safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile
     )
     from ...utils.common_operations import create_fallback_logger, safe_dataframe_operation
-    from ...utils.m1_gpu_utils import M1GPUManager
+    from ...utils.hardware.m1_gpu_utils import M1GPUManager
     from ...utils.parallel_processing_optimizer import ParallelProcessor
-    from ...utils.matrix_operations import (
+    from ...utils.ml_common.matrix_operations import (
         m1_correlation_matrix, m1_matrix_multiply, m1_batch_process,
         m1_parallel_operations, m1_optimize_memory, get_m1_performance_stats
     )
@@ -37,7 +39,7 @@ try:
     from ...utils.ml_common.stability import StabilityAnalyzer
     from ...utils.ml_common.thresholding import AdaptiveThresholding
 except ImportError as e:
-    print(f"⚠️ Some utilities not available: {e}")
+    tprint(f"⚠️ Some utilities not available: {e}")
     # Create fallback implementations
     def safe_divide(a, b): return a / b if b != 0 else 0
     def safe_log(x): return np.log(np.maximum(x, 1e-10))
@@ -54,9 +56,9 @@ except ImportError as e:
 try:
     from ...utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.BaseFramework")
-    print("✅ Custom logger available for FeatureSelection.BaseFramework")
+    tprint("✅ Custom logger available for FeatureSelection.BaseFramework")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("FeatureSelection.BaseFramework")
     _LOGGER.setLevel(logging.INFO)
 

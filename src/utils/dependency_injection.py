@@ -372,9 +372,9 @@ def _register_data_processing_utils(container: DependencyInjectionContainer) -> 
 def _register_m1_optimizers(container: DependencyInjectionContainer) -> None:
     """Register M1 optimization utilities."""
     try:
-        from .m1_gpu_utils import M1GPUManager, get_m1_gpu_manager, initialize_m1_gpu
-        from .m1_memory_optimizer import M1MemoryOptimizer, get_m1_memory_optimizer
-        from .m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer, initialize_m1_cpu_optimizer
+        from .hardware.m1_gpu_utils import M1GPUManager, get_m1_gpu_manager, initialize_m1_gpu
+        from .hardware.m1_memory_optimizer import M1MemoryOptimizer, get_m1_memory_optimizer
+        from .hardware.m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer, initialize_m1_cpu_optimizer
         
         # Register as singleton services
         container.register_singleton('m1_gpu_manager', M1GPUManager, get_m1_gpu_manager)

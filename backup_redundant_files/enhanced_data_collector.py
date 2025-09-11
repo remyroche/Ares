@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 
 from src.utils.logger import system_logger
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
@@ -428,6 +430,6 @@ if __name__ == "__main__":
             raw_data = raw_data
         )
         
-        print("Collection Summary:", summary)
+        tprint("Collection Summary:", summary)
     
     asyncio.run(test_enhanced_collection())

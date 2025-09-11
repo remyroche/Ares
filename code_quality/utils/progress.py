@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Rich progress tracking for code quality tools.
 """
@@ -81,14 +83,14 @@ class CodeQualityProgress:
     def start_operation(self, operation_name: str):
         """Start a new operation."""
         self.start_time = time.time()
-        self.console.print(f"\n[bold blue]🚀 Starting {operation_name}...[/bold blue]")
+        self.console.tprint(f"\n[bold blue]🚀 Starting {operation_name}...[/bold blue]")
 
     def end_operation(self, operation_name: str, success: bool = True):
         """End an operation."""
         if self.start_time:
             duration = time.time() - self.start_time
             status = "✅ Completed" if success else "❌ Failed"
-            self.console.print(f"\n[bold green]{status} {operation_name} in {duration:.2f}s[/bold green]")
+            self.console.tprint(f"\n[bold green]{status} {operation_name} in {duration:.2f}s[/bold green]")
 
     def track_file_processing(self, files: list[str], operation: str = "Processing"):
         """Track progress of file processing operations."""
@@ -143,12 +145,12 @@ class CodeQualityProgress:
             elif isinstance(value, dict):
                 table.add_row(key.replace("_", " ").title(), f"{len(value)} entries")
 
-        self.console.print(table)
+        self.console.tprint(table)
 
     def show_file_results(self, file_results: list[dict[str, Any]], operation: str = "Results"):
         """Show detailed results for individual files."""
         if not file_results:
-            self.console.print(f"[yellow]No {operation.lower()} to display[/yellow]")
+            self.console.tprint(f"[yellow]No {operation.lower()} to display[/yellow]")
             return
 
         table = Table(title=f"{operation} by File", box=box.ROUNDED)
@@ -164,7 +166,7 @@ class CodeQualityProgress:
 
             table.add_row(file_path, status, details)
 
-        self.console.print(table)
+        self.console.tprint(table)
 
     def show_tool_results(self, tool_results: dict[str, Any], operation: str = "Tool Results"):
         """Show results organized by tool."""
@@ -183,7 +185,7 @@ class CodeQualityProgress:
 
                 table.add_row(tool_name, status, str(files_processed), success_rate)
 
-        self.console.print(table)
+        self.console.tprint(table)
 
 
 class LiveProgressDisplay:

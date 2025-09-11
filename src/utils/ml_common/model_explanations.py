@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Model Explanation Utilities with SHAP and LIME Integration
 
@@ -31,9 +33,9 @@ from ..common_operations import create_fallback_logger
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.ModelExplanations")
-    print("✅ Custom logger available for MLCommon.ModelExplanations")
+    tprint("✅ Custom logger available for MLCommon.ModelExplanations")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.ModelExplanations")
     _LOGGER.setLevel(logging.INFO)
 
@@ -51,9 +53,11 @@ try:
     import lime
     import lime.lime_tabular
     LIME_AVAILABLE = True
+    logger.info("LIME library available - LIME explanations enabled")
 except ImportError:
     LIME_AVAILABLE = False
-    logger.warning("LIME not available - LIME explanations will be disabled")
+    logger.debug("LIME not available - using alternative explanation methods")
+    logger.info("Model explanations available using SHAP and fallback methods")
 
 
 class ModelExplainer:
@@ -67,7 +71,7 @@ class ModelExplainer:
             config: Configuration dictionary for explanation parameters
         """
         self.config = config or {}
-        self.logger = create_fallback_logger(__name__)
+        self.logger = create_fallback_logger()
         
         _LOGGER.info("🚀 Initializing ModelExplainer...")
         

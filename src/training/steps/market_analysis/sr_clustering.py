@@ -43,19 +43,14 @@ from src.utils.logger import system_logger
 # Initialize logger early to avoid usage before definition
 logger = system_logger.getChild('SRClustering')
 
-# Required utility modules - Comprehensive Integration
+# Required utility modules - Simplified imports
 from src.utils.common_operations import (
-    safe_json_load, safe_json_dump, safe_read_parquet, safe_to_parquet,
+    safe_json_load, safe_json_dump,
     ensure_directory, create_fallback_logger, create_fallback_decorator,
-    safe_mean, safe_std, safe_float, safe_int, safe_append, safe_extend,
-    safe_dict_get, safe_dict_items, safe_lower, safe_upper, safe_join,
     get_current_datetime, format_datetime, create_empty_dataframe,
-    safe_fillna, safe_rolling, safe_copy, safe_deepcopy, safe_sleep,
-    safe_gather, create_async_task, get_logger, setup_basic_logging,
-    safe_exception_handler, suggest_float_uniform, suggest_int_uniform,
-    validate_dataframe, validate_numeric_range, optimize_dataframe_dtypes,
-    timed_operation, format_bytes, chunked_iterable, parallel_map,
-    safe_log_metric, safe_log_params, safe_log_artifact, get_common_operations_health_status
+    safe_fillna, get_logger, setup_basic_logging,
+    validate_dataframe, optimize_dataframe_dtypes,
+    safe_log_metric, safe_log_params, safe_log_artifact
 )
 
 # SR Clustering System Integration - Required
@@ -268,13 +263,17 @@ class SRClusteringStep(BaseStep):
                 else:
                     # Convert from object format
                     if hasattr(level, 'price'):
+                        # If no touch times available, assume no touches occurred
+                        has_touch_times = hasattr(level, 'first_touch') and hasattr(level, 'last_touch')
+                        touch_count = getattr(level, 'touch_count', 0 if not has_touch_times else 2)
+
                         level_dict = {
                             'price': level.price,
                             'strength': getattr(level, 'strength', 0.5),
                             'level_type': getattr(level, 'type', 'support'),
-                            'touch_count': getattr(level, 'touch_count', 2),
-                            'first_touch': getattr(level, 'first_touch', datetime.now() - timedelta(days=30)),
-                            'last_touch': getattr(level, 'last_touch', datetime.now() - timedelta(days=1))
+                            'touch_count': touch_count,
+                            'first_touch': getattr(level, 'first_touch', datetime.now()) if has_touch_times else datetime.now(),
+                            'last_touch': getattr(level, 'last_touch', datetime.now()) if has_touch_times else datetime.now()
                         }
                         levels_dict.append(level_dict)
                     

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import pandas as pd
 
@@ -33,7 +35,7 @@ import time
     UNIFIED_LOADER_AVAILABLE = True
     DATA_DOWNLOADER_AVAILABLE = True
 except ImportError as e:
-    print(f'Warning: Could not import config modules: {e}')
+    tprint(f'Warning: Could not import config modules: {e}')
     DEFAULT_LOOKBACK_DAYS = 730
     system_logger = None
     UNIFIED_LOADER_AVAILABLE = False
@@ -491,5 +493,5 @@ async def create_sr_data_integration(symbol: str='BTCUSDT', exchange: str='binan
         else:
             raise RuntimeError('Failed to initialize S/R data integration')
     except Exception as e:
-        print(f'❌ Failed to create S/R data integration: {e}')
+        tprint(f'❌ Failed to create S/R data integration: {e}')
         raise

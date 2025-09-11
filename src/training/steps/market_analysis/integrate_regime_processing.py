@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Integration script for per-regime processing in Steps 5-7."""
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -109,13 +111,13 @@ async def main() -> None:
     integrator = RegimeProcessingIntegrator()
     success = await integrator.integrate()
     if success:
-        print('\n✅ Per-regime processing successfully integrated!')
-        print('\nNext steps:')
-        print('1. Review the modified step files')
-        print('2. Run full pipeline tests')
-        print('3. Monitor regime-specific metrics')
+        tprint('\n✅ Per-regime processing successfully integrated!')
+        tprint('\nNext steps:')
+        tprint('1. Review the modified step files')
+        tprint('2. Run full pipeline tests')
+        tprint('3. Monitor regime-specific metrics')
     else:
-        print('\n❌ Integration failed. Check logs for details.')
+        tprint('\n❌ Integration failed. Check logs for details.')
 if __name__ == '__main__':
     asyncio.run(main())
 """Integration script for per-regime processing in Steps 5-7."""

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """Chart generator for code analysis visualizations."""
 
 from typing import Dict, Any, Optional, List
@@ -49,10 +51,10 @@ class ChartGenerator:
             return fig
             
         except ImportError:
-            print("  - Matplotlib not available for dead code type chart")
+            tprint("  - Matplotlib not available for dead code type chart")
             return None
         except Exception as e:
-            print(f"  - Error creating dead code type chart: {e}")
+            tprint(f"  - Error creating dead code type chart: {e}")
             return None
     
     def create_dead_code_severity_chart(self, dead_code_report) -> Optional[Any]:
@@ -95,10 +97,10 @@ class ChartGenerator:
             return fig
             
         except ImportError:
-            print("  - Matplotlib not available for dead code severity chart")
+            tprint("  - Matplotlib not available for dead code severity chart")
             return None
         except Exception as e:
-            print(f"  - Error creating dead code severity chart: {e}")
+            tprint(f"  - Error creating dead code severity chart: {e}")
             return None
     
     def save_figure(self, fig, filename: str) -> List[str]:
@@ -125,5 +127,5 @@ class ChartGenerator:
             return saved_files
             
         except Exception as e:
-            print(f"  - Error saving figure {filename}: {e}")
+            tprint(f"  - Error saving figure {filename}: {e}")
             return []

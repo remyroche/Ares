@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Standardized trial/result logging and summaries for HPO and CV runs.
 
@@ -16,9 +18,9 @@ from datetime import datetime
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.LoggingUtils")
-    print("✅ Custom logger available for MLCommon.LoggingUtils")
+    tprint("✅ Custom logger available for MLCommon.LoggingUtils")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.LoggingUtils")
     _LOGGER.setLevel(logging.INFO)
 

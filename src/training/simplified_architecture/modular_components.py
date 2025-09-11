@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import pandas as pd
 import numpy as np
@@ -752,8 +754,8 @@ async def example_usage() -> None:
     )
     
     results = await pipeline.run(symbol='BTCUSDT', start = datetime(2023, 1, 1), end = datetime(2023, 12, 31))
-    print('Pipeline completed successfully!')
-    print(f"Features calculated: {results['features'].columns.tolist()}")
+    tprint('Pipeline completed successfully!')
+    tprint(f"Features calculated: {results['features'].columns.tolist()}")
 
 if __name__ == '__main__':
     asyncio.run(example_usage())

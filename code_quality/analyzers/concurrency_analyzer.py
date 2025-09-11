@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Concurrency Analyzer - Analyzes threading, async/await patterns, race conditions, and synchronization.
 """
@@ -537,7 +539,7 @@ class ConcurrencyAnalyzer:
             Dictionary containing analysis results
         """
         python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
-        print(f"Analyzing concurrency for {len(python_files)} Python files...")
+        tprint(f"Analyzing concurrency for {len(python_files)} Python files...")
 
         # Clear previous results
         self.concurrency_issues.clear()

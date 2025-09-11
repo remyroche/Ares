@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Code Interaction Mapping Script
 
@@ -95,7 +97,7 @@ class EnhancedCodeInteractionMapper:
 
     def analyze_dead_code(self):
         """Analyze dead code using enhanced analyzer."""
-        print("\n[1/4] Analyzing dead code and unused imports...")
+        tprint("\n[1/4] Analyzing dead code and unused imports...")
         
         try:
             analyzer = EnhancedDeadCodeAnalyzer(self.config)
@@ -121,12 +123,12 @@ class EnhancedCodeInteractionMapper:
             self.stats["dependency_modules"] = len(report.dependency_graph)
             
             # Print summary
-            print(f"  ✅ Found {report.total_issues} total issues")
-            print(f"  📊 Dead code functions: {report.issues_by_type.get('dead_code', 0)}")
-            print(f"  📦 Unused imports: {report.issues_by_type.get('unused_import', 0)}")
-            print(f"  🔗 Call graph nodes: {len(report.call_graph_nodes)}")
-            print(f"  📈 Dependency modules: {len(report.dependency_graph)}")
-            print(f"  🎯 False positives filtered: {report.false_positives_filtered}")
+            tprint(f"  ✅ Found {report.total_issues} total issues")
+            tprint(f"  📊 Dead code functions: {report.issues_by_type.get('dead_code', 0)}")
+            tprint(f"  📦 Unused imports: {report.issues_by_type.get('unused_import', 0)}")
+            tprint(f"  🔗 Call graph nodes: {len(report.call_graph_nodes)}")
+            tprint(f"  📈 Dependency modules: {len(report.dependency_graph)}")
+            tprint(f"  🎯 False positives filtered: {report.false_positives_filtered}")
             
         except Exception as e:
             logger.error(f"Dead code analysis failed: {e}")
@@ -135,7 +137,7 @@ class EnhancedCodeInteractionMapper:
 
     def analyze_file_structure(self):
         """Analyze file structure and organization."""
-        print("\n[2/4] Analyzing file structure...")
+        tprint("\n[2/4] Analyzing file structure...")
         
         try:
             python_files = self.find_python_files()
@@ -195,10 +197,10 @@ class EnhancedCodeInteractionMapper:
             self.results["file_structure"] = file_analysis
             
             # Print summary
-            print(f"  📁 Total Python files: {len(python_files)}")
-            print(f"  📊 Files by size: {file_analysis['files_by_size']}")
-            print(f"  🏗️  Directories: {len(file_analysis['files_by_directory'])}")
-            print(f"  📈 Files failed to analyze: {self.stats['files_failed']}")
+            tprint(f"  📁 Total Python files: {len(python_files)}")
+            tprint(f"  📊 Files by size: {file_analysis['files_by_size']}")
+            tprint(f"  🏗️  Directories: {len(file_analysis['files_by_directory'])}")
+            tprint(f"  📈 Files failed to analyze: {self.stats['files_failed']}")
             
         except Exception as e:
             logger.error(f"File structure analysis failed: {e}")
@@ -206,7 +208,7 @@ class EnhancedCodeInteractionMapper:
 
     def analyze_import_patterns(self):
         """Analyze import patterns across the codebase."""
-        print("\n[3/4] Analyzing import patterns...")
+        tprint("\n[3/4] Analyzing import patterns...")
         
         try:
             python_files = self.find_python_files()
@@ -271,10 +273,10 @@ class EnhancedCodeInteractionMapper:
             self.results["import_patterns"] = import_analysis
             
             # Print summary
-            print(f"  📦 Total imports: {import_analysis['total_imports']}")
-            print(f"  📊 Import types: {import_analysis['import_types']}")
-            print(f"  🏆 Top modules: {list(import_analysis['top_imported_modules'].keys())[:5]}")
-            print(f"  🗑️  Unused imports: {import_analysis['unused_imports']}")
+            tprint(f"  📦 Total imports: {import_analysis['total_imports']}")
+            tprint(f"  📊 Import types: {import_analysis['import_types']}")
+            tprint(f"  🏆 Top modules: {list(import_analysis['top_imported_modules'].keys())[:5]}")
+            tprint(f"  🗑️  Unused imports: {import_analysis['unused_imports']}")
             
         except Exception as e:
             logger.error(f"Import pattern analysis failed: {e}")
@@ -282,7 +284,7 @@ class EnhancedCodeInteractionMapper:
 
     def generate_summary_report(self):
         """Generate a comprehensive summary report."""
-        print("\n[4/4] Generating summary report...")
+        tprint("\n[4/4] Generating summary report...")
         
         try:
             summary = {
@@ -301,26 +303,26 @@ class EnhancedCodeInteractionMapper:
             self.results["summary"] = summary
             
             # Print final summary
-            print(f"\n{'='*60}")
-            print("📊 ENHANCED CODE INTERACTION ANALYSIS SUMMARY")
-            print(f"{'='*60}")
-            print(f"📁 Project: {self.project_root}")
-            print(f"📈 Files analyzed: {self.stats['files_analyzed']}")
-            print(f"❌ Files failed: {self.stats['files_failed']}")
-            print(f"🔍 Total issues found: {self.stats['total_issues']}")
-            print(f"💀 Dead code functions: {self.stats['dead_code_functions']}")
-            print(f"📦 Unused imports: {self.stats['unused_imports']}")
-            print(f"🔗 Call graph nodes: {self.stats['call_graph_nodes']}")
-            print(f"📊 Dependency modules: {self.stats['dependency_modules']}")
+            tprint(f"\n{'='*60}")
+            tprint("📊 ENHANCED CODE INTERACTION ANALYSIS SUMMARY")
+            tprint(f"{'='*60}")
+            tprint(f"📁 Project: {self.project_root}")
+            tprint(f"📈 Files analyzed: {self.stats['files_analyzed']}")
+            tprint(f"❌ Files failed: {self.stats['files_failed']}")
+            tprint(f"🔍 Total issues found: {self.stats['total_issues']}")
+            tprint(f"💀 Dead code functions: {self.stats['dead_code_functions']}")
+            tprint(f"📦 Unused imports: {self.stats['unused_imports']}")
+            tprint(f"🔗 Call graph nodes: {self.stats['call_graph_nodes']}")
+            tprint(f"📊 Dependency modules: {self.stats['dependency_modules']}")
             
             # Print recommendations
             recommendations = summary["recommendations"]
             if recommendations:
-                print(f"\n💡 RECOMMENDATIONS:")
+                tprint(f"\n💡 RECOMMENDATIONS:")
                 for i, rec in enumerate(recommendations, 1):
-                    print(f"   {i}. {rec}")
+                    tprint(f"   {i}. {rec}")
             
-            print(f"\n✅ Analysis complete!")
+            tprint(f"\n✅ Analysis complete!")
             
         except Exception as e:
             logger.error(f"Summary report generation failed: {e}")
@@ -363,15 +365,15 @@ class EnhancedCodeInteractionMapper:
             with open(json_file, 'w') as f:
                 json.dump(self.results, f, indent=2, default=str)
             
-            print(f"📁 Results exported to: {json_file}")
+            tprint(f"📁 Results exported to: {json_file}")
             
         except Exception as e:
             logger.error(f"Failed to export results: {e}")
 
     def run(self):
         """Run the complete enhanced code interaction analysis."""
-        print(f"Starting enhanced code interaction mapping for: {self.project_root}")
-        print("=" * 80)
+        tprint(f"Starting enhanced code interaction mapping for: {self.project_root}")
+        tprint("=" * 80)
         
         try:
             # Run all analysis phases
@@ -390,10 +392,10 @@ class EnhancedCodeInteractionMapper:
 
     def map_interactions(self, project_root: str) -> dict:
         """Map enhanced code interactions across the project."""
-        print(f"\n{'='*60}")
-        print("ENHANCED CODE INTERACTION MAPPING")
-        print(f"{'='*60}")
-        print(f"Project root: {project_root}")
+        tprint(f"\n{'='*60}")
+        tprint("ENHANCED CODE INTERACTION MAPPING")
+        tprint(f"{'='*60}")
+        tprint(f"Project root: {project_root}")
         
         # Initialize enhanced results
         interactions = {
@@ -433,13 +435,13 @@ class EnhancedCodeInteractionMapper:
             arch_analyzer = ArchitectureAnalyzer(config)
             
             # Run enhanced analysis
-            print("Running enhanced call graph analysis...")
+            tprint("Running enhanced call graph analysis...")
             call_results = call_analyzer.analyze_directory(project_root)
             
-            print("Running enhanced dependency analysis...")
+            tprint("Running enhanced dependency analysis...")
             dep_results = dep_analyzer.analyze_directory(project_root)
             
-            print("Running enhanced architecture analysis...")
+            tprint("Running enhanced architecture analysis...")
             arch_results = arch_analyzer.analyze_directory(project_root)
             
             # Extract function calls with enhanced metrics
@@ -529,21 +531,21 @@ class EnhancedCodeInteractionMapper:
             interactions["call_graph"] = self.results.get("call_graph", {})
             interactions["dependency_graph"] = self.results.get("dependency_graph", {})
             
-            print(f"\n✅ Enhanced interaction mapping completed:")
-            print(f"   - Total interactions: {interactions['enhanced_metrics']['total_interactions']}")
-            print(f"   - Function calls: {interactions['enhanced_metrics']['function_calls']}")
-            print(f"   - Class interactions: {interactions['enhanced_metrics']['class_interactions']}")
-            print(f"   - Module dependencies: {interactions['enhanced_metrics']['module_dependencies']}")
-            print(f"   - Complex interactions: {interactions['enhanced_metrics']['complex_interactions']}")
-            print(f"   - Cross-module interactions: {interactions['enhanced_metrics']['cross_module_interactions']}")
-            print(f"   - Complexity score: {interactions['enhanced_metrics']['complexity_score']:.2f}")
-            print(f"   - Coupling score: {interactions['enhanced_metrics']['coupling_score']:.2f}")
-            print(f"   - Files analyzed: {interactions['enhanced_metrics']['files_analyzed']}")
+            tprint(f"\n✅ Enhanced interaction mapping completed:")
+            tprint(f"   - Total interactions: {interactions['enhanced_metrics']['total_interactions']}")
+            tprint(f"   - Function calls: {interactions['enhanced_metrics']['function_calls']}")
+            tprint(f"   - Class interactions: {interactions['enhanced_metrics']['class_interactions']}")
+            tprint(f"   - Module dependencies: {interactions['enhanced_metrics']['module_dependencies']}")
+            tprint(f"   - Complex interactions: {interactions['enhanced_metrics']['complex_interactions']}")
+            tprint(f"   - Cross-module interactions: {interactions['enhanced_metrics']['cross_module_interactions']}")
+            tprint(f"   - Complexity score: {interactions['enhanced_metrics']['complexity_score']:.2f}")
+            tprint(f"   - Coupling score: {interactions['enhanced_metrics']['coupling_score']:.2f}")
+            tprint(f"   - Files analyzed: {interactions['enhanced_metrics']['files_analyzed']}")
             
             return interactions
             
         except Exception as e:
-            print(f"❌ Error in enhanced interaction mapping: {e}")
+            tprint(f"❌ Error in enhanced interaction mapping: {e}")
             return {
                 "error": str(e),
                 "interactions": [],
@@ -573,7 +575,7 @@ def main():
         mapper = EnhancedCodeInteractionMapper(args.project_root, args.exclude)
         mapper.run()
     except Exception as e:
-        print(f"❌ Analysis failed: {e}")
+        tprint(f"❌ Analysis failed: {e}")
         sys.exit(1)
 
 

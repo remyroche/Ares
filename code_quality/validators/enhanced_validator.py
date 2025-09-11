@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Validator - Comprehensive Function Argument and Data Access Validation
 
@@ -638,16 +640,16 @@ def main():
         output_file = args.output or "enhanced_validation_report.txt"
         generate_report(report, output_file)
 
-    print("\nEnhanced validation completed!")
-    print(f"Report saved to: {output_file}")
+    tprint("\nEnhanced validation completed!")
+    tprint(f"Report saved to: {output_file}")
 
     # Print summary
     summary = report["summary"]
-    print(f"\nFound {summary['total_issues']} issues:")
-    print(f"  - Argument mismatches: {summary['argument_mismatches']}")
-    print(f"  - Unsafe data access: {summary['unsafe_data_access']}")
-    print(f"  - Missing null checks: {summary['missing_null_checks']}")
-    print(f"  - Type inconsistencies: {summary['type_inconsistencies']}")
+    tprint(f"\nFound {summary['total_issues']} issues:")
+    tprint(f"  - Argument mismatches: {summary['argument_mismatches']}")
+    tprint(f"  - Unsafe data access: {summary['unsafe_data_access']}")
+    tprint(f"  - Missing null checks: {summary['missing_null_checks']}")
+    tprint(f"  - Type inconsistencies: {summary['type_inconsistencies']}")
 
 
 if __name__ == "__main__":

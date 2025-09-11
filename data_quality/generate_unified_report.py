@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Generate Unified Quality Report
 
@@ -25,10 +27,10 @@ def generate_unified_report():
     report_files = glob.glob("quality_report_*.json")
 
     if not report_files:
-        print("No quality report files found. Running fresh analysis...")
+        tprint("No quality report files found. Running fresh analysis...")
         return run_fresh_analysis()
 
-    print(f"Found {len(report_files)} quality report files")
+    tprint(f"Found {len(report_files)} quality report files")
 
     # Load and combine all reports
     all_reports = {}
@@ -95,7 +97,7 @@ def generate_unified_report():
                 summary_stats["recommendations"].update(recommendations)
 
         except Exception as e:
-            print(f"Error loading {report_file}: {e}")
+            tprint(f"Error loading {report_file}: {e}")
 
     # Calculate overall success rate
     total_analyses = summary_stats["total_files_analyzed"] + summary_stats["total_directories_analyzed"]
@@ -112,13 +114,13 @@ def generate_unified_report():
     with open(output_file, "w") as f:
         f.write(unified_report)
 
-    print(f"✅ Unified quality report saved to: {output_file}")
+    tprint(f"✅ Unified quality report saved to: {output_file}")
     return output_file
 
 
 def run_fresh_analysis():
     """Run fresh analysis on key files and directories."""
-    print("Running fresh analysis...")
+    tprint("Running fresh analysis...")
 
     orchestrator = SimpleQualityOrchestrator()
 
@@ -149,7 +151,7 @@ def run_fresh_analysis():
     # Analyze files
     for file_path in key_files:
         if Path(file_path).exists():
-            print(f"Analyzing file: {file_path}")
+            tprint(f"Analyzing file: {file_path}")
             report = orchestrator.analyze_file(file_path, f"Key file: {Path(file_path).name}")
 
             if "error" not in report:
@@ -171,7 +173,7 @@ def run_fresh_analysis():
     # Analyze directories
     for dir_path in key_directories:
         if Path(dir_path).is_dir():
-            print(f"Analyzing directory: {dir_path}")
+            tprint(f"Analyzing directory: {dir_path}")
             report = orchestrator.analyze_directory(dir_path)
 
             if "error" not in report:
@@ -207,7 +209,7 @@ def run_fresh_analysis():
     with open(output_file, "w") as f:
         f.write(unified_report)
 
-    print(f"✅ Fresh unified quality report saved to: {output_file}")
+    tprint(f"✅ Fresh unified quality report saved to: {output_file}")
     return output_file
 
 

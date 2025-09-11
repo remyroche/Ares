@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Backtesting Sub-Pipeline
 
@@ -111,31 +113,31 @@ class BacktestingSubPipeline:
         self.version_manager = get_version_manager()
     def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
         """Helper method to log sub-pipeline completion with emojis and artifact paths."""
-        print("\n" + "="*80)
-        print(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED SUCCESSFULLY!")
-        print("="*80)
-        print(f"📁 Artifact Paths:")
+        tprint("\n" + "="*80)
+        tprint(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED SUCCESSFULLY!")
+        tprint("="*80)
+        tprint(f"📁 Artifact Paths:")
         
         # Log different types of artifacts with appropriate emojis
         for key, value in artifacts.items():
             if isinstance(value, list) and value:
                 if 'model' in key.lower():
                     for item in value:
-                        print(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
+                        tprint(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
                 elif 'file' in key.lower() or 'data' in key.lower():
                     for item in value:
-                        print(f"   📄 {key.title()}: {config.data_dir}/{item}")
+                        tprint(f"   📄 {key.title()}: {config.data_dir}/{item}")
                 elif 'report' in key.lower():
                     for item in value:
-                        print(f"   📋 {key.title()}: {config.data_dir}/{item}")
+                        tprint(f"   📋 {key.title()}: {config.data_dir}/{item}")
                 else:
                     for item in value:
-                        print(f"   📊 {key.title()}: {config.data_dir}/{item}")
+                        tprint(f"   📊 {key.title()}: {config.data_dir}/{item}")
             elif isinstance(value, dict) and value:
-                print(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
+                tprint(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
         
-        print(f"📊 Artifacts Summary: {len(artifacts)} artifact types generated")
-        print("="*80 + "\n")
+        tprint(f"📊 Artifacts Summary: {len(artifacts)} artifact types generated")
+        tprint("="*80 + "\n")
         
         # Log to logger as well
         self.logger.info(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED SUCCESSFULLY!")

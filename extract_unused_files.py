@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Extract unused files from import analysis results.
 """
@@ -29,6 +31,6 @@ def extract_unused_files():
 
 if __name__ == "__main__":
     unused_files = extract_unused_files()
-    print(f"Found {len(unused_files)} unused files:")
+    tprint(f"Found {len(unused_files)} unused files:")
     for i, file_info in enumerate(unused_files, 1):
-        print(f"{i:2d}. {file_info['path']} ({file_info['module_name']})")
+        tprint(f"{i:2d}. {file_info['path']} ({file_info['module_name']})")

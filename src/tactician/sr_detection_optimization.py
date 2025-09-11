@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable, Awaitable
 
@@ -19,13 +21,13 @@ try:
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
-    print('Warning: optuna not available, using basic optimization')
+    tprint('Warning: optuna not available, using basic optimization')
 try:
     from sklearn.model_selection import TimeSeriesSplit
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
-    print('Warning: sklearn not available, clustering optimization disabled')
+    tprint('Warning: sklearn not available, clustering optimization disabled')
 from .tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.tactician.sr_levels.sr_regime_optimizer import SRRegimeOptimizer
 from src.tactician.sr_levels.sr_ml_enhancer import SRMLEnhancer

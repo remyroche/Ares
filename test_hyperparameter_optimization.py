@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Test script for hyperparameter optimization in tree-based ensemble selection.
 
@@ -21,7 +23,7 @@ from utils.ml_common.feature_selection import FeatureSelectionFramework
 
 def create_complex_data(n_samples=1000, n_features=30, n_informative=8, noise=0.1):
     """Create complex sample data that benefits from hyperparameter optimization."""
-    print("🔧 Creating complex sample data...")
+    tprint("🔧 Creating complex sample data...")
     
     # Generate random features
     np.random.seed(42)
@@ -42,24 +44,24 @@ def create_complex_data(n_samples=1000, n_features=30, n_informative=8, noise=0.
     # Create feature names
     feature_names = [f"feature_{i:02d}" for i in range(n_features)]
     
-    print(f"📊 Data created: {n_samples} samples, {n_features} features")
-    print(f"📊 Informative features: {n_informative} (features 0-{n_informative-1})")
-    print(f"📊 Target includes linear, quadratic, and interaction terms")
+    tprint(f"📊 Data created: {n_samples} samples, {n_features} features")
+    tprint(f"📊 Informative features: {n_informative} (features 0-{n_informative-1})")
+    tprint(f"📊 Target includes linear, quadratic, and interaction terms")
     
     return X, y, feature_names
 
 
 def test_hyperparameter_optimization():
     """Test the impact of hyperparameter optimization on feature selection."""
-    print("\n" + "="*60)
-    print("🧪 TESTING HYPERPARAMETER OPTIMIZATION")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🧪 TESTING HYPERPARAMETER OPTIMIZATION")
+    tprint("="*60)
     
     # Create complex data
     X, y, feature_names = create_complex_data()
     
     # Test with hyperparameter optimization enabled
-    print("\n🔍 Testing WITH hyperparameter optimization...")
+    tprint("\n🔍 Testing WITH hyperparameter optimization...")
     framework_optimized = FeatureSelectionFramework({
         'enable_gpu': False,
         'enable_parallel': True,
@@ -85,7 +87,7 @@ def test_hyperparameter_optimization():
     )
     
     # Test with hyperparameter optimization disabled
-    print("\n🔍 Testing WITHOUT hyperparameter optimization...")
+    tprint("\n🔍 Testing WITHOUT hyperparameter optimization...")
     framework_fixed = FeatureSelectionFramework({
         'enable_gpu': False,
         'enable_parallel': True,
@@ -112,46 +114,46 @@ def test_hyperparameter_optimization():
     
     # Compare results
     if 'error' not in result_optimized and 'error' not in result_fixed:
-        print(f"\n📊 HYPERPARAMETER OPTIMIZATION COMPARISON:")
-        print(f"{'Metric':<30} {'Optimized':<15} {'Fixed':<15} {'Improvement':<15}")
-        print("-" * 80)
+        tprint(f"\n📊 HYPERPARAMETER OPTIMIZATION COMPARISON:")
+        tprint(f"{'Metric':<30} {'Optimized':<15} {'Fixed':<15} {'Improvement':<15}")
+        tprint("-" * 80)
         
         # Compare baseline scores
         opt_score = result_optimized['selection_metadata']['baseline_score']
         fixed_score = result_fixed['selection_metadata']['baseline_score']
         improvement = opt_score - fixed_score
-        print(f"{'Baseline Score':<30} {opt_score:<15.3f} {fixed_score:<15.3f} {improvement:<15.3f}")
+        tprint(f"{'Baseline Score':<30} {opt_score:<15.3f} {fixed_score:<15.3f} {improvement:<15.3f}")
         
         # Compare hyperparameter scores
         opt_hp_score = result_optimized['selection_metadata']['best_hyperparameter_score']
         fixed_hp_score = result_fixed['selection_metadata']['best_hyperparameter_score']
         hp_improvement = opt_hp_score - fixed_hp_score
-        print(f"{'HP Search Score':<30} {opt_hp_score:<15.3f} {fixed_hp_score:<15.3f} {hp_improvement:<15.3f}")
+        tprint(f"{'HP Search Score':<30} {opt_hp_score:<15.3f} {fixed_hp_score:<15.3f} {hp_improvement:<15.3f}")
         
         # Compare CV scores
         if 'cv_validation' in result_optimized and 'error' not in result_optimized['cv_validation']:
             opt_cv = result_optimized['cv_validation']['cv_mean']
             fixed_cv = result_fixed['cv_validation']['cv_mean']
             cv_improvement = opt_cv - fixed_cv
-            print(f"{'CV Score':<30} {opt_cv:<15.3f} {fixed_cv:<15.3f} {cv_improvement:<15.3f}")
+            tprint(f"{'CV Score':<30} {opt_cv:<15.3f} {fixed_cv:<15.3f} {cv_improvement:<15.3f}")
         
         # Compare selected features
         opt_features = set(result_optimized['selected_features'])
         fixed_features = set(result_fixed['selected_features'])
         overlap = len(opt_features.intersection(fixed_features))
-        print(f"{'Selected Features':<30} {len(opt_features):<15} {len(fixed_features):<15} {overlap:<15}")
+        tprint(f"{'Selected Features':<30} {len(opt_features):<15} {len(fixed_features):<15} {overlap:<15}")
         
         # Show best hyperparameters
-        print(f"\n📊 Best Hyperparameters:")
+        tprint(f"\n📊 Best Hyperparameters:")
         opt_params = result_optimized['selection_metadata']['best_hyperparameters']
         fixed_params = result_fixed['selection_metadata']['best_hyperparameters']
-        print(f"  - Optimized: {opt_params}")
-        print(f"  - Fixed: {fixed_params}")
+        tprint(f"  - Optimized: {opt_params}")
+        tprint(f"  - Fixed: {fixed_params}")
         
         # Show top features
-        print(f"\n📊 Top 5 Features by Importance:")
-        print(f"{'Rank':<5} {'Optimized':<15} {'Fixed':<15}")
-        print("-" * 40)
+        tprint(f"\n📊 Top 5 Features by Importance:")
+        tprint(f"{'Rank':<5} {'Optimized':<15} {'Fixed':<15}")
+        tprint("-" * 40)
         
         opt_sorted = sorted(result_optimized['permutation_importance'].items(), 
                            key=lambda x: x[1]['importance'], reverse=True)
@@ -161,29 +163,29 @@ def test_hyperparameter_optimization():
         for i in range(min(5, len(opt_sorted), len(fixed_sorted))):
             opt_feature = opt_sorted[i][0]
             fixed_feature = fixed_sorted[i][0]
-            print(f"{i+1:<5} {opt_feature:<15} {fixed_feature:<15}")
+            tprint(f"{i+1:<5} {opt_feature:<15} {fixed_feature:<15}")
         
         # Check if informative features were selected
         informative_features = set([f"feature_{i:02d}" for i in range(8)])
         opt_informative = len(opt_features.intersection(informative_features))
         fixed_informative = len(fixed_features.intersection(informative_features))
-        print(f"\n📊 Informative Features Selected:")
-        print(f"  - Optimized: {opt_informative}/8 ({opt_informative/8*100:.1f}%)")
-        print(f"  - Fixed: {fixed_informative}/8 ({fixed_informative/8*100:.1f}%)")
+        tprint(f"\n📊 Informative Features Selected:")
+        tprint(f"  - Optimized: {opt_informative}/8 ({opt_informative/8*100:.1f}%)")
+        tprint(f"  - Fixed: {fixed_informative}/8 ({fixed_informative/8*100:.1f}%)")
         
     else:
-        print(f"❌ Comparison failed:")
+        tprint(f"❌ Comparison failed:")
         if 'error' in result_optimized:
-            print(f"  - Optimized error: {result_optimized['error']}")
+            tprint(f"  - Optimized error: {result_optimized['error']}")
         if 'error' in result_fixed:
-            print(f"  - Fixed error: {result_fixed['error']}")
+            tprint(f"  - Fixed error: {result_fixed['error']}")
 
 
 def test_different_param_grids():
     """Test different hyperparameter grids to see their impact."""
-    print("\n" + "="*60)
-    print("🧪 TESTING DIFFERENT HYPERPARAMETER GRIDS")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🧪 TESTING DIFFERENT HYPERPARAMETER GRIDS")
+    tprint("="*60)
     
     # Create sample data
     X, y, feature_names = create_complex_data()
@@ -207,7 +209,7 @@ def test_different_param_grids():
     results = {}
     
     for grid_name, param_grid in param_grids.items():
-        print(f"\n🔍 Testing {grid_name} parameter grid...")
+        tprint(f"\n🔍 Testing {grid_name} parameter grid...")
         
         framework = FeatureSelectionFramework({
             'enable_gpu': False,
@@ -232,15 +234,15 @@ def test_different_param_grids():
         
         if 'error' not in result:
             results[grid_name] = result
-            print(f"✅ {grid_name}: {len(result['selected_features'])} features selected")
+            tprint(f"✅ {grid_name}: {len(result['selected_features'])} features selected")
         else:
-            print(f"❌ {grid_name}: {result['error']}")
+            tprint(f"❌ {grid_name}: {result['error']}")
     
     # Compare results
     if results:
-        print(f"\n📊 PARAMETER GRID COMPARISON:")
-        print(f"{'Grid':<15} {'HP Score':<12} {'Baseline':<12} {'CV Score':<12} {'Features':<10}")
-        print("-" * 70)
+        tprint(f"\n📊 PARAMETER GRID COMPARISON:")
+        tprint(f"{'Grid':<15} {'HP Score':<12} {'Baseline':<12} {'CV Score':<12} {'Features':<10}")
+        tprint("-" * 70)
         
         for grid_name, result in results.items():
             hp_score = result['selection_metadata']['best_hyperparameter_score']
@@ -248,20 +250,20 @@ def test_different_param_grids():
             cv_score = result['cv_validation']['cv_mean'] if 'cv_validation' in result and 'error' not in result['cv_validation'] else 0.0
             n_features = len(result['selected_features'])
             
-            print(f"{grid_name:<15} {hp_score:<12.3f} {baseline:<12.3f} {cv_score:<12.3f} {n_features:<10}")
+            tprint(f"{grid_name:<15} {hp_score:<12.3f} {baseline:<12.3f} {cv_score:<12.3f} {n_features:<10}")
         
         # Show best hyperparameters for each grid
-        print(f"\n📊 Best Hyperparameters by Grid:")
+        tprint(f"\n📊 Best Hyperparameters by Grid:")
         for grid_name, result in results.items():
             best_params = result['selection_metadata']['best_hyperparameters']
-            print(f"  - {grid_name}: {best_params}")
+            tprint(f"  - {grid_name}: {best_params}")
 
 
 def test_correlation_grouping_impact():
     """Test the impact of correlation grouping on feature selection."""
-    print("\n" + "="*60)
-    print("🧪 TESTING CORRELATION GROUPING IMPACT")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🧪 TESTING CORRELATION GROUPING IMPACT")
+    tprint("="*60)
     
     # Create data with highly correlated features
     X, y, feature_names = create_complex_data()
@@ -270,15 +272,15 @@ def test_correlation_grouping_impact():
     X[:, 1] = 0.95 * X[:, 0] + 0.05 * np.random.randn(len(X))  # feature_01 highly correlated with feature_00
     X[:, 3] = 0.90 * X[:, 2] + 0.10 * np.random.randn(len(X))  # feature_03 highly correlated with feature_02
     
-    print("📊 Created highly correlated feature pairs:")
-    print("  - feature_00 and feature_01 (r ≈ 0.95)")
-    print("  - feature_02 and feature_03 (r ≈ 0.90)")
+    tprint("📊 Created highly correlated feature pairs:")
+    tprint("  - feature_00 and feature_01 (r ≈ 0.95)")
+    tprint("  - feature_02 and feature_03 (r ≈ 0.90)")
     
     # Test with different correlation thresholds
     thresholds = [0.7, 0.8, 0.9]
     
     for threshold in thresholds:
-        print(f"\n🔍 Testing with correlation threshold: {threshold}")
+        tprint(f"\n🔍 Testing with correlation threshold: {threshold}")
         
         framework = FeatureSelectionFramework({
             'enable_gpu': False,
@@ -306,7 +308,7 @@ def test_correlation_grouping_impact():
         )
         
         if 'error' not in result:
-            print(f"✅ Threshold {threshold}: {len(result['selected_features'])} features selected")
+            tprint(f"✅ Threshold {threshold}: {len(result['selected_features'])} features selected")
             
             # Show correlation groups
             groups_shown = set()
@@ -314,16 +316,16 @@ def test_correlation_grouping_impact():
                 group = data['group']
                 group_key = tuple(sorted(group))
                 if group_key not in groups_shown and len(group) > 1:
-                    print(f"  - Correlated group: {group}")
+                    tprint(f"  - Correlated group: {group}")
                     groups_shown.add(group_key)
         else:
-            print(f"❌ Threshold {threshold}: {result['error']}")
+            tprint(f"❌ Threshold {threshold}: {result['error']}")
 
 
 def main():
     """Run all tests."""
-    print("🚀 HYPERPARAMETER OPTIMIZATION TESTING")
-    print("="*60)
+    tprint("🚀 HYPERPARAMETER OPTIMIZATION TESTING")
+    tprint("="*60)
     
     try:
         # Test hyperparameter optimization impact
@@ -335,12 +337,12 @@ def main():
         # Test correlation grouping impact
         test_correlation_grouping_impact()
         
-        print("\n" + "="*60)
-        print("✅ ALL TESTS COMPLETED SUCCESSFULLY!")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("✅ ALL TESTS COMPLETED SUCCESSFULLY!")
+        tprint("="*60)
         
     except Exception as e:
-        print(f"\n❌ Test failed with error: {e}")
+        tprint(f"\n❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
 

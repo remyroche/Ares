@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 """
 
@@ -422,7 +424,7 @@ class ErrorHandlingAnalyzer:
             Dictionary containing analysis results
         """
         python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
-        print(f"Analyzing error handling for {len(python_files)} Python files...")
+        tprint(f"Analyzing error handling for {len(python_files)} Python files...")
 
         # Clear previous results
         self.error_issues.clear()

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.core.error_classes import execution_error, initialization_error
 from .core.decorators import handles_errors
 '\nDependency injection-aware Analyst implementation.\n\nThis module provides an Analyst implementation that properly supports\ndependency injection patterns and modern architectural practices.\n'
@@ -55,7 +57,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
                 await self._setup_event_subscriptions()
             return True
         except Exception:
-            self.print(failed('Failed to initialize analyst: {e}'))
+            self.tprint(failed('Failed to initialize analyst: {e}'))
             return False
 
     async def _initialize_analysis_components(self) -> None:
@@ -84,7 +86,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
     async def analyze_market_data(self, market_data: MarketData) -> AnalysisResult | None:
         """Analyze market data and return analysis result."""
         if not self.is_initialized or not self._validate_dependencies():
-            self.print(initialization_error('Analyst not properly initialized'))
+            self.tprint(initialization_error('Analyst not properly initialized'))
             return None
         try:
             self.is_analyzing = True
@@ -97,7 +99,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
                     await self.event_bus.publish(EventType.ANALYSIS_COMPLETED.value, analysis_result)
             return analysis_result
         except Exception:
-            self.print(failed('Analysis failed: {e}'))
+            self.tprint(failed('Analysis failed: {e}'))
             return None
         finally:
             self.is_analyzing = False
@@ -135,7 +137,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
                     support_resistance.update(feature_result.get('support_resistance', {}))
             return AnalysisResult(timestamp = market_data.timestamp, symbol = market_data.symbol, confidence = confidence, signal = signal, features = features, technical_indicators = technical_indicators, market_regime = market_regime, support_resistance = support_resistance, risk_metrics = risk_metrics)
         except Exception:
-            self.print(failed('Comprehensive analysis failed: {e}'))
+            self.tprint(failed('Comprehensive analysis failed: {e}'))
             return None
 
     async def _store_analysis_result(self, analysis_result: AnalysisResult) -> None:
@@ -146,7 +148,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             if len(self.analysis_history) > self.max_analysis_history:
                 self.analysis_history = self.analysis_history[-self.max_analysis_history:]
         except Exception:
-            self.print(failed('Failed to store analysis result: {e}'))
+            self.tprint(failed('Failed to store analysis result: {e}'))
 
     async def get_historical_analysis(self, symbol: str, start_date: datetime, end_date: datetime) -> list[AnalysisResult]:
         """Get historical analysis results."""
@@ -159,7 +161,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
                     filtered_results.append(analysis_result)
             return filtered_results
         except Exception:
-            self.print(failed('Failed to get historical analysis: {e}'))
+            self.tprint(failed('Failed to get historical analysis: {e}'))
             return []
 
     async def train_models(self, training_data: pd.DataFrame) -> bool:
@@ -176,7 +178,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             self.logger.info(f"Model training {('completed' if success else 'failed')}")
             return success
         except Exception:
-            self.print(failed('Model training failed: {e}'))
+            self.tprint(failed('Model training failed: {e}'))
             return False
 
     async def load_models(self, model_path: str) -> bool:
@@ -193,7 +195,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
             self.logger.info(f"Model loading {('completed' if success else 'failed')}")
             return success
         except Exception:
-            self.print(failed('Model loading failed: {e}'))
+            self.tprint(failed('Model loading failed: {e}'))
             return False
 
     async def _start_component(self) -> None:

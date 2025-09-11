@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Simple Complexity Analyzer
 
@@ -72,7 +74,7 @@ class SimpleComplexityAnalyzer:
             try:
                 results[str(file_path)] = self.analyze_file(file_path)
             except Exception as e:
-                print(f"Warning: Could not analyze {file_path}: {e}")
+                tprint(f"Warning: Could not analyze {file_path}: {e}")
         
         return results
     

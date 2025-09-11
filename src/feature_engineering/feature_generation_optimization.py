@@ -29,7 +29,7 @@ from enum import Enum
 
 from ..utils.math_validation import safe_divide, safe_log
 from ..utils.common_operations import create_fallback_logger
-from ..utils.m1_gpu_utils import M1GPUManager
+from ..utils.hardware.m1_gpu_utils import M1GPUManager
 from ..utils.parallel_processing_optimizer import ParallelProcessor
 
 logger = logging.getLogger(__name__)

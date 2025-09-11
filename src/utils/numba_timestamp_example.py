@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Example Usage of Numba-Friendly Timestamps
 
@@ -43,7 +45,7 @@ except ImportError:
 
 def example_basic_usage():
     """Example of basic numba-friendly timestamp usage."""
-    print("=== Basic Numba-Friendly Timestamp Usage ===")
+    tprint("=== Basic Numba-Friendly Timestamp Usage ===")
     
     # Basic timestamped printing
     numba_print_info("Starting basic example")
@@ -57,12 +59,12 @@ def example_basic_usage():
     # Simple timestamps
     numba_print_simple("This message has simple timestamp")
     
-    print()
+    tprint()
 
 
 def example_progress_tracking():
     """Example of progress tracking with timestamps."""
-    print("=== Progress Tracking Example ===")
+    tprint("=== Progress Tracking Example ===")
     
     @njit
     def process_data_with_progress(data: List[float]) -> List[float]:
@@ -87,13 +89,13 @@ def example_progress_tracking():
     # Test the function
     test_data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
     result = process_data_with_progress(test_data)
-    print(f"Processed {len(result)} items")
-    print()
+    tprint(f"Processed {len(result)} items")
+    tprint()
 
 
 def example_performance_monitoring():
     """Example of performance monitoring with timestamps."""
-    print("=== Performance Monitoring Example ===")
+    tprint("=== Performance Monitoring Example ===")
     
     @njit
     def matrix_operations_with_timing(size: int) -> float:
@@ -123,13 +125,13 @@ def example_performance_monitoring():
     
     # Test the function
     result = matrix_operations_with_timing(100)
-    print(f"Matrix operations result: {result}")
-    print()
+    tprint(f"Matrix operations result: {result}")
+    tprint()
 
 
 def example_error_handling():
     """Example of error handling with timestamps."""
-    print("=== Error Handling Example ===")
+    tprint("=== Error Handling Example ===")
     
     @njit
     def safe_division_with_logging(a: float, b: float) -> float:
@@ -146,17 +148,17 @@ def example_error_handling():
         return result
     
     # Test the function
-    print("Testing safe division:")
+    tprint("Testing safe division:")
     result1 = safe_division_with_logging(10.0, 2.0)
     result2 = safe_division_with_logging(10.0, 0.0)
     result3 = safe_division_with_logging(10.0, -2.0)
-    print(f"Results: {result1}, {result2}, {result3}")
-    print()
+    tprint(f"Results: {result1}, {result2}, {result3}")
+    tprint()
 
 
 def example_timestamp_strings():
     """Example of getting timestamp strings in numba functions."""
-    print("=== Timestamp Strings Example ===")
+    tprint("=== Timestamp Strings Example ===")
     
     @njit
     def work_with_timestamps() -> str:
@@ -175,13 +177,13 @@ def example_timestamp_strings():
     
     # Test the function
     result = work_with_timestamps()
-    print(f"Timestamp result: {result}")
-    print()
+    tprint(f"Timestamp result: {result}")
+    tprint()
 
 
 def example_complex_workflow():
     """Example of a complex workflow with comprehensive logging."""
-    print("=== Complex Workflow Example ===")
+    tprint("=== Complex Workflow Example ===")
     
     @njit
     def complex_data_processing(data: List[float], threshold: float) -> dict:
@@ -247,16 +249,16 @@ def example_complex_workflow():
     # Test the function
     test_data = [1.0, 2.0, 3.0, 4.0, 5.0, 0.5, 1.5, 2.5, 3.5, 4.5]
     result = complex_data_processing(test_data, 2.0)
-    print(f"Complex workflow result: {result}")
-    print()
+    tprint(f"Complex workflow result: {result}")
+    tprint()
 
 
 def main():
     """Run all examples."""
-    print("Numba-Friendly Timestamps Examples")
-    print("=" * 50)
-    print(f"Numba available: {NUMBA_AVAILABLE}")
-    print()
+    tprint("Numba-Friendly Timestamps Examples")
+    tprint("=" * 50)
+    tprint(f"Numba available: {NUMBA_AVAILABLE}")
+    tprint()
     
     try:
         example_basic_usage()
@@ -266,10 +268,10 @@ def main():
         example_timestamp_strings()
         example_complex_workflow()
         
-        print("All examples completed successfully!")
+        tprint("All examples completed successfully!")
         
     except Exception as e:
-        print(f"Error running examples: {e}")
+        tprint(f"Error running examples: {e}")
         import traceback
         traceback.print_exc()
 

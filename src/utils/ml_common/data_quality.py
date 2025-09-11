@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Data Quality & Preprocessing Utilities
 
@@ -41,21 +43,21 @@ from ..common_operations import create_fallback_logger
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.DataQuality")
-    print("✅ Custom logger available for MLCommon.DataQuality")
+    tprint("✅ Custom logger available for MLCommon.DataQuality")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.DataQuality")
     _LOGGER.setLevel(logging.INFO)
 
 # Enhanced imports for new functionality
 try:
-    from ..m1_gpu_utils import M1GPUManager
+    from ..hardware.m1_gpu_utils import M1GPUManager
     GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from ..m1_memory_optimizer import M1MemoryOptimizer
+    from ..hardware.m1_memory_optimizer import M1MemoryOptimizer
     MEMORY_OPTIMIZER_AVAILABLE = True
 except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False

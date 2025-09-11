@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
@@ -32,6 +34,14 @@ from src.utils.math_validation import (
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
+from src.utils.enhanced_mlflow_integration import enhanced_mlflow
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
+
+# Dependency validation
+REQUIRED_MODULES = ['pandas', 'numpy', 'src.core.decorators', 'src.utils.logger', 'src.training.steps.standardized_parquet_handler', 'pyarrow']
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 """Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring.
 
@@ -139,9 +149,9 @@ from ..model_training.step04_dependency_injection import (
 
 # M1 Hardware Optimizations
 try:
-    from src.utils.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
-    from src.utils.m1_memory_optimizer import M1MemoryOptimizer
-    from src.utils.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
     M1_OPTIMIZATIONS_AVAILABLE = True
 except ImportError as e:
     system_logger.warning(f"M1 optimizations not available: {e}")
@@ -2103,27 +2113,21 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = N
         StepResult: Standardized result with success status and details
     """
     logger.info('🚀 Starting Step 4: Regime Data Splitting with Comprehensive Function Call Monitoring')
-    
+
     # Initialize lookahead bias detector
     from datetime import datetime
-<<<<<<< HEAD
-from src.utils.enhanced_artifact_manager import get_artifact_manager
-from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
-from src.utils.version_manager import get_version_manager
-=======
->>>>>>> origin/main
     current_time = datetime.now()
     bias_detector = get_global_detector()
     bias_detector.set_current_timestamp(current_time)
     if data_dir is None:
         data_dir = standardized_parquet_handler.get_standardized_path('processed_data', exchange, symbol)
-    
+
     step_start = time.time()
     try:
         step = RegimeDataSplittingStep(config or {})
         await step.initialize()
         result = await step.split_data_by_regimes(symbol, exchange, timeframe, data_dir)
-        
+
         # Standardize the result if it's not already a StepResult
         standardized_result = standardize_result(result, "regime_data_splitting")
 
@@ -2156,7 +2160,7 @@ from src.utils.version_manager import get_version_manager
                 'execution_time': standardized_result.execution_time,
                 'step_name': 'step04_regime_data_splitting'
             }
-        
+
     except Exception as e:
         error_context = {
             'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe,
@@ -2180,5 +2184,5 @@ if __name__ == '__main__':
     async def test() -> None:
         test_config = {'symbol': 'ETHUSDT', 'exchange': 'BINANCE', 'timeframe': '1m'}
         success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache', force_rerun = False, config = test_config)
-        print(f'Test result: {success}')
+        tprint(f'Test result: {success}')
     asyncio.run(test())

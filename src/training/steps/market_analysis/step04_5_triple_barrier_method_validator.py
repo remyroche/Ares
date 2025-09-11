@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """Validator for Step 4: Triple Barrier Method.
 
 This module validates the triple barrier method step outputs.
@@ -297,5 +299,5 @@ if __name__ == '__main__':
         test_input = {'symbol': 'ETHUSDT', 'exchange': 'BINANCE', 'timeframe': '1m', 'data_dir': 'data_cache'}
         test_state = {}
         result = await run_validator(test_input, test_state)
-        print(f'Validation result: {result}')
+        tprint(f'Validation result: {result}')
     asyncio.run(test())

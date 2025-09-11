@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 from .logger import system_logger
 Feature Output Validator for Feature Engineering
@@ -61,19 +63,19 @@ class FeatureOutputValidator:
         Returns:
             Validation results dictionary
         """
-        print(f'🔍 [FEATURE OUTPUT VALIDATION] Starting validation for {method_name}')
+        tprint(f'🔍 [FEATURE OUTPUT VALIDATION] Starting validation for {method_name}')
         self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Starting validation for {method_name}')
-        print(f'   📊 Input data shape: {input_data_shape}')
-        print(f'   📊 Features type: {type(features)}')
+        tprint(f'   📊 Input data shape: {input_data_shape}')
+        tprint(f'   📊 Features type: {type(features)}')
         self.logger.info(f'   📊 Input data shape: {input_data_shape}')
         self.logger.info(f'   📊 Features type: {type(features)}')
         self.issues.clear()
         validation_results: dict[str, Any] = {'method_name': method_name, 'validation_passed': True, 'critical_issues': [], 'warnings': [], 'recommendations': [], 'output_quality_score': 0.0, 'feature_statistics': {}, 'detailed_analysis': {}}
-        print(f'🔍 [FEATURE OUTPUT VALIDATION] Converting features to DataFrame for {method_name}')
+        tprint(f'🔍 [FEATURE OUTPUT VALIDATION] Converting features to DataFrame for {method_name}')
         self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Converting features to DataFrame for {method_name}')
         features_df = self._convert_features_to_dataframe(features)
         if features_df is None or features_df.empty:
-            print(f'❌ [FEATURE OUTPUT VALIDATION] No features generated or empty output for {method_name}')
+            tprint(f'❌ [FEATURE OUTPUT VALIDATION] No features generated or empty output for {method_name}')
             self.logger.error(f'❌ [FEATURE OUTPUT VALIDATION] No features generated or empty output for {method_name}')
             if 'engineer_features' in method_name.lower():
                 self.logger.warning('⚠️ [FEATURE OUTPUT VALIDATION] Empty output, continuing due to complex financial feature engineering')
@@ -86,17 +88,17 @@ class FeatureOutputValidator:
             validation_results['validation_passed'] = False
             validation_results['output_quality_score'] = 0.0
             return validation_results
-        print(f'✅ [FEATURE OUTPUT VALIDATION] Features converted to DataFrame for {method_name}')
-        print(f'   📊 DataFrame shape: {features_df.shape}')
-        print(f'   📊 DataFrame columns: {list(features_df.columns)}')
+        tprint(f'✅ [FEATURE OUTPUT VALIDATION] Features converted to DataFrame for {method_name}')
+        tprint(f'   📊 DataFrame shape: {features_df.shape}')
+        tprint(f'   📊 DataFrame columns: {list(features_df.columns)}')
         self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Features converted to DataFrame for {method_name}')
         self.logger.info(f'   📊 DataFrame shape: {features_df.shape}')
         self.logger.info(f'   📊 DataFrame columns: {list(features_df.columns)}')
-        print(f'🔍 [FEATURE OUTPUT VALIDATION] Validating output structure for {method_name}')
+        tprint(f'🔍 [FEATURE OUTPUT VALIDATION] Validating output structure for {method_name}')
         self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Validating output structure for {method_name}')
         structure_valid = self._validate_output_structure(features_df, validation_results)
         if not structure_valid:
-            print(f'❌ [FEATURE OUTPUT VALIDATION] Structure validation failed for {method_name}')
+            tprint(f'❌ [FEATURE OUTPUT VALIDATION] Structure validation failed for {method_name}')
             self.logger.error(f'❌ [FEATURE OUTPUT VALIDATION] Structure validation failed for {method_name}')
             if 'engineer_features' in method_name.lower():
                 self.logger.warning(f'⚠️ [FEATURE OUTPUT VALIDATION] Structure validation failed for {method_name}, but continuing')
@@ -106,13 +108,13 @@ class FeatureOutputValidator:
             else:
                 validation_results['validation_passed'] = False
                 return validation_results
-        print(f'✅ [FEATURE OUTPUT VALIDATION] Structure validation passed for {method_name}')
+        tprint(f'✅ [FEATURE OUTPUT VALIDATION] Structure validation passed for {method_name}')
         self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Structure validation passed for {method_name}')
-        print(f'🔍 [FEATURE OUTPUT VALIDATION] Validating data types for {method_name}')
+        tprint(f'🔍 [FEATURE OUTPUT VALIDATION] Validating data types for {method_name}')
         self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Validating data types for {method_name}')
         dtype_valid = self._validate_data_types(features_df, validation_results)
         if not dtype_valid:
-            print(f'❌ [FEATURE OUTPUT VALIDATION] Data type validation failed for {method_name}')
+            tprint(f'❌ [FEATURE OUTPUT VALIDATION] Data type validation failed for {method_name}')
             self.logger.error(f'❌ [FEATURE OUTPUT VALIDATION] Data type validation failed for {method_name}')
             if 'engineer_features' in method_name.lower():
                 self.logger.warning(f'⚠️ [FEATURE OUTPUT VALIDATION] Data type validation failed for {method_name}, but continuing')
@@ -122,13 +124,13 @@ class FeatureOutputValidator:
             else:
                 validation_results['validation_passed'] = False
                 return validation_results
-        print(f'✅ [FEATURE OUTPUT VALIDATION] Data type validation passed for {method_name}')
+        tprint(f'✅ [FEATURE OUTPUT VALIDATION] Data type validation passed for {method_name}')
         self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Data type validation passed for {method_name}')
-        print(f'🔍 [FEATURE OUTPUT VALIDATION] Validating feature values for {method_name}')
+        tprint(f'🔍 [FEATURE OUTPUT VALIDATION] Validating feature values for {method_name}')
         self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Validating feature values for {method_name}')
         value_valid = self._validate_feature_values(features_df, method_name, validation_results)
         if not value_valid:
-            print(f'❌ [FEATURE OUTPUT VALIDATION] Value validation failed for {method_name}')
+            tprint(f'❌ [FEATURE OUTPUT VALIDATION] Value validation failed for {method_name}')
             self.logger.error(f'❌ [FEATURE OUTPUT VALIDATION] Value validation failed for {method_name}')
             if 'engineer_features' in method_name.lower():
                 self.logger.warning(f'⚠️ [FEATURE OUTPUT VALIDATION] Value validation failed for {method_name}, but continuing')
@@ -138,13 +140,13 @@ class FeatureOutputValidator:
             else:
                 validation_results['validation_passed'] = False
                 return validation_results
-        print(f'✅ [FEATURE OUTPUT VALIDATION] Value validation passed for {method_name}')
+        tprint(f'✅ [FEATURE OUTPUT VALIDATION] Value validation passed for {method_name}')
         self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Value validation passed for {method_name}')
-        print(f'🔍 [FEATURE OUTPUT VALIDATION] Validating feature relationships for {method_name}')
+        tprint(f'🔍 [FEATURE OUTPUT VALIDATION] Validating feature relationships for {method_name}')
         self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Validating feature relationships for {method_name}')
         relationship_valid = self._validate_feature_relationships(features_df, validation_results)
         if not relationship_valid:
-            print(f'❌ [FEATURE OUTPUT VALIDATION] Relationship validation failed for {method_name}')
+            tprint(f'❌ [FEATURE OUTPUT VALIDATION] Relationship validation failed for {method_name}')
             self.logger.error(f'❌ [FEATURE OUTPUT VALIDATION] Relationship validation failed for {method_name}')
             if 'engineer_features' in method_name.lower():
                 self.logger.warning(f'⚠️ [FEATURE OUTPUT VALIDATION] Relationship validation failed for {method_name}, but continuing')
@@ -154,14 +156,14 @@ class FeatureOutputValidator:
             else:
                 validation_results['validation_passed'] = False
                 return validation_results
-        print(f'✅ [FEATURE OUTPUT VALIDATION] Relationship validation passed for {method_name}')
+        tprint(f'✅ [FEATURE OUTPUT VALIDATION] Relationship validation passed for {method_name}')
         self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Relationship validation passed for {method_name}')
         if input_data_shape:
-            print(f'🔍 [FEATURE OUTPUT VALIDATION] Validating input-output consistency for {method_name}')
+            tprint(f'🔍 [FEATURE OUTPUT VALIDATION] Validating input-output consistency for {method_name}')
             self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Validating input-output consistency for {method_name}')
             consistency_valid = self._validate_input_output_consistency(features_df, input_data_shape, validation_results)
             if not consistency_valid:
-                print(f'❌ [FEATURE OUTPUT VALIDATION] Consistency validation failed for {method_name}')
+                tprint(f'❌ [FEATURE OUTPUT VALIDATION] Consistency validation failed for {method_name}')
                 self.logger.error(f'❌ [FEATURE OUTPUT VALIDATION] Consistency validation failed for {method_name}')
                 if 'engineer_features' in method_name.lower():
                     self.logger.warning(f'⚠️ [FEATURE OUTPUT VALIDATION] Consistency validation failed for {method_name}, but continuing')
@@ -171,13 +173,13 @@ class FeatureOutputValidator:
                 else:
                     validation_results['validation_passed'] = False
                     return validation_results
-            print(f'✅ [FEATURE OUTPUT VALIDATION] Consistency validation passed for {method_name}')
+            tprint(f'✅ [FEATURE OUTPUT VALIDATION] Consistency validation passed for {method_name}')
             self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Consistency validation passed for {method_name}')
-        print(f'🔍 [FEATURE OUTPUT VALIDATION] Validating downstream compatibility for {method_name}')
+        tprint(f'🔍 [FEATURE OUTPUT VALIDATION] Validating downstream compatibility for {method_name}')
         self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Validating downstream compatibility for {method_name}')
         downstream_valid = self._validate_downstream_compatibility(features_df, method_name, validation_results)
         if not downstream_valid:
-            print(f'❌ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation failed for {method_name}')
+            tprint(f'❌ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation failed for {method_name}')
             self.logger.error(f'❌ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation failed for {method_name}')
             if 'engineer_features' in method_name.lower():
                 self.logger.warning(f'⚠️ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation failed for {method_name}, but continuing')
@@ -187,12 +189,12 @@ class FeatureOutputValidator:
             else:
                 validation_results['validation_passed'] = False
                 return validation_results
-        print(f'✅ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation passed for {method_name}')
+        tprint(f'✅ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation passed for {method_name}')
         self.logger.info(f'✅ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation passed for {method_name}')
-        print(f'🔍 [FEATURE OUTPUT VALIDATION] Calculating quality score for {method_name}')
+        tprint(f'🔍 [FEATURE OUTPUT VALIDATION] Calculating quality score for {method_name}')
         self.logger.info(f'🔍 [FEATURE OUTPUT VALIDATION] Calculating quality score for {method_name}')
         validation_results['output_quality_score'] = self._calculate_output_quality_score(validation_results)
-        print(f"📊 [FEATURE OUTPUT VALIDATION] Quality score for {method_name}: {validation_results['output_quality_score']:.2f}")
+        tprint(f"📊 [FEATURE OUTPUT VALIDATION] Quality score for {method_name}: {validation_results['output_quality_score']:.2f}")
         self.logger.info(f"📊 [FEATURE OUTPUT VALIDATION] Quality score for {method_name}: {validation_results['output_quality_score']:.2f}")
         validation_results['recommendations'] = self._generate_output_recommendations(validation_results)
         if validation_results['validation_passed']:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Robust async/await fixer that handles complex cases.
 """
@@ -173,7 +175,7 @@ class RobustAsyncFixer:
                 if "__pycache__" not in str(f) and ".venv" not in str(f)
             ]
 
-        print(f"Checking {len(files_to_fix)} files for async/await issues...")
+        tprint(f"Checking {len(files_to_fix)} files for async/await issues...")
 
         if dry_run:
             issues_found = 0
@@ -194,18 +196,18 @@ class RobustAsyncFixer:
                 except:
                     pass
 
-            print(f"\nFound potential async/await issues in {issues_found} files")
-            print("\nSample files:")
+            tprint(f"\nFound potential async/await issues in {issues_found} files")
+            tprint("\nSample files:")
             for f in sample_files[:5]:
-                print(f"  - {Path(f).name}")
+                tprint(f"  - {Path(f).name}")
 
             return {"dry_run": True, "potential_fixes": issues_found}
         # Actually fix the files
         for file_path in files_to_fix:
             self.fix_missing_awaits(file_path)
 
-        print(f"\nFixed {len(self.fixed_files)} files")
-        print(f"Failed to fix {len(files_to_fix) - len(self.fixed_files)} files")
+        tprint(f"\nFixed {len(self.fixed_files)} files")
+        tprint(f"Failed to fix {len(files_to_fix) - len(self.fixed_files)} files")
 
         return {
             "fixed": len(self.fixed_files),
@@ -237,7 +239,7 @@ def main():
     with open(report_file, "w") as f:
         json.dump(result, f, indent=2, default=str)
 
-    print(f"\nReport saved to: {report_file}")
+    tprint(f"\nReport saved to: {report_file}")
 
 
 if __name__ == "__main__":

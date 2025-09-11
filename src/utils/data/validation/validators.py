@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Set
 
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
-from ..logger import system_logger
+from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 import logging
 import time

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Quality Metrics Component
 
@@ -17,9 +19,9 @@ from collections import defaultdict
 try:
     from ...utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.QualityMetrics")
-    print("✅ Custom logger available for FeatureSelection.QualityMetrics")
+    tprint("✅ Custom logger available for FeatureSelection.QualityMetrics")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("FeatureSelection.QualityMetrics")
     _LOGGER.setLevel(logging.INFO)
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Summarize code interactions from the analysis.
 """
@@ -12,24 +14,24 @@ try:
     with open("/workspace/code_quality/interaction_analysis.json") as f:
         data = json.load(f)
 except FileNotFoundError:
-    print("No interaction analysis data found. Please run the interaction analysis first.")
+    tprint("No interaction analysis data found. Please run the interaction analysis first.")
     data = {}
 
-print("CODE INTERACTION MAPPING SUMMARY")
-print("=" * 60)
-print()
+tprint("CODE INTERACTION MAPPING SUMMARY")
+tprint("=" * 60)
+tprint()
 
 # Overall statistics
-print("OVERALL STATISTICS")
-print("-" * 30)
+tprint("OVERALL STATISTICS")
+tprint("-" * 30)
 if data and 'summary' in data:
-    print(f"Files analyzed: {data['summary']['files_processed']}")
-    print(f"Total issues: {data['summary']['total_issues']}")
-    print(f"Undefined functions: {data['summary']['undefined_functions']}")
-    print(f"Missing await calls: {data['summary']['missing_await']}")
+    tprint(f"Files analyzed: {data['summary']['files_processed']}")
+    tprint(f"Total issues: {data['summary']['total_issues']}")
+    tprint(f"Undefined functions: {data['summary']['undefined_functions']}")
+    tprint(f"Missing await calls: {data['summary']['missing_await']}")
 else:
-    print("No data available")
-print()
+    tprint("No data available")
+tprint()
 
 # Analyze undefined functions
 undefined_funcs = defaultdict(int)
@@ -60,37 +62,37 @@ for issue in data.get("issues", []):
             async_issues[func_name] += 1
 
 # Key Interactions
-print("KEY CODE INTERACTIONS")
-print("-" * 30)
-print()
+tprint("KEY CODE INTERACTIONS")
+tprint("-" * 30)
+tprint()
 
 # Module-level interactions
-print("MODULES WITH MOST ISSUES:")
+tprint("MODULES WITH MOST ISSUES:")
 for module, count in sorted(module_issues.items(), key=lambda x: x[1], reverse=True)[:10]:
-    print(f"  {module}: {count} issues")
-print()
+    tprint(f"  {module}: {count} issues")
+tprint()
 
 # Most undefined functions
-print("TOP 15 UNDEFINED FUNCTIONS:")
+tprint("TOP 15 UNDEFINED FUNCTIONS:")
 for func, count in sorted(undefined_funcs.items(), key=lambda x: x[1], reverse=True)[:15]:
-    print(f"  {func}: {count} occurrences")
-print()
+    tprint(f"  {func}: {count} occurrences")
+tprint()
 
 # Async patterns
-print("ASYNC FUNCTIONS MISSING AWAIT:")
+tprint("ASYNC FUNCTIONS MISSING AWAIT:")
 for func, count in sorted(async_issues.items(), key=lambda x: x[1], reverse=True)[:10]:
-    print(f"  {func}: {count} occurrences")
-print()
+    tprint(f"  {func}: {count} occurrences")
+tprint()
 
 # Files with most issues
-print("FILES WITH MOST ISSUES:")
+tprint("FILES WITH MOST ISSUES:")
 for file, count in sorted(files_with_issues.items(), key=lambda x: x[1], reverse=True)[:10]:
-    print(f"  {Path(file).name}: {count} issues")
-print()
+    tprint(f"  {Path(file).name}: {count} issues")
+tprint()
 
 # Interaction patterns
-print("INTERACTION PATTERNS DETECTED:")
-print("-" * 30)
+tprint("INTERACTION PATTERNS DETECTED:")
+tprint("-" * 30)
 
 # Common patterns in undefined functions
 patterns = defaultdict(int)
@@ -109,16 +111,16 @@ for func in undefined_funcs:
         patterns["DateTime operations"] += undefined_funcs[func]
 
 for pattern, count in sorted(patterns.items(), key=lambda x: x[1], reverse=True):
-    print(f"  {pattern}: {count} occurrences")
+    tprint(f"  {pattern}: {count} occurrences")
 
-print()
-print("RECOMMENDATIONS:")
-print("-" * 30)
-print("1. Add missing imports for common operations (datetime, pandas)")
-print("2. Ensure all async functions are properly awaited")
-print("3. Review module dependencies and circular imports")
-print("4. Add type hints to clarify expected interfaces")
-print("5. Consider creating utility modules for common undefined functions")
+tprint()
+tprint("RECOMMENDATIONS:")
+tprint("-" * 30)
+tprint("1. Add missing imports for common operations (datetime, pandas)")
+tprint("2. Ensure all async functions are properly awaited")
+tprint("3. Review module dependencies and circular imports")
+tprint("4. Add type hints to clarify expected interfaces")
+tprint("5. Consider creating utility modules for common undefined functions")
 
 
 class InteractionSummary:
@@ -134,7 +136,7 @@ class InteractionSummary:
                 with open(data_file) as f:
                     data = json.load(f)
             except FileNotFoundError:
-                print("No interaction analysis data found. Please run the interaction analysis first.")
+                tprint("No interaction analysis data found. Please run the interaction analysis first.")
                 data = {}
         else:
             data = {}

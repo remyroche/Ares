@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Conservative code fixer that only makes safe, minimal changes.
 This fixer is designed to be extremely safe and avoid generating new issues.
@@ -256,50 +258,50 @@ def main():
     if args.file:
         file_path = Path(args.file)
         if not file_path.exists():
-            print(f"Error: File not found at {file_path}")
+            tprint(f"Error: File not found at {file_path}")
             return
 
         result = fixer.fix_file(file_path)
         if result.get("fixed", False):
-            print(f"✅ Fixed issues in {file_path}")
-            print(f"   Fixes applied: {', '.join(result['fixes_applied'])}")
+            tprint(f"✅ Fixed issues in {file_path}")
+            tprint(f"   Fixes applied: {', '.join(result['fixes_applied'])}")
         elif result.get("status") == "skipped":
-            print(f"⏭️  Skipped {file_path}: {result.get('reason', 'unknown')}")
+            tprint(f"⏭️  Skipped {file_path}: {result.get('reason', 'unknown')}")
         else:
-            print(f"ℹ️  No fixes applied to {file_path}")
+            tprint(f"ℹ️  No fixes applied to {file_path}")
         
         # Show detected issues (like empty except blocks)
         issues = result.get("issues_detected", [])
         if issues:
-            print(f"⚠️  Detected {len(issues)} issues that need attention:")
+            tprint(f"⚠️  Detected {len(issues)} issues that need attention:")
             for issue in issues:
-                print(f"   Line {issue['line_number']}: {issue['message']}")
-                print(f"   Suggestion: {issue['suggestion']}")
+                tprint(f"   Line {issue['line_number']}: {issue['message']}")
+                tprint(f"   Suggestion: {issue['suggestion']}")
 
     elif args.directory:
         directory_path = Path(args.directory)
         if not directory_path.exists() or not directory_path.is_dir():
-            print(f"Error: Directory not found at {directory_path}")
+            tprint(f"Error: Directory not found at {directory_path}")
             return
 
         results = fixer.fix_directory(directory_path)
-        print(f"Fix results for {directory_path}:")
-        print(f"  Total files processed: {results['total_files']}")
-        print(f"  Files fixed: {results['files_fixed']}")
-        print(f"  Files skipped: {results['files_skipped']}")
-        print(f"  Total fixes applied: {results['total_fixes']}")
+        tprint(f"Fix results for {directory_path}:")
+        tprint(f"  Total files processed: {results['total_files']}")
+        tprint(f"  Files fixed: {results['files_fixed']}")
+        tprint(f"  Files skipped: {results['files_skipped']}")
+        tprint(f"  Total fixes applied: {results['total_fixes']}")
         
         # Show files with detected issues
         files_with_issues = [r for r in results['results'] if r.get('issues_detected')]
         if files_with_issues:
-            print(f"\n⚠️  Files with issues that need attention: {len(files_with_issues)}")
+            tprint(f"\n⚠️  Files with issues that need attention: {len(files_with_issues)}")
             for result in files_with_issues[:5]:  # Show first 5 files
                 issues = result.get('issues_detected', [])
-                print(f"  {result['file_path']}: {len(issues)} issues")
+                tprint(f"  {result['file_path']}: {len(issues)} issues")
                 for issue in issues[:2]:  # Show first 2 issues per file
-                    print(f"    Line {issue['line_number']}: {issue['message']}")
+                    tprint(f"    Line {issue['line_number']}: {issue['message']}")
             if len(files_with_issues) > 5:
-                print(f"  ... and {len(files_with_issues) - 5} more files with issues")
+                tprint(f"  ... and {len(files_with_issues) - 5} more files with issues")
 
     else:
         parser.print_help()

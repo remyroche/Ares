@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 GUI Manager for Ares Launcher
 
@@ -166,8 +168,8 @@ class TradingProcessManager:
         """Run trading process with real-time output monitoring."""
         mode_display = "paper trading" if trading_mode == "PAPER" else "live trading"
         self.logger.info(f"📊 Running {mode_display} for {symbol} on {exchange}")
-        print(f"📊 Running {mode_display} for {symbol} on {exchange}")
-        print("=" * 80)
+        tprint(f"📊 Running {mode_display} for {symbol} on {exchange}")
+        tprint("=" * 80)
         
         try:
             # Set environment variable for trading mode
@@ -194,7 +196,7 @@ class TradingProcessManager:
                 if output == "" and process.poll() is not None:
                     break
                 if output:
-                    print(output.strip())  # Print to terminal in real-time
+                    tprint(output.strip())  # Print to terminal in real-time
                     self.logger.info(output.strip())  # Also log it
             
             # Get the final return code
@@ -202,16 +204,16 @@ class TradingProcessManager:
             
             if return_code == 0:
                 self.logger.info(f"✅ {mode_display} completed successfully")
-                print(f"✅ {mode_display} completed successfully")
+                tprint(f"✅ {mode_display} completed successfully")
                 return True
             else:
                 self.logger.error(f"❌ {mode_display} failed with return code: {return_code}")
-                print(f"❌ {mode_display} failed with return code: {return_code}")
+                tprint(f"❌ {mode_display} failed with return code: {return_code}")
                 return False
                 
         except Exception as e:
             self.logger.exception(f"❌ Failed to run {mode_display}: {e}")
-            print(f"❌ Failed to run {mode_display}: {e}")
+            tprint(f"❌ Failed to run {mode_display}: {e}")
             return False
     
     def run_portfolio_trading(self, supported_tokens: List[str]) -> bool:

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import os
 import pickle
 from datetime import datetime
@@ -107,7 +109,7 @@ class EfficientFeaturesDatabase:
             self.logger.info(f'Found {len(databases)} existing precomputed features databases')
             return databases
         except Exception:
-            self.print(error('Error scanning existing databases: {e}'))
+            self.tprint(error('Error scanning existing databases: {e}'))
             return []
 
     @handles_errors(exceptions=(OSError, ValueError, KeyError, pd.errors.EmptyDataError), default_return={})
@@ -134,7 +136,7 @@ class EfficientFeaturesDatabase:
                 return {'start_time': data.index.min(), 'end_time': data.index.max(), 'num_records': len(data), 'num_features': len(data.columns), 'feature_categories': self._analyze_feature_categories(data.columns)}
             return {}
         except Exception:
-            self.print(warning('Error reading database info: {e}'))
+            self.tprint(warning('Error reading database info: {e}'))
             return {}
 
     def _analyze_feature_categories(self, columns: list[str]) -> dict[str, int]:
@@ -189,7 +191,7 @@ class EfficientFeaturesDatabase:
                         missing_ranges.append((db_end, end_time))
             return (db_name, missing_ranges)
         except Exception:
-            self.print(error('Error finding existing database: {e}'))
+            self.tprint(error('Error finding existing database: {e}'))
             return (None, [(start_time, end_time)] if start_time and end_time else [])
 
     @handles_errors(exceptions=(OSError, ValueError, KeyError, pd.errors.EmptyDataError), default_return = pd.DataFrame())
@@ -200,7 +202,7 @@ class EfficientFeaturesDatabase:
                 self.logger.info(f'Loading database from cache: {database_name}')
                 return self.database_cache[database_name].copy()
             if database_name not in self.metadata_cache:
-                self.print(missing('Database not found: {database_name}'))
+                self.tprint(missing('Database not found: {database_name}'))
                 return pd.DataFrame()
             db_path = self.metadata_cache[database_name]['file_path']
             self.logger.info(f'Loading database from disk: {database_name}')
@@ -218,7 +220,7 @@ class EfficientFeaturesDatabase:
             self.logger.info(f'Loaded {len(data)} records with {len(data.columns)} features')
             return data
         except Exception:
-            self.print(error('Error loading database {database_name}: {e}'))
+            self.tprint(error('Error loading database {database_name}: {e}'))
             return pd.DataFrame()
 
     @handles_errors(exceptions=(OSError, ValueError, PermissionError), default_return = False)
@@ -285,7 +287,7 @@ class EfficientFeaturesDatabase:
         """
         try:
             if new_data.empty:
-                self.print(warning('No new data to update database'))
+                self.tprint(warning('No new data to update database'))
                 return True
             existing_data = await self.load_database(existing_database_name)
             if existing_data.empty:
@@ -312,7 +314,7 @@ class EfficientFeaturesDatabase:
                 self.logger.info(f'📝 File timestamp updated for database: {existing_database_name}')
             return success
         except Exception:
-            self.print(error('❌ Error updating database: {e}'))
+            self.tprint(error('❌ Error updating database: {e}'))
             return False
 
     @handles_errors(exceptions=(OSError, ValueError, PermissionError), default_return = False)

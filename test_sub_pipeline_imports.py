@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Test script to isolate which sub-pipeline import is causing the hang
 """
@@ -10,36 +12,36 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-print("1. Starting sub-pipeline import test...")
+tprint("1. Starting sub-pipeline import test...")
 
 try:
-    print("2. About to import simple_logger...")
+    tprint("2. About to import simple_logger...")
     from simple_logger import system_logger
-    print("3. Simple logger imported successfully")
+    tprint("3. Simple logger imported successfully")
 except Exception as e:
-    print(f"3. ERROR importing simple_logger: {e}")
+    tprint(f"3. ERROR importing simple_logger: {e}")
     sys.exit(1)
 
 try:
-    print("4. About to import decorators...")
+    tprint("4. About to import decorators...")
     from src.core.decorators import handles_errors, traced, log_execution_time
-    print("5. Decorators imported successfully")
+    tprint("5. Decorators imported successfully")
 except Exception as e:
-    print(f"5. ERROR importing decorators: {e}")
+    tprint(f"5. ERROR importing decorators: {e}")
     sys.exit(1)
 
 # Test data collection sub-pipeline import
 try:
-    print("6. About to import data_collection sub_pipeline...")
+    tprint("6. About to import data_collection sub_pipeline...")
     from src.training.steps.data_collection.sub_pipeline import (
         DataCollectionSubPipeline, SubPipelineConfig as DataCollectionConfig,
         SubPipelineResult as DataCollectionResult, ExecutionMode, SubPipelineStatus
     )
-    print("7. Data collection sub-pipeline imported successfully")
+    tprint("7. Data collection sub-pipeline imported successfully")
 except Exception as e:
-    print(f"7. ERROR importing data_collection sub_pipeline: {e}")
+    tprint(f"7. ERROR importing data_collection sub_pipeline: {e}")
     import traceback
     traceback.print_exc()
 
-print("8. Test completed!")
+tprint("8. Test completed!")
 

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Threshold search and calibration helpers.
 
@@ -27,15 +29,15 @@ try:
         precision_recall_curve,
     )
     SKLEARN_AVAILABLE = True
-    print("✅ Scikit-learn available for thresholding functionality")
+    tprint("✅ Scikit-learn available for thresholding functionality")
 except ImportError as e:
     SKLEARN_AVAILABLE = False
-    print(f"❌ Scikit-learn not available: {e}. Thresholding functionality severely limited.")
+    tprint(f"❌ Scikit-learn not available: {e}. Thresholding functionality severely limited.")
     _LOGGER.error("Scikit-learn not available - limited thresholding functionality")
     raise ImportError(f"Scikit-learn is required for thresholding functionality: {e}")
 except Exception as e:
     SKLEARN_AVAILABLE = False
-    print(f"❌ Scikit-learn import failed: {e}. Thresholding functionality severely limited.")
+    tprint(f"❌ Scikit-learn import failed: {e}. Thresholding functionality severely limited.")
     _LOGGER.error(f"Scikit-learn import failed: {e}")
     raise ImportError(f"Scikit-learn import failed: {e}")
 
@@ -53,13 +55,13 @@ except Exception:
 
 # Import M1 utilities
 try:
-    from ..m1_gpu_utils import M1GPUManager
+    from ..hardware.m1_gpu_utils import M1GPUManager
     GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from ..m1_memory_optimizer import (
+    from ..hardware.m1_memory_optimizer import (
         auto_skim_memory, smart_memory_allocation,
         memory_skim_decorator, auto_memory_skim_decorator,
         auto_memory_skim_context, smart_memory_context
@@ -69,7 +71,7 @@ except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False
 
 try:
-    from ..m1_cpu_optimizer import get_m1_cpu_optimizer
+    from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
     CPU_OPTIMIZER_AVAILABLE = True
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False

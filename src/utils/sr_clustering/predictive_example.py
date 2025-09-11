@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Example demonstrating how the weight optimization system predicts future SR level quality.
 
@@ -186,32 +188,32 @@ def create_diverse_sr_levels() -> list:
 def demonstrate_future_prediction():
     """Demonstrate how the system predicts future SR level quality."""
     logger.info("🔮 Starting Future SR Quality Prediction Demo")
-    print("🔮 Future SR Quality Prediction Demo")
-    print("=" * 60)
+    tprint("🔮 Future SR Quality Prediction Demo")
+    tprint("=" * 60)
     
     # Create historical and current market data
     logger.info("📊 Creating market data for prediction demonstration")
-    print("📊 Creating market data...")
+    tprint("📊 Creating market data...")
     
     historical_data = create_realistic_market_data(150)  # 150 days of historical data
     current_data = create_realistic_market_data(200)     # 200 days including future
     
     logger.info(f"✅ Created historical data: {len(historical_data)} days")
     logger.info(f"✅ Created current data: {len(current_data)} days")
-    print(f"✅ Historical data: {len(historical_data)} days")
-    print(f"✅ Current data: {len(current_data)} days")
+    tprint(f"✅ Historical data: {len(historical_data)} days")
+    tprint(f"✅ Current data: {len(current_data)} days")
     
     # Create diverse SR levels
     logger.info("🎯 Creating diverse SR levels for prediction")
-    print("\n🎯 Creating diverse SR levels...")
+    tprint("\n🎯 Creating diverse SR levels...")
     
     sr_levels = create_diverse_sr_levels()
     logger.info(f"✅ Created {len(sr_levels)} SR levels for prediction")
-    print(f"✅ Created {len(sr_levels)} SR levels")
+    tprint(f"✅ Created {len(sr_levels)} SR levels")
     
     # Initialize predictive engine
     logger.info("🔧 Initializing predictive engine")
-    print("\n🔧 Initializing predictive engine...")
+    tprint("\n🔧 Initializing predictive engine...")
     
     predictive_config = PredictiveConfig(
         model_type='ensemble',
@@ -234,7 +236,7 @@ def demonstrate_future_prediction():
     
     # Train the predictive model
     logger.info("📈 Training predictive model with historical data")
-    print("\n📈 Training predictive model...")
+    tprint("\n📈 Training predictive model...")
     
     training_result = predictive_engine.train_predictive_model(
         historical_data, 
@@ -244,7 +246,7 @@ def demonstrate_future_prediction():
     
     if training_result.get('status') == 'success':
         logger.info("✅ Model training successful")
-        print("✅ Model training successful!")
+        tprint("✅ Model training successful!")
         
         training_samples = training_result.get('training_samples', 0)
         model_perf = training_result.get('model_performance', {})
@@ -254,17 +256,17 @@ def demonstrate_future_prediction():
         logger.info(f"Model performance: {model_perf}")
         logger.info(f"Validation performance: {validation_perf}")
         
-        print(f"   Training samples: {training_samples}")
-        print(f"   Model performance: {model_perf}")
-        print(f"   Validation performance: {validation_perf}")
+        tprint(f"   Training samples: {training_samples}")
+        tprint(f"   Model performance: {model_perf}")
+        tprint(f"   Validation performance: {validation_perf}")
         
         # Show optimized weights
         optimized_weights = training_result.get('optimized_weights', {})
         if optimized_weights:
             logger.info(f"Optimized weights available for {len(optimized_weights)} features")
-            print(f"\n🎯 Optimized weights:")
+            tprint(f"\n🎯 Optimized weights:")
             for feature, weight in optimized_weights.items():
-                print(f"   {feature}: {weight:.3f}")
+                tprint(f"   {feature}: {weight:.3f}")
                 logger.debug(f"Optimized weight: {feature}={weight:.3f}")
         else:
             logger.warning("No optimized weights available")
@@ -273,22 +275,22 @@ def demonstrate_future_prediction():
         feature_importance = training_result.get('feature_importance', {})
         if feature_importance:
             logger.info(f"Feature importance available for {len(feature_importance)} features")
-            print(f"\n📊 Top feature importance:")
+            tprint(f"\n📊 Top feature importance:")
             sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
             for feature, importance in sorted_features[:10]:
-                print(f"   {feature}: {importance:.3f}")
+                tprint(f"   {feature}: {importance:.3f}")
                 logger.debug(f"Feature importance: {feature}={importance:.3f}")
         else:
             logger.warning("No feature importance data available")
     else:
         error_msg = training_result.get('error', 'Unknown error')
         logger.error(f"❌ Model training failed: {error_msg}")
-        print(f"❌ Model training failed: {error_msg}")
+        tprint(f"❌ Model training failed: {error_msg}")
         return
     
     # Predict future quality for each SR level
     logger.info(f"🔮 Predicting future quality for {len(sr_levels)} SR levels")
-    print(f"\n🔮 Predicting future quality for {len(sr_levels)} SR levels...")
+    tprint(f"\n🔮 Predicting future quality for {len(sr_levels)} SR levels...")
     
     predictions = []
     prediction_errors = 0
@@ -306,18 +308,18 @@ def demonstrate_future_prediction():
             
             logger.info(f"Level {i+1} prediction: quality={prediction.predicted_quality:.3f}, confidence={prediction.confidence:.3f}")
             
-            print(f"\n   Level {i+1} at {sr_level.price} ({sr_level.level_type}):")
-            print(f"     Predicted Quality: {prediction.predicted_quality:.3f}")
-            print(f"     Confidence: {prediction.confidence:.3f}")
-            print(f"     Prediction Horizon: {prediction.prediction_horizon} days")
+            tprint(f"\n   Level {i+1} at {sr_level.price} ({sr_level.level_type}):")
+            tprint(f"     Predicted Quality: {prediction.predicted_quality:.3f}")
+            tprint(f"     Confidence: {prediction.confidence:.3f}")
+            tprint(f"     Prediction Horizon: {prediction.prediction_horizon} days")
             
             # Show key factors
             if prediction.key_factors:
                 logger.debug(f"Key factors for level {i+1}: {len(prediction.key_factors)} factors")
-                print(f"     Key Factors:")
+                tprint(f"     Key Factors:")
                 sorted_factors = sorted(prediction.key_factors.items(), key=lambda x: abs(x[1]), reverse=True)
                 for factor, contribution in sorted_factors[:5]:
-                    print(f"       {factor}: {contribution:.3f}")
+                    tprint(f"       {factor}: {contribution:.3f}")
                     logger.debug(f"Key factor: {factor}={contribution:.3f}")
             else:
                 logger.warning(f"No key factors available for level {i+1}")
@@ -325,9 +327,9 @@ def demonstrate_future_prediction():
             # Show market context
             if prediction.market_context:
                 logger.debug(f"Market context for level {i+1}: {len(prediction.market_context)} context features")
-                print(f"     Market Context:")
+                tprint(f"     Market Context:")
                 for context, value in prediction.market_context.items():
-                    print(f"       {context}: {value:.3f}")
+                    tprint(f"       {context}: {value:.3f}")
                     logger.debug(f"Market context: {context}={value:.3f}")
             else:
                 logger.warning(f"No market context available for level {i+1}")
@@ -335,13 +337,13 @@ def demonstrate_future_prediction():
         except Exception as e:
             prediction_errors += 1
             logger.error(f"❌ Failed to predict level {i+1}: {e}")
-            print(f"   ❌ Failed to predict level {i+1}: {e}")
+            tprint(f"   ❌ Failed to predict level {i+1}: {e}")
     
     logger.info(f"✅ Prediction completed: {len(predictions)} successful, {prediction_errors} errors")
     
     # Get high-quality predictions
     logger.info("⭐ Identifying high-quality SR level predictions")
-    print(f"\n⭐ High-Quality SR Level Predictions:")
+    tprint(f"\n⭐ High-Quality SR Level Predictions:")
     
     high_quality_predictions = predictive_engine.get_high_quality_predictions(
         sr_levels, 
@@ -352,17 +354,17 @@ def demonstrate_future_prediction():
     
     if high_quality_predictions:
         logger.info(f"✅ Found {len(high_quality_predictions)} high-quality predictions")
-        print(f"✅ Found {len(high_quality_predictions)} high-quality predictions:")
+        tprint(f"✅ Found {len(high_quality_predictions)} high-quality predictions:")
         for i, prediction in enumerate(high_quality_predictions):
-            print(f"   {i+1}. Price: {prediction.level.price}, Quality: {prediction.predicted_quality:.3f}, Confidence: {prediction.confidence:.3f}")
+            tprint(f"   {i+1}. Price: {prediction.level.price}, Quality: {prediction.predicted_quality:.3f}, Confidence: {prediction.confidence:.3f}")
             logger.debug(f"High-quality prediction {i+1}: price={prediction.level.price}, quality={prediction.predicted_quality:.3f}, confidence={prediction.confidence:.3f}")
     else:
         logger.warning("No high-quality predictions found with current thresholds")
-        print("   No high-quality predictions found with current thresholds")
+        tprint("   No high-quality predictions found with current thresholds")
     
     # Show prediction summary
     logger.info("📊 Generating prediction summary")
-    print(f"\n📊 Prediction Summary:")
+    tprint(f"\n📊 Prediction Summary:")
     
     summary = predictive_engine.get_prediction_summary()
     logger.info(f"Prediction summary: {summary}")
@@ -376,17 +378,17 @@ def demonstrate_future_prediction():
         
         logger.info(f"Summary stats: total={total_predictions}, avg_quality={avg_quality:.3f}, avg_confidence={avg_confidence:.3f}")
         
-        print(f"   Total Predictions: {total_predictions}")
-        print(f"   Average Predicted Quality: {avg_quality:.3f}")
-        print(f"   Average Confidence: {avg_confidence:.3f}")
-        print(f"   High Quality Predictions: {high_quality_count}")
-        print(f"   High Confidence Predictions: {high_confidence_count}")
+        tprint(f"   Total Predictions: {total_predictions}")
+        tprint(f"   Average Predicted Quality: {avg_quality:.3f}")
+        tprint(f"   Average Confidence: {avg_confidence:.3f}")
+        tprint(f"   High Quality Predictions: {high_quality_count}")
+        tprint(f"   High Confidence Predictions: {high_confidence_count}")
     else:
         logger.warning("No predictions available for summary")
     
     # Demonstrate how predictions improve over time
     logger.info("🔄 Demonstrating continuous learning with extended data")
-    print(f"\n🔄 Demonstrating continuous learning...")
+    tprint(f"\n🔄 Demonstrating continuous learning...")
     
     # Simulate new market data (future)
     future_data = create_realistic_market_data(250)  # Extended data
@@ -408,29 +410,29 @@ def demonstrate_future_prediction():
             future_predictions.append(future_prediction)
             
             logger.info(f"Future prediction for {sr_level.price}: Quality = {future_prediction.predicted_quality:.3f}")
-            print(f"   Future prediction for {sr_level.price}: Quality = {future_prediction.predicted_quality:.3f}")
+            tprint(f"   Future prediction for {sr_level.price}: Quality = {future_prediction.predicted_quality:.3f}")
             
         except Exception as e:
             future_errors += 1
             logger.error(f"❌ Future prediction failed for {sr_level.price}: {e}")
-            print(f"   ❌ Future prediction failed for {sr_level.price}: {e}")
+            tprint(f"   ❌ Future prediction failed for {sr_level.price}: {e}")
     
     logger.info(f"Future predictions completed: {len(future_predictions)} successful, {future_errors} errors")
     
     logger.info("🎉 Future prediction demo completed successfully")
-    print(f"\n🎉 Future prediction demo completed!")
-    print("=" * 60)
+    tprint(f"\n🎉 Future prediction demo completed!")
+    tprint("=" * 60)
     
     # Show how the system answers the key question
     logger.info("💡 Demonstrating how the system predicts future SR quality")
-    print(f"\n💡 How This Predicts Future SR Quality:")
-    print(f"   1. ✅ Weight Optimization: Learned optimal weights from historical data")
-    print(f"   2. ✅ Feature Engineering: Extracted predictive features (market context, volatility, volume)")
-    print(f"   3. ✅ Model Training: Trained ensemble model on historical performance")
-    print(f"   4. ✅ Future Prediction: Applied model to current market conditions")
-    print(f"   5. ✅ Quality Assessment: Predicted which levels will be most effective")
-    print(f"   6. ✅ Confidence Scoring: Provided confidence levels for predictions")
-    print(f"   7. ✅ Continuous Learning: System improves as more data becomes available")
+    tprint(f"\n💡 How This Predicts Future SR Quality:")
+    tprint(f"   1. ✅ Weight Optimization: Learned optimal weights from historical data")
+    tprint(f"   2. ✅ Feature Engineering: Extracted predictive features (market context, volatility, volume)")
+    tprint(f"   3. ✅ Model Training: Trained ensemble model on historical performance")
+    tprint(f"   4. ✅ Future Prediction: Applied model to current market conditions")
+    tprint(f"   5. ✅ Quality Assessment: Predicted which levels will be most effective")
+    tprint(f"   6. ✅ Confidence Scoring: Provided confidence levels for predictions")
+    tprint(f"   7. ✅ Continuous Learning: System improves as more data becomes available")
 
 if __name__ == "__main__":
     try:
@@ -441,5 +443,5 @@ if __name__ == "__main__":
         logger.error(f"❌ Demo failed: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
-        print(f"❌ Demo failed: {e}")
+        tprint(f"❌ Demo failed: {e}")
         traceback.print_exc()

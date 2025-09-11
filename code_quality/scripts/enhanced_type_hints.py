@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced type hint adder to increase type coverage to 90%+.
 """
@@ -399,7 +401,7 @@ class EnhancedTypeHintAdder:
             if "__pycache__" not in str(f) and ".venv" not in str(f)
         ]
 
-        print(f"Analyzing {len(python_files)} Python files for type hint coverage...")
+        tprint(f"Analyzing {len(python_files)} Python files for type hint coverage...")
 
         # Analyze current state
         total_functions = 0
@@ -431,22 +433,22 @@ class EnhancedTypeHintAdder:
 
         current_coverage = functions_with_hints / total_functions if total_functions > 0 else 0
 
-        print(f"\nCurrent type hint coverage: {current_coverage:.1%}")
-        print(f"Target coverage: {target_coverage:.1%}")
-        print(f"Files needing type hints: {len(files_needing_hints)}")
+        tprint(f"\nCurrent type hint coverage: {current_coverage:.1%}")
+        tprint(f"Target coverage: {target_coverage:.1%}")
+        tprint(f"Files needing type hints: {len(files_needing_hints)}")
 
         # Calculate how many files to process
         functions_to_add = int((target_coverage - current_coverage) * total_functions)
         files_to_process = min(len(files_needing_hints), functions_to_add // 5)  # Assume 5 functions per file
 
-        print(f"\nProcessing {files_to_process} files to reach target coverage...")
+        tprint(f"\nProcessing {files_to_process} files to reach target coverage...")
 
         # Process files
         for file_path in files_needing_hints[:files_to_process]:
             self.add_type_hints_to_file(str(file_path))
 
-        print(f"\nProcessed {len(self.processed_files)} files")
-        print(f"Estimated new coverage: {(functions_with_hints + len(self.processed_files) * 5) / total_functions:.1%}")
+        tprint(f"\nProcessed {len(self.processed_files)} files")
+        tprint(f"Estimated new coverage: {(functions_with_hints + len(self.processed_files) * 5) / total_functions:.1%}")
 
         return {
             "current_coverage": current_coverage,
@@ -497,7 +499,7 @@ def main():
     with open(report_file, "w") as f:
         json.dump(result, f, indent=2)
 
-    print(f"\nReport saved to: {report_file}")
+    tprint(f"\nReport saved to: {report_file}")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import asyncio
 from datetime import datetime
 from typing import Any
@@ -305,12 +307,12 @@ class MainSupervisor:
         """Initialize live trading utilities."""
         try:
             self.logger.info("Initializing live trading utilities...")
-            print("Initializing live trading utilities...")
+            tprint("Initializing live trading utilities...")
             
             # Initialize Model Manager for model selection and loading
             self.model_manager = ModelManager()
             self.logger.info("✅ Model Manager initialized")
-            print("✅ Model Manager initialized")
+            tprint("✅ Model Manager initialized")
             
             # Set default model selections for each component
             self.selected_models = {
@@ -319,19 +321,19 @@ class MainSupervisor:
                 "tactician": "tactician_position_sizing_model"
             }
             self.logger.info("✅ Default model selections configured")
-            print("✅ Default model selections configured")
+            tprint("✅ Default model selections configured")
             
             # Initialize caches
             self.model_cache = {}
             self.supervision_cache = {}
             self.logger.info("✅ Model and supervision caches initialized")
-            print("✅ Model and supervision caches initialized")
+            tprint("✅ Model and supervision caches initialized")
             
             return True
         except Exception as e:
             error_msg = f"❌ Error initializing live trading utilities: {e}"
             self.logger.error(error_msg)
-            print(error_msg)
+            tprint(error_msg)
             return False
 
     @handles_errors(fallback = False)
@@ -372,19 +374,19 @@ class MainSupervisor:
         if not self.model_manager:
             error_msg = "Model Manager not available"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return False
         
         try:
             self.logger.info(f"Managing model for component {component}: {model_name}")
-            print(f"Managing model for component {component}: {model_name}")
+            tprint(f"Managing model for component {component}: {model_name}")
             
             # Check if model is available
             available_models = await self.model_manager.list_available_models()
             if model_name not in available_models:
                 error_msg = f"Model {model_name} not available for live trading"
                 self.logger.error(error_msg)
-                print(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
                 return False
             
             # Update selected model for component
@@ -395,18 +397,18 @@ class MainSupervisor:
             if model:
                 self.model_cache[model_name] = model
                 self.logger.info(f"✅ Model {model_name} selected and cached for {component}")
-                print(f"✅ Model {model_name} selected and cached for {component}")
+                tprint(f"✅ Model {model_name} selected and cached for {component}")
                 return True
             else:
                 error_msg = f"Failed to load model: {model_name}"
                 self.logger.error(error_msg)
-                print(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
                 return False
             
         except Exception as e:
             error_msg = f"Error managing model for component {component}: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return False
 
     @handle_errors_with_tracking(
@@ -428,7 +430,7 @@ class MainSupervisor:
         """
         try:
             self.logger.info(f"Coordinating models with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
-            print(f"Coordinating models with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            tprint(f"Coordinating models with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
             
             # Single models for each component (trained on various market conditions)
             component_models = {
@@ -462,7 +464,7 @@ class MainSupervisor:
                         }
                         
                         self.logger.info(f"✅ {component} model coordinated: {model_name}")
-                        print(f"✅ {component} model coordinated: {model_name}")
+                        tprint(f"✅ {component} model coordinated: {model_name}")
                     else:
                         coordination_results["component_configs"][component] = {
                             "model_name": model_name,
@@ -483,14 +485,14 @@ class MainSupervisor:
             
             success_count = sum(1 for config in coordination_results["component_configs"].values() if config["loaded"])
             self.logger.info(f"✅ HMM regime coordination completed: {success_count}/3 components coordinated")
-            print(f"✅ HMM regime coordination completed: {success_count}/3 components coordinated")
+            tprint(f"✅ HMM regime coordination completed: {success_count}/3 components coordinated")
             
             return coordination_results
             
         except Exception as e:
             error_msg = f"Error coordinating models with HMM regime: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return {"error": error_msg, "success": False}
 
     def _get_regime_specific_config(self, component: str, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
@@ -633,5 +635,5 @@ async def setup_main_supervisor(config: dict[str, Any] | None = None) -> MainSup
             return main_supervisor
         return None
     except Exception as e:
-        print(f'Error setting up main supervisor: {e}')
+        tprint(f'Error setting up main supervisor: {e}')
         return None

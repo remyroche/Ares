@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import hashlib
 import hmac
 import time
@@ -8,13 +10,13 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 try:
-    from src.utils.network_operations import handle_network_operations
+    from src.utils.network_operations import handle_network_operations  # type: ignore
 except ImportError:
 
     def handle_network_operations(*args, **kwargs) -> None:
         return None
 try:
-    from tenacity import retry
+    from tenacity import retry, stop_after_attempt  # type: ignore
 except ImportError:
 
     def handles_errors(*args, **kwargs) -> None:
@@ -28,6 +30,9 @@ except ImportError:
         def decorator(func: Callable) -> None:
             return func
         return decorator
+
+    def stop_after_attempt(*args, **kwargs) -> None:
+        return None
 try:
     from src.utils.logger import system_logger
 except ImportError:
@@ -38,19 +43,19 @@ try:
 except ImportError:
 
     def connection_error(msg: Any) -> None:
-        print(f'CONNECTION_ERROR: {msg}')
+        tprint(f'CONNECTION_ERROR: {msg}')
 
     def error(msg: Any) -> None:
-        print(f'ERROR: {msg}')
+        tprint(f'ERROR: {msg}')
 
     def failed(msg: Any) -> None:
-        print(f'FAILED: {msg}')
+        tprint(f'FAILED: {msg}')
 
     def invalid(msg: Any) -> None:
-        print(f'INVALID: {msg}')
+        tprint(f'INVALID: {msg}')
 
     def missing(msg: Any) -> None:
-        print(f'MISSING: {msg}')
+        tprint(f'MISSING: {msg}')
 
 class BinanceExchange:
     """
@@ -90,7 +95,7 @@ class BinanceExchange:
         self.logger.info('Initializing Binance Exchange...')
         await self._load_exchange_configuration()
         if not self._validate_configuration():
-            self.print(invalid('Invalid configuration for Binance exchange'))
+            self.tprint(invalid('Invalid configuration for Binance exchange'))
             return False
         await self._initialize_connection()
         self.logger.info('✅ Binance Exchange initialization completed successfully')
@@ -121,18 +126,18 @@ class BinanceExchange:
             bool: True if configuration is valid, False otherwise
         """
         if self.timeout <= 0:
-            self.print(invalid('Invalid timeout'))
+            self.tprint(invalid('Invalid timeout'))
             return False
         if self.max_retries < 0:
-            self.print(invalid('Invalid max retries'))
+            self.tprint(invalid('Invalid max retries'))
             return False
         if not self.use_testnet and (not self.api_key or not self.api_secret):
-            self.print(error('API credentials required for live trading'))
+            self.tprint(error('API credentials required for live trading'))
             return False
         self.logger.info('Configuration validation successful')
         return True
 
-    @retry(max_retries = 3, default_return = False)
+    @retry(stop=stop_after_attempt(3))
     async def _initialize_connection(self) -> bool:
         """
         Initialize connection to Binance API.
@@ -141,19 +146,30 @@ class BinanceExchange:
             bool: True if successful, False otherwise
         """
         try:
-            self.session = aiohttp.ClientSession(timeout = aiohttp.ClientTimeout(total = self.timeout))
+            # Create connector with SSL configuration to handle certificate issues
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            self.session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout),
+                connector=connector
+            )
+
             server_time = await self._get_server_time()
             if server_time:
                 self.is_connected = True
                 self.logger.info(f'Connected to Binance API (Server time: {server_time})')
                 return True
-            self.print(failed('Failed to connect to Binance API'))
+            self.tprint(failed('Failed to connect to Binance API'))
             return False
-        except Exception:
-            self.print(connection_error('Error initializing connection: {e}'))
+        except Exception as e:
+            self.tprint(connection_error(f'Error initializing connection: {e}'))
             return False
 
-    @retry(max_retries = 3, default_return = None)
+    @retry(stop=stop_after_attempt(3))
     async def _get_server_time(self) -> int | None:
         """
         Get server time from Binance.
@@ -167,10 +183,10 @@ class BinanceExchange:
                 if response.status == 200:
                     data = await response.json()
                     return data.get('serverTime')
-                self.print(failed('Failed to get server time: {response.status}'))
+                self.tprint(failed(f'Failed to get server time: {response.status}'))
                 return None
-        except Exception:
-            self.print(error('Error getting server time: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error getting server time: {e}'))
             return None
 
     def _get_base_url(self) -> str:
@@ -197,11 +213,11 @@ class BinanceExchange:
                 raise ValueError(msg)
             query_string = urlencode(params)
             return hmac.new(self.api_secret.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
-        except Exception:
-            self.print(error('Error generating signature: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error generating signature: {e}'))
             return ''
 
-    @retry(max_retries = 3, default_return = None)
+    @retry(stop=stop_after_attempt(3))
     async def get_account_info(self) -> dict[str, Any] | None:
         """
         Get account information.
@@ -211,10 +227,10 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
-                self.print(error('Exchange not connected'))
+                self.tprint(error('Exchange not connected'))
                 return None
             if not self.api_key or not self.api_secret:
-                self.print(error('API credentials required for account info'))
+                self.tprint(error('API credentials required for account info'))
                 return None
             params = {'timestamp': int(time.time() * 1000)}
             signature = self._generate_signature(params)
@@ -226,13 +242,13 @@ class BinanceExchange:
                     data = await response.json()
                     self.logger.info('Account information retrieved successfully')
                     return data
-                self.print(failed('Failed to get account info: {response.status}'))
+                self.tprint(failed(f'Failed to get account info: {response.status}'))
                 return None
-        except Exception:
-            self.print(error('Error getting account info: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error getting account info: {e}'))
             return None
 
-    @retry(max_retries = 3, default_return = None)
+    @retry(stop=stop_after_attempt(3))
     async def get_position_risk(self, symbol: str | None = None) -> list[dict[str, Any]] | None:
         """
         Get position risk information.
@@ -245,10 +261,10 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
-                self.print(error('Exchange not connected'))
+                self.tprint(error('Exchange not connected'))
                 return None
             if not self.api_key or not self.api_secret:
-                self.print(error('API credentials required for position risk'))
+                self.tprint(error('API credentials required for position risk'))
                 return None
             params = {'timestamp': int(time.time() * 1000)}
             params['recvWindow'] = 5000
@@ -263,10 +279,10 @@ class BinanceExchange:
                     data = await response.json()
                     self.logger.info('Position risk information retrieved successfully')
                     return data if isinstance(data, list) else [data]
-                self.print(failed('Failed to get position risk: {response.status}'))
+                self.tprint(failed(f'Failed to get position risk: {response.status}'))
                 return None
-        except Exception:
-            self.print(error('Error getting position risk: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error getting position risk: {e}'))
             return None
 
     @handles_errors(error_handlers={ValueError: (False, 'Invalid order parameters'), AttributeError: (False, 'Missing order components'), KeyError: (False, 'Missing required order data')}, default_return = False, context='order creation')
@@ -286,19 +302,19 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
-                self.print(error('Exchange not connected'))
+                self.tprint(error('Exchange not connected'))
                 return None
             if not self.api_key or not self.api_secret:
-                self.print(error('API credentials required for order creation'))
+                self.tprint(error('API credentials required for order creation'))
                 return None
             if side not in ['BUY', 'SELL']:
-                self.print(invalid('Invalid order side'))
+                self.tprint(invalid('Invalid order side'))
                 return None
             if order_type not in ['MARKET', 'LIMIT']:
-                self.print(invalid('Invalid order type'))
+                self.tprint(invalid('Invalid order type'))
                 return None
             if order_type == 'LIMIT' and price is None:
-                self.print(error('Price required for LIMIT orders'))
+                self.tprint(error('Price required for LIMIT orders'))
                 return None
             params = {'symbol': symbol, 'side': side, 'type': order_type, 'quantity': quantity, 'timestamp': int(time.time() * 1000)}
             if price is not None:
@@ -324,17 +340,17 @@ class BinanceExchange:
                     data = await response.json()
                     self.logger.info(f"Order created successfully: {data.get('orderId')}")
                     return data
-                await response.json()
-                self.print(failed('Failed to create order: {error_data}'))
+                error_data = await response.json()
+                self.tprint(failed(f'Failed to create order: {error_data}'))
                 return None
-        except Exception:
-            self.print(error('Error creating order: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error creating order: {e}'))
             return None
 
     async def _signed_request(self, method: str, path: str, params: dict[str, Any]) -> dict[str, Any] | bool | None:
         """Make a signed request; returns JSON dict for GET, True/False for DELETE depending on status."""
         if not self.is_connected or not self.api_key or (not self.api_secret):
-            self.print(missing('Exchange not connected or missing credentials'))
+            self.tprint(missing('Exchange not connected or missing credentials'))
             return None
         params = {**params, 'timestamp': int(time.time() * 1000)}
         params['signature'] = self._generate_signature(params)
@@ -345,19 +361,21 @@ class BinanceExchange:
                 async with self.session.get(url, params = params, headers = headers) as resp:
                     if resp.status == 200:
                         return await resp.json()
-                    self.print(failed('GET {path} failed: {await resp.text()}'))
+                    error_text = await resp.text()
+                    self.tprint(failed(f'GET {path} failed: {error_text}'))
                     return None
             if method == 'DELETE':
                 async with self.session.delete(url, params = params, headers = headers) as resp:
                     if resp.status == 200:
                         await resp.read()
                         return True
-                    self.print(failed('DELETE {path} failed: {await resp.text()}'))
+                    error_text = await resp.text()
+                    self.tprint(failed(f'DELETE {path} failed: {error_text}'))
                     return False
-            self.print(error('Unsupported method {method} for {path}'))
+            self.tprint(error(f'Unsupported method {method} for {path}'))
             return None
-        except aiohttp.ClientError:
-            self.print(connection_error('Network error calling {path}: {e}'))
+        except aiohttp.ClientError as e:
+            self.tprint(connection_error(f'Network error calling {path}: {e}'))
             return None
 
     @handles_errors(error_handlers={ValueError: (False, 'Invalid cancel parameters'), AttributeError: (False, 'Missing cancel components'), KeyError: (False, 'Missing required cancel data')}, default_return = False, context='order cancellation')
@@ -393,8 +411,8 @@ class BinanceExchange:
         try:
             self._fills_callback = callback
             return True
-        except Exception:
-            self.print(error('Error subscribing to fills: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error subscribing to fills: {e}'))
             return False
 
     async def unsubscribe_fills(self) -> bool:
@@ -409,7 +427,7 @@ class BinanceExchange:
         """Get the status of an order."""
         return await self._signed_request(method='GET', path='/api/v3/order', params={'symbol': symbol, 'orderId': order_id})
 
-    @retry(max_retries = 3, default_return = None)
+    @retry(stop=stop_after_attempt(3))
     async def get_klines(self, symbol: str, interval: str='1m', limit: int = 500) -> list[list[Any]] | None:
         """
         Get kline/candlestick data.
@@ -424,7 +442,7 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
-                self.print(error('Exchange not connected'))
+                self.tprint(error('Exchange not connected'))
                 return None
             params = {'symbol': symbol, 'interval': interval, 'limit': limit}
             url = f'{self._get_base_url()}/api/v3/klines'
@@ -433,13 +451,13 @@ class BinanceExchange:
                     data = await response.json()
                     self.logger.info(f'Klines retrieved successfully: {len(data)} records')
                     return data
-                self.print(failed('Failed to get klines: {response.status}'))
+                self.tprint(failed(f'Failed to get klines: {response.status}'))
                 return None
-        except Exception:
-            self.print(error('Error getting klines: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error getting klines: {e}'))
             return None
 
-    @retry(max_retries = 3, default_return = None)
+    @retry(stop=stop_after_attempt(3))
     async def get_ticker(self, symbol: str) -> dict[str, Any] | None:
         """
         Get ticker information.
@@ -452,7 +470,7 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
-                self.print(error('Exchange not connected'))
+                self.tprint(error('Exchange not connected'))
                 return None
             params = {'symbol': symbol}
             url = f'{self._get_base_url()}/api/v3/ticker/24hr'
@@ -461,13 +479,13 @@ class BinanceExchange:
                     data = await response.json()
                     self.logger.info(f'Ticker retrieved successfully: {symbol}')
                     return data
-                self.print(failed('Failed to get ticker: {response.status}'))
+                self.tprint(failed(f'Failed to get ticker: {response.status}'))
                 return None
-        except Exception:
-            self.print(error('Error getting ticker: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error getting ticker: {e}'))
             return None
 
-    @retry(max_retries = 3, default_return = None)
+    @retry(stop=stop_after_attempt(3))
     async def get_order_book(self, symbol: str, limit: int = 100) -> dict[str, Any] | None:
         """
         Get order book.
@@ -481,7 +499,7 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
-                self.print(error('Exchange not connected'))
+                self.tprint(error('Exchange not connected'))
                 return None
             params = {'symbol': symbol, 'limit': limit}
             url = f'{self._get_base_url()}/api/v3/depth'
@@ -490,13 +508,129 @@ class BinanceExchange:
                     data = await response.json()
                     self.logger.info(f'Order book retrieved successfully: {symbol}')
                     return data
-                self.print(failed('Failed to get order book: {response.status}'))
+                self.tprint(failed(f'Failed to get order book: {response.status}'))
                 return None
-        except Exception:
-            self.print(error('Error getting order book: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error getting order book: {e}'))
             return None
 
-    @retry(max_retries = 3, default_return = None)
+    @retry(stop=stop_after_attempt(3))
+    async def _get_historical_klines_raw(self, symbol: str, interval: str, start_time_ms: int, end_time_ms: int, limit: int = 500) -> list[list[Any]]:
+        """
+        Get historical klines data in raw format.
+
+        Args:
+            symbol: Trading symbol
+            interval: Kline interval
+            start_time_ms: Start time in milliseconds
+            end_time_ms: End time in milliseconds
+            limit: Number of klines to retrieve
+
+        Returns:
+            List of raw kline data
+        """
+        try:
+            if not self.is_connected:
+                self.tprint(error('Exchange not connected'))
+                return []
+
+            params = {
+                'symbol': symbol,
+                'interval': interval,
+                'limit': min(limit, 1000),  # Binance limit is 1000
+                'startTime': start_time_ms,
+                'endTime': end_time_ms
+            }
+
+            url = f'{self._get_base_url()}/api/v3/klines'
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    self.logger.info(f'Klines retrieved successfully: {len(data)} records')
+                    return data
+                self.tprint(failed(f'Failed to get klines: {response.status}'))
+                return []
+        except Exception as e:
+            self.tprint(error(f'Error getting klines: {e}'))
+            return []
+
+    @retry(stop=stop_after_attempt(3))
+    async def _get_historical_agg_trades_raw(self, symbol: str, start_time_ms: int, end_time_ms: int, limit: int = 1000) -> list[dict[str, Any]]:
+        """
+        Get historical aggregate trades data in raw format.
+
+        Args:
+            symbol: Trading symbol
+            start_time_ms: Start time in milliseconds
+            end_time_ms: End time in milliseconds
+            limit: Number of trades to retrieve
+
+        Returns:
+            List of raw aggregate trades data
+        """
+        try:
+            if not self.is_connected:
+                self.tprint(error('Exchange not connected'))
+                return []
+
+            params = {
+                'symbol': symbol,
+                'startTime': start_time_ms,
+                'endTime': end_time_ms,
+                'limit': min(limit, 1000)  # Binance limit is 1000
+            }
+
+            url = f'{self._get_base_url()}/api/v3/aggTrades'
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    self.logger.info(f'Aggregate trades retrieved successfully: {len(data)} records')
+                    return data
+                self.logger.error(f'Failed to get aggregate trades: {response.status}')
+                return []
+        except Exception as e:
+            self.tprint(error(f'Error getting aggregate trades: {e}'))
+            return []
+
+    @retry(stop=stop_after_attempt(3))
+    async def _get_historical_futures_raw(self, symbol: str, start_time_ms: int, end_time_ms: int, limit: int = 1000) -> list[dict[str, Any]]:
+        """
+        Get historical futures funding rates data in raw format.
+
+        Args:
+            symbol: Trading symbol
+            start_time_ms: Start time in milliseconds
+            end_time_ms: End time in milliseconds
+            limit: Number of records to retrieve
+
+        Returns:
+            List of raw futures data
+        """
+        try:
+            if not self.is_connected:
+                self.tprint(error('Exchange not connected'))
+                return []
+
+            params = {
+                'symbol': symbol,
+                'startTime': start_time_ms,
+                'endTime': end_time_ms,
+                'limit': min(limit, 1000)
+            }
+
+            url = f'{self._get_futures_base_url()}/fapi/v1/fundingRate'
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    self.logger.info(f'Futures funding rates retrieved successfully: {len(data)} records')
+                    return data
+                self.tprint(failed(f'Failed to get funding rates: {response.status}'))
+                return []
+        except Exception as e:
+            self.tprint(error(f'Error getting funding rates: {e}'))
+            return []
+
+    @retry(stop=stop_after_attempt(3))
     async def get_aggregate_trades(self, symbol: str, start_time_ms: int, end_time_ms: int) -> list[dict[str, Any]] | None:
         """
         Get aggregate trades for a symbol within a time range.
@@ -517,11 +651,11 @@ class BinanceExchange:
                     return await response.json()
                 self.logger.error(f'Failed to get aggregate trades: {response.status}')
                 return None
-        except Exception:
-            self.print(error('Error getting aggregate trades: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error getting aggregate trades: {e}'))
             return None
 
-    @retry(max_retries = 3, default_return = None)
+    @retry(stop=stop_after_attempt(3))
     async def get_historical_agg_trades_ccxt(self, symbol: str, start_time_ms: int, end_time_ms: int) -> list[dict[str, Any]] | None:
         """
         Get historical aggregated trades data.
@@ -536,7 +670,7 @@ class BinanceExchange:
         """
         try:
             if not self.is_connected:
-                self.print(error('Exchange not connected'))
+                self.tprint(error('Exchange not connected'))
                 return None
             params = {'symbol': symbol, 'startTime': start_time_ms, 'endTime': end_time_ms, 'limit': 1000}
             url = f'{self._get_base_url()}/api/v3/aggTrades'
@@ -547,11 +681,11 @@ class BinanceExchange:
                     return data
                 self.logger.error(f'Failed to get aggregated trades: {response.status}')
                 return None
-        except Exception:
-            self.print(error('Error getting aggregated trades: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error getting aggregated trades: {e}'))
             return None
 
-    @retry(max_retries = 3, default_return = None)
+    @retry(stop=stop_after_attempt(3))
     async def futures_funding_rate(self, symbol: str, start_time_ms: int, end_time_ms: int) -> list[dict[str, Any]] | None:
         """
         Get futures funding rates for a symbol within a time range.
@@ -570,10 +704,10 @@ class BinanceExchange:
             async with self.session.get(url, params = params) as response:
                 if response.status == 200:
                     return await response.json()
-                self.print(failed('Failed to get funding rates: {response.status}'))
+                self.tprint(failed(f'Failed to get funding rates: {response.status}'))
                 return None
-        except Exception:
-            self.print(error('Error getting funding rates: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error getting funding rates: {e}'))
             return None
 
     def get_exchange_status(self) -> dict[str, Any]:
@@ -585,7 +719,7 @@ class BinanceExchange:
         """
         return {'is_connected': self.is_connected, 'use_testnet': self.use_testnet, 'base_url': self._get_base_url(), 'timeout': self.timeout, 'max_retries': self.max_retries, 'api_key_configured': bool(self.api_key), 'api_secret_configured': bool(self.api_secret)}
 
-    @handles_errors(Exception, fallback = None, context='Binance exchange cleanup')
+    @handles_errors(context='Binance exchange cleanup')
     async def stop(self) -> None:
         """Stop the Binance exchange."""
         self.logger.info('🛑 Stopping Binance Exchange...')
@@ -595,6 +729,23 @@ class BinanceExchange:
                 self.session = None
             self.is_connected = False
             self.logger.info('✅ Binance Exchange stopped successfully')
-        except Exception:
-            self.print(error('Error stopping Binance exchange: {e}'))
+        except Exception as e:
+            self.tprint(error(f'Error stopping Binance exchange: {e}'))
+
+    @staticmethod
+    def get_exchange(exchange_name: str) -> 'BinanceExchange':
+        """
+        Factory method to create exchange instance.
+
+        Args:
+            exchange_name: Name of the exchange
+
+        Returns:
+            BinanceExchange instance
+        """
+        if exchange_name.lower() == 'binance':
+            return BinanceExchange({})
+        else:
+            raise ValueError(f'Unsupported exchange: {exchange_name}')
+
 binance_exchange: BinanceExchange | None = None

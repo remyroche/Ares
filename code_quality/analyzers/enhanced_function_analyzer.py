@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Function Analyzer
 
@@ -387,9 +389,9 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
         result = analyze_function_issues(sys.argv[1])
-        print(f"Found {result.total_issues} function issues in {sys.argv[1]}")
-        print(f"Critical: {result.critical_issues}, High: {result.high_issues}")
+        tprint(f"Found {result.total_issues} function issues in {sys.argv[1]}")
+        tprint(f"Critical: {result.critical_issues}, High: {result.high_issues}")
         for issue in result.issues:
-            print(f"  {issue.severity.value}: {issue.type.value} - {issue.function_name} (line {issue.line})")
+            tprint(f"  {issue.severity.value}: {issue.type.value} - {issue.function_name} (line {issue.line})")
     else:
-        print("Usage: python enhanced_function_analyzer.py <file_path>")
+        tprint("Usage: python enhanced_function_analyzer.py <file_path>")

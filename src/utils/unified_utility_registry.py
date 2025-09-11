@@ -62,11 +62,11 @@ from .data_processing_utils import (
     transform_dataframe, get_dataframe_info as get_dataframe_info_advanced
 )
 
-from .m1_gpu_utils import M1GPUManager, get_m1_gpu_manager, initialize_m1_gpu
+from .hardware.m1_gpu_utils import M1GPUManager, get_m1_gpu_manager, initialize_m1_gpu
 
-from .m1_memory_optimizer import M1MemoryOptimizer, get_m1_memory_optimizer
+from .hardware.m1_memory_optimizer import M1MemoryOptimizer, get_m1_memory_optimizer
 
-from .m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer
+from .hardware.m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer
 
 logger = logging.getLogger(__name__)
 

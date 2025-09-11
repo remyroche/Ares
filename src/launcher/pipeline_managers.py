@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Pipeline Managers for Ares Launcher
 
@@ -52,7 +54,7 @@ class BasePipelineManager(ABC):
                 if output == "" and process.poll() is not None:
                     break
                 if output:
-                    print(output.strip())
+                    tprint(output.strip())
                     self.logger.info(output.strip())
             
             return process.poll() == 0
@@ -67,28 +69,28 @@ class DataCollectionPipelineManager(BasePipelineManager):
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute unified data collection pipeline with all 12 steps."""
         self.logger.info(f"📊 Running unified data collection pipeline for {symbol} on {exchange}")
-        print("=" * 80)
-        print("🚀 UNIFIED DATA COLLECTION PIPELINE")
-        print("=" * 80)
-        print(f"ℹ️ Symbol: {symbol}")
-        print(f"ℹ️ Exchange: {exchange}")
-        print(f"ℹ️ GUI Mode: {with_gui}")
-        print(f"ℹ️ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
-        print("=" * 80)
-        print("📋 Pipeline Steps:")
-        print("   1. Data Download - Download raw data from exchanges")
-        print("   2. Data Conversion - Convert data formats and standardize")
-        print("   3. Data Validation - Validate data quality and integrity")
-        print("   4. Data Preparation - Prepare data for further processing")
-        print("   5. Feature Engineering - Limited feature engineering (price returns, volume returns)")
-        print("   6. Data Resampling - Resample to multiple timeframes")
-        print("   7. Gap Filling - Detect and fill data gaps")
-        print("   8. Data Quality Check - Comprehensive quality assessment")
-        print("   9. Data Integration - Integrate multiple data sources with backwards compatibility")
-        print("  10. Data Storage - Store processed data")
-        print("  11. Data Monitoring - Monitor data collection process")
-        print("  12. Data Export - Export data in various formats")
-        print("=" * 80)
+        tprint("=" * 80)
+        tprint("🚀 UNIFIED DATA COLLECTION PIPELINE")
+        tprint("=" * 80)
+        tprint(f"ℹ️ Symbol: {symbol}")
+        tprint(f"ℹ️ Exchange: {exchange}")
+        tprint(f"ℹ️ GUI Mode: {with_gui}")
+        tprint(f"ℹ️ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        tprint("=" * 80)
+        tprint("📋 Pipeline Steps:")
+        tprint("   1. Data Download - Download raw data from exchanges")
+        tprint("   2. Data Conversion - Convert data formats and standardize")
+        tprint("   3. Data Validation - Validate data quality and integrity")
+        tprint("   4. Data Preparation - Prepare data for further processing")
+        tprint("   5. Feature Engineering - Limited feature engineering (price returns, volume returns)")
+        tprint("   6. Data Resampling - Resample to multiple timeframes")
+        tprint("   7. Gap Filling - Detect and fill data gaps")
+        tprint("   8. Data Quality Check - Comprehensive quality assessment")
+        tprint("   9. Data Integration - Integrate multiple data sources with backwards compatibility")
+        tprint("  10. Data Storage - Store processed data")
+        tprint("  11. Data Monitoring - Monitor data collection process")
+        tprint("  12. Data Export - Export data in various formats")
+        tprint("=" * 80)
 
         # Pre-flight validation
         if not self._validate_prerequisites(symbol, exchange):
@@ -133,11 +135,11 @@ class DataCollectionPipelineManager(BasePipelineManager):
             
         except Exception as e:
             self.logger.exception(f"❌ Failed to execute standalone data collection pipeline: {e}")
-            print("=" * 80)
-            print("❌ DATA COLLECTION PIPELINE FAILED")
-            print("=" * 80)
-            print(f"Error: {str(e)}")
-            print("=" * 80)
+            tprint("=" * 80)
+            tprint("❌ DATA COLLECTION PIPELINE FAILED")
+            tprint("=" * 80)
+            tprint(f"Error: {str(e)}")
+            tprint("=" * 80)
             return False
     
     def _validate_prerequisites(self, symbol: str, exchange: str) -> bool:
@@ -175,14 +177,14 @@ class ModelTrainingPipelineManager(BasePipelineManager):
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute model training pipeline with comprehensive monitoring."""
         self.logger.info(f"📊 Running model training pipeline for {symbol} on {exchange}")
-        print("=" * 80)
-        print("🚀 ENHANCED MODEL TRAINING PIPELINE")
-        print("=" * 80)
-        print(f"🎯 Symbol: {symbol}")
-        print(f"🏢 Exchange: {exchange}")
-        print(f"🖥️ GUI Mode: {with_gui}")
-        print(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
-        print("=" * 80)
+        tprint("=" * 80)
+        tprint("🚀 ENHANCED MODEL TRAINING PIPELINE")
+        tprint("=" * 80)
+        tprint(f"🎯 Symbol: {symbol}")
+        tprint(f"🏢 Exchange: {exchange}")
+        tprint(f"🖥️ GUI Mode: {with_gui}")
+        tprint(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        tprint("=" * 80)
 
         # Pre-flight validation
         if not self._validate_prerequisites(symbol, exchange):
@@ -240,11 +242,11 @@ class ModelTrainingPipelineManager(BasePipelineManager):
             
             if missing_files:
                 self.logger.error(f"❌ Missing required data files: {missing_files}")
-                print(f"❌ Missing required data files:")
+                tprint(f"❌ Missing required data files:")
                 for file_path in missing_files:
-                    print(f"   • {file_path}")
-                print("💡 Please run data collection first:")
-                print(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
+                    tprint(f"   • {file_path}")
+                tprint("💡 Please run data collection first:")
+                tprint(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
                 return False
             
             self.logger.info("✅ Model training prerequisites validation completed")
@@ -260,14 +262,14 @@ class OptimisationPipelineManager(BasePipelineManager):
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute enhanced optimisation pipeline."""
         self.logger.info(f"📊 Running enhanced optimisation pipeline for {symbol} on {exchange}")
-        print("=" * 80)
-        print("🚀 ENHANCED OPTIMISATION PIPELINE")
-        print("=" * 80)
-        print(f"🎯 Symbol: {symbol}")
-        print(f"🏢 Exchange: {exchange}")
-        print(f"🖥️ GUI Mode: {with_gui}")
-        print(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
-        print("=" * 80)
+        tprint("=" * 80)
+        tprint("🚀 ENHANCED OPTIMISATION PIPELINE")
+        tprint("=" * 80)
+        tprint(f"🎯 Symbol: {symbol}")
+        tprint(f"🏢 Exchange: {exchange}")
+        tprint(f"🖥️ GUI Mode: {with_gui}")
+        tprint(f"⏰ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        tprint("=" * 80)
 
         # Pre-flight validation
         if not self._validate_prerequisites(symbol, exchange):
@@ -325,11 +327,11 @@ class OptimisationPipelineManager(BasePipelineManager):
             
             if missing_files:
                 self.logger.error(f"❌ Missing required data files: {missing_files}")
-                print(f"❌ Missing required data files:")
+                tprint(f"❌ Missing required data files:")
                 for file_path in missing_files:
-                    print(f"   • {file_path}")
-                print("💡 Please run data collection first:")
-                print(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
+                    tprint(f"   • {file_path}")
+                tprint("💡 Please run data collection first:")
+                tprint(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
                 return False
             
             self.logger.info("✅ Optimisation prerequisites validation completed")
@@ -345,8 +347,8 @@ class BacktestingPipelineManager(BasePipelineManager):
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute enhanced backtesting pipeline."""
         self.logger.info(f"📊 Running enhanced backtesting for {symbol} on {exchange}")
-        print(f"📊 Running enhanced backtesting for {symbol} on {exchange}")
-        print("=" * 80)
+        tprint(f"📊 Running enhanced backtesting for {symbol} on {exchange}")
+        tprint("=" * 80)
 
         if with_gui and not self.launcher.launch_gui("backtesting", symbol, exchange):
             return False
@@ -419,8 +421,8 @@ class BacktestingPipelineManager(BasePipelineManager):
 
                 # Run enhanced backtesting pipeline
                 launcher_logger.log_info("🚀 Starting enhanced backtesting pipeline", "EXECUTION")
-                print("🚀 Starting enhanced backtesting pipeline...")
-                print(f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+                tprint("🚀 Starting enhanced backtesting pipeline...")
+                tprint(f"📅 Started at: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
 
                 success = asyncio.run(
                     self._run_backtesting_pipeline(
@@ -434,11 +436,11 @@ class BacktestingPipelineManager(BasePipelineManager):
 
                 if success:
                     launcher_logger.log_success("🎉 Enhanced backtesting completed successfully!", "COMPLETION")
-                    print("🎉 Enhanced backtesting completed successfully!")
+                    tprint("🎉 Enhanced backtesting completed successfully!")
                     return True
                 else:
                     launcher_logger.log_error(Exception("Enhanced backtesting failed"), "EXECUTION")
-                    print("❌ Enhanced backtesting failed!")
+                    tprint("❌ Enhanced backtesting failed!")
                     return False
 
             finally:
@@ -447,7 +449,7 @@ class BacktestingPipelineManager(BasePipelineManager):
 
         except Exception as e:
             self.logger.exception(f"❌ Failed to run enhanced backtesting: {e}")
-            print(f"❌ Failed to run enhanced backtesting: {e}")
+            tprint(f"❌ Failed to run enhanced backtesting: {e}")
             return False
     
     async def _run_backtesting_pipeline(self, **kwargs) -> bool:
@@ -474,7 +476,7 @@ class AllPipelinesManager(BasePipelineManager):
             report_collector.setup_pipeline_interception(symbol, exchange)
             
             self.logger.info(f"📁 Report directory initialized: {report_manager.get_run_directory()}")
-            print(f"📁 Report directory: {report_manager.get_run_directory()}")
+            tprint(f"📁 Report directory: {report_manager.get_run_directory()}")
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize report manager/collector: {e}")
 

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import pandas as pd
 import numpy as np
@@ -184,5 +186,5 @@ if __name__ == '__main__':
         trade = {'timestamp': datetime.now(), 'symbol': 'BTCUSDT', 'regime': 'bull', 'regime_confidence': 0.85, 'action': 'long', 'entry_price': 50000, 'exit_price': 51000, 'quantity': 0.1, 'pnl': 100, 'pnl_percent': 2.0, 'holding_period_minutes': 120, 'max_drawdown': 0.5, 'models_used': ['momentum_model', 'breakout_model'], 'features_used': ['rsi', 'macd', 'volume']}
         await tracker.track_trade(trade)
         report = await tracker.generate_regime_report('BTCUSDT')
-        print(json.dumps(report, indent = 2))
+        tprint(json.dumps(report, indent = 2))
     asyncio.run( main())

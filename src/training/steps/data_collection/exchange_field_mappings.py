@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 Exchange Field Mappings
@@ -132,19 +134,19 @@ def get_exchange_field_mapping(exchange: str, data_type: str) -> Optional[FieldM
     mapper = get_exchange_mapper(exchange)
     return mapper.get_field_mapping(data_type)
 if __name__ == '__main__':
-    print('🔍 Testing Exchange Field Mappings')
-    print('=' * 50)
+    tprint('🔍 Testing Exchange Field Mappings')
+    tprint('=' * 50)
     binance_mapper = get_exchange_mapper('binance')
     raw_klines = {'open_time': 1640995200000, 'open': '3000.0', 'high': '3100.0', 'low': '2900.0', 'close': '3050.0', 'volume': '1000.0'}
     mapped_klines = binance_mapper.map_fields('klines', raw_klines)
-    print(f'✅ Binance klines mapping: {mapped_klines}')
+    tprint(f'✅ Binance klines mapping: {mapped_klines}')
     raw_aggtrades = {'T': 1640995200000, 'p': '3050.0', 'q': '1.5', 'm': True}
     mapped_aggtrades = binance_mapper.map_fields('aggtrades', raw_aggtrades)
-    print(f'✅ Binance aggtrades mapping: {mapped_aggtrades}')
+    tprint(f'✅ Binance aggtrades mapping: {mapped_aggtrades}')
     coinbase_mapper = get_exchange_mapper('coinbase')
     raw_coinbase_klines = {'timestamp': 1640995200, 'price_open': '3000.0', 'price_high': '3100.0', 'price_low': '2900.0', 'price_close': '3050.0', 'volume': '1000.0'}
     mapped_coinbase_klines = coinbase_mapper.map_fields('klines', raw_coinbase_klines)
-    print(f'✅ Coinbase klines mapping: {mapped_coinbase_klines}')
-    print(f'📋 Supported exchanges: {list_supported_exchanges()}')
-    print('=' * 50)
-    print('🎉 Field mapping tests completed successfully!')
+    tprint(f'✅ Coinbase klines mapping: {mapped_coinbase_klines}')
+    tprint(f'📋 Supported exchanges: {list_supported_exchanges()}')
+    tprint('=' * 50)
+    tprint('🎉 Field mapping tests completed successfully!')

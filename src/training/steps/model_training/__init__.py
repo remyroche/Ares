@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Optional, Union, Any, Tuple
 
 # Optional imports
@@ -79,22 +81,22 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             memory_stats = {'system_memory': {'total_gb': memory_info.total / 1024 ** 3, 'available_gb': memory_info.available / 1024 ** 3, 'used_gb': memory_info.used / 1024 ** 3, 'percent_used': memory_info.percent}, 'process_memory': {'rss_gb': process_memory.rss / 1024 ** 3, 'vms_gb': process_memory.vms / 1024 ** 3}}
             if memory_info.percent > 90:
                 logger.warning(f'⚠️ High system memory usage: {memory_info.percent:.1f}%')
-                print(f'   ⚠️ High system memory usage: {memory_info.percent:.1f}%')
+                tprint(f'   ⚠️ High system memory usage: {memory_info.percent:.1f}%')
             elif memory_info.percent > 80:
                 logger.warning(f'⚠️ Moderate system memory usage: {memory_info.percent:.1f}%')
-                print(f'   ⚠️ Moderate system memory usage: {memory_info.percent:.1f}%')
+                tprint(f'   ⚠️ Moderate system memory usage: {memory_info.percent:.1f}%')
             if process_memory.rss / 1024 ** 3 > 2:
                 logger.warning(f'⚠️ High process memory usage: {process_memory.rss / 1024 ** 3:.2f} GB')
-                print(f'   ⚠️ High process memory usage: {process_memory.rss / 1024 ** 3:.2f} GB')
+                tprint(f'   ⚠️ High process memory usage: {process_memory.rss / 1024 ** 3:.2f} GB')
             gc.collect()
             return memory_stats
         except ImportError:
             logger.warning('⚠️ psutil not available for memory monitoring')
-            print('   ⚠️ psutil not available for memory monitoring')
+            tprint('   ⚠️ psutil not available for memory monitoring')
             return {}
         except Exception as e:
             logger.warning(f'⚠️ Memory monitoring failed: {e}')
-            print(f'   ⚠️ Memory monitoring failed: {e}')
+            tprint(f'   ⚠️ Memory monitoring failed: {e}')
             return {}
 
     @handles_errors(Exception, fallback = False, log_level='ERROR')
@@ -104,7 +106,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
     async def _validate_pipeline_inputs(symbol: str, exchange: str, timeframe: str, data_dir: str, **config) -> bool:
         """Validate all pipeline inputs and dependencies."""
         logger.info('🔍 Validating pipeline inputs and dependencies...')
-        print('   🔍 Validating pipeline inputs and dependencies...')
+        tprint('   🔍 Validating pipeline inputs and dependencies...')
         quality_issues = []
         quality_warnings = []
         if not symbol or not exchange or (not timeframe) or (not data_dir):
@@ -129,12 +131,12 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
                         warning_msg = f'⚠️ Data file {file_name} is very small ({file_size} bytes)'
                         quality_warnings.append(warning_msg)
                         logger.warning(warning_msg)
-                        print(f'   {warning_msg}')
+                        tprint(f'   {warning_msg}')
                 except Exception as e:
                     warning_msg = f'⚠️ Could not check file size for {file_name}: {e}'
                     quality_warnings.append(warning_msg)
                     logger.warning(warning_msg)
-                    print(f'   {warning_msg}')
+                    tprint(f'   {warning_msg}')
         required_config_keys = ['hmm_training', 'regime_intelligence', 'analyst_creation']
         for key in required_config_keys:
             if key not in config:
@@ -142,22 +144,22 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
                 warning_msg = f'⚠️ Set default value for missing config key: {key}'
                 quality_warnings.append(warning_msg)
                 logger.warning(warning_msg)
-                print(f'   {warning_msg}')
+                tprint(f'   {warning_msg}')
         if quality_issues:
             logger.error(f'❌ Found {len(quality_issues)} quality issues:')
-            print(f'   ❌ Found {len(quality_issues)} quality issues:')
+            tprint(f'   ❌ Found {len(quality_issues)} quality issues:')
             for issue in quality_issues:
                 logger.error(f'   • {issue}')
-                print(f'   • {issue}')
+                tprint(f'   • {issue}')
             return False
         if quality_warnings:
             logger.warning(f'⚠️ Found {len(quality_warnings)} quality warnings:')
-            print(f'   ⚠️ Found {len(quality_warnings)} quality warnings:')
+            tprint(f'   ⚠️ Found {len(quality_warnings)} quality warnings:')
             for warning in quality_warnings:
                 logger.warning(f'   • {warning}')
-                print(f'   • {warning}')
+                tprint(f'   • {warning}')
         logger.info('✅ Pipeline inputs validation passed')
-        print('   ✅ Pipeline inputs validation passed')
+        tprint('   ✅ Pipeline inputs validation passed')
         return True
 
     @handles_errors(Exception, fallback = False, log_level='ERROR')
@@ -199,32 +201,32 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
     async def _validate_data_quality(symbol: str, exchange: str, data_dir: str) -> bool:
         """Validate data quality before training."""
         logger.info('🔍 Validating data quality...')
-        print('   🔍 Validating data quality...')
+        tprint('   🔍 Validating data quality...')
         quality_issues = []
         quality_warnings = []
         quality_score = 100
         try:
             data_file = f'{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet'
-            print(f'   📁 Loading data file: {data_file}')
+            tprint(f'   📁 Loading data file: {data_file}')
             df = safe_read_parquet(data_file)
             if df.empty:
                 error_msg = f'Data file is empty: {data_file}'
                 quality_issues.append(error_msg)
                 logger.error(f'❌ {error_msg}')
-                print(f'   ❌ {error_msg}')
+                tprint(f'   ❌ {error_msg}')
                 return False
             df = optimize_dataframe_dtypes(df)
-            print(f'   📊 Data loaded: {len(df)} rows, {len(df.columns)} columns')
+            tprint(f'   📊 Data loaded: {len(df)} rows, {len(df.columns)} columns')
             required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             schema_valid, schema_errors = validate_dataframe_schema(df, required_columns)
             if not schema_valid:
                 error_msg = f'Data schema validation failed: {schema_errors}'
                 quality_issues.append(error_msg)
                 logger.error(f'❌ {error_msg}')
-                print(f'   ❌ {error_msg}')
+                tprint(f'   ❌ {error_msg}')
                 return False
             else:
-                print('   ✅ Data schema validation passed')
+                tprint('   ✅ Data schema validation passed')
             nan_counts = df.isnull().sum()
             total_nans = nan_counts.sum()
             if total_nans > 0:
@@ -233,34 +235,34 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
                     error_msg = f'High missing data ratio: {nan_ratio:.2%} ({total_nans} missing values)'
                     quality_issues.append(error_msg)
                     logger.error(f'❌ {error_msg}')
-                    print(f'   ❌ {error_msg}')
+                    tprint(f'   ❌ {error_msg}')
                     quality_score -= 30
                 else:
                     warning_msg = f'Some missing data found: {nan_ratio:.2%} ({total_nans} missing values)'
                     quality_warnings.append(warning_msg)
                     logger.warning(f'⚠️ {warning_msg}')
-                    print(f'   ⚠️ {warning_msg}')
+                    tprint(f'   ⚠️ {warning_msg}')
                     quality_score -= 10
             else:
-                print('   ✅ No missing values found')
+                tprint('   ✅ No missing values found')
             duplicate_count = df.duplicated().sum()
             if duplicate_count > 0:
                 warning_msg = f'Found {duplicate_count} duplicate rows'
                 quality_warnings.append(warning_msg)
                 logger.warning(f'⚠️ {warning_msg}')
-                print(f'   ⚠️ {warning_msg}')
+                tprint(f'   ⚠️ {warning_msg}')
                 quality_score -= 5
             if len(df) < 1000:
                 warning_msg = f'Low data volume: {len(df)} rows (minimum recommended: 1000)'
                 quality_warnings.append(warning_msg)
                 logger.warning(f'⚠️ {warning_msg}')
-                print(f'   ⚠️ {warning_msg}')
+                tprint(f'   ⚠️ {warning_msg}')
                 quality_score -= 20
             elif len(df) < 10000:
                 warning_msg = f'Moderate data volume: {len(df)} rows (recommended: 10000+)'
                 quality_warnings.append(warning_msg)
                 logger.warning(f'⚠️ {warning_msg}')
-                print(f'   ⚠️ {warning_msg}')
+                tprint(f'   ⚠️ {warning_msg}')
                 quality_score -= 5
             price_columns = ['open', 'high', 'low', 'close']
             for col in price_columns:
@@ -269,44 +271,44 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
                         error_msg = f'Found non-positive prices in {col} column'
                         quality_issues.append(error_msg)
                         logger.error(f'❌ {error_msg}')
-                        print(f'   ❌ {error_msg}')
+                        tprint(f'   ❌ {error_msg}')
                         quality_score -= 25
                     elif (df[col] > df[col].quantile(0.99) * 10).any():
                         warning_msg = f'Found potential price outliers in {col} column'
                         quality_warnings.append(warning_msg)
                         logger.warning(f'⚠️ {warning_msg}')
-                        print(f'   ⚠️ {warning_msg}')
+                        tprint(f'   ⚠️ {warning_msg}')
                         quality_score -= 5
-            print(f'   📊 Data quality score: {quality_score}/100')
+            tprint(f'   📊 Data quality score: {quality_score}/100')
             if quality_score >= 90:
-                print('   🎉 Excellent data quality!')
+                tprint('   🎉 Excellent data quality!')
             elif quality_score >= 70:
-                print('   ✅ Good data quality')
+                tprint('   ✅ Good data quality')
             elif quality_score >= 50:
-                print('   ⚠️ Fair data quality - proceed with caution')
+                tprint('   ⚠️ Fair data quality - proceed with caution')
             else:
-                print('   ❌ Poor data quality - consider data cleaning')
+                tprint('   ❌ Poor data quality - consider data cleaning')
             if quality_issues:
                 logger.error(f'❌ Found {len(quality_issues)} quality issues:')
-                print(f'   ❌ Found {len(quality_issues)} quality issues:')
+                tprint(f'   ❌ Found {len(quality_issues)} quality issues:')
                 for issue in quality_issues:
                     logger.error(f'   • {issue}')
-                    print(f'   • {issue}')
+                    tprint(f'   • {issue}')
                 return False
             if quality_warnings:
                 logger.warning(f'⚠️ Found {len(quality_warnings)} quality warnings:')
-                print(f'   ⚠️ Found {len(quality_warnings)} quality warnings:')
+                tprint(f'   ⚠️ Found {len(quality_warnings)} quality warnings:')
                 for warning in quality_warnings:
                     logger.warning(f'   • {warning}')
-                    print(f'   • {warning}')
+                    tprint(f'   • {warning}')
             logger.info(f'✅ Data quality validation passed: {len(df)} rows, {len(df.columns)} columns, score: {quality_score}/100')
-            print(f'   ✅ Data quality validation passed: {len(df)} rows, {len(df.columns)} columns, score: {quality_score}/100')
+            tprint(f'   ✅ Data quality validation passed: {len(df)} rows, {len(df.columns)} columns, score: {quality_score}/100')
             return True
         except Exception as e:
             error_msg = f'Error in data quality validation: {e}'
             quality_issues.append(error_msg)
             logger.error(f'❌ {error_msg}')
-            print(f'   ❌ {error_msg}')
+            tprint(f'   ❌ {error_msg}')
             return False
 
     @handles_errors(Exception, fallback = False, log_level='ERROR')
@@ -315,12 +317,12 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
     async def _execute_training_step(step_name: str, step_class: Any, symbol: str, exchange: str, timeframe: str, data_dir: str, **config) -> bool:
         """Execute a single training step with comprehensive error handling."""
         logger.info(f'🚀 Executing {step_name}...')
-        print(f'   🔧 Initializing {step_name}...')
+        tprint(f'   🔧 Initializing {step_name}...')
         try:
             step_instance = step_class(config)
-            print(f'   ✅ {step_name} instance created successfully')
+            tprint(f'   ✅ {step_name} instance created successfully')
             logger.info(f'✅ {step_name} instance created successfully')
-            print(f'   🚀 Starting {step_name} execution...')
+            tprint(f'   🚀 Starting {step_name} execution...')
             logger.info(f'🚀 Starting {step_name} execution...')
             if hasattr(step_instance, 'train_models'):
                 success = await step_instance.train_models(symbol, exchange, timeframe, data_dir)
@@ -336,31 +338,31 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
                 success = await step_instance.train_tacticians(symbol, exchange, timeframe, data_dir)
             else:
                 logger.error(f'❌ Unknown step method for {step_name}')
-                print(f'   ❌ Unknown step method for {step_name}')
+                tprint(f'   ❌ Unknown step method for {step_name}')
                 return False
             if success:
                 logger.info(f'✅ {step_name} completed successfully')
-                print(f'   ✅ {step_name} completed successfully')
+                tprint(f'   ✅ {step_name} completed successfully')
                 if _is_model_training_step(step_name):
-                    print(f'   🧠 Running model interpretability analysis for {step_name}...')
+                    tprint(f'   🧠 Running model interpretability analysis for {step_name}...')
                     logger.info(f'🧠 Running model interpretability analysis for {step_name}...')
                     interpretability_success = await _run_model_interpretability_analysis(step_instance, symbol, exchange, timeframe, data_dir, step_name)
                     if interpretability_success:
-                        print(f'   ✅ Model interpretability analysis completed for {step_name}')
+                        tprint(f'   ✅ Model interpretability analysis completed for {step_name}')
                         logger.info(f'✅ Model interpretability analysis completed for {step_name}')
                     else:
-                        print(f'   ⚠️ Model interpretability analysis failed for {step_name} - continuing...')
+                        tprint(f'   ⚠️ Model interpretability analysis failed for {step_name} - continuing...')
                         logger.warning(f'⚠️ Model interpretability analysis failed for {step_name} - continuing...')
                 return True
             else:
                 logger.error(f'❌ {step_name} failed')
-                print(f'   ❌ {step_name} failed')
+                tprint(f'   ❌ {step_name} failed')
                 return False
         except Exception as e:
             logger.error(f'❌ Error executing {step_name}: {e}')
             logger.error(f'📋 Exception type: {type(e).__name__}')
-            print(f'   ❌ Error executing {step_name}: {e}')
-            print(f'   📋 Exception type: {type(e).__name__}')
+            tprint(f'   ❌ Error executing {step_name}: {e}')
+            tprint(f'   📋 Exception type: {type(e).__name__}')
             return False
 
     @handles_errors(Exception, fallback = False, log_level='ERROR')
@@ -675,7 +677,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
                     if 'target' in labels_df.columns:
                         y_train = labels_df.iloc[:split_idx]['target']
                         y_test = labels_df.iloc[split_idx:]['target']
-                print(f'   📊 Loaded {len(X_train)} training samples and {len(X_test)} test samples for {model_type} analysis')
+                tprint(f'   📊 Loaded {len(X_train)} training samples and {len(X_test)} test samples for {model_type} analysis')
                 logger.info(f'📊 Loaded {len(X_train)} training samples and {len(X_test)} test samples for {model_type} analysis')
             return (X_train, X_test, y_train, y_test)
         except Exception as e:
@@ -690,7 +692,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         try:
             from .training.model_interpretability import ModelExplainer
             model_type = _determine_model_type(step_name)
-            print(f'   🔍 Detected model type: {model_type}')
+            tprint(f'   🔍 Detected model type: {model_type}')
             logger.info(f'🔍 Detected model type: {model_type}')
             trained_models = None
             feature_names = None
@@ -726,72 +728,72 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             output_dir = f'{data_dir}/interpretability/{step_name}_{model_type}'
             X_train, X_test, y_train, y_test = await _load_model_specific_data(model_type, data_dir, symbol, exchange, feature_names)
             if isinstance(trained_models, dict) and len(trained_models) > 1:
-                print(f'   🔍 Running multi-model interpretability analysis for {len(trained_models)} {model_type} models...')
+                tprint(f'   🔍 Running multi-model interpretability analysis for {len(trained_models)} {model_type} models...')
                 logger.info(f'🔍 Running multi-model interpretability analysis for {len(trained_models)} {model_type} models...')
                 results = await model_explainer.explain_multiple_models(models = trained_models, X_train = X_train, X_test = X_test, y_train = y_train, y_test = y_test, feature_names = feature_names, symbol = symbol, exchange = exchange, output_dir = output_dir)
             else:
                 model = list(trained_models.values())[0] if isinstance(trained_models, dict) else trained_models
                 model_name = list(trained_models.keys())[0] if isinstance(trained_models, dict) else f'{step_name}_{model_type}'
-                print(f'   🔍 Running single-model interpretability analysis for {model_type} model: {model_name}')
+                tprint(f'   🔍 Running single-model interpretability analysis for {model_type} model: {model_name}')
                 logger.info(f'🔍 Running single-model interpretability analysis for {model_type} model: {model_name}')
                 results = await model_explainer.explain_model(model = model, X_train = X_train, X_test = X_test, y_train = y_train, y_test = y_test, feature_names = feature_names, model_name = model_name, symbol = symbol, exchange = exchange, output_dir = output_dir)
             if results and 'error' not in results:
                 top_features = results.get('feature_importance', {}).get('top_features', [])
                 if top_features:
                     logger.info(f"🧠 Top 5 important features for {step_name}: {', '.join(top_features[:5])}")
-                    print(f"   🧠 Top 5 important features: {', '.join(top_features[:5])}")
+                    tprint(f"   🧠 Top 5 important features: {', '.join(top_features[:5])}")
                 insights = results.get('insights', {})
                 feature_insights = insights.get('feature_insights', [])
                 if feature_insights:
                     logger.info(f'💡 Key insight: {feature_insights[0]}')
-                    print(f'   💡 Key insight: {feature_insights[0]}')
+                    tprint(f'   💡 Key insight: {feature_insights[0]}')
                 return True
             else:
                 logger.warning(f'⚠️ Interpretability analysis returned no results for {step_name}')
                 return False
         except Exception as e:
             logger.error(f'❌ Model interpretability analysis failed for {step_name}: {e}')
-            print(f'   ❌ Model interpretability analysis failed: {e}')
+            tprint(f'   ❌ Model interpretability analysis failed: {e}')
             return False
     try:
-        print('🚀 Starting Enhanced Model Training Pipeline')
-        print('=' * 80)
+        tprint('🚀 Starting Enhanced Model Training Pipeline')
+        tprint('=' * 80)
         logger.info('🚀 Starting Enhanced Model Training Pipeline')
         logger.info(f'📊 Configuration: {symbol} on {exchange}, timeframe: {timeframe}')
         logger.info(f'📁 Data directory: {data_dir}')
         logger.info(f'⚙️ Training config: {config}')
-        print('🔍 Initial memory monitoring...')
+        tprint('🔍 Initial memory monitoring...')
         initial_memory = await _monitor_memory_usage()
-        print('🔍 STEP 1/6: Validating pipeline inputs...')
+        tprint('🔍 STEP 1/6: Validating pipeline inputs...')
         logger.info('🔍 STEP 1/6: Validating pipeline inputs...')
         inputs_valid = await _validate_pipeline_inputs(symbol, exchange, timeframe, data_dir, **config)
         if not inputs_valid:
             logger.error('❌ Pipeline input validation failed')
-            print('❌ Pipeline input validation failed')
+            tprint('❌ Pipeline input validation failed')
             return False
-        print('✅ Pipeline input validation passed')
+        tprint('✅ Pipeline input validation passed')
         logger.info('✅ Pipeline input validation passed')
-        print('🔍 STEP 2/6: Validating step dependencies...')
+        tprint('🔍 STEP 2/6: Validating step dependencies...')
         logger.info('🔍 STEP 2/6: Validating step dependencies...')
         dependencies_valid = await _validate_step_dependencies(symbol, exchange, timeframe, data_dir)
         if not dependencies_valid:
             logger.error('❌ Step dependency validation failed')
-            print('❌ Step dependency validation failed')
+            tprint('❌ Step dependency validation failed')
             return False
-        print('✅ Step dependency validation passed')
+        tprint('✅ Step dependency validation passed')
         logger.info('✅ Step dependency validation passed')
-        print('🔍 STEP 3/6: Validating data quality...')
+        tprint('🔍 STEP 3/6: Validating data quality...')
         logger.info('🔍 STEP 3/6: Validating data quality...')
         data_quality_valid = await _validate_data_quality(symbol, exchange, data_dir)
         if not data_quality_valid:
             logger.error('❌ Data quality validation failed')
-            print('❌ Data quality validation failed')
+            tprint('❌ Data quality validation failed')
             return False
-        print('✅ Data quality validation passed')
+        tprint('✅ Data quality validation passed')
         logger.info('✅ Data quality validation passed')
-        print('🔍 Memory monitoring after data validation...')
+        tprint('🔍 Memory monitoring after data validation...')
         post_data_memory = await _monitor_memory_usage()
-        print('🚀 STEP 4/6: Executing training steps...')
+        tprint('🚀 STEP 4/6: Executing training steps...')
         logger.info('🚀 STEP 4/6: Executing training steps...')
         # Use simplified training steps if available
         if SIMPLIFIED_TRAINING_AVAILABLE:
@@ -812,12 +814,12 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             ]
         enabled_steps = [(name, cls, enabled) for name, cls, enabled in training_steps if enabled]
         total_steps = len(enabled_steps)
-        print(f'📊 Total training steps to execute: {total_steps}')
+        tprint(f'📊 Total training steps to execute: {total_steps}')
         logger.info(f'📊 Total training steps to execute: {total_steps}')
         all_steps_successful = True
         completed_steps = 0
         for step_index, (step_name, step_class, enabled) in enumerate(enabled_steps, 1):
-            print(f'🔄 STEP 4.{step_index}/{total_steps}: {step_name}...')
+            tprint(f'🔄 STEP 4.{step_index}/{total_steps}: {step_name}...')
             logger.info(f'🔄 STEP 4.{step_index}/{total_steps}: {step_name}...')
             step_start_time = time.time()
             step_success = await _execute_training_step(step_name, step_class, symbol, exchange, timeframe, data_dir, **config)
@@ -826,39 +828,39 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             if step_success:
                 completed_steps += 1
                 progress_percentage = completed_steps / total_steps * 100
-                print(f'✅ {step_name} completed successfully in {step_duration:.2f} seconds')
-                print(f'📊 Progress: {completed_steps}/{total_steps} steps ({progress_percentage:.1f}%)')
+                tprint(f'✅ {step_name} completed successfully in {step_duration:.2f} seconds')
+                tprint(f'📊 Progress: {completed_steps}/{total_steps} steps ({progress_percentage:.1f}%)')
                 logger.info(f'✅ {step_name} completed successfully in {step_duration:.2f} seconds')
                 logger.info(f'📊 Progress: {completed_steps}/{total_steps} steps ({progress_percentage:.1f}%)')
                 if step_index % 2 == 0:
-                    print(f'🔍 Memory monitoring after step {step_index}...')
+                    tprint(f'🔍 Memory monitoring after step {step_index}...')
                     step_memory = await _monitor_memory_usage()
             else:
                 all_steps_successful = False
                 logger.error(f'❌ Pipeline failed at {step_name}')
-                print(f'❌ Pipeline failed at {step_name}')
-                print(f'💥 Training stopped at step {step_index}/{total_steps}')
+                tprint(f'❌ Pipeline failed at {step_name}')
+                tprint(f'💥 Training stopped at step {step_index}/{total_steps}')
                 break
         skipped_steps = [(name, cls, enabled) for name, cls, enabled in training_steps if not enabled]
         if skipped_steps:
-            print(f'⏭️ Skipped {len(skipped_steps)} disabled steps:')
+            tprint(f'⏭️ Skipped {len(skipped_steps)} disabled steps:')
             logger.info(f'⏭️ Skipped {len(skipped_steps)} disabled steps:')
             for step_name, _, _ in skipped_steps:
-                print(f'   • {step_name}')
+                tprint(f'   • {step_name}')
                 logger.info(f'   • {step_name}')
         if all_steps_successful:
-            print('🎉 STEP 5/6: Model training pipeline completed successfully!')
-            print('=' * 80)
+            tprint('🎉 STEP 5/6: Model training pipeline completed successfully!')
+            tprint('=' * 80)
             logger.info('🎉 STEP 5/6: Model training pipeline completed successfully!')
             total_execution_time = time.time() - start_time
             avg_step_time = total_execution_time / total_steps if total_steps > 0 else 0
-            print('🔍 Final memory monitoring...')
+            tprint('🔍 Final memory monitoring...')
             final_memory = await _monitor_memory_usage()
             execution_summary = {'pipeline_info': {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'data_dir': data_dir, 'execution_time': format_datetime(get_current_datetime()), 'success': True}, 'configuration': config, 'steps_completed': [step[0] for step in training_steps if step[2]], 'performance_metrics': {'total_steps': len(training_steps), 'completed_steps': len([step for step in training_steps if step[2]]), 'success_rate': 1.0, 'enabled_steps': total_steps, 'skipped_steps': len(skipped_steps) if 'skipped_steps' in locals() else 0, 'total_execution_time_seconds': total_execution_time, 'total_execution_time_minutes': total_execution_time / 60, 'average_step_time_seconds': avg_step_time, 'execution_efficiency': 'high' if total_execution_time < 3600 else 'medium' if total_execution_time < 7200 else 'low', 'steps_per_minute': total_steps / (total_execution_time / 60) if total_execution_time > 0 else 0}, 'data_info': {'data_file_size': format_bytes(Path(f'{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet').stat().st_size) if safe_file_exists(f'{data_dir}/aggtrades_{exchange}_{symbol}_consolidated.parquet') else 'unknown'}, 'quality_metrics': {'data_validation_passed': True, 'step_dependencies_validated': True, 'overall_quality_score': 100, 'quality_issues_found': 0, 'quality_warnings_found': 0}, 'memory_metrics': {'initial_memory': initial_memory, 'post_data_memory': post_data_memory if 'post_data_memory' in locals() else {}, 'final_memory': final_memory}}
             summary_file = f'{data_dir}/model_training_execution_summary_{symbol}_{timeframe}.json'
             safe_json_dump(execution_summary, summary_file, indent = 2)
             logger.info(f'💾 Execution summary saved to: {summary_file}')
-            print(f'💾 Execution summary saved to: {summary_file}')
+            tprint(f'💾 Execution summary saved to: {summary_file}')
             safe_log_metric('pipeline_success', 1.0)
             safe_log_metric('steps_completed', len([step for step in training_steps if step[2]]))
             safe_log_metric('total_execution_time_seconds', total_execution_time)
@@ -867,32 +869,32 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             safe_log_metric('steps_per_minute', total_steps / (total_execution_time / 60) if total_execution_time > 0 else 0)
             safe_log_metric('execution_efficiency', 'high' if total_execution_time < 3600 else 'medium' if total_execution_time < 7200 else 'low')
             safe_log_params({'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'total_steps': total_steps, 'enabled_steps': total_steps, 'skipped_steps': len(skipped_steps) if 'skipped_steps' in locals() else 0})
-            print('📊 PERFORMANCE SUMMARY:')
-            print(f'   ⏱️ Total execution time: {total_execution_time:.2f} seconds ({total_execution_time / 60:.2f} minutes)')
-            print(f'   📈 Average step time: {avg_step_time:.2f} seconds')
-            print(f'   🚀 Steps per minute: {total_steps / (total_execution_time / 60):.2f}')
-            print(f"   📊 Execution efficiency: {('high' if total_execution_time < 3600 else 'medium' if total_execution_time < 7200 else 'low')}")
-            print(f'   ✅ Success rate: 100%')
-            print('✅ All training steps completed successfully!')
-            print('=' * 80)
+            tprint('📊 PERFORMANCE SUMMARY:')
+            tprint(f'   ⏱️ Total execution time: {total_execution_time:.2f} seconds ({total_execution_time / 60:.2f} minutes)')
+            tprint(f'   📈 Average step time: {avg_step_time:.2f} seconds')
+            tprint(f'   🚀 Steps per minute: {total_steps / (total_execution_time / 60):.2f}')
+            tprint(f"   📊 Execution efficiency: {('high' if total_execution_time < 3600 else 'medium' if total_execution_time < 7200 else 'low')}")
+            tprint(f'   ✅ Success rate: 100%')
+            tprint('✅ All training steps completed successfully!')
+            tprint('=' * 80)
             return True
         else:
-            print('❌ STEP 5/6: Model training pipeline failed')
-            print('=' * 80)
+            tprint('❌ STEP 5/6: Model training pipeline failed')
+            tprint('=' * 80)
             logger.error('❌ STEP 5/6: Model training pipeline failed')
             return False
     except Exception as e:
-        print('💥 STEP 6/6: Model training pipeline failed with exception!')
-        print('=' * 80)
-        print(f'❌ Error: {e}')
-        print(f'📋 Exception type: {type(e).__name__}')
-        print('🔍 Troubleshooting suggestions:')
-        print('   • Check data file integrity and availability')
-        print('   • Verify previous steps completed successfully')
-        print('   • Check system resources (memory, disk space)')
-        print('   • Review configuration parameters')
-        print('   • Check log files for detailed error information')
-        print('=' * 80)
+        tprint('💥 STEP 6/6: Model training pipeline failed with exception!')
+        tprint('=' * 80)
+        tprint(f'❌ Error: {e}')
+        tprint(f'📋 Exception type: {type(e).__name__}')
+        tprint('🔍 Troubleshooting suggestions:')
+        tprint('   • Check data file integrity and availability')
+        tprint('   • Verify previous steps completed successfully')
+        tprint('   • Check system resources (memory, disk space)')
+        tprint('   • Review configuration parameters')
+        tprint('   • Check log files for detailed error information')
+        tprint('=' * 80)
         logger.error(f'❌ STEP 6/6: Model training pipeline failed with error: {e}')
         logger.error(f'📋 Exception type: {type(e).__name__}')
         logger.error(f'📋 Exception details: {str(e)}')

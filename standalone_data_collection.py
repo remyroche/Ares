@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Standalone Data Collection Pipeline
 
@@ -126,35 +128,35 @@ Examples:
 
 def print_pipeline_info(args):
     """Print pipeline information."""
-    print("=" * 80)
-    print("🚀 UNIFIED DATA COLLECTION PIPELINE")
-    print("=" * 80)
-    print(f"📊 Symbol: {args.symbol}")
-    print(f"🏢 Exchange: {args.exchange}")
-    print(f"⏰ Base Timeframe: {args.timeframe}")
-    print(f"📁 Data Directory: {args.data_dir}")
-    print(f"🔧 Execution Mode: {args.mode.upper()}")
-    print(f"📅 Lookback Days: {args.lookback_days}")
-    print(f"⏱️ Target Timeframes: {', '.join(args.timeframes)}")
-    print(f"📈 Technical Indicators: {'Yes' if args.add_technical_indicators else 'No'}")
-    print(f"🔄 Force Rerun: {'Yes' if args.force_rerun else 'No'}")
-    print(f"⚡ Parallel Processing: {'Yes' if args.parallel_processing else 'No'}")
-    print(f"👥 Max Workers: {args.max_workers}")
-    print("=" * 80)
-    print("📋 Pipeline Steps:")
-    print("   1. Data Download - Download raw data from exchanges")
-    print("   2. Data Conversion - Convert data formats and standardize")
-    print("   3. Data Validation - Validate data quality and integrity")
-    print("   4. Data Preparation - Prepare data for further processing")
-    print("   5. Feature Engineering - Limited feature engineering (price returns, volume returns)")
-    print("   6. Data Resampling - Resample to multiple timeframes")
-    print("   7. Gap Filling - Detect and fill data gaps")
-    print("   8. Data Quality Check - Comprehensive quality assessment")
-    print("   9. Data Integration - Integrate multiple data sources with backwards compatibility")
-    print("  10. Data Storage - Store processed data")
-    print("  11. Data Monitoring - Monitor data collection process")
-    print("  12. Data Export - Export data in various formats")
-    print("=" * 80)
+    tprint("=" * 80)
+    tprint("🚀 UNIFIED DATA COLLECTION PIPELINE")
+    tprint("=" * 80)
+    tprint(f"📊 Symbol: {args.symbol}")
+    tprint(f"🏢 Exchange: {args.exchange}")
+    tprint(f"⏰ Base Timeframe: {args.timeframe}")
+    tprint(f"📁 Data Directory: {args.data_dir}")
+    tprint(f"🔧 Execution Mode: {args.mode.upper()}")
+    tprint(f"📅 Lookback Days: {args.lookback_days}")
+    tprint(f"⏱️ Target Timeframes: {', '.join(args.timeframes)}")
+    tprint(f"📈 Technical Indicators: {'Yes' if args.add_technical_indicators else 'No'}")
+    tprint(f"🔄 Force Rerun: {'Yes' if args.force_rerun else 'No'}")
+    tprint(f"⚡ Parallel Processing: {'Yes' if args.parallel_processing else 'No'}")
+    tprint(f"👥 Max Workers: {args.max_workers}")
+    tprint("=" * 80)
+    tprint("📋 Pipeline Steps:")
+    tprint("   1. Data Download - Download raw data from exchanges")
+    tprint("   2. Data Conversion - Convert data formats and standardize")
+    tprint("   3. Data Validation - Validate data quality and integrity")
+    tprint("   4. Data Preparation - Prepare data for further processing")
+    tprint("   5. Feature Engineering - Limited feature engineering (price returns, volume returns)")
+    tprint("   6. Data Resampling - Resample to multiple timeframes")
+    tprint("   7. Gap Filling - Detect and fill data gaps")
+    tprint("   8. Data Quality Check - Comprehensive quality assessment")
+    tprint("   9. Data Integration - Integrate multiple data sources with backwards compatibility")
+    tprint("  10. Data Storage - Store processed data")
+    tprint("  11. Data Monitoring - Monitor data collection process")
+    tprint("  12. Data Export - Export data in various formats")
+    tprint("=" * 80)
 
 async def main():
     """Main execution function."""
@@ -172,7 +174,7 @@ async def main():
     execution_mode = mode_map[args.mode]
     
     try:
-        print("🔄 Starting data collection pipeline...")
+        tprint("🔄 Starting data collection pipeline...")
         
         # Execute the complete pipeline
         result = await execute_full_data_collection_pipeline(
@@ -193,38 +195,38 @@ async def main():
         pipeline_summary = result.get('pipeline_summary', {})
         sub_pipeline_results = result.get('sub_pipeline_results', [])
         
-        print("=" * 80)
-        print("✅ DATA COLLECTION PIPELINE COMPLETED")
-        print("=" * 80)
-        print(f"📊 Total Steps Executed: {pipeline_summary.get('total_steps', 0)}")
-        print(f"✅ Successful Steps: {pipeline_summary.get('successful_steps', 0)}")
-        print(f"❌ Failed Steps: {pipeline_summary.get('failed_steps', 0)}")
-        print(f"⏱️ Total Duration: {pipeline_summary.get('total_duration', 0):.2f} seconds")
-        print("=" * 80)
+        tprint("=" * 80)
+        tprint("✅ DATA COLLECTION PIPELINE COMPLETED")
+        tprint("=" * 80)
+        tprint(f"📊 Total Steps Executed: {pipeline_summary.get('total_steps', 0)}")
+        tprint(f"✅ Successful Steps: {pipeline_summary.get('successful_steps', 0)}")
+        tprint(f"❌ Failed Steps: {pipeline_summary.get('failed_steps', 0)}")
+        tprint(f"⏱️ Total Duration: {pipeline_summary.get('total_duration', 0):.2f} seconds")
+        tprint("=" * 80)
         
         # Print individual step results
         if sub_pipeline_results:
-            print("📋 Step Results:")
+            tprint("📋 Step Results:")
             for step_result in sub_pipeline_results:
                 status_emoji = "✅" if step_result.status.value == "completed" else "❌"
-                print(f"   {status_emoji} {step_result.sub_pipeline_name}: {step_result.status.value}")
+                tprint(f"   {status_emoji} {step_result.sub_pipeline_name}: {step_result.status.value}")
                 if step_result.duration_seconds:
-                    print(f"      Duration: {step_result.duration_seconds:.2f}s")
+                    tprint(f"      Duration: {step_result.duration_seconds:.2f}s")
                 if step_result.output_files:
-                    print(f"      Output Files: {', '.join(step_result.output_files)}")
+                    tprint(f"      Output Files: {', '.join(step_result.output_files)}")
         
-        print("=" * 80)
-        print("🎉 Data collection pipeline completed successfully!")
-        print("=" * 80)
+        tprint("=" * 80)
+        tprint("🎉 Data collection pipeline completed successfully!")
+        tprint("=" * 80)
         
         return True
         
     except Exception as e:
-        print("=" * 80)
-        print("❌ DATA COLLECTION PIPELINE FAILED")
-        print("=" * 80)
-        print(f"Error: {str(e)}")
-        print("=" * 80)
+        tprint("=" * 80)
+        tprint("❌ DATA COLLECTION PIPELINE FAILED")
+        tprint("=" * 80)
+        tprint(f"Error: {str(e)}")
+        tprint("=" * 80)
         import traceback
         traceback.print_exc()
         return False

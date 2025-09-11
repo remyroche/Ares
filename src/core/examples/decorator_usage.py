@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from ..core.decorators import handles_errors
 """
 from src.core.errors.base import ValidationError
@@ -48,7 +50,7 @@ async def fetch_external_data(api_endpoint: str) -> dict:
 @handles_errors(propagate = True)
 def delete_content(content_id: str) -> bool:
     """Delete content - requires authentication and proper role."""
-    print(f'Deleting content {content_id}')
+    tprint(f'Deleting content {content_id}')
     return True
 
 class UserCreateSchema:
@@ -146,40 +148,40 @@ def complex_operation(user_id: str, action: str) -> dict:
 
 async def main() -> None:
     """Run examples."""
-    print('Core Decorator System Examples\n')
+    tprint('Core Decorator System Examples\n')
     try:
         price = calculate_price(100.0, 0.08)
-        print(f'1. Calculated price: ${price:.2f}')
+        tprint(f'1. Calculated price: ${price:.2f}')
     except ValidationError as e:
-        print(f'1. Validation error: {e}')
+        tprint(f'1. Validation error: {e}')
     result = process_user_data('user123', {'name': 'John', 'age': 30})
-    print(f'2. Processed user data: {result}')
+    tprint(f'2. Processed user data: {result}')
     try:
         data = await fetch_external_data('https://api.example.com/data')
-        print(f'3. External data: {data}')
+        tprint(f'3. External data: {data}')
     except Exception as e:
-        print(f'3. Failed to fetch external data: {e}')
+        tprint(f'3. Failed to fetch external data: {e}')
     try:
         user = create_user({'username': 'johndoe', 'email': 'john@example.com', 'age': 25})
-        print(f'5. Created user: {user}')
+        tprint(f'5. Created user: {user}')
     except ValidationError as e:
-        print(f'5. Validation failed: {e}')
+        tprint(f'5. Validation failed: {e}')
     try:
         result = business_operation(50)
-        print(f'7. Business operation result: {result}')
+        tprint(f'7. Business operation result: {result}')
     except Exception as e:
-        print(f'7. Business error: {e}')
+        tprint(f'7. Business error: {e}')
     user = await get_user_from_db('user456')
-    print(f'8. User from DB: {user}')
+    tprint(f'8. User from DB: {user}')
     service = UserService()
     user = service.get_user('user789')
-    print(f'9. User from service: {user}')
+    tprint(f'9. User from service: {user}')
     stats = cache_stats()
-    print(f'\nCache statistics: {stats}')
+    tprint(f'\nCache statistics: {stats}')
     trace = get_current_trace()
     if trace:
         pass
         summary = get_trace_summary(trace.trace_id)
-        print(f'\nTrace summary: {summary}')
+        tprint(f'\nTrace summary: {summary}')
 if __name__ == '__main__':
     asyncio.run(main())

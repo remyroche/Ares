@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 import pandas as pd
@@ -732,9 +734,9 @@ if __name__ == "__main__":
         )
         
         if success:
-            print("✅ Enhanced data conversion completed successfully")
+            tprint("✅ Enhanced data conversion completed successfully")
         else:
-            print("❌ Enhanced data conversion failed")
+            tprint("❌ Enhanced data conversion failed")
     
     asyncio.run(main())
 #!/usr/bin/env python3

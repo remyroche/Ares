@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import asyncio
 import contextlib
 import json
@@ -49,10 +51,10 @@ try:
     from src.utils.state_manager import StateManager
 
     ares_config = AresConfig()
-    print("Successfully imported Ares modules.")
+    tprint("Successfully imported Ares modules.")
 except ImportError as e:
-    print(f"Error importing Ares modules: {e}")
-    print(
+    tprint(f"Error importing Ares modules: {e}")
+    tprint(
         "Please ensure the project structure is correct and all dependencies are installed.",
     )
 
@@ -515,8 +517,9 @@ async def get_dashboard_data(days: int = 7):
                 is_public=False,
                 query_filters=[("limit", "10")],
             )
-        except Exception:
-            # Fallback to mock data
+        except Exception as e:
+            # Fallback to mock data when database is unavailable
+            logger.warning(f"⚠️ Database unavailable, using mock data for positions/trades: {e}")
             mock_bots, mock_positions, mock_trades = create_mock_data()
             open_positions_raw = mock_positions
             last_trades_raw = mock_trades
@@ -1152,8 +1155,8 @@ async def get_tokens():
 
         return tokens
     except Exception as e:
-        logger.exception(f"Error getting tokens: {e}")
-        # Return mock data
+        logger.warning(f"⚠️ Error getting tokens, using mock data: {e}")
+        # Return mock data when token retrieval fails
         return [
             TokenConfig(
                 symbol="BTCUSDT",
@@ -1256,8 +1259,8 @@ async def get_available_models():
 
         return models
     except Exception as e:
-        logger.exception(f"Error getting available models: {e}")
-        # Return mock data
+        logger.warning(f"⚠️ Error getting models, using mock data: {e}")
+        # Return mock data when model retrieval fails
         return [
             {
                 "model_id": "lightgbm",
@@ -1457,7 +1460,7 @@ async def get_detailed_model_analysis(symbol: str, exchange: str, model_id: str)
                 else 0,
             },
             "performance_trends": {
-                "monthly_returns": [2.5, 3.1, -1.2, 4.3, 2.8, 1.9],  # Mock data
+                "monthly_returns": [2.5, 3.1, -1.2, 4.3, 2.8, 1.9],  # Mock data - replace with real performance data
                 "rolling_sharpe": [1.1, 1.3, 0.9, 1.4, 1.2, 1.1],
                 "drawdown_periods": [5, 3, 8, 2, 4, 6],
             },
@@ -1566,7 +1569,7 @@ try:
     import os
     gui_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, gui_dir)
-    from ares_launcher import (
+    from src.launcher.ares_launcher import (
         start_launcher_mode, start_training, stop_process, stop_all_processes,
         get_process_status, get_available_modes, get_available_training_modes,
         get_available_exchanges
@@ -1939,7 +1942,7 @@ async def get_data_status():
 if __name__ == "__main__":
     import uvicorn
 
-    print("Starting Ares API server v2.0...")
-    print("API documentation will be available at http://localhost:8000/docs")
+    tprint("Starting Ares API server v2.0...")
+    tprint("API documentation will be available at http://localhost:8000/docs")
     port = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
     uvicorn.run("api_server:app", host="0.0.0.0", port=port, reload=True)

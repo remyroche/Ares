@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Syntax Validator - Comprehensive Python syntax validation, AST parsing, and compilation checks.
 """
@@ -94,7 +96,7 @@ class SyntaxValidator:
             Dictionary containing validation results
         """
         python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
-        print(f"Validating syntax for {len(python_files)} Python files...")
+        tprint(f"Validating syntax for {len(python_files)} Python files...")
 
         # Clear previous results
         self.syntax_errors.clear()
@@ -623,44 +625,44 @@ class SyntaxValidator:
             with open(output_path, "w") as f:
                 json.dump(report, f, indent=2)
 
-            print(f"Validation report exported to {output_path}")
+            tprint(f"Validation report exported to {output_path}")
 
         except Exception as e:
-            print(f"Error exporting report: {e}")
+            tprint(f"Error exporting report: {e}")
 
     def print_summary(self) -> None:
         """Print a summary of validation results."""
         report = self._generate_validation_report()
         summary = report["summary"]
 
-        print("\n" + "="*60)
-        print("SYNTAX VALIDATION SUMMARY")
-        print("="*60)
-        print(f"Total files analyzed: {summary['total_files']}")
-        print(f"Valid files: {summary['valid_files']}")
-        print(f"Invalid files: {summary['invalid_files']}")
-        print(f"AST parseable files: {summary['ast_parseable_files']}")
-        print(f"Compilable files: {summary['compilable_files']}")
-        print(f"Total syntax errors: {summary['total_errors']}")
-        print(f"Total AST nodes: {summary['total_ast_nodes']}")
+        tprint("\n" + "="*60)
+        tprint("SYNTAX VALIDATION SUMMARY")
+        tprint("="*60)
+        tprint(f"Total files analyzed: {summary['total_files']}")
+        tprint(f"Valid files: {summary['valid_files']}")
+        tprint(f"Invalid files: {summary['invalid_files']}")
+        tprint(f"AST parseable files: {summary['ast_parseable_files']}")
+        tprint(f"Compilable files: {summary['compilable_files']}")
+        tprint(f"Total syntax errors: {summary['total_errors']}")
+        tprint(f"Total AST nodes: {summary['total_ast_nodes']}")
 
         if report["error_counts"]:
-            print("\nErrors by type:")
+            tprint("\nErrors by type:")
             for error_type, count in sorted(report["error_counts"].items(), key=lambda x: x[1], reverse=True):
-                print(f"  {error_type}: {count}")
+                tprint(f"  {error_type}: {count}")
 
         if report["severity_counts"]:
-            print("\nErrors by severity:")
+            tprint("\nErrors by severity:")
             for severity, count in sorted(report["severity_counts"].items(), key=lambda x: x[1], reverse=True):
-                print(f"  {severity}: {count}")
+                tprint(f"  {severity}: {count}")
 
         # Show top problematic files
         if report["errors_by_file"]:
-            print("\nTop problematic files:")
+            tprint("\nTop problematic files:")
             sorted_files = sorted(report["errors_by_file"].items(),
                                key=lambda x: len(x[1]), reverse=True)
             for file_path, errors in sorted_files[:5]:
-                print(f"  {file_path}: {len(errors)} issues")
+                tprint(f"  {file_path}: {len(errors)} issues")
 
 
 def main():

@@ -476,9 +476,9 @@ class VectorizedProcessingCore:
 
         # Initialize M1 optimizations if available
         try:
-            from .m1_gpu_utils import get_m1_gpu_manager
-            from .m1_memory_optimizer import get_m1_memory_optimizer
-            from .m1_cpu_optimizer import get_m1_cpu_optimizer
+            from .hardware.m1_gpu_utils import get_m1_gpu_manager
+            from .hardware.m1_memory_optimizer import get_m1_memory_optimizer
+            from .hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
             self.m1_gpu_manager = get_m1_gpu_manager()
             self.m1_memory_optimizer = get_m1_memory_optimizer()

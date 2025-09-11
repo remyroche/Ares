@@ -28,11 +28,27 @@ from src.utils.common_operations import CommonOperations
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import MathValidation
 from src.utils.parquet_utils import ParquetUtils
-from src.utils.serialization_utils import SerializationUtils
-from src.utils.data_processing_utils import DataProcessingUtils
-from src.utils.m1_gpu_utils import M1GPUManager
-from src.utils.m1_memory_optimizer import M1MemoryOptimizer
-from src.utils.m1_cpu_optimizer import M1CPUOptimizer
+# Serialization and data processing utilities - using core implementations
+from src.utils.core.file_operations import JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer
+from enum import Enum
+from typing import Any, Dict, List, Optional, Union
+import pandas as pd
+import numpy as np
+
+class SerializationUtils:
+    """Serialization utilities wrapper."""
+    @staticmethod
+    def validate_json_structure(data):
+        return isinstance(data, dict) and len(data) > 0
+
+class DataProcessingUtils:
+    """Data processing utilities wrapper."""
+    @staticmethod
+    def validate_dataframe(df):
+        return not df.empty and len(df.columns) > 0
+from src.utils.hardware.m1_gpu_utils import M1GPUManager
+from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
 
 from src.training.steps.market_analysis.enhanced_market_analysis_orchestrator import (
     run_enhanced_market_analysis_pipeline,
@@ -40,6 +56,7 @@ from src.training.steps.market_analysis.enhanced_market_analysis_orchestrator im
 )
 from src.training.steps.market_analysis.enhanced_logging_metrics import enhanced_logger
 from src.training.steps.market_analysis.progress_monitor import progress_monitor
+from src.training.steps.market_analysis.hmm_clustering.step03_hmm_regime_discovery import run_step as run_enhanced_step
 
 from src.training.reports import save_training_report
 import logging
@@ -55,6 +72,63 @@ try:
 except ImportError as e:
     ML_COMMON_AVAILABLE = False
     logging.warning(f"⚠️ ML Common utilities not available in market analysis main: {e}")
+
+# Simple cache implementation
+class SimpleCache:
+    def __init__(self):
+        self.cache = {}
+
+    def get(self, key):
+        return self.cache.get(key)
+
+    def set(self, key, value):
+        self.cache[key] = value
+
+cache = SimpleCache()
+
+# Simple IO operations implementation
+class SimpleIOOps:
+    async def load_file_async(self, file_path, format_type='json'):
+        """Simple async file loader."""
+        try:
+            import aiofiles
+            async with aiofiles.open(file_path, 'r') as f:
+                content = await f.read()
+            if format_type == 'json':
+                import json
+                return json.loads(content)
+            return content
+        except Exception:
+            # Fallback to sync loading
+            with open(file_path, 'r') as f:
+                content = f.read()
+            if format_type == 'json':
+                import json
+                return json.loads(content)
+            return content
+
+    async def load_files_parallel(self, file_paths):
+        """Simple parallel file loader."""
+        import asyncio
+        results = []
+        for path in file_paths:
+            try:
+                # Try async first
+                import aiofiles
+                async with aiofiles.open(path, 'rb') as f:
+                    content = await f.read()
+                # Assume parquet for now
+                import pandas as pd
+                df = pd.read_parquet(path)
+                results.append(df)
+            except Exception:
+                # Fallback to sync
+                import pandas as pd
+                df = pd.read_parquet(path)
+                results.append(df)
+        return results
+
+io_ops = SimpleIOOps()
 
 async def analyze_hmm_clustering_results(symbol: str, exchange: str, timeframe: str) -> dict:
     """Analyze HMM clustering results and return comprehensive summary with utility integration."""

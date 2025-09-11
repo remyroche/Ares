@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 # Note: compat module has been refactored, using enhanced_error_handler instead
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from ..config_optuna import get_parameter_value
@@ -579,7 +581,7 @@ class MLConfidencePredictor:
             self.logger.info('✅ Meta-labeling system initialized successfully')
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f'Error in {self.__class__.__name__}: {e}')
-            self.print(initialization_error('Error initializing meta-labeling system: {e}'))
+            self.tprint(initialization_error('Error initializing meta-labeling system: {e}'))
             self.meta_labeling_system = None
 
     async def _generate_analyst_meta_labels(self, market_data: pd.DataFrame, timeframes: list[str]=None) -> dict[str, Any]:
@@ -1257,7 +1259,7 @@ class MLConfidencePredictor:
                 self.logger.error(failed('Failed to initialize async order executor'))
         except (ValueError, TypeError) as e:
             self.logger.debug(f'Error in {self.__class__.__name__}: {e}')
-            self.print(initialization_error('Error initializing enhanced order manager: {e}'))
+            self.tprint(initialization_error('Error initializing enhanced order manager: {e}'))
             self.enhanced_order_manager = None
             self.async_order_executor = None
 

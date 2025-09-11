@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Mode-Specific CSV Export Example
 
@@ -50,17 +52,17 @@ async def example_mode_specific_monitoring():
     }
     
     # Create and initialize monitoring orchestrator
-    print("🚀 Initializing Mode-Specific ML Monitoring System...")
+    tprint("🚀 Initializing Mode-Specific ML Monitoring System...")
     orchestrator = await create_monitoring_orchestrator(config)
     
     if not orchestrator:
-        print("❌ Failed to initialize monitoring orchestrator")
+        tprint("❌ Failed to initialize monitoring orchestrator")
         return
     
-    print("✅ Mode-Specific ML Monitoring System initialized successfully!")
+    tprint("✅ Mode-Specific ML Monitoring System initialized successfully!")
     
     # Example 1: Record trade decisions for different trading modes
-    print("\n📊 Recording trade decisions for different trading modes...")
+    tprint("\n📊 Recording trade decisions for different trading modes...")
     
     # Simulate multiple days of trading across different modes
     base_date = datetime.now() - timedelta(days = 3)
@@ -79,7 +81,7 @@ async def example_mode_specific_monitoring():
             # Simulate 2-5 trades per mode per day
             num_trades = np.random.randint(2, 6)
             
-            print(f"  📈 Recording {num_trades} {mode_name} trades for {current_date.date()}")
+            tprint(f"  📈 Recording {num_trades} {mode_name} trades for {current_date.date()}")
             
             for trade_num in range(num_trades):
                 # Create HMM regime information
@@ -221,80 +223,80 @@ async def example_mode_specific_monitoring():
                 await orchestrator.record_trade_decision(trade_decision)
     
     # Example 2: Export mode-specific data
-    print("\n📤 Exporting mode-specific monitoring data...")
+    tprint("\n📤 Exporting mode-specific monitoring data...")
     
     export_success = await orchestrator.export_monitoring_data()
     if export_success:
-        print("✅ Mode-specific monitoring data exported successfully!")
-        print("📁 Check the 'mode_specific_monitoring_exports' directory for CSV files:")
-        print("  📊 trade_decisions_backtest_*.csv - Backtesting trade decisions")
-        print("  📊 trade_decisions_paper_*.csv - Paper trading decisions")
-        print("  📊 trade_decisions_live_*.csv - Live trading decisions")
-        print("  📈 daily_summary_backtest_*.csv - Backtesting daily summaries")
-        print("  📈 daily_summary_paper_*.csv - Paper trading daily summaries")
-        print("  📈 daily_summary_live_*.csv - Live trading daily summaries")
+        tprint("✅ Mode-specific monitoring data exported successfully!")
+        tprint("📁 Check the 'mode_specific_monitoring_exports' directory for CSV files:")
+        tprint("  📊 trade_decisions_backtest_*.csv - Backtesting trade decisions")
+        tprint("  📊 trade_decisions_paper_*.csv - Paper trading decisions")
+        tprint("  📊 trade_decisions_live_*.csv - Live trading decisions")
+        tprint("  📈 daily_summary_backtest_*.csv - Backtesting daily summaries")
+        tprint("  📈 daily_summary_paper_*.csv - Paper trading daily summaries")
+        tprint("  📈 daily_summary_live_*.csv - Live trading daily summaries")
     else:
-        print("❌ Failed to export mode-specific monitoring data")
+        tprint("❌ Failed to export mode-specific monitoring data")
     
     # Example 3: Get mode-specific statistics
-    print("\n📊 Getting mode-specific monitoring statistics...")
+    tprint("\n📊 Getting mode-specific monitoring statistics...")
     
     stats = orchestrator.get_comprehensive_stats()
-    print("Mode-Specific Monitoring Statistics:")
-    print(f"  Total Decisions Processed: {stats['orchestrator']['total_decisions_processed']}")
-    print(f"  Total Exports Performed: {stats['orchestrator']['total_exports_performed']}")
-    print(f"  Uptime Hours: {stats['orchestrator']['uptime_hours']:.2f}")
+    tprint("Mode-Specific Monitoring Statistics:")
+    tprint(f"  Total Decisions Processed: {stats['orchestrator']['total_decisions_processed']}")
+    tprint(f"  Total Exports Performed: {stats['orchestrator']['total_exports_performed']}")
+    tprint(f"  Uptime Hours: {stats['orchestrator']['uptime_hours']:.2f}")
     
     if 'daily_summary_tracker' in stats:
-        print(f"  Days Tracked: {stats['daily_summary_tracker']['total_days_tracked']}")
-        print(f"  Regimes Tracked: {stats['daily_summary_tracker']['regimes_tracked']}")
+        tprint(f"  Days Tracked: {stats['daily_summary_tracker']['total_days_tracked']}")
+        tprint(f"  Regimes Tracked: {stats['daily_summary_tracker']['regimes_tracked']}")
     
     # Example 4: Get daily summaries by mode
-    print("\n📈 Getting daily summaries by trading mode...")
+    tprint("\n📈 Getting daily summaries by trading mode...")
     
     for mode_enum, mode_name in trading_modes:
         summary_date = date.today() - timedelta(days = 1)
         daily_summary = await orchestrator.daily_summary_tracker.get_daily_summary(summary_date)
         
         if daily_summary and daily_summary.trading_mode == mode_name:
-            print(f"\n{mode_name.upper()} Mode Daily Summary for {summary_date}:")
-            print(f"  Total Trades: {daily_summary.total_trades}")
-            print(f"  Long Trades: {daily_summary.long_trades}")
-            print(f"  Short Trades: {daily_summary.short_trades}")
-            print(f"  Dominant Regime: {daily_summary.dominant_regime}")
-            print(f"  Total PnL: {daily_summary.total_pnl:.2f}")
-            print(f"  Win Rate: {daily_summary.win_rate:.3f}")
-            print(f"  Profit Factor: {daily_summary.profit_factor:.2f}")
+            tprint(f"\n{mode_name.upper()} Mode Daily Summary for {summary_date}:")
+            tprint(f"  Total Trades: {daily_summary.total_trades}")
+            tprint(f"  Long Trades: {daily_summary.long_trades}")
+            tprint(f"  Short Trades: {daily_summary.short_trades}")
+            tprint(f"  Dominant Regime: {daily_summary.dominant_regime}")
+            tprint(f"  Total PnL: {daily_summary.total_pnl:.2f}")
+            tprint(f"  Win Rate: {daily_summary.win_rate:.3f}")
+            tprint(f"  Profit Factor: {daily_summary.profit_factor:.2f}")
     
     # Example 5: Export mode-specific daily summaries
-    print("\n📊 Exporting mode-specific daily summaries CSV...")
+    tprint("\n📊 Exporting mode-specific daily summaries CSV...")
     
     if orchestrator.daily_summary_tracker:
         csv_success = await orchestrator.daily_summary_tracker.export_summary_csv()
         if csv_success:
-            print("✅ Mode-specific daily summaries CSV exported successfully!")
-            print("📁 Check the 'mode_specific_daily_summaries' directory for files:")
-            print("  📈 daily_summary_backtest_YYYYMMDD.csv")
-            print("  📈 daily_summary_paper_YYYYMMDD.csv")
-            print("  📈 daily_summary_live_YYYYMMDD.csv")
+            tprint("✅ Mode-specific daily summaries CSV exported successfully!")
+            tprint("📁 Check the 'mode_specific_daily_summaries' directory for files:")
+            tprint("  📈 daily_summary_backtest_YYYYMMDD.csv")
+            tprint("  📈 daily_summary_paper_YYYYMMDD.csv")
+            tprint("  📈 daily_summary_live_YYYYMMDD.csv")
         else:
-            print("❌ Failed to export mode-specific daily summaries CSV")
+            tprint("❌ Failed to export mode-specific daily summaries CSV")
     
     # Shutdown
-    print("\n🛑 Shutting down monitoring system...")
+    tprint("\n🛑 Shutting down monitoring system...")
     await orchestrator.shutdown()
     
-    print("✅ Mode-Specific ML Monitoring example completed successfully!")
-    print("\n🎯 Key Features Demonstrated:")
-    print("  ✅ Separate CSV files for backtesting, paper trading, and live trading")
-    print("  ✅ Mode-specific daily summaries with HMM regime analysis")
-    print("  ✅ Independent data tracking per trading mode")
-    print("  ✅ Comprehensive CSV exports with mode identification")
-    print("  ✅ Real-time monitoring and statistics per mode")
+    tprint("✅ Mode-Specific ML Monitoring example completed successfully!")
+    tprint("\n🎯 Key Features Demonstrated:")
+    tprint("  ✅ Separate CSV files for backtesting, paper trading, and live trading")
+    tprint("  ✅ Mode-specific daily summaries with HMM regime analysis")
+    tprint("  ✅ Independent data tracking per trading mode")
+    tprint("  ✅ Comprehensive CSV exports with mode identification")
+    tprint("  ✅ Real-time monitoring and statistics per mode")
 
 async def example_gui_mode_loading():
     """Example of launching the GUI with mode-specific data loading."""
-    print("\n🖥️ Launching Enhanced Monitoring Dashboard GUI with Mode-Specific Loading...")
+    tprint("\n🖥️ Launching Enhanced Monitoring Dashboard GUI with Mode-Specific Loading...")
     
     try:
         from .monitoring.gui import launch_dashboard
@@ -303,19 +305,19 @@ async def example_gui_mode_loading():
         exit_code = launch_dashboard()
         
         if exit_code == 0:
-            print("✅ GUI dashboard closed successfully")
+            tprint("✅ GUI dashboard closed successfully")
         else:
-            print(f"❌ GUI dashboard exited with code {exit_code}")
+            tprint(f"❌ GUI dashboard exited with code {exit_code}")
             
     except ImportError as e:
-        print(f"❌ Could not import GUI components: {e}")
-        print("Make sure matplotlib, seaborn, and tkinter are installed")
+        tprint(f"❌ Could not import GUI components: {e}")
+        tprint("Make sure matplotlib, seaborn, and tkinter are installed")
     except Exception as e:
-        print(f"❌ Error launching GUI: {e}")
+        tprint(f"❌ Error launching GUI: {e}")
 
 if __name__ == "__main__":
-    print("🚀 Mode-Specific ML Monitoring System Examples")
-    print("=" * 60)
+    tprint("🚀 Mode-Specific ML Monitoring System Examples")
+    tprint("=" * 60)
     
     # Run mode-specific monitoring example
     asyncio.run(example_mode_specific_monitoring())
@@ -326,15 +328,15 @@ if __name__ == "__main__":
         if response.lower() in ['y', 'yes']:
             asyncio.run(example_gui_mode_loading())
     except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
+        tprint("\n👋 Goodbye!")
     
-    print("\n🎉 All examples completed!")
-    print("\n📁 Generated Files:")
-    print("  📊 mode_specific_monitoring_exports/ - Mode-specific trade decisions")
-    print("  📈 mode_specific_daily_summaries/ - Mode-specific daily summaries")
-    print("  📋 monitoring_exports/ - Comprehensive monitoring reports")
-    print("\n💡 GUI Features:")
-    print("  🎛️ Trading mode selector (all, backtest, paper, live)")
-    print("  📊 Independent data loading per mode")
-    print("  📈 Mode-specific visualizations and statistics")
-    print("  🔄 Real-time mode switching and data updates")
+    tprint("\n🎉 All examples completed!")
+    tprint("\n📁 Generated Files:")
+    tprint("  📊 mode_specific_monitoring_exports/ - Mode-specific trade decisions")
+    tprint("  📈 mode_specific_daily_summaries/ - Mode-specific daily summaries")
+    tprint("  📋 monitoring_exports/ - Comprehensive monitoring reports")
+    tprint("\n💡 GUI Features:")
+    tprint("  🎛️ Trading mode selector (all, backtest, paper, live)")
+    tprint("  📊 Independent data loading per mode")
+    tprint("  📈 Mode-specific visualizations and statistics")
+    tprint("  🔄 Real-time mode switching and data updates")

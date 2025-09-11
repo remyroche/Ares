@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Optional, Union, Any, Tuple
 """
 Example: Adding a New Exchange to the Abstract Architecture
@@ -114,23 +116,23 @@ def register_new_components() -> None:
     ExchangeDataSourceFactory.register_exchange('bybit', BybitDataSource)
     ExchangeDataSourceFactory.register_exchange('deribit', DeribitDataSource)
     ModelTrainerFactory.register_trainer('catboost', CatBoostTrainer)
-    print('✅ New components registered successfully!')
+    tprint('✅ New components registered successfully!')
 
 async def example_usage() -> None:
     """Example using the new components."""
     register_new_components()
     bybit = ExchangeDataSourceFactory.create('bybit', api_key='your_api_key', api_secret='your_api_secret', testnet = True)
     data = await bybit.fetch_data('BTCUSDT', datetime(2024, 1, 1), datetime(2024, 1, 2))
-    print(f'\nFetched {len(data)} hours of data from Bybit')
-    print(f'Columns: {data.columns.tolist()}')
+    tprint(f'\nFetched {len(data)} hours of data from Bybit')
+    tprint(f'Columns: {data.columns.tolist()}')
     catboost_trainer = ModelTrainerFactory.create('catboost', iterations = 50, learning_rate = 0.1, depth = 4)
     features = pd.DataFrame({'feature1': np.random.randn(100), 'feature2': np.random.randn(100), 'feature3': np.random.randn(100)})
     labels = pd.Series(np.random.randint(0, 2, 100))
-    print('\nTraining CatBoost model...')
+    tprint('\nTraining CatBoost model...')
     model = catboost_trainer.train(features, labels)
     predictions = model.predict(features.iloc[:10])
-    print(f'Sample predictions: {predictions}')
-    print(f'\nFeature importance:\n{importance}')
+    tprint(f'Sample predictions: {predictions}')
+    tprint(f'\nFeature importance:\n{importance}')
 EXAMPLE_CONFIG_WITH_NEW_COMPONENTS = {'name': 'Pipeline_With_New_Components', 'version': '1.0.0', 'global_settings': {'data_source': {'type': 'exchange', 'exchange': 'bybit', 'api_key': 'your_api_key', 'api_secret': 'your_api_secret', 'testnet': True}, 'model': {'type': 'catboost', 'hyperparameters': {'iterations': 200, 'learning_rate': 0.03, 'depth': 8, 'l2_leaf_reg': 3.0}}}, 'steps': {}}
 if __name__ == '__main__':
     asyncio.run(example_usage())

@@ -585,13 +585,12 @@ class StepOptimizationManager:
         """Initialize all optimization components."""
         try:
             from .vectorized_processing_core import get_vectorized_processing_core
-            from .optimized_data_manager import get_optimized_data_manager
-            from .m1_gpu_utils import get_m1_gpu_manager
-            from .m1_memory_optimizer import get_m1_memory_optimizer
-            from .m1_cpu_optimizer import get_m1_cpu_optimizer
+            from .hardware.m1_gpu_utils import get_m1_gpu_manager
+            from .hardware.m1_memory_optimizer import get_m1_memory_optimizer
+            from .hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
             self.vectorized_core = get_vectorized_processing_core()
-            self.data_manager = get_optimized_data_manager()
+            self.data_manager = None  # Fallback since optimized_data_manager doesn't exist
             self.gpu_manager = get_m1_gpu_manager()
             self.memory_optimizer = get_m1_memory_optimizer()
             self.cpu_optimizer = get_m1_cpu_optimizer()

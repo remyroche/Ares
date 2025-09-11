@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 from .logger import system_logger
 """Centralized Report Manager for Ares Trading System.
 
@@ -50,7 +52,7 @@ class ReportManager:
         ensure_directory(str(self.current_run_dir))
         
         self.logger.info(f"📁 Initialized report directory: {self.current_run_dir}")
-        print(f"📁 Report directory: {self.current_run_dir}")
+        tprint(f"📁 Report directory: {self.current_run_dir}")
     
     def get_run_directory(self) -> Path:
         """Get the current run directory path."""
@@ -171,7 +173,7 @@ class ReportManager:
                     f.write(str(enhanced_report_data))
         
         self.logger.info(f"💾 Step report saved: {report_path}")
-        print(f"💾 Step report saved: {report_path}")
+        tprint(f"💾 Step report saved: {report_path}")
         return report_path
     
     def save_ml_interpretability_report(
@@ -222,7 +224,7 @@ class ReportManager:
                     f.write(str(enhanced_report_data))
         
         self.logger.info(f"💾 ML interpretability report saved: {report_path}")
-        print(f"💾 ML interpretability report saved: {report_path}")
+        tprint(f"💾 ML interpretability report saved: {report_path}")
         return report_path
     
     def save_general_report(
@@ -272,7 +274,7 @@ class ReportManager:
                     f.write(str(enhanced_report_data))
         
         self.logger.info(f"💾 General report saved: {report_path}")
-        print(f"💾 General report saved: {report_path}")
+        tprint(f"💾 General report saved: {report_path}")
         return report_path
     
     def copy_existing_report(
@@ -309,7 +311,7 @@ class ReportManager:
         shutil.copy2(source_path, target_path)
         
         self.logger.info(f"📋 Copied report: {source_path} -> {target_path}")
-        print(f"📋 Copied report: {source_path} -> {target_path}")
+        tprint(f"📋 Copied report: {source_path} -> {target_path}")
         return target_path
     
     def generate_run_summary(self, symbol: str, exchange: str) -> Path:
@@ -396,7 +398,7 @@ class ReportManager:
             f.write('\n'.join(lines))
         
         self.logger.info(f"📊 Run summary generated: {summary_path}")
-        print(f"📊 Run summary generated: {summary_path}")
+        tprint(f"📊 Run summary generated: {summary_path}")
         return summary_path
     
     def _format_markdown_report(self, report_data: Dict[str, Any]) -> str:

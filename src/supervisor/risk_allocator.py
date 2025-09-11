@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import asyncio
 from datetime import datetime
@@ -418,5 +420,5 @@ async def setup_risk_allocator(
             return risk_allocator
         return None
     except Exception as e:
-        print(f"Error setting up risk allocator: {e}")
+        tprint(f"Error setting up risk allocator: {e}")
         return None

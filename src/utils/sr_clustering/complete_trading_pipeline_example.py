@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Complete Trading Pipeline Example - From SR Quality to Trading Decisions.
 
@@ -284,26 +286,26 @@ def create_diverse_sr_levels() -> list:
 
 def demonstrate_complete_trading_pipeline():
     """Demonstrate the complete pipeline from SR quality to trading decisions."""
-    print("🚀 Complete Trading Pipeline Demo")
-    print("=" * 70)
+    tprint("🚀 Complete Trading Pipeline Demo")
+    tprint("=" * 70)
     
     # Step 1: Create comprehensive market data
-    print("📊 Step 1: Creating comprehensive market data...")
+    tprint("📊 Step 1: Creating comprehensive market data...")
     market_data = create_comprehensive_market_data(300)
-    print(f"✅ Created {len(market_data)} days of market data")
+    tprint(f"✅ Created {len(market_data)} days of market data")
     
     # Step 2: Create diverse SR levels
-    print("\n🎯 Step 2: Creating diverse SR levels...")
+    tprint("\n🎯 Step 2: Creating diverse SR levels...")
     sr_levels = create_diverse_sr_levels()
-    print(f"✅ Created {len(sr_levels)} SR levels")
+    tprint(f"✅ Created {len(sr_levels)} SR levels")
     
     # Step 3: Create historical performance data
-    print("\n📈 Step 3: Creating historical performance data...")
+    tprint("\n📈 Step 3: Creating historical performance data...")
     historical_performance = create_historical_performance_data(market_data, sr_levels)
-    print(f"✅ Created {len(historical_performance)} historical performance records")
+    tprint(f"✅ Created {len(historical_performance)} historical performance records")
     
     # Step 4: Initialize trading ML integration
-    print("\n🔧 Step 4: Initializing trading ML integration...")
+    tprint("\n🔧 Step 4: Initializing trading ML integration...")
     trading_config = TradingMLConfig(
         classification_model='random_forest',
         regression_model='ridge',
@@ -320,54 +322,54 @@ def demonstrate_complete_trading_pipeline():
     trading_ml = get_trading_ml_integration(trading_config)
     
     # Step 5: Prepare enhanced training data
-    print("\n🧠 Step 5: Preparing enhanced training data with SR quality predictions...")
+    tprint("\n🧠 Step 5: Preparing enhanced training data with SR quality predictions...")
     enhanced_data = trading_ml.prepare_enhanced_training_data(
         market_data, sr_levels, historical_performance
     )
     
     if len(enhanced_data) > 0:
-        print(f"✅ Created enhanced training dataset with {len(enhanced_data)} samples")
-        print(f"   Features: {list(enhanced_data.columns)}")
+        tprint(f"✅ Created enhanced training dataset with {len(enhanced_data)} samples")
+        tprint(f"   Features: {list(enhanced_data.columns)}")
         
         # Show sample of enhanced data
-        print(f"\n📊 Sample of enhanced training data:")
+        tprint(f"\n📊 Sample of enhanced training data:")
         sample_features = ['sr_quality', 'sr_confidence', 'momentum_score', 'volatility_score', 'volume_score', 'trade_success', 'future_return']
-        print(enhanced_data[sample_features].head())
+        tprint(enhanced_data[sample_features].head())
     else:
-        print("❌ Failed to create enhanced training data")
+        tprint("❌ Failed to create enhanced training data")
         return
     
     # Step 6: Train trading models
-    print(f"\n🎯 Step 6: Training ML models for trading decisions...")
+    tprint(f"\n🎯 Step 6: Training ML models for trading decisions...")
     training_result = trading_ml.train_trading_models(enhanced_data)
     
     if training_result.get('status') == 'success':
-        print("✅ Trading models trained successfully!")
+        tprint("✅ Trading models trained successfully!")
         
         # Show model performance
         classification_perf = training_result.get('classification_performance', {})
         regression_perf = training_result.get('regression_performance', {})
         
-        print(f"\n📊 Model Performance:")
-        print(f"   Classification Accuracy: {classification_perf.get('accuracy', 0.0):.3f}")
-        print(f"   Classification F1 Score: {classification_perf.get('f1_score', 0.0):.3f}")
-        print(f"   Classification ROC AUC: {classification_perf.get('roc_auc', 0.0):.3f}")
-        print(f"   Regression R² Score: {regression_perf.get('r2_score', 0.0):.3f}")
-        print(f"   Regression MSE: {regression_perf.get('mse', 0.0):.4f}")
+        tprint(f"\n📊 Model Performance:")
+        tprint(f"   Classification Accuracy: {classification_perf.get('accuracy', 0.0):.3f}")
+        tprint(f"   Classification F1 Score: {classification_perf.get('f1_score', 0.0):.3f}")
+        tprint(f"   Classification ROC AUC: {classification_perf.get('roc_auc', 0.0):.3f}")
+        tprint(f"   Regression R² Score: {regression_perf.get('r2_score', 0.0):.3f}")
+        tprint(f"   Regression MSE: {regression_perf.get('mse', 0.0):.4f}")
         
         # Show feature importance
         feature_importance = training_result.get('feature_importance', {})
         if feature_importance:
-            print(f"\n🎯 Top Feature Importance:")
+            tprint(f"\n🎯 Top Feature Importance:")
             sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
             for feature, importance in sorted_features[:10]:
-                print(f"   {feature}: {importance:.3f}")
+                tprint(f"   {feature}: {importance:.3f}")
     else:
-        print(f"❌ Model training failed: {training_result.get('error', 'Unknown error')}")
+        tprint(f"❌ Model training failed: {training_result.get('error', 'Unknown error')}")
         return
     
     # Step 7: Generate trading signals
-    print(f"\n📡 Step 7: Generating trading signals...")
+    tprint(f"\n📡 Step 7: Generating trading signals...")
     
     # Use recent market data for signal generation
     recent_market_data = market_data.tail(50)
@@ -376,55 +378,55 @@ def demonstrate_complete_trading_pipeline():
     trading_signals = trading_ml.generate_trading_signals(recent_market_data, current_sr_levels)
     
     if trading_signals:
-        print(f"✅ Generated {len(trading_signals)} trading signals")
+        tprint(f"✅ Generated {len(trading_signals)} trading signals")
         
         # Show trading signals
-        print(f"\n📊 Trading Signals:")
+        tprint(f"\n📊 Trading Signals:")
         for i, signal in enumerate(trading_signals[:5]):  # Show top 5
-            print(f"   {i+1}. {signal.symbol} at {signal.sr_quality:.3f} quality:")
-            print(f"      Signal: {signal.signal_type.upper()}")
-            print(f"      Confidence: {signal.confidence:.3f}")
-            print(f"      Expected Return: {signal.expected_return:.3f}")
-            print(f"      Market Regime: {signal.market_regime}")
-            print(f"      Risk Score: {signal.risk_score:.3f}")
-            print()
+            tprint(f"   {i+1}. {signal.symbol} at {signal.sr_quality:.3f} quality:")
+            tprint(f"      Signal: {signal.signal_type.upper()}")
+            tprint(f"      Confidence: {signal.confidence:.3f}")
+            tprint(f"      Expected Return: {signal.expected_return:.3f}")
+            tprint(f"      Market Regime: {signal.market_regime}")
+            tprint(f"      Risk Score: {signal.risk_score:.3f}")
+            tprint()
     else:
-        print("❌ No trading signals generated")
+        tprint("❌ No trading signals generated")
     
     # Step 8: Show trading summary
-    print(f"\n📈 Step 8: Trading Summary...")
+    tprint(f"\n📈 Step 8: Trading Summary...")
     trading_summary = trading_ml.get_trading_summary()
     
-    print(f"✅ Trading Summary:")
-    print(f"   Total Signals: {trading_summary.get('total_signals', 0)}")
-    print(f"   Buy Signals: {trading_summary.get('buy_signals', 0)}")
-    print(f"   Sell Signals: {trading_summary.get('sell_signals', 0)}")
-    print(f"   Hold Signals: {trading_summary.get('hold_signals', 0)}")
-    print(f"   Average Confidence: {trading_summary.get('avg_confidence', 0.0):.3f}")
-    print(f"   Average Expected Return: {trading_summary.get('avg_expected_return', 0.0):.3f}")
+    tprint(f"✅ Trading Summary:")
+    tprint(f"   Total Signals: {trading_summary.get('total_signals', 0)}")
+    tprint(f"   Buy Signals: {trading_summary.get('buy_signals', 0)}")
+    tprint(f"   Sell Signals: {trading_summary.get('sell_signals', 0)}")
+    tprint(f"   Hold Signals: {trading_summary.get('hold_signals', 0)}")
+    tprint(f"   Average Confidence: {trading_summary.get('avg_confidence', 0.0):.3f}")
+    tprint(f"   Average Expected Return: {trading_summary.get('avg_expected_return', 0.0):.3f}")
     
     logger.info("🎉 Complete trading pipeline demo completed successfully")
-    print(f"\n🎉 Complete trading pipeline demo completed!")
-    print("=" * 70)
+    tprint(f"\n🎉 Complete trading pipeline demo completed!")
+    tprint("=" * 70)
     
     # Show how this answers the key question
     logger.info("💡 Demonstrating how the pipeline answers the key question")
-    print(f"\n💡 How This Answers 'What Makes a Strong SR Level for Trading?':")
-    print(f"   1. ✅ Weight Optimization: Learned optimal weights from historical data")
-    print(f"   2. ✅ SR Quality Prediction: Predicted quality of each SR level")
-    print(f"   3. ✅ Enhanced Training Data: Combined SR quality with market features")
-    print(f"   4. ✅ ML Model Training: Trained models on enhanced data")
-    print(f"   5. ✅ Trading Signal Generation: Generated actionable trading signals")
-    print(f"   6. ✅ Risk Assessment: Provided confidence and risk scores")
-    print(f"   7. ✅ Market Context: Considered momentum, volatility, volume, regime")
+    tprint(f"\n💡 How This Answers 'What Makes a Strong SR Level for Trading?':")
+    tprint(f"   1. ✅ Weight Optimization: Learned optimal weights from historical data")
+    tprint(f"   2. ✅ SR Quality Prediction: Predicted quality of each SR level")
+    tprint(f"   3. ✅ Enhanced Training Data: Combined SR quality with market features")
+    tprint(f"   4. ✅ ML Model Training: Trained models on enhanced data")
+    tprint(f"   5. ✅ Trading Signal Generation: Generated actionable trading signals")
+    tprint(f"   6. ✅ Risk Assessment: Provided confidence and risk scores")
+    tprint(f"   7. ✅ Market Context: Considered momentum, volatility, volume, regime")
     
     logger.info("🎯 Providing key insights from the demonstration")
-    print(f"\n🎯 Key Insights:")
-    print(f"   • SR quality is now a quantifiable feature in trading models")
-    print(f"   • Models learn which SR levels work best in different market conditions")
-    print(f"   • Trading signals combine SR quality with market context")
-    print(f"   • System provides confidence scores for risk management")
-    print(f"   • Continuous learning improves predictions over time")
+    tprint(f"\n🎯 Key Insights:")
+    tprint(f"   • SR quality is now a quantifiable feature in trading models")
+    tprint(f"   • Models learn which SR levels work best in different market conditions")
+    tprint(f"   • Trading signals combine SR quality with market context")
+    tprint(f"   • System provides confidence scores for risk management")
+    tprint(f"   • Continuous learning improves predictions over time")
 
 if __name__ == "__main__":
     try:
@@ -435,5 +437,5 @@ if __name__ == "__main__":
         logger.error(f"❌ Demo failed: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
-        print(f"❌ Demo failed: {e}")
+        tprint(f"❌ Demo failed: {e}")
         traceback.print_exc()

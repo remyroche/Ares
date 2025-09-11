@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Any
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
@@ -421,35 +423,35 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
 
 async def main() -> None:
     """Main function to run enhanced step 3."""
-    print('🚀 Enhanced Step 3: HMM Regime Discovery with All Improvements')
-    print('=' * 80)
+    tprint('🚀 Enhanced Step 3: HMM Regime Discovery with All Improvements')
+    tprint('=' * 80)
     symbol = 'ETHUSDT'
     exchange = 'BINANCE'
     timeframe = '1m'
     data_dir = 'data_cache'
-    print(f'📊 Configuration:')
-    print(f'   Symbol: {symbol}')
-    print(f'   Exchange: {exchange}')
-    print(f'   Timeframe: {timeframe}')
-    print(f'   Data directory: {data_dir}')
-    print('=' * 80)
+    tprint(f'📊 Configuration:')
+    tprint(f'   Symbol: {symbol}')
+    tprint(f'   Exchange: {exchange}')
+    tprint(f'   Timeframe: {timeframe}')
+    tprint(f'   Data directory: {data_dir}')
+    tprint('=' * 80)
     success = await run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = True)
     if success:
-        print('\n🎉 ENHANCED STEP 3 COMPLETED SUCCESSFULLY!')
-        print('=' * 80)
-        print('✅ All improvements integrated:')
-        print('   ✅ Bayesian parameter optimization with Optuna')
-        print('   ✅ Enhanced regime discovery features')
-        print('   ✅ Economic significance validation')
-        print('   ✅ Ensemble clustering (HMM + K-means + DBSCAN)')
-        print('   ✅ Enhanced ML transition detection (Random Forest + LGBM)')
-        print('   ✅ Full MLflow integration and data persistence')
-        print('   ✅ Standardized pipeline integration')
-        print('=' * 80)
+        tprint('\n🎉 ENHANCED STEP 3 COMPLETED SUCCESSFULLY!')
+        tprint('=' * 80)
+        tprint('✅ All improvements integrated:')
+        tprint('   ✅ Bayesian parameter optimization with Optuna')
+        tprint('   ✅ Enhanced regime discovery features')
+        tprint('   ✅ Economic significance validation')
+        tprint('   ✅ Ensemble clustering (HMM + K-means + DBSCAN)')
+        tprint('   ✅ Enhanced ML transition detection (Random Forest + LGBM)')
+        tprint('   ✅ Full MLflow integration and data persistence')
+        tprint('   ✅ Standardized pipeline integration')
+        tprint('=' * 80)
     else:
-        print('\n❌ ENHANCED STEP 3 FAILED!')
-        print('=' * 80)
-        print('❌ Please check the logs for error details')
-        print('=' * 80)
+        tprint('\n❌ ENHANCED STEP 3 FAILED!')
+        tprint('=' * 80)
+        tprint('❌ Please check the logs for error details')
+        tprint('=' * 80)
 if __name__ == '__main__':
     asyncio.run(main())

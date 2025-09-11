@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 from .logger import system_logger
 """Comprehensive Report Collector for Ares Trading System.
 
@@ -47,7 +49,7 @@ class ReportCollector:
         self.current_run_dir = self.base_reports_dir / f"run_{self.run_timestamp}"
         
         self.logger.info(f"📁 Report collector initialized: {self.current_run_dir}")
-        print(f"📁 Report collector directory: {self.current_run_dir}")
+        tprint(f"📁 Report collector directory: {self.current_run_dir}")
     
     def get_run_directory(self) -> Path:
         """Get the current run directory path."""
@@ -117,7 +119,7 @@ class ReportCollector:
             })
             
             self.logger.info(f"📄 Collected report: {filename}")
-            print(f"📄 Collected report: {filename}")
+            tprint(f"📄 Collected report: {filename}")
             return report_path
             
         except Exception as e:
@@ -238,7 +240,7 @@ class ReportCollector:
             })
             
             self.logger.info(f"📋 Copied report: {filename}")
-            print(f"📋 Copied report: {filename}")
+            tprint(f"📋 Copied report: {filename}")
             return target_path
             
         except Exception as e:
@@ -310,7 +312,7 @@ class ReportCollector:
                 f.write('\n'.join(lines))
             
             self.logger.info(f"📊 Collection summary generated: {summary_path}")
-            print(f"📊 Collection summary generated: {summary_path}")
+            tprint(f"📊 Collection summary generated: {summary_path}")
             return summary_path
             
         except Exception as e:

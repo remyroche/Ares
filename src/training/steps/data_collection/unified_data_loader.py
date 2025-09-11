@@ -1,7 +1,8 @@
-from ...core.decorators import handles_errors
+from src.utils.tprint import tprint
+
+from ...core.decorators import handles_errors, traced
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-import src.utils.data_operations
 import numpy as np
 
 """Unified Data Loader for Step1_5 Data.
@@ -21,11 +22,11 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.file_operations import (
-    safe_read_parquet, 
-    list_parquet_files, 
-    safe_file_exists, 
-    validate_dataframe_schema, 
+from src.utils.common_operations import (
+    safe_read_parquet,
+    list_parquet_files,
+    safe_file_exists,
+    validate_dataframe_schema,
     safe_copy
 )
 
@@ -65,8 +66,10 @@ except ImportError:
     def validate_dataframe_schema(*args, **kwargs) -> bool:
         return True
 
-    def validate_file_size(*args, **kwargs) -> bool:
-        return True
+    def validate_file_size(*args, **kwargs) -> Callable:
+        def decorator(func: Callable) -> Callable:
+            return func
+        return decorator
 
     def guard_dataframe_nulls(*args, **kwargs) -> Any:
         return None
@@ -366,17 +369,17 @@ if __name__ == "__main__":
         
         # Get data info
         info = await loader.get_data_info("ETHUSDT", "BINANCE", "1m")
-        print(f"Data info: {info}")
+        tprint(f"Data info: {info}")
         
         # Load data
         data = await loader.load_unified_data("ETHUSDT", "BINANCE", "1m")
         if data is not None:
-            print(f"Loaded data shape: {data.shape}")
+            tprint(f"Loaded data shape: {data.shape}")
             
             # Validate quality
             quality = await loader.validate_data_quality(data)
-            print(f"Quality validation: {quality}")
+            tprint(f"Quality validation: {quality}")
         else:
-            print("Failed to load data")
+            tprint("Failed to load data")
 
     asyncio.run(main())

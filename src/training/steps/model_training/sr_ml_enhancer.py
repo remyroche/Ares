@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import List
 from typing import Dict
 from typing import Any
@@ -46,7 +48,7 @@ import time
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
-    print('Warning: scikit-learn not available, ML features disabled')
+    tprint('Warning: scikit-learn not available, ML features disabled')
 
 @dataclass
 class MLFeatureSet:
@@ -611,7 +613,7 @@ class SRMLEnhancer:
                 feature_selector = FeatureSelectionFramework(feature_selection_config)
                 
                 # Apply comprehensive feature selection
-                print("   🔍 Applying comprehensive feature selection...")
+                tprint("   🔍 Applying comprehensive feature selection...")
                 
                 # 1. Correlation-based filtering
                 correlation_results = feature_selector.correlation_based_filtering(
@@ -622,7 +624,7 @@ class SRMLEnhancer:
                 X_filtered = X[:, filtered_indices]
                 feature_names_filtered = filtered_features
                 
-                print(f"   📊 Correlation filtering: {len(filtered_features)} features retained from {len(feature_names)}")
+                tprint(f"   📊 Correlation filtering: {len(filtered_features)} features retained from {len(feature_names)}")
                 
                 # 2. mRMR selection for top features
                 if len(filtered_features) > 70:
@@ -637,14 +639,14 @@ class SRMLEnhancer:
                     X = X_filtered
                     final_feature_names = feature_names_filtered
                 
-                print(f"   📊 mRMR selection: {len(final_feature_names)} features selected")
+                tprint(f"   📊 mRMR selection: {len(final_feature_names)} features selected")
                 
                 # 3. Train model for SHAP/LIME explanations
                 rf_selector = RandomForestRegressor(n_estimators=100, random_state=42)
                 rf_selector.fit(X, y)
                 
                 # 4. Generate SHAP/LIME explanations
-                print("   🧠 Generating SHAP/LIME explanations...")
+                tprint("   🧠 Generating SHAP/LIME explanations...")
                 explainer_config = {
                     'enable_shap': True,
                     'enable_lime': True,
@@ -678,7 +680,7 @@ class SRMLEnhancer:
                 # Log explanations
                 model_explainer.log_explanations(explanation_results, "SR_Quality_Model")
                 
-                print(f"   ✅ Feature selection complete: {len(final_feature_names)} features with SHAP/LIME analysis")
+                tprint(f"   ✅ Feature selection complete: {len(final_feature_names)} features with SHAP/LIME analysis")
             X_scaled = self.feature_scaler.fit_transform(X)
             self.sr_quality_model.fit(X_scaled, y)
             if len(X) > 20:
@@ -722,7 +724,7 @@ class SRMLEnhancer:
                 feature_selector = FeatureSelectionFramework(feature_selection_config)
                 
                 # Apply comprehensive feature selection
-                print("   🔍 Applying feature selection for breakout prediction...")
+                tprint("   🔍 Applying feature selection for breakout prediction...")
                 
                 # 1. Correlation-based filtering
                 correlation_results = feature_selector.correlation_based_filtering(
@@ -751,7 +753,7 @@ class SRMLEnhancer:
                 rf_selector.fit(X, y_breakout)
                 
                 # 4. Generate SHAP/LIME explanations
-                print("   🧠 Generating SHAP/LIME explanations for breakout prediction...")
+                tprint("   🧠 Generating SHAP/LIME explanations for breakout prediction...")
                 explainer_config = {
                     'enable_shap': True,
                     'enable_lime': True,
@@ -785,7 +787,7 @@ class SRMLEnhancer:
                 # Log explanations
                 model_explainer.log_explanations(explanation_results, "Breakout_Prediction_Model")
                 
-                print(f"   ✅ Breakout model feature selection complete: {len(final_feature_names)} features with SHAP/LIME analysis")
+                tprint(f"   ✅ Breakout model feature selection complete: {len(final_feature_names)} features with SHAP/LIME analysis")
             
             self.breakout_prediction_model.fit(X, y_breakout)
             self.logger.info('✅ Breakout prediction model trained')

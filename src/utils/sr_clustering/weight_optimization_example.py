@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Example script demonstrating weight optimization for SR quality score parameters.
 
@@ -95,23 +97,23 @@ def create_sample_sr_levels() -> list:
 def demonstrate_weight_optimization():
     """Demonstrate weight optimization for SR quality scores."""
     logger.info("🚀 Starting SR Weight Optimization Demo")
-    print("🚀 SR Weight Optimization Demo")
-    print("=" * 50)
+    tprint("🚀 SR Weight Optimization Demo")
+    tprint("=" * 50)
     
     # Create sample data
     logger.info("📊 Creating sample market data and SR levels")
-    print("📊 Creating sample market data and SR levels...")
+    tprint("📊 Creating sample market data and SR levels...")
     market_data = create_sample_market_data(100)
     sr_levels = create_sample_sr_levels()
     
     logger.info(f"✅ Created {len(market_data)} days of market data")
     logger.info(f"✅ Created {len(sr_levels)} SR levels")
-    print(f"✅ Created {len(market_data)} days of market data")
-    print(f"✅ Created {len(sr_levels)} SR levels")
+    tprint(f"✅ Created {len(market_data)} days of market data")
+    tprint(f"✅ Created {len(sr_levels)} SR levels")
     
     # Initialize backtesting engine
     logger.info("🔧 Initializing backtesting engine")
-    print("\n🔧 Initializing backtesting engine...")
+    tprint("\n🔧 Initializing backtesting engine...")
     backtest_config = BacktestConfig(
         touch_tolerance=0.002,  # 0.2% tolerance
         min_touches=2,
@@ -127,14 +129,14 @@ def demonstrate_weight_optimization():
     
     # Run backtesting
     logger.info("📈 Running backtesting on SR levels")
-    print("\n📈 Running backtesting on SR levels...")
+    tprint("\n📈 Running backtesting on SR levels...")
     backtest_results = backtesting_engine.backtest_multiple_levels(sr_levels, market_data)
     
     logger.info(f"✅ Backtesting completed. Results: {len(backtest_results)}")
-    print(f"✅ Backtesting completed. Results: {len(backtest_results)}")
+    tprint(f"✅ Backtesting completed. Results: {len(backtest_results)}")
     for i, result in enumerate(backtest_results):
         logger.info(f"Level {i+1}: Quality Score = {result.quality_score:.3f}")
-        print(f"   Level {i+1}: Quality Score = {result.quality_score:.3f}")
+        tprint(f"   Level {i+1}: Quality Score = {result.quality_score:.3f}")
     
     # Test different optimization methods
     optimization_methods = ['scipy_minimize', 'grid_search']
@@ -142,7 +144,7 @@ def demonstrate_weight_optimization():
     
     for method in optimization_methods:
         logger.info(f"🎯 Testing {method} optimization")
-        print(f"\n🎯 Testing {method} optimization...")
+        tprint(f"\n🎯 Testing {method} optimization...")
         
         # Configure weight optimization
         weight_config = WeightOptimizationConfig(
@@ -164,17 +166,17 @@ def demonstrate_weight_optimization():
             best_weights = optimization_result.get('best_weights', {})
             
             logger.info(f"✅ {method} optimization successful! Best score: {best_score:.4f}")
-            print(f"✅ {method} optimization successful!")
-            print(f"   Best Score: {best_score:.4f}")
-            print(f"   Best Weights:")
+            tprint(f"✅ {method} optimization successful!")
+            tprint(f"   Best Score: {best_score:.4f}")
+            tprint(f"   Best Weights:")
             
             for feature, weight in best_weights.items():
                 logger.info(f"  {feature}: {weight:.3f}")
-                print(f"     {feature}: {weight:.3f}")
+                tprint(f"     {feature}: {weight:.3f}")
             
             # Validate weights
             logger.info("🔍 Validating optimized weights")
-            print(f"\n🔍 Validating optimized weights...")
+            tprint(f"\n🔍 Validating optimized weights...")
             validation_result = weight_optimizer.validate_weights(best_weights, backtest_results)
             
             if validation_result:
@@ -183,18 +185,18 @@ def demonstrate_weight_optimization():
                 correlation = validation_result.get('correlation', 0.0)
                 
                 logger.info(f"Validation results: R²={r2_score:.4f}, MSE={mse:.4f}, Correlation={correlation:.4f}")
-                print(f"   Validation R² Score: {r2_score:.4f}")
-                print(f"   Validation MSE: {mse:.4f}")
-                print(f"   Validation Correlation: {correlation:.4f}")
+                tprint(f"   Validation R² Score: {r2_score:.4f}")
+                tprint(f"   Validation MSE: {mse:.4f}")
+                tprint(f"   Validation Correlation: {correlation:.4f}")
             else:
                 logger.warning("Validation failed")
         else:
             logger.error(f"❌ {method} optimization failed")
-            print(f"❌ {method} optimization failed")
+            tprint(f"❌ {method} optimization failed")
     
     # Demonstrate integration with backtesting engine
     logger.info("🔗 Testing integration with backtesting engine")
-    print(f"\n🔗 Testing integration with backtesting engine...")
+    tprint(f"\n🔗 Testing integration with backtesting engine...")
     
     # Learn rules with weight optimization
     logger.info("Learning quality rules with weight optimization")
@@ -208,21 +210,21 @@ def demonstrate_weight_optimization():
         optimized_weights = learned_rules.get('optimized_weights', {})
         if optimized_weights:
             logger.info("✅ Weight optimization integrated successfully!")
-            print("✅ Weight optimization integrated successfully!")
-            print("   Optimized weights from backtesting engine:")
+            tprint("✅ Weight optimization integrated successfully!")
+            tprint("   Optimized weights from backtesting engine:")
             for feature, weight in optimized_weights.items():
                 logger.info(f"  {feature}: {weight:.3f}")
-                print(f"     {feature}: {weight:.3f}")
+                tprint(f"     {feature}: {weight:.3f}")
         else:
             logger.warning("⚠️ Weight optimization attempted but no weights available")
-            print("⚠️  Weight optimization attempted but no weights available")
+            tprint("⚠️  Weight optimization attempted but no weights available")
     else:
         logger.error("❌ Weight optimization integration failed")
-        print("❌ Weight optimization integration failed")
+        tprint("❌ Weight optimization integration failed")
     
     # Test clustering with optimized weights
     logger.info("🎯 Testing clustering with optimized weights")
-    print(f"\n🎯 Testing clustering with optimized weights...")
+    tprint(f"\n🎯 Testing clustering with optimized weights...")
     
     clustering_config = BacktestingEnhancedConfig(
         min_levels_for_learning=3,
@@ -258,21 +260,21 @@ def demonstrate_weight_optimization():
         algorithm_used = clustering_result.algorithm_used
         
         logger.info(f"✅ Clustering completed successfully! {num_clusters} clusters using {algorithm_used}")
-        print(f"✅ Clustering completed successfully!")
-        print(f"   Number of clusters: {num_clusters}")
-        print(f"   Algorithm used: {algorithm_used}")
+        tprint(f"✅ Clustering completed successfully!")
+        tprint(f"   Number of clusters: {num_clusters}")
+        tprint(f"   Algorithm used: {algorithm_used}")
         
         for i, cluster in enumerate(clustering_result.clusters):
             avg_quality = cluster.get('avg_quality', 0.0)
             logger.info(f"Cluster {i+1}: {len(cluster)} levels, avg quality: {avg_quality:.3f}")
-            print(f"   Cluster {i+1}: {len(cluster)} levels, avg quality: {avg_quality:.3f}")
+            tprint(f"   Cluster {i+1}: {len(cluster)} levels, avg quality: {avg_quality:.3f}")
     else:
         logger.error("❌ Clustering failed")
-        print("❌ Clustering failed")
+        tprint("❌ Clustering failed")
     
     logger.info("🎉 Weight optimization demo completed successfully!")
-    print(f"\n🎉 Weight optimization demo completed!")
-    print("=" * 50)
+    tprint(f"\n🎉 Weight optimization demo completed!")
+    tprint("=" * 50)
 
 if __name__ == "__main__":
     try:
@@ -283,5 +285,5 @@ if __name__ == "__main__":
         logger.error(f"❌ Demo failed: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
-        print(f"❌ Demo failed: {e}")
+        tprint(f"❌ Demo failed: {e}")
         traceback.print_exc()

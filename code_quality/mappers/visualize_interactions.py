@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Visualization Script for Code Interactions.
 
@@ -33,9 +35,9 @@ def visualize_code_interactions(analysis_results: Dict[str, Any], output_dir: st
     if output_dir is None:
         output_dir = "code_quality/visualizations"
     
-    print("CODE INTERACTION VISUALIZATION")
-    print("=" * 80)
-    print()
+    tprint("CODE INTERACTION VISUALIZATION")
+    tprint("=" * 80)
+    tprint()
     
     # Create visualizers
     dep_viz = DependencyGraphVisualizer(output_dir)
@@ -47,7 +49,7 @@ def visualize_code_interactions(analysis_results: Dict[str, Any], output_dir: st
     
     # 1. Dependency Visualizations
     if 'dependencies' in analysis_results:
-        print("[1/5] Creating dependency visualizations...")
+        tprint("[1/5] Creating dependency visualizations...")
         
         deps = analysis_results['dependencies'].get('modules', {})
         if deps:
@@ -71,11 +73,11 @@ def visualize_code_interactions(analysis_results: Dict[str, Any], output_dir: st
             files = dep_viz.save_figure(fig, "module_hierarchy")
             generated_files.extend(files)
             
-            print(f"  ✓ Generated {len(files)} dependency visualizations")
+            tprint(f"  ✓ Generated {len(files)} dependency visualizations")
     
     # 2. Complexity Visualizations
     if 'complexity' in analysis_results:
-        print("[2/5] Creating complexity visualizations...")
+        tprint("[2/5] Creating complexity visualizations...")
         
         complexity_data = analysis_results['complexity'].get('files', {})
         if complexity_data:
@@ -105,11 +107,11 @@ def visualize_code_interactions(analysis_results: Dict[str, Any], output_dir: st
             files = complexity_viz.save_figure(fig, "complexity_bubble_chart")
             generated_files.extend(files)
             
-            print(f"  ✓ Generated {len(files)} complexity visualizations")
+            tprint(f"  ✓ Generated {len(files)} complexity visualizations")
     
     # 3. Function Call Network
     if 'call_graph' in analysis_results:
-        print("[3/5] Creating function call network...")
+        tprint("[3/5] Creating function call network...")
         
         call_graph = analysis_results['call_graph'].get('functions', {})
         if call_graph:
@@ -129,11 +131,11 @@ def visualize_code_interactions(analysis_results: Dict[str, Any], output_dir: st
             )
             generated_files.append(html_file)
             
-            print(f"  ✓ Generated function call visualizations")
+            tprint(f"  ✓ Generated function call visualizations")
     
     # 4. Module Interactions
     if 'imports' in analysis_results:
-        print("[4/5] Creating module interaction visualizations...")
+        tprint("[4/5] Creating module interaction visualizations...")
         
         imports = analysis_results['imports'].get('files', {})
         interactions = {}
@@ -154,10 +156,10 @@ def visualize_code_interactions(analysis_results: Dict[str, Any], output_dir: st
             files = network_viz.save_figure(fig, "interaction_matrix")
             generated_files.extend(files)
             
-            print(f"  ✓ Generated module interaction visualizations")
+            tprint(f"  ✓ Generated module interaction visualizations")
     
     # 5. Interactive Dashboard
-    print("[5/5] Creating interactive dashboard...")
+    tprint("[5/5] Creating interactive dashboard...")
     
     dashboard_file = dashboard_gen.generate_quality_dashboard(
         analysis_results,
@@ -165,17 +167,17 @@ def visualize_code_interactions(analysis_results: Dict[str, Any], output_dir: st
     )
     generated_files.append(dashboard_file)
     
-    print(f"  ✓ Generated interactive dashboard")
+    tprint(f"  ✓ Generated interactive dashboard")
     
     # Summary
-    print()
-    print("=" * 80)
-    print("VISUALIZATION COMPLETE!")
-    print("=" * 80)
-    print()
-    print(f"Generated {len(generated_files)} visualization files:")
+    tprint()
+    tprint("=" * 80)
+    tprint("VISUALIZATION COMPLETE!")
+    tprint("=" * 80)
+    tprint()
+    tprint(f"Generated {len(generated_files)} visualization files:")
     for file in generated_files:
-        print(f"  - {file}")
+        tprint(f"  - {file}")
     
     return generated_files
 
@@ -262,7 +264,7 @@ def main():
     args = parser.parse_args()
     
     if args.sample:
-        print("Generating sample visualizations...")
+        tprint("Generating sample visualizations...")
         create_sample_visualizations()
     elif args.input:
         # Load analysis results
@@ -272,7 +274,7 @@ def main():
         
         visualize_code_interactions(analysis_results, args.output)
     else:
-        print("Error: Please provide either --input FILE or use --sample flag")
+        tprint("Error: Please provide either --input FILE or use --sample flag")
         parser.print_help()
         sys.exit(1)
 

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Optional, Union, Any, Tuple
 """
 Enhanced Dependency Injection System for Simplified ML Pipeline
@@ -313,10 +315,10 @@ class ConsoleLogger(ILogger):
     """Simple console logger implementation."""
 
     def info(self, message: str) -> None:
-        print(f'[INFO] {datetime.now()}: {message}')
+        tprint(f'[INFO] {datetime.now()}: {message}')
 
     def error(self, message: str) -> None:
-        print(f'[ERROR] {datetime.now()}: {message}')
+        tprint(f'[ERROR] {datetime.now()}: {message}')
 
 class FileLogger(ILogger):
     """File-based logger implementation."""

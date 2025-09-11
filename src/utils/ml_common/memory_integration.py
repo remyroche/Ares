@@ -14,6 +14,7 @@ Key Features:
 """
 
 import logging
+import time
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Callable, Union
@@ -21,7 +22,7 @@ from functools import wraps
 from contextlib import contextmanager
 
 # Import memory skimming utilities
-from ..m1_memory_optimizer import (
+from ..hardware.m1_memory_optimizer import (
     auto_skim_memory, smart_memory_allocation,
     memory_skim_decorator, auto_memory_skim_decorator,
     auto_memory_skim_context, smart_memory_context,

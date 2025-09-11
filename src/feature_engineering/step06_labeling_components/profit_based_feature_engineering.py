@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 import numpy as np
@@ -1046,13 +1048,13 @@ if __name__ == "__main__":
     
     # Get feature summary
     summary = feature_eng.get_feature_summary(result)
-    print(f"Generated {summary['total_features']} profit-based features")
+    tprint(f"Generated {summary['total_features']} profit-based features")
     
     # Select important features
     selected_features = feature_eng.select_features(result, method="correlation", threshold=0.01)
-    print(f"Selected {len(selected_features)} important features")
+    tprint(f"Selected {len(selected_features)} important features")
     
     # Benchmark performance
     benchmark_results = benchmark_profit_feature_engineering(data)
-    print(f"Performance benchmark: {benchmark_results}")
+    tprint(f"Performance benchmark: {benchmark_results}")
 #!/usr/bin/env python3

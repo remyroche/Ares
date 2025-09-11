@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 import pandas as pd
@@ -235,5 +237,5 @@ if __name__ == '__main__':
     async def test() -> None:
         """Test the per-regime labeling step."""
         success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
-        print(f'Per-regime labeling result: {success}')
+        tprint(f'Per-regime labeling result: {success}')
     asyncio.run(test())

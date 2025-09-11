@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 import numpy as np
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
@@ -591,17 +593,17 @@ class DataCollectionValidator:
         """Print a formatted validation report."""
         summary = self.get_validation_summary()
         
-        print("\n" + "="*80)
-        print("📊 DATA COLLECTION PIPELINE VALIDATION REPORT")
-        print("="*80)
-        print(f"Total Steps Validated: {summary['total_reports']}")
-        print(f"✅ Passed: {summary['passed']}")
-        print(f"❌ Failed: {summary['failed']}")
-        print(f"⚠️  Warnings: {summary['warnings']}")
-        print(f"Success Rate: {summary['success_rate']:.1%}")
-        print(f"Total Warnings: {summary['total_warnings']}")
-        print(f"Total Errors: {summary['total_errors']}")
-        print("="*80)
+        tprint("\n" + "="*80)
+        tprint("📊 DATA COLLECTION PIPELINE VALIDATION REPORT")
+        tprint("="*80)
+        tprint(f"Total Steps Validated: {summary['total_reports']}")
+        tprint(f"✅ Passed: {summary['passed']}")
+        tprint(f"❌ Failed: {summary['failed']}")
+        tprint(f"⚠️  Warnings: {summary['warnings']}")
+        tprint(f"Success Rate: {summary['success_rate']:.1%}")
+        tprint(f"Total Warnings: {summary['total_warnings']}")
+        tprint(f"Total Errors: {summary['total_errors']}")
+        tprint("="*80)
         
         for report in self.validation_reports:
             status_icon = {
@@ -611,22 +613,22 @@ class DataCollectionValidator:
                 ValidationResult.SKIPPED: "⏭️"
             }[report.result]
             
-            print(f"\n{status_icon} {report.step_name}")
-            print(f"   Result: {report.result.value}")
-            print(f"   Message: {report.message}")
-            print(f"   Execution Time: {report.execution_time:.3f}s")
+            tprint(f"\n{status_icon} {report.step_name}")
+            tprint(f"   Result: {report.result.value}")
+            tprint(f"   Message: {report.message}")
+            tprint(f"   Execution Time: {report.execution_time:.3f}s")
             
             if report.warnings:
-                print(f"   Warnings ({len(report.warnings)}):")
+                tprint(f"   Warnings ({len(report.warnings)}):")
                 for warning in report.warnings:
-                    print(f"     • {warning}")
+                    tprint(f"     • {warning}")
             
             if report.errors:
-                print(f"   Errors ({len(report.errors)}):")
+                tprint(f"   Errors ({len(report.errors)}):")
                 for error in report.errors:
-                    print(f"     • {error}")
+                    tprint(f"     • {error}")
         
-        print("="*80)
+        tprint("="*80)
 
 class PipelineStepValidator:
     """Validator for individual pipeline steps with comprehensive checks."""

@@ -94,6 +94,156 @@ def safe_percentage_change(old_value: float, new_value: float) -> float:
     except Exception:
         return 0.0
 
+def safe_correlation(x: np.ndarray, y: np.ndarray, default: float = 0.0) -> float:
+    """Safely calculate correlation coefficient between two arrays."""
+    try:
+        if x is None or y is None:
+            return default
+        if len(x) != len(y):
+            return default
+        if len(x) <= 1:
+            return default
+
+        # Remove NaN and infinite values
+        valid_mask = np.isfinite(x) & np.isfinite(y)
+        if not np.any(valid_mask):
+            return default
+
+        x_clean = x[valid_mask]
+        y_clean = y[valid_mask]
+
+        if len(x_clean) <= 1:
+            return default
+
+        # Calculate correlation coefficient
+        corr_matrix = np.corrcoef(x_clean, y_clean)
+        if corr_matrix.shape != (2, 2):
+            return default
+
+        corr = corr_matrix[0, 1]
+
+        # Ensure result is valid
+        if not np.isfinite(corr):
+            return default
+
+        return corr
+
+    except Exception:
+        return default
+
+def safe_covariance(x: np.ndarray, y: np.ndarray, default: float = 0.0) -> float:
+    """Safely calculate covariance between two arrays."""
+    try:
+        if x is None or y is None:
+            return default
+        if len(x) != len(y):
+            return default
+        if len(x) <= 1:
+            return default
+
+        # Remove NaN and infinite values
+        valid_mask = np.isfinite(x) & np.isfinite(y)
+        if not np.any(valid_mask):
+            return default
+
+        x_clean = x[valid_mask]
+        y_clean = y[valid_mask]
+
+        if len(x_clean) <= 1:
+            return default
+
+        # Calculate covariance
+        cov = np.cov(x_clean, y_clean)[0, 1]
+
+        # Ensure result is valid
+        if not np.isfinite(cov):
+            return default
+
+        return cov
+
+    except Exception:
+        return default
+
+def safe_mean(x: np.ndarray, default: float = 0.0) -> float:
+    """Safely calculate mean of array."""
+    try:
+        if x is None or len(x) == 0:
+            return default
+
+        # Remove NaN and infinite values
+        valid_mask = np.isfinite(x)
+        if not np.any(valid_mask):
+            return default
+
+        x_clean = x[valid_mask]
+        if len(x_clean) == 0:
+            return default
+
+        mean_val = np.mean(x_clean)
+
+        # Ensure result is valid
+        if not np.isfinite(mean_val):
+            return default
+
+        return mean_val
+
+    except Exception:
+        return default
+
+def safe_std(x: np.ndarray, default: float = 0.0) -> float:
+    """Safely calculate standard deviation of array."""
+    try:
+        if x is None or len(x) <= 1:
+            return default
+
+        # Remove NaN and infinite values
+        valid_mask = np.isfinite(x)
+        if not np.any(valid_mask):
+            return default
+
+        x_clean = x[valid_mask]
+        if len(x_clean) <= 1:
+            return default
+
+        std_val = np.std(x_clean, ddof=1)  # Use ddof=1 for sample standard deviation
+
+        # Ensure result is valid
+        if not np.isfinite(std_val):
+            return default
+
+        return std_val
+
+    except Exception:
+        return default
+
+def safe_percentile(x: np.ndarray, percentile: float = 50.0, default: float = 0.0) -> float:
+    """Safely calculate percentile of array."""
+    try:
+        if x is None or len(x) == 0:
+            return default
+        if not (0 <= percentile <= 100):
+            return default
+
+        # Remove NaN and infinite values
+        valid_mask = np.isfinite(x)
+        if not np.any(valid_mask):
+            return default
+
+        x_clean = x[valid_mask]
+        if len(x_clean) == 0:
+            return default
+
+        percentile_val = np.percentile(x_clean, percentile)
+
+        # Ensure result is valid
+        if not np.isfinite(percentile_val):
+            return default
+
+        return percentile_val
+
+    except Exception:
+        return default
+
 def validate_correlation_matrix(corr_matrix: np.ndarray) -> bool:
     """Validate correlation matrix."""
     try:
@@ -124,6 +274,41 @@ def math_safe(func: Callable, *args, default: Any = 0.0, **kwargs) -> Any:
         return func(*args, **kwargs)
     except Exception:
         return default
+
+class MathValidation:
+    """Math validation wrapper class for safe mathematical operations."""
+
+    def __init__(self):
+        """Initialize math validation."""
+        pass
+
+    def validate_finite(self, value: Any, name: str = "value") -> float:
+        """Validate that a value is finite."""
+        return validate_finite(value, name)
+
+    def validate_positive(self, value: float, name: str = "value") -> float:
+        """Validate that a value is positive."""
+        return validate_positive(value, name)
+
+    def validate_range(self, value: float, min_val: float = None, max_val: float = None, name: str = "value") -> float:
+        """Validate that a value is in range."""
+        return validate_range(value, min_val, max_val, name)
+
+    def safe_divide(self, a: float, b: float, default: float = 0.0) -> float:
+        """Safely divide two numbers."""
+        return safe_divide(a, b, default)
+
+    def safe_log(self, x: float, default: float = 0.0) -> float:
+        """Safely calculate logarithm."""
+        return safe_log(x, default)
+
+    def safe_sqrt(self, x: float, default: float = 0.0) -> float:
+        """Safely calculate square root."""
+        return safe_sqrt(x, default)
+
+    def safe_power(self, x: float, y: float, default: float = 0.0) -> float:
+        """Safely calculate power."""
+        return safe_power(x, y, default)
 
 class MathValidationError(Exception):
     """Exception raised for math validation errors."""

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Advanced AST Analyzer - Deep Python code structure analysis, pattern detection, and quality insights.
 """
@@ -618,7 +620,7 @@ class AdvancedASTAnalyzer:
             Dictionary containing analysis results
         """
         python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
-        print(f"Performing advanced AST analysis on {len(python_files)} Python files...")
+        tprint(f"Performing advanced AST analysis on {len(python_files)} Python files...")
 
         # Clear previous results
         self.ast_patterns.clear()

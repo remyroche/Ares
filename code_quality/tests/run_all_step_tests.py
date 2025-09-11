@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """Run all unit tests for training pipeline steps 1-7.
 
 This script discovers and runs all test files for the training pipeline steps.
@@ -35,15 +37,15 @@ def run_all_tests():
     # Create test suite
     suite = unittest.TestSuite()
 
-    print("=" * 80)
-    print("Running Unit Tests for Training Pipeline Steps 1-7")
-    print("=" * 80)
+    tprint("=" * 80)
+    tprint("Running Unit Tests for Training Pipeline Steps 1-7")
+    tprint("=" * 80)
 
     # Load tests from each file
     for test_file in test_files:
         test_path = tests_dir / test_file
         if test_path.exists():
-            print(f"\n📁 Loading tests from {test_file}...")
+            tprint(f"\n📁 Loading tests from {test_file}...")
             try:
                 # Import the test module
                 module_name = test_file[:-3]  # Remove .py extension
@@ -55,17 +57,17 @@ def run_all_tests():
 
                 # Count tests
                 test_count = module_tests.countTestCases()
-                print(f"   ✅ Loaded {test_count} tests from {test_file}")
+                tprint(f"   ✅ Loaded {test_count} tests from {test_file}")
 
             except Exception as e:
-                print(f"   ❌ Error loading tests from {test_file}: {e}")
+                tprint(f"   ❌ Error loading tests from {test_file}: {e}")
         else:
-            print(f"   ⚠️  Test file not found: {test_file}")
+            tprint(f"   ⚠️  Test file not found: {test_file}")
 
     # Run the tests
-    print("\n" + "=" * 80)
-    print("Running Tests...")
-    print("=" * 80 + "\n")
+    tprint("\n" + "=" * 80)
+    tprint("Running Tests...")
+    tprint("=" * 80 + "\n")
 
     # Create test runner with verbosity
     runner = unittest.TextTestRunner(verbosity=2)
@@ -74,23 +76,23 @@ def run_all_tests():
     result = runner.run(suite)
 
     # Print summary
-    print("\n" + "=" * 80)
-    print("Test Summary")
-    print("=" * 80)
-    print(f"Total tests run: {result.testsRun}")
-    print(f"Successes: {result.testsRun - len(result.failures) - len(result.errors)}")
-    print(f"Failures: {len(result.failures)}")
-    print(f"Errors: {len(result.errors)}")
+    tprint("\n" + "=" * 80)
+    tprint("Test Summary")
+    tprint("=" * 80)
+    tprint(f"Total tests run: {result.testsRun}")
+    tprint(f"Successes: {result.testsRun - len(result.failures) - len(result.errors)}")
+    tprint(f"Failures: {len(result.failures)}")
+    tprint(f"Errors: {len(result.errors)}")
 
     if result.failures:
-        print("\n❌ Failed Tests:")
+        tprint("\n❌ Failed Tests:")
         for test, traceback in result.failures:
-            print(f"  - {test}: {traceback.split(chr(10))[0]}")
+            tprint(f"  - {test}: {traceback.split(chr(10))[0]}")
 
     if result.errors:
-        print("\n💥 Test Errors:")
+        tprint("\n💥 Test Errors:")
         for test, traceback in result.errors:
-            print(f"  - {test}: {traceback.split(chr(10))[0]}")
+            tprint(f"  - {test}: {traceback.split(chr(10))[0]}")
 
     # Return success/failure
     return result.wasSuccessful()
@@ -109,7 +111,7 @@ def run_specific_step_tests(step_number):
     }
 
     if step_number not in test_file_map:
-        print(f"❌ Invalid step number: {step_number}. Must be between 1 and 7.")
+        tprint(f"❌ Invalid step number: {step_number}. Must be between 1 and 7.")
         return False
 
     test_file = test_file_map[step_number]
@@ -117,10 +119,10 @@ def run_specific_step_tests(step_number):
     test_path = tests_dir / test_file
 
     if not test_path.exists():
-        print(f"❌ Test file not found: {test_file}")
+        tprint(f"❌ Test file not found: {test_file}")
         return False
 
-    print(f"Running tests for Step {step_number} ({test_file})...")
+    tprint(f"Running tests for Step {step_number} ({test_file})...")
 
     # Create test loader and runner
     loader = unittest.TestLoader()
@@ -134,7 +136,7 @@ def run_specific_step_tests(step_number):
         result = runner.run(suite)
         return result.wasSuccessful()
     except Exception as e:
-        print(f"❌ Error running tests: {e}")
+        tprint(f"❌ Error running tests: {e}")
         return False
 
 
@@ -145,8 +147,8 @@ if __name__ == "__main__":
             step_num = int(sys.argv[1])
             success = run_specific_step_tests(step_num)
         except ValueError:
-            print("Usage: python run_all_step_tests.py [step_number]")
-            print("  step_number: Optional, 1-7 to run tests for specific step")
+            tprint("Usage: python run_all_step_tests.py [step_number]")
+            tprint("  step_number: Optional, 1-7 to run tests for specific step")
             success = False
     else:
         # Run all tests

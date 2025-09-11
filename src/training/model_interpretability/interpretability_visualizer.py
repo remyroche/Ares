@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
@@ -43,20 +45,20 @@ import typing
             self.matplotlib = matplotlib
             self.matplotlib_available = True
             self.logger.info("✅ Matplotlib available for visualization")
-            print("✅ Matplotlib available for visualization")
+            tprint("✅ Matplotlib available for visualization")
         except ImportError:
             self.logger.warning("⚠️ Matplotlib not available - install with: pip install matplotlib")
-            print("⚠️ Matplotlib not available - install with: pip install matplotlib")
+            tprint("⚠️ Matplotlib not available - install with: pip install matplotlib")
             self.matplotlib_available = False
         
         try:
             self.sns = sns
             self.seaborn_available = True
             self.logger.info("✅ Seaborn available for enhanced visualization")
-            print("✅ Seaborn available for enhanced visualization")
+            tprint("✅ Seaborn available for enhanced visualization")
         except ImportError:
             self.logger.warning("⚠️ Seaborn not available - install with: pip install seaborn")
-            print("⚠️ Seaborn not available - install with: pip install seaborn")
+            tprint("⚠️ Seaborn not available - install with: pip install seaborn")
             self.seaborn_available = False
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -74,7 +76,7 @@ import typing
             return {"error": "Matplotlib not available"}
         
         self.logger.info("🎨 Creating interpretability visualizations...")
-        print("🎨 Creating interpretability visualizations...")
+        tprint("🎨 Creating interpretability visualizations...")
         
         visualizations = {
             "plots_created": [],
@@ -89,7 +91,7 @@ import typing
             ensure_directory(output_dir)
             
             # 1. Feature Importance Comparison Plot
-            print("📊 Creating feature importance comparison plot...")
+            tprint("📊 Creating feature importance comparison plot...")
             self.logger.info("📊 Creating feature importance comparison plot...")
             
             importance_plot = await self._create_feature_importance_comparison_plot(results, output_dir)
@@ -98,7 +100,7 @@ import typing
                 visualizations["plots_created"].append(importance_plot)
             
             # 2. Top Features Summary Plot
-            print("📈 Creating top features summary plot...")
+            tprint("📈 Creating top features summary plot...")
             self.logger.info("📈 Creating top features summary plot...")
             
             summary_plot = await self._create_top_features_summary_plot(results, output_dir)
@@ -107,7 +109,7 @@ import typing
                 visualizations["plots_created"].append(summary_plot)
             
             # 3. Feature Importance Distribution Plot
-            print("📊 Creating feature importance distribution plot...")
+            tprint("📊 Creating feature importance distribution plot...")
             self.logger.info("📊 Creating feature importance distribution plot...")
             
             distribution_plot = await self._create_feature_importance_distribution_plot(results, output_dir)
@@ -117,7 +119,7 @@ import typing
             
             # 4. Model Comparison Plot (if multiple models)
             if "individual_results" in results:
-                print("📊 Creating model comparison plot...")
+                tprint("📊 Creating model comparison plot...")
                 self.logger.info("📊 Creating model comparison plot...")
                 
                 comparison_plot = await self._create_model_comparison_plot(results, output_dir)
@@ -126,7 +128,7 @@ import typing
                     visualizations["plots_created"].append(comparison_plot)
             
             # 5. Insights Summary Plot
-            print("💡 Creating insights summary plot...")
+            tprint("💡 Creating insights summary plot...")
             self.logger.info("💡 Creating insights summary plot...")
             
             insights_plot = await self._create_insights_summary_plot(results, output_dir)
@@ -134,14 +136,14 @@ import typing
                 visualizations["insight_plots"].append(insights_plot)
                 visualizations["plots_created"].append(insights_plot)
             
-            print(f"✅ Created {len(visualizations['plots_created'])} visualization plots")
+            tprint(f"✅ Created {len(visualizations['plots_created'])} visualization plots")
             self.logger.info(f"✅ Created {len(visualizations['plots_created'])} visualization plots")
             
             return visualizations
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create visualizations: {e}")
-            print(f"❌ Failed to create visualizations: {e}")
+            tprint(f"❌ Failed to create visualizations: {e}")
             return visualizations
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -226,14 +228,14 @@ import typing
             self.plt.savefig(plot_path, dpi = 300, bbox_inches='tight')
             self.plt.close()
             
-            print(f"✅ Feature importance comparison plot saved: {plot_path}")
+            tprint(f"✅ Feature importance comparison plot saved: {plot_path}")
             self.logger.info(f"✅ Feature importance comparison plot saved: {plot_path}")
             
             return plot_path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create feature importance comparison plot: {e}")
-            print(f"❌ Failed to create feature importance comparison plot: {e}")
+            tprint(f"❌ Failed to create feature importance comparison plot: {e}")
             return None
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -291,14 +293,14 @@ import typing
             self.plt.savefig(plot_path, dpi = 300, bbox_inches='tight')
             self.plt.close()
             
-            print(f"✅ Top features summary plot saved: {plot_path}")
+            tprint(f"✅ Top features summary plot saved: {plot_path}")
             self.logger.info(f"✅ Top features summary plot saved: {plot_path}")
             
             return plot_path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create top features summary plot: {e}")
-            print(f"❌ Failed to create top features summary plot: {e}")
+            tprint(f"❌ Failed to create top features summary plot: {e}")
             return None
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -354,14 +356,14 @@ import typing
             self.plt.savefig(plot_path, dpi = 300, bbox_inches='tight')
             self.plt.close()
             
-            print(f"✅ Feature importance distribution plot saved: {plot_path}")
+            tprint(f"✅ Feature importance distribution plot saved: {plot_path}")
             self.logger.info(f"✅ Feature importance distribution plot saved: {plot_path}")
             
             return plot_path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create feature importance distribution plot: {e}")
-            print(f"❌ Failed to create feature importance distribution plot: {e}")
+            tprint(f"❌ Failed to create feature importance distribution plot: {e}")
             return None
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -438,14 +440,14 @@ import typing
             self.plt.savefig(plot_path, dpi = 300, bbox_inches='tight')
             self.plt.close()
             
-            print(f"✅ Model comparison plot saved: {plot_path}")
+            tprint(f"✅ Model comparison plot saved: {plot_path}")
             self.logger.info(f"✅ Model comparison plot saved: {plot_path}")
             
             return plot_path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create model comparison plot: {e}")
-            print(f"❌ Failed to create model comparison plot: {e}")
+            tprint(f"❌ Failed to create model comparison plot: {e}")
             return None
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -504,12 +506,12 @@ import typing
             self.plt.savefig(plot_path, dpi = 300, bbox_inches='tight')
             self.plt.close()
             
-            print(f"✅ Insights summary plot saved: {plot_path}")
+            tprint(f"✅ Insights summary plot saved: {plot_path}")
             self.logger.info(f"✅ Insights summary plot saved: {plot_path}")
             
             return plot_path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create insights summary plot: {e}")
-            print(f"❌ Failed to create insights summary plot: {e}")
+            tprint(f"❌ Failed to create insights summary plot: {e}")
             return None

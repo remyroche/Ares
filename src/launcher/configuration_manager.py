@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Configuration Manager for Ares Launcher
 
@@ -106,26 +108,26 @@ class TrainingModeManager:
     
     def show_training_modes(self) -> bool:
         """Display available training modes and their configurations."""
-        print("=" * 80)
-        print("🎯 AVAILABLE TRAINING MODES")
-        print("=" * 80)
+        tprint("=" * 80)
+        tprint("🎯 AVAILABLE TRAINING MODES")
+        tprint("=" * 80)
         
         # Show intensity comparison table
-        print("\n📊 INTENSITY COMPARISON")
-        print("-" * 80)
+        tprint("\n📊 INTENSITY COMPARISON")
+        tprint("-" * 80)
         comparison = get_intensity_comparison()
         
         # Print header
-        print(f"{'Mode':<8} {'Intensity':<12} {'Max Trials':<12} {'N Trials':<10} {'Duration':<10} {'Lookback':<10}")
-        print("-" * 80)
+        tprint(f"{'Mode':<8} {'Intensity':<12} {'Max Trials':<12} {'N Trials':<10} {'Duration':<10} {'Lookback':<10}")
+        tprint("-" * 80)
         
         for mode, data in comparison.items():
             intensity_pct = f"{data['intensity_percentage']*100:.0f}%"
-            print(f"{mode:<8} {intensity_pct:<12} {data['max_trials']:<12} {data['n_trials']:<10} {data['estimated_duration_minutes']:<10}min {data['lookback_days']:<10}days")
+            tprint(f"{mode:<8} {intensity_pct:<12} {data['max_trials']:<12} {data['n_trials']:<10} {data['estimated_duration_minutes']:<10}min {data['lookback_days']:<10}days")
         
-        print("\n" + "=" * 80)
-        print("📋 DETAILED MODE CONFIGURATIONS")
-        print("=" * 80)
+        tprint("\n" + "=" * 80)
+        tprint("📋 DETAILED MODE CONFIGURATIONS")
+        tprint("=" * 80)
         
         modes = list_available_modes()
         recommendations = get_mode_recommendations()
@@ -136,34 +138,34 @@ class TrainingModeManager:
                 recommendation = recommendations.get(mode_name, "No specific recommendation available.")
                 intensity_pct = f"{get_intensity_percentage(mode_name)*100:.0f}%"
                 
-                print(f"\n📊 {mode_name.upper()} MODE ({intensity_pct} of full intensity)")
-                print(f"   Description: {description}")
-                print(f"   Lookback Days: {config.lookback_days}")
-                print(f"   Max Trials: {config.max_trials}")
-                print(f"   N Trials: {config.n_trials}")
-                print(f"   Exclude Recent Days: {config.exclude_recent_days}")
-                print(f"   Min Data Points: {config.min_data_points}")
-                print(f"   Computational Intensity: {config.computational_intensity}")
-                print(f"   Estimated Duration: {config.estimated_duration_minutes} minutes")
-                print(f"   Advanced Model Training: {'✅' if config.enable_advanced_model_training else '❌'}")
-                print(f"   Ensemble Training: {'✅' if config.enable_ensemble_training else '❌'}")
-                print(f"   Multi-timeframe Training: {'✅' if config.enable_multi_timeframe_training else '❌'}")
-                print(f"   Adaptive Training: {'✅' if config.enable_adaptive_training else '❌'}")
-                print(f"   Recommendation: {recommendation}")
+                tprint(f"\n📊 {mode_name.upper()} MODE ({intensity_pct} of full intensity)")
+                tprint(f"   Description: {description}")
+                tprint(f"   Lookback Days: {config.lookback_days}")
+                tprint(f"   Max Trials: {config.max_trials}")
+                tprint(f"   N Trials: {config.n_trials}")
+                tprint(f"   Exclude Recent Days: {config.exclude_recent_days}")
+                tprint(f"   Min Data Points: {config.min_data_points}")
+                tprint(f"   Computational Intensity: {config.computational_intensity}")
+                tprint(f"   Estimated Duration: {config.estimated_duration_minutes} minutes")
+                tprint(f"   Advanced Model Training: {'✅' if config.enable_advanced_model_training else '❌'}")
+                tprint(f"   Ensemble Training: {'✅' if config.enable_ensemble_training else '❌'}")
+                tprint(f"   Multi-timeframe Training: {'✅' if config.enable_multi_timeframe_training else '❌'}")
+                tprint(f"   Adaptive Training: {'✅' if config.enable_adaptive_training else '❌'}")
+                tprint(f"   Recommendation: {recommendation}")
                 
             except ValueError as e:
-                print(f"\n❌ Error loading {mode_name} mode: {e}")
+                tprint(f"\n❌ Error loading {mode_name} mode: {e}")
         
-        print("\n" + "=" * 80)
-        print("💡 USAGE EXAMPLES")
-        print("=" * 80)
-        print("  python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE")
-        print("  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE")
-        print("  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE")
-        print("  python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE --lookback-days 15")
-        print("  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --lookback-days 90")
-        print("  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --lookback-days 365")
-        print("=" * 80)
+        tprint("\n" + "=" * 80)
+        tprint("💡 USAGE EXAMPLES")
+        tprint("=" * 80)
+        tprint("  python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE")
+        tprint("  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE")
+        tprint("  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE")
+        tprint("  python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE --lookback-days 15")
+        tprint("  python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --lookback-days 90")
+        tprint("  python ares_launcher.py full --symbol ETHUSDT --exchange BINANCE --lookback-days 365")
+        tprint("=" * 80)
         
         return True
 

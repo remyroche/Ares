@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Simple import test for the refactored feature selection framework.
 """
@@ -10,12 +12,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def test_imports():
     """Test that all modules can be imported."""
-    print("🧪 Testing imports...")
+    tprint("🧪 Testing imports...")
     
     try:
         # Test importing the main framework
         from src.training.utils.feature_selection import FeatureSelectionFramework
-        print("✅ Successfully imported FeatureSelectionFramework")
+        tprint("✅ Successfully imported FeatureSelectionFramework")
         
         # Test importing individual components
         from src.training.utils.feature_selection import (
@@ -32,12 +34,12 @@ def test_imports():
             TemporalAnalyzer,
             CausalAnalyzer
         )
-        print("✅ Successfully imported all individual components")
+        tprint("✅ Successfully imported all individual components")
         
         # Test that the main class can be instantiated
         config = {'random_state': 42}
         framework = FeatureSelectionFramework(config)
-        print("✅ Successfully instantiated FeatureSelectionFramework")
+        tprint("✅ Successfully instantiated FeatureSelectionFramework")
         
         # Test that expected methods exist
         expected_methods = [
@@ -49,25 +51,25 @@ def test_imports():
         
         for method in expected_methods:
             if hasattr(framework, method):
-                print(f"✅ Method {method} exists")
+                tprint(f"✅ Method {method} exists")
             else:
-                print(f"❌ Method {method} missing")
+                tprint(f"❌ Method {method} missing")
                 return False
         
-        print("✅ All expected methods exist")
+        tprint("✅ All expected methods exist")
         return True
         
     except ImportError as e:
-        print(f"❌ Import failed: {e}")
+        tprint(f"❌ Import failed: {e}")
         return False
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        tprint(f"❌ Unexpected error: {e}")
         return False
 
 if __name__ == "__main__":
     success = test_imports()
     if success:
-        print("\n🎉 All imports successful! The refactoring is working correctly.")
+        tprint("\n🎉 All imports successful! The refactoring is working correctly.")
     else:
-        print("\n⚠️ Some imports failed. Please check the module structure.")
+        tprint("\n⚠️ Some imports failed. Please check the module structure.")
     sys.exit(0 if success else 1)

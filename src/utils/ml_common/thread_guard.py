@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Thread/BLAS clamping utilities to prevent CPU oversubscription and nested
 parallelism during CV and HPO. Safe for macOS (including Apple Silicon).
@@ -17,9 +19,9 @@ from typing import Iterator, Dict, Any, Optional
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.ThreadGuard")
-    print("✅ Custom logger available for MLCommon.ThreadGuard")
+    tprint("✅ Custom logger available for MLCommon.ThreadGuard")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.ThreadGuard")
     _LOGGER.setLevel(logging.INFO)
 
@@ -27,11 +29,11 @@ except Exception as e:
 try:
     from threadpoolctl import threadpool_limits
     THREADPOOLCTL_AVAILABLE = True
-    print("✅ threadpoolctl available for thread management")
+    tprint("✅ threadpoolctl available for thread management")
 except ImportError as e:
     THREADPOOLCTL_AVAILABLE = False
     threadpool_limits = None  # type: ignore
-    print(f"⚠️ threadpoolctl not available: {e}. Using environment variable fallback.")
+    tprint(f"⚠️ threadpoolctl not available: {e}. Using environment variable fallback.")
 
 # Setup logging
 logger = logging.getLogger(__name__)

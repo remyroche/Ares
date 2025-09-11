@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Linter analyzer module for running various Python linters and collecting error reports.
 """
@@ -64,7 +66,7 @@ class LinterAnalyzer:
             Dictionary containing analysis results
         """
         python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
-        print(f"Analyzing {len(python_files)} Python files with {len(self.config.analysis.linters)} linters...")
+        tprint(f"Analyzing {len(python_files)} Python files with {len(self.config.analysis.linters)} linters...")
 
         self.results.clear()
         self.linter_outputs.clear()
@@ -81,13 +83,13 @@ class LinterAnalyzer:
             elif linter == "pyflakes":
                 self._run_pyflakes(python_files)
             else:
-                print(f"Warning: Unknown linter '{linter}' configured.")
+                tprint(f"Warning: Unknown linter '{linter}' configured.")
 
         return self._generate_summary()
 
     def _run_flake8(self, files: list[str]) -> None:
         """Run flake8 linter."""
-        print("Running flake8...")
+        tprint("Running flake8...")
         try:
             cmd = [
                 sys.executable, "-m", "flake8",
@@ -123,19 +125,19 @@ class LinterAnalyzer:
                     }
 
                 except json.JSONDecodeError:
-                    print("Warning: Could not parse flake8 JSON output")
+                    tprint("Warning: Could not parse flake8 JSON output")
                     self.linter_outputs["flake8"] = {"status": "parse_error"}
             else:
-                print(f"flake8 failed: {result.stderr}")
+                tprint(f"flake8 failed: {result.stderr}")
                 self.linter_outputs["flake8"] = {"status": "failed", "error": result.stderr}
 
         except Exception as e:
-            print(f"Error running flake8: {e}")
+            tprint(f"Error running flake8: {e}")
             self.linter_outputs["flake8"] = {"status": "error", "error": str(e)}
 
     def _run_pylint(self, files: list[str]) -> None:
         """Run pylint linter."""
-        print("Running pylint...")
+        tprint("Running pylint...")
         try:
             cmd = [
                 sys.executable, "-m", "pylint",
@@ -172,19 +174,19 @@ class LinterAnalyzer:
                     }
 
                 except json.JSONDecodeError:
-                    print("Warning: Could not parse pylint JSON output")
+                    tprint("Warning: Could not parse pylint JSON output")
                     self.linter_outputs["pylint"] = {"status": "parse_error"}
             else:
-                print(f"pylint failed: {result.stderr}")
+                tprint(f"pylint failed: {result.stderr}")
                 self.linter_outputs["pylint"] = {"status": "failed", "error": result.stderr}
 
         except Exception as e:
-            print(f"Error running pylint: {e}")
+            tprint(f"Error running pylint: {e}")
             self.linter_outputs["pylint"] = {"status": "error", "error": str(e)}
 
     def _run_mypy(self, files: list[str]) -> None:
         """Run mypy type checker."""
-        print("Running mypy...")
+        tprint("Running mypy...")
         try:
             cmd = [
                 sys.executable, "-m", "mypy",
@@ -225,16 +227,16 @@ class LinterAnalyzer:
                     "issues_found": issues_found,
                 }
             else:
-                print(f"mypy failed: {result.stderr}")
+                tprint(f"mypy failed: {result.stderr}")
                 self.linter_outputs["mypy"] = {"status": "failed", "error": result.stderr}
 
         except Exception as e:
-            print(f"Error running mypy: {e}")
+            tprint(f"Error running mypy: {e}")
             self.linter_outputs["mypy"] = {"status": "error", "error": str(e)}
 
     def _run_pycodestyle(self, files: list[str]) -> None:
         """Run pycodestyle linter."""
-        print("Running pycodestyle...")
+        tprint("Running pycodestyle...")
         try:
             cmd = [
                 sys.executable, "-m", "pycodestyle",
@@ -270,19 +272,19 @@ class LinterAnalyzer:
                     }
 
                 except json.JSONDecodeError:
-                    print("Warning: Could not parse pycodestyle JSON output")
+                    tprint("Warning: Could not parse pycodestyle JSON output")
                     self.linter_outputs["pycodestyle"] = {"status": "parse_error"}
             else:
-                print(f"pycodestyle failed: {result.stderr}")
+                tprint(f"pycodestyle failed: {result.stderr}")
                 self.linter_outputs["pycodestyle"] = {"status": "failed", "error": result.stderr}
 
         except Exception as e:
-            print(f"Error running pycodestyle: {e}")
+            tprint(f"Error running pycodestyle: {e}")
             self.linter_outputs["pycodestyle"] = {"status": "error", "error": str(e)}
 
     def _run_pyflakes(self, files: list[str]) -> None:
         """Run pyflakes linter."""
-        print("Running pyflakes...")
+        tprint("Running pyflakes...")
         try:
             cmd = [
                 sys.executable, "-m", "pyflakes",
@@ -318,11 +320,11 @@ class LinterAnalyzer:
                     "issues_found": issues_found,
                 }
             else:
-                print(f"pyflakes failed: {result.stderr}")
+                tprint(f"pyflakes failed: {result.stderr}")
                 self.linter_outputs["pyflakes"] = {"status": "failed", "error": result.stderr}
 
         except Exception as e:
-            print(f"Error running pyflakes: {e}")
+            tprint(f"Error running pyflakes: {e}")
             self.linter_outputs["pyflakes"] = {"status": "error", "error": str(e)}
 
     def _generate_summary(self) -> dict[str, Any]:
@@ -400,29 +402,29 @@ def main():
     results = analyzer.analyze_directory(args.path)
 
     # Print summary
-    print("\n" + "="*50)
-    print("LINTER ANALYSIS SUMMARY")
-    print("="*50)
-    print(f"Total issues found: {results['total_issues']}")
-    print(f"Files with issues: {results['total_files_with_issues']}")
-    print(f"Errors: {results['total_errors']}")
-    print(f"Warnings: {results['total_warnings']}")
+    tprint("\n" + "="*50)
+    tprint("LINTER ANALYSIS SUMMARY")
+    tprint("="*50)
+    tprint(f"Total issues found: {results['total_issues']}")
+    tprint(f"Files with issues: {results['total_files_with_issues']}")
+    tprint(f"Errors: {results['total_errors']}")
+    tprint(f"Warnings: {results['total_warnings']}")
 
-    print("\nIssues by linter:")
+    tprint("\nIssues by linter:")
     for linter, count in results["by_linter"].items():
-        print(f"  {linter}: {count}")
+        tprint(f"  {linter}: {count}")
 
-    print("\nTop error types:")
+    tprint("\nTop error types:")
     sorted_errors = sorted(results["by_error_type"].items(), key=lambda x: x[1], reverse=True)
     for error_type, count in sorted_errors[:10]:
-        print(f"  {error_type}: {count}")
+        tprint(f"  {error_type}: {count}")
 
     # Save results if requested
     if args.output:
         import json
         with open(args.output, "w") as f:
             json.dump(results, f, indent=2)
-        print(f"\nResults saved to {args.output}")
+        tprint(f"\nResults saved to {args.output}")
 
 
 if __name__ == "__main__":

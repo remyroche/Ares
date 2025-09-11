@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import asyncio
 import os
 from celery import Celery
@@ -22,7 +24,7 @@ async def run_training():
         success = await training_manager.execute_training(training_input)
         return success
     except Exception as e:
-        print(f'Training execution failed: {e}')
+        tprint(f'Training execution failed: {e}')
         return False
 
 @app.task
@@ -41,7 +43,7 @@ def run_monthly_training_pipeline() -> None:
     """
     Celery task to run the monthly retraining and validation pipeline using TrainingManager.
     """
-    print('Celery Task: Kicking off monthly training pipeline...')
+    tprint('Celery Task: Kicking off monthly training pipeline...')
     try:
 
         async def run_training() -> None:
@@ -53,12 +55,12 @@ def run_monthly_training_pipeline() -> None:
             exchange_name = env_settings.exchange_name
             success = await training_manager.run_full_training(symbol, exchange_name)
             if success:
-                print(f'Monthly training pipeline completed successfully for {symbol}')
+                tprint(f'Monthly training pipeline completed successfully for {symbol}')
             else:
-                print(f'Monthly training pipeline failed for {symbol}')
+                tprint(f'Monthly training pipeline failed for {symbol}')
             await db_manager.close()
         await run_training()
     except Exception as e:
-        print(f'An unexpected error occurred while running the training pipeline task: {e}')
+        tprint(f'An unexpected error occurred while running the training pipeline task: {e}')
 app.conf.beat_schedule = {'run-monthly-training': {'task': 'src.tasks.run_monthly_training_pipeline', 'schedule': crontab(day_of_month='1', hour = 0, minute = 0)}}
 app.conf.timezone = 'UTC'

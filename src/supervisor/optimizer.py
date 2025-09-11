@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import pandas as pd
 # src/supervisor/optimizer.py
@@ -272,5 +274,5 @@ async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | N
             return optimizer
         return None
     except Exception as e:
-        print(f"Error setting up optimizer: {e}")
+        tprint(f"Error setting up optimizer: {e}")
         return None

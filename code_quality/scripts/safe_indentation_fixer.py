@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Safe Indentation Error Fixer
 
@@ -50,7 +52,7 @@ class SafeIndentationFixer:
                     results["failed_files"].append(str(file_path))
             except Exception as e:
                 results["failed_files"].append(str(file_path))
-                print(f"Error processing {file_path}: {e}")
+                tprint(f"Error processing {file_path}: {e}")
         
         return results
     
@@ -427,26 +429,26 @@ def main():
     fixer = SafeIndentationFixer(args.project_root)
     
     if args.dry_run:
-        print("DRY RUN MODE - No changes will be made")
+        tprint("DRY RUN MODE - No changes will be made")
         # In dry run mode, we would analyze but not fix
         # For now, just run normally but with extra logging
         results = fixer.fix_indentation_errors()
     else:
         results = fixer.fix_indentation_errors()
     
-    print(f"\nSafe Indentation Fixer Results:")
-    print(f"Total files processed: {results['total_files']}")
-    print(f"Files fixed: {len(results['fixed_files'])}")
-    print(f"Files failed: {len(results['failed_files'])}")
-    print(f"Files skipped: {len(results['skipped_files'])}")
-    print(f"Total changes made: {results['changes_made']}")
+    tprint(f"\nSafe Indentation Fixer Results:")
+    tprint(f"Total files processed: {results['total_files']}")
+    tprint(f"Files fixed: {len(results['fixed_files'])}")
+    tprint(f"Files failed: {len(results['failed_files'])}")
+    tprint(f"Files skipped: {len(results['skipped_files'])}")
+    tprint(f"Total changes made: {results['changes_made']}")
     
     if results['fixed_files']:
-        print(f"\nFixed files:")
+        tprint(f"\nFixed files:")
         for file_path in results['fixed_files'][:10]:  # Show first 10
-            print(f"  - {file_path}")
+            tprint(f"  - {file_path}")
         if len(results['fixed_files']) > 10:
-            print(f"  ... and {len(results['fixed_files']) - 10} more")
+            tprint(f"  ... and {len(results['fixed_files']) - 10} more")
 
 
 if __name__ == "__main__":

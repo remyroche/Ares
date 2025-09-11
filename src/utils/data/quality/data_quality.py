@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from enum import Enum
 
 # Import our custom utilities
-from ..logger import system_logger
+from src.utils.logger import system_logger
 
 logger = logging.getLogger(__name__)
 

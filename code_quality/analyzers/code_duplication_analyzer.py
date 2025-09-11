@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Code Duplication Analyzer - Detects duplicate code patterns and suggests refactoring opportunities.
 """
@@ -422,7 +424,7 @@ class CodeDuplicationAnalyzer:
             Dictionary containing analysis results
         """
         python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
-        print(f"Analyzing code duplication for {len(python_files)} Python files...")
+        tprint(f"Analyzing code duplication for {len(python_files)} Python files...")
 
         # Clear previous results
         self.duplication_blocks.clear()

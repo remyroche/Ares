@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Backwards Compatibility Module for Feature Selection Framework
 
@@ -20,13 +22,13 @@ try:
         stacklevel=2
     )
     
-    print("⚠️ DEPRECATION WARNING: feature_selection.py has been refactored.")
-    print("📁 New location: src/training/utils/feature_selection/")
-    print("✅ Backwards compatibility maintained.")
+    tprint("⚠️ DEPRECATION WARNING: feature_selection.py has been refactored.")
+    tprint("📁 New location: src/training/utils/feature_selection/")
+    tprint("✅ Backwards compatibility maintained.")
     
 except ImportError as e:
-    print(f"⚠️ Could not import new modular components: {e}")
-    print("🔄 Please ensure the new modules are available.")
+    tprint(f"⚠️ Could not import new modular components: {e}")
+    tprint("🔄 Please ensure the new modules are available.")
     raise
 
 # Re-export for backwards compatibility

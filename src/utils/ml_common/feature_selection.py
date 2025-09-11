@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Unified Feature Selection Framework
 
@@ -36,9 +38,9 @@ from ..math_validation import (
     safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile
 )
 from ..common_operations import create_fallback_logger, safe_dataframe_operation
-from ..m1_gpu_utils import M1GPUManager
+from ..hardware.m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
-from ..matrix_operations import (
+from .matrix_operations import (
     m1_correlation_matrix, m1_matrix_multiply, m1_batch_process,
     m1_parallel_operations, m1_optimize_memory, get_m1_performance_stats
 )
@@ -54,9 +56,9 @@ from .thresholding import AdaptiveThresholding
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.FeatureSelection")
-    print("✅ Custom logger available for MLCommon.FeatureSelection")
+    tprint("✅ Custom logger available for MLCommon.FeatureSelection")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.FeatureSelection")
     _LOGGER.setLevel(logging.INFO)
 
@@ -8513,8 +8515,8 @@ class FeatureSelectionFramework:
 
 # Comprehensive usage example demonstrating all optimizations
 if __name__ == "__main__":
-    print("🚀 Comprehensive Feature Selection Framework Example")
-    print("=" * 60)
+    tprint("🚀 Comprehensive Feature Selection Framework Example")
+    tprint("=" * 60)
     
     # Initialize framework with all optimizations
     config = {
@@ -8532,58 +8534,58 @@ if __name__ == "__main__":
     framework = FeatureSelectionFramework(config)
     
     # Check system requirements first
-    print("\n🔍 System Requirements Check:")
-    print("-" * 40)
+    tprint("\n🔍 System Requirements Check:")
+    tprint("-" * 40)
     requirements = framework.check_system_requirements()
     
     if requirements['production_ready']:
-        print("✅ System ready for production use")
+        tprint("✅ System ready for production use")
     else:
-        print("❌ System not ready for production")
+        tprint("❌ System not ready for production")
         for error in requirements['errors']:
-            print(f"   ❌ {error}")
+            tprint(f"   ❌ {error}")
     
     for warning in requirements['warnings']:
-        print(f"   ⚠️ {warning}")
+        tprint(f"   ⚠️ {warning}")
     
     # Display optimization capabilities
-    print("\n📊 Available Optimization Tools:")
-    print("-" * 40)
+    tprint("\n📊 Available Optimization Tools:")
+    tprint("-" * 40)
     optimization_stats = framework.get_optimization_stats()
     for tool, available in optimization_stats.items():
         if isinstance(available, bool):
             status = "✅" if available else "❌"
-            print(f"{status} {tool.replace('_', ' ').title()}")
+            tprint(f"{status} {tool.replace('_', ' ').title()}")
     
-    print("\n🔧 Safe Mathematical Operations:")
-    print("-" * 40)
+    tprint("\n🔧 Safe Mathematical Operations:")
+    tprint("-" * 40)
     safe_ops = ['safe_divide', 'safe_log', 'safe_sqrt', 'safe_power', 
                 'safe_correlation', 'safe_covariance', 'safe_mean', 'safe_std']
     for op in safe_ops:
         if hasattr(framework, op):
-            print(f"✅ {op}")
+            tprint(f"✅ {op}")
         else:
-            print(f"❌ {op}")
+            tprint(f"❌ {op}")
     
-    print("\n💾 Caching and Memory Optimization:")
-    print("-" * 40)
-    print(f"✅ Shared Cache: {framework.shared_cache is not None}")
-    print(f"✅ Memory Optimizer: {framework.memory_optimizer is not None}")
-    print(f"✅ Memory Processor: {framework.memory_processor is not None}")
+    tprint("\n💾 Caching and Memory Optimization:")
+    tprint("-" * 40)
+    tprint(f"✅ Shared Cache: {framework.shared_cache is not None}")
+    tprint(f"✅ Memory Optimizer: {framework.memory_optimizer is not None}")
+    tprint(f"✅ Memory Processor: {framework.memory_processor is not None}")
     
-    print("\n📈 Performance and Stability:")
-    print("-" * 40)
-    print(f"✅ Performance Monitor: {framework.performance_monitor is not None}")
-    print(f"✅ Stability Analyzer: {framework.stability_analyzer is not None}")
-    print(f"✅ Adaptive Thresholding: {framework.adaptive_thresholding is not None}")
+    tprint("\n📈 Performance and Stability:")
+    tprint("-" * 40)
+    tprint(f"✅ Performance Monitor: {framework.performance_monitor is not None}")
+    tprint(f"✅ Stability Analyzer: {framework.stability_analyzer is not None}")
+    tprint(f"✅ Adaptive Thresholding: {framework.adaptive_thresholding is not None}")
     
-    print("\n🚀 GPU and Parallel Processing:")
-    print("-" * 40)
-    print(f"✅ GPU Manager: {framework.gpu_manager is not None}")
-    print(f"✅ Parallel Processor: {framework.parallel_processor is not None}")
+    tprint("\n🚀 GPU and Parallel Processing:")
+    tprint("-" * 40)
+    tprint(f"✅ GPU Manager: {framework.gpu_manager is not None}")
+    tprint(f"✅ Parallel Processor: {framework.parallel_processor is not None}")
     
-    print("\n🎯 Enhanced Methods Available:")
-    print("-" * 40)
+    tprint("\n🎯 Enhanced Methods Available:")
+    tprint("-" * 40)
     enhanced_methods = [
         'correlation_based_filtering',
         'mrmr_selection',
@@ -8597,14 +8599,14 @@ if __name__ == "__main__":
     
     for method in enhanced_methods:
         if hasattr(framework, method):
-            print(f"✅ {method}")
+            tprint(f"✅ {method}")
         else:
-            print(f"❌ {method}")
+            tprint(f"❌ {method}")
     
     # Test enhanced error handling
-    print("\n" + "=" * 60)
-    print("🧪 TESTING ENHANCED ERROR HANDLING")
-    print("=" * 60)
+    tprint("\n" + "=" * 60)
+    tprint("🧪 TESTING ENHANCED ERROR HANDLING")
+    tprint("=" * 60)
     
     # Test with invalid data to trigger error handling
     try:
@@ -8613,24 +8615,24 @@ if __name__ == "__main__":
         y_test = np.array([1, 2, 3])
         feature_names_test = ['feature_1', 'feature_2', 'feature_3']
         
-        print("Testing with constant features (should trigger warnings)...")
+        tprint("Testing with constant features (should trigger warnings)...")
         result = framework.run_comprehensive_feature_selection(
             X_test, y_test, feature_names_test, target_count=2
         )
         
         if 'error_context' in result:
-            print("✅ Error context captured successfully")
-            print(f"Data quality issues: {len(result['error_context'].get('data_quality_issues', []))}")
-            print(f"Data quality warnings: {len(result['error_context'].get('data_quality_warnings', []))}")
-            print(f"Suspicious features: {len(result['error_context'].get('suspicious_features', []))}")
+            tprint("✅ Error context captured successfully")
+            tprint(f"Data quality issues: {len(result['error_context'].get('data_quality_issues', []))}")
+            tprint(f"Data quality warnings: {len(result['error_context'].get('data_quality_warnings', []))}")
+            tprint(f"Suspicious features: {len(result['error_context'].get('suspicious_features', []))}")
         else:
-            print("✅ Feature selection completed successfully")
+            tprint("✅ Feature selection completed successfully")
             
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        tprint(f"❌ Test failed: {e}")
     
-    print("\n" + "=" * 60)
-    print("🎉 FeatureSelectionFramework with comprehensive optimizations ready!")
-    print("💡 Use framework.run_comprehensive_feature_selection() for full optimization")
-    print("🔧 All methods automatically enhanced with performance monitoring, caching, and memory optimization")
-    print("🚨 Enhanced error handling with detailed context and suspicious feature detection")
+    tprint("\n" + "=" * 60)
+    tprint("🎉 FeatureSelectionFramework with comprehensive optimizations ready!")
+    tprint("💡 Use framework.run_comprehensive_feature_selection() for full optimization")
+    tprint("🔧 All methods automatically enhanced with performance monitoring, caching, and memory optimization")
+    tprint("🚨 Enhanced error handling with detailed context and suspicious feature detection")

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 # src/analyst/advanced_feature_engineering.py
 
 import numpy as np
@@ -1138,7 +1140,7 @@ class FeatureInteractionEngine:
 
     def print_message(self, message: str) -> None:
         """Print message with proper formatting."""
-        print(message)
+        tprint(message)
 
 
 class AdvancedFeatureEngineering:

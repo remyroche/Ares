@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Script to detect and analyze circular imports in the codebase.
 """
@@ -52,13 +54,13 @@ class ImportAnalyzer:
                             imports.add(base)
 
         except Exception as e:
-            print(f"Error analyzing {file_path}: {e}")
+            tprint(f"Error analyzing {file_path}: {e}")
 
         return imports
 
     def build_import_graph(self):
         """Build the import dependency graph."""
-        print("Building import graph...")
+        tprint("Building import graph...")
 
         # Find all Python files
         python_files = list(self.project_root.rglob("*.py"))
@@ -322,41 +324,41 @@ def main():
 
     args = parser.parse_args()
 
-    print("Analyzing circular imports...")
-    print("=" * 60)
+    tprint("Analyzing circular imports...")
+    tprint("=" * 60)
 
     analyzer = ImportAnalyzer(args.project_root)
     report = analyzer.generate_report()
 
     # Print summary
-    print(f"\nTotal modules analyzed: {report['total_modules']}")
-    print(f"Total import relationships: {report['total_imports']}")
-    print(f"Circular imports found: {report['circular_imports']['count']}")
+    tprint(f"\nTotal modules analyzed: {report['total_modules']}")
+    tprint(f"Total import relationships: {report['total_imports']}")
+    tprint(f"Circular imports found: {report['circular_imports']['count']}")
 
     if report["circular_imports"]["cycles"]:
-        print("\nCircular import cycles:")
+        tprint("\nCircular import cycles:")
         for i, cycle in enumerate(report["circular_imports"]["cycles"][:5], 1):
-            print(f"\n{i}. Cycle of length {cycle['length']}:")
+            tprint(f"\n{i}. Cycle of length {cycle['length']}:")
             for j, module in enumerate(cycle["modules"]):
                 if j < len(cycle["modules"]) - 1:
-                    print(f"   {module} → {cycle['modules'][j+1]}")
+                    tprint(f"   {module} → {cycle['modules'][j+1]}")
                 else:
-                    print(f"   {module} → {cycle['modules'][0]}")
+                    tprint(f"   {module} → {cycle['modules'][0]}")
 
     # Get suggestions
     suggestions = analyzer.suggest_fixes()
     if suggestions:
-        print("\nSuggested fixes:")
+        tprint("\nSuggested fixes:")
         for i, sugg in enumerate(suggestions[:3], 1):
-            print(f"\n{i}. For cycle: {' → '.join(sugg['cycle'][:3])}...")
+            tprint(f"\n{i}. For cycle: {' → '.join(sugg['cycle'][:3])}...")
             for fix in sugg["suggestions"]:
-                print(f"   - {fix}")
+                tprint(f"   - {fix}")
 
     # Save full report
     with open(args.output, "w") as f:
         json.dump(report, f, indent=2)
 
-    print(f"\nFull report saved to: {args.output}")
+    tprint(f"\nFull report saved to: {args.output}")
 
 
 if __name__ == "__main__":

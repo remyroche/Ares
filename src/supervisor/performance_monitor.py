@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from logging import error
 from src.utils.logger import system_logger
@@ -99,14 +101,14 @@ class PerformanceMonitor:
             self.logger.info("Initializing Performance Monitor...")
             await self._load_monitor_configuration()
             if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for performance monitor"))
+                self.tprint(invalid("Invalid configuration for performance monitor"))
                 return False
             self.logger.info(
                 "✅ Performance Monitor initialization completed successfully",
             )
             return True
         except (ValueError, AttributeError, KeyError) as e:
-            self.print(
+            self.tprint(
                 failed(
                     f"❌ Performance Monitor initialization failed: {type(e).__name__}: {e}"
                 )
@@ -114,7 +116,7 @@ class PerformanceMonitor:
             return False
         except Exception as e:
             self.logger.exception("Unexpected error during initialization")
-            self.print(
+            self.tprint(
                 failed(
                     f"❌ Performance Monitor initialization failed with unexpected error: {e}"
                 )
@@ -137,10 +139,10 @@ class PerformanceMonitor:
             self.logger.warning("Monitor configuration file not found, using defaults")
             self.monitor_config = {"monitor_interval": 60, "max_history": 100}
         except (json.JSONDecodeError, yaml.YAMLError) as e:
-            self.print(error(f"Error parsing monitor configuration: {e}"))
+            self.tprint(error(f"Error parsing monitor configuration: {e}"))
             self.monitor_config = {"monitor_interval": 60, "max_history": 100}
         except Exception as e:
-            self.print(error(f"Unexpected error loading monitor configuration: {e}"))
+            self.tprint(error(f"Unexpected error loading monitor configuration: {e}"))
             self.monitor_config = {"monitor_interval": 60, "max_history": 100}
 
     @handles_errors(
@@ -151,15 +153,15 @@ class PerformanceMonitor:
     def _validate_configuration(self) -> bool:
         try:
             if self.monitor_interval <= 0:
-                self.print(invalid("Invalid monitor interval"))
+                self.tprint(invalid("Invalid monitor interval"))
                 return False
             if self.max_history <= 0:
-                self.print(invalid("Invalid max history"))
+                self.tprint(invalid("Invalid max history"))
                 return False
             self.logger.info("Configuration validation successful")
             return True
         except Exception:
-            self.print(error("Error validating configuration: {e}"))
+            self.tprint(error("Error validating configuration: {e}"))
             return False
 
     @handle_specific_errors(
@@ -178,7 +180,7 @@ class PerformanceMonitor:
                 await asyncio.sleep(self.monitor_interval)
             return True
         except Exception:
-            self.print(error("Error in performance monitor run: {e}"))
+            self.tprint(error("Error in performance monitor run: {e}"))
             self.is_running = False
             return False
 
@@ -198,7 +200,7 @@ class PerformanceMonitor:
             await self._check_performance_alerts()
             self.logger.info(f"Performance monitoring tick at {now}")
         except Exception:
-            self.print(error("Error in performance monitoring step: {e}"))
+            self.tprint(error("Error in performance monitoring step: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -218,7 +220,7 @@ class PerformanceMonitor:
             self.performance_metrics.update(metrics)
             self.logger.info("Performance metrics collected successfully")
         except Exception:
-            self.print(error("Error collecting performance metrics: {e}"))
+            self.tprint(error("Error collecting performance metrics: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -235,7 +237,7 @@ class PerformanceMonitor:
                     "message": "Maximum drawdown exceeded threshold",
                 }
                 self.alerts.append(alert)
-                self.print(warning("Performance alert: Maximum drawdown exceeded"))
+                self.tprint(warning("Performance alert: Maximum drawdown exceeded"))
 
             if self.performance_metrics.get("sharpe_ratio", 0) < 1.0:
                 alert = {
@@ -244,11 +246,11 @@ class PerformanceMonitor:
                     "message": "Sharpe ratio below threshold",
                 }
                 self.alerts.append(alert)
-                self.print(warning("Performance alert: Sharpe ratio below threshold"))
+                self.tprint(warning("Performance alert: Sharpe ratio below threshold"))
 
             self.logger.info("Performance alerts checked successfully")
         except Exception:
-            self.print(error("Error checking performance alerts: {e}"))
+            self.tprint(error("Error checking performance alerts: {e}"))
 
     @handles_errors(
         exceptions=(Exception,),
@@ -262,7 +264,7 @@ class PerformanceMonitor:
             self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
             self.logger.info("✅ Performance Monitor stopped successfully")
         except Exception:
-            self.print(error("Error stopping performance monitor: {e}"))
+            self.tprint(error("Error stopping performance monitor: {e}"))
 
     def get_status(self) -> dict[str, Any]:
         return self.status.copy()
@@ -374,7 +376,7 @@ class PerformanceMonitor:
                             f"Distribution shift (KS p-value: {p_value:.4f})",
                         )
             except ImportError:
-                self.print(warning("scipy not available for KS test"))
+                self.tprint(warning("scipy not available for KS test"))
 
             # Create drift alert if detected
             if drift_detected:
@@ -852,5 +854,5 @@ async def setup_performance_monitor(
             return performance_monitor
         return None
     except Exception as e:
-        print(f"Error setting up performance monitor: {e}")
+        tprint(f"Error setting up performance monitor: {e}")
         return None

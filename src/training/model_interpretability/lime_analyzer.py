@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
@@ -40,10 +42,10 @@ class LIMEAnalyzer:
             self.lime_tabular = lime.lime_tabular
             self.lime_available = True
             self.logger.info("✅ LIME library available and initialized")
-            print("✅ LIME library available and initialized")
+            tprint("✅ LIME library available and initialized")
         except ImportError:
             self.logger.warning("⚠️ LIME library not available - install with: pip install lime")
-            print("⚠️ LIME library not available - install with: pip install lime")
+            tprint("⚠️ LIME library not available - install with: pip install lime")
             self.lime_available = False
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -64,7 +66,7 @@ class LIMEAnalyzer:
             return {"error": "LIME library not available"}
         
         self.logger.info(f"🔍 Starting LIME analysis for {model_name}")
-        print(f"🔍 Starting LIME analysis for {model_name}")
+        tprint(f"🔍 Starting LIME analysis for {model_name}")
         
         results = {
             "model_name": model_name,
@@ -82,7 +84,7 @@ class LIMEAnalyzer:
             ensure_directory(output_dir)
             
             # Step 1: Create LIME explainer
-            print("🔧 Creating LIME explainer...")
+            tprint("🔧 Creating LIME explainer...")
             self.logger.info("🔧 Creating LIME explainer...")
             
             explainer = await self._create_lime_explainer(X_test, feature_names)
@@ -90,7 +92,7 @@ class LIMEAnalyzer:
                 return {"error": "Failed to create LIME explainer"}
             
             # Step 2: Generate local explanations
-            print("🔍 Generating local explanations...")
+            tprint("🔍 Generating local explanations...")
             self.logger.info("🔍 Generating local explanations...")
             
             local_explanations = await self._generate_local_explanations(
@@ -99,21 +101,21 @@ class LIMEAnalyzer:
             results["local_explanations"] = local_explanations
             
             # Step 3: Analyze feature importance
-            print("📈 Analyzing feature importance...")
+            tprint("📈 Analyzing feature importance...")
             self.logger.info("📈 Analyzing feature importance...")
             
             feature_importance = await self._analyze_feature_importance(local_explanations, feature_names)
             results["feature_importance"] = feature_importance
             
             # Step 4: Analyze explanation consistency
-            print("📊 Analyzing explanation consistency...")
+            tprint("📊 Analyzing explanation consistency...")
             self.logger.info("📊 Analyzing explanation consistency...")
             
             explanation_consistency = await self._analyze_explanation_consistency(local_explanations, feature_names)
             results["explanation_consistency"] = explanation_consistency
             
             # Step 5: Create visualizations
-            print("🎨 Creating LIME visualizations...")
+            tprint("🎨 Creating LIME visualizations...")
             self.logger.info("🎨 Creating LIME visualizations...")
             
             plots_created = await self._create_lime_plots(
@@ -127,14 +129,14 @@ class LIMEAnalyzer:
             safe_log_metric("lime_explanations_generated", len(local_explanations))
             safe_log_metric("lime_plots_created", len(plots_created))
             
-            print("✅ LIME analysis completed successfully!")
+            tprint("✅ LIME analysis completed successfully!")
             self.logger.info("✅ LIME analysis completed successfully!")
             
             return results
             
         except Exception as e:
             self.logger.error(f"❌ LIME analysis failed: {e}")
-            print(f"❌ LIME analysis failed: {e}")
+            tprint(f"❌ LIME analysis failed: {e}")
             return {"error": str(e)}
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -156,14 +158,14 @@ class LIMEAnalyzer:
                 random_state = 42
             )
             
-            print("✅ Created LIME tabular explainer")
+            tprint("✅ Created LIME tabular explainer")
             self.logger.info("✅ Created LIME tabular explainer")
             
             return explainer
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create LIME explainer: {e}")
-            print(f"❌ Failed to create LIME explainer: {e}")
+            tprint(f"❌ Failed to create LIME explainer: {e}")
             return None
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -232,14 +234,14 @@ class LIMEAnalyzer:
                     self.logger.warning(f"⚠️ Failed to explain sample {sample_idx}: {e}")
                     continue
             
-            print(f"✅ Generated local explanations for {len(local_explanations)} samples")
+            tprint(f"✅ Generated local explanations for {len(local_explanations)} samples")
             self.logger.info(f"✅ Generated local explanations for {len(local_explanations)} samples")
             
             return local_explanations
             
         except Exception as e:
             self.logger.error(f"❌ Failed to generate local explanations: {e}")
-            print(f"❌ Failed to generate local explanations: {e}")
+            tprint(f"❌ Failed to generate local explanations: {e}")
             return {}
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -289,14 +291,14 @@ class LIMEAnalyzer:
                 reverse = True
             ))
             
-            print(f"✅ Feature importance calculated for {len(feature_importance)} features")
+            tprint(f"✅ Feature importance calculated for {len(feature_importance)} features")
             self.logger.info(f"✅ Feature importance calculated for {len(feature_importance)} features")
             
             return sorted_importance
             
         except Exception as e:
             self.logger.error(f"❌ Failed to analyze feature importance: {e}")
-            print(f"❌ Failed to analyze feature importance: {e}")
+            tprint(f"❌ Failed to analyze feature importance: {e}")
             return {}
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -365,14 +367,14 @@ class LIMEAnalyzer:
             ))
             consistency_analysis["top_features_consistency"] = dict(list(sorted_consistency.items())[:10])
             
-            print("✅ Explanation consistency analysis completed")
+            tprint("✅ Explanation consistency analysis completed")
             self.logger.info("✅ Explanation consistency analysis completed")
             
             return consistency_analysis
             
         except Exception as e:
             self.logger.error(f"❌ Failed to analyze explanation consistency: {e}")
-            print(f"❌ Failed to analyze explanation consistency: {e}")
+            tprint(f"❌ Failed to analyze explanation consistency: {e}")
             return {}
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -412,19 +414,19 @@ class LIMEAnalyzer:
                     explanation.save_to_file(html_path)
                     plots_created.append(html_path)
                     
-                    print(f"✅ LIME explanation plot saved: {html_path}")
+                    tprint(f"✅ LIME explanation plot saved: {html_path}")
                     self.logger.info(f"✅ LIME explanation plot saved: {html_path}")
                     
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to create LIME plot for sample {sample_idx}: {e}")
                     continue
             
-            print(f"✅ Created {len(plots_created)} LIME plots")
+            tprint(f"✅ Created {len(plots_created)} LIME plots")
             self.logger.info(f"✅ Created {len(plots_created)} LIME plots")
             
             return plots_created
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create LIME plots: {e}")
-            print(f"❌ Failed to create LIME plots: {e}")
+            tprint(f"❌ Failed to create LIME plots: {e}")
             return plots_created

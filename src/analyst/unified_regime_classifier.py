@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import os
 from datetime import datetime
 from typing import Any, Callable
@@ -40,7 +42,7 @@ try:
     import time
 except ImportError:
     def warning(msg: Any) -> None:
-        print(f'WARNING: {msg}')
+        tprint(f'WARNING: {msg}')
 
 def comprehensive_data_validation(*args, **kwargs) -> None:
 

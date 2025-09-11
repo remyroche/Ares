@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Optional, Any, Dict, List, Union, Tuple
 import numpy as np
 from src.utils.logger import system_logger
@@ -209,8 +211,8 @@ class HMMRegimeDiscoveryStep:
 
     def __init__(self, config: dict[str, Any]) -> None:
         # 🖨️ THOROUGH PRINTING: HMM Regime Discovery Step Initialization
-        print("🔧 INITIALIZING HMM REGIME DISCOVERY STEP")
-        print(f"   📋 Configuration: {config}")
+        tprint("🔧 INITIALIZING HMM REGIME DISCOVERY STEP")
+        tprint(f"   📋 Configuration: {config}")
         
         self.config = config
         self.logger = system_logger.getChild('HMMRegimeDiscoveryStep')
@@ -219,26 +221,26 @@ class HMMRegimeDiscoveryStep:
         self.step_timings = {}
         self.data_quality_manager = None
         
-        print("   ✅ Basic attributes initialized")
-        print("   🔍 Validating environment dependencies...")
+        tprint("   ✅ Basic attributes initialized")
+        tprint("   🔍 Validating environment dependencies...")
         self._validate_environment()
-        print("   🔧 Initializing HMM regime discovery components...")
+        tprint("   🔧 Initializing HMM regime discovery components...")
         self._initialize_components()
-        print("   🎉 HMM Regime Discovery Step initialization complete")
+        tprint("   🎉 HMM Regime Discovery Step initialization complete")
     @log_all_calls
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
-        print("   🔍 Validating environment dependencies...")
+        tprint("   🔍 Validating environment dependencies...")
         self.logger.info('🔍 Validating environment dependencies...')
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
-            print(f"   ⚠️ Missing optional modules: {missing_modules}")
-            print("   📝 Pipeline will continue with fallback implementations")
+            tprint(f"   ⚠️ Missing optional modules: {missing_modules}")
+            tprint("   📝 Pipeline will continue with fallback implementations")
             self.logger.warning(f'⚠️ Missing optional modules: {missing_modules}')
             self.logger.info('📝 Pipeline will continue with fallback implementations')
         else:
-            print("   ✅ All required dependencies available")
+            tprint("   ✅ All required dependencies available")
             self.logger.info('✅ All required dependencies available')
     @log_all_calls
 
@@ -413,9 +415,9 @@ class HMMRegimeDiscoveryStep:
     @handles_errors(fallback = False)
     async def initialize(self) -> None:
         """Initialize the HMM regime discovery step."""
-        print("🚀 INITIALIZING HMM REGIME DISCOVERY STEP")
+        tprint("🚀 INITIALIZING HMM REGIME DISCOVERY STEP")
         self.start_time = time.time()
-        print(f"   ⏰ Start time: {self.start_time}")
+        tprint(f"   ⏰ Start time: {self.start_time}")
         
         self.logger.info('🚀 Initializing HMM Regime Discovery Step...')
         self.logger.info('📋 Step 3 Configuration:')
@@ -424,25 +426,25 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"   - Timeframe: {self.config.get('TIMEFRAME', 'N/A')}")
         self.logger.info(f"   - Data Directory: {self.config.get('DATA_DIR', 'N/A')}")
         
-        print("📋 STEP 3 CONFIGURATION:")
-        print(f"   - Symbol: {self.config.get('SYMBOL', 'N/A')}")
-        print(f"   - Exchange: {self.config.get('EXCHANGE', 'N/A')}")
-        print(f"   - Timeframe: {self.config.get('TIMEFRAME', 'N/A')}")
-        print(f"   - Data Directory: {self.config.get('DATA_DIR', 'N/A')}")
+        tprint("📋 STEP 3 CONFIGURATION:")
+        tprint(f"   - Symbol: {self.config.get('SYMBOL', 'N/A')}")
+        tprint(f"   - Exchange: {self.config.get('EXCHANGE', 'N/A')}")
+        tprint(f"   - Timeframe: {self.config.get('TIMEFRAME', 'N/A')}")
+        tprint(f"   - Data Directory: {self.config.get('DATA_DIR', 'N/A')}")
         
         if hasattr(self, 'sr_predictor'):
-            print("   🔧 Initializing SR Breakout Predictor...")
+            tprint("   🔧 Initializing SR Breakout Predictor...")
             try:
                 await self.sr_predictor.initialize()
-                print("   ✅ SR Breakout Predictor initialized successfully")
+                tprint("   ✅ SR Breakout Predictor initialized successfully")
                 self.logger.info('✅ SR Breakout Predictor initialized successfully')
             except Exception as e:
-                print(f"   ⚠️ Failed to initialize SR Breakout Predictor: {e}")
+                tprint(f"   ⚠️ Failed to initialize SR Breakout Predictor: {e}")
                 self.logger.warning(f'⚠️ Failed to initialize SR Breakout Predictor: {e}')
         else:
-            print("   ⏭️ SR Breakout Predictor not available")
+            tprint("   ⏭️ SR Breakout Predictor not available")
         
-        print("✅ HMM REGIME DISCOVERY STEP INITIALIZED SUCCESSFULLY")
+        tprint("✅ HMM REGIME DISCOVERY STEP INITIALIZED SUCCESSFULLY")
         self.logger.info('✅ HMM Regime Discovery Step initialized successfully')
     @log_all_calls
 
@@ -469,33 +471,33 @@ class HMMRegimeDiscoveryStep:
             Updated pipeline state with regime discovery results
         """
         step_start = time.time()
-        print("🎯 STARTING HMM REGIME DISCOVERY EXECUTION")
-        print(f"   ⏰ Step start time: {step_start}")
+        tprint("🎯 STARTING HMM REGIME DISCOVERY EXECUTION")
+        tprint(f"   ⏰ Step start time: {step_start}")
         
         # Initialize timing variables
         data_quality_elapsed = 0.0
         data_loading_elapsed = 0.0
         hmm_elapsed = 0.0
         
-        print(f"   📊 Training input keys: {list(training_input.keys())}")
-        print(f"   🔄 Pipeline state keys: {list(pipeline_state.keys())}")
+        tprint(f"   📊 Training input keys: {list(training_input.keys())}")
+        tprint(f"   🔄 Pipeline state keys: {list(pipeline_state.keys())}")
         
         self.logger.info('🎯 Starting HMM regime discovery execution...')
         self.logger.info(f'📊 Training input keys: {list(training_input.keys())}')
         self.logger.info(f'🔄 Pipeline state keys: {list(pipeline_state.keys())}')
 
         # Check if we should use optimized pipeline
-        print("   🔍 Checking if optimized pipeline should be used...")
+        tprint("   🔍 Checking if optimized pipeline should be used...")
         use_optimized = self._should_use_optimized_pipeline(training_input)
-        print(f"   📊 Use optimized pipeline: {use_optimized}")
+        tprint(f"   📊 Use optimized pipeline: {use_optimized}")
         
         if use_optimized:
-            print("🚀 USING OPTIMIZED PIPELINE FOR ENHANCED PERFORMANCE!")
+            tprint("🚀 USING OPTIMIZED PIPELINE FOR ENHANCED PERFORMANCE!")
             self.logger.info('🚀 Using optimized pipeline for enhanced performance!')
             return await self._execute_optimized_pipeline(training_input, pipeline_state)
 
         # Fallback to standard pipeline
-        print("📊 USING STANDARD PIPELINE")
+        tprint("📊 USING STANDARD PIPELINE")
         self.logger.info('📊 Using standard pipeline')
         return await self._execute_standard_pipeline(training_input, pipeline_state)
 
@@ -3222,24 +3224,24 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
     start_time = time.time()
     
     # 🖨️ THOROUGH PRINTING: HMM Regime Discovery Step Start
-    print("🚀 STEP 3: HMM REGIME DISCOVERY WITH STANDARDIZED DATA QUALITY MANAGEMENT")
-    print("=" * 80)
-    print(f"🎯 Symbol: {symbol}")
-    print(f"🏢 Exchange: {exchange}")
-    print(f"📊 Timeframe: {timeframe}")
-    print(f"📁 Data directory: {data_dir}")
-    print(f"🔄 Force rerun: {force_rerun}")
-    print(f"🔧 Use optimized pipeline: {use_optimized_pipeline}")
-    print(f"⚡ Force optimized pipeline: {force_optimized_pipeline}")
-    print(f"⚙️ Additional kwargs: {kwargs}")
-    print(f"⏰ Start time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 80)
+    tprint("🚀 STEP 3: HMM REGIME DISCOVERY WITH STANDARDIZED DATA QUALITY MANAGEMENT")
+    tprint("=" * 80)
+    tprint(f"🎯 Symbol: {symbol}")
+    tprint(f"🏢 Exchange: {exchange}")
+    tprint(f"📊 Timeframe: {timeframe}")
+    tprint(f"📁 Data directory: {data_dir}")
+    tprint(f"🔄 Force rerun: {force_rerun}")
+    tprint(f"🔧 Use optimized pipeline: {use_optimized_pipeline}")
+    tprint(f"⚡ Force optimized pipeline: {force_optimized_pipeline}")
+    tprint(f"⚙️ Additional kwargs: {kwargs}")
+    tprint(f"⏰ Start time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    tprint("=" * 80)
     
     try:
         logger = system_logger.getChild('Step3HMMRegimeDiscovery')
         if data_dir is None:
             data_dir = 'data_cache'
-            print(f"📁 Data directory set to default: {data_dir}")
+            tprint(f"📁 Data directory set to default: {data_dir}")
         
         logger.info('=' * 80)
         logger.info('🚀 STEP 3: HMM Regime Discovery with Standardized Data Quality Management')
@@ -3252,15 +3254,15 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
         logger.info(f"⏰ Start time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info('=' * 80)
         config = {'SYMBOL': symbol, 'EXCHANGE': exchange, 'TIMEFRAME': timeframe, 'DATA_DIR': data_dir}
-        print("🔧 INITIALIZING HMM REGIME DISCOVERY STEP")
-        print(f"   📋 Configuration: {config}")
+        tprint("🔧 INITIALIZING HMM REGIME DISCOVERY STEP")
+        tprint(f"   📋 Configuration: {config}")
         
         logger.info('🔧 Initializing HMM regime discovery step...')
         step = HMMRegimeDiscoveryStep(config)
-        print("   ✅ HMMRegimeDiscoveryStep instance created")
+        tprint("   ✅ HMMRegimeDiscoveryStep instance created")
         
         await step.initialize()
-        print("   ✅ HMMRegimeDiscoveryStep initialized")
+        tprint("   ✅ HMMRegimeDiscoveryStep initialized")
         
         training_input = {
             'symbol': symbol,
@@ -3271,67 +3273,67 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             'use_optimized_pipeline': use_optimized_pipeline,
             'force_optimized_pipeline': force_optimized_pipeline
         }
-        print("🎯 EXECUTING HMM REGIME DISCOVERY")
-        print(f"   📋 Training input: {training_input}")
+        tprint("🎯 EXECUTING HMM REGIME DISCOVERY")
+        tprint(f"   📋 Training input: {training_input}")
         
         logger.info('🎯 Executing HMM regime discovery...')
         pipeline_state = {}
-        print("   📊 Pipeline state initialized")
+        tprint("   📊 Pipeline state initialized")
         
         result = await step.execute(training_input, pipeline_state)
-        print(f"   📊 Execution result: {result}")
+        tprint(f"   📊 Execution result: {result}")
         if result.get('hmm_regime_discovery_completed', False):
-            print("✅ STEP 3: HMM REGIME DISCOVERY COMPLETED SUCCESSFULLY")
+            tprint("✅ STEP 3: HMM REGIME DISCOVERY COMPLETED SUCCESSFULLY")
             logger.info('✅ Step 3: HMM Regime Discovery completed successfully')
 
             # Log optimization usage
             if result.get('optimized_pipeline_used', False):
-                print("🚀 OPTIMIZED PIPELINE USED FOR ENHANCED PERFORMANCE!")
+                tprint("🚀 OPTIMIZED PIPELINE USED FOR ENHANCED PERFORMANCE!")
                 logger.info('🚀 Optimized pipeline used for enhanced performance!')
                 if result.get('performance_metrics'):
                     perf = result['performance_metrics']
-                    print(f"⚡ Performance: {perf.get('average_task_time', 0):.2f}s avg task time")
+                    tprint(f"⚡ Performance: {perf.get('average_task_time', 0):.2f}s avg task time")
                     logger.info(f"⚡ Performance: {perf.get('average_task_time', 0):.2f}s avg task time")
                 if result.get('cache_performance'):
                     cache = result['cache_performance']
-                    print(f"📋 Cache: {cache.get('hit_rate', 0):.1%} hit rate")
+                    tprint(f"📋 Cache: {cache.get('hit_rate', 0):.1%} hit rate")
                     logger.info(f"📋 Cache: {cache.get('hit_rate', 0):.1%} hit rate")
             elif result.get('optimization_used', False):
-                print("🔧 STANDARD PARAMETER OPTIMIZATION COMPLETED SUCCESSFULLY")
+                tprint("🔧 STANDARD PARAMETER OPTIMIZATION COMPLETED SUCCESSFULLY")
                 logger.info('🔧 Standard parameter optimization completed successfully')
                 if result.get('optimized_params'):
-                    print(f"📊 Optimized parameters applied: {list(result['optimized_params'].keys())}")
+                    tprint(f"📊 Optimized parameters applied: {list(result['optimized_params'].keys())}")
                     logger.info(f"📊 Optimized parameters applied: {list(result['optimized_params'].keys())}")
             else:
-                print("⚠️ PARAMETER OPTIMIZATION FAILED, USING DEFAULT PARAMETERS")
+                tprint("⚠️ PARAMETER OPTIMIZATION FAILED, USING DEFAULT PARAMETERS")
                 logger.warning('⚠️ Parameter optimization failed, using default parameters')
             if result.get('regime_states'):
                 unique_regimes = len(set(result['regime_states']))
                 total_periods = len(result['regime_states'])
-                print(f"📊 DISCOVERED {unique_regimes} UNIQUE REGIMES ACROSS {total_periods:,} PERIODS")
+                tprint(f"📊 DISCOVERED {unique_regimes} UNIQUE REGIMES ACROSS {total_periods:,} PERIODS")
                 logger.info(f'📊 Discovered {unique_regimes} unique regimes across {total_periods:,} periods')
             if result.get('regime_metrics'):
                 metrics = result['regime_metrics']
-                print(f"📈 TOTAL PERIODS: {metrics.get('total_periods', 0):,}")
-                print(f"🔄 UNIQUE REGIMES: {metrics.get('unique_regimes', 0)}")
+                tprint(f"📈 TOTAL PERIODS: {metrics.get('total_periods', 0):,}")
+                tprint(f"🔄 UNIQUE REGIMES: {metrics.get('unique_regimes', 0)}")
                 logger.info(f"📈 Total periods: {metrics.get('total_periods', 0):,}")
                 logger.info(f"🔄 Unique regimes: {metrics.get('unique_regimes', 0)}")
                 regime_dist = metrics.get('regime_distribution', {})
                 if regime_dist:
-                    print("📊 REGIME DISTRIBUTION:")
+                    tprint("📊 REGIME DISTRIBUTION:")
                     logger.info('📊 Regime distribution:')
                     for regime, count in regime_dist.items():
                         percentage = count / metrics.get('total_periods', 1) * 100
-                        print(f"   - {regime}: {count:,} periods ({percentage:.1f}%)")
+                        tprint(f"   - {regime}: {count:,} periods ({percentage:.1f}%)")
                         logger.info(f'   - {regime}: {count:,} periods ({percentage:.1f}%)')
             total_elapsed = time.time() - start_time
-            print("=" * 80)
-            print("🎉 STEP 3 EXECUTION SUMMARY")
-            print("=" * 80)
-            print(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
-            print(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-            print("✅ SUCCESS")
-            print("=" * 80)
+            tprint("=" * 80)
+            tprint("🎉 STEP 3 EXECUTION SUMMARY")
+            tprint("=" * 80)
+            tprint(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
+            tprint(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            tprint("✅ SUCCESS")
+            tprint("=" * 80)
             
             logger.info('=' * 80)
             logger.info('🎉 STEP 3 EXECUTION SUMMARY')
@@ -3342,20 +3344,20 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             logger.info('=' * 80)
             return True
         else:
-            print("❌ STEP 3: HMM REGIME DISCOVERY FAILED")
+            tprint("❌ STEP 3: HMM REGIME DISCOVERY FAILED")
             logger.error('❌ Step 3: HMM Regime Discovery failed')
             error = result.get('regime_discovery_error', 'Unknown error')
-            print(f"   ❌ Error: {error}")
+            tprint(f"   ❌ Error: {error}")
             logger.error(f'   Error: {error}')
             total_elapsed = time.time() - start_time
-            print("=" * 80)
-            print("💥 STEP 3 EXECUTION SUMMARY")
-            print("=" * 80)
-            print(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
-            print(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-            print("❌ FAILED")
-            print(f"   Error: {error}")
-            print("=" * 80)
+            tprint("=" * 80)
+            tprint("💥 STEP 3 EXECUTION SUMMARY")
+            tprint("=" * 80)
+            tprint(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
+            tprint(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            tprint("❌ FAILED")
+            tprint(f"   Error: {error}")
+            tprint("=" * 80)
             
             logger.info('=' * 80)
             logger.info('💥 STEP 3 EXECUTION SUMMARY')
@@ -3367,18 +3369,18 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             logger.info('=' * 80)
             return False
     except Exception as e:
-        print("💥 STEP 3: HMM REGIME DISCOVERY FAILED WITH EXCEPTION")
-        print(f"   ❌ Exception: {e}")
+        tprint("💥 STEP 3: HMM REGIME DISCOVERY FAILED WITH EXCEPTION")
+        tprint(f"   ❌ Exception: {e}")
         logger.exception(f'❌ Step 3: HMM Regime Discovery failed with exception: {e}')
         total_elapsed = time.time() - start_time
-        print("=" * 80)
-        print("💥 STEP 3 EXECUTION SUMMARY")
-        print("=" * 80)
-        print(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
-        print(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print("❌ FAILED")
-        print(f"   Exception: {e}")
-        print("=" * 80)
+        tprint("=" * 80)
+        tprint("💥 STEP 3 EXECUTION SUMMARY")
+        tprint("=" * 80)
+        tprint(f"⏱️ Total execution time: {total_elapsed:.2f} seconds")
+        tprint(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        tprint("❌ FAILED")
+        tprint(f"   Exception: {e}")
+        tprint("=" * 80)
         
         logger.info('=' * 80)
         logger.info('💥 STEP 3 EXECUTION SUMMARY')
@@ -3887,35 +3889,35 @@ if __name__ == '__main__':
             data_dir = sys.argv[4] if len(sys.argv) > 4 else 'data_cache'
             force_rerun = len(sys.argv) > 5 and sys.argv[5].lower() == 'true'
         else:
-            print('Usage: python step3_hmm_regime_discovery.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]')
-            print(f'Example: python step3_hmm_regime_discovery.py {get_default_symbol()} BINANCE 1m data_cache true')
+            tprint('Usage: python step3_hmm_regime_discovery.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]')
+            tprint(f'Example: python step3_hmm_regime_discovery.py {get_default_symbol()} BINANCE 1m data_cache true')
             return
-        print('=' * 80)
-        print('🚀 STEP 3: HMM Regime Discovery - Command Line Execution')
-        print('=' * 80)
-        print(f'🎯 Symbol: {symbol}')
-        print(f'🏢 Exchange: {exchange}')
-        print(f'📊 Timeframe: {timeframe}')
-        print(f'📁 Data directory: {data_dir}')
-        print(f'🔄 Force rerun: {force_rerun}')
-        print(f"⏰ Start time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print('=' * 80)
+        tprint('=' * 80)
+        tprint('🚀 STEP 3: HMM Regime Discovery - Command Line Execution')
+        tprint('=' * 80)
+        tprint(f'🎯 Symbol: {symbol}')
+        tprint(f'🏢 Exchange: {exchange}')
+        tprint(f'📊 Timeframe: {timeframe}')
+        tprint(f'📁 Data directory: {data_dir}')
+        tprint(f'🔄 Force rerun: {force_rerun}')
+        tprint(f"⏰ Start time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        tprint('=' * 80)
         success = await run_step(symbol = symbol, exchange = exchange, timeframe = timeframe, data_dir = data_dir, force_rerun = force_rerun)
-        print('=' * 80)
+        tprint('=' * 80)
         if success:
-            print('✅ Step 3: HMM Regime Discovery completed successfully')
+            tprint('✅ Step 3: HMM Regime Discovery completed successfully')
         else:
-            print('❌ Step 3: HMM Regime Discovery failed')
-        print(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print('=' * 80)
+            tprint('❌ Step 3: HMM Regime Discovery failed')
+        tprint(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        tprint('=' * 80)
         gc.collect()
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print('\n🛑 Interrupted by user')
+        tprint('\n🛑 Interrupted by user')
     except Exception as e:
-        print(f'❌ Error: {e}')
+        tprint(f'❌ Error: {e}')
     finally:
         gc.collect()

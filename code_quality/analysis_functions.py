@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Code Quality Analysis Functions
 
@@ -84,26 +86,26 @@ def save_report(data: Dict[str, Any], filename: str, output_dir: Optional[Union[
     with open(report_path, 'w') as f:
         json.dump(data, f, indent=2, default=str)
     
-    print(f"Report saved to: {report_path}")
+    tprint(f"Report saved to: {report_path}")
     return report_path
 
 
 def print_summary(data: Dict[str, Any], title: str = "Analysis Summary"):
     """Print a summary of analysis results."""
-    print(f"\n{'='*60}")
-    print(f"{title}")
-    print(f"{'='*60}")
+    tprint(f"\n{'='*60}")
+    tprint(f"{title}")
+    tprint(f"{'='*60}")
     
     if isinstance(data, dict):
         for key, value in data.items():
             if isinstance(value, (list, dict)):
-                print(f"{key}: {len(value)} items")
+                tprint(f"{key}: {len(value)} items")
             else:
-                print(f"{key}: {value}")
+                tprint(f"{key}: {value}")
     else:
-        print(f"Results: {data}")
+        tprint(f"Results: {data}")
     
-    print(f"{'='*60}")
+    tprint(f"{'='*60}")
 
 
 def run_import_verification(
@@ -128,7 +130,7 @@ def run_import_verification(
     Returns:
         Dict containing analysis results
     """
-    print("Starting import verification analysis...")
+    tprint("Starting import verification analysis...")
     
     # Check if analyzer is available
     if ImportVerifierAnalyzer is None:
@@ -161,7 +163,7 @@ def run_import_verification(
     
     # Create visualizations if requested
     if create_visualizations:
-        print("Creating enhanced visualizations...")
+        tprint("Creating enhanced visualizations...")
         try:
             # Initialize visualizers
             reports_dir = output_dir or Path(project_root) / "code_quality" / "reports"
@@ -175,7 +177,7 @@ def run_import_verification(
             }
             results["visualizations"] = visualizations
         except Exception as e:
-            print(f"Warning: Could not create visualizations: {e}")
+            tprint(f"Warning: Could not create visualizations: {e}")
     
     # Print report if requested
     if print_report:
@@ -186,7 +188,7 @@ def run_import_verification(
         report_path = save_report(results, "import_verification", output_dir)
         results["report_path"] = str(report_path)
     
-    print("Import verification analysis completed successfully")
+    tprint("Import verification analysis completed successfully")
     return results
 
 
@@ -212,7 +214,7 @@ def run_enhanced_import_analysis(
     Returns:
         Dict containing comprehensive analysis results
     """
-    print("Starting enhanced import analysis...")
+    tprint("Starting enhanced import analysis...")
     
     analysis_dir = target_directory or str(project_root)
     
@@ -254,7 +256,7 @@ def run_enhanced_import_analysis(
     
     # Create visualizations if requested
     if create_visualizations:
-        print("Creating enhanced visualizations...")
+        tprint("Creating enhanced visualizations...")
         try:
             reports_dir = output_dir or Path(project_root) / "code_quality" / "reports"
             import_visualizer = ImportNetworkVisualizer(str(reports_dir / "import_networks"))
@@ -268,7 +270,7 @@ def run_enhanced_import_analysis(
             }
             results["visualizations"] = visualizations
         except Exception as e:
-            print(f"Warning: Could not create visualizations: {e}")
+            tprint(f"Warning: Could not create visualizations: {e}")
     
     # Print summary if requested
     if print_report:
@@ -279,7 +281,7 @@ def run_enhanced_import_analysis(
         report_path = save_report(results, "enhanced_import_analysis", output_dir)
         results["report_path"] = str(report_path)
     
-    print("Enhanced import analysis completed successfully")
+    tprint("Enhanced import analysis completed successfully")
     return results
 
 
@@ -305,7 +307,7 @@ def run_dead_code_analysis(
     Returns:
         Dict containing dead code analysis results
     """
-    print("Starting dead code analysis...")
+    tprint("Starting dead code analysis...")
     
     analysis_dir = target_directory or str(project_root)
     
@@ -349,7 +351,7 @@ def run_dead_code_analysis(
         report_path = save_report(results, "dead_code_analysis", output_dir)
         results["report_path"] = str(report_path)
     
-    print("Dead code analysis completed successfully")
+    tprint("Dead code analysis completed successfully")
     return results
 
 
@@ -373,7 +375,7 @@ def run_complexity_analysis(
     Returns:
         Dict containing complexity analysis results
     """
-    print("Starting complexity analysis...")
+    tprint("Starting complexity analysis...")
     
     analysis_dir = target_directory or str(project_root)
     
@@ -414,7 +416,7 @@ def run_complexity_analysis(
         report_path = save_report(results, "complexity_analysis", output_dir)
         results["report_path"] = str(report_path)
     
-    print("Complexity analysis completed successfully")
+    tprint("Complexity analysis completed successfully")
     return results
 
 
@@ -438,7 +440,7 @@ def run_dependency_analysis(
     Returns:
         Dict containing dependency analysis results
     """
-    print("Starting dependency analysis...")
+    tprint("Starting dependency analysis...")
     
     analysis_dir = target_directory or str(project_root)
     
@@ -479,7 +481,7 @@ def run_dependency_analysis(
         report_path = save_report(results, "dependency_analysis", output_dir)
         results["report_path"] = str(report_path)
     
-    print("Dependency analysis completed successfully")
+    tprint("Dependency analysis completed successfully")
     return results
 
 
@@ -506,7 +508,7 @@ def run_all_analyses(
     Returns:
         Dict containing all analysis results
     """
-    print("Starting comprehensive code quality analysis...")
+    tprint("Starting comprehensive code quality analysis...")
     
     all_results = {}
     
@@ -540,5 +542,5 @@ def run_all_analyses(
         "analyses_run": list(all_results.keys())
     }
     
-    print("Comprehensive code quality analysis completed successfully")
+    tprint("Comprehensive code quality analysis completed successfully")
     return all_results

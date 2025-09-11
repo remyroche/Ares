@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Extended Example Usage for Code Quality Tools
 
@@ -25,72 +27,72 @@ from code_quality import (  # New analyzers; New reporters; Quick access functio
 
 def example_complexity_analysis():
     """Demonstrate complexity analysis."""
-    print("🔍 Running Complexity Analysis...")
+    tprint("🔍 Running Complexity Analysis...")
 
     # Analyze current directory
     try:
         complexity_results = analyze_complexity(".")
-        print(f"✅ Complexity analysis completed for {len(complexity_results)} files")
+        tprint(f"✅ Complexity analysis completed for {len(complexity_results)} files")
 
         # Get summary
         analyzer = ComplexityAnalyzer()
         summary = analyzer.get_complexity_summary(complexity_results)
 
-        print("📊 Complexity Summary:")
-        print(f"  - Total files: {summary['total_files']}")
-        print(f"  - Total functions: {summary['total_functions']}")
-        print(f"  - Total classes: {summary['total_classes']}")
-        print(f"  - High complexity functions: {summary['high_complexity_functions']}")
-        print(f"  - Average complexity score: {summary['average_complexity_score']:.2f}")
+        tprint("📊 Complexity Summary:")
+        tprint(f"  - Total files: {summary['total_files']}")
+        tprint(f"  - Total functions: {summary['total_functions']}")
+        tprint(f"  - Total classes: {summary['total_classes']}")
+        tprint(f"  - High complexity functions: {summary['high_complexity_functions']}")
+        tprint(f"  - Average complexity score: {summary['average_complexity_score']:.2f}")
 
         # Find issues
         issues = analyzer.find_complexity_issues(complexity_results)
         if issues:
-            print(f"⚠️  Found {len(issues)} complexity issues:")
+            tprint(f"⚠️  Found {len(issues)} complexity issues:")
             for issue in issues[:3]:  # Show first 3
-                print(f"    - {issue['file']}:{issue['line']} {issue['name']} (complexity: {issue['complexity']})")
+                tprint(f"    - {issue['file']}:{issue['line']} {issue['name']} (complexity: {issue['complexity']})")
 
         return complexity_results
 
     except Exception as e:
-        print(f"❌ Complexity analysis failed: {e}")
+        tprint(f"❌ Complexity analysis failed: {e}")
         return {}
 
 
 def example_dead_code_analysis():
     """Demonstrate dead code analysis."""
-    print("\n🧹 Running Dead Code Analysis...")
+    tprint("\n🧹 Running Dead Code Analysis...")
 
     try:
         dead_code_results = analyze_dead_code(".")
-        print("✅ Dead code analysis completed")
+        tprint("✅ Dead code analysis completed")
 
         # Get summary
         analyzer = DeadCodeAnalyzer()
         summary = analyzer.get_dead_code_summary(dead_code_results)
 
-        print("📊 Dead Code Summary:")
-        print(f"  - Total issues: {summary['total_issues']}")
-        print(f"  - Files affected: {summary['files_affected']}")
-        print(f"  - High confidence issues: {summary['high_confidence_issues']}")
+        tprint("📊 Dead Code Summary:")
+        tprint(f"  - Total issues: {summary['total_issues']}")
+        tprint(f"  - Files affected: {summary['files_affected']}")
+        tprint(f"  - High confidence issues: {summary['high_confidence_issues']}")
 
         # Get recommendations
         recommendations = analyzer.generate_cleanup_recommendations(dead_code_results)
         if recommendations:
-            print("💡 Recommendations:")
+            tprint("💡 Recommendations:")
             for rec in recommendations[:3]:  # Show first 3
-                print(f"    - {rec}")
+                tprint(f"    - {rec}")
 
         return dead_code_results
 
     except Exception as e:
-        print(f"❌ Dead code analysis failed: {e}")
+        tprint(f"❌ Dead code analysis failed: {e}")
         return {}
 
 
 def example_error_reporting(complexity_results, dead_code_results):
     """Demonstrate comprehensive error reporting."""
-    print("\n📋 Generating Error Report...")
+    tprint("\n📋 Generating Error Report...")
 
     try:
         # Create error reporter
@@ -131,22 +133,22 @@ def example_error_reporting(complexity_results, dead_code_results):
 
         # Generate report
         error_report = reporter.generate_report(".")
-        print("✅ Error report generated")
-        print("📊 Error Summary:")
-        print(f"  - Total errors: {error_report.summary.total_errors}")
-        print(f"  - Total warnings: {error_report.summary.total_warnings}")
-        print(f"  - Files with errors: {error_report.summary.files_with_errors}")
+        tprint("✅ Error report generated")
+        tprint("📊 Error Summary:")
+        tprint(f"  - Total errors: {error_report.summary.total_errors}")
+        tprint(f"  - Total warnings: {error_report.summary.total_warnings}")
+        tprint(f"  - Files with errors: {error_report.summary.files_with_errors}")
 
         return error_report
 
     except Exception as e:
-        print(f"❌ Error reporting failed: {e}")
+        tprint(f"❌ Error reporting failed: {e}")
         return None
 
 
 def example_html_reporting(complexity_results, dead_code_results):
     """Demonstrate HTML report generation."""
-    print("\n🌐 Generating HTML Report...")
+    tprint("\n🌐 Generating HTML Report...")
 
     try:
         # Prepare data for HTML report
@@ -163,19 +165,19 @@ def example_html_reporting(complexity_results, dead_code_results):
             f.write(html_content)
             temp_file = f.name
 
-        print(f"✅ HTML report generated and saved to: {temp_file}")
-        print("🌐 Open this file in your browser to view the report")
+        tprint(f"✅ HTML report generated and saved to: {temp_file}")
+        tprint("🌐 Open this file in your browser to view the report")
 
         return temp_file
 
     except Exception as e:
-        print(f"❌ HTML report generation failed: {e}")
+        tprint(f"❌ HTML report generation failed: {e}")
         return None
 
 
 def example_trend_tracking():
     """Demonstrate trend tracking."""
-    print("\n📈 Setting up Trend Tracking...")
+    tprint("\n📈 Setting up Trend Tracking...")
 
     try:
         # Create trend reporter
@@ -191,23 +193,23 @@ def example_trend_tracking():
         }
 
         trend_reporter.add_data_point(sample_metrics, "example_project")
-        print("✅ Added data point for trend tracking")
+        tprint("✅ Added data point for trend tracking")
 
         # Show available projects
         projects = trend_reporter.get_project_list()
-        print(f"📊 Available projects: {projects}")
+        tprint(f"📊 Available projects: {projects}")
 
         return trend_reporter
 
     except Exception as e:
-        print(f"❌ Trend tracking setup failed: {e}")
+        tprint(f"❌ Trend tracking setup failed: {e}")
         return None
 
 
 def main():
     """Run all examples."""
-    print("🚀 Code Quality Tools - Extended Example")
-    print("=" * 50)
+    tprint("🚀 Code Quality Tools - Extended Example")
+    tprint("=" * 50)
 
     # Run complexity analysis
     complexity_results = example_complexity_analysis()
@@ -224,22 +226,22 @@ def main():
     # Set up trend tracking
     example_trend_tracking()
 
-    print("\n🎉 All examples completed!")
-    print("\n📝 Summary of what was demonstrated:")
-    print("  ✅ Complexity analysis with Radon")
-    print("  ✅ Dead code detection with Vulture")
-    print("  ✅ Comprehensive error reporting")
-    print("  ✅ Beautiful HTML report generation")
-    print("  ✅ Trend tracking setup")
+    tprint("\n🎉 All examples completed!")
+    tprint("\n📝 Summary of what was demonstrated:")
+    tprint("  ✅ Complexity analysis with Radon")
+    tprint("  ✅ Dead code detection with Vulture")
+    tprint("  ✅ Comprehensive error reporting")
+    tprint("  ✅ Beautiful HTML report generation")
+    tprint("  ✅ Trend tracking setup")
 
     if html_file:
-        print(f"\n🌐 HTML report available at: {html_file}")
+        tprint(f"\n🌐 HTML report available at: {html_file}")
 
-    print("\n💡 Next steps:")
-    print("  - Run these analyses on your own code")
-    print("  - Customize the configuration")
-    print("  - Set up automated trend tracking")
-    print("  - Integrate with your CI/CD pipeline")
+    tprint("\n💡 Next steps:")
+    tprint("  - Run these analyses on your own code")
+    tprint("  - Customize the configuration")
+    tprint("  - Set up automated trend tracking")
+    tprint("  - Integrate with your CI/CD pipeline")
 
 
 if __name__ == "__main__":

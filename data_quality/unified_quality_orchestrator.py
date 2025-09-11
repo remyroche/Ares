@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 import numpy as np
 import pandas as pd
 
@@ -43,7 +45,7 @@ try:
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
-    print("Warning: pandas not available, some functionality will be limited")
+    tprint("Warning: pandas not available, some functionality will be limited")
 
 try:
     from sklearn.impute import SimpleImputer
@@ -52,13 +54,13 @@ try:
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
-    print("Warning: sklearn not available, some functionality will be limited")
+    tprint("Warning: sklearn not available, some functionality will be limited")
 
 try:
     NETWORKX_AVAILABLE = True
 except ImportError:
     NETWORKX_AVAILABLE = False
-    print("Warning: networkx not available, dependency graph functionality will be limited")
+    tprint("Warning: networkx not available, dependency graph functionality will be limited")
 
 # Import project-specific modules
 try:
@@ -75,7 +77,7 @@ try:
 except ImportError:
     # Fallback logger if project modules aren't available
     system_logger = logging.getLogger("UnifiedQualityOrchestrator")
-    print("Warning: Some project modules not available, using fallback implementations")
+    tprint("Warning: Some project modules not available, using fallback implementations")
 
 
 class QualityLevel(Enum):
@@ -1294,7 +1296,7 @@ def main():
                 threshold_data = json.load(f)
                 thresholds = QualityThresholds(**threshold_data)
         except Exception as e:
-            print(f"Warning: Could not load custom thresholds: {e}")
+            tprint(f"Warning: Could not load custom thresholds: {e}")
 
     # Initialize orchestrator
     orchestrator = UnifiedQualityOrchestrator(thresholds)
@@ -1307,7 +1309,7 @@ def main():
         elif data_path.is_dir():
             mode = "directory"
         else:
-            print(f"Path not found: {data_path}")
+            tprint(f"Path not found: {data_path}")
             return
     else:
         mode = args.mode
@@ -1316,14 +1318,14 @@ def main():
     if mode == "file":
         # Single file analysis
         if not data_path.is_file():
-            print(f"Path is not a file: {data_path}")
+            tprint(f"Path is not a file: {data_path}")
             return
 
         if data_path.suffix.lower() not in [".csv", ".parquet", ".json"]:
-            print(f"Unsupported file format: {data_path.suffix}")
+            tprint(f"Unsupported file format: {data_path.suffix}")
             return
 
-        print(f"📁 Analyzing single file: {data_path.name}")
+        tprint(f"📁 Analyzing single file: {data_path.name}")
 
         # Load data
         try:
@@ -1334,7 +1336,7 @@ def main():
             elif data_path.suffix.lower() == ".json":
                 data = pd.read_json(data_path)
         except Exception as e:
-            print(f"Error loading file: {e}")
+            tprint(f"Error loading file: {e}")
             return
 
         # Generate comprehensive report
@@ -1348,36 +1350,36 @@ def main():
 
         # Print summary
         summary = report.get("summary", {})
-        print("\n📊 QUALITY REPORT SUMMARY")
-        print(f"Overall Quality: {summary.get('overall_quality', 'unknown').upper()}")
-        print(f"Critical Issues: {summary.get('critical_issues', 0)}")
-        print(f"Recommendations: {len(summary.get('recommendations', []))}")
-        print(f"Report saved to: {output_file}")
+        tprint("\n📊 QUALITY REPORT SUMMARY")
+        tprint(f"Overall Quality: {summary.get('overall_quality', 'unknown').upper()}")
+        tprint(f"Critical Issues: {summary.get('critical_issues', 0)}")
+        tprint(f"Recommendations: {len(summary.get('recommendations', []))}")
+        tprint(f"Report saved to: {output_file}")
 
     elif mode == "directory":
         # Directory analysis
         if not data_path.is_dir():
-            print(f"Path is not a directory: {data_path}")
+            tprint(f"Path is not a directory: {data_path}")
             return
 
-        print(f"📁 Analyzing directory: {data_path}")
+        tprint(f"📁 Analyzing directory: {data_path}")
 
         if args.quick_scan:
             # Quick directory scan
-            print("🔍 Performing quick directory scan...")
+            tprint("🔍 Performing quick directory scan...")
             scan_summary = orchestrator.get_directory_summary(
                 str(data_path),
                 args.file_pattern,
                 args.recursive,
             )
 
-            print("\n📊 DIRECTORY SCAN SUMMARY")
-            print(f"Directory: {scan_summary['directory_path']}")
-            print(f"Total data files: {scan_summary['total_files']}")
-            print(f"Total size: {scan_summary['total_size_mb']:.2f} MB")
-            print("File types:")
+            tprint("\n📊 DIRECTORY SCAN SUMMARY")
+            tprint(f"Directory: {scan_summary['directory_path']}")
+            tprint(f"Total data files: {scan_summary['total_files']}")
+            tprint(f"Total size: {scan_summary['total_size_mb']:.2f} MB")
+            tprint("File types:")
             for file_type, info in scan_summary["file_types"].items():
-                print(f"  - {file_type}: {info['count']} files ({info['total_size'] / (1024*1024):.2f} MB)")
+                tprint(f"  - {file_type}: {info['count']} files ({info['total_size'] / (1024*1024):.2f} MB)")
 
             # Save scan summary
             if args.output:
@@ -1388,11 +1390,11 @@ def main():
             with open(output_file, "w") as f:
                 json.dump(scan_summary, f, indent=2, default=str)
 
-            print(f"Scan summary saved to: {output_file}")
+            tprint(f"Scan summary saved to: {output_file}")
 
         else:
             # Full directory analysis
-            print("🔍 Performing full directory analysis...")
+            tprint("🔍 Performing full directory analysis...")
             directory_report = orchestrator.analyze_directory(
                 str(data_path),
                 args.file_pattern,
@@ -1400,29 +1402,29 @@ def main():
             )
 
             if "error" in directory_report:
-                print(f"❌ Directory analysis failed: {directory_report['error']}")
+                tprint(f"❌ Directory analysis failed: {directory_report['error']}")
                 return
 
             # Print directory summary
             summary = directory_report.get("summary", {})
-            print("\n📊 DIRECTORY QUALITY SUMMARY")
-            print(f"Directory: {directory_report['directory_path']}")
-            print(f"Total files: {summary['total_files']}")
-            print(f"Successful analyses: {summary['successful_analyses']}")
-            print(f"Failed analyses: {summary['failed_analyses']}")
-            print(f"Success rate: {summary['success_rate']:.1%}")
-            print(f"Overall Quality: {summary['overall_quality'].upper()}")
-            print(f"Critical Issues Total: {summary['critical_issues_total']}")
+            tprint("\n📊 DIRECTORY QUALITY SUMMARY")
+            tprint(f"Directory: {directory_report['directory_path']}")
+            tprint(f"Total files: {summary['total_files']}")
+            tprint(f"Successful analyses: {summary['successful_analyses']}")
+            tprint(f"Failed analyses: {summary['failed_analyses']}")
+            tprint(f"Success rate: {summary['success_rate']:.1%}")
+            tprint(f"Overall Quality: {summary['overall_quality'].upper()}")
+            tprint(f"Critical Issues Total: {summary['critical_issues_total']}")
 
             if summary.get("quality_distribution"):
-                print("Quality Distribution:")
+                tprint("Quality Distribution:")
                 for quality, count in summary["quality_distribution"].items():
-                    print(f"  - {quality.capitalize()}: {count} files")
+                    tprint(f"  - {quality.capitalize()}: {count} files")
 
             if summary.get("recommendations"):
-                print("Recommendations:")
+                tprint("Recommendations:")
                 for rec in summary["recommendations"][:5]:  # Show first 5
-                    print(f"  - {rec}")
+                    tprint(f"  - {rec}")
 
             # Save directory report
             if args.output:
@@ -1431,7 +1433,7 @@ def main():
                 output_file = f"directory_quality_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
             orchestrator.save_report(directory_report, output_file)
-            print(f"Directory report saved to: {output_file}")
+            tprint(f"Directory report saved to: {output_file}")
 
 
 if __name__ == "__main__":

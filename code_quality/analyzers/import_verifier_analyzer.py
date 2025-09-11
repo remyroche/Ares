@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Import Verifier Analyzer - Checks if each file is imported by others.
 
@@ -404,18 +406,18 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         summary = results.get("summary", {})
         import_status = results.get("import_status", {})
         
-        print("\n" + "="*80)
-        print("IMPORT VERIFICATION REPORT")
-        print("="*80)
-        print(f"Total files analyzed: {summary.get('total_files', 0)}")
-        print(f"Files imported by others: {summary.get('imported_files', 0)}")
-        print(f"Files NOT imported by others: {summary.get('unimported_files', 0)}")
-        print(f"Files only imported by non-production files: {summary.get('only_non_production_files', 0)}")
-        print(f"Import percentage: {summary.get('import_percentage', 0):.1f}%")
-        print(f"Non-production only percentage: {summary.get('non_production_percentage', 0):.1f}%")
-        print("\n" + "-"*80)
-        print("FILE IMPORT STATUS (YES = imported by others, NO = not imported)")
-        print("-"*80)
+        tprint("\n" + "="*80)
+        tprint("IMPORT VERIFICATION REPORT")
+        tprint("="*80)
+        tprint(f"Total files analyzed: {summary.get('total_files', 0)}")
+        tprint(f"Files imported by others: {summary.get('imported_files', 0)}")
+        tprint(f"Files NOT imported by others: {summary.get('unimported_files', 0)}")
+        tprint(f"Files only imported by non-production files: {summary.get('only_non_production_files', 0)}")
+        tprint(f"Import percentage: {summary.get('import_percentage', 0):.1f}%")
+        tprint(f"Non-production only percentage: {summary.get('non_production_percentage', 0):.1f}%")
+        tprint("\n" + "-"*80)
+        tprint("FILE IMPORT STATUS (YES = imported by others, NO = not imported)")
+        tprint("-"*80)
         
         # Sort files for consistent output
         for file_path in sorted(simple_report.keys()):
@@ -431,39 +433,39 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
                 # Add flag indicators
                 flag_indicator = " [NON-PROD]" if only_non_production else ""
                 depth_indicator = f" [D{import_depth}]" if import_depth > 0 else ""
-                print(f"{status:3} | {rel_path}{flag_indicator}{depth_indicator}")
+                tprint(f"{status:3} | {rel_path}{flag_indicator}{depth_indicator}")
                 
                 # Show which files import this file (if any)
                 if imported_by:
-                    print(f"     └─ Imported by {len(imported_by)} file(s):")
+                    tprint(f"     └─ Imported by {len(imported_by)} file(s):")
                     for importer in sorted(imported_by):
                         try:
                             rel_importer = Path(importer).relative_to(Path.cwd())
-                            print(f"        • {rel_importer}")
+                            tprint(f"        • {rel_importer}")
                         except ValueError:
-                            print(f"        • {importer}")
+                            tprint(f"        • {importer}")
                 elif status == "NO":
-                    print(f"     └─ Not imported by any other files")
+                    tprint(f"     └─ Not imported by any other files")
                     
             except ValueError:
                 flag_indicator = " [NON-PROD]" if only_non_production else ""
                 depth_indicator = f" [D{import_depth}]" if import_depth > 0 else ""
-                print(f"{status:3} | {file_path}{flag_indicator}{depth_indicator}")
+                tprint(f"{status:3} | {file_path}{flag_indicator}{depth_indicator}")
                 if imported_by:
-                    print(f"     └─ Imported by {len(imported_by)} file(s):")
+                    tprint(f"     └─ Imported by {len(imported_by)} file(s):")
                     for importer in sorted(imported_by):
-                        print(f"        • {importer}")
+                        tprint(f"        • {importer}")
                 elif status == "NO":
-                    print(f"     └─ Not imported by any other files")
+                    tprint(f"     └─ Not imported by any other files")
         
-        print("\n" + "-"*80)
+        tprint("\n" + "-"*80)
         most_imported = summary.get("most_imported_file", {})
         if most_imported.get("file"):
-            print(f"Most imported file: {most_imported['file']} ({most_imported['import_count']} imports)")
+            tprint(f"Most imported file: {most_imported['file']} ({most_imported['import_count']} imports)")
         
         least_imported = summary.get("least_imported_file", {})
         if least_imported.get("file"):
-            print(f"Least imported file: {least_imported['file']} ({least_imported['import_count']} imports)")
+            tprint(f"Least imported file: {least_imported['file']} ({least_imported['import_count']} imports)")
         
         # Advanced analysis section
         self._print_advanced_analysis(results)
@@ -472,58 +474,58 @@ class ImportVerifierAnalyzer(BaseAnalyzer):
         """Print advanced analysis results."""
         advanced = results.get("advanced_analysis", {})
         
-        print("\n" + "="*80)
-        print("ADVANCED ANALYSIS")
-        print("="*80)
+        tprint("\n" + "="*80)
+        tprint("ADVANCED ANALYSIS")
+        tprint("="*80)
         
         # Circular imports
         circular_imports = advanced.get("circular_imports", [])
-        print(f"\n🔄 CIRCULAR IMPORTS: {len(circular_imports)} found")
+        tprint(f"\n🔄 CIRCULAR IMPORTS: {len(circular_imports)} found")
         if circular_imports:
             for i, cycle in enumerate(circular_imports, 1):
-                print(f"  {i}. {' → '.join(cycle)}")
+                tprint(f"  {i}. {' → '.join(cycle)}")
         else:
-            print("  ✅ No circular imports detected")
+            tprint("  ✅ No circular imports detected")
         
         # Import depths
         import_depths = advanced.get("import_depths", {})
         if import_depths:
             max_depth = max(import_depths.values()) if import_depths else 0
             avg_depth = sum(import_depths.values()) / len(import_depths) if import_depths else 0
-            print(f"\n📊 IMPORT DEPTH ANALYSIS:")
-            print(f"  Maximum depth: {max_depth}")
-            print(f"  Average depth: {avg_depth:.1f}")
+            tprint(f"\n📊 IMPORT DEPTH ANALYSIS:")
+            tprint(f"  Maximum depth: {max_depth}")
+            tprint(f"  Average depth: {avg_depth:.1f}")
             
             # Show files with highest depths
             sorted_depths = sorted(import_depths.items(), key=lambda x: x[1], reverse=True)
-            print(f"  Deepest import chains:")
+            tprint(f"  Deepest import chains:")
             for file_path, depth in sorted_depths[:5]:
                 try:
                     rel_path = Path(file_path).relative_to(Path.cwd())
-                    print(f"    • {rel_path} (depth: {depth})")
+                    tprint(f"    • {rel_path} (depth: {depth})")
                 except ValueError:
-                    print(f"    • {file_path} (depth: {depth})")
+                    tprint(f"    • {file_path} (depth: {depth})")
         
         # Critical paths
         critical_paths = advanced.get("critical_paths", {})
         high_impact_files = critical_paths.get("high_impact_files", [])
         bottleneck_files = critical_paths.get("bottleneck_files", [])
         
-        print(f"\n🎯 CRITICAL PATH ANALYSIS:")
-        print(f"  High-impact files (top 10% by import count): {len(high_impact_files)}")
+        tprint(f"\n🎯 CRITICAL PATH ANALYSIS:")
+        tprint(f"  High-impact files (top 10% by import count): {len(high_impact_files)}")
         if high_impact_files:
             for file_path, count in high_impact_files[:5]:
                 try:
                     rel_path = Path(file_path).relative_to(Path.cwd())
-                    print(f"    • {rel_path} ({count} imports)")
+                    tprint(f"    • {rel_path} ({count} imports)")
                 except ValueError:
-                    print(f"    • {file_path} ({count} imports)")
+                    tprint(f"    • {file_path} ({count} imports)")
         
-        print(f"  Bottleneck files (high import count): {len(bottleneck_files)}")
+        tprint(f"  Bottleneck files (high import count): {len(bottleneck_files)}")
         if bottleneck_files:
             for file_path, count in bottleneck_files[:5]:
                 try:
                     rel_path = Path(file_path).relative_to(Path.cwd())
-                    print(f"    • {rel_path} ({count} imports)")
+                    tprint(f"    • {rel_path} ({count} imports)")
                 except ValueError:
-                    print(f"    • {file_path} ({count} imports)")
+                    tprint(f"    • {file_path} ({count} imports)")

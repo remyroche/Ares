@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Demo Script for Code Quality Pipelines
 
@@ -26,8 +28,8 @@ from .function_import_analysis_pipeline import run_function_import_analysis
 
 async def demo_all_pipelines(project_root: str = "/workspace"):
     """Demonstrate all pipeline types."""
-    print("🚀 Code Quality Pipelines Demo")
-    print("=" * 80)
+    tprint("🚀 Code Quality Pipelines Demo")
+    tprint("=" * 80)
     
     # Configuration
     config = PipelineConfig(
@@ -51,55 +53,58 @@ async def demo_all_pipelines(project_root: str = "/workspace"):
     results = {}
     
     for name, pipeline_func in pipelines:
-        print(f"\n🔍 Running {name} Pipeline...")
-        print("-" * 50)
+        tprint(f"\n🔍 Running {name} Pipeline...")
+        tprint("-" * 50)
         
         try:
-            result = await pipeline_func(project_root, **config.__dict__)
+            # Create a copy of config dict without project_root to avoid argument conflicts
+            config_dict = config.__dict__.copy()
+            config_dict.pop('project_root', None)
+            result = await pipeline_func(project_root, **config_dict)
             results[name] = result
             
-            print(f"✅ {name} completed successfully")
-            print(f"   Status: {result.status.value}")
-            print(f"   Duration: {result.duration_seconds:.2f}s")
-            print(f"   Stages: {len(result.stages)}")
+            tprint(f"✅ {name} completed successfully")
+            tprint(f"   Status: {result.status.value}")
+            tprint(f"   Duration: {result.duration_seconds:.2f}s")
+            tprint(f"   Stages: {len(result.stages)}")
             
             if result.errors:
-                print(f"   Errors: {len(result.errors)}")
+                tprint(f"   Errors: {len(result.errors)}")
                 for error in result.errors[:3]:  # Show first 3 errors
-                    print(f"     - {error}")
+                    tprint(f"     - {error}")
             
             if result.warnings:
-                print(f"   Warnings: {len(result.warnings)}")
+                tprint(f"   Warnings: {len(result.warnings)}")
                 for warning in result.warnings[:3]:  # Show first 3 warnings
-                    print(f"     - {warning}")
+                    tprint(f"     - {warning}")
                     
         except Exception as e:
-            print(f"❌ {name} failed: {e}")
+            tprint(f"❌ {name} failed: {e}")
             results[name] = None
     
     # Summary
-    print(f"\n📊 Pipeline Execution Summary")
-    print("=" * 80)
+    tprint(f"\n📊 Pipeline Execution Summary")
+    tprint("=" * 80)
     
     successful = sum(1 for r in results.values() if r is not None)
     total = len(results)
     
-    print(f"Successful: {successful}/{total}")
-    print(f"Failed: {total - successful}/{total}")
+    tprint(f"Successful: {successful}/{total}")
+    tprint(f"Failed: {total - successful}/{total}")
     
     for name, result in results.items():
         if result:
-            print(f"✅ {name}: {result.duration_seconds:.2f}s")
+            tprint(f"✅ {name}: {result.duration_seconds:.2f}s")
         else:
-            print(f"❌ {name}: Failed")
+            tprint(f"❌ {name}: Failed")
     
     return results
 
 
 async def demo_single_pipeline(pipeline_name: str, project_root: str = "/workspace"):
     """Demonstrate a single pipeline with detailed output."""
-    print(f"🔍 Running {pipeline_name} Pipeline")
-    print("=" * 80)
+    tprint(f"🔍 Running {pipeline_name} Pipeline")
+    tprint("=" * 80)
     
     config = PipelineConfig(
         project_root=project_root,
@@ -119,43 +124,46 @@ async def demo_single_pipeline(pipeline_name: str, project_root: str = "/workspa
     }
     
     if pipeline_name not in pipeline_map:
-        print(f"❌ Unknown pipeline: {pipeline_name}")
-        print(f"Available pipelines: {', '.join(pipeline_map.keys())}")
+        tprint(f"❌ Unknown pipeline: {pipeline_name}")
+        tprint(f"Available pipelines: {', '.join(pipeline_map.keys())}")
         return None
     
     try:
-        result = await pipeline_map[pipeline_name](project_root, **config.__dict__)
+        # Create a copy of config dict without project_root to avoid argument conflicts
+        config_dict = config.__dict__.copy()
+        config_dict.pop('project_root', None)
+        result = await pipeline_map[pipeline_name](project_root, **config_dict)
         
-        print(f"\n📊 {pipeline_name.title()} Pipeline Results")
-        print("-" * 50)
-        print(f"Status: {result.status.value}")
-        print(f"Duration: {result.duration_seconds:.2f}s")
-        print(f"Stages: {len(result.stages)}")
+        tprint(f"\n📊 {pipeline_name.title()} Pipeline Results")
+        tprint("-" * 50)
+        tprint(f"Status: {result.status.value}")
+        tprint(f"Duration: {result.duration_seconds:.2f}s")
+        tprint(f"Stages: {len(result.stages)}")
         
-        print(f"\n📋 Stage Details:")
+        tprint(f"\n📋 Stage Details:")
         for stage in result.stages:
-            print(f"  {stage.stage.value}: {stage.status.value} ({stage.duration_seconds:.2f}s)")
+            tprint(f"  {stage.stage.value}: {stage.status.value} ({stage.duration_seconds:.2f}s)")
             if stage.errors:
                 for error in stage.errors:
-                    print(f"    ❌ {error}")
+                    tprint(f"    ❌ {error}")
             if stage.warnings:
                 for warning in stage.warnings:
-                    print(f"    ⚠️  {warning}")
+                    tprint(f"    ⚠️  {warning}")
         
         if result.errors:
-            print(f"\n❌ Pipeline Errors:")
+            tprint(f"\n❌ Pipeline Errors:")
             for error in result.errors:
-                print(f"  - {error}")
+                tprint(f"  - {error}")
         
         if result.warnings:
-            print(f"\n⚠️  Pipeline Warnings:")
+            tprint(f"\n⚠️  Pipeline Warnings:")
             for warning in result.warnings:
-                print(f"  - {warning}")
+                tprint(f"  - {warning}")
         
         return result
         
     except Exception as e:
-        print(f"❌ Pipeline failed: {e}")
+        tprint(f"❌ Pipeline failed: {e}")
         return None
 
 
@@ -175,8 +183,8 @@ def main():
     elif args.pipeline:
         asyncio.run(demo_single_pipeline(args.pipeline, args.project_root))
     else:
-        print("Please specify --pipeline <name> or --all")
-        print("Available pipelines: syntax, import, import-free, dead-code, graph, complexity, function-import, autofixer")
+        tprint("Please specify --pipeline <name> or --all")
+        tprint("Available pipelines: syntax, import, import-free, dead-code, graph, complexity, function-import, autofixer")
 
 
 if __name__ == "__main__":

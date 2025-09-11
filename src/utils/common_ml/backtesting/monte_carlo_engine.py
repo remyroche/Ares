@@ -20,9 +20,9 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 # M1 Optimization imports
-from src.utils.m1_gpu_utils import get_m1_gpu_manager, m1_monte_carlo_simulate
-from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
-from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer, parallel_monte_carlo_simulation
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, m1_monte_carlo_simulate
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, parallel_monte_carlo_simulation
 
 # Common utilities
 from src.utils.common_operations import (

@@ -31,21 +31,21 @@ from pathlib import Path
 
 # Import comprehensive utility infrastructure
 from ..math_validation import (
-    safe_divide, safe_log, safe_sqrt, safe_kelly_calculation,
-    validate_positive, validate_range, MathValidationError
+    safe_divide, safe_log, safe_sqrt,
+    validate_positive, validate_range
 )
-from ..common_operations import create_fallback_logger, create_fallback_decorator
-from ..common_utilities import CommonUtilities
+from ..core.common import create_fallback_logger, create_fallback_decorator
 from ..parquet_utils import ParquetUtils
 from ..parquet_utils import ParquetUtils as UniversalSerializer
-from ..data.processing.transformers import DataStreamingManager as DataProcessingUtils
-from ..hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
-from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
+from ..data_processing_utils import DataProcessingUtils
+from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+from ..hardware.m1_gpu_utils import get_m1_gpu_manager
+from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
 
 # Import ML Common utilities for cross-validation
 from .cv_utils import TemporalCrossValidator, PurgedKFold
-from .validation_utils import ValidationFramework
-from .pareto import ParetoFrontAnalyzer
+# from .validation_utils import ValidationFramework  # Not available
+# from .pareto import ParetoFrontAnalyzer  # Causes circular import
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,8 @@ class EnhancedDataLabeler:
     
     def __init__(self, config: Optional[TripleBarrierConfig] = None):
         self.config = config or TripleBarrierConfig()
-        self.logger = create_fallback_logger("EnhancedDataLabeler")
+        self.logger = create_fallback_logger()
+        self.logger.name = "EnhancedDataLabeler"
         
         # Initialize utility managers
         self._initialize_utilities()
@@ -130,19 +131,37 @@ class EnhancedDataLabeler:
         """Initialize utility managers."""
         self.logger.info("🔄 Initializing utility managers for EnhancedDataLabeler...")
         start_time = time.time()
-        
+
         try:
-            self.logger.debug("🔧 Initializing M1 GPU manager...")
-            self.gpu_manager = get_m1_gpu_manager()
-            self.logger.debug("✅ M1 GPU manager initialized")
-            
-            self.logger.debug("🔧 Initializing M1 memory optimizer...")
-            self.memory_optimizer = get_m1_memory_optimizer()
-            self.logger.debug("✅ M1 memory optimizer initialized")
-            
-            self.logger.debug("🔧 Initializing M1 CPU optimizer...")
-            self.cpu_optimizer = get_m1_cpu_optimizer()
-            self.logger.debug("✅ M1 CPU optimizer initialized")
+            # Try to import and initialize M1 GPU manager with fallback
+            try:
+                self.logger.debug("🔧 Initializing M1 GPU manager...")
+                self.gpu_manager = get_m1_gpu_manager()
+                self.logger.debug("✅ M1 GPU manager initialized")
+            except NameError:
+                self.logger.warning("⚠️ get_m1_gpu_manager not available, using fallback")
+                self.gpu_manager = None
+            except Exception as gpu_e:
+                self.logger.warning(f"⚠️ M1 GPU manager initialization failed: {gpu_e}")
+                self.gpu_manager = None
+
+            # Try to import and initialize M1 memory optimizer with fallback
+            try:
+                self.logger.debug("🔧 Initializing M1 memory optimizer...")
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.logger.debug("✅ M1 memory optimizer initialized")
+            except Exception as mem_e:
+                self.logger.warning(f"⚠️ M1 memory optimizer initialization failed: {mem_e}")
+                self.memory_optimizer = None
+
+            # Try to import and initialize M1 CPU optimizer with fallback
+            try:
+                self.logger.debug("🔧 Initializing M1 CPU optimizer...")
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.logger.debug("✅ M1 CPU optimizer initialized")
+            except Exception as cpu_e:
+                self.logger.warning(f"⚠️ M1 CPU optimizer initialization failed: {cpu_e}")
+                self.cpu_optimizer = None
             
             self.logger.debug("🔧 Initializing Parquet utilities...")
             self.parquet_utils = ParquetUtils()
@@ -156,9 +175,9 @@ class EnhancedDataLabeler:
             self.data_processor = DataProcessingUtils()
             self.logger.debug("✅ Data processing utilities initialized")
             
-            self.logger.debug("🔧 Initializing common utilities...")
-            self.common_utils = CommonUtilities()
-            self.logger.debug("✅ Common utilities initialized")
+            # self.logger.debug("🔧 Common utilities not available")
+            # self.common_utils = CommonUtilities()
+            # self.logger.debug("✅ Common utilities initialized")
             
             init_time = time.time() - start_time
             self.logger.info(f"✅ All utility managers initialized successfully in {init_time:.3f}s")
@@ -168,18 +187,23 @@ class EnhancedDataLabeler:
             
         except Exception as e:
             init_time = time.time() - start_time
-            self.logger.warning(f"⚠️ Some utility managers failed to initialize after {init_time:.3f}s: {e}")
-            self.logger.warning("🔄 Falling back to basic implementations...")
-            
-            # Set fallback implementations
-            self.gpu_manager = None
-            self.memory_optimizer = None
-            self.cpu_optimizer = None
-            self.parquet_utils = None
-            self.serializer = None
-            self.data_processor = None
-            self.common_utils = None
-            
+            self.logger.warning(f"⚠️ Unexpected error during utility initialization after {init_time:.3f}s: {e}")
+            self.logger.warning("🔄 Setting fallback implementations...")
+
+            # Set fallback implementations for any that weren't already set
+            if not hasattr(self, 'gpu_manager') or self.gpu_manager is None:
+                self.gpu_manager = None
+            if not hasattr(self, 'memory_optimizer') or self.memory_optimizer is None:
+                self.memory_optimizer = None
+            if not hasattr(self, 'cpu_optimizer') or self.cpu_optimizer is None:
+                self.cpu_optimizer = None
+            if not hasattr(self, 'parquet_utils'):
+                self.parquet_utils = None
+            if not hasattr(self, 'serializer'):
+                self.serializer = None
+            if not hasattr(self, 'data_processor'):
+                self.data_processor = None
+
             self.logger.info("✅ Fallback implementations set - basic functionality preserved")
 
     def create_triple_barrier_labels(

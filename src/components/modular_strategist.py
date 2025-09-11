@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from datetime import datetime, timedelta
 from typing import Any
@@ -1032,5 +1034,5 @@ async def setup_modular_strategist(
         return None
 
     except Exception as e:
-        print(f"Error setting up modular strategist: {e}")
+        tprint(f"Error setting up modular strategist: {e}")
         return None

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Context-Aware Security Analyzer
 
@@ -389,11 +391,11 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
         result = analyze_security_issues(sys.argv[1])
-        print(f"Found {result.total_issues} security issues in {sys.argv[1]}")
-        print(f"Real issues: {result.real_issues}")
-        print(f"False positives: {result.false_positives}")
+        tprint(f"Found {result.total_issues} security issues in {sys.argv[1]}")
+        tprint(f"Real issues: {result.real_issues}")
+        tprint(f"False positives: {result.false_positives}")
         for issue in result.issues:
             if not issue.is_false_positive:
-                print(f"  {issue.severity.value}: {issue.description} (line {issue.line})")
+                tprint(f"  {issue.severity.value}: {issue.description} (line {issue.line})")
     else:
-        print("Usage: python enhanced_security_analyzer.py <file_path>")
+        tprint("Usage: python enhanced_security_analyzer.py <file_path>")

@@ -464,6 +464,70 @@ def get_system_info() -> Dict[str, Any]:
         logger.error(f"Failed to get system info: {e}")
         return {'error': str(e)}
 
+def performance_timer(func: Callable) -> Callable:
+    """
+    Decorator to time function performance and log results.
+
+    Args:
+        func: Function to time
+
+    Returns:
+        Wrapped function with timing
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        start_memory = get_memory_usage()
+
+        try:
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            end_memory = get_memory_usage()
+
+            execution_time = end_time - start_time
+            memory_delta = end_memory - start_memory
+
+            logger.debug(f"Function {func.__name__} took {execution_time:.4f}s, memory delta: {memory_delta:.2f}MB")
+
+            # Record in global monitor
+            metrics = PerformanceMetrics(
+                function_name=func.__name__,
+                execution_time=execution_time,
+                memory_usage=memory_delta,
+                cpu_usage=get_cpu_usage(),
+                timestamp=end_time,
+                args_count=len(args),
+                kwargs_count=len(kwargs),
+                success=True
+            )
+            global_monitor.record_metrics(metrics)
+
+            return result
+
+        except Exception as e:
+            end_time = time.time()
+            execution_time = end_time - start_time
+
+            logger.error(f"Function {func.__name__} failed after {execution_time:.4f}s: {e}")
+
+            # Record failure
+            metrics = PerformanceMetrics(
+                function_name=func.__name__,
+                execution_time=execution_time,
+                memory_usage=0.0,
+                cpu_usage=get_cpu_usage(),
+                timestamp=end_time,
+                args_count=len(args),
+                kwargs_count=len(kwargs),
+                success=False,
+                error_message=str(e)
+            )
+            global_monitor.record_metrics(metrics)
+
+            raise
+
+    return wrapper
+
 __all__ = [
     'PerformanceMetrics',
     'PerformanceMonitor',
@@ -476,5 +540,6 @@ __all__ = [
     'profile_function',
     'time_function',
     'benchmark_function',
-    'get_system_info'
+    'get_system_info',
+    'performance_timer'
 ]

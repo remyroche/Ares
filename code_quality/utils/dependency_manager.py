@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Dependency Manager - Handles optional dependencies gracefully.
 
@@ -138,18 +140,18 @@ class DependencyManager:
     
     def print_dependency_status(self):
         """Print the status of all dependencies."""
-        print("Dependency Status:")
-        print("=" * 50)
+        tprint("Dependency Status:")
+        tprint("=" * 50)
         
         available = self.get_available_dependencies()
         missing = self.get_missing_dependencies()
         
-        print(f"Available ({len(available)}): {', '.join(available) if available else 'None'}")
-        print(f"Missing ({len(missing)}): {', '.join(missing) if missing else 'None'}")
+        tprint(f"Available ({len(available)}): {', '.join(available) if available else 'None'}")
+        tprint(f"Missing ({len(missing)}): {', '.join(missing) if missing else 'None'}")
         
         if missing:
-            print(f"\nTo install missing dependencies:")
-            print(f"pip install {' '.join(missing)}")
+            tprint(f"\nTo install missing dependencies:")
+            tprint(f"pip install {' '.join(missing)}")
     
     def create_fallback_config(self) -> Dict[str, Any]:
         """Create a configuration that works with available dependencies."""

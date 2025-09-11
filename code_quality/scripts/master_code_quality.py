@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Master Code Quality Management Script
 
@@ -59,8 +61,8 @@ class CodeQualityMaster:
 
     def analyze_current_state(self) -> dict[str, Any]:
         """Analyze the current state of code quality."""
-        print("Analyzing current code quality state...")
-        print("=" * 60)
+        tprint("Analyzing current code quality state...")
+        tprint("=" * 60)
 
         state = {
             "timestamp": datetime.now().isoformat(),
@@ -72,7 +74,7 @@ class CodeQualityMaster:
         }
 
         # Check syntax errors
-        print("\n1. Checking syntax errors...")
+        tprint("\n1. Checking syntax errors...")
         result = self.run_script("syntax_fixer", ["--project-root", "/workspace/src"])
         if "files with syntax errors" in result.get("stdout", ""):
             # Parse the output
@@ -81,7 +83,7 @@ class CodeQualityMaster:
                     state["syntax_errors"] = int(line.split()[1])
 
         # Check import issues
-        print("2. Checking import issues...")
+        tprint("2. Checking import issues...")
         # This would analyze the existing reports
         import_report = self.reports_dir / "import_fixes_report.json"
         if import_report.exists():
@@ -90,7 +92,7 @@ class CodeQualityMaster:
                 state["import_issues"] = data.get("total_files", 0)
 
         # Check async issues
-        print("3. Checking async/await issues...")
+        tprint("3. Checking async/await issues...")
         async_report = self.reports_dir / "async_fixes_report.json"
         if async_report.exists():
             with open(async_report) as f:
@@ -98,7 +100,7 @@ class CodeQualityMaster:
                 state["async_issues"] = data.get("total_issues", 0)
 
         # Check type hint coverage
-        print("4. Checking type hint coverage...")
+        tprint("4. Checking type hint coverage...")
         type_report = self.reports_dir / "type_hints_report.json"
         if type_report.exists():
             with open(type_report) as f:
@@ -106,7 +108,7 @@ class CodeQualityMaster:
                 state["type_coverage"] = data.get("overall_coverage", 0.0)
 
         # Check circular imports
-        print("5. Checking circular imports...")
+        tprint("5. Checking circular imports...")
         circular_report = self.reports_dir / "circular_imports_report.json"
         if circular_report.exists():
             with open(circular_report) as f:
@@ -120,32 +122,32 @@ class CodeQualityMaster:
         results = {}
 
         mode = "DRY RUN" if dry_run else "APPLYING FIXES"
-        print(f"\n{mode}")
-        print("=" * 60)
+        tprint(f"\n{mode}")
+        tprint("=" * 60)
 
         if "syntax" in fix_types:
-            print("\nFixing syntax errors...")
+            tprint("\nFixing syntax errors...")
             args = ["--project-root", "/workspace/src"]
             if not dry_run:
                 args.append("--fix")
             results["syntax"] = self.run_script("syntax_fixer", args)
 
         if "imports" in fix_types:
-            print("\nFixing import issues...")
+            tprint("\nFixing import issues...")
             args = ["--project-root", "/workspace/src"]
             if not dry_run:
                 args.append("--fix")
             results["imports"] = self.run_script("import_fixer", args)
 
         if "async" in fix_types:
-            print("\nFixing async/await issues...")
+            tprint("\nFixing async/await issues...")
             args = ["--project-root", "/workspace/src"]
             if not dry_run:
                 args.append("--fix")
             results["async"] = self.run_script("async_fixer", args)
 
         if "types" in fix_types:
-            print("\nImproving type hint coverage...")
+            tprint("\nImproving type hint coverage...")
             args = ["--project-root", "/workspace/src", "--target", "0.9"]
             results["types"] = self.run_script("type_hints", args)
 
@@ -153,7 +155,7 @@ class CodeQualityMaster:
 
     def generate_summary_report(self) -> dict[str, Any]:
         """Generate a comprehensive summary report."""
-        print("\nGenerating summary report...")
+        tprint("\nGenerating summary report...")
 
         # Get current state
         current_state = self.analyze_current_state()
@@ -218,21 +220,21 @@ class CodeQualityMaster:
         """Print a code quality dashboard."""
         state = self.analyze_current_state()
 
-        print("\n" + "=" * 60)
-        print("CODE QUALITY DASHBOARD")
-        print("=" * 60)
-        print(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print()
+        tprint("\n" + "=" * 60)
+        tprint("CODE QUALITY DASHBOARD")
+        tprint("=" * 60)
+        tprint(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        tprint()
 
         # Quality metrics
-        print("QUALITY METRICS")
-        print("-" * 30)
-        print(f"Syntax Errors:     {state['syntax_errors']:>6} files")
-        print(f"Import Issues:     {state['import_issues']:>6} files")
-        print(f"Async Issues:      {state['async_issues']:>6} calls")
-        print(f"Type Coverage:     {state['type_coverage']:>6.1%}")
-        print(f"Circular Imports:  {state['circular_imports']:>6}")
-        print()
+        tprint("QUALITY METRICS")
+        tprint("-" * 30)
+        tprint(f"Syntax Errors:     {state['syntax_errors']:>6} files")
+        tprint(f"Import Issues:     {state['import_issues']:>6} files")
+        tprint(f"Async Issues:      {state['async_issues']:>6} calls")
+        tprint(f"Type Coverage:     {state['type_coverage']:>6.1%}")
+        tprint(f"Circular Imports:  {state['circular_imports']:>6}")
+        tprint()
 
         # Overall score (simple calculation)
         score = 100
@@ -242,22 +244,22 @@ class CodeQualityMaster:
         score -= (1 - state["type_coverage"]) * 20  # Max -20 for 0% coverage
         score -= state["circular_imports"] * 5  # -5 per circular import
 
-        print(f"OVERALL QUALITY SCORE: {max(0, score):.1f}/100")
-        print()
+        tprint(f"OVERALL QUALITY SCORE: {max(0, score):.1f}/100")
+        tprint()
 
         # Recommendations
-        print("RECOMMENDATIONS")
-        print("-" * 30)
+        tprint("RECOMMENDATIONS")
+        tprint("-" * 30)
         if state["syntax_errors"] > 0:
-            print(f"1. Run syntax fixer to fix {state['syntax_errors']} files")
+            tprint(f"1. Run syntax fixer to fix {state['syntax_errors']} files")
         if state["import_issues"] > 0:
-            print(f"2. Run import fixer to resolve {state['import_issues']} import issues")
+            tprint(f"2. Run import fixer to resolve {state['import_issues']} import issues")
         if state["async_issues"] > 0:
-            print(f"3. Add await to {state['async_issues']} async function calls")
+            tprint(f"3. Add await to {state['async_issues']} async function calls")
         if state["type_coverage"] < 0.9:
-            print(f"4. Increase type coverage from {state['type_coverage']:.1%} to 90%+")
+            tprint(f"4. Increase type coverage from {state['type_coverage']:.1%} to 90%+")
 
-        print("\n" + "=" * 60)
+        tprint("\n" + "=" * 60)
 
 
 def main():
@@ -285,7 +287,7 @@ def main():
 
     if args.analyze:
         master.analyze_current_state()
-        print("\nCurrent state saved to reports directory")
+        tprint("\nCurrent state saved to reports directory")
 
     if args.fix:
         fix_types = args.fix
@@ -295,11 +297,11 @@ def main():
         master.apply_fixes(fix_types, dry_run=not args.apply)
 
         if not args.apply:
-            print("\nTo apply these fixes, run with --apply flag")
+            tprint("\nTo apply these fixes, run with --apply flag")
 
     if args.report:
         summary = master.generate_summary_report()
-        print(f"\nSummary report generated: {list(summary.keys())}")
+        tprint(f"\nSummary report generated: {list(summary.keys())}")
 
 
 if __name__ == "__main__":

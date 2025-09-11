@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Conservative Auto-Fixer - A safer version of the auto-fixer that prioritizes not breaking code.
 """
@@ -358,29 +360,29 @@ class ConservativeAutoFixer:
         
         results["total_files"] = len(python_files)
         
-        print(f"Found {len(python_files)} Python files to process")
-        print(f"Using tools: {', '.join(self.enabled_tools)}")
-        print("Safety features: Always backup, validate after fix, restore on error")
-        print("-" * 50)
+        tprint(f"Found {len(python_files)} Python files to process")
+        tprint(f"Using tools: {', '.join(self.enabled_tools)}")
+        tprint("Safety features: Always backup, validate after fix, restore on error")
+        tprint("-" * 50)
         
         # Process each file
         for i, file_path in enumerate(python_files, 1):
-            print(f"Processing ({i}/{len(python_files)}): {file_path}")
+            tprint(f"Processing ({i}/{len(python_files)}): {file_path}")
             
             file_result = self.fix_file(file_path)
             results["file_results"][file_path] = file_result
             
             if file_result.get("skipped"):
                 results["skipped_files"] += 1
-                print(f"  SKIPPED: {file_result.get('skip_reason', 'Unknown reason')}")
+                tprint(f"  SKIPPED: {file_result.get('skip_reason', 'Unknown reason')}")
             elif file_result.get("restored"):
                 results["restored_files"] += 1
-                print(f"  RESTORED: {file_result.get('restore_reason', 'Unknown reason')}")
+                tprint(f"  RESTORED: {file_result.get('restore_reason', 'Unknown reason')}")
             elif file_result["final_validation"]["valid"]:
                 results["successful_files"] += 1
-                print("  SUCCESS: File fixed and validated")
+                tprint("  SUCCESS: File fixed and validated")
             else:
-                print(f"  ERROR: {file_result['final_validation']['error']}")
+                tprint(f"  ERROR: {file_result['final_validation']['error']}")
             
             results["processed_files"] = i
         
@@ -397,15 +399,15 @@ class ConservativeAutoFixer:
             )
         }
         
-        print("\n" + "=" * 50)
-        print("CONSERVATIVE AUTO-FIX SUMMARY")
-        print("=" * 50)
-        print(f"Total files found: {results['summary']['total_files']}")
-        print(f"Files processed: {results['summary']['processed_files']}")
-        print(f"Successfully fixed: {results['summary']['successful_files']}")
-        print(f"Skipped (pre-existing errors): {results['summary']['skipped_files']}")
-        print(f"Restored (fixes broke syntax): {results['summary']['restored_files']}")
-        print(f"Success rate: {results['summary']['success_rate']:.1f}%")
+        tprint("\n" + "=" * 50)
+        tprint("CONSERVATIVE AUTO-FIX SUMMARY")
+        tprint("=" * 50)
+        tprint(f"Total files found: {results['summary']['total_files']}")
+        tprint(f"Files processed: {results['summary']['processed_files']}")
+        tprint(f"Successfully fixed: {results['summary']['successful_files']}")
+        tprint(f"Skipped (pre-existing errors): {results['summary']['skipped_files']}")
+        tprint(f"Restored (fixes broke syntax): {results['summary']['restored_files']}")
+        tprint(f"Success rate: {results['summary']['success_rate']:.1f}%")
         
         return results
 
@@ -457,16 +459,16 @@ def main():
     
     if path.is_file():
         results = fixer.fix_file(str(path))
-        print("\nResults:")
+        tprint("\nResults:")
         import json
-        print(json.dumps(results, indent=2))
+        tprint(json.dumps(results, indent=2))
     elif path.is_dir():
         results = fixer.fix_directory(
             str(path),
             recursive=not args.no_recursive
         )
     else:
-        print(f"Error: {path} is not a valid file or directory")
+        tprint(f"Error: {path} is not a valid file or directory")
         return 1
     
     # Return appropriate exit code

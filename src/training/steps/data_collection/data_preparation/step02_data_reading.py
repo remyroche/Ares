@@ -28,13 +28,11 @@ from src.utils.logger import system_logger
 # Import optimization utilities for enhanced performance
 try:
     from src.utils.vectorized_processing_core import get_vectorized_processing_core
-    from src.utils.optimized_data_manager import get_optimized_data_manager
-    from src.utils.m1_gpu_utils import get_m1_gpu_manager
-    from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
-import logging
-import os
-import time
-
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    import logging
+    import os
+    import time
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False
@@ -57,19 +55,16 @@ class DataReadingStep(BaseStep):
         if OPTIMIZATIONS_AVAILABLE:
             try:
                 self.vectorized_core = get_vectorized_processing_core()
-                self.data_manager = get_optimized_data_manager()
                 self.gpu_manager = get_m1_gpu_manager()
                 self.memory_optimizer = get_m1_memory_optimizer()
                 self.logger.info('🚀 Step 2 initialized with M1 hardware acceleration and vectorized processing')
             except Exception as e:
                 self.logger.warning(f'Failed to initialize optimizations: {e}')
                 self.vectorized_core = None
-                self.data_manager = None
                 self.gpu_manager = None
                 self.memory_optimizer = None
         else:
             self.vectorized_core = None
-            self.data_manager = None
             self.gpu_manager = None
             self.memory_optimizer = None
     @log_step_functions
@@ -217,7 +212,7 @@ class DataReadingStep(BaseStep):
                         if parquet_files:
                             dataframes = []
                             for file_path in parquet_files:
-                                df = parquet_utils.safe_read_parquet(str(file_path))
+                                df = standardized_parquet_handler.read_parquet_standardized(str(file_path), schema_name='unified')
                                 if df is not None and (not df.empty):
                                     try:
                                         df = PipelineStandards(self.logger).enforce_schema(df, 'unified')

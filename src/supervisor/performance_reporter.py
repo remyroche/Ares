@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import asyncio
 import json
@@ -1024,5 +1026,5 @@ async def setup_performance_reporter(
             return performance_reporter
         return None
     except Exception as e:
-        print(f"Error setting up performance reporter: {e}")
+        tprint(f"Error setting up performance reporter: {e}")
         return None

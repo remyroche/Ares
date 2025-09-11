@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Dynamic Import Analyzer
 
@@ -480,16 +482,16 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
         result = analyze_dynamic_imports(sys.argv[1])
-        print(f"Found {result.total_patterns} import patterns in {sys.argv[1]}")
-        print(f"Found {result.total_issues} import issues")
-        print(f"Real issues: {result.real_issues}")
-        print(f"False positives: {result.false_positives}")
+        tprint(f"Found {result.total_patterns} import patterns in {sys.argv[1]}")
+        tprint(f"Found {result.total_issues} import issues")
+        tprint(f"Real issues: {result.real_issues}")
+        tprint(f"False positives: {result.false_positives}")
         
         for pattern in result.patterns:
-            print(f"  Pattern: {pattern.type.value} - {pattern.name} (line {pattern.line})")
+            tprint(f"  Pattern: {pattern.type.value} - {pattern.name} (line {pattern.line})")
         
         for issue in result.issues:
             if not issue.is_false_positive:
-                print(f"  Issue: {issue.severity.value} - {issue.description} (line {issue.line})")
+                tprint(f"  Issue: {issue.severity.value} - {issue.description} (line {issue.line})")
     else:
-        print("Usage: python enhanced_dynamic_import_analyzer.py <file_path>")
+        tprint("Usage: python enhanced_dynamic_import_analyzer.py <file_path>")

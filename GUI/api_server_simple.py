@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Simplified Ares Trading Bot API Server
 
@@ -942,7 +944,7 @@ async def get_monitoring_dashboard():
 if __name__ == "__main__":
     import uvicorn
 
-    print("Starting Ares API server v2.0 (Simplified)...")
-    print("API documentation will be available at http://localhost:8000/docs")
+    tprint("Starting Ares API server v2.0 (Simplified)...")
+    tprint("API documentation will be available at http://localhost:8000/docs")
     port = int(os.getenv("API_PORT", os.getenv("PORT", "8000")))
     uvicorn.run("api_server_simple:app", host="0.0.0.0", port=port, reload=True)

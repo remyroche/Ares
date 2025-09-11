@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Comprehensive Model Evaluation Utilities
 
@@ -31,15 +33,15 @@ import time
 
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
-from ..m1_gpu_utils import M1GPUManager
+from ..hardware.m1_gpu_utils import M1GPUManager
 
 # Enhanced dependency management with fast fail
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.ModelEvaluation")
-    print("✅ Custom logger available for MLCommon.ModelEvaluation")
+    tprint("✅ Custom logger available for MLCommon.ModelEvaluation")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.ModelEvaluation")
     _LOGGER.setLevel(logging.INFO)
 

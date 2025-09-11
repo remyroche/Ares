@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Secrets and API Keys Analyzer
 
@@ -318,9 +320,9 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
         result = analyze_secrets(sys.argv[1])
-        print(f"Found {result.total_secrets} secrets in {sys.argv[1]}")
-        print(f"Critical: {result.critical_secrets}, High: {result.high_secrets}")
+        tprint(f"Found {result.total_secrets} secrets in {sys.argv[1]}")
+        tprint(f"Critical: {result.critical_secrets}, High: {result.high_secrets}")
         for secret in result.secrets:
-            print(f"  {secret.severity.value}: {secret.type.value} (line {secret.line}) - {secret.name}")
+            tprint(f"  {secret.severity.value}: {secret.type.value} (line {secret.line}) - {secret.name}")
     else:
-        print("Usage: python secrets_analyzer.py <file_path>")
+        tprint("Usage: python secrets_analyzer.py <file_path>")

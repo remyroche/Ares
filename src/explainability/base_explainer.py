@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import List
 from typing import Any
 from typing import Dict
@@ -18,7 +20,7 @@ try:
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
-    print('Warning: SHAP not available, SHAP explanations disabled')
+    tprint('Warning: SHAP not available, SHAP explanations disabled')
 
 try:
     from lime.lime_tabular import LimeTabularExplainer
@@ -28,7 +30,7 @@ import time
     LIME_AVAILABLE = True
 except ImportError:
     LIME_AVAILABLE = False
-    print('Warning: LIME not available, LIME explanations disabled')
+    tprint('Warning: LIME not available, LIME explanations disabled')
 
 @dataclass
 class ExplanationResult:

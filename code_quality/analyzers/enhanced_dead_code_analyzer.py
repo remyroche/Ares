@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
 import numpy as np
@@ -30,7 +32,7 @@ try:
     PYCG_AVAILABLE = True
 except ImportError:
     PYCG_AVAILABLE = False
-    print("Warning: PyCG not available. Install with: pip install pycg")
+    tprint("Warning: PyCG not available. Install with: pip install pycg")
     
     # Create a mock pycg module to prevent import errors
     class MockPyCG:
@@ -47,21 +49,21 @@ try:
     DEADCODE_AVAILABLE = True
 except ImportError:
     DEADCODE_AVAILABLE = False
-    print("Warning: DeadCodeRemover not available. Install with: pip install deadcode")
+    tprint("Warning: DeadCodeRemover not available. Install with: pip install deadcode")
 
 try:
     import networkx as nx
     NETWORKX_AVAILABLE = True
 except ImportError:
     NETWORKX_AVAILABLE = False
-    print("Warning: NetworkX not available. Install with: pip install networkx")
+    tprint("Warning: NetworkX not available. Install with: pip install networkx")
 
 try:
     import matplotlib.pyplot as plt
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
-    print("Warning: Matplotlib not available. Install with: pip install matplotlib")
+    tprint("Warning: Matplotlib not available. Install with: pip install matplotlib")
 
 from core.config import AnalysisConfig, CodeQualityConfig
 from utils.file_utils import find_python_files

@@ -63,8 +63,8 @@ try:
     from src.utils.vectorized_processing_core import (
         get_vectorized_processing_core, OptimizedPipelineExecutor, PipelineStage
     )
-    from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
     ENHANCED_OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     ENHANCED_OPTIMIZATIONS_AVAILABLE = False

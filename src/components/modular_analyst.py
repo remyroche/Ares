@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from datetime import datetime
 from typing import Any
@@ -903,5 +905,5 @@ async def setup_modular_analyst(
         return None
 
     except Exception as e:
-        print(f"Error setting up modular analyst: {e}")
+        tprint(f"Error setting up modular analyst: {e}")
         return None

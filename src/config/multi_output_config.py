@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 
 """Multi-Output Prediction Configuration.
 
@@ -305,14 +307,14 @@ def validate_multi_output_config(config: dict[str, Any]) -> bool:
 
     for key in required_keys:
         if key not in config:
-            print(f"❌ Missing required configuration key: {key}")
+            tprint(f"❌ Missing required configuration key: {key}")
             return False
 
     # Validate model type
     model_type = config["multi_output_models"].get("model_type")
     valid_model_types = ["LightGBM", "RandomForest", "NeuralNetwork"]
     if model_type not in valid_model_types:
-        print(
+        tprint(
             f"❌ Invalid model type: {model_type}. Must be one of {valid_model_types}"
         )
         return False
@@ -320,19 +322,19 @@ def validate_multi_output_config(config: dict[str, Any]) -> bool:
     # Validate profit feature engineering
     profit_config = config["profit_feature_engineering"]
     if not profit_config.get("use_numba", True):
-        print("⚠️ Numba acceleration is recommended for profit feature engineering")
+        tprint("⚠️ Numba acceleration is recommended for profit feature engineering")
 
-    print("✅ Multi-output configuration validation passed")
+    tprint("✅ Multi-output configuration validation passed")
     return True
 
 # Example usage and testing
 if __name__ == "__main__":
     # Test configuration
     config = get_multi_output_config()
-    print("Multi-output configuration:")
-    print(f"  - Enable multi-output: {config['enable_multi_output']}")
-    print(f"  - Model type: {config['multi_output_models']['model_type']}")
-    print(
+    tprint("Multi-output configuration:")
+    tprint(f"  - Enable multi-output: {config['enable_multi_output']}")
+    tprint(f"  - Model type: {config['multi_output_models']['model_type']}")
+    tprint(
         f"  - Use profit features: {config['multi_output_models']['use_profit_features']}"
     )
 
@@ -341,16 +343,16 @@ if __name__ == "__main__":
 
     # Test model-specific configuration
     lightgbm_config = get_multi_output_model_config("LightGBM")
-    print("\nLightGBM configuration:")
-    print(f"  - N estimators: {lightgbm_config['model_config']['n_estimators']}")
-    print(f"  - Learning rate: {lightgbm_config['model_config']['learning_rate']}")
+    tprint("\nLightGBM configuration:")
+    tprint(f"  - N estimators: {lightgbm_config['model_config']['n_estimators']}")
+    tprint(f"  - Learning rate: {lightgbm_config['model_config']['learning_rate']}")
 
     # Test enhanced pipeline configuration
     pipeline_config = get_enhanced_training_pipeline_config()
-    print("\nEnhanced pipeline configuration:")
-    print(
+    tprint("\nEnhanced pipeline configuration:")
+    tprint(
         f"  - Enable enhanced steps: {pipeline_config['pipeline']['enable_enhanced_steps']}"
     )
-    print(
+    tprint(
         f"  - Enable multi-output training: {pipeline_config['pipeline']['enable_multi_output_training']}"
     )

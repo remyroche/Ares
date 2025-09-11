@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Any, Optional
 import numpy as np
 
@@ -19,7 +21,7 @@ try:
 except ImportError:
     astroid = None
     ASTROID_AVAILABLE = False
-    print("Warning: astroid not available")
+    tprint("Warning: astroid not available")
 
 # Rope integration removed as requested
 ROPE_AVAILABLE = False

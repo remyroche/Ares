@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from .core.decorators import handles_errors
 """
 from ...utils.logger import system_logger
@@ -17,7 +19,7 @@ try:
     import talib
 except ImportError:
     talib = None
-    print('Warning: talib not available')
+    tprint('Warning: talib not available')
 from sklearn.preprocessing import StandardScaler
 import numba
 from .tactician.sr_breakout_predictor import SRBreakoutPredictor

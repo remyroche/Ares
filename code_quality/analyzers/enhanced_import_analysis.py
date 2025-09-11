@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Any, Optional
 #!/usr/bin/env python3
 """
@@ -724,7 +726,7 @@ class EnhancedImportAndUndefinedAnalyzer:
     
     def analyze_file(self, file_path: str) -> Dict[str, AnalysisResult]:
         """Analyze a single file for both import and undefined issues."""
-        print(f"🔍 Analyzing file: {file_path}")
+        tprint(f"🔍 Analyzing file: {file_path}")
         
         import_result = self.import_analyzer.analyze_file(file_path)
         undefined_result = self.undefined_analyzer.analyze_file(file_path)
@@ -736,7 +738,7 @@ class EnhancedImportAndUndefinedAnalyzer:
     
     def analyze_directory(self, directory_path: str) -> Dict[str, Any]:
         """Analyze all Python files in a directory."""
-        print(f"🔍 Analyzing directory: {directory_path}")
+        tprint(f"🔍 Analyzing directory: {directory_path}")
         
         python_files = []
         for root, dirs, files in os.walk(directory_path):
@@ -785,12 +787,12 @@ class EnhancedImportAndUndefinedAnalyzer:
         if target_path is None:
             target_path = str(self.project_root)
         
-        print("="*70)
-        print("ENHANCED IMPORT AND UNDEFINED VARIABLE ANALYSIS")
-        print("="*70)
-        print(f"Target: {target_path}")
-        print(f"Timestamp: {self.timestamp}")
-        print()
+        tprint("="*70)
+        tprint("ENHANCED IMPORT AND UNDEFINED VARIABLE ANALYSIS")
+        tprint("="*70)
+        tprint(f"Target: {target_path}")
+        tprint(f"Timestamp: {self.timestamp}")
+        tprint()
         
         start_time = time.time()
         
@@ -851,20 +853,20 @@ class EnhancedImportAndUndefinedAnalyzer:
         self.results["files"] = results['files']
         
         # Print final summary
-        print("\n" + "="*70)
-        print("COMPREHENSIVE ANALYSIS SUMMARY")
-        print("="*70)
-        print(f"Total execution time: {total_time:.2f}s")
-        print(f"Files analyzed: {overall_summary['total_files']}")
-        print(f"Import issues: {overall_summary['import_issues']}")
-        print(f"Undefined variable issues: {overall_summary['undefined_issues']}")
-        print(f"Total issues: {overall_summary['total_issues']}")
+        tprint("\n" + "="*70)
+        tprint("COMPREHENSIVE ANALYSIS SUMMARY")
+        tprint("="*70)
+        tprint(f"Total execution time: {total_time:.2f}s")
+        tprint(f"Files analyzed: {overall_summary['total_files']}")
+        tprint(f"Import issues: {overall_summary['import_issues']}")
+        tprint(f"Undefined variable issues: {overall_summary['undefined_issues']}")
+        tprint(f"Total issues: {overall_summary['total_issues']}")
         
         if recommendations:
-            print("\n📋 Recommendations:")
+            tprint("\n📋 Recommendations:")
             for i, rec in enumerate(recommendations, 1):
                 priority_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(rec.get("priority", "low"), "⚪")
-                print(f"  {i}. {priority_emoji} [{rec.get('priority', 'low').upper()}] {rec.get('message', '')}")
+                tprint(f"  {i}. {priority_emoji} [{rec.get('priority', 'low').upper()}] {rec.get('message', '')}")
         
         return self.results
     
@@ -884,11 +886,11 @@ class EnhancedImportAndUndefinedAnalyzer:
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(serializable_results, f, indent=2, ensure_ascii=False)
             
-            print(f"💾 Report saved to: {output_path}")
+            tprint(f"💾 Report saved to: {output_path}")
             return str(output_path)
             
         except Exception as e:
-            print(f"❌ Failed to save report: {e}")
+            tprint(f"❌ Failed to save report: {e}")
             raise
     
     def _make_serializable(self, obj: Any) -> Any:
@@ -1040,50 +1042,50 @@ def main():
     # Print high-priority issues
     high_priority = analyzer.get_high_priority_issues()
     if high_priority:
-        print(f"\n🚨 {len(high_priority)} high-priority issues found:")
+        tprint(f"\n🚨 {len(high_priority)} high-priority issues found:")
         for issue in high_priority:
-            print(f"  - {issue['file']}:{issue['line']} - {issue['message']}")
+            tprint(f"  - {issue['file']}:{issue['line']} - {issue['message']}")
     
     # Show detailed statistics if requested
     if args.stats:
         stats = analyzer.get_issue_statistics()
-        print(f"\n📊 Detailed Statistics:")
-        print(f"Import Issues:")
-        print(f"  Total: {stats['import_issues']['total']}")
-        print(f"  Files affected: {stats['import_issues']['files_affected']}")
+        tprint(f"\n📊 Detailed Statistics:")
+        tprint(f"Import Issues:")
+        tprint(f"  Total: {stats['import_issues']['total']}")
+        tprint(f"  Files affected: {stats['import_issues']['files_affected']}")
         if stats['import_issues']['by_type']:
-            print(f"  By type:")
+            tprint(f"  By type:")
             for issue_type, count in stats['import_issues']['by_type'].items():
-                print(f"    {issue_type}: {count}")
+                tprint(f"    {issue_type}: {count}")
         if stats['import_issues']['by_severity']:
-            print(f"  By severity:")
+            tprint(f"  By severity:")
             for severity, count in stats['import_issues']['by_severity'].items():
-                print(f"    {severity}: {count}")
+                tprint(f"    {severity}: {count}")
         
-        print(f"Undefined Issues:")
-        print(f"  Total: {stats['undefined_issues']['total']}")
-        print(f"  Files affected: {stats['undefined_issues']['files_affected']}")
+        tprint(f"Undefined Issues:")
+        tprint(f"  Total: {stats['undefined_issues']['total']}")
+        tprint(f"  Files affected: {stats['undefined_issues']['files_affected']}")
         if stats['undefined_issues']['by_type']:
-            print(f"  By type:")
+            tprint(f"  By type:")
             for issue_type, count in stats['undefined_issues']['by_type'].items():
-                print(f"    {issue_type}: {count}")
+                tprint(f"    {issue_type}: {count}")
         if stats['undefined_issues']['by_severity']:
-            print(f"  By severity:")
+            tprint(f"  By severity:")
             for severity, count in stats['undefined_issues']['by_severity'].items():
-                print(f"    {severity}: {count}")
+                tprint(f"    {severity}: {count}")
     
     # Exit with appropriate code
     summary = results.get("summary", {})
     total_issues = summary.get("total_issues", 0)
     
     if total_issues == 0:
-        print(f"\n✅ All checks passed!")
+        tprint(f"\n✅ All checks passed!")
         return 0
     elif total_issues <= 10:
-        print(f"\n⚠️  Found {total_issues} issues that need attention.")
+        tprint(f"\n⚠️  Found {total_issues} issues that need attention.")
         return 1
     else:
-        print(f"\n❌ Found {total_issues} issues that require immediate attention!")
+        tprint(f"\n❌ Found {total_issues} issues that require immediate attention!")
         return 2
 
 

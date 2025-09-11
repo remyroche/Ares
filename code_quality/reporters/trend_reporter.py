@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Trend Reporter
 
@@ -161,7 +163,7 @@ class TrendReporter:
             with open(self.history_file, "w", encoding="utf-8") as f:
                 json.dump(history, f, indent=2)
         except Exception as e:
-            print(f"Warning: Could not save history: {e}")
+            tprint(f"Warning: Could not save history: {e}")
 
     def _extract_metrics(self, data: dict[str, Any]) -> dict[str, float]:
         """Extract relevant metrics for trend analysis."""

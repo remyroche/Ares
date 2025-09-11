@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from typing import Any, Callable
 from .logger import system_logger
@@ -303,12 +305,12 @@ async def setup_signal_handler(config: dict[str, Any] | None = None) -> SignalHa
         signal_handler = SignalHandler(config)
         success = await signal_handler.initialize()
         if success:
-            print('✅ Signal handler setup completed successfully')
+            tprint('✅ Signal handler setup completed successfully')
             return signal_handler
-        print(failed('Signal handler setup failed'))
+        tprint(failed('Signal handler setup failed'))
         return None
     except Exception:
-        print(failed('Signal handler setup failed: {e}'))
+        tprint(failed('Signal handler setup failed: {e}'))
         return None
 
 class GracefulShutdown:
@@ -350,5 +352,5 @@ def setup_signal_handlers() -> SignalHandler:
         asyncio.set_event_loop(loop)
         loop.run_until_complete(signal_handler.initialize())
     except Exception as e:
-        print(f'Warning: Signal handler initialization failed: {e}')
+        tprint(f'Warning: Signal handler initialization failed: {e}')
     return signal_handler

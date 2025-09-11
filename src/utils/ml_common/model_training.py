@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Comprehensive Model Training Utilities with Automatic Confidence Metrics
 
@@ -37,9 +39,9 @@ from ..common_operations import create_fallback_logger
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.ModelTraining")
-    print("✅ Custom logger available for MLCommon.ModelTraining")
+    tprint("✅ Custom logger available for MLCommon.ModelTraining")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.ModelTraining")
     _LOGGER.setLevel(logging.INFO)
 
@@ -69,7 +71,7 @@ class EnhancedModelTrainer:
             config: Configuration dictionary for training parameters
         """
         self.config = config or {}
-        self.logger = create_fallback_logger(__name__)
+        self.logger = create_fallback_logger()
         
         _LOGGER.info("🚀 Initializing EnhancedModelTrainer...")
         

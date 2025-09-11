@@ -411,6 +411,11 @@ def get_unified_validator() -> UnifiedValidator:
         _unified_validator = UnifiedValidator()
     return _unified_validator
 
+def validate_data_quality(df: pd.DataFrame, **kwargs) -> Dict[str, Any]:
+    """Validate data quality using unified validator."""
+    validator = UnifiedValidator()
+    return validator.validate_dataframe(df, **kwargs)
+
 def setup_unified_validation(config: ValidationConfig = None) -> UnifiedValidator:
     """Setup unified validation system."""
     global _unified_validator

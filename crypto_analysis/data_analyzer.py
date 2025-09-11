@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Cryptocurrency Price Movement Analyzer
 Analyzes OHLCV data to calculate potential profits from different triple barrier methods
@@ -566,9 +568,9 @@ class CryptoPriceAnalyzer:
             logger.error("No analysis results. Call analyze_all_assets() first.")
             return None
 
-        print("\n" + "="*80)
-        print("CRYPTOCURRENCY PRICE MOVEMENT ANALYSIS REPORT")
-        print("="*80)
+        tprint("\n" + "="*80)
+        tprint("CRYPTOCURRENCY PRICE MOVEMENT ANALYSIS REPORT")
+        tprint("="*80)
 
         # Create summary DataFrames
         basic_summary = []
@@ -606,106 +608,106 @@ class CryptoPriceAnalyzer:
         barrier_df = pd.DataFrame(barrier_summary)
 
         # Print basic metrics
-        print("\nBASIC PRICE MOVEMENT METRICS:")
-        print("-" * 60)
-        print(basic_df.round(4).to_string(index=False))
+        tprint("\nBASIC PRICE MOVEMENT METRICS:")
+        tprint("-" * 60)
+        tprint(basic_df.round(4).to_string(index=False))
 
         # Print triple barrier results
-        print("\nTRIPLE BARRIER PROFIT ANALYSIS:")
-        print("-" * 60)
-        print(barrier_df.round(4).to_string(index=False))
+        tprint("\nTRIPLE BARRIER PROFIT ANALYSIS:")
+        tprint("-" * 60)
+        tprint(barrier_df.round(4).to_string(index=False))
 
         # Top performers by barrier level
-        print("\nTOP PERFORMERS BY BARRIER LEVEL:")
-        print("-" * 60)
+        tprint("\nTOP PERFORMERS BY BARRIER LEVEL:")
+        tprint("-" * 60)
 
         barrier_levels = barrier_df["Barrier_Level"].unique()
         for barrier in sorted(barrier_levels):
             barrier_data = barrier_df[barrier_df["Barrier_Level"] == barrier]
             top_performers = barrier_data.nlargest(5, "Avg_Profit")[["Symbol", "Barrier_Level", "Avg_Profit", "Total_Trades", "Long_Trades", "Short_Trades"]]
-            print(f"\nTop 5 for {barrier} barrier:")
-            print(top_performers.round(4).to_string(index=False))
+            tprint(f"\nTop 5 for {barrier} barrier:")
+            tprint(top_performers.round(4).to_string(index=False))
 
         # Best overall performers
-        print("\nBEST OVERALL PERFORMERS:")
-        print("-" * 60)
+        tprint("\nBEST OVERALL PERFORMERS:")
+        tprint("-" * 60)
 
         # Average across all barriers
         avg_profits = barrier_df.groupby("Symbol")["Avg_Profit"].mean().sort_values(ascending=False)
-        print("Average profit across all barriers:")
+        tprint("Average profit across all barriers:")
         for symbol, profit in avg_profits.head(10).items():
-            print(f"  {symbol}: {profit:.4f}")
+            tprint(f"  {symbol}: {profit:.4f}")
 
         # Most active assets
         total_trades = barrier_df.groupby("Symbol")["Total_Trades"].sum().sort_values(ascending=False)
-        print("\nMost active assets (total trades across all barriers):")
+        tprint("\nMost active assets (total trades across all barriers):")
         for symbol, trades in total_trades.head(10).items():
-            print(f"  {symbol}: {trades:.0f} trades")
+            tprint(f"  {symbol}: {trades:.0f} trades")
 
         # Long vs Short analysis
         total_longs = barrier_df.groupby("Symbol")["Long_Trades"].sum().sort_values(ascending=False)
         total_shorts = barrier_df.groupby("Symbol")["Short_Trades"].sum().sort_values(ascending=False)
-        print("\nAssets with most long trades:")
+        tprint("\nAssets with most long trades:")
         for symbol, trades in total_longs.head(5).items():
-            print(f"  {symbol}: {trades:.0f} long trades")
-        print("\nAssets with most short trades:")
+            tprint(f"  {symbol}: {trades:.0f} long trades")
+        tprint("\nAssets with most short trades:")
         for symbol, trades in total_shorts.head(5).items():
-            print(f"  {symbol}: {trades:.0f} short trades")
+            tprint(f"  {symbol}: {trades:.0f} short trades")
 
         # Volume comparison summary
         volume_comparison_summary = self.calculate_volume_comparison()
         if volume_comparison_summary:
-            print("\nVOLUME ANALYSIS SUMMARY:")
-            print("-" * 60)
-            print(f"Total Volume Mean: {volume_comparison_summary['summary_stats']['total_volume_mean']:.2f}")
-            print(f"Total Volume Median: {volume_comparison_summary['summary_stats']['total_volume_median']:.2f}")
-            print(f"Total Volume Std Dev: {volume_comparison_summary['summary_stats']['total_volume_std']:.2f}")
-            print(f"Avg Volume Mean: {volume_comparison_summary['summary_stats']['avg_volume_mean']:.2f}")
-            print(f"Avg Volume Median: {volume_comparison_summary['summary_stats']['avg_volume_median']:.2f}")
-            print(f"Volume Consistency Mean: {volume_comparison_summary['summary_stats']['volume_consistency_mean']:.2f}")
-            print(f"Volume Volatility Mean: {volume_comparison_summary['summary_stats']['volume_volatility_mean']:.2f}")
-            print(f"Volume Price Correlation Mean: {volume_comparison_summary['summary_stats']['volume_price_correlation_mean']:.2f}")
-            print(f"Volume Spike Frequency Mean: {volume_comparison_summary['summary_stats']['volume_spike_frequency_mean']:.2f}")
+            tprint("\nVOLUME ANALYSIS SUMMARY:")
+            tprint("-" * 60)
+            tprint(f"Total Volume Mean: {volume_comparison_summary['summary_stats']['total_volume_mean']:.2f}")
+            tprint(f"Total Volume Median: {volume_comparison_summary['summary_stats']['total_volume_median']:.2f}")
+            tprint(f"Total Volume Std Dev: {volume_comparison_summary['summary_stats']['total_volume_std']:.2f}")
+            tprint(f"Avg Volume Mean: {volume_comparison_summary['summary_stats']['avg_volume_mean']:.2f}")
+            tprint(f"Avg Volume Median: {volume_comparison_summary['summary_stats']['avg_volume_median']:.2f}")
+            tprint(f"Volume Consistency Mean: {volume_comparison_summary['summary_stats']['volume_consistency_mean']:.2f}")
+            tprint(f"Volume Volatility Mean: {volume_comparison_summary['summary_stats']['volume_volatility_mean']:.2f}")
+            tprint(f"Volume Price Correlation Mean: {volume_comparison_summary['summary_stats']['volume_price_correlation_mean']:.2f}")
+            tprint(f"Volume Spike Frequency Mean: {volume_comparison_summary['summary_stats']['volume_spike_frequency_mean']:.2f}")
 
-            print("\nVOLUME RANKINGS:")
-            print("-" * 60)
+            tprint("\nVOLUME RANKINGS:")
+            tprint("-" * 60)
 
             # Top 10 by total volume
-            print("Top 10 Assets by Total Volume:")
+            tprint("Top 10 Assets by Total Volume:")
             top_volume = volume_comparison_summary["volume_ranking"].head(10)
             for _, row in top_volume.iterrows():
-                print(f"  {row['symbol']}: {row['total_volume']:.2f}")
+                tprint(f"  {row['symbol']}: {row['total_volume']:.2f}")
 
             # Top 10 by volume consistency
-            print("\nTop 10 Assets by Volume Consistency:")
+            tprint("\nTop 10 Assets by Volume Consistency:")
             top_consistency = volume_comparison_summary["consistency_ranking"].head(10)
             for _, row in top_consistency.iterrows():
-                print(f"  {row['symbol']}: {row['volume_consistency']:.4f}")
+                tprint(f"  {row['symbol']}: {row['volume_consistency']:.4f}")
 
             # Top 10 by volume-price correlation
-            print("\nTop 10 Assets by Volume-Price Correlation:")
+            tprint("\nTop 10 Assets by Volume-Price Correlation:")
             top_correlation = volume_comparison_summary["correlation_ranking"].head(10)
             for _, row in top_correlation.iterrows():
-                print(f"  {row['symbol']}: {row['volume_price_correlation']:.4f}")
+                tprint(f"  {row['symbol']}: {row['volume_price_correlation']:.4f}")
 
             # Volume categories
-            print("\nVOLUME CATEGORIES:")
-            print("-" * 60)
-            print(f"High Volume Assets: {', '.join(volume_comparison_summary['volume_categories']['high_volume'])}")
-            print(f"Medium Volume Assets: {', '.join(volume_comparison_summary['volume_categories']['medium_volume'])}")
-            print(f"Low Volume Assets: {', '.join(volume_comparison_summary['volume_categories']['low_volume'])}")
+            tprint("\nVOLUME CATEGORIES:")
+            tprint("-" * 60)
+            tprint(f"High Volume Assets: {', '.join(volume_comparison_summary['volume_categories']['high_volume'])}")
+            tprint(f"Medium Volume Assets: {', '.join(volume_comparison_summary['volume_categories']['medium_volume'])}")
+            tprint(f"Low Volume Assets: {', '.join(volume_comparison_summary['volume_categories']['low_volume'])}")
 
             # Volume patterns summary
-            print("\nVOLUME PATTERNS SUMMARY:")
-            print("-" * 60)
+            tprint("\nVOLUME PATTERNS SUMMARY:")
+            tprint("-" * 60)
             for symbol in list(self.results.keys())[:5]:  # Show first 5 assets
                 if "volume_patterns" in self.results[symbol]:
                     patterns = self.results[symbol]["volume_patterns"]
-                    print(f"\n{symbol}:")
-                    print(f"  Peak Hours: {patterns['peak_hours']}")
-                    print(f"  Peak Days: {patterns['peak_days']}")
-                    print(f"  Volume Autocorrelation: {patterns['volume_autocorrelation']:.4f}")
-                    print(f"  Weekly Seasonality: {patterns['weekly_seasonality']:.4f}")
+                    tprint(f"\n{symbol}:")
+                    tprint(f"  Peak Hours: {patterns['peak_hours']}")
+                    tprint(f"  Peak Days: {patterns['peak_days']}")
+                    tprint(f"  Volume Autocorrelation: {patterns['volume_autocorrelation']:.4f}")
+                    tprint(f"  Weekly Seasonality: {patterns['weekly_seasonality']:.4f}")
 
         return {
             "basic_summary": basic_df,

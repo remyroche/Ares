@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Temporal Analysis Component
 
@@ -17,9 +19,9 @@ from collections import defaultdict
 try:
     from ...utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.TemporalAnalysis")
-    print("✅ Custom logger available for FeatureSelection.TemporalAnalysis")
+    tprint("✅ Custom logger available for FeatureSelection.TemporalAnalysis")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("FeatureSelection.TemporalAnalysis")
     _LOGGER.setLevel(logging.INFO)
 

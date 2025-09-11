@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Full GUI Functionality Test
 
@@ -27,7 +29,7 @@ class GUIFunctionalityTester:
         
     def test_api_server_startup(self):
         """Test if API server starts successfully"""
-        print("🧪 Testing API server startup...")
+        tprint("🧪 Testing API server startup...")
         
         try:
             # Start API server
@@ -44,22 +46,22 @@ class GUIFunctionalityTester:
             # Test if server is responding
             response = requests.get(f"{self.api_base_url}/", timeout=5)
             if response.status_code == 200:
-                print("✅ API server started successfully")
+                tprint("✅ API server started successfully")
                 self.test_results["api_startup"] = True
                 return process
             else:
-                print(f"❌ API server failed to start: {response.status_code}")
+                tprint(f"❌ API server failed to start: {response.status_code}")
                 self.test_results["api_startup"] = False
                 return None
                 
         except Exception as e:
-            print(f"❌ API server startup failed: {e}")
+            tprint(f"❌ API server startup failed: {e}")
             self.test_results["api_startup"] = False
             return None
     
     def test_all_api_endpoints(self):
         """Test all API endpoints"""
-        print("\n🧪 Testing all API endpoints...")
+        tprint("\n🧪 Testing all API endpoints...")
         
         endpoints = [
             ("GET", "/", "Root endpoint"),
@@ -86,19 +88,19 @@ class GUIFunctionalityTester:
                     response = requests.post(f"{self.api_base_url}{endpoint}", timeout=5)
                 
                 if response.status_code == 200:
-                    print(f"✅ {description}")
+                    tprint(f"✅ {description}")
                     passed += 1
                 else:
-                    print(f"❌ {description} - Status: {response.status_code}")
+                    tprint(f"❌ {description} - Status: {response.status_code}")
             except Exception as e:
-                print(f"❌ {description} - Error: {e}")
+                tprint(f"❌ {description} - Error: {e}")
         
         self.test_results["api_endpoints"] = {"passed": passed, "total": total}
-        print(f"\n📊 API Endpoints: {passed}/{total} passed")
+        tprint(f"\n📊 API Endpoints: {passed}/{total} passed")
     
     def test_post_endpoints(self):
         """Test POST endpoints"""
-        print("\n🧪 Testing POST endpoints...")
+        tprint("\n🧪 Testing POST endpoints...")
         
         post_tests = [
             {
@@ -137,21 +139,21 @@ class GUIFunctionalityTester:
                 if response.status_code == 200:
                     result = response.json()
                     if result.get("success", True):  # Most endpoints return success
-                        print(f"✅ {test['description']}")
+                        tprint(f"✅ {test['description']}")
                         passed += 1
                     else:
-                        print(f"❌ {test['description']} - Failed: {result.get('error', 'Unknown error')}")
+                        tprint(f"❌ {test['description']} - Failed: {result.get('error', 'Unknown error')}")
                 else:
-                    print(f"❌ {test['description']} - Status: {response.status_code}")
+                    tprint(f"❌ {test['description']} - Status: {response.status_code}")
             except Exception as e:
-                print(f"❌ {test['description']} - Error: {e}")
+                tprint(f"❌ {test['description']} - Error: {e}")
         
         self.test_results["post_endpoints"] = {"passed": passed, "total": total}
-        print(f"\n📊 POST Endpoints: {passed}/{total} passed")
+        tprint(f"\n📊 POST Endpoints: {passed}/{total} passed")
     
     def test_launcher_integration(self):
         """Test launcher integration functionality"""
-        print("\n🧪 Testing launcher integration...")
+        tprint("\n🧪 Testing launcher integration...")
         
         try:
             # Test launcher status
@@ -159,7 +161,7 @@ class GUIFunctionalityTester:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("integration_available"):
-                    print("✅ Launcher integration available")
+                    tprint("✅ Launcher integration available")
                     
                     # Test starting a process
                     start_response = requests.post(
@@ -171,70 +173,70 @@ class GUIFunctionalityTester:
                     if start_response.status_code == 200:
                         result = start_response.json()
                         if result.get("success"):
-                            print("✅ Launcher process started successfully")
-                            print(f"   Process ID: {result.get('pid')}")
-                            print(f"   Command: {result.get('command')}")
+                            tprint("✅ Launcher process started successfully")
+                            tprint(f"   Process ID: {result.get('pid')}")
+                            tprint(f"   Command: {result.get('command')}")
                             
                             # Wait a moment and check status
                             time.sleep(2)
                             status_response = requests.get(f"{self.api_base_url}/api/launcher/status", timeout=5)
                             if status_response.status_code == 200:
                                 status_data = status_response.json()
-                                print(f"✅ Process status check: {len(status_data.get('running_processes', []))} processes")
+                                tprint(f"✅ Process status check: {len(status_data.get('running_processes', []))} processes")
                             
                             self.test_results["launcher_integration"] = True
                         else:
-                            print(f"❌ Launcher process start failed: {result.get('error')}")
+                            tprint(f"❌ Launcher process start failed: {result.get('error')}")
                             self.test_results["launcher_integration"] = False
                     else:
-                        print(f"❌ Launcher start request failed: {start_response.status_code}")
+                        tprint(f"❌ Launcher start request failed: {start_response.status_code}")
                         self.test_results["launcher_integration"] = False
                 else:
-                    print("⚠️ Launcher integration not available (fallback mode)")
+                    tprint("⚠️ Launcher integration not available (fallback mode)")
                     self.test_results["launcher_integration"] = "fallback"
             else:
-                print(f"❌ Launcher status check failed: {response.status_code}")
+                tprint(f"❌ Launcher status check failed: {response.status_code}")
                 self.test_results["launcher_integration"] = False
                 
         except Exception as e:
-            print(f"❌ Launcher integration test failed: {e}")
+            tprint(f"❌ Launcher integration test failed: {e}")
             self.test_results["launcher_integration"] = False
     
     def test_frontend_accessibility(self):
         """Test if frontend is accessible"""
-        print("\n🧪 Testing frontend accessibility...")
+        tprint("\n🧪 Testing frontend accessibility...")
         
         try:
             response = requests.get(self.frontend_url, timeout=5)
             if response.status_code == 200:
-                print("✅ Frontend is accessible")
+                tprint("✅ Frontend is accessible")
                 self.test_results["frontend_accessibility"] = True
             else:
-                print(f"❌ Frontend not accessible: {response.status_code}")
+                tprint(f"❌ Frontend not accessible: {response.status_code}")
                 self.test_results["frontend_accessibility"] = False
         except Exception as e:
-            print(f"❌ Frontend accessibility test failed: {e}")
+            tprint(f"❌ Frontend accessibility test failed: {e}")
             self.test_results["frontend_accessibility"] = False
     
     def test_websocket_connection(self):
         """Test WebSocket connection"""
-        print("\n🧪 Testing WebSocket connection...")
+        tprint("\n🧪 Testing WebSocket connection...")
         
         try:
             import websocket
             
             def on_message(ws, message):
-                print("✅ WebSocket message received")
+                tprint("✅ WebSocket message received")
                 ws.close()
             
             def on_error(ws, error):
-                print(f"❌ WebSocket error: {error}")
+                tprint(f"❌ WebSocket error: {error}")
             
             def on_close(ws, close_status_code, close_msg):
-                print("✅ WebSocket connection closed")
+                tprint("✅ WebSocket connection closed")
             
             def on_open(ws):
-                print("✅ WebSocket connection opened")
+                tprint("✅ WebSocket connection opened")
                 ws.send(json.dumps({"type": "ping"}))
             
             ws = websocket.WebSocketApp(
@@ -250,15 +252,15 @@ class GUIFunctionalityTester:
             self.test_results["websocket"] = True
             
         except ImportError:
-            print("⚠️ WebSocket library not available, skipping test")
+            tprint("⚠️ WebSocket library not available, skipping test")
             self.test_results["websocket"] = "skipped"
         except Exception as e:
-            print(f"❌ WebSocket test failed: {e}")
+            tprint(f"❌ WebSocket test failed: {e}")
             self.test_results["websocket"] = False
     
     def test_data_endpoints(self):
         """Test data-related endpoints"""
-        print("\n🧪 Testing data endpoints...")
+        tprint("\n🧪 Testing data endpoints...")
         
         data_tests = [
             ("/api/data/status", "Data status"),
@@ -276,24 +278,24 @@ class GUIFunctionalityTester:
                 if response.status_code == 200:
                     data = response.json()
                     if isinstance(data, (list, dict)) and len(data) > 0:
-                        print(f"✅ {description} - Data available")
+                        tprint(f"✅ {description} - Data available")
                         passed += 1
                     else:
-                        print(f"⚠️ {description} - No data returned")
+                        tprint(f"⚠️ {description} - No data returned")
                         passed += 0.5  # Partial credit
                 else:
-                    print(f"❌ {description} - Status: {response.status_code}")
+                    tprint(f"❌ {description} - Status: {response.status_code}")
             except Exception as e:
-                print(f"❌ {description} - Error: {e}")
+                tprint(f"❌ {description} - Error: {e}")
         
         self.test_results["data_endpoints"] = {"passed": passed, "total": total}
-        print(f"\n📊 Data Endpoints: {passed}/{total} passed")
+        tprint(f"\n📊 Data Endpoints: {passed}/{total} passed")
     
     def generate_report(self):
         """Generate a comprehensive test report"""
-        print("\n" + "="*60)
-        print("📊 COMPREHENSIVE GUI FUNCTIONALITY TEST REPORT")
-        print("="*60)
+        tprint("\n" + "="*60)
+        tprint("📊 COMPREHENSIVE GUI FUNCTIONALITY TEST REPORT")
+        tprint("="*60)
         
         total_tests = 0
         passed_tests = 0
@@ -306,7 +308,7 @@ class GUIFunctionalityTester:
                     status = "✅ PASSED"
                 else:
                     status = "❌ FAILED"
-                print(f"{test_name:<25} {status}")
+                tprint(f"{test_name:<25} {status}")
             elif isinstance(result, dict):
                 if "passed" in result and "total" in result:
                     total_tests += 1
@@ -315,33 +317,33 @@ class GUIFunctionalityTester:
                         status = "✅ PASSED"
                     else:
                         status = "❌ FAILED"
-                    print(f"{test_name:<25} {status} ({result['passed']}/{result['total']})")
+                    tprint(f"{test_name:<25} {status} ({result['passed']}/{result['total']})")
             elif result == "skipped":
-                print(f"{test_name:<25} ⚠️ SKIPPED")
+                tprint(f"{test_name:<25} ⚠️ SKIPPED")
             elif result == "fallback":
-                print(f"{test_name:<25} ⚠️ FALLBACK MODE")
+                tprint(f"{test_name:<25} ⚠️ FALLBACK MODE")
         
-        print("="*60)
-        print(f"Overall Result: {passed_tests}/{total_tests} test categories passed")
+        tprint("="*60)
+        tprint(f"Overall Result: {passed_tests}/{total_tests} test categories passed")
         
         if passed_tests == total_tests:
-            print("🎉 ALL TESTS PASSED! GUI is fully functional.")
+            tprint("🎉 ALL TESTS PASSED! GUI is fully functional.")
         elif passed_tests >= total_tests * 0.8:
-            print("✅ MOSTLY FUNCTIONAL! GUI is working with minor issues.")
+            tprint("✅ MOSTLY FUNCTIONAL! GUI is working with minor issues.")
         else:
-            print("❌ SIGNIFICANT ISSUES! GUI needs attention.")
+            tprint("❌ SIGNIFICANT ISSUES! GUI needs attention.")
         
-        print("="*60)
+        tprint("="*60)
     
     def run_all_tests(self):
         """Run all tests"""
-        print("🚀 Starting Comprehensive GUI Functionality Test")
-        print("="*60)
+        tprint("🚀 Starting Comprehensive GUI Functionality Test")
+        tprint("="*60)
         
         # Test API server startup
         api_process = self.test_api_server_startup()
         if not api_process:
-            print("❌ Cannot continue without API server")
+            tprint("❌ Cannot continue without API server")
             return
         
         try:

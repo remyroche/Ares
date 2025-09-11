@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Data Flow Analyzer
 
@@ -247,7 +249,7 @@ class DataFlowAnalyzer:
 
     def analyze_data_flow(self, project_root: str) -> dict[str, Any]:
         """Analyze data flow across the entire project."""
-        print(f"Analyzing data flow in: {project_root}")
+        tprint(f"Analyzing data flow in: {project_root}")
         
         project_path = Path(project_root)
         python_files = list(project_path.rglob("*.py"))
@@ -280,7 +282,7 @@ class DataFlowAnalyzer:
                     total_issues += result.get("issues", 0)
                     
             except Exception as e:
-                print(f"Error analyzing {file_path}: {e}")
+                tprint(f"Error analyzing {file_path}: {e}")
         
         # Calculate metrics
         complex_data_flows = [df for df in data_flows if df["complexity"] > 3]

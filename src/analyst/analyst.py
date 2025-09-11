@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 # src/analyst/analyst.py
 
 
@@ -1311,7 +1313,7 @@ class Analyst:
         """
         if not self.regime_classifier:
             self.logger.warning("Regime classifier not available")
-            print("⚠️ Regime classifier not available")
+            tprint("⚠️ Regime classifier not available")
             return {"regime": "UNKNOWN", "confidence": 0.0}
         
         # Start performance monitoring
@@ -1319,7 +1321,7 @@ class Analyst:
             self.performance_monitor.start_timer("regime_analysis")
         
         self.logger.info("Starting regime analysis...")
-        print("Starting regime analysis...")
+        tprint("Starting regime analysis...")
         
         try:
             # Get fractal location classification
@@ -1341,16 +1343,16 @@ class Analyst:
             if self.performance_monitor:
                 execution_time = self.performance_monitor.end_timer("regime_analysis")
                 self.logger.info(f"Regime analysis completed in {execution_time:.3f}s")
-                print(f"Regime analysis completed in {execution_time:.3f}s")
+                tprint(f"Regime analysis completed in {execution_time:.3f}s")
             
             self.logger.info(f"✅ Regime analysis completed: {regime_info.get('regime', 'UNKNOWN')}")
-            print(f"✅ Regime analysis completed: {regime_info.get('regime', 'UNKNOWN')}")
+            tprint(f"✅ Regime analysis completed: {regime_info.get('regime', 'UNKNOWN')}")
             return regime_info
             
         except Exception as e:
             error_msg = f"Error in fractal location analysis: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             
             # End performance monitoring even on error
             if self.performance_monitor:
@@ -1373,7 +1375,7 @@ class Analyst:
         if not self.model_manager:
             error_msg = "Model Manager not available"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return False
         
         try:
@@ -1381,14 +1383,14 @@ class Analyst:
             model_name = "analyst_market_analysis_model"
             
             self.logger.info(f"Loading analyst model for live trading: {model_name}")
-            print(f"Loading analyst model for live trading: {model_name}")
+            tprint(f"Loading analyst model for live trading: {model_name}")
             
             # Check if model is available
             available_models = await self.model_manager.list_available_models()
             if model_name not in available_models:
                 error_msg = f"Analyst model {model_name} not available for live trading"
                 self.logger.error(error_msg)
-                print(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
                 return False
             
             # Load and cache the model
@@ -1397,18 +1399,18 @@ class Analyst:
                 self.selected_model = model_name
                 self.model_cache[model_name] = model
                 self.logger.info(f"✅ Analyst model loaded and cached: {model_name}")
-                print(f"✅ Analyst model loaded and cached: {model_name}")
+                tprint(f"✅ Analyst model loaded and cached: {model_name}")
                 return True
             else:
                 error_msg = f"Failed to load analyst model: {model_name}"
                 self.logger.error(error_msg)
-                print(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
                 return False
             
         except Exception as e:
             error_msg = f"Error loading analyst model: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return False
 
     @intelligent_caching(ttl=60, key_func=lambda self, data, model_name: f"prediction_{model_name}_{hash(str(data.tail(5).values.tolist()))}")
@@ -1431,14 +1433,14 @@ class Analyst:
         if not self.model_manager:
             error_msg = "Model Manager not available"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return {"error": error_msg}
         
         model_name = model_name or self.selected_model
         if not model_name:
             error_msg = "No model selected for prediction"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return {"error": error_msg}
         
         try:
@@ -1447,7 +1449,7 @@ class Analyst:
                 self.performance_monitor.start_timer("model_prediction")
             
             self.logger.info(f"Getting prediction from model: {model_name}")
-            print(f"Getting prediction from model: {model_name}")
+            tprint(f"Getting prediction from model: {model_name}")
             
             # Get model from cache or load it
             model = self.model_cache.get(model_name)
@@ -1458,7 +1460,7 @@ class Analyst:
                 else:
                     error_msg = f"Failed to load model: {model_name}"
                     self.logger.error(error_msg)
-                    print(f"❌ {error_msg}")
+                    tprint(f"❌ {error_msg}")
                     return {"error": error_msg}
             
             # Get prediction
@@ -1468,16 +1470,16 @@ class Analyst:
             if self.performance_monitor:
                 execution_time = self.performance_monitor.end_timer("model_prediction")
                 self.logger.info(f"Model prediction completed in {execution_time:.3f}s")
-                print(f"Model prediction completed in {execution_time:.3f}s")
+                tprint(f"Model prediction completed in {execution_time:.3f}s")
             
             self.logger.info(f"✅ Prediction obtained from model: {model_name}")
-            print(f"✅ Prediction obtained from model: {model_name}")
+            tprint(f"✅ Prediction obtained from model: {model_name}")
             return prediction
             
         except Exception as e:
             error_msg = f"Error getting prediction from model {model_name}: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             
             # End performance monitoring even on error
             if self.performance_monitor:
@@ -1652,29 +1654,29 @@ class Analyst:
         """Initialize live trading utilities."""
         try:
             self.logger.info("Initializing live trading utilities...")
-            print("Initializing live trading utilities...")
+            tprint("Initializing live trading utilities...")
             
             # Initialize Model Manager for model selection and loading
             self.model_manager = ModelManager()
             self.logger.info("✅ Model Manager initialized")
-            print("✅ Model Manager initialized")
+            tprint("✅ Model Manager initialized")
             
             # Load the single analyst model
             success = await self.load_analyst_model()
             if not success:
                 self.logger.warning("⚠️ Failed to load analyst model during initialization")
-                print("⚠️ Failed to load analyst model during initialization")
+                tprint("⚠️ Failed to load analyst model during initialization")
             
             # Initialize model cache
             self.model_cache = {}
             self.prediction_cache = {}
             self.logger.info("✅ Model and prediction caches initialized")
-            print("✅ Model and prediction caches initialized")
+            tprint("✅ Model and prediction caches initialized")
             
             return True
         except Exception as e:
             self.logger.error(f"❌ Error initializing live trading utilities: {e}")
-            print(f"❌ Error initializing live trading utilities: {e}")
+            tprint(f"❌ Error initializing live trading utilities: {e}")
             return False
 
     @handles_errors(
@@ -1718,7 +1720,7 @@ class Analyst:
         """
         try:
             self.logger.info("Validating live trading data...")
-            print("Validating live trading data...")
+            tprint("Validating live trading data...")
             
             validation_results = {
                 "is_valid": True,
@@ -1751,13 +1753,13 @@ class Analyst:
                     validation_results["errors"].append("Price data contains non-positive values")
             
             self.logger.info(f"✅ Live trading data validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
-            print(f"✅ Live trading data validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
+            tprint(f"✅ Live trading data validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
             return validation_results
             
         except Exception as e:
             error_msg = f"Error validating live trading data: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return {"error": error_msg}
 
     @handle_errors_with_tracking(
@@ -1779,19 +1781,19 @@ class Analyst:
         if not self.model_manager or not self.selected_model:
             error_msg = "Model Manager or selected model not available"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return {"error": error_msg}
         
         try:
             self.logger.info(f"Coordinating with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
-            print(f"Coordinating with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            tprint(f"Coordinating with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
             
             # Get the single model (trained on various market conditions)
             model = self.model_cache.get(self.selected_model)
             if not model:
                 error_msg = f"Model {self.selected_model} not loaded in cache"
                 self.logger.error(error_msg)
-                print(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
                 return {"error": error_msg}
             
             # Configure regime-specific parameters for the same model
@@ -1807,13 +1809,13 @@ class Analyst:
             regime_config["regime_parameters"] = self._get_optimized_regime_parameters(hmm_regime, regime_confidence)
             
             self.logger.info(f"✅ HMM regime coordination completed: {hmm_regime}")
-            print(f"✅ HMM regime coordination completed: {hmm_regime}")
+            tprint(f"✅ HMM regime coordination completed: {hmm_regime}")
             return regime_config
             
         except Exception as e:
             error_msg = f"Error coordinating with HMM regime: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return {"error": error_msg}
 
     def _get_optimized_regime_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
@@ -1934,7 +1936,7 @@ class Analyst:
                     self.logger.info("✅ Dual model system stopped")
                 except Exception as e:
                     self.logger.error(f"❌ Error stopping dual model system: {e}")
-                    print(f"❌ Error stopping dual model system: {e}")
+                    tprint(f"❌ Error stopping dual model system: {e}")
 
             if self.market_health_analyzer:
                 try:
@@ -1942,7 +1944,7 @@ class Analyst:
                     self.logger.info("✅ Market health analyzer stopped")
                 except Exception as e:
                     self.logger.error(f"❌ Error stopping market health analyzer: {e}")
-                    print(f"❌ Error stopping market health analyzer: {e}")
+                    tprint(f"❌ Error stopping market health analyzer: {e}")
 
             if self.liquidation_risk_model:
                 try:
@@ -1950,7 +1952,7 @@ class Analyst:
                     self.logger.info("✅ Liquidation risk model stopped")
                 except Exception as e:
                     self.logger.error(f"❌ Error stopping liquidation risk model: {e}")
-                    print(f"❌ Error stopping liquidation risk model: {e}")
+                    tprint(f"❌ Error stopping liquidation risk model: {e}")
 
             # Clean up live trading utilities
             if self.model_manager:
@@ -1959,10 +1961,10 @@ class Analyst:
                     self.model_cache.clear()
                     self.prediction_cache.clear()
                     self.logger.info("✅ Model and prediction caches cleared")
-                    print("✅ Model and prediction caches cleared")
+                    tprint("✅ Model and prediction caches cleared")
                 except Exception as e:
                     self.logger.error(f"❌ Error cleaning up model caches: {e}")
-                    print(f"❌ Error cleaning up model caches: {e}")
+                    tprint(f"❌ Error cleaning up model caches: {e}")
 
             if self.performance_monitor:
                 try:
@@ -1970,14 +1972,14 @@ class Analyst:
                     self.logger.info("✅ Performance monitor stopped")
                 except Exception as e:
                     self.logger.error(f"❌ Error stopping performance monitor: {e}")
-                    print(f"❌ Error stopping performance monitor: {e}")
+                    tprint(f"❌ Error stopping performance monitor: {e}")
 
             self.analysis_results = {}
             self.analysis_history = []
 
             self.logger.info("✅ Analyst stopped successfully")
-            print("✅ Analyst stopped successfully")
+            tprint("✅ Analyst stopped successfully")
         except Exception as e:
             self.logger.error(f"❌ Error stopping Analyst: {e}")
-            print(f"❌ Error stopping Analyst: {e}")
+            tprint(f"❌ Error stopping Analyst: {e}")
             raise

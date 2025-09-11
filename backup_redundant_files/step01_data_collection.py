@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 import numpy as np
@@ -607,9 +609,9 @@ if __name__ == "__main__":
         )
         
         if success:
-            print("✅ Enhanced data collection completed successfully")
+            tprint("✅ Enhanced data collection completed successfully")
         else:
-            print("❌ Enhanced data collection failed")
+            tprint("❌ Enhanced data collection failed")
     
     asyncio.run(main())
 #!/usr/bin/env python3

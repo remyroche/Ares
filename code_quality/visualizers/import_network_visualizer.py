@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Import Network Visualizer
 
@@ -22,7 +24,7 @@ try:
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
-    print("Warning: Plotly not available - interactive visualizations will be limited")
+    tprint("Warning: Plotly not available - interactive visualizations will be limited")
 
 from .code_visualizer import CodeVisualizer
 

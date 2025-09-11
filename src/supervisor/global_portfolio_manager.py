@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from logging import error
 from ..utils.logger import system_logger
@@ -92,7 +94,7 @@ class GlobalPortfolioManager:
 
             # Validate configuration
             if not self._validate_configuration():
-                self.print(
+                self.tprint(
                     invalid("Invalid configuration for global portfolio manager"),
                 )
                 return False
@@ -146,7 +148,7 @@ class GlobalPortfolioManager:
             )
 
         except Exception:
-            self.print(error("Error loading portfolio configuration: {e}"))
+            self.tprint(error("Error loading portfolio configuration: {e}"))
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -163,12 +165,12 @@ class GlobalPortfolioManager:
         try:
             # Validate management interval
             if self.management_interval <= 0:
-                self.print(invalid("Invalid management interval"))
+                self.tprint(invalid("Invalid management interval"))
                 return False
 
             # Validate max management history
             if self.max_management_history <= 0:
-                self.print(invalid("Invalid max management history"))
+                self.tprint(invalid("Invalid max management history"))
                 return False
 
             # Validate that at least one management type is enabled
@@ -181,14 +183,14 @@ class GlobalPortfolioManager:
                     self.portfolio_config.get("enable_optimization", True),
                 ],
             ):
-                self.print(error("At least one management type must be enabled"))
+                self.tprint(error("At least one management type must be enabled"))
                 return False
 
             self.logger.info("Configuration validation successful")
             return True
 
         except Exception:
-            self.print(error("Error validating configuration: {e}"))
+            self.tprint(error("Error validating configuration: {e}"))
             return False
 
     @handles_errors(
@@ -224,7 +226,7 @@ class GlobalPortfolioManager:
             )
 
         except Exception:
-            self.print(
+            self.tprint(
                 initialization_error("Error initializing portfolio modules: {e}"),
             )
 
@@ -247,7 +249,7 @@ class GlobalPortfolioManager:
             self.logger.info("Portfolio allocation module initialized")
 
         except Exception:
-            self.print(
+            self.tprint(
                 initialization_error("Error initializing portfolio allocation: {e}"),
             )
 
@@ -269,7 +271,7 @@ class GlobalPortfolioManager:
             self.logger.info("Risk management module initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing risk management: {e}"))
+            self.tprint(initialization_error("Error initializing risk management: {e}"))
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -290,7 +292,7 @@ class GlobalPortfolioManager:
             self.logger.info("Rebalancing module initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing rebalancing: {e}"))
+            self.tprint(initialization_error("Error initializing rebalancing: {e}"))
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -311,7 +313,7 @@ class GlobalPortfolioManager:
             self.logger.info("Performance monitoring module initialized")
 
         except Exception:
-            self.print(
+            self.tprint(
                 initialization_error("Error initializing performance monitoring: {e}"),
             )
 
@@ -334,7 +336,7 @@ class GlobalPortfolioManager:
             self.logger.info("Optimization module initialized")
 
         except Exception:
-            self.print(initialization_error("Error initializing optimization: {e}"))
+            self.tprint(initialization_error("Error initializing optimization: {e}"))
 
     @handle_specific_errors(
         error_handlers={
@@ -406,7 +408,7 @@ class GlobalPortfolioManager:
             return True
 
         except Exception:
-            self.print(error("Error executing global portfolio management: {e}"))
+            self.tprint(error("Error executing global portfolio management: {e}"))
             self.is_managing = False
             return False
 
@@ -437,17 +439,17 @@ class GlobalPortfolioManager:
 
             # Validate data types
             if not isinstance(management_input["management_type"], str):
-                self.print(invalid("Invalid management type"))
+                self.tprint(invalid("Invalid management type"))
                 return False
 
             if not isinstance(management_input["data_source"], str):
-                self.print(invalid("Invalid data source"))
+                self.tprint(invalid("Invalid data source"))
                 return False
 
             return True
 
         except Exception:
-            self.print(error("Error validating management inputs: {e}"))
+            self.tprint(error("Error validating management inputs: {e}"))
             return False
 
     @handles_errors(
@@ -499,7 +501,7 @@ class GlobalPortfolioManager:
             return results
 
         except Exception:
-            self.print(error("Error performing portfolio allocation: {e}"))
+            self.tprint(error("Error performing portfolio allocation: {e}"))
             return {}
 
     @handles_errors(
@@ -548,7 +550,7 @@ class GlobalPortfolioManager:
             return results
 
         except Exception:
-            self.print(error("Error performing risk management: {e}"))
+            self.tprint(error("Error performing risk management: {e}"))
             return {}
 
     @handles_errors(
@@ -600,7 +602,7 @@ class GlobalPortfolioManager:
             return results
 
         except Exception:
-            self.print(error("Error performing rebalancing: {e}"))
+            self.tprint(error("Error performing rebalancing: {e}"))
             return {}
 
     @handles_errors(
@@ -656,7 +658,7 @@ class GlobalPortfolioManager:
             return results
 
         except Exception:
-            self.print(error("Error performing performance monitoring: {e}"))
+            self.tprint(error("Error performing performance monitoring: {e}"))
             return {}
 
     @handles_errors(
@@ -708,7 +710,7 @@ class GlobalPortfolioManager:
             return results
 
         except Exception:
-            self.print(error("Error performing optimization: {e}"))
+            self.tprint(error("Error performing optimization: {e}"))
             return {}
 
     # Portfolio allocation methods
@@ -728,7 +730,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing asset allocation: {e}"))
+            self.tprint(error("Error performing asset allocation: {e}"))
             return {}
 
     def _perform_sector_allocation(
@@ -752,7 +754,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing sector allocation: {e}"))
+            self.tprint(error("Error performing sector allocation: {e}"))
             return {}
 
     def _perform_geographic_allocation(
@@ -775,7 +777,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing geographic allocation: {e}"))
+            self.tprint(error("Error performing geographic allocation: {e}"))
             return {}
 
     def _perform_strategy_allocation(
@@ -798,7 +800,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing strategy allocation: {e}"))
+            self.tprint(error("Error performing strategy allocation: {e}"))
             return {}
 
     # Risk management methods
@@ -821,7 +823,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing stop loss management: {e}"))
+            self.tprint(error("Error performing stop loss management: {e}"))
             return {}
 
     def _perform_correlation_management(
@@ -839,7 +841,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing correlation management: {e}"))
+            self.tprint(error("Error performing correlation management: {e}"))
             return {}
 
     def _perform_volatility_management(
@@ -857,7 +859,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing volatility management: {e}"))
+            self.tprint(error("Error performing volatility management: {e}"))
             return {}
 
     # Rebalancing methods
@@ -878,7 +880,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing periodic rebalancing: {e}"))
+            self.tprint(error("Error performing periodic rebalancing: {e}"))
             return {}
 
     def _perform_threshold_rebalancing(
@@ -897,7 +899,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing threshold rebalancing: {e}"))
+            self.tprint(error("Error performing threshold rebalancing: {e}"))
             return {}
 
     def _perform_drift_rebalancing(
@@ -915,7 +917,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing drift rebalancing: {e}"))
+            self.tprint(error("Error performing drift rebalancing: {e}"))
             return {}
 
     def _perform_opportunistic_rebalancing(
@@ -934,7 +936,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing opportunistic rebalancing: {e}"))
+            self.tprint(error("Error performing opportunistic rebalancing: {e}"))
             return {}
 
     # Performance monitoring methods
@@ -955,7 +957,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing return monitoring: {e}"))
+            self.tprint(error("Error performing return monitoring: {e}"))
             return {}
 
     def _perform_risk_monitoring(
@@ -974,7 +976,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing risk monitoring: {e}"))
+            self.tprint(error("Error performing risk monitoring: {e}"))
             return {}
 
     def _perform_attribution_monitoring(
@@ -996,7 +998,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing attribution monitoring: {e}"))
+            self.tprint(error("Error performing attribution monitoring: {e}"))
             return {}
 
     def _perform_benchmark_monitoring(
@@ -1015,7 +1017,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing benchmark monitoring: {e}"))
+            self.tprint(error("Error performing benchmark monitoring: {e}"))
             return {}
 
     # Optimization methods
@@ -1036,7 +1038,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing mean variance optimization: {e}"))
+            self.tprint(error("Error performing mean variance optimization: {e}"))
             return {}
 
     def _perform_black_litterman_optimization(
@@ -1055,7 +1057,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing Black Litterman optimization: {e}"))
+            self.tprint(error("Error performing Black Litterman optimization: {e}"))
             return {}
 
     def _perform_risk_parity_optimization(
@@ -1074,7 +1076,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing risk parity optimization: {e}"))
+            self.tprint(error("Error performing risk parity optimization: {e}"))
             return {}
 
     def _perform_factor_optimization(
@@ -1093,7 +1095,7 @@ class GlobalPortfolioManager:
                 "training_time": datetime.now().isoformat(),
             }
         except Exception:
-            self.print(error("Error performing factor optimization: {e}"))
+            self.tprint(error("Error performing factor optimization: {e}"))
             return {}
 
     @handles_errors(
@@ -1117,7 +1119,7 @@ class GlobalPortfolioManager:
             self.logger.info("Management results stored successfully")
 
         except Exception:
-            self.print(error("Error storing management results: {e}"))
+            self.tprint(error("Error storing management results: {e}"))
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -1143,7 +1145,7 @@ class GlobalPortfolioManager:
             return self.management_results.copy()
 
         except Exception:
-            self.print(error("Error getting management results: {e}"))
+            self.tprint(error("Error getting management results: {e}"))
             return {}
 
     @handles_errors(
@@ -1170,7 +1172,7 @@ class GlobalPortfolioManager:
             return history
 
         except Exception:
-            self.print(error("Error getting management history: {e}"))
+            self.tprint(error("Error getting management history: {e}"))
             return []
 
     def get_management_status(self) -> dict[str, Any]:
@@ -1220,7 +1222,7 @@ class GlobalPortfolioManager:
             self.logger.info("✅ Global Portfolio Manager stopped successfully")
 
         except Exception:
-            self.print(error("Error stopping global portfolio manager: {e}"))
+            self.tprint(error("Error stopping global portfolio manager: {e}"))
 
 # Global portfolio manager instance
 global_portfolio_manager: GlobalPortfolioManager | None = None
@@ -1268,5 +1270,5 @@ async def setup_global_portfolio_manager(
         return None
 
     except Exception as e:
-        print(f"Error setting up global portfolio manager: {e}")
+        tprint(f"Error setting up global portfolio manager: {e}")
         return None

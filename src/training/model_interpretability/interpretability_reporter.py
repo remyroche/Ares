@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 from src.utils.logger import system_logger
 from ..core.decorators import handles_errors
 """Interpretability Reporter for Model Analysis.
@@ -38,7 +40,7 @@ class InterpretabilityReporter:
     ) -> str:
         """Generate comprehensive interpretability report using the report manager."""
         self.logger.info("📄 Generating comprehensive interpretability report...")
-        print("📄 Generating comprehensive interpretability report...")
+        tprint("📄 Generating comprehensive interpretability report...")
         
         try:
             # Use report manager for standardized report organization
@@ -92,15 +94,15 @@ class InterpretabilityReporter:
             except Exception as summary_error:
                 self.logger.warning(f"⚠️ Summary report generation failed: {summary_error}")
             
-            print(f"✅ Generated {len(reports_created)} interpretability reports")
+            tprint(f"✅ Generated {len(reports_created)} interpretability reports")
             self.logger.info(f"✅ Generated {len(reports_created)} interpretability reports")
-            print(f"📁 Reports saved in: {report_manager.get_run_directory()}")
+            tprint(f"📁 Reports saved in: {report_manager.get_run_directory()}")
             
             return reports_created[0] if reports_created else None
             
         except Exception as e:
             self.logger.error(f"❌ Failed to generate interpretability report: {e}")
-            print(f"❌ Failed to generate interpretability report: {e}")
+            tprint(f"❌ Failed to generate interpretability report: {e}")
             return None
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -133,14 +135,14 @@ class InterpretabilityReporter:
             json_path = f"{output_dir}/interpretability_report.json"
             safe_json_dump(json_report, json_path, indent = 2)
             
-            print(f"✅ JSON report saved: {json_path}")
+            tprint(f"✅ JSON report saved: {json_path}")
             self.logger.info(f"✅ JSON report saved: {json_path}")
             
             return json_path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to generate JSON report: {e}")
-            print(f"❌ Failed to generate JSON report: {e}")
+            tprint(f"❌ Failed to generate JSON report: {e}")
             return None
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -302,14 +304,14 @@ class InterpretabilityReporter:
             with open(markdown_path, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(markdown_content))
             
-            print(f"✅ Markdown report saved: {markdown_path}")
+            tprint(f"✅ Markdown report saved: {markdown_path}")
             self.logger.info(f"✅ Markdown report saved: {markdown_path}")
             
             return markdown_path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to generate Markdown report: {e}")
-            print(f"❌ Failed to generate Markdown report: {e}")
+            tprint(f"❌ Failed to generate Markdown report: {e}")
             return None
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -462,14 +464,14 @@ class InterpretabilityReporter:
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(html_content))
             
-            print(f"✅ HTML report saved: {html_path}")
+            tprint(f"✅ HTML report saved: {html_path}")
             self.logger.info(f"✅ HTML report saved: {html_path}")
             
             return html_path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to generate HTML report: {e}")
-            print(f"❌ Failed to generate HTML report: {e}")
+            tprint(f"❌ Failed to generate HTML report: {e}")
             return None
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -519,12 +521,12 @@ class InterpretabilityReporter:
             summary_path = f"{output_dir}/interpretability_summary.json"
             safe_json_dump(summary, summary_path, indent = 2)
             
-            print(f"✅ Summary report saved: {summary_path}")
+            tprint(f"✅ Summary report saved: {summary_path}")
             self.logger.info(f"✅ Summary report saved: {summary_path}")
             
             return summary_path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to generate summary report: {e}")
-            print(f"❌ Failed to generate summary report: {e}")
+            tprint(f"❌ Failed to generate summary report: {e}")
             return None

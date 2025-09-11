@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Simplified Code Interaction Mapping Script
 
@@ -65,8 +67,8 @@ class SimplifiedCodeInteractionMapper:
     
     def run_analysis(self):
         """Run the complete analysis pipeline."""
-        print(f"Starting simplified code interaction mapping for: {self.project_root}")
-        print("=" * 80)
+        tprint(f"Starting simplified code interaction mapping for: {self.project_root}")
+        tprint("=" * 80)
         
         try:
             # Run dead code analysis (main focus)
@@ -82,9 +84,9 @@ class SimplifiedCodeInteractionMapper:
             # Generate reports
             self._generate_reports()
             
-            print("\n" + "=" * 80)
-            print("SIMPLIFIED CODE INTERACTION MAPPING COMPLETE!")
-            print("=" * 80)
+            tprint("\n" + "=" * 80)
+            tprint("SIMPLIFIED CODE INTERACTION MAPPING COMPLETE!")
+            tprint("=" * 80)
             self._print_summary()
             
             return {
@@ -95,7 +97,7 @@ class SimplifiedCodeInteractionMapper:
             }
             
         except Exception as e:
-            print(f"❌ Analysis failed: {e}")
+            tprint(f"❌ Analysis failed: {e}")
             return {
                 "project_root": str(self.project_root),
                 "stats": self.stats,
@@ -106,7 +108,7 @@ class SimplifiedCodeInteractionMapper:
     
     def _analyze_dead_code(self):
         """Analyze dead code using the enhanced analyzer."""
-        print("\n[1/6] Analyzing dead code and deprecated patterns...")
+        tprint("\n[1/6] Analyzing dead code and deprecated patterns...")
         
         try:
             report = self.dead_code_analyzer.analyze_directory(self.project_root)
@@ -130,77 +132,77 @@ class SimplifiedCodeInteractionMapper:
             self.stats["unused_imports"] = report.issues_by_type.get("unused_import", 0)
             self.stats["call_graph_nodes"] = len(report.call_graph_nodes)
             
-            print(f"  ✅ Enhanced analysis complete:")
-            print(f"     - Total issues found: {report.total_issues}")
-            print(f"     - Dead code functions: {report.issues_by_type.get('dead_code', 0)}")
-            print(f"     - Unused imports: {report.issues_by_type.get('unused_import', 0)}")
-            print(f"     - False positives filtered: {report.false_positives_filtered}")
+            tprint(f"  ✅ Enhanced analysis complete:")
+            tprint(f"     - Total issues found: {report.total_issues}")
+            tprint(f"     - Dead code functions: {report.issues_by_type.get('dead_code', 0)}")
+            tprint(f"     - Unused imports: {report.issues_by_type.get('unused_import', 0)}")
+            tprint(f"     - False positives filtered: {report.false_positives_filtered}")
             
         except Exception as e:
-            print(f"  ❌ Dead code analysis failed: {e}")
+            tprint(f"  ❌ Dead code analysis failed: {e}")
             self.results["dead_code"] = {"error": str(e)}
             self.stats["files_failed"] += 1
     
     def _analyze_dependencies(self):
         """Analyze module dependencies."""
-        print("\n[2/6] Analyzing module dependencies...")
+        tprint("\n[2/6] Analyzing module dependencies...")
         try:
             self.results["dependencies"] = self.dependency_analyzer.analyze_directory(str(self.project_root))
             deps = self.results["dependencies"]
-            print(f"  - Found {len(deps.get('modules', {}))} modules")
-            print(f"  - Total dependencies: {deps.get('total_dependencies', 0)}")
+            tprint(f"  - Found {len(deps.get('modules', {}))} modules")
+            tprint(f"  - Total dependencies: {deps.get('total_dependencies', 0)}")
         except Exception as e:
-            print(f"  ❌ Dependency analysis failed: {e}")
+            tprint(f"  ❌ Dependency analysis failed: {e}")
             self.results["dependencies"] = {"error": str(e)}
     
     def _analyze_call_graph(self):
         """Analyze function call relationships."""
-        print("\n[3/6] Analyzing function call graph...")
+        tprint("\n[3/6] Analyzing function call graph...")
         try:
             self.results["call_graph"] = self.call_graph_analyzer.analyze_directory(str(self.project_root))
             cg = self.results["call_graph"]
-            print(f"  - Found {len(cg.get('functions', {}))} functions")
-            print(f"  - Total function calls: {cg.get('total_calls', 0)}")
+            tprint(f"  - Found {len(cg.get('functions', {}))} functions")
+            tprint(f"  - Total function calls: {cg.get('total_calls', 0)}")
         except Exception as e:
-            print(f"  ❌ Call graph analysis failed: {e}")
+            tprint(f"  ❌ Call graph analysis failed: {e}")
             self.results["call_graph"] = {"error": str(e)}
     
     def _analyze_architecture(self):
         """Analyze system architecture."""
-        print("\n[4/6] Analyzing system architecture...")
+        tprint("\n[4/6] Analyzing system architecture...")
         try:
             self.results["architecture"] = self.architecture_analyzer.analyze_directory(str(self.project_root))
             arch = self.results["architecture"]
-            print(f"  - Found {len(arch.get('components', {}))} components")
+            tprint(f"  - Found {len(arch.get('components', {}))} components")
         except Exception as e:
-            print(f"  ❌ Architecture analysis failed: {e}")
+            tprint(f"  ❌ Architecture analysis failed: {e}")
             self.results["architecture"] = {"error": str(e)}
     
     def _analyze_imports(self):
         """Analyze import relationships."""
-        print("\n[5/6] Analyzing import relationships...")
+        tprint("\n[5/6] Analyzing import relationships...")
         try:
             self.results["imports"] = self.import_analyzer.analyze_directory(str(self.project_root))
             imps = self.results["imports"]
-            print(f"  - Total imports: {imps.get('total_imports', 0)}")
+            tprint(f"  - Total imports: {imps.get('total_imports', 0)}")
         except Exception as e:
-            print(f"  ❌ Import analysis failed: {e}")
+            tprint(f"  ❌ Import analysis failed: {e}")
             self.results["imports"] = {"error": str(e)}
     
     def _analyze_complexity(self):
         """Analyze code complexity."""
-        print("\n[6/6] Analyzing code complexity...")
+        tprint("\n[6/6] Analyzing code complexity...")
         try:
             self.results["complexity"] = self.complexity_analyzer.analyze_directory(str(self.project_root))
             comp = self.results["complexity"]
-            print(f"  - Average complexity: {comp.get('average_complexity', 0):.2f}")
+            tprint(f"  - Average complexity: {comp.get('average_complexity', 0):.2f}")
         except Exception as e:
-            print(f"  ❌ Complexity analysis failed: {e}")
+            tprint(f"  ❌ Complexity analysis failed: {e}")
             self.results["complexity"] = {"error": str(e)}
     
     def _generate_reports(self):
         """Generate all reports."""
-        print("\n[7/7] Generating reports...")
+        tprint("\n[7/7] Generating reports...")
         
         # Create output directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -211,7 +213,7 @@ class SimplifiedCodeInteractionMapper:
         json_file = output_dir / f"simplified_analysis_{timestamp}.json"
         with open(json_file, 'w') as f:
             json.dump(self.results, f, indent=2, default=str)
-        print(f"  📁 JSON report saved to: {json_file}")
+        tprint(f"  📁 JSON report saved to: {json_file}")
         
         # Generate HTML report
         html_content = self.html_reporter.generate_from_analyzer_results(
@@ -221,23 +223,23 @@ class SimplifiedCodeInteractionMapper:
         html_file = output_dir / f"simplified_analysis_{timestamp}.html"
         with open(html_file, 'w') as f:
             f.write(html_content)
-        print(f"  📁 HTML report saved to: {html_file}")
+        tprint(f"  📁 HTML report saved to: {html_file}")
         
         # Generate text report
         text_content = self.text_reporter.generate_detailed_report(self.results)
         text_file = output_dir / f"simplified_analysis_{timestamp}.txt"
         with open(text_file, 'w') as f:
             f.write(text_content)
-        print(f"  📁 Text report saved to: {text_file}")
+        tprint(f"  📁 Text report saved to: {text_file}")
     
     def _print_summary(self):
         """Print analysis summary."""
-        print(f"\n📊 Analysis Summary:")
-        print(f"   - Total issues found: {self.stats['total_issues']}")
-        print(f"   - Dead code functions: {self.stats['dead_code_functions']}")
-        print(f"   - Unused imports: {self.stats['unused_imports']}")
-        print(f"   - Call graph nodes: {self.stats['call_graph_nodes']}")
-        print(f"   - Files analyzed: {self.stats['files_analyzed']}")
+        tprint(f"\n📊 Analysis Summary:")
+        tprint(f"   - Total issues found: {self.stats['total_issues']}")
+        tprint(f"   - Dead code functions: {self.stats['dead_code_functions']}")
+        tprint(f"   - Unused imports: {self.stats['unused_imports']}")
+        tprint(f"   - Call graph nodes: {self.stats['call_graph_nodes']}")
+        tprint(f"   - Files analyzed: {self.stats['files_analyzed']}")
 
 
 def main():
@@ -269,7 +271,7 @@ Examples:
     with open(args.output, 'w') as f:
         json.dump(results, f, indent=2)
     
-    print(f"📊 Analysis complete! Report saved to: {args.output}")
+    tprint(f"📊 Analysis complete! Report saved to: {args.output}")
 
 
 if __name__ == "__main__":

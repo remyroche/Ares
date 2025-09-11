@@ -1,12 +1,14 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import functools
 """Core decorators for the Ares project."""
 
-print("DEBUG: decorators.py module starting to load...")
+tprint("DEBUG: decorators.py module starting to load...")
 
 def handles_errors(*args, **kwargs) -> Callable:
     """Enhanced decorator for handling errors in functions."""
-    print("DEBUG: handles_errors decorator function defined")
+    tprint("DEBUG: handles_errors decorator function defined")
     import inspect
     
     def decorator(func: Callable) -> Callable:
@@ -51,7 +53,7 @@ def handles_errors(*args, **kwargs) -> Callable:
 
                     except (ImportError, AttributeError):
                         # Fallback to simple logging if error classes not available or circular import
-                        print(f'Error in {func.__name__}: {e}')
+                        tprint(f'Error in {func.__name__}: {e}')
                         raise
             return async_wrapper
         else:
@@ -95,14 +97,14 @@ def handles_errors(*args, **kwargs) -> Callable:
 
                     except (ImportError, AttributeError):
                         # Fallback to simple logging if error classes not available or circular import
-                        print(f'Error in {func.__name__}: {e}')
+                        tprint(f'Error in {func.__name__}: {e}')
                         raise
             return sync_wrapper
     return decorator
 
 def traced(*args, **kwargs) -> Callable:
     """Tracing decorator that accepts optional parameters."""
-    print("DEBUG: traced decorator function defined")
+    tprint("DEBUG: traced decorator function defined")
 
     def decorator(func: Callable) -> Callable:
         def wrapper(*args, **kwargs) -> Any:
@@ -145,7 +147,7 @@ def validates(*args, **kwargs) -> Callable:
 
                 except (ImportError, AttributeError):
                     # Fallback to simple error handling if imports fail or circular dependency
-                    print(f'Validation error in {func.__name__}: {e}')
+                    tprint(f'Validation error in {func.__name__}: {e}')
                     raise
         return wrapper
 
@@ -217,4 +219,4 @@ __all__ = [
     'span_event'
 ]
 
-print("DEBUG: decorators.py module loaded successfully!")
+tprint("DEBUG: decorators.py module loaded successfully!")

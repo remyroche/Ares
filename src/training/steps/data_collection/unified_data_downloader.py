@@ -63,7 +63,7 @@ class UnifiedDataDownloader:
         # Initialize exchange instances cache
         self._exchange_instances = {}
         
-    @handles_errors(fallback=False, context="download_klines")
+    @handles_errors(context="download_klines")
     @log_all_calls
     async def download_klines(
         self, 
@@ -144,7 +144,7 @@ class UnifiedDataDownloader:
             self.download_stats['failed_downloads'] += 1
             return False, [], str(e)
     
-    @handles_errors(fallback=False, context="download_aggtrades")
+    @handles_errors(context="download_aggtrades")
     @log_all_calls
     async def download_aggtrades(
         self, 
@@ -223,7 +223,7 @@ class UnifiedDataDownloader:
             self.download_stats['failed_downloads'] += 1
             return False, [], str(e)
     
-    @handles_errors(fallback=False, context="download_futures")
+    @handles_errors(context="download_futures")
     @log_all_calls
     async def download_futures(
         self, 
@@ -302,30 +302,34 @@ class UnifiedDataDownloader:
             self.download_stats['failed_downloads'] += 1
             return False, [], str(e)
     
-    @handles_errors(fallback=None, context="get_exchange_instance")
+    @handles_errors(context="get_exchange_instance")
     async def _get_exchange_instance(self, exchange: str):
         """Get or create exchange instance."""
         if exchange.upper() not in self._exchange_instances:
             try:
-                # Use the exchange factory to create exchange instances
-                from exchange.factory import ExchangeFactory
-                
-                exchange_instance = ExchangeFactory.get_exchange(exchange.lower())
-                
-                # Initialize the exchange if it has an initialize method
-                if hasattr(exchange_instance, '_initialize_exchange'):
-                    await exchange_instance._initialize_exchange()
-                
+                # Create exchange instance based on exchange name
+                if exchange.lower() == 'binance':
+                    from src.exchange.binance import BinanceExchange
+                    exchange_instance = BinanceExchange({})
+                else:
+                    raise ValueError(f"Unsupported exchange: {exchange}")
+
+                # Initialize the exchange
+                success = await exchange_instance.initialize()
+                if not success:
+                    self.logger.error(f"❌ Failed to initialize {exchange} exchange")
+                    return None
+
                 self._exchange_instances[exchange.upper()] = exchange_instance
                 self.logger.info(f"✅ Initialized {exchange} exchange")
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Failed to initialize {exchange} exchange: {e}")
                 return None
-                
+
         return self._exchange_instances[exchange.upper()]
     
-    @handles_errors(fallback=[], context="download_klines_batch")
+    @handles_errors(context="download_klines_batch")
     async def _download_klines_batch(
         self, 
         exchange_instance, 
@@ -367,7 +371,7 @@ class UnifiedDataDownloader:
             self.logger.error(f"❌ Error downloading klines batch: {e}")
             return []
     
-    @handles_errors(fallback=[], context="download_aggtrades_batch")
+    @handles_errors(context="download_aggtrades_batch")
     async def _download_aggtrades_batch(
         self, 
         exchange_instance, 
@@ -405,7 +409,7 @@ class UnifiedDataDownloader:
             self.logger.error(f"❌ Error downloading aggtrades batch: {e}")
             return []
     
-    @handles_errors(fallback=[], context="download_futures_batch")
+    @handles_errors(context="download_futures_batch")
     async def _download_futures_batch(
         self, 
         exchange_instance, 
@@ -465,21 +469,21 @@ class UnifiedDataDownloader:
         }
 
 # Convenience functions for backward compatibility
-@handles_errors(fallback=False)
+@handles_errors()
 async def download_klines_data(symbol: str, exchange: str, timeframe: str = "1m", **kwargs) -> bool:
     """Convenience function for downloading klines data."""
     downloader = UnifiedDataDownloader()
     success, data, error = await downloader.download_klines(symbol, exchange, timeframe, **kwargs)
     return success
 
-@handles_errors(fallback=False)
+@handles_errors()
 async def download_aggtrades_data(symbol: str, exchange: str, **kwargs) -> bool:
     """Convenience function for downloading aggtrades data."""
     downloader = UnifiedDataDownloader()
     success, data, error = await downloader.download_aggtrades(symbol, exchange, **kwargs)
     return success
 
-@handles_errors(fallback=False)
+@handles_errors()
 async def download_futures_data(symbol: str, exchange: str, **kwargs) -> bool:
     """Convenience function for downloading futures data."""
     downloader = UnifiedDataDownloader()

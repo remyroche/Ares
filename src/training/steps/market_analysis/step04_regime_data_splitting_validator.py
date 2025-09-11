@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import pandas as pd  # noqa: F401
@@ -355,4 +357,4 @@ if __name__ == '__main__':
     test_state = {}
     import asyncio
     result = asyncio.run(run_validator(test_input, test_state))
-    print(json.dumps(result, indent = 2))
+    tprint(json.dumps(result, indent = 2))

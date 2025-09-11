@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Enhanced Fallback Pattern Detector
 
@@ -360,8 +362,8 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
         result = analyze_fallback_patterns(sys.argv[1])
-        print(f"Found {result.total_patterns} fallback patterns in {sys.argv[1]}")
+        tprint(f"Found {result.total_patterns} fallback patterns in {sys.argv[1]}")
         for pattern in result.patterns:
-            print(f"  {pattern.type.value}: {pattern.name} (line {pattern.line})")
+            tprint(f"  {pattern.type.value}: {pattern.name} (line {pattern.line})")
     else:
-        print("Usage: python enhanced_fallback_detector.py <file_path>")
+        tprint("Usage: python enhanced_fallback_detector.py <file_path>")

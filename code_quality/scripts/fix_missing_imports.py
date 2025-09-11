@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Script to analyze and fix missing imports for common operations.
 """
@@ -533,16 +535,16 @@ class ImportFixer:
             return filtered_imports
             
         except SyntaxError as e:
-            print(f"Syntax error in {file_path}: {e}")
+            tprint(f"Syntax error in {file_path}: {e}")
             return set()
         except IndentationError as e:
-            print(f"Indentation error in {file_path}: {e}")
+            tprint(f"Indentation error in {file_path}: {e}")
             return set()
         except ImportError as e:
-            print(f"Import error in {file_path}: {e}")
+            tprint(f"Import error in {file_path}: {e}")
             return set()
         except Exception as e:
-            print(f"Unknown error analyzing {file_path}: {e}")
+            tprint(f"Unknown error analyzing {file_path}: {e}")
             return set()
 
     def add_common_missing_imports(self, file_path: str) -> set:
@@ -613,7 +615,7 @@ class ImportFixer:
                     missing_imports.add(('typing', None))
             
         except Exception as e:
-            print(f"Error analyzing {file_path}: {e}")
+            tprint(f"Error analyzing {file_path}: {e}")
             
         return missing_imports
 
@@ -708,7 +710,7 @@ class ImportFixer:
             return self.fix_file_imports(file_path, all_missing_imports)
             
         except Exception as e:
-            print(f"Error auto-fixing {file_path}: {e}")
+            tprint(f"Error auto-fixing {file_path}: {e}")
             return False
 
     def fix_file_imports(self, file_path: str, imports_needed: set[tuple[str, str]]) -> bool:
@@ -790,7 +792,7 @@ class ImportFixer:
             return True
 
         except Exception as e:
-            print(f"Error fixing {file_path}: {e}")
+            tprint(f"Error fixing {file_path}: {e}")
             return False
 
     def generate_report(self) -> dict:
@@ -818,23 +820,23 @@ class ImportFixer:
 
         if dry_run:
             report = self.generate_report()
-            print("\nDRY RUN - Imports that would be added:")
-            print("=" * 60)
+            tprint("\nDRY RUN - Imports that would be added:")
+            tprint("=" * 60)
 
             # Show summary
-            print("\nSummary by module:")
+            tprint("\nSummary by module:")
             for module, count in sorted(report["summary"].items(), key=lambda x: x[1], reverse=True):
-                print(f"  {module}: {count} files")
+                tprint(f"  {module}: {count} files")
 
             # Show sample files
-            print("\nSample files to be fixed (showing first 5):")
+            tprint("\nSample files to be fixed (showing first 5):")
             for file_path, imports in list(report["imports_by_file"].items())[:5]:
-                print(f"\n{file_path}:")
+                tprint(f"\n{file_path}:")
                 for imp in imports:
-                    print(f"  + {imp}")
+                    tprint(f"  + {imp}")
 
             if len(report["imports_by_file"]) > 5:
-                print(f"\n... and {len(report['imports_by_file']) - 5} more files")
+                tprint(f"\n... and {len(report['imports_by_file']) - 5} more files")
 
             return report
         # Actually fix the files
@@ -844,12 +846,12 @@ class ImportFixer:
         for file_path, imports in self.imports_to_add.items():
             if self.fix_file_imports(file_path, imports):
                 fixed += 1
-                print(f"✓ Fixed {file_path}")
+                tprint(f"✓ Fixed {file_path}")
             else:
                 failed += 1
-                print(f"✗ Failed to fix {file_path}")
+                tprint(f"✗ Failed to fix {file_path}")
 
-        print(f"\nFixed {fixed} files, {failed} failures")
+        tprint(f"\nFixed {fixed} files, {failed} failures")
         return {"fixed": fixed, "failed": failed}
 
     def auto_fix_all_files(self, file_paths: list, dry_run: bool = True):
@@ -858,8 +860,8 @@ class ImportFixer:
         categorized_results = self.categorize_all_files(file_paths)
         
         if dry_run:
-            print("\nAUTO-DETECTION DRY RUN - Categorized Analysis:")
-            print("=" * 70)
+            tprint("\nAUTO-DETECTION DRY RUN - Categorized Analysis:")
+            tprint("=" * 70)
             
             # Print categorized results
             self._print_categorized_results(categorized_results)
@@ -874,12 +876,12 @@ class ImportFixer:
             if self.auto_fix_file_imports(file_path):
                 fixed += 1
                 self.fixed_files.append(file_path)
-                print(f"✓ Auto-fixed {file_path}")
+                tprint(f"✓ Auto-fixed {file_path}")
             else:
                 failed += 1
                 self.failed_files.append(file_path)
         
-        print(f"\nAuto-fixed {fixed} files, {failed} failures")
+        tprint(f"\nAuto-fixed {fixed} files, {failed} failures")
         return {"fixed": fixed, "failed": failed, "fixed_files": self.fixed_files, "failed_files": self.failed_files}
 
     def categorize_all_files(self, file_paths: list) -> dict:
@@ -945,9 +947,9 @@ class ImportFixer:
 
     def _print_categorized_results(self, results: dict):
         """Print categorized analysis results."""
-        print(f"\n📊 CATEGORIZED ANALYSIS RESULTS:")
-        print(f"Total files analyzed: {results['total_files']}")
-        print()
+        tprint(f"\n📊 CATEGORIZED ANALYSIS RESULTS:")
+        tprint(f"Total files analyzed: {results['total_files']}")
+        tprint()
         
         # Print each category
         categories = [
@@ -964,8 +966,8 @@ class ImportFixer:
         for category, title, description in categories:
             count = results["error_counts"][category]
             if count > 0:
-                print(f"{title}: {count} files")
-                print(f"  {description}")
+                tprint(f"{title}: {count} files")
+                tprint(f"  {description}")
                 
                 # Show first few examples
                 if category in results and results[category]:
@@ -974,19 +976,19 @@ class ImportFixer:
                         if isinstance(example, dict) and "file_path" in example:
                             file_path = example["file_path"]
                             if "error_message" in example and example["error_message"]:
-                                print(f"    - {file_path}: {example['error_message']}")
+                                tprint(f"    - {file_path}: {example['error_message']}")
                             else:
-                                print(f"    - {file_path}")
-                print()
+                                tprint(f"    - {file_path}")
+                tprint()
         
         # Summary
         total_errors = sum(results["error_counts"][cat] for cat in ["syntax_errors", "indentation_errors", "ast_parse_errors", "file_not_found", "permission_errors", "unknown_errors"])
-        print(f"📈 SUMMARY:")
-        print(f"  ✅ Files with valid syntax: {results['error_counts']['successful_analysis']}")
-        print(f"  ❌ Files with issues: {total_errors}")
-        print(f"  📦 Files needing import fixes: {results['error_counts']['files_with_missing_imports']}")
-        print(f"  🔴 Real syntax errors: {results['error_counts']['syntax_errors'] + results['error_counts']['indentation_errors']}")
-        print(f"  🟡 Semantic/AST issues: {results['error_counts']['ast_parse_errors']}")
+        tprint(f"📈 SUMMARY:")
+        tprint(f"  ✅ Files with valid syntax: {results['error_counts']['successful_analysis']}")
+        tprint(f"  ❌ Files with issues: {total_errors}")
+        tprint(f"  📦 Files needing import fixes: {results['error_counts']['files_with_missing_imports']}")
+        tprint(f"  🔴 Real syntax errors: {results['error_counts']['syntax_errors'] + results['error_counts']['indentation_errors']}")
+        tprint(f"  🟡 Semantic/AST issues: {results['error_counts']['ast_parse_errors']}")
 
 
 def main():
@@ -1011,9 +1013,9 @@ def main():
 
     if args.auto_detect:
         # Auto-detect mode: scan all Python files
-        print("🔍 Auto-detecting missing imports...")
+        tprint("🔍 Auto-detecting missing imports...")
         file_paths = list(Path(args.project_root).glob(args.file_pattern))
-        print(f"Found {len(file_paths)} Python files to analyze")
+        tprint(f"Found {len(file_paths)} Python files to analyze")
         
         result = fixer.auto_fix_all_files([str(f) for f in file_paths], dry_run=not args.fix)
         
@@ -1024,7 +1026,7 @@ def main():
             report_file = f"/workspace/code_quality/reports/auto_import_fixes_report_{timestamp}.json"
             with open(report_file, "w") as f:
                 json.dump(result, f, indent=2)
-            print(f"\nReport saved to: {report_file}")
+            tprint(f"\nReport saved to: {report_file}")
     else:
         # Issues file mode: use existing issues
         fixer.load_issues(args.issues_file)
@@ -1037,7 +1039,7 @@ def main():
             report_file = f"/workspace/code_quality/reports/import_fixes_report_{timestamp}.json"
             with open(report_file, "w") as f:
                 json.dump(result, f, indent=2)
-            print(f"\nReport saved to: {report_file}")
+            tprint(f"\nReport saved to: {report_file}")
 
 
 if __name__ == "__main__":

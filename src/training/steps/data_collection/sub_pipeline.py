@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Unified Data Collection Sub-Pipeline
 
@@ -381,22 +383,10 @@ class DataCollectionSubPipeline:
         return artifacts
     
     async def _fallback_data_download(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Fallback data download method."""
-        self.logger.info("🔄 Using fallback data download method")
-        
-        artifacts = {
-            'downloaded_files': [],
-            'download_stats': {'fallback_mode': True},
-            'exchange_info': {'exchange': config.exchange, 'symbol': config.symbol},
-            'data_types': ['klines', 'aggtrades', 'futures']
-        }
-        
-        # Create mock data files
-        for data_type in ['klines', 'aggtrades', 'futures']:
-            filename = f"{data_type}_{config.exchange}_{config.symbol}_mock.parquet"
-            artifacts['downloaded_files'].append(filename)
-        
-        return artifacts
+        """Fallback data download method - now fails fast instead of creating mock data."""
+        self.logger.error("❌ Data download failed - no fallback data available")
+        self.logger.error("Please ensure data downloaders are properly configured and available")
+        raise RuntimeError("Data download failed - cannot proceed without real market data")
     
     @log_important_calls
     async def _data_conversion_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -949,7 +939,7 @@ class DataCollectionSubPipeline:
         except Exception as e:
             self.logger.warning(f"⚠️ Error adding technical indicators: {e}")
             return df
-    
+
     @log_important_calls
     async def _data_quality_check_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data quality check sub-pipeline."""
@@ -1424,8 +1414,8 @@ if __name__ == "__main__":
             add_technical_indicators=True
         )
         
-        print("Pipeline execution completed!")
-        print(f"Success rate: {result['pipeline_summary']['success_rate']:.1%}")
-        print(f"Total duration: {result['pipeline_summary']['total_duration_seconds']:.2f}s")
+        tprint("Pipeline execution completed!")
+        tprint(f"Success rate: {result['pipeline_summary']['success_rate']:.1%}")
+        tprint(f"Total duration: {result['pipeline_summary']['total_duration_seconds']:.2f}s")
     
     asyncio.run(main())

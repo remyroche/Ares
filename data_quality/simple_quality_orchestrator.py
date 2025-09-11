@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Simple Data Quality Orchestrator
 
@@ -1004,7 +1006,7 @@ def main():
         elif data_path.is_dir():
             mode = "directory"
         else:
-            print(f"Path not found: {data_path}")
+            tprint(f"Path not found: {data_path}")
             return
     else:
         mode = args.mode
@@ -1013,16 +1015,16 @@ def main():
     if mode == "file":
         # Single file analysis
         if not data_path.exists():
-            print(f"File not found: {data_path}")
+            tprint(f"File not found: {data_path}")
             return
 
-        print(f"📁 Analyzing single file: {data_path.name}")
+        tprint(f"📁 Analyzing single file: {data_path.name}")
 
         # Analyze file
         report = orchestrator.analyze_file(str(data_path), args.context or f"File: {data_path.name}")
 
         if "error" in report:
-            print(f"❌ Analysis failed: {report['error']}")
+            tprint(f"❌ Analysis failed: {report['error']}")
             return
 
         # Save JSON report
@@ -1039,25 +1041,25 @@ def main():
 
         # Print summary
         quality_assessment = report.get("quality_assessment", {})
-        print("\n📊 QUALITY REPORT SUMMARY")
-        print(f"Overall Quality: {quality_assessment.get('overall_quality', 'unknown').upper()}")
-        print(f"Quality Score: {quality_assessment.get('quality_score', 'unknown')}/100")
-        print(f"JSON Report: {output_file}")
-        print(f"Text Report: {text_file}")
+        tprint("\n📊 QUALITY REPORT SUMMARY")
+        tprint(f"Overall Quality: {quality_assessment.get('overall_quality', 'unknown').upper()}")
+        tprint(f"Quality Score: {quality_assessment.get('quality_score', 'unknown')}/100")
+        tprint(f"JSON Report: {output_file}")
+        tprint(f"Text Report: {text_file}")
 
     elif mode == "directory":
         # Directory analysis
         if not data_path.is_dir():
-            print(f"Path is not a directory: {data_path}")
+            tprint(f"Path is not a directory: {data_path}")
             return
 
-        print(f"📁 Analyzing directory: {data_path}")
+        tprint(f"📁 Analyzing directory: {data_path}")
 
         # Analyze directory
         directory_report = orchestrator.analyze_directory(str(data_path), args.file_pattern)
 
         if "error" in directory_report:
-            print(f"❌ Directory analysis failed: {directory_report['error']}")
+            tprint(f"❌ Directory analysis failed: {directory_report['error']}")
             return
 
         # Save JSON report
@@ -1074,12 +1076,12 @@ def main():
 
         # Print summary
         summary = directory_report.get("summary", {})
-        print("\n📊 DIRECTORY QUALITY SUMMARY")
-        print(f"Overall Quality: {summary.get('overall_quality', 'unknown').upper()}")
-        print(f"Total Files: {summary.get('total_files', 'unknown')}")
-        print(f"Success Rate: {summary.get('success_rate', 'unknown'):.1%}")
-        print(f"JSON Report: {output_file}")
-        print(f"Text Report: {text_file}")
+        tprint("\n📊 DIRECTORY QUALITY SUMMARY")
+        tprint(f"Overall Quality: {summary.get('overall_quality', 'unknown').upper()}")
+        tprint(f"Total Files: {summary.get('total_files', 'unknown')}")
+        tprint(f"Success Rate: {summary.get('success_rate', 'unknown'):.1%}")
+        tprint(f"JSON Report: {output_file}")
+        tprint(f"Text Report: {text_file}")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Base Code Visualizer
 
@@ -17,7 +19,7 @@ try:
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
-    print("Warning: matplotlib not available - visualization features will be limited")
+    tprint("Warning: matplotlib not available - visualization features will be limited")
 
 
 class CodeVisualizer:

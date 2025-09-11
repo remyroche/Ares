@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Test script to verify the refactored feature selection framework functionality.
 """
@@ -13,12 +15,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 def test_modular_framework():
     """Test the new modular feature selection framework."""
-    print("🧪 Testing new modular feature selection framework...")
+    tprint("🧪 Testing new modular feature selection framework...")
     
     try:
         # Import the new framework
         from src.training.utils.feature_selection import FeatureSelectionFramework
-        print("✅ Successfully imported new modular framework")
+        tprint("✅ Successfully imported new modular framework")
         
         # Create sample data
         np.random.seed(42)
@@ -27,7 +29,7 @@ def test_modular_framework():
         y = np.random.randn(n_samples)
         feature_names = [f'feature_{i}' for i in range(n_features)]
         
-        print(f"📊 Created sample data: {X.shape[0]} samples, {X.shape[1]} features")
+        tprint(f"📊 Created sample data: {X.shape[0]} samples, {X.shape[1]} features")
         
         # Initialize framework
         config = {
@@ -39,10 +41,10 @@ def test_modular_framework():
         }
         
         framework = FeatureSelectionFramework(config)
-        print("✅ Successfully initialized framework")
+        tprint("✅ Successfully initialized framework")
         
         # Test basic functionality
-        print("🔍 Testing basic feature selection...")
+        tprint("🔍 Testing basic feature selection...")
         
         # Run a simple feature selection
         result = framework.run_comprehensive_feature_selection(
@@ -56,45 +58,45 @@ def test_modular_framework():
         
         if result.get('success', False):
             selected_features = result.get('final_selected_features', [])
-            print(f"✅ Feature selection completed successfully")
-            print(f"📊 Selected {len(selected_features)} features")
-            print(f"🎯 Selected features: {selected_features[:10]}...")  # Show first 10
+            tprint(f"✅ Feature selection completed successfully")
+            tprint(f"📊 Selected {len(selected_features)} features")
+            tprint(f"🎯 Selected features: {selected_features[:10]}...")  # Show first 10
             
             # Test individual components
-            print("🔍 Testing individual components...")
+            tprint("🔍 Testing individual components...")
             
             # Test data validator
             validation_result = framework.data_validator.validate_data_quality(X, y)
-            print(f"✅ Data validation: {validation_result.get('is_valid', False)}")
+            tprint(f"✅ Data validation: {validation_result.get('is_valid', False)}")
             
             # Test mRMR selector
             mrmr_result = framework.mrmr_selector.select_features(X, y, feature_names, 10)
-            print(f"✅ mRMR selection: {len(mrmr_result.get('selected_features', []))} features")
+            tprint(f"✅ mRMR selection: {len(mrmr_result.get('selected_features', []))} features")
             
             # Test correlation filter
             corr_result = framework.correlation_filter.select_features(X, y, feature_names)
-            print(f"✅ Correlation filtering: {len(corr_result.get('selected_features', []))} features")
+            tprint(f"✅ Correlation filtering: {len(corr_result.get('selected_features', []))} features")
             
             return True
             
         else:
-            print(f"❌ Feature selection failed: {result.get('pipeline_summary', {}).get('error', 'Unknown error')}")
+            tprint(f"❌ Feature selection failed: {result.get('pipeline_summary', {}).get('error', 'Unknown error')}")
             return False
             
     except Exception as e:
-        print(f"❌ Test failed with error: {e}")
+        tprint(f"❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 def test_backwards_compatibility():
     """Test backwards compatibility with the original interface."""
-    print("\n🧪 Testing backwards compatibility...")
+    tprint("\n🧪 Testing backwards compatibility...")
     
     try:
         # Test importing from the new location
         from src.training.utils.feature_selection import FeatureSelectionFramework as NewFramework
-        print("✅ Successfully imported from new location")
+        tprint("✅ Successfully imported from new location")
         
         # Test that the interface is compatible
         config = {'random_state': 42}
@@ -102,7 +104,7 @@ def test_backwards_compatibility():
         
         # Test that the main method exists
         assert hasattr(framework, 'run_comprehensive_feature_selection'), "Main method missing"
-        print("✅ Main interface method exists")
+        tprint("✅ Main interface method exists")
         
         # Test that other expected methods exist
         expected_methods = [
@@ -114,16 +116,16 @@ def test_backwards_compatibility():
         for method in expected_methods:
             assert hasattr(framework, method), f"Method {method} missing"
         
-        print("✅ All expected methods exist")
+        tprint("✅ All expected methods exist")
         return True
         
     except Exception as e:
-        print(f"❌ Backwards compatibility test failed: {e}")
+        tprint(f"❌ Backwards compatibility test failed: {e}")
         return False
 
 def test_component_isolation():
     """Test that individual components can be used independently."""
-    print("\n🧪 Testing component isolation...")
+    tprint("\n🧪 Testing component isolation...")
     
     try:
         # Test individual component imports
@@ -131,7 +133,7 @@ def test_component_isolation():
             DataValidator, MRMRSelector, CorrelationBasedFilter,
             StabilityAnalyzer, QualityMetricsCalculator
         )
-        print("✅ Successfully imported individual components")
+        tprint("✅ Successfully imported individual components")
         
         # Create sample data
         np.random.seed(42)
@@ -142,27 +144,27 @@ def test_component_isolation():
         # Test DataValidator
         validator = DataValidator()
         validation_result = validator.validate_data_quality(X, y)
-        print(f"✅ DataValidator works independently: {validation_result.get('is_valid', False)}")
+        tprint(f"✅ DataValidator works independently: {validation_result.get('is_valid', False)}")
         
         # Test MRMRSelector
         mrmr_selector = MRMRSelector()
         mrmr_result = mrmr_selector.select_features(X, y, feature_names, 10)
-        print(f"✅ MRMRSelector works independently: {len(mrmr_result.get('selected_features', []))} features")
+        tprint(f"✅ MRMRSelector works independently: {len(mrmr_result.get('selected_features', []))} features")
         
         # Test CorrelationBasedFilter
         corr_filter = CorrelationBasedFilter()
         corr_result = corr_filter.select_features(X, y, feature_names)
-        print(f"✅ CorrelationBasedFilter works independently: {len(corr_result.get('selected_features', []))} features")
+        tprint(f"✅ CorrelationBasedFilter works independently: {len(corr_result.get('selected_features', []))} features")
         
         return True
         
     except Exception as e:
-        print(f"❌ Component isolation test failed: {e}")
+        tprint(f"❌ Component isolation test failed: {e}")
         return False
 
 def main():
     """Run all tests."""
-    print("🚀 Starting feature selection framework refactor tests...\n")
+    tprint("🚀 Starting feature selection framework refactor tests...\n")
     
     tests = [
         ("Modular Framework", test_modular_framework),
@@ -172,40 +174,40 @@ def main():
     
     results = []
     for test_name, test_func in tests:
-        print(f"\n{'='*50}")
-        print(f"Running: {test_name}")
-        print('='*50)
+        tprint(f"\n{'='*50}")
+        tprint(f"Running: {test_name}")
+        tprint('='*50)
         
         try:
             result = test_func()
             results.append((test_name, result))
             if result:
-                print(f"✅ {test_name} PASSED")
+                tprint(f"✅ {test_name} PASSED")
             else:
-                print(f"❌ {test_name} FAILED")
+                tprint(f"❌ {test_name} FAILED")
         except Exception as e:
-            print(f"❌ {test_name} FAILED with exception: {e}")
+            tprint(f"❌ {test_name} FAILED with exception: {e}")
             results.append((test_name, False))
     
     # Summary
-    print(f"\n{'='*50}")
-    print("TEST SUMMARY")
-    print('='*50)
+    tprint(f"\n{'='*50}")
+    tprint("TEST SUMMARY")
+    tprint('='*50)
     
     passed = sum(1 for _, result in results if result)
     total = len(results)
     
     for test_name, result in results:
         status = "✅ PASSED" if result else "❌ FAILED"
-        print(f"{test_name}: {status}")
+        tprint(f"{test_name}: {status}")
     
-    print(f"\nOverall: {passed}/{total} tests passed")
+    tprint(f"\nOverall: {passed}/{total} tests passed")
     
     if passed == total:
-        print("🎉 All tests passed! The refactoring is successful.")
+        tprint("🎉 All tests passed! The refactoring is successful.")
         return True
     else:
-        print("⚠️ Some tests failed. Please review the issues above.")
+        tprint("⚠️ Some tests failed. Please review the issues above.")
         return False
 
 if __name__ == "__main__":

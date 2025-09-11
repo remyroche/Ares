@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Main Feature Selection Framework
 
@@ -30,9 +32,9 @@ from .causal_analysis import CausalAnalyzer
 try:
     from ...utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.MainFramework")
-    print("✅ Custom logger available for FeatureSelection.MainFramework")
+    tprint("✅ Custom logger available for FeatureSelection.MainFramework")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("FeatureSelection.MainFramework")
     _LOGGER.setLevel(logging.INFO)
 

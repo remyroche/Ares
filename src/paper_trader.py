@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from .utils.compat import handle_specific_errors
 from .core.error_classes import execution_error, initialization_error, validation_error
 from .utils.logger import system_logger
@@ -888,5 +890,5 @@ async def setup_paper_trader(
         return None
 
     except Exception as e:
-        print(f"Error setting up paper trader: {e}")
+        tprint(f"Error setting up paper trader: {e}")
         return None

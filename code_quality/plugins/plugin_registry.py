@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Set, List, Dict, Any, Optional
 from typing import List, Dict, Any, Optional
 """
@@ -239,10 +241,10 @@ class PluginRegistry:
                             self.register_plugin(obj)
                             discovered_count += 1
                         except PluginError as e:
-                            print(f"Warning: Failed to register plugin {name}: {e}")
+                            tprint(f"Warning: Failed to register plugin {name}: {e}")
                 
             except Exception as e:
-                print(f"Warning: Failed to import {py_file}: {e}")
+                tprint(f"Warning: Failed to import {py_file}: {e}")
         
         return discovered_count
     

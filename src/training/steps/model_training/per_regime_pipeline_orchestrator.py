@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Per-Regime Pipeline Orchestrator.
 
@@ -391,7 +393,7 @@ if __name__ == '__main__':
     async def test() -> None:
         """Test the per-regime pipeline."""
         success = await run_per_regime_pipeline(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
-        print(f'Per-regime pipeline result: {success}')
+        tprint(f'Per-regime pipeline result: {success}')
     asyncio.run(test())
 
 """

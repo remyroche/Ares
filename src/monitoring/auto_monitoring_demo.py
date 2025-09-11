@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Auto Monitoring Demo
 
@@ -27,8 +29,8 @@ from src.monitoring.auto_monitoring_launcher import (
 
 async def demo_auto_monitoring():
     """Demonstrate automatic monitoring activation."""
-    print("🚀 Auto Enhanced Monitoring System Demo")
-    print("=" * 50)
+    tprint("🚀 Auto Enhanced Monitoring System Demo")
+    tprint("=" * 50)
     
     # Setup logging
     setup_logging()
@@ -37,34 +39,34 @@ async def demo_auto_monitoring():
     try:
         # Set trading mode (can be BACKTEST, PAPER, or LIVE)
         trading_mode = os.environ.get('TRADING_MODE', 'PAPER')
-        print(f"📊 Trading Mode: {trading_mode}")
+        tprint(f"📊 Trading Mode: {trading_mode}")
         
         # Launch auto monitoring system
-        print("\n🔍 Launching Auto Enhanced Monitoring System...")
+        tprint("\n🔍 Launching Auto Enhanced Monitoring System...")
         success = await launch_auto_monitoring()
         
         if not success:
-            print("❌ Failed to launch auto monitoring system")
+            tprint("❌ Failed to launch auto monitoring system")
             return
         
-        print("✅ Auto Enhanced Monitoring System launched successfully!")
+        tprint("✅ Auto Enhanced Monitoring System launched successfully!")
         
         # Get the launcher instance
         launcher = await get_auto_monitoring()
         if not launcher:
-            print("❌ Failed to get auto monitoring launcher")
+            tprint("❌ Failed to get auto monitoring launcher")
             return
         
         # Display system status
-        print("\n📋 System Status:")
+        tprint("\n📋 System Status:")
         status = launcher.get_system_status()
-        print(f"   🚀 Launched: {status['launcher_status']['is_launched']}")
-        print(f"   📊 Trading Mode: {status['launcher_status']['trading_mode']}")
-        print(f"   🕐 Launch Time: {status['launcher_status']['launch_time']}")
-        print(f"   🎯 Monitoring Active: {status['launcher_status']['monitoring_active']}")
+        tprint(f"   🚀 Launched: {status['launcher_status']['is_launched']}")
+        tprint(f"   📊 Trading Mode: {status['launcher_status']['trading_mode']}")
+        tprint(f"   🕐 Launch Time: {status['launcher_status']['launch_time']}")
+        tprint(f"   🎯 Monitoring Active: {status['launcher_status']['monitoring_active']}")
         
         # Simulate trade decisions
-        print("\n📈 Simulating Trade Decisions...")
+        tprint("\n📈 Simulating Trade Decisions...")
         
         # Simulate multiple trade decisions
         for i in range(3):
@@ -89,11 +91,11 @@ async def demo_auto_monitoring():
                 }
             }
             
-            print(f"   📊 Recording trade {i+1}: {trade_data['action']} {trade_data['symbol']} @ ${trade_data['price']}")
+            tprint(f"   📊 Recording trade {i+1}: {trade_data['action']} {trade_data['symbol']} @ ${trade_data['price']}")
             await auto_capture_trade_decision(trade_data)
         
         # Simulate performance updates
-        print("\n📊 Simulating Performance Updates...")
+        tprint("\n📊 Simulating Performance Updates...")
         
         performance_data = {
             'accuracy': 0.85,
@@ -107,12 +109,12 @@ async def demo_auto_monitoring():
             'profit_factor': 1.45
         }
         
-        print("   📈 Updating model performance metrics...")
+        tprint("   📈 Updating model performance metrics...")
         await auto_update_performance(performance_data, 'analyst_model')
         await auto_update_performance(performance_data, 'tactician_model')
         
         # Simulate ensemble updates
-        print("\n🎯 Simulating Ensemble Updates...")
+        tprint("\n🎯 Simulating Ensemble Updates...")
         
         ensemble_data = {
             'ensemble_accuracy': 0.87,
@@ -122,54 +124,54 @@ async def demo_auto_monitoring():
             'disagreement_level': 0.12
         }
         
-        print("   🎯 Updating ensemble performance...")
+        tprint("   🎯 Updating ensemble performance...")
         await auto_update_ensemble(ensemble_data, 'dual_model_ensemble')
         
         # Display final status
-        print("\n📋 Final System Status:")
+        tprint("\n📋 Final System Status:")
         final_status = launcher.get_system_status()
-        print(f"   🚀 Launched: {final_status['launcher_status']['is_launched']}")
-        print(f"   📊 Trading Mode: {final_status['launcher_status']['trading_mode']}")
-        print(f"   🎯 Monitoring Active: {final_status['launcher_status']['monitoring_active']}")
+        tprint(f"   🚀 Launched: {final_status['launcher_status']['is_launched']}")
+        tprint(f"   📊 Trading Mode: {final_status['launcher_status']['trading_mode']}")
+        tprint(f"   🎯 Monitoring Active: {final_status['launcher_status']['monitoring_active']}")
         
         if 'monitoring_integration_status' in final_status:
             integration_status = final_status['monitoring_integration_status']
             if 'enhanced_monitoring_status' in integration_status:
                 monitoring_status = integration_status['enhanced_monitoring_status']
-                print(f"   📈 Decisions Recorded: {monitoring_status.get('total_decisions_recorded', 0)}")
-                print(f"   🔍 SHAP Enabled: {monitoring_status.get('shap_enabled', False)}")
-                print(f"   🔍 LIME Enabled: {monitoring_status.get('lime_enabled', False)}")
+                tprint(f"   📈 Decisions Recorded: {monitoring_status.get('total_decisions_recorded', 0)}")
+                tprint(f"   🔍 SHAP Enabled: {monitoring_status.get('shap_enabled', False)}")
+                tprint(f"   🔍 LIME Enabled: {monitoring_status.get('lime_enabled', False)}")
         
-        print("\n✅ Auto Enhanced Monitoring System Demo completed successfully!")
-        print("\n📋 Key Features Demonstrated:")
-        print("   🎯 Automatic trade decision capture")
-        print("   📊 Performance metrics tracking")
-        print("   🎯 Ensemble performance monitoring")
-        print("   🔍 SHAP/LIME explanations ready")
-        print("   📋 Daily and monthly CSV exports configured")
-        print("   📈 Real-time monitoring active")
+        tprint("\n✅ Auto Enhanced Monitoring System Demo completed successfully!")
+        tprint("\n📋 Key Features Demonstrated:")
+        tprint("   🎯 Automatic trade decision capture")
+        tprint("   📊 Performance metrics tracking")
+        tprint("   🎯 Ensemble performance monitoring")
+        tprint("   🔍 SHAP/LIME explanations ready")
+        tprint("   📋 Daily and monthly CSV exports configured")
+        tprint("   📈 Real-time monitoring active")
         
     except Exception as e:
         logger.exception(f"Error in auto monitoring demo: {e}")
-        print(f"❌ Demo failed: {e}")
+        tprint(f"❌ Demo failed: {e}")
     
     finally:
         # Stop the monitoring system
-        print("\n🛑 Stopping Auto Enhanced Monitoring System...")
+        tprint("\n🛑 Stopping Auto Enhanced Monitoring System...")
         await stop_auto_monitoring()
-        print("✅ Auto Enhanced Monitoring System stopped successfully!")
+        tprint("✅ Auto Enhanced Monitoring System stopped successfully!")
 
 async def main():
     """Main entry point."""
-    print("🚀 Starting Auto Enhanced Monitoring System Demo...")
-    print("This demo shows how the monitoring system automatically activates")
-    print("when the trading system is launched in any mode.\n")
+    tprint("🚀 Starting Auto Enhanced Monitoring System Demo...")
+    tprint("This demo shows how the monitoring system automatically activates")
+    tprint("when the trading system is launched in any mode.\n")
     
     await demo_auto_monitoring()
     
-    print("\n🎉 Demo completed! The enhanced monitoring system is now")
-    print("automatically integrated with your trading system and will")
-    print("activate whenever you launch the Ares pipeline in trading mode.")
+    tprint("\n🎉 Demo completed! The enhanced monitoring system is now")
+    tprint("automatically integrated with your trading system and will")
+    tprint("activate whenever you launch the Ares pipeline in trading mode.")
 
 if __name__ == "__main__":
     asyncio.run(main())

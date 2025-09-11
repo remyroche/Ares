@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from typing import Any
 import pandas as pd
@@ -206,19 +208,19 @@ async def create_example_config() -> Any:
 async def main() -> None:
     """Main entry point demonstrating the integrated architecture."""
     config_path = await create_example_config()
-    print(f'Created configuration at: {config_path}')
+    tprint(f'Created configuration at: {config_path}')
     pipeline = IntegratedPipeline(str(config_path))
-    print('\nRunning integrated pipeline...')
+    tprint('\nRunning integrated pipeline...')
     results = await pipeline.run()
-    print('\nPipeline Results:')
+    tprint('\nPipeline Results:')
     for step_name, result in results.items():
-        print(f'\n{step_name}:')
-        print(f'  Status: {result.status.value}')
-        print(f'  Duration: {result.duration:.2f}s' if result.duration else '  Duration: N/A')
-        print(f'  Metrics: {result.metrics}')
+        tprint(f'\n{step_name}:')
+        tprint(f'  Status: {result.status.value}')
+        tprint(f'  Duration: {result.duration:.2f}s' if result.duration else '  Duration: N/A')
+        tprint(f'  Metrics: {result.metrics}')
         if result.warnings:
-            print(f'  Warnings: {result.warnings}')
+            tprint(f'  Warnings: {result.warnings}')
         if result.error:
-            print(f'  Error: {result.error}')
+            tprint(f'  Error: {result.error}')
 if __name__ == '__main__':
     asyncio.run( main())

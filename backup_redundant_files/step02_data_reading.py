@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """Step 2: Data Reading - Optimized with Parallel Processing, Memory Efficiency, and Fast-Fail Validation.
 
 This module implements optimized data reading with:
@@ -56,9 +58,9 @@ from src.utils.data_processing_utils import (
     DataQualityLevel, DataQualityIssue, DataQualityReport,
     DataFrameValidator, DataFrameCleaner, DataFrameTransformer
 )
-from src.utils.m1_gpu_utils import M1GPUManager, M1PerformanceOptimizer
-from src.utils.m1_memory_optimizer import M1MemoryOptimizer, M1DataManager
-from src.utils.m1_cpu_optimizer import M1CPUOptimizer, M1BatchProcessor
+from src.utils.hardware.m1_gpu_utils import M1GPUManager, M1PerformanceOptimizer
+from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer, M1DataManager
+from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer, M1BatchProcessor
 from src.core.errors.base import ValidationError, DataQualityError, FileNotFoundError
 from src.core.errors.mapping import ErrorMapping
 
@@ -1120,12 +1122,12 @@ if __name__ == '__main__':
             chunk_size=10000,
             memory_pressure_threshold=0.8
         )
-        print(f'Enhanced Step02 Result: {result}')
+        tprint(f'Enhanced Step02 Result: {result}')
         if result['success']:
-            print(f"✅ All utilities successfully integrated!")
-            print(f"📊 Utility integration status: {result.get('utility_integration', {})}")
-            print(f"🚀 M1 optimization info: {result.get('m1_optimization_info', {})}")
+            tprint(f"✅ All utilities successfully integrated!")
+            tprint(f"📊 Utility integration status: {result.get('utility_integration', {})}")
+            tprint(f"🚀 M1 optimization info: {result.get('m1_optimization_info', {})}")
         else:
-            print(f"❌ Step02 failed: {result.get('error', 'Unknown error')}")
+            tprint(f"❌ Step02 failed: {result.get('error', 'Unknown error')}")
     
     asyncio.run(test())

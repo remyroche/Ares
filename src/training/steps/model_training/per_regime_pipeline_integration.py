@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import pandas as pd
 
@@ -230,11 +232,11 @@ if __name__ == '__main__':
     async def test() -> None:
         """Test the per-regime pipeline integration."""
         config_template = per_regime_integrator.generate_per_regime_config_template()
-        print('📋 Per-Regime Configuration Template:')
+        tprint('📋 Per-Regime Configuration Template:')
         import json
-        print(json.dumps(config_template, indent = 2))
+        tprint(json.dumps(config_template, indent = 2))
         verified = await per_regime_integrator.verify_regime_data_availability(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
-        print(f'\n✅ Regime data verified: {verified}')
+        tprint(f'\n✅ Regime data verified: {verified}')
     asyncio.run(test())
 
 """Per-Regime Pipeline Integration Module.

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Dependency Graph Visualizer
 
@@ -20,7 +22,7 @@ except ImportError:
     MATPLOTLIB_AVAILABLE = False
     nx = None
     plt = None
-    print("Warning: NetworkX/matplotlib not available - dependency graph visualization will be limited")
+    tprint("Warning: NetworkX/matplotlib not available - dependency graph visualization will be limited")
 
 
 class DependencyGraphVisualizer(CodeVisualizer):

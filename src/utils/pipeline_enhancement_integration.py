@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """Integration script for pipeline enhancements."""
 import pandas as pd
 import numpy as np
@@ -145,31 +147,31 @@ pipeline_enhancement_integration = PipelineEnhancementIntegration()
 
 def demonstrate_pipeline_enhancements() -> None:
     """Demonstrate all pipeline enhancements."""
-    print('🚀 AresTradingSystem Pipeline Enhancements Demonstration')
-    print('=' * 60)
+    tprint('🚀 AresTradingSystem Pipeline Enhancements Demonstration')
+    tprint('=' * 60)
     integration_result = pipeline_enhancement_integration.integrate_all_enhancements()
-    print(f"\n📦 Integration Status: {('✅ Success' if integration_result['integration_successful'] else '❌ Failed')}")
-    print(f"🔧 Enhancements Applied: {', '.join(integration_result['enhancements_applied'])}")
-    print(f"📊 Steps Enhanced: {integration_result['steps_enhanced']}")
+    tprint(f"\n📦 Integration Status: {('✅ Success' if integration_result['integration_successful'] else '❌ Failed')}")
+    tprint(f"🔧 Enhancements Applied: {', '.join(integration_result['enhancements_applied'])}")
+    tprint(f"📊 Steps Enhanced: {integration_result['steps_enhanced']}")
     demo_results = pipeline_enhancement_integration.demonstrate_enhancements()
-    print('\n🎯 Enhancement Demonstrations:')
-    print('-' * 40)
+    tprint('\n🎯 Enhancement Demonstrations:')
+    tprint('-' * 40)
     for demo_name, result in demo_results.items():
         status = '✅ Success' if result.get('success', False) else '❌ Failed'
-        print(f'{demo_name}: {status}')
+        tprint(f'{demo_name}: {status}')
         if result.get('success', False):
             if 'overall_score' in result:
-                print(f"  📊 Quality Score: {result['overall_score']:.1f}/100")
+                tprint(f"  📊 Quality Score: {result['overall_score']:.1f}/100")
             if 'consistency_score' in result:
-                print(f"  🔍 Consistency Score: {result['consistency_score']:.1f}/100")
+                tprint(f"  🔍 Consistency Score: {result['consistency_score']:.1f}/100")
             if 'issues_found' in result:
-                print(f"  ⚠️ Issues Found: {result['issues_found']}")
-    print('\n🛡️ Pipeline Enhancement Summary:')
-    print('-' * 40)
-    print('✅ Data Streaming & Chunking - Handles large datasets efficiently')
-    print('✅ Cross-Step Validation - Ensures data consistency between steps')
-    print('✅ Advanced Quality Metrics - Comprehensive data quality assessment')
-    print('✅ Enhanced Step Wrapper - Integrates all improvements seamlessly')
+                tprint(f"  ⚠️ Issues Found: {result['issues_found']}")
+    tprint('\n🛡️ Pipeline Enhancement Summary:')
+    tprint('-' * 40)
+    tprint('✅ Data Streaming & Chunking - Handles large datasets efficiently')
+    tprint('✅ Cross-Step Validation - Ensures data consistency between steps')
+    tprint('✅ Advanced Quality Metrics - Comprehensive data quality assessment')
+    tprint('✅ Enhanced Step Wrapper - Integrates all improvements seamlessly')
     return (integration_result, demo_results)
 if __name__ == '__main__':
     demonstrate_pipeline_enhancements()

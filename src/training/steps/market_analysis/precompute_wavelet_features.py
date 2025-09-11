@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.utils.logger import system_logger
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
@@ -495,12 +497,12 @@ async def main() -> None:
         if success:
             # Print statistics
             stats = precomputer.get_precomputation_stats()
-            print(f"Pre-computation statistics: {stats}")
+            tprint(f"Pre-computation statistics: {stats}")
         else:
-            print("Pre-computation failed")
+            tprint("Pre-computation failed")
 
     except Exception as e:
-        print(f"Error in main: {e}")
+        tprint(f"Error in main: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

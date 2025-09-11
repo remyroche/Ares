@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Performance Monitoring Component
 
@@ -19,9 +21,9 @@ from collections import defaultdict, deque
 try:
     from ...utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.PerformanceMonitoring")
-    print("✅ Custom logger available for FeatureSelection.PerformanceMonitoring")
+    tprint("✅ Custom logger available for FeatureSelection.PerformanceMonitoring")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("FeatureSelection.PerformanceMonitoring")
     _LOGGER.setLevel(logging.INFO)
 

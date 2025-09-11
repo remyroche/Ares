@@ -1,13 +1,15 @@
+from src.utils.tprint import tprint
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-"""
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
+"""
 Enhanced Data Validation Framework for Data Collection
 
 This module provides comprehensive validation during data collection for:
 - Klines data
-- Aggtrades data  
+- Aggtrades data
 - Futures data
 
 Features:
@@ -318,7 +320,30 @@ def create_aggtrades_schema() -> DataSchema:
 
 def create_futures_schema() -> DataSchema:
     """Create standardized futures schema."""
-    return DataSchema(data_type = DataType.FUTURES, fields=[FieldDefinition(name='timestamp', dtype='int64', source_mapping={'binance': 'fundingTime', 'coinbase': 'timestamp', 'kraken': 'time'}), FieldDefinition(name='funding_rate', dtype='float64', allow_zero = True, source_mapping={'binance': 'fundingRate', 'coinbase': 'funding_rate', 'kraken': 'funding_rate'}), FieldDefinition(name='exchange', dtype='string', required = True), FieldDefinition(name='symbol', dtype='string', required = True)], primary_key=['timestamp', 'exchange', 'symbol'], time_gap_config = TimeGapConfig(max_gap_seconds = 32400.0, tolerance_seconds = 300.0, severity = ValidationSeverity.MEDIUM))
+    return DataSchema(
+        data_type=DataType.FUTURES,
+        fields=[
+            FieldDefinition(
+                name='timestamp',
+                dtype='int64',
+                source_mapping={'binance': 'fundingTime', 'coinbase': 'timestamp', 'kraken': 'time'}
+            ),
+            FieldDefinition(
+                name='funding_rate',
+                dtype='float64',
+                allow_zero=True,
+                source_mapping={'binance': 'fundingRate', 'coinbase': 'funding_rate', 'kraken': 'funding_rate'}
+            ),
+            FieldDefinition(name='exchange', dtype='string', required=True),
+            FieldDefinition(name='symbol', dtype='string', required=True)
+        ],
+        primary_key=['timestamp', 'exchange', 'symbol'],
+        time_gap_config=TimeGapConfig(
+            max_gap_seconds=32400.0,
+            tolerance_seconds=300.0,
+            severity=ValidationSeverity.MEDIUM
+        )
+    )
 
 def create_unified_schema() -> DataSchema:
     """Create standardized unified schema."""
@@ -356,10 +381,10 @@ if __name__ == '__main__':
         klines_data = [{'open_time': 1640995200000, 'open': '3000.0', 'high': '3100.0', 'low': '2900.0', 'close': '3050.0', 'volume': '1000.0'}]
         validator = get_validator(DataType.KLINES)
         validated = validator.validate_batch(klines_data)
-        print(f'Validated {len(validated)} klines rows')
+        tprint(f'Validated {len(validated)} klines rows')
         aggtrades_data = [{'T': 1640995200000, 'p': '3050.0', 'q': '1.5', 'm': True}]
         validator = get_validator(DataType.AGGTRADES)
         validated = validator.validate_batch(aggtrades_data)
-        print(f'Validated {len(validated)} aggtrades rows')
-        print('Validation Summary:', validator.get_validation_summary())
+        tprint(f'Validated {len(validated)} aggtrades rows')
+        tprint('Validation Summary:', validator.get_validation_summary())
     asyncio.run(test_validation())

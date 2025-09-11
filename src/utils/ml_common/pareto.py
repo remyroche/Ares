@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Callable, Optional
 
 import math
+import time
 import numpy as np
 
 # Import torch for GPU acceleration
@@ -34,23 +35,24 @@ except Exception:
 
 # Import M1 utilities for enhanced performance
 try:
-    from ..m1_gpu_utils import M1GPUManager
+    from ..hardware.m1_gpu_utils import M1GPUManager
     GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from ..m1_memory_optimizer import (
-        auto_skim_memory, smart_memory_allocation,
-        memory_skim_decorator, auto_memory_skim_decorator,
-        auto_memory_skim_context, smart_memory_context
-    )
-    MEMORY_OPTIMIZER_AVAILABLE = True
+    # from ..hardware.m1_memory_optimizer import (  # type: ignore
+    #     auto_skim_memory, smart_memory_allocation,
+    #     memory_skim_decorator, auto_memory_skim_decorator,
+    #     auto_memory_skim_context, smart_memory_context
+    # )
+    MEMORY_OPTIMIZER_AVAILABLE = False
 except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False
 
+
 try:
-    from ..m1_cpu_optimizer import get_m1_cpu_optimizer
+    from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer  # type: ignore
     CPU_OPTIMIZER_AVAILABLE = True
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False
@@ -92,7 +94,7 @@ class ParetoFront:
         init_time = time.time() - start_time
         self.logger.info(f"✅ ParetoFront initialized in {init_time:.3f}s")
 
-    @auto_memory_skim_decorator("pareto_front_construction")
+    # @auto_memory_skim_decorator("pareto_front_construction")  # Commented out due to import issues
     def compute_pareto_front_gpu(
         self,
         solutions: List[Solution],
@@ -103,10 +105,11 @@ class ParetoFront:
         if not solutions:
             return []
 
-        # Estimate memory requirements and auto-skim if needed
+        # Estimate memory requirements and optimize if needed
         if MEMORY_OPTIMIZER_AVAILABLE:
             estimated_memory_mb = len(solutions) * len(objectives) * 8 / (1024**2)
-            auto_skim_memory(estimated_memory_mb, "pareto_front_construction")
+            # Memory optimization would be implemented here when available
+            _LOGGER.debug(f"Estimated memory usage: {estimated_memory_mb:.2f} MB for pareto front construction")
 
         if use_gpu and self.gpu_manager and len(solutions) > 100:
             return self._compute_pareto_front_gpu(solutions, objectives)
@@ -493,6 +496,7 @@ def get_pareto_front() -> ParetoFront:
 __all__ = [
     'Solution',
     'ParetoFront',
+    'ParetoFrontAnalyzer',
     'DEFAULT_FINANCIAL_WEIGHTS',
     'filter_by_constraints',
     'compute_pareto_front',
@@ -501,5 +505,17 @@ __all__ = [
     'scalarize_financial_goals',
     'get_pareto_front',
 ]
+
+
+# ParetoFrontAnalyzer class - defined at module level to avoid indentation issues
+class ParetoFrontAnalyzer:
+    """Simple Pareto front analyzer placeholder."""
+
+    def __init__(self):
+        self.logger = _LOGGER
+
+    def analyze(self, data):
+        """Basic analysis method."""
+        return {"pareto_front": [], "knee_point": None}
 
 

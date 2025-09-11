@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 import numpy as np
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
@@ -414,29 +416,29 @@ class PipelineMonitor:
         progress = self.get_progress()
         metrics = self.get_pipeline_metrics()
         
-        print("\n" + "="*80)
-        print("📊 PIPELINE PROGRESS REPORT")
-        print("="*80)
-        print(f"Pipeline ID: {progress['pipeline_id']}")
-        print(f"Status: {progress['status']}")
-        print(f"Progress: {progress['progress_percent']:.1f}% ({progress['steps_completed']}/{progress['steps_total']} steps)")
+        tprint("\n" + "="*80)
+        tprint("📊 PIPELINE PROGRESS REPORT")
+        tprint("="*80)
+        tprint(f"Pipeline ID: {progress['pipeline_id']}")
+        tprint(f"Status: {progress['status']}")
+        tprint(f"Progress: {progress['progress_percent']:.1f}% ({progress['steps_completed']}/{progress['steps_total']} steps)")
         
         if progress['current_step']:
-            print(f"Current Step: {progress['current_step']}")
+            tprint(f"Current Step: {progress['current_step']}")
         
         if progress['estimated_remaining_time']:
             remaining_minutes = progress['estimated_remaining_time'] / 60
-            print(f"Estimated Remaining Time: {remaining_minutes:.1f} minutes")
+            tprint(f"Estimated Remaining Time: {remaining_minutes:.1f} minutes")
         
-        print(f"Total Duration: {metrics.total_duration:.1f} seconds")
-        print(f"Memory Peak: {metrics.total_memory_peak:.1f}%")
-        print(f"CPU Peak: {metrics.total_cpu_peak:.1f}%")
-        print(f"Data Processed: {metrics.total_data_processed:,} bytes")
-        print(f"Errors: {metrics.total_errors}")
-        print(f"Warnings: {metrics.total_warnings}")
+        tprint(f"Total Duration: {metrics.total_duration:.1f} seconds")
+        tprint(f"Memory Peak: {metrics.total_memory_peak:.1f}%")
+        tprint(f"CPU Peak: {metrics.total_cpu_peak:.1f}%")
+        tprint(f"Data Processed: {metrics.total_data_processed:,} bytes")
+        tprint(f"Errors: {metrics.total_errors}")
+        tprint(f"Warnings: {metrics.total_warnings}")
         
         if metrics.step_metrics:
-            print("\nStep Details:")
+            tprint("\nStep Details:")
             for step in metrics.step_metrics:
                 status_icon = {
                     MonitorStatus.COMPLETED: "✅",
@@ -447,14 +449,14 @@ class PipelineMonitor:
                     MonitorStatus.IDLE: "⏳"
                 }.get(step.status, "❓")
                 
-                print(f"  {status_icon} {step.step_name}: {step.duration:.1f}s | "
+                tprint(f"  {status_icon} {step.step_name}: {step.duration:.1f}s | "
                     f"Memory: {step.memory_peak:.1f}% | "
                     f"CPU: {step.cpu_peak:.1f}% | "
                     f"Data: {step.data_processed:,} bytes | "
                     f"Errors: {step.errors} | "
                     f"Warnings: {step.warnings}")
         
-        print("="*80)
+        tprint("="*80)
 
 class RealTimeMonitor:
     """Real-time monitoring with live updates."""

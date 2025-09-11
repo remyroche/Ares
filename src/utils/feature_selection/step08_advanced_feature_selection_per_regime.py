@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Step 8: Advanced Feature Selection - Per-Regime Implementation.
 
@@ -948,5 +950,5 @@ if __name__ == '__main__':
     async def test() -> None:
         """Test the per-regime feature selection step."""
         success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
-        print(f'Per-regime feature selection result: {success}')
+        tprint(f'Per-regime feature selection result: {success}')
     asyncio.run(test())

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Improved Function Signature Analysis - More accurate detection with false positive filtering.
 """
@@ -136,14 +138,14 @@ class ImprovedSignatureAnalyzer:
 
     def analyze_files(self, file_paths: list[str]) -> dict[str, Any]:
         """Analyze function signatures in specific Python files."""
-        print(f"Analyzing function signatures in {len(file_paths)} files...")
+        tprint(f"Analyzing function signatures in {len(file_paths)} files...")
 
         # First pass: collect all function definitions, imports, and calls
         for file_path in file_paths:
             try:
                 self._analyze_file_signatures(file_path)
             except Exception as e:
-                print(f"Error analyzing {file_path}: {e}")
+                tprint(f"Error analyzing {file_path}: {e}")
 
         # Second pass: detect issues with better filtering
         self._detect_signature_changes()
@@ -171,7 +173,7 @@ class ImprovedSignatureAnalyzer:
             self._walk_tree(tree, file_path)
 
         except Exception as e:
-            print(f"Error parsing {file_path}: {e}")
+            tprint(f"Error parsing {file_path}: {e}")
 
     def _collect_imports(self, tree: ast.AST, file_path: str) -> None:
         """Collect all imported names in a file."""

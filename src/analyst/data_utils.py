@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import logging
 import os
 from datetime import datetime
@@ -119,7 +121,7 @@ class DataUtils:
             self.logger.info('Data utils modules initialized successfully')
         except (KeyError, IndexError, AttributeError) as e:
             self.logger.debug(f'Error in {self.__class__.__name__}: {e}')
-            self.print(initialization_error('Error initializing data utils modules: {e}'))
+            self.tprint(initialization_error('Error initializing data utils modules: {e}'))
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='data cleaning initialization')
     async def _initialize_data_cleaning(self) -> None:
@@ -149,7 +151,7 @@ class DataUtils:
             self.logger.info('Data transformation module initialized')
         except (AttributeError, TypeError) as e:
             self.logger.debug(f'Error in {self.__class__.__name__}: {e}')
-            self.print(initialization_error('Error initializing data transformation: {e}'))
+            self.tprint(initialization_error('Error initializing data transformation: {e}'))
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='data aggregation initialization')
     async def _initialize_data_aggregation(self) -> None:
@@ -591,19 +593,19 @@ def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
 def load_klines_data(filename: str) -> Any:
     """Loads k-line data from a CSV file with strict quality validation."""
     if not os.path.exists(filename):
-        print(missing('CRITICAL: K-lines data file not found at {filename}'))
+        tprint(missing('CRITICAL: K-lines data file not found at {filename}'))
         return pd.DataFrame()
     try:
         df = pd.read_csv(filename, index_col='open_time', parse_dates = True)
-        print(f'[DEBUG] load_klines_data: type={type(df)}, shape={df.shape}, columns={df.columns.tolist()}')
-        print(df.head())
+        tprint(f'[DEBUG] load_klines_data: type={type(df)}, shape={df.shape}, columns={df.columns.tolist()}')
+        tprint(df.head())
         df.index = pd.to_datetime(df.index, format='mixed', errors='coerce')
         initial_rows = len(df)
         df = df.dropna()
         if len(df) < initial_rows:
-            print(f'⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps')
+            tprint(f'⚠️ Warning: Removed {initial_rows - len(df)} rows with invalid timestamps')
         if df.empty:
-            print(critical('CRITICAL: No valid data after timestamp processing'))
+            tprint(critical('CRITICAL: No valid data after timestamp processing'))
             return pd.DataFrame()
         df = df[~df.index.duplicated(keep='first')]
         numeric_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -613,48 +615,48 @@ def load_klines_data(filename: str) -> Any:
         nan_counts = df[numeric_cols].isnull().sum()
         total_nan = nan_counts.sum()
         if total_nan > 0:
-            print(f'❌ CRITICAL: Found {total_nan} NaN values in klines data: {nan_counts.to_dict()}')
-            print('Please fix the data quality issues before proceeding.')
+            tprint(f'❌ CRITICAL: Found {total_nan} NaN values in klines data: {nan_counts.to_dict()}')
+            tprint('Please fix the data quality issues before proceeding.')
             return pd.DataFrame()
         inf_counts = np.isinf(df[numeric_cols]).sum()
         total_inf = inf_counts.sum()
         if total_inf > 0:
-            print(f'❌ CRITICAL: Found {total_inf} infinite values in klines data: {inf_counts.to_dict()}')
-            print('Please fix the data quality issues before proceeding.')
+            tprint(f'❌ CRITICAL: Found {total_inf} infinite values in klines data: {inf_counts.to_dict()}')
+            tprint('Please fix the data quality issues before proceeding.')
             return pd.DataFrame()
         price_cols = ['open', 'high', 'low', 'close']
         for col in price_cols:
             if col in df.columns:
                 negative_count = (df[col] < 0).sum()
                 if negative_count > 0:
-                    print(f'❌ CRITICAL: Found {negative_count} negative values in {col}')
-                    print('Please fix the data quality issues before proceeding.')
+                    tprint(f'❌ CRITICAL: Found {negative_count} negative values in {col}')
+                    tprint('Please fix the data quality issues before proceeding.')
                     return pd.DataFrame()
         for col in price_cols:
             if col in df.columns:
                 zero_count = (df[col] == 0).sum()
                 if zero_count > 0:
-                    print(critical('CRITICAL: Found {zero_count} zero values in {col}'))
-                    print('Please fix the data quality issues before proceeding.')
+                    tprint(critical('CRITICAL: Found {zero_count} zero values in {col}'))
+                    tprint('Please fix the data quality issues before proceeding.')
                     return pd.DataFrame()
         if (df['high'] < df['low']).any():
             invalid_count = (df['high'] < df['low']).sum()
-            print(invalid('CRITICAL: Found {invalid_count} rows where high < low'))
-            print('Please fix the data quality issues before proceeding.')
+            tprint(invalid('CRITICAL: Found {invalid_count} rows where high < low'))
+            tprint('Please fix the data quality issues before proceeding.')
             return pd.DataFrame()
         if ((df['open'] > df['high']) | (df['open'] < df['low']) | (df['close'] > df['high']) | (df['close'] < df['low'])).any():
             invalid_count = ((df['open'] > df['high']) | (df['open'] < df['low']) | (df['close'] > df['high']) | (df['close'] < df['low'])).sum()
-            print(f'❌ CRITICAL: Found {invalid_count} rows where open/close outside high-low range')
-            print('Please fix the data quality issues before proceeding.')
+            tprint(f'❌ CRITICAL: Found {invalid_count} rows where open/close outside high-low range')
+            tprint('Please fix the data quality issues before proceeding.')
             return pd.DataFrame()
         if df.empty:
-            print(critical('CRITICAL: No valid data after processing'))
+            tprint(critical('CRITICAL: No valid data after processing'))
             return pd.DataFrame()
-        print(f'✅ Successfully loaded {len(df)} high-quality klines records')
+        tprint(f'✅ Successfully loaded {len(df)} high-quality klines records')
         return df
     except (KeyError, IndexError, ValueError) as e:
         self.logger.debug(f'Error in {self.__class__.__name__}: {e}')
-        print(critical('CRITICAL ERROR: Error loading klines data from {filename}: {e}'))
+        tprint(critical('CRITICAL ERROR: Error loading klines data from {filename}: {e}'))
         return pd.DataFrame()
 
 def load_agg_trades_data(filename: str) -> Any:
@@ -832,17 +834,17 @@ def create_ethusdt_1h_csv() -> Any:
     """Convert downloaded klines data to the expected ETHUSDT_1h.csv format."""
     klines_file = 'data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.csv'
     if not os.path.exists(klines_file):
-        print(missing('Klines file not found: {klines_file}'))
+        tprint(missing('Klines file not found: {klines_file}'))
         return False
-    print(f'📖 Reading klines data from: {klines_file}')
+    tprint(f'📖 Reading klines data from: {klines_file}')
     try:
         df = pd.read_csv(klines_file)
-        print(f'📊 Loaded {len(df)} records')
-        print(f'📋 Columns: {list(df.columns)}')
+        tprint(f'📊 Loaded {len(df)} records')
+        tprint(f'📋 Columns: {list(df.columns)}')
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            print(missing('Missing required columns: {missing_columns}'))
+            tprint(missing('Missing required columns: {missing_columns}'))
             return False
         if 'timestamp' in df.columns:
             if df['timestamp'].dtype == 'object':
@@ -852,18 +854,18 @@ def create_ethusdt_1h_csv() -> Any:
         df = df.rename(columns={'timestamp': 'open_time'})
         df = df.sort_values('open_time').reset_index(drop = True)
         df.set_index('open_time', inplace = True)
-        print('🔄 Resampling 1-minute data to 1-hour data...')
+        tprint('🔄 Resampling 1-minute data to 1-hour data...')
         df_1h = df.resample('1H').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
-        print(f'📊 Original 1-minute data: {len(df)} records')
-        print(f'📊 Resampled 1-hour data: {len(df_1h)} records')
+        tprint(f'📊 Original 1-minute data: {len(df)} records')
+        tprint(f'📊 Resampled 1-hour data: {len(df_1h)} records')
         os.makedirs('data', exist_ok = True)
         output_file = 'data/ETHUSDT_1h.csv'
         df_1h.to_csv(output_file)
-        print(f'✅ Successfully created: {output_file}')
-        print(f'📊 File contains {len(df_1h)} records')
-        print(f'📅 Date range: {df_1h.index.min()} to {df_1h.index.max()}')
+        tprint(f'✅ Successfully created: {output_file}')
+        tprint(f'📊 File contains {len(df_1h)} records')
+        tprint(f'📅 Date range: {df_1h.index.min()} to {df_1h.index.max()}')
         return True
     except (ValueError, TypeError) as e:
         self.logger.debug(f'Error in {self.__class__.__name__}: {e}')
-        print(warning('Error creating ETHUSDT_1h.csv: {e}'))
+        tprint(warning('Error creating ETHUSDT_1h.csv: {e}'))
         return False

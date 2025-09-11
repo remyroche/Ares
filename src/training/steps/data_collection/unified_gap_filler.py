@@ -64,7 +64,7 @@ class UnifiedGapFiller:
             'start_time': None
         }
         
-    @handles_errors(fallback=[], context="detect_gaps")
+    @handles_errors(context="detect_gaps")
     @log_all_calls
     def detect_gaps(
         self, 
@@ -125,7 +125,7 @@ class UnifiedGapFiller:
             self.logger.exception(f"❌ Error detecting gaps: {e}")
             return []
     
-    @handles_errors(fallback=False, context="fill_gaps")
+    @handles_errors(context="fill_gaps")
     @log_all_calls
     async def fill_gaps(
         self, 
@@ -213,7 +213,7 @@ class UnifiedGapFiller:
                 'errors': [str(e)]
             }
     
-    @handles_errors(fallback=False, context="detect_and_fill_gaps")
+    @handles_errors(context="detect_and_fill_gaps")
     @log_all_calls
     async def detect_and_fill_gaps(
         self, 
@@ -524,19 +524,19 @@ class UnifiedGapFiller:
         }
 
 # Convenience functions for backward compatibility
-@handles_errors(fallback=[])
+@handles_errors()
 def detect_gaps(symbol: str, exchange: str, data_type: str, **kwargs) -> List[Dict[str, Any]]:
     """Convenience function for detecting gaps."""
     gap_filler = UnifiedGapFiller()
     return gap_filler.detect_gaps(symbol, exchange, data_type, **kwargs)
 
-@handles_errors(fallback={})
+@handles_errors()
 async def fill_gaps(symbol: str, exchange: str, data_type: str, gaps: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
     """Convenience function for filling gaps."""
     gap_filler = UnifiedGapFiller()
     return await gap_filler.fill_gaps(symbol, exchange, data_type, gaps, **kwargs)
 
-@handles_errors(fallback={})
+@handles_errors()
 async def detect_and_fill_gaps(symbol: str, exchange: str, data_type: str, **kwargs) -> Dict[str, Any]:
     """Convenience function for detecting and filling gaps."""
     gap_filler = UnifiedGapFiller()

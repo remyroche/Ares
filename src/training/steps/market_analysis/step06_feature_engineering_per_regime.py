@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import numpy as np
 import pandas as pd
@@ -737,5 +739,5 @@ if __name__ == '__main__':
     async def test() -> None:
         """Test the per-regime feature engineering step."""
         success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
-        print(f'Per-regime feature engineering result: {success}')
+        tprint(f'Per-regime feature engineering result: {success}')
     asyncio.run(test())

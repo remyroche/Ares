@@ -20,9 +20,9 @@ import optuna
 from pathlib import Path
 
 # M1 Optimization imports
-from src.utils.m1_gpu_utils import get_m1_gpu_manager
-from src.utils.m1_memory_optimizer import get_m1_memory_optimizer
-from src.utils.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
 # Common utilities
 from src.utils.common_operations import (
@@ -43,13 +43,18 @@ from src.core.decorators import (
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
 from src.utils.intensity_scaler import (
-    get_intensity_from_environment, get_scaled_hpo_trials, 
+    get_intensity_from_environment, get_scaled_hpo_trials,
     get_scaled_hpo_timeout, log_intensity_info
 )
 from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     MathValidationError, TimeoutError
 )
+
+# Additional imports for artifact management
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
 logger = logging.getLogger(__name__)
 
@@ -704,13 +709,10 @@ class ModelFactory:
         
         elif model_type == ModelType.SVM:
             from sklearn.svm import SVC, SVR
-from src.utils.enhanced_artifact_manager import get_artifact_manager
-from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
-from src.utils.version_manager import get_version_manager
             if 'task_type' in params and params['task_type'] == TaskType.REGRESSION:
                 return SVR(**params)
             else:
                 return SVC(**params)
-        
+
         else:
             raise ValueError(f"Unsupported model type: {model_type}")

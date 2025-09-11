@@ -30,7 +30,7 @@ from src.utils.ml_common.data_quality import DataQualityUtilities
 from src.utils.ml_common.feature_selection import FeatureSelectionFramework
 from src.utils.ml_common.model_training import ModelTrainingUtilities
 from src.utils.core.common import CommonOperations
-from src.utils.core.math_utilities import MathValidation
+from src.utils.math_validation import MathValidation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 logger = system_logger.getChild('SRMLLearningPipeline')

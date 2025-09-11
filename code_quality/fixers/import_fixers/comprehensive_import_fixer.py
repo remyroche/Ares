@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Comprehensive import fixer to address all remaining import issues.
 """
@@ -29,7 +31,7 @@ class ComprehensiveImportFixer:
         with open(self.report_file, 'r') as f:
             data = json.load(f)
         self.issues = data['issues']['unresolvable_imports']
-        print(f"📊 Loaded {len(self.issues)} remaining import issues")
+        tprint(f"📊 Loaded {len(self.issues)} remaining import issues")
         
     def create_missing_utils_modules(self) -> int:
         """Create missing utils modules that are commonly imported."""
@@ -158,7 +160,7 @@ class ComprehensiveImportFixer:
                     f.write(module_content)
                 
                 created_count += 1
-                print(f"✅ Created missing utils module: {full_path}")
+                tprint(f"✅ Created missing utils module: {full_path}")
         
         return created_count
     
@@ -239,7 +241,7 @@ class ComprehensiveImportFixer:
                     f.write(module_content)
                 
                 created_count += 1
-                print(f"✅ Created missing core module: {full_path}")
+                tprint(f"✅ Created missing core module: {full_path}")
         
         return created_count
     
@@ -289,7 +291,7 @@ class ComprehensiveImportFixer:
                     f.write(module_content)
                 
                 created_count += 1
-                print(f"✅ Created missing interface module: {full_path}")
+                tprint(f"✅ Created missing interface module: {full_path}")
         
         return created_count
     
@@ -364,7 +366,7 @@ class ComprehensiveImportFixer:
                     })
                         
             except Exception as e:
-                print(f"⚠️  Error fixing {file_path}: {e}")
+                tprint(f"⚠️  Error fixing {file_path}: {e}")
                 self.failed_fixes.append({
                     'file': file_path,
                     'error': str(e)
@@ -374,32 +376,32 @@ class ComprehensiveImportFixer:
     
     def run_comprehensive_fixes(self, dry_run: bool = True) -> Dict:
         """Run comprehensive import fixes."""
-        print("🔧 Starting comprehensive import fixes...")
+        tprint("🔧 Starting comprehensive import fixes...")
         
         # Load issues
         self.load_issues()
         
         if dry_run:
-            print(f"\n🔍 DRY RUN - Would fix {len(self.issues)} remaining issues")
+            tprint(f"\n🔍 DRY RUN - Would fix {len(self.issues)} remaining issues")
             return {'dry_run': True, 'issues_count': len(self.issues)}
         
         # Create missing modules
         created_utils = self.create_missing_utils_modules()
-        print(f"\n✅ Created {created_utils} missing utils modules")
+        tprint(f"\n✅ Created {created_utils} missing utils modules")
         
         created_core = self.create_missing_core_modules()
-        print(f"✅ Created {created_core} missing core modules")
+        tprint(f"✅ Created {created_core} missing core modules")
         
         created_interfaces = self.create_missing_interface_modules()
-        print(f"✅ Created {created_interfaces} missing interface modules")
+        tprint(f"✅ Created {created_interfaces} missing interface modules")
         
         # Fix import paths
         fixed_paths = self.fix_import_paths()
-        print(f"✅ Fixed {fixed_paths} import paths")
+        tprint(f"✅ Fixed {fixed_paths} import paths")
         
-        print(f"\n✅ Applied {len(self.fixes_applied)} total fixes")
+        tprint(f"\n✅ Applied {len(self.fixes_applied)} total fixes")
         if self.failed_fixes:
-            print(f"⚠️  {len(self.failed_fixes)} fixes failed")
+            tprint(f"⚠️  {len(self.failed_fixes)} fixes failed")
         
         return {
             'created_utils': created_utils,
@@ -440,7 +442,7 @@ def main():
         os.makedirs("reports", exist_ok=True)
         with open(report_file, "w") as f:
             json.dump(result, f, indent=2)
-        print(f"\n📄 Fix report saved to: {report_file}")
+        tprint(f"\n📄 Fix report saved to: {report_file}")
     
     return 0 if result.get('failed_fixes', 0) == 0 else 1
 

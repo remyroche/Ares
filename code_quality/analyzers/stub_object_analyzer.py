@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Stub Object and Mock Object Analyzer
 
@@ -475,12 +477,12 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
         result = analyze_stub_objects(sys.argv[1])
-        print(f"Found {result.total_stubs} stub objects in {sys.argv[1]}")
-        print(f"Expected stubs: {result.expected_stubs}")
-        print(f"Unexpected stubs: {result.unexpected_stubs}")
+        tprint(f"Found {result.total_stubs} stub objects in {sys.argv[1]}")
+        tprint(f"Expected stubs: {result.expected_stubs}")
+        tprint(f"Unexpected stubs: {result.unexpected_stubs}")
         
         for stub in result.stub_objects:
             status = "EXPECTED" if stub.is_expected else "UNEXPECTED"
-            print(f"  {status} {stub.type.value}: {stub.name} (line {stub.line}) - {stub.category.value}")
+            tprint(f"  {status} {stub.type.value}: {stub.name} (line {stub.line}) - {stub.category.value}")
     else:
-        print("Usage: python stub_object_analyzer.py <file_path>")
+        tprint("Usage: python stub_object_analyzer.py <file_path>")

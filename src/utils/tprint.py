@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 Enhanced Timestamped Print Utility - Production-Ready Version
 
@@ -241,18 +242,32 @@ class TPrintManager:
     def _write_to_outputs(self, message: str, level: LogLevel, **kwargs):
         """Write message to configured outputs."""
         colored_message = self._get_colored_message(level, message)
-        
+
         if self.config.output_to_console:
-            print(colored_message, **kwargs)
-        
+            try:
+                print(colored_message, **kwargs)
+            except BrokenPipeError:
+                # Handle broken pipe gracefully (e.g., when piping output)
+                import sys
+                sys.stdout.close()
+                sys.exit(0)
+
         if self.config.output_to_file and self._file_handle:
-            # Write uncolored message to file
-            self._file_handle.write(message + '\n')
-            self._file_handle.flush()
-        
+            try:
+                # Write uncolored message to file
+                self._file_handle.write(message + '\n')
+                self._file_handle.flush()
+            except Exception:
+                # Silently handle file write errors
+                pass
+
         if self.config.log_to_python_logger:
-            log_level = getattr(logging, level.value, logging.INFO)
-            self.logger.log(log_level, message)
+            try:
+                log_level = getattr(logging, level.value, logging.INFO)
+                self.logger.log(log_level, message)
+            except Exception:
+                # Silently handle logger errors
+                pass
     
     def _log(self, level: LogLevel, *args, **kwargs):
         """Internal logging method."""
@@ -577,7 +592,7 @@ def tprint_numba_compatible(*args, **kwargs) -> None:
                 message += " " + " ".join(str(arg) for arg in args[1:])
         else:
             message = f"[{timestamp}]"
-        print(message, **kwargs)
+        tprint(message, **kwargs)
     else:
         tprint(*args, **kwargs)
 

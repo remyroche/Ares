@@ -43,19 +43,14 @@ from src.utils.logger import system_logger
 # Initialize logger early to avoid usage before definition
 logger = system_logger.getChild('SRDetection')
 
-# Required utility modules - Comprehensive Integration
+# Required utility modules - Simplified imports
 from src.utils.common_operations import (
-    safe_json_load, safe_json_dump, safe_read_parquet, safe_to_parquet,
+    safe_json_load, safe_json_dump,
     ensure_directory, create_fallback_logger, create_fallback_decorator,
-    safe_mean, safe_std, safe_float, safe_int, safe_append, safe_extend,
-    safe_dict_get, safe_dict_items, safe_lower, safe_upper, safe_join,
     get_current_datetime, format_datetime, create_empty_dataframe,
-    safe_fillna, safe_rolling, safe_copy, safe_deepcopy, safe_sleep,
-    safe_gather, create_async_task, get_logger, setup_basic_logging,
-    safe_exception_handler, suggest_float_uniform, suggest_int_uniform,
-    validate_dataframe, validate_numeric_range, optimize_dataframe_dtypes,
-    timed_operation, format_bytes, chunked_iterable, parallel_map,
-    safe_log_metric, safe_log_params, safe_log_artifact, get_common_operations_health_status
+    safe_fillna, get_logger, setup_basic_logging,
+    validate_dataframe, optimize_dataframe_dtypes,
+    safe_log_metric, safe_log_params, safe_log_artifact
 )
 
 # Core decorators and errors
@@ -75,24 +70,20 @@ from src.utils.comprehensive_function_logger import (
     log_internal_call, log_step_progress, log_data_operation
 )
 
-# Enhanced SR Detection imports
-try:
-    from src.tactician.sr_levels.enhanced_sr_detection import EnhancedSRDetector, SRLevel
-    ENHANCED_SR_DETECTOR_AVAILABLE = True
-    logger.info('✅ Enhanced SR Detector available')
-except ImportError as e:
-    EnhancedSRDetector = None
-    SRLevel = None
-    ENHANCED_SR_DETECTOR_AVAILABLE = False
-    logger.warning(f'⚠️ Enhanced SR Detector not available: {e}')
+# Enhanced SR Detection imports - moved to local imports to avoid circular dependencies
+ENHANCED_SR_DETECTOR_AVAILABLE = False
+EnhancedSRDetector = None
+SRLevel = None
 
-# M1 Optimization Utilities - Integrated via Common Operations
+# M1 Optimization Utilities - Now in hardware modules
 try:
     from src.utils.common_operations import (
-        integrate_with_m1_optimizers, get_m1_gpu_manager, get_m1_memory_optimizer,
-        get_m1_cpu_optimizer, cleanup_m1_optimizers, memory_checkpoint, gpu_context,
-        optimize_memory, get_memory_usage
+        integrate_with_m1_optimizers, get_m1_gpu_manager,
+        cleanup_m1_optimizers, memory_checkpoint, gpu_context
     )
+    from src.utils.hardware.m1_memory_optimizer import optimize_memory, get_memory_usage
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager as m1_gpu_manager
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as m1_cpu_optimizer
 
     # Initialize M1 integration through common operations
     m1_integration_result = integrate_with_m1_optimizers()
@@ -257,11 +248,21 @@ class SRDetectionStep(BaseStep):
         self.logger.info(f'📊 Data reduction: {len(data) - len(clean_data)} rows removed ({(len(data) - len(clean_data))/len(data)*100:.1f}%)')
 
         try:
-            # First, get basic SR levels using existing detector
-            if not ENHANCED_SR_DETECTOR_AVAILABLE or EnhancedSRDetector is None or SRLevel is None:
+            # Local imports to avoid circular dependencies
+            try:
+                from src.tactician.sr_levels.enhanced_sr_detection import EnhancedSRDetector, SRLevel
+                enhanced_detector_available = True
+                self.logger.info('✅ Enhanced SR Detector available')
+            except ImportError as e:
+                self.logger.warning(f'⚠️ Enhanced SR Detector not available: {e}')
+                enhanced_detector_available = False
+                EnhancedSRDetector = None
+                SRLevel = None
+
+            if not enhanced_detector_available or EnhancedSRDetector is None or SRLevel is None:
                 self.logger.error('❌ Enhanced SR Detector not available for initial detection.')
                 raise RuntimeError("Enhanced SR Detector not available for initial detection.")
-            
+
             self.logger.info('✅ Enhanced SR Detector is available, proceeding with detection...')
             
             # Create basic SR detector for initial detection
@@ -271,6 +272,7 @@ class SRDetectionStep(BaseStep):
                 'lookback_periods': getattr(self, 'lookback_periods', 100),
                 'memory_efficient': True,
                 'use_parallel': getattr(self, 'enable_parallel_processing', False),
+                'disable_dbscan_clustering': True,  # DISABLE DBSCAN clustering - using new logic
             }
             
             self.logger.info(f'🔧 SR Detection Configuration:')
@@ -279,6 +281,7 @@ class SRDetectionStep(BaseStep):
             self.logger.info(f'   • Lookback periods: {sr_config["lookback_periods"]}')
             self.logger.info(f'   • Memory efficient: {sr_config["memory_efficient"]}')
             self.logger.info(f'   • Parallel processing: {sr_config["use_parallel"]}')
+            self.logger.info(f'   • DBSCAN clustering: {"DISABLED" if sr_config.get("disable_dbscan_clustering", False) else "ENABLED"}')
             
             self.logger.info('🎯 Creating Enhanced SR Detector...')
             detector_creation_start = time.time()
@@ -299,10 +302,21 @@ class SRDetectionStep(BaseStep):
                 resistance_levels = basic_sr_levels.get('resistance_levels', [])
                 all_levels = support_levels + resistance_levels
                 self.logger.info(f'📊 Basic detection results: {len(support_levels)} support levels, {len(resistance_levels)} resistance levels')
+            elif isinstance(basic_sr_levels, list) and len(basic_sr_levels) > 0:
+                # Handle list of SRLevel objects from EnhancedSRDetector
+                if hasattr(basic_sr_levels[0], 'price'):  # SRLevel objects
+                    all_levels = basic_sr_levels
+                    support_levels = [level for level in all_levels if getattr(level, 'type', '').lower() == 'support']
+                    resistance_levels = [level for level in all_levels if getattr(level, 'type', '').lower() == 'resistance']
+                    self.logger.info(f'📊 Enhanced SR detection results: {len(support_levels)} support levels, {len(resistance_levels)} resistance levels')
+                else:
+                    # Handle list of dictionaries
+                    all_levels = basic_sr_levels
+                    self.logger.info(f'📊 Basic detection results: {len(all_levels)} total levels (format: dict list)')
             else:
-                all_levels = basic_sr_levels if isinstance(basic_sr_levels, list) else []
-                self.logger.info(f'📊 Basic detection results: {len(all_levels)} total levels (format: list)')
-            
+                all_levels = []
+                self.logger.info('📊 Basic detection results: 0 levels')
+
             if not all_levels:
                 self.logger.error('❌ No basic SR levels detected.')
                 raise RuntimeError("No basic SR levels detected.")
@@ -316,13 +330,17 @@ class SRDetectionStep(BaseStep):
             
             for i, level in enumerate(all_levels):
                 if hasattr(level, 'price'):
+                    # If no touch times available, assume no touches occurred
+                    has_touch_times = hasattr(level, 'first_touch_time') and hasattr(level, 'last_touch_time')
+                    touch_count = getattr(level, 'touch_count', 0 if not has_touch_times else 2)
+
                     level_dict = {
                         'price': level.price,
                         'strength': getattr(level, 'strength', 0.5),
                         'level_type': getattr(level, 'type', 'support'),
-                        'touch_count': getattr(level, 'touch_count', 2),
-                        'first_touch': getattr(level, 'first_touch', datetime.now() - timedelta(days=30)),
-                        'last_touch': getattr(level, 'last_touch', datetime.now() - timedelta(days=1))
+                        'touch_count': touch_count,
+                        'first_touch': getattr(level, 'first_touch_time', datetime.now()) if has_touch_times else datetime.now(),
+                        'last_touch': getattr(level, 'last_touch_time', datetime.now()) if has_touch_times else datetime.now()
                     }
                     levels_dict.append(level_dict)
                     
@@ -337,6 +355,10 @@ class SRDetectionStep(BaseStep):
             # Separate support and resistance levels
             support_levels = [level for level in levels_dict if level.get('level_type', '').lower() == 'support']
             resistance_levels = [level for level in levels_dict if level.get('level_type', '').lower() == 'resistance']
+
+            # Also separate the original SRLevel objects for compatibility
+            support_srlevels = [level for level in all_levels if hasattr(level, 'type') and getattr(level, 'type', '').lower() == 'support']
+            resistance_srlevels = [level for level in all_levels if hasattr(level, 'type') and getattr(level, 'type', '').lower() == 'resistance']
             
             detection_time = time.time() - detection_start_time
             
@@ -347,7 +369,10 @@ class SRDetectionStep(BaseStep):
             return {
                 'support_levels': support_levels,
                 'resistance_levels': resistance_levels,
+                'support_srlevels': support_srlevels,
+                'resistance_srlevels': resistance_srlevels,
                 'all_levels': levels_dict,
+                'all_srlevels': all_levels,
                 'detection_time': detection_time,
                 'detection_config': sr_config,
                 'data_shape': clean_data.shape,
@@ -410,17 +435,77 @@ class SRDetectionStep(BaseStep):
         
         return clean_data
 
-    def _get_fallback_sr_levels(self) -> Dict[str, Any]:
-        """Get fallback SR levels when detection fails."""
-        self.logger.warning('⚠️ Using fallback SR levels due to detection failure')
-        
+    def validate_config(self) -> None:
+        """Validate the configuration for the SR detection step."""
+        required_keys = ['symbol', 'exchange', 'timeframe']
+        for key in required_keys:
+            if key not in self.config:
+                raise ValueError(f"Missing required configuration key: {key}")
+
+        # Validate SR optimization config
+        sr_config = self.config.get('sr_optimization', {})
+        if not isinstance(sr_config, dict):
+            raise ValueError("sr_optimization must be a dictionary")
+
+        # Validate numeric parameters
+        numeric_params = ['min_touches', 'tolerance_pct', 'lookback_periods']
+        for param in numeric_params:
+            if param in sr_config:
+                value = sr_config[param]
+                if not isinstance(value, (int, float)) or value <= 0:
+                    raise ValueError(f"{param} must be a positive number")
+
+        self.logger.info("✅ SR detection configuration validated successfully")
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get the current status and metrics of the SR detection step."""
         return {
-            'support_levels': [],
-            'resistance_levels': [],
-            'all_levels': [],
-            'detection_time': 0.0,
-            'detection_config': {},
-            'data_shape': (0, 0),
-            'validation_time': 0.0,
-            'fallback': True
+            'step_name': 'SR Detection',
+            'status': 'ready',
+            'config_validated': True,
+            'sr_config': self.sr_optimization_config,
+            'memory_manager_active': hasattr(self, 'memory_manager'),
+            'proximity_threshold': self.proximity_threshold,
+            'sr_ratio_range': f"{self.min_sr_ratio:.2f} - {self.max_sr_ratio:.2f}",
+            'timestamp': get_current_datetime().isoformat()
+        }
+
+    def validate_config(self) -> None:
+        """Validate the configuration for the SR detection step."""
+        try:
+            # Validate required configuration parameters
+            required_keys = ['sr_optimization']
+            for key in required_keys:
+                if key not in self.config:
+                    raise ValueError(f"Missing required configuration key: {key}")
+
+            # Validate SR optimization parameters
+            sr_config = self.config.get('sr_optimization', {})
+            if 'min_touches' in sr_config and sr_config['min_touches'] < 1:
+                raise ValueError("min_touches must be >= 1")
+
+            if 'tolerance_pct' in sr_config and (sr_config['tolerance_pct'] <= 0 or sr_config['tolerance_pct'] > 1):
+                raise ValueError("tolerance_pct must be between 0 and 1")
+
+            if 'lookback_periods' in sr_config and sr_config['lookback_periods'] < 1:
+                raise ValueError("lookback_periods must be >= 1")
+
+            self.logger.info("✅ SR detection configuration validated successfully")
+
+        except Exception as e:
+            self.logger.error(f"❌ SR detection configuration validation failed: {e}")
+            raise
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get the current status and metrics of the SR detection step."""
+        return {
+            'step_name': 'SRDetectionStep',
+            'status': 'ready',
+            'config_validated': True,
+            'memory_manager_active': hasattr(self, 'memory_manager') and self.memory_manager is not None,
+            'sr_optimization_config': self.sr_optimization_config,
+            'proximity_threshold': self.proximity_threshold,
+            'min_sr_ratio': self.min_sr_ratio,
+            'max_sr_ratio': self.max_sr_ratio,
+            'timestamp': get_current_datetime().isoformat()
         }

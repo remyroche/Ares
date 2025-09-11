@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Shared ML Cache Utilities
 
@@ -25,20 +27,20 @@ try:
     from joblib import Memory
     from joblib.hashing import hash as joblib_hash
     JOBLIB_AVAILABLE = True
-    print("✅ joblib available for persistent caching")
+    tprint("✅ joblib available for persistent caching")
 except ImportError as e:
     JOBLIB_AVAILABLE = False
     Memory = None  # type: ignore
     joblib_hash = None  # type: ignore
-    print(f"⚠️ joblib not available: {e}. Using in-memory cache only.")
+    tprint(f"⚠️ joblib not available: {e}. Using in-memory cache only.")
 
 try:
     import psutil
     PSUTIL_AVAILABLE = True
-    print("✅ psutil available for memory monitoring")
+    tprint("✅ psutil available for memory monitoring")
 except ImportError as e:
     PSUTIL_AVAILABLE = False
-    print(f"⚠️ psutil not available: {e}. Memory monitoring disabled.")
+    tprint(f"⚠️ psutil not available: {e}. Memory monitoring disabled.")
 
 
 def _default_cache_dir() -> str:
@@ -71,7 +73,7 @@ class SharedMLCache:
     _lock = threading.Lock()
 
     def __init__(self, cache_dir: Optional[str] = None, max_memory_mb: int = 1024):
-        print("🚀 Initializing SharedMLCache...")
+        tprint("🚀 Initializing SharedMLCache...")
         start_time = time.time()
         
         self._cache_dir = cache_dir or _default_cache_dir()
@@ -79,28 +81,28 @@ class SharedMLCache:
         self._max_memory_mb = max_memory_mb
         self._memory_threshold = 0.8  # Cleanup when 80% of max memory used
         
-        print(f"📊 Cache directory: {self._cache_dir}")
-        print(f"📊 Max memory: {self._max_memory_mb}MB")
-        print(f"📊 Memory threshold: {self._memory_threshold*100:.1f}%")
-        print(f"📊 Joblib available: {JOBLIB_AVAILABLE}")
+        tprint(f"📊 Cache directory: {self._cache_dir}")
+        tprint(f"📊 Max memory: {self._max_memory_mb}MB")
+        tprint(f"📊 Memory threshold: {self._memory_threshold*100:.1f}%")
+        tprint(f"📊 Joblib available: {JOBLIB_AVAILABLE}")
         
         # Process-local dictionaries with weak references for automatic cleanup
         self.cv_splits: Dict[str, List[Tuple[np.ndarray, np.ndarray]]] = {}
         self.mi_scores: Dict[str, Dict[str, float]] = {}
         self.corr_matrices: Dict[str, np.ndarray] = {}
         self.rf_importances: Dict[str, Dict[str, float]] = {}
-        print("✅ Cache dictionaries initialized")
+        tprint("✅ Cache dictionaries initialized")
         
         # Memory tracking
         self._cache_sizes: Dict[str, int] = {}
         self._access_counts: Dict[str, int] = {}
         self._last_access: Dict[str, float] = {}
-        print("✅ Memory tracking initialized")
+        tprint("✅ Memory tracking initialized")
         
         # Memory monitoring
         self._initial_memory = self._get_memory_usage()
         init_time = time.time() - start_time
-        print(f"✅ SharedMLCache initialized in {init_time:.3f}s with {self._max_memory_mb}MB limit")
+        tprint(f"✅ SharedMLCache initialized in {init_time:.3f}s with {self._max_memory_mb}MB limit")
 
     @classmethod
     def get(cls) -> "SharedMLCache":
@@ -181,7 +183,7 @@ class SharedMLCache:
                 total_size = sum(self._cache_sizes.values())
                 return total_size / 1024 / 1024
         except Exception as e:
-            print(f"⚠️ Memory monitoring failed: {e}")
+            tprint(f"⚠️ Memory monitoring failed: {e}")
             return 0.0
 
     def _update_access_stats(self, key: str) -> None:
@@ -205,7 +207,7 @@ class SharedMLCache:
             self._cache_sizes[key] = size
             self._update_access_stats(key)
         except Exception as e:
-            print(f"⚠️ Cache stats update failed for key {key}: {e}")
+            tprint(f"⚠️ Cache stats update failed for key {key}: {e}")
 
     def _check_memory_usage(self) -> None:
         """Check memory usage and trigger cleanup if needed."""
@@ -213,7 +215,7 @@ class SharedMLCache:
         memory_limit = self._max_memory_mb * self._memory_threshold
         
         if current_memory > memory_limit:
-            print(f"🧹 Memory usage {current_memory:.1f}MB exceeds threshold {memory_limit:.1f}MB, triggering cleanup")
+            tprint(f"🧹 Memory usage {current_memory:.1f}MB exceeds threshold {memory_limit:.1f}MB, triggering cleanup")
             self._aggressive_cleanup()
 
     def _aggressive_cleanup(self) -> None:
@@ -237,10 +239,10 @@ class SharedMLCache:
             gc.collect()
             
             current_memory = self._get_memory_usage()
-            print(f"🧹 Cleanup completed: removed {len(removed_keys)} entries, memory now {current_memory:.1f}MB")
+            tprint(f"🧹 Cleanup completed: removed {len(removed_keys)} entries, memory now {current_memory:.1f}MB")
             
         except Exception as e:
-            print(f"❌ Aggressive cleanup failed: {e}")
+            tprint(f"❌ Aggressive cleanup failed: {e}")
 
     def _remove_key(self, key: str) -> None:
         """Remove a key from all caches."""
@@ -257,12 +259,12 @@ class SharedMLCache:
             self._last_access.pop(key, None)
             
         except Exception as e:
-            print(f"⚠️ Failed to remove key {key}: {e}")
+            tprint(f"⚠️ Failed to remove key {key}: {e}")
 
     def clear_all(self) -> None:
         """Clear all caches and force garbage collection."""
         try:
-            print("🧹 Clearing all caches...")
+            tprint("🧹 Clearing all caches...")
             
             # Clear all cache dictionaries
             self.cv_splits.clear()
@@ -279,10 +281,10 @@ class SharedMLCache:
             gc.collect()
             
             current_memory = self._get_memory_usage()
-            print(f"✅ All caches cleared, memory now {current_memory:.1f}MB")
+            tprint(f"✅ All caches cleared, memory now {current_memory:.1f}MB")
             
         except Exception as e:
-            print(f"❌ Cache clearing failed: {e}")
+            tprint(f"❌ Cache clearing failed: {e}")
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get comprehensive memory statistics."""
@@ -305,21 +307,21 @@ class SharedMLCache:
                 'cache_sizes_total_mb': sum(self._cache_sizes.values()) / 1024 / 1024
             }
         except Exception as e:
-            print(f"❌ Memory stats failed: {e}")
+            tprint(f"❌ Memory stats failed: {e}")
             return {'error': str(e)}
 
     @contextmanager
     def memory_context(self, operation_name: str) -> Any:
         """Context manager for memory-intensive operations."""
         initial_memory = self._get_memory_usage()
-        print(f"🔄 Starting {operation_name}, initial memory: {initial_memory:.1f}MB")
+        tprint(f"🔄 Starting {operation_name}, initial memory: {initial_memory:.1f}MB")
         
         try:
             yield self
         finally:
             final_memory = self._get_memory_usage()
             memory_delta = final_memory - initial_memory
-            print(f"✅ Completed {operation_name}, memory delta: {memory_delta:+.1f}MB")
+            tprint(f"✅ Completed {operation_name}, memory delta: {memory_delta:+.1f}MB")
             
             # Trigger cleanup if memory usage increased significantly
             if memory_delta > 100:  # More than 100MB increase
@@ -329,9 +331,9 @@ class SharedMLCache:
 # Convenience module-level singleton with enhanced error handling
 try:
     shared_cache = SharedMLCache.get()
-    print("✅ SharedMLCache singleton initialized successfully")
+    tprint("✅ SharedMLCache singleton initialized successfully")
 except Exception as e:
-    print(f"❌ Failed to initialize SharedMLCache: {e}")
+    tprint(f"❌ Failed to initialize SharedMLCache: {e}")
     # Create a minimal fallback
     shared_cache = SharedMLCache()
 

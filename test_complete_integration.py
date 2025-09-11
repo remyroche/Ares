@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Complete Integration Test for Artifact Versioning System
 
@@ -17,7 +19,7 @@ sys.path.insert(0, '/workspace')
 
 def test_core_components():
     """Test core artifact versioning components."""
-    print("🧪 Testing Core Components...")
+    tprint("🧪 Testing Core Components...")
     
     try:
         from src.utils.version_manager import get_version_manager, set_ares_version
@@ -38,16 +40,16 @@ def test_core_components():
         pickup_utils = get_artifact_pickup_utils()
         assert pickup_utils is not None
         
-        print("✅ Core components working correctly")
+        tprint("✅ Core components working correctly")
         return True
         
     except Exception as e:
-        print(f"❌ Core components test failed: {e}")
+        tprint(f"❌ Core components test failed: {e}")
         return False
 
 def test_sub_pipeline_integration():
     """Test sub-pipeline integration."""
-    print("🧪 Testing Sub-Pipeline Integration...")
+    tprint("🧪 Testing Sub-Pipeline Integration...")
     
     try:
         # Test data collection sub-pipeline
@@ -78,16 +80,16 @@ def test_sub_pipeline_integration():
         assert hasattr(bt_pipeline, 'pickup_utils')
         assert hasattr(bt_pipeline, 'version_manager')
         
-        print("✅ All sub-pipelines properly integrated")
+        tprint("✅ All sub-pipelines properly integrated")
         return True
         
     except Exception as e:
-        print(f"❌ Sub-pipeline integration test failed: {e}")
+        tprint(f"❌ Sub-pipeline integration test failed: {e}")
         return False
 
 def test_artifact_operations():
     """Test artifact save/load operations."""
-    print("🧪 Testing Artifact Operations...")
+    tprint("🧪 Testing Artifact Operations...")
     
     try:
         from src.utils.enhanced_artifact_manager import get_artifact_manager
@@ -117,16 +119,16 @@ def test_artifact_operations():
             assert metadata is not None
             assert metadata.version == "v1"
             
-        print("✅ Artifact operations working correctly")
+        tprint("✅ Artifact operations working correctly")
         return True
         
     except Exception as e:
-        print(f"❌ Artifact operations test failed: {e}")
+        tprint(f"❌ Artifact operations test failed: {e}")
         return False
 
 def test_version_management():
     """Test version management functionality."""
-    print("🧪 Testing Version Management...")
+    tprint("🧪 Testing Version Management...")
     
     try:
         from src.utils.version_manager import get_version_manager, set_ares_version
@@ -146,16 +148,16 @@ def test_version_management():
         set_ares_version("v1")
         assert vm.get_ares_version() == "v1"
         
-        print("✅ Version management working correctly")
+        tprint("✅ Version management working correctly")
         return True
         
     except Exception as e:
-        print(f"❌ Version management test failed: {e}")
+        tprint(f"❌ Version management test failed: {e}")
         return False
 
 def test_pipeline_artifact_flow():
     """Test complete pipeline artifact flow."""
-    print("🧪 Testing Pipeline Artifact Flow...")
+    tprint("🧪 Testing Pipeline Artifact Flow...")
     
     try:
         from src.utils.enhanced_artifact_manager import get_artifact_manager
@@ -197,16 +199,16 @@ def test_pipeline_artifact_flow():
             assert features_meta.version == "v1"
             assert model_meta.version == "v1"
             
-        print("✅ Pipeline artifact flow working correctly")
+        tprint("✅ Pipeline artifact flow working correctly")
         return True
         
     except Exception as e:
-        print(f"❌ Pipeline artifact flow test failed: {e}")
+        tprint(f"❌ Pipeline artifact flow test failed: {e}")
         return False
 
 def test_integration_files():
     """Test that integration files exist and are properly configured."""
-    print("🧪 Testing Integration Files...")
+    tprint("🧪 Testing Integration Files...")
     
     try:
         # Check core files exist
@@ -241,17 +243,17 @@ def test_integration_files():
             assert "from src.utils.enhanced_artifact_manager import get_artifact_manager" in content
             assert "self.artifact_manager = get_artifact_manager()" in content
         
-        print("✅ Integration files properly configured")
+        tprint("✅ Integration files properly configured")
         return True
         
     except Exception as e:
-        print(f"❌ Integration files test failed: {e}")
+        tprint(f"❌ Integration files test failed: {e}")
         return False
 
 def main():
     """Run all integration tests."""
-    print("🚀 Complete Artifact Versioning Integration Test")
-    print("=" * 60)
+    tprint("🚀 Complete Artifact Versioning Integration Test")
+    tprint("=" * 60)
     
     tests = [
         test_core_components,
@@ -268,20 +270,20 @@ def main():
     for test in tests:
         if test():
             passed += 1
-        print()
+        tprint()
     
-    print("📊 Integration Test Results:")
-    print(f"✅ Passed: {passed}/{total}")
-    print(f"❌ Failed: {total - passed}/{total}")
+    tprint("📊 Integration Test Results:")
+    tprint(f"✅ Passed: {passed}/{total}")
+    tprint(f"❌ Failed: {total - passed}/{total}")
     
     if passed == total:
-        print("🎉 ALL TESTS PASSED! Complete integration successful!")
-        print("\n✅ The artifact versioning system is fully integrated across all sub-pipeline stages.")
-        print("✅ All 41 sub-pipelines now support versioned artifacts with automatic pickup.")
-        print("✅ The system is ready for production use.")
+        tprint("🎉 ALL TESTS PASSED! Complete integration successful!")
+        tprint("\n✅ The artifact versioning system is fully integrated across all sub-pipeline stages.")
+        tprint("✅ All 41 sub-pipelines now support versioned artifacts with automatic pickup.")
+        tprint("✅ The system is ready for production use.")
         return 0
     else:
-        print("⚠️ Some tests failed. Please review the implementation.")
+        tprint("⚠️ Some tests failed. Please review the implementation.")
         return 1
 
 if __name__ == "__main__":

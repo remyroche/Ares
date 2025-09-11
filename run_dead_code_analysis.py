@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Dead Code Analysis Runner for Ares Repository
 
@@ -21,10 +23,10 @@ try:
     from analyzers.enhanced_dead_code_analyzer import EnhancedDeadCodeAnalyzer
     from analyzers.truly_enhanced_dead_code_analyzer import TrulyEnhancedDeadCodeAnalyzer
     from core.config import get_default_config
-    print("✓ Successfully imported dead code analyzers")
+    tprint("✓ Successfully imported dead code analyzers")
 except ImportError as e:
-    print(f"❌ Failed to import analyzers: {e}")
-    print("Please ensure you're running this from the Ares repository root")
+    tprint(f"❌ Failed to import analyzers: {e}")
+    tprint("Please ensure you're running this from the Ares repository root")
     sys.exit(1)
 
 def setup_logging():
@@ -40,14 +42,14 @@ def setup_logging():
 
 def run_enhanced_analysis(target_path: Path, output_dir: Path):
     """Run enhanced dead code analysis."""
-    print("\n🔍 Running Enhanced Dead Code Analysis...")
-    print("=" * 60)
+    tprint("\n🔍 Running Enhanced Dead Code Analysis...")
+    tprint("=" * 60)
 
     config = get_default_config()
     analyzer = EnhancedDeadCodeAnalyzer(config)
 
     try:
-        print(f"Analyzing directory: {target_path}")
+        tprint(f"Analyzing directory: {target_path}")
         report = analyzer.analyze_directory(str(target_path))
 
         # Save JSON report
@@ -65,23 +67,23 @@ def run_enhanced_analysis(target_path: Path, output_dir: Path):
                 'low_confidence_issues': len([i for i in report.issues_by_severity.get('low', [])]),
             }, f, indent=2, default=str)
 
-        print(f"✅ Enhanced analysis complete. Report saved to: {json_file}")
+        tprint(f"✅ Enhanced analysis complete. Report saved to: {json_file}")
         return report
 
     except Exception as e:
-        print(f"❌ Enhanced analysis failed: {e}")
+        tprint(f"❌ Enhanced analysis failed: {e}")
         return None
 
 def run_truly_enhanced_analysis(target_path: Path, output_dir: Path):
     """Run truly enhanced dead code analysis."""
-    print("\n🔬 Running Truly Enhanced Dead Code Analysis...")
-    print("=" * 60)
+    tprint("\n🔬 Running Truly Enhanced Dead Code Analysis...")
+    tprint("=" * 60)
 
     config = get_default_config()
     analyzer = TrulyEnhancedDeadCodeAnalyzer(config)
 
     try:
-        print(f"Analyzing directory: {target_path}")
+        tprint(f"Analyzing directory: {target_path}")
         report = analyzer.analyze_directory(str(target_path))
 
         # Save JSON report
@@ -100,17 +102,17 @@ def run_truly_enhanced_analysis(target_path: Path, output_dir: Path):
                 'consensus_issues': report.consensus_issues,
             }, f, indent=2, default=str)
 
-        print(f"✅ Truly enhanced analysis complete. Report saved to: {json_file}")
+        tprint(f"✅ Truly enhanced analysis complete. Report saved to: {json_file}")
         return report
 
     except Exception as e:
-        print(f"❌ Truly enhanced analysis failed: {e}")
+        tprint(f"❌ Truly enhanced analysis failed: {e}")
         return None
 
 def generate_summary_report(enhanced_report, truly_enhanced_report, output_dir: Path):
     """Generate a summary report combining both analyses."""
-    print("\n📊 Generating Summary Report...")
-    print("=" * 60)
+    tprint("\n📊 Generating Summary Report...")
+    tprint("=" * 60)
 
     summary = {
         'timestamp': datetime.now().isoformat(),
@@ -190,16 +192,16 @@ For detailed reports, check the JSON files in: {output_dir}
     with open(text_file, 'w') as f:
         f.write(text_summary)
 
-    print(f"✅ Summary report generated: {summary_file}")
-    print(f"✅ Text summary generated: {text_file}")
+    tprint(f"✅ Summary report generated: {summary_file}")
+    tprint(f"✅ Text summary generated: {text_file}")
 
     # Print summary to console
-    print("\n" + text_summary)
+    tprint("\n" + text_summary)
 
 def main():
     """Main function to run dead code analysis."""
-    print("🚀 DEAD CODE ANALYSIS FOR ARES REPOSITORY")
-    print("=" * 80)
+    tprint("🚀 DEAD CODE ANALYSIS FOR ARES REPOSITORY")
+    tprint("=" * 80)
 
     # Setup logging
     setup_logging()
@@ -211,13 +213,13 @@ def main():
     output_dir = repo_root / f"dead_code_analysis_{timestamp}"
     output_dir.mkdir(exist_ok=True)
 
-    print(f"Repository root: {repo_root}")
-    print(f"Target directory: {target_path}")
-    print(f"Output directory: {output_dir}")
-    print()
+    tprint(f"Repository root: {repo_root}")
+    tprint(f"Target directory: {target_path}")
+    tprint(f"Output directory: {output_dir}")
+    tprint()
 
     if not target_path.exists():
-        print(f"❌ Target directory does not exist: {target_path}")
+        tprint(f"❌ Target directory does not exist: {target_path}")
         sys.exit(1)
 
     # Run enhanced analysis
@@ -229,13 +231,13 @@ def main():
     # Generate summary
     generate_summary_report(enhanced_report, truly_enhanced_report, output_dir)
 
-    print("\n🎉 DEAD CODE ANALYSIS COMPLETE!")
-    print(f"📁 All reports saved to: {output_dir}")
-    print("\nNext steps:")
-    print("1. Review the summary report for an overview")
-    print("2. Examine detailed JSON reports for specific issues")
-    print("3. Consider the confidence levels before removing code")
-    print("4. Test thoroughly after any code removal")
+    tprint("\n🎉 DEAD CODE ANALYSIS COMPLETE!")
+    tprint(f"📁 All reports saved to: {output_dir}")
+    tprint("\nNext steps:")
+    tprint("1. Review the summary report for an overview")
+    tprint("2. Examine detailed JSON reports for specific issues")
+    tprint("3. Consider the confidence levels before removing code")
+    tprint("4. Test thoroughly after any code removal")
 
 if __name__ == "__main__":
     main()

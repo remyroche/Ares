@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
@@ -212,7 +214,7 @@ class Strategist:
             self._validate_market_data(market_data)
 
             self.logger.info("🎯 Generating trading strategy...")
-            print("🎯 Generating trading strategy...")
+            tprint("🎯 Generating trading strategy...")
 
             # Extract market indicators using performance optimizer
             market_indicators = await self._extract_market_indicators_optimized(
@@ -268,16 +270,16 @@ class Strategist:
             if self.performance_monitor:
                 execution_time = self.performance_monitor.end_timer("strategy_generation")
                 self.logger.info(f"Strategy generation completed in {execution_time:.3f}s")
-                print(f"Strategy generation completed in {execution_time:.3f}s")
+                tprint(f"Strategy generation completed in {execution_time:.3f}s")
             
             self.logger.info(f"✅ Strategy generated: {base_strategy.get('direction', 'UNKNOWN')} with confidence {base_strategy.get('confidence', 0.0):.3f}")
-            print(f"✅ Strategy generated: {base_strategy.get('direction', 'UNKNOWN')} with confidence {base_strategy.get('confidence', 0.0):.3f}")
+            tprint(f"✅ Strategy generated: {base_strategy.get('direction', 'UNKNOWN')} with confidence {base_strategy.get('confidence', 0.0):.3f}")
             return base_strategy
 
         except ValidationError as e:
             error_msg = f"Validation error in strategy generation: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             log_error(self.logger, "Validation error in strategy generation", e)
             
             # End performance monitoring even on error
@@ -288,7 +290,7 @@ class Strategist:
         except Exception as e:
             error_msg = f"Error generating strategy: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             log_error(self.logger, "Error generating strategy", e)
             
             # End performance monitoring even on error
@@ -640,29 +642,29 @@ class Strategist:
         """Initialize live trading utilities."""
         try:
             self.logger.info("Initializing live trading utilities...")
-            print("Initializing live trading utilities...")
+            tprint("Initializing live trading utilities...")
             
             # Initialize Model Manager for model selection and loading
             self.model_manager = ModelManager()
             self.logger.info("✅ Model Manager initialized")
-            print("✅ Model Manager initialized")
+            tprint("✅ Model Manager initialized")
             
             # Set default model selection for strategy generation (single model trained on various conditions)
             # The strategist now includes regime classification functionality
             self.selected_model = "strategist_regime_classifier"
             self.logger.info(f"✅ Default model selected: {self.selected_model}")
-            print(f"✅ Default model selected: {self.selected_model}")
+            tprint(f"✅ Default model selected: {self.selected_model}")
             
             # Initialize caches
             self.model_cache = {}
             self.strategy_cache = {}
             self.logger.info("✅ Model and strategy caches initialized")
-            print("✅ Model and strategy caches initialized")
+            tprint("✅ Model and strategy caches initialized")
             
             return True
         except Exception as e:
             self.logger.error(f"❌ Error initializing live trading utilities: {e}")
-            print(f"❌ Error initializing live trading utilities: {e}")
+            tprint(f"❌ Error initializing live trading utilities: {e}")
             return False
 
     @handle_errors_with_tracking(
@@ -683,7 +685,7 @@ class Strategist:
         if not self.model_manager or not self.selected_model:
             error_msg = "Model Manager or selected model not available"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return {"error": error_msg}
         
         try:
@@ -692,7 +694,7 @@ class Strategist:
                 self.performance_monitor.start_timer("regime_classification")
             
             self.logger.info("Classifying HMM regime...")
-            print("Classifying HMM regime...")
+            tprint("Classifying HMM regime...")
             
             # Get model from cache or load it
             model = self.model_cache.get(self.selected_model)
@@ -703,7 +705,7 @@ class Strategist:
                 else:
                     error_msg = f"Failed to load regime classifier model: {self.selected_model}"
                     self.logger.error(error_msg)
-                    print(f"❌ {error_msg}")
+                    tprint(f"❌ {error_msg}")
                     return {"error": error_msg}
             
             # Get regime classification
@@ -713,16 +715,16 @@ class Strategist:
             if self.performance_monitor:
                 execution_time = self.performance_monitor.end_timer("regime_classification")
                 self.logger.info(f"Regime classification completed in {execution_time:.3f}s")
-                print(f"Regime classification completed in {execution_time:.3f}s")
+                tprint(f"Regime classification completed in {execution_time:.3f}s")
             
             self.logger.info(f"✅ HMM regime classified: {regime_result.get('regime', 'UNKNOWN')}")
-            print(f"✅ HMM regime classified: {regime_result.get('regime', 'UNKNOWN')}")
+            tprint(f"✅ HMM regime classified: {regime_result.get('regime', 'UNKNOWN')}")
             return regime_result
             
         except Exception as e:
             error_msg = f"Error classifying HMM regime: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             
             # End performance monitoring even on error
             if self.performance_monitor:
@@ -749,19 +751,19 @@ class Strategist:
         if not self.model_manager or not self.selected_model:
             error_msg = "Model Manager or selected model not available"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return {"error": error_msg}
         
         try:
             self.logger.info(f"Coordinating strategy with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
-            print(f"Coordinating strategy with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
+            tprint(f"Coordinating strategy with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
             
             # Get the single model (trained on various market conditions)
             model = self.model_cache.get(self.selected_model)
             if not model:
                 error_msg = f"Model {self.selected_model} not loaded in cache"
                 self.logger.error(error_msg)
-                print(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
                 return {"error": error_msg}
             
             # Configure regime-specific parameters for strategy generation
@@ -773,13 +775,13 @@ class Strategist:
             }
             
             self.logger.info(f"✅ Strategy coordination with HMM regime completed: {hmm_regime}")
-            print(f"✅ Strategy coordination with HMM regime completed: {hmm_regime}")
+            tprint(f"✅ Strategy coordination with HMM regime completed: {hmm_regime}")
             return regime_config
             
         except Exception as e:
             error_msg = f"Error coordinating strategy with HMM regime: {e}"
             self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
             return {"error": error_msg}
 
     def _get_optimized_strategy_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
@@ -908,7 +910,7 @@ class Strategist:
         """Stop the strategist component."""
         try:
             self.logger.info("Stopping Strategist...")
-            print("Stopping Strategist...")
+            tprint("Stopping Strategist...")
             self.is_running = False
 
             # Cleanup optimizer resources with enhanced error handling
@@ -916,10 +918,10 @@ class Strategist:
                 try:
                     self.optimizer._executor.shutdown(wait = True)
                     self.logger.info("✅ Optimizer executor shutdown successfully")
-                    print("✅ Optimizer executor shutdown successfully")
+                    tprint("✅ Optimizer executor shutdown successfully")
                 except Exception as e:
                     self.logger.error(f"❌ Error shutting down optimizer executor: {e}")
-                    print(f"❌ Error shutting down optimizer executor: {e}")
+                    tprint(f"❌ Error shutting down optimizer executor: {e}")
 
             # Clean up live trading utilities
             if self.model_manager:
@@ -928,27 +930,27 @@ class Strategist:
                     self.model_cache.clear()
                     self.strategy_cache.clear()
                     self.logger.info("✅ Model and strategy caches cleared")
-                    print("✅ Model and strategy caches cleared")
+                    tprint("✅ Model and strategy caches cleared")
                 except Exception as e:
                     self.logger.error(f"❌ Error cleaning up model caches: {e}")
-                    print(f"❌ Error cleaning up model caches: {e}")
+                    tprint(f"❌ Error cleaning up model caches: {e}")
 
             if self.performance_monitor:
                 try:
                     self.performance_monitor.stop()
                     self.logger.info("✅ Performance monitor stopped")
-                    print("✅ Performance monitor stopped")
+                    tprint("✅ Performance monitor stopped")
                 except Exception as e:
                     self.logger.error(f"❌ Error stopping performance monitor: {e}")
-                    print(f"❌ Error stopping performance monitor: {e}")
+                    tprint(f"❌ Error stopping performance monitor: {e}")
 
             self.logger.info("✅ Strategist stopped successfully")
-            print("✅ Strategist stopped successfully")
+            tprint("✅ Strategist stopped successfully")
             return True
 
         except Exception as e:
             error_msg = f"❌ Failed to stop Strategist: {e}"
             self.logger.error(error_msg)
-            print(error_msg)
+            tprint(error_msg)
             log_error(self.logger, "❌ Failed to stop Strategist", e)
             return False

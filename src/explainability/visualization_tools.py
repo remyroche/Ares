@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Optional, Union, Any, Tuple
 from ..utils.logger import system_logger
 """Visualization tools for model explanations and decision traces.
@@ -17,12 +19,12 @@ try:
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
-    print('Warning: matplotlib not available, visualization features disabled')
+    tprint('Warning: matplotlib not available, visualization features disabled')
 try:
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
-    print('Warning: plotly not available, interactive visualization features disabled')
+    tprint('Warning: plotly not available, interactive visualization features disabled')
 try:
     SHAP_AVAILABLE = True
 except ImportError:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 from .training.training_manager import TrainingManager
 """
 Refactored Ares Launcher - Simplified and Modular
@@ -135,13 +137,13 @@ class AresLauncher:
             # Display training information
             mode_display = f"{training_mode} training"
             intensity_pct = f"{display_info['intensity_percentage']:.0f}%"
-            print(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
-            print(f"📊 Mode Configuration ({intensity_pct} of full intensity):")
-            print(f"   • Lookback Days: {actual_lookback_days}")
-            print(f"   • Max Trials: {mode_config.max_trials}")
-            print(f"   • N Trials: {mode_config.n_trials}")
-            print(f"   • Computational Intensity: {mode_config.computational_intensity}")
-            print(f"   • Estimated Duration: {mode_config.estimated_duration_minutes} minutes")
+            tprint(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
+            tprint(f"📊 Mode Configuration ({intensity_pct} of full intensity):")
+            tprint(f"   • Lookback Days: {actual_lookback_days}")
+            tprint(f"   • Max Trials: {mode_config.max_trials}")
+            tprint(f"   • N Trials: {mode_config.n_trials}")
+            tprint(f"   • Computational Intensity: {mode_config.computational_intensity}")
+            tprint(f"   • Estimated Duration: {mode_config.estimated_duration_minutes} minutes")
             
             # Run the training
             return asyncio.run(self._execute_enhanced_training(symbol, exchange, training_mode, actual_lookback_days))
@@ -506,7 +508,7 @@ class AresLauncher:
 # Command execution functions (simplified)
 def execute_command(launcher, args):
     """Execute the requested command using command handlers."""
-    print(f"🔍 DEBUG: Executing command: {args.command}")
+    tprint(f"🔍 DEBUG: Executing command: {args.command}")
     
     # Normalize input step name and collapse force flags
     normalized_step = launcher.step_orchestrator_wrapper._normalize_step_name(getattr(args, "step", None))
@@ -632,7 +634,7 @@ def main():
             launcher.comprehensive_logger.log_error(f"Main function exception: {e}", exc_info = True)
             launcher.comprehensive_logger.log_launcher_end(1)
         else:
-            print(f"💥 ERROR: Exception in main: {e}")
+            tprint(f"💥 ERROR: Exception in main: {e}")
             import traceback
             traceback.print_exc()
         return 1

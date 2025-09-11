@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import asyncio
 import hashlib
 import json
@@ -202,10 +204,10 @@ async def validate_migration_file(file_path: str) -> dict[str, Any]:
     return validation_result
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print('Usage:')
-        print('  python migration_utils.py export [db_path]')
-        print('  python migration_utils.py import <import_path> [db_path]')
-        print('  python migration_utils.py validate <file_path>')
+        tprint('Usage:')
+        tprint('  python migration_utils.py export [db_path]')
+        tprint('  python migration_utils.py import <import_path> [db_path]')
+        tprint('  python migration_utils.py validate <file_path>')
         sys.exit(1)
     command = sys.argv[1]
 
@@ -214,28 +216,28 @@ if __name__ == '__main__':
             db_path = sys.argv[2] if len(sys.argv) > 2 else 'data/ares_local_db.sqlite'
             export_path = await export_database_for_trading(db_path)
             if export_path:
-                print(f'Export created: {export_path}')
+                tprint(f'Export created: {export_path}')
             else:
-                print('Export failed')
+                tprint('Export failed')
         elif command == 'import':
             if len(sys.argv) < 3:
-                print('Import path required')
+                tprint('Import path required')
                 sys.exit(1)
             import_path = sys.argv[2]
             db_path = sys.argv[3] if len(sys.argv) > 3 else 'data/ares_local_db.sqlite'
             success = await import_database_for_trading(import_path, db_path)
             if success:
-                print('Import completed successfully')
+                tprint('Import completed successfully')
             else:
-                print('Import failed')
+                tprint('Import failed')
         elif command == 'validate':
             if len(sys.argv) < 3:
-                print('File path required')
+                tprint('File path required')
                 sys.exit(1)
             file_path = sys.argv[2]
             validation_result = await validate_migration_file(file_path)
-            print(json.dumps(validation_result, indent = 2))
+            tprint(json.dumps(validation_result, indent = 2))
         else:
-            print(f'Unknown command: {command}')
+            tprint(f'Unknown command: {command}')
             sys.exit(1)
     asyncio.run(main())

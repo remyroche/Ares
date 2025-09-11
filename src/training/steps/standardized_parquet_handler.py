@@ -476,9 +476,20 @@ class StandardizedParquetHandler:
                 'metadata': {}
             }
     
+    def read_parquet(
+        self,
+        file_path: Union[str, Path],
+        **kwargs
+    ) -> Optional['pd.DataFrame']:
+        """Convenience method for read_parquet_standardized.
+
+        This method provides backward compatibility for any code that calls read_parquet.
+        """
+        return self.read_parquet_standardized(file_path, **kwargs)
+
     def read_parquet_standardized(
-        self, 
-        file_path: Union[str, Path], 
+        self,
+        file_path: Union[str, Path],
         schema_name: str = 'unified',
         validate_quality: bool = True
     ) -> Optional['pd.DataFrame']:
@@ -526,13 +537,27 @@ class StandardizedParquetHandler:
             self.logger.error(f"Error reading Parquet file {file_path}: {e}")
             return None
     
+    def write_parquet(
+        self,
+        df: 'pd.DataFrame',
+        file_path: Union[str, Path],
+        **kwargs
+    ) -> bool:
+        """Convenience method for write_parquet_standardized.
+
+        This method provides backward compatibility for any code that calls write_parquet.
+        """
+        return self.write_parquet_standardized(df, file_path, **kwargs)
+
     def write_parquet_standardized(
-        self, 
-        df: 'pd.DataFrame', 
-        file_path: Union[str, Path], 
+        self,
+        df: 'pd.DataFrame',
+        file_path: Union[str, Path],
         schema_name: str = 'unified',
         validate_quality: bool = True,
-        create_metadata: bool = True
+        create_metadata: bool = True,
+        index: bool = None,
+        **kwargs
     ) -> bool:
         """Write DataFrame to Parquet file with standardized processing.
         
@@ -568,8 +593,9 @@ class StandardizedParquetHandler:
                     self.logger.warning(f"Data quality issues before writing: {validation_result['issues']}")
                     # Continue anyway, but log the issues
             
-            # Write the file
-            df.to_parquet(file_path, index=False, compression='snappy')
+            # Write the file - use index parameter if provided, otherwise default to False
+            index_param = index if index is not None else False
+            df.to_parquet(file_path, index=index_param, compression='snappy')
             
             # Create metadata file if requested
             if create_metadata:
@@ -728,9 +754,19 @@ standardized_parquet_handler = StandardizedParquetHandler()
 
 
 # Convenience functions for backward compatibility
+def read_parquet(file_path: Union[str, Path], **kwargs) -> Optional['pd.DataFrame']:
+    """Convenience function to read Parquet file."""
+    return standardized_parquet_handler.read_parquet(file_path, **kwargs)
+
+
 def read_parquet_standardized(file_path: Union[str, Path], **kwargs) -> Optional['pd.DataFrame']:
     """Convenience function to read Parquet file with standardization."""
     return standardized_parquet_handler.read_parquet_standardized(file_path, **kwargs)
+
+
+def write_parquet(df: 'pd.DataFrame', file_path: Union[str, Path], **kwargs) -> bool:
+    """Convenience function to write Parquet file."""
+    return standardized_parquet_handler.write_parquet(df, file_path, **kwargs)
 
 
 def write_parquet_standardized(df: 'pd.DataFrame', file_path: Union[str, Path], **kwargs) -> bool:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Import Analysis Runner for Ares Repository
 
@@ -21,10 +23,10 @@ try:
     from code_quality.analyzers.enhanced_import_analysis import EnhancedImportAnalyzer, IssueType, IssueSeverity
     from code_quality.analyzers.import_verifier_analyzer import ImportVerifierAnalyzer
     from code_quality.core.config import get_default_config
-    print("✓ Successfully imported import analyzers")
+    tprint("✓ Successfully imported import analyzers")
 except ImportError as e:
-    print(f"❌ Failed to import analyzers: {e}")
-    print("Please ensure you're running this from the Ares repository root")
+    tprint(f"❌ Failed to import analyzers: {e}")
+    tprint("Please ensure you're running this from the Ares repository root")
     sys.exit(1)
 
 def setup_logging():
@@ -40,8 +42,8 @@ def setup_logging():
 
 def run_enhanced_import_analysis(target_path: Path, output_dir: Path):
     """Run enhanced import analysis."""
-    print("\n🔍 Running Enhanced Import Analysis...")
-    print("=" * 60)
+    tprint("\n🔍 Running Enhanced Import Analysis...")
+    tprint("=" * 60)
 
     config = {
         'ignore_patterns': ['__pycache__', '.git', 'node_modules', '.venv', 'venv', '.pytest_cache'],
@@ -51,7 +53,7 @@ def run_enhanced_import_analysis(target_path: Path, output_dir: Path):
     analyzer = EnhancedImportAnalyzer(config)
 
     try:
-        print(f"Analyzing directory: {target_path}")
+        tprint(f"Analyzing directory: {target_path}")
         results = analyzer.analyze_directory(str(target_path))
 
         # Convert results to serializable format
@@ -92,17 +94,17 @@ def run_enhanced_import_analysis(target_path: Path, output_dir: Path):
                 'results': serializable_results
             }, f, indent=2)
 
-        print(f"✅ Enhanced import analysis complete. Report saved to: {json_file}")
+        tprint(f"✅ Enhanced import analysis complete. Report saved to: {json_file}")
         return results
 
     except Exception as e:
-        print(f"❌ Enhanced import analysis failed: {e}")
+        tprint(f"❌ Enhanced import analysis failed: {e}")
         return None
 
 def run_import_verifier_analysis(target_path: Path, output_dir: Path):
     """Run import verifier analysis."""
-    print("\n🔍 Running Import Verifier Analysis...")
-    print("=" * 60)
+    tprint("\n🔍 Running Import Verifier Analysis...")
+    tprint("=" * 60)
 
     config = {
         'ignore_patterns': ['__pycache__', '.git', 'node_modules', '.venv', 'venv', '.pytest_cache'],
@@ -112,7 +114,7 @@ def run_import_verifier_analysis(target_path: Path, output_dir: Path):
     analyzer = ImportVerifierAnalyzer(config)
 
     try:
-        print(f"Analyzing directory: {target_path}")
+        tprint(f"Analyzing directory: {target_path}")
         results = analyzer.analyze_directory(str(target_path))
 
         # Save JSON report
@@ -126,17 +128,17 @@ def run_import_verifier_analysis(target_path: Path, output_dir: Path):
                 'stats': results.get('stats', {})
             }, f, indent=2)
 
-        print(f"✅ Import verifier analysis complete. Report saved to: {json_file}")
+        tprint(f"✅ Import verifier analysis complete. Report saved to: {json_file}")
         return results
 
     except Exception as e:
-        print(f"❌ Import verifier analysis failed: {e}")
+        tprint(f"❌ Import verifier analysis failed: {e}")
         return None
 
 def generate_import_summary_report(enhanced_results, verifier_results, output_dir: Path):
     """Generate a summary report focusing on import-related dead code."""
-    print("\n📊 Generating Import Analysis Summary Report...")
-    print("=" * 60)
+    tprint("\n📊 Generating Import Analysis Summary Report...")
+    tprint("=" * 60)
 
     summary = {
         'timestamp': datetime.now().isoformat(),
@@ -279,16 +281,16 @@ For detailed reports, check the JSON files in: {output_dir}
     with open(text_file, 'w') as f:
         f.write(text_summary)
 
-    print(f"✅ Import analysis summary generated: {summary_file}")
-    print(f"✅ Text summary generated: {text_file}")
+    tprint(f"✅ Import analysis summary generated: {summary_file}")
+    tprint(f"✅ Text summary generated: {text_file}")
 
     # Print summary to console
-    print("\n" + text_summary)
+    tprint("\n" + text_summary)
 
 def main():
     """Main function to run import analysis."""
-    print("🔧 IMPORT ANALYSIS FOR ARES REPOSITORY")
-    print("=" * 80)
+    tprint("🔧 IMPORT ANALYSIS FOR ARES REPOSITORY")
+    tprint("=" * 80)
 
     # Setup logging
     setup_logging()
@@ -300,13 +302,13 @@ def main():
     output_dir = repo_root / f"imports_analysis_{timestamp}"
     output_dir.mkdir(exist_ok=True)
 
-    print(f"Repository root: {repo_root}")
-    print(f"Target directory: {target_path}")
-    print(f"Output directory: {output_dir}")
-    print()
+    tprint(f"Repository root: {repo_root}")
+    tprint(f"Target directory: {target_path}")
+    tprint(f"Output directory: {output_dir}")
+    tprint()
 
     if not target_path.exists():
-        print(f"❌ Target directory does not exist: {target_path}")
+        tprint(f"❌ Target directory does not exist: {target_path}")
         sys.exit(1)
 
     # Run enhanced import analysis
@@ -318,13 +320,13 @@ def main():
     # Generate summary
     generate_import_summary_report(enhanced_results, verifier_results, output_dir)
 
-    print("\n🎉 IMPORT ANALYSIS COMPLETE!")
-    print(f"📁 All reports saved to: {output_dir}")
-    print("\nNext steps:")
-    print("1. Review the summary report for unused imports")
-    print("2. Examine duplicate imports for consolidation")
-    print("3. Check unused files for potential dead code")
-    print("4. Consider the impact before removing any imports")
+    tprint("\n🎉 IMPORT ANALYSIS COMPLETE!")
+    tprint(f"📁 All reports saved to: {output_dir}")
+    tprint("\nNext steps:")
+    tprint("1. Review the summary report for unused imports")
+    tprint("2. Examine duplicate imports for consolidation")
+    tprint("3. Check unused files for potential dead code")
+    tprint("4. Consider the impact before removing any imports")
 
 if __name__ == "__main__":
     main()

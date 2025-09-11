@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """Verify that all test files for steps 1-7 have been created with proper structure.
 
 This script checks the existence and basic structure of test files without running them.
@@ -23,9 +25,9 @@ def verify_test_files():
         ("test_step7_enhanced_matrix_operations.py", ["TestMatrixOperationsStep", "test_initialization"]),
     ]
 
-    print("=" * 80)
-    print("Verifying Test Files for Training Pipeline Steps 1-7")
-    print("=" * 80)
+    tprint("=" * 80)
+    tprint("Verifying Test Files for Training Pipeline Steps 1-7")
+    tprint("=" * 80)
 
     all_valid = True
     total_test_classes = 0
@@ -33,10 +35,10 @@ def verify_test_files():
 
     for test_file, expected_content in expected_files:
         test_path = tests_dir / test_file
-        print(f"\n📁 Checking {test_file}...")
+        tprint(f"\n📁 Checking {test_file}...")
 
         if not test_path.exists():
-            print("   ❌ File not found!")
+            tprint("   ❌ File not found!")
             all_valid = False
             continue
 
@@ -46,18 +48,18 @@ def verify_test_files():
 
         # Check file size
         file_size = len(content)
-        print(f"   📏 File size: {file_size:,} bytes")
+        tprint(f"   📏 File size: {file_size:,} bytes")
 
         # Count test classes
         test_classes = re.findall(r"class\s+Test\w+\s*\(.*TestCase\)", content)
-        print(f"   🧪 Test classes found: {len(test_classes)}")
+        tprint(f"   🧪 Test classes found: {len(test_classes)}")
         for cls in test_classes:
-            print(f"      - {cls.split()[1].split('(')[0]}")
+            tprint(f"      - {cls.split()[1].split('(')[0]}")
         total_test_classes += len(test_classes)
 
         # Count test methods
         test_methods = re.findall(r"def\s+test_\w+\s*\(", content)
-        print(f"   🔬 Test methods found: {len(test_methods)}")
+        tprint(f"   🔬 Test methods found: {len(test_methods)}")
         total_test_methods += len(test_methods)
 
         # Check for expected content
@@ -67,54 +69,54 @@ def verify_test_files():
                 missing_content.append(expected)
 
         if missing_content:
-            print(f"   ⚠️  Missing expected content: {', '.join(missing_content)}")
+            tprint(f"   ⚠️  Missing expected content: {', '.join(missing_content)}")
         else:
-            print("   ✅ All expected content found")
+            tprint("   ✅ All expected content found")
 
         # Check for required imports
         has_unittest = "import unittest" in content
         has_mock = "from unittest.mock import" in content
         has_asyncio = "import asyncio" in content
 
-        print(f"   📦 Required imports: unittest={'✅' if has_unittest else '❌'}, "
+        tprint(f"   📦 Required imports: unittest={'✅' if has_unittest else '❌'}, "
               f"mock={'✅' if has_mock else '❌'}, "
               f"asyncio={'✅' if has_asyncio else '❌'}")
 
         # Check for main block
         has_main = 'if __name__ == "__main__"' in content
-        print(f"   🚀 Has main block: {'✅' if has_main else '❌'}")
+        tprint(f"   🚀 Has main block: {'✅' if has_main else '❌'}")
 
     # Summary
-    print("\n" + "=" * 80)
-    print("Summary")
-    print("=" * 80)
-    print(f"✅ Total test files created: {len(expected_files)}")
-    print(f"🧪 Total test classes: {total_test_classes}")
-    print(f"🔬 Total test methods: {total_test_methods}")
-    print(f"📊 Average methods per class: {total_test_methods / total_test_classes:.1f}" if total_test_classes > 0 else "N/A")
+    tprint("\n" + "=" * 80)
+    tprint("Summary")
+    tprint("=" * 80)
+    tprint(f"✅ Total test files created: {len(expected_files)}")
+    tprint(f"🧪 Total test classes: {total_test_classes}")
+    tprint(f"🔬 Total test methods: {total_test_methods}")
+    tprint(f"📊 Average methods per class: {total_test_methods / total_test_classes:.1f}" if total_test_classes > 0 else "N/A")
 
     if all_valid:
-        print("\n✅ All test files are properly structured!")
+        tprint("\n✅ All test files are properly structured!")
     else:
-        print("\n❌ Some test files are missing or incomplete!")
+        tprint("\n❌ Some test files are missing or incomplete!")
 
     # List all test files in directory
-    print("\n" + "=" * 80)
-    print("All Python files in tests directory:")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("All Python files in tests directory:")
+    tprint("=" * 80)
     for file in sorted(tests_dir.glob("*.py")):
         if file.name != "__init__.py":
             size = file.stat().st_size
-            print(f"  - {file.name:<40} ({size:>10,} bytes)")
+            tprint(f"  - {file.name:<40} ({size:>10,} bytes)")
 
     return all_valid
 
 
 def check_test_coverage():
     """Check which step modules are being tested."""
-    print("\n" + "=" * 80)
-    print("Test Coverage Check")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Test Coverage Check")
+    tprint("=" * 80)
 
     step_modules = {
         1: ["step1_data_collection.py"],
@@ -127,16 +129,16 @@ def check_test_coverage():
     }
 
     for step_num, modules in step_modules.items():
-        print(f"\nStep {step_num}:")
+        tprint(f"\nStep {step_num}:")
         test_file = f"test_step{step_num}_*.py"
         test_exists = len(list(Path(__file__).parent.glob(test_file))) > 0
 
         for module in modules:
-            print(f"  - {module:<45} {'✅ Has tests' if test_exists else '❌ No tests'}")
+            tprint(f"  - {module:<45} {'✅ Has tests' if test_exists else '❌ No tests'}")
 
 
 if __name__ == "__main__":
-    print("🔍 Verifying test file structure...\n")
+    tprint("🔍 Verifying test file structure...\n")
 
     # Verify test files
     success = verify_test_files()
@@ -144,17 +146,17 @@ if __name__ == "__main__":
     # Check coverage
     check_test_coverage()
 
-    print("\n✅ Verification complete!")
+    tprint("\n✅ Verification complete!")
 
     # Provide instructions
-    print("\n" + "=" * 80)
-    print("Next Steps:")
-    print("=" * 80)
-    print("1. Install required dependencies:")
-    print("   pip install pandas numpy scikit-learn")
-    print("\n2. Run the tests:")
-    print("   python3 code_quality/tests/run_all_step_tests.py")
-    print("\n3. Run tests for a specific step:")
-    print("   python3 code_quality/tests/run_all_step_tests.py <step_number>")
-    print("\n4. Run tests with pytest (if installed):")
-    print("   pytest code_quality/tests/test_step*.py -v")
+    tprint("\n" + "=" * 80)
+    tprint("Next Steps:")
+    tprint("=" * 80)
+    tprint("1. Install required dependencies:")
+    tprint("   pip install pandas numpy scikit-learn")
+    tprint("\n2. Run the tests:")
+    tprint("   python3 code_quality/tests/run_all_step_tests.py")
+    tprint("\n3. Run tests for a specific step:")
+    tprint("   python3 code_quality/tests/run_all_step_tests.py <step_number>")
+    tprint("\n4. Run tests with pytest (if installed):")
+    tprint("   pytest code_quality/tests/test_step*.py -v")

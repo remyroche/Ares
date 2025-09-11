@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 # src/config/m1_gpu_config.py
 
@@ -300,7 +302,7 @@ def validate_m1_config(config: dict[str, Any]) -> bool:
         return True
 
     except Exception as e:
-        print(f"M1 configuration validation failed: {e}")
+        tprint(f"M1 configuration validation failed: {e}")
         return False
 
 def get_default_m1_config() -> dict[str, Any]:

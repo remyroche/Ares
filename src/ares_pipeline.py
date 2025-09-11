@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import argparse
 import asyncio
 from datetime import datetime
@@ -133,7 +135,7 @@ class AresPipeline:
     async def _initialize_configuration_service(self) -> None:
         """Initialize configuration service."""
         try:
-            print('   ⚙️ Initializing ConfigurationService...')
+            tprint('   ⚙️ Initializing ConfigurationService...')
             self.logger.info('   ⚙️ Initializing ConfigurationService...')
 
             def _config_service_factory(container: DependencyContainer) -> ConfigurationService:
@@ -141,10 +143,10 @@ class AresPipeline:
             if self.container.get_config('root_config') is None:
                 self.container.set_config('root_config', self.container._config)
             self.container.register_factory('ConfigurationService', _config_service_factory)
-            print('   ✅ ConfigurationService initialized successfully')
+            tprint('   ✅ ConfigurationService initialized successfully')
             self.logger.info('   ✅ ConfigurationService initialized successfully')
         except Exception as e:
-            print(f'   ❌ Error initializing configuration service: {e}')
+            tprint(f'   ❌ Error initializing configuration service: {e}')
             self.logger.exception('Error initializing configuration service')
             raise
 
@@ -152,86 +154,86 @@ class AresPipeline:
     async def _register_core_services(self) -> None:
         """Register core services in DI container with comprehensive logging."""
         try:
-            print('🔧 Registering core services...')
+            tprint('🔧 Registering core services...')
             self.logger.info('🔧 Registering core services...')
-            print('   💾 Registering DatabaseManager...')
+            tprint('   💾 Registering DatabaseManager...')
             self.logger.info('   💾 Registering DatabaseManager...')
             try:
                 self.container.register('DatabaseManager', SQLiteManager)
-                print('   ✅ DatabaseManager registered successfully')
+                tprint('   ✅ DatabaseManager registered successfully')
                 self.logger.info('   ✅ DatabaseManager registered successfully')
             except Exception as e:
-                print(f'   ❌ Failed to register DatabaseManager: {e}')
+                tprint(f'   ❌ Failed to register DatabaseManager: {e}')
                 self.logger.exception('   ❌ Failed to register DatabaseManager')
-            print('   🏢 Registering ExchangeClient...')
+            tprint('   🏢 Registering ExchangeClient...')
             self.logger.info('   🏢 Registering ExchangeClient...')
             try:
                 env_settings = get_environment_settings()
                 exchange_instance = RootExchangeFactory.get_exchange(env_settings.exchange_name.lower())
                 self.container.register_instance('ExchangeClient', exchange_instance)
-                print('   ✅ ExchangeClient registered successfully')
+                tprint('   ✅ ExchangeClient registered successfully')
                 self.logger.info('   ✅ ExchangeClient registered successfully')
             except Exception as e:
-                print(f'   ❌ Failed to register ExchangeClient: {e}')
+                tprint(f'   ❌ Failed to register ExchangeClient: {e}')
                 self.logger.exception('   ❌ Failed to register ExchangeClient')
-            print('   📊 Registering Analyst...')
+            tprint('   📊 Registering Analyst...')
             self.logger.info('   📊 Registering Analyst...')
             try:
                 self.container.register('Analyst', Analyst, config={'analyst': {}})
-                print('   ✅ Analyst registered successfully')
+                tprint('   ✅ Analyst registered successfully')
                 self.logger.info('   ✅ Analyst registered successfully')
             except Exception as e:
-                print(f'   ❌ Failed to register Analyst: {e}')
+                tprint(f'   ❌ Failed to register Analyst: {e}')
                 self.logger.exception('   ❌ Failed to register Analyst')
-            print('   🧠 Registering Strategist...')
+            tprint('   🧠 Registering Strategist...')
             self.logger.info('   🧠 Registering Strategist...')
             try:
                 self.container.register('Strategist', Strategist, config={'strategist': {}})
-                print('   ✅ Strategist registered successfully')
+                tprint('   ✅ Strategist registered successfully')
                 self.logger.info('   ✅ Strategist registered successfully')
             except Exception as e:
-                print(f'   ❌ Failed to register Strategist: {e}')
+                tprint(f'   ❌ Failed to register Strategist: {e}')
                 self.logger.exception('   ❌ Failed to register Strategist')
-            print('   🎯 Registering Tactician...')
+            tprint('   🎯 Registering Tactician...')
             self.logger.info('   🎯 Registering Tactician...')
             try:
                 self.container.register('Tactician', Tactician, config={'tactician': {}})
-                print('   ✅ Tactician registered successfully')
+                tprint('   ✅ Tactician registered successfully')
                 self.logger.info('   ✅ Tactician registered successfully')
             except Exception as e:
-                print(f'   ❌ Failed to register Tactician: {e}')
+                tprint(f'   ❌ Failed to register Tactician: {e}')
                 self.logger.exception('   ❌ Failed to register Tactician')
-            print('   👁️ Registering Supervisor...')
+            tprint('   👁️ Registering Supervisor...')
             self.logger.info('   👁️ Registering Supervisor...')
             try:
                 self.container.register('Supervisor', Supervisor, config={'supervisor': {}})
-                print('   ✅ Supervisor registered successfully')
+                tprint('   ✅ Supervisor registered successfully')
                 self.logger.info('   ✅ Supervisor registered successfully')
             except Exception as e:
-                print(f'   ❌ Failed to register Supervisor: {e}')
+                tprint(f'   ❌ Failed to register Supervisor: {e}')
                 self.logger.exception('   ❌ Failed to register Supervisor')
-            print('   💾 Registering StateManager...')
+            tprint('   💾 Registering StateManager...')
             self.logger.info('   💾 Registering StateManager...')
             try:
                 self.container.register('StateManager', StateManager, config={'state_manager': {}})
-                print('   ✅ StateManager registered successfully')
+                tprint('   ✅ StateManager registered successfully')
                 self.logger.info('   ✅ StateManager registered successfully')
             except Exception as e:
-                print(f'   ❌ Failed to register StateManager: {e}')
+                tprint(f'   ❌ Failed to register StateManager: {e}')
                 self.logger.exception('   ❌ Failed to register StateManager')
-            print('   📡 Registering EventBus...')
+            tprint('   📡 Registering EventBus...')
             self.logger.info('   📡 Registering EventBus...')
             try:
                 self.container.register('EventBus', EventBus, config={'event_bus': {}})
-                print('   ✅ EventBus registered successfully')
+                tprint('   ✅ EventBus registered successfully')
                 self.logger.info('   ✅ EventBus registered successfully')
             except Exception as e:
-                print(f'   ❌ Failed to register EventBus: {e}')
+                tprint(f'   ❌ Failed to register EventBus: {e}')
                 self.logger.exception('   ❌ Failed to register EventBus')
-            print('✅ Core services registered successfully')
+            tprint('✅ Core services registered successfully')
             self.logger.info('✅ Core services registered successfully')
         except Exception:
-            print(warning('Error registering core services'))
+            tprint(warning('Error registering core services'))
             self.logger.exception('Error registering core services')
             raise
 
@@ -239,66 +241,66 @@ class AresPipeline:
     async def _resolve_pipeline_components(self) -> None:
         """Resolve pipeline components through DI container with comprehensive logging."""
         try:
-            print('🔧 Resolving pipeline components...')
+            tprint('🔧 Resolving pipeline components...')
             self.logger.info('🔧 Resolving pipeline components...')
-            print('   📊 Resolving Analyst component...')
+            tprint('   📊 Resolving Analyst component...')
             self.logger.info('   📊 Resolving Analyst component...')
             self.analyst = self.container.resolve('Analyst')
             if self.analyst:
-                print('   ✅ Analyst component resolved successfully')
+                tprint('   ✅ Analyst component resolved successfully')
                 self.logger.info('   ✅ Analyst component resolved successfully')
             else:
-                print('   ❌ Failed to resolve Analyst component')
+                tprint('   ❌ Failed to resolve Analyst component')
                 self.logger.error('   ❌ Failed to resolve Analyst component')
-            print('   🧠 Resolving Strategist component...')
+            tprint('   🧠 Resolving Strategist component...')
             self.logger.info('   🧠 Resolving Strategist component...')
             self.strategist = self.container.resolve('Strategist')
             if self.strategist:
-                print('   ✅ Strategist component resolved successfully')
+                tprint('   ✅ Strategist component resolved successfully')
                 self.logger.info('   ✅ Strategist component resolved successfully')
             else:
-                print('   ❌ Failed to resolve Strategist component')
+                tprint('   ❌ Failed to resolve Strategist component')
                 self.logger.error('   ❌ Failed to resolve Strategist component')
-            print('   🎯 Resolving Tactician component...')
+            tprint('   🎯 Resolving Tactician component...')
             self.logger.info('   🎯 Resolving Tactician component...')
             self.tactician = self.container.resolve('Tactician')
             if self.tactician:
-                print('   ✅ Tactician component resolved successfully')
+                tprint('   ✅ Tactician component resolved successfully')
                 self.logger.info('   ✅ Tactician component resolved successfully')
             else:
-                print('   ❌ Failed to resolve Tactician component')
+                tprint('   ❌ Failed to resolve Tactician component')
                 self.logger.error('   ❌ Failed to resolve Tactician component')
-            print('   👁️ Resolving Supervisor component...')
+            tprint('   👁️ Resolving Supervisor component...')
             self.logger.info('   👁️ Resolving Supervisor component...')
             self.supervisor = self.container.resolve('Supervisor')
             if self.supervisor:
-                print('   ✅ Supervisor component resolved successfully')
+                tprint('   ✅ Supervisor component resolved successfully')
                 self.logger.info('   ✅ Supervisor component resolved successfully')
             else:
-                print('   ❌ Failed to resolve Supervisor component')
+                tprint('   ❌ Failed to resolve Supervisor component')
                 self.logger.error('   ❌ Failed to resolve Supervisor component')
-            print('   💾 Resolving StateManager component...')
+            tprint('   💾 Resolving StateManager component...')
             self.logger.info('   💾 Resolving StateManager component...')
             self.state_manager = self.container.resolve('StateManager')
             if self.state_manager:
-                print('   ✅ StateManager component resolved successfully')
+                tprint('   ✅ StateManager component resolved successfully')
                 self.logger.info('   ✅ StateManager component resolved successfully')
             else:
-                print('   ❌ Failed to resolve StateManager component')
+                tprint('   ❌ Failed to resolve StateManager component')
                 self.logger.error('   ❌ Failed to resolve StateManager component')
-            print('   📡 Resolving EventBus component...')
+            tprint('   📡 Resolving EventBus component...')
             self.logger.info('   📡 Resolving EventBus component...')
             self.event_bus = self.container.resolve('EventBus')
             if self.event_bus:
-                print('   ✅ EventBus component resolved successfully')
+                tprint('   ✅ EventBus component resolved successfully')
                 self.logger.info('   ✅ EventBus component resolved successfully')
             else:
-                print('   ❌ Failed to resolve EventBus component')
+                tprint('   ❌ Failed to resolve EventBus component')
                 self.logger.error('   ❌ Failed to resolve EventBus component')
-            print('✅ Pipeline components resolved successfully')
+            tprint('✅ Pipeline components resolved successfully')
             self.logger.info('✅ Pipeline components resolved successfully')
         except Exception:
-            print(warning('Error resolving pipeline components'))
+            tprint(warning('Error resolving pipeline components'))
             self.logger.exception('Error resolving pipeline components')
             raise
 
@@ -346,17 +348,17 @@ class AresPipeline:
             dict[str, Any] | None: Pipeline execution results or None if failed
         """
         try:
-            print('🔄 Starting Ares Pipeline execution...')
+            tprint('🔄 Starting Ares Pipeline execution...')
             self.logger.info('🔄 Starting Ares Pipeline execution...')
             if self.is_running:
-                print(warning('Pipeline already running'))
+                tprint(warning('Pipeline already running'))
                 self.logger.warning('Pipeline already running')
                 return None
-            print('🚀 Starting Ares Pipeline...')
+            tprint('🚀 Starting Ares Pipeline...')
             self.logger.info('🚀 Starting Ares Pipeline...')
             self.is_running = True
             self.start_time = datetime.now()
-            print(f'📅 Pipeline start time: {self.start_time}')
+            tprint(f'📅 Pipeline start time: {self.start_time}')
             self.logger.info(f'📅 Pipeline start time: {self.start_time}')
             max_cycles = 10
             max_duration = 300
@@ -365,54 +367,54 @@ class AresPipeline:
                     current_time = datetime.now()
                     elapsed_time = (current_time - self.start_time).total_seconds()
                     if self.cycle_count >= max_cycles:
-                        print(f'⏰ Reached maximum cycles ({max_cycles}), stopping pipeline')
+                        tprint(f'⏰ Reached maximum cycles ({max_cycles}), stopping pipeline')
                         self.logger.info(f'⏰ Reached maximum cycles ({max_cycles}), stopping pipeline')
                         break
                     if elapsed_time >= max_duration:
-                        print(f'⏰ Reached maximum duration ({max_duration}s), stopping pipeline')
+                        tprint(f'⏰ Reached maximum duration ({max_duration}s), stopping pipeline')
                         self.logger.info(f'⏰ Reached maximum duration ({max_duration}s), stopping pipeline')
                         break
-                    print(f'🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)')
+                    tprint(f'🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)')
                     self.logger.info(f'🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)')
                     await self._execute_cycle()
                     self.cycle_count += 1
                     self.last_cycle_time = datetime.now()
-                    print(f'✅ Cycle {self.cycle_count} completed successfully')
+                    tprint(f'✅ Cycle {self.cycle_count} completed successfully')
                     self.logger.info(f'✅ Cycle {self.cycle_count} completed successfully')
                     try:
                         config_service = self.container.resolve('ConfigurationService')
                         cycle_interval = config_service.get_value('pipeline.loop_interval_seconds', 10)
-                        print(f'⏱️ Waiting {cycle_interval} seconds before next cycle...')
+                        tprint(f'⏱️ Waiting {cycle_interval} seconds before next cycle...')
                         self.logger.info(f'⏱️ Waiting {cycle_interval} seconds before next cycle...')
                     except Exception as e:
-                        print(warning('Error getting cycle interval, using default'))
+                        tprint(warning('Error getting cycle interval, using default'))
                         self.logger.warning(f'Error getting cycle interval, using default: {e}')
                         cycle_interval = 10
                     await asyncio.sleep(cycle_interval)
                 except asyncio.CancelledError:
-                    print(error('Pipeline cancelled'))
+                    tprint(error('Pipeline cancelled'))
                     self.logger.info('Pipeline cancelled')
                     break
                 except Exception as e:
-                    print(warning(f'Error in pipeline cycle: {e}'))
+                    tprint(warning(f'Error in pipeline cycle: {e}'))
                     self.logger.exception('Error in pipeline cycle')
                     await asyncio.sleep(5)
             end_time = datetime.now()
             duration = (end_time - self.start_time).total_seconds()
-            print('✅ Pipeline completed successfully!')
-            print(f'📊 Total cycles executed: {self.cycle_count}')
-            print(f'⏱️ Total duration: {duration:.2f} seconds')
+            tprint('✅ Pipeline completed successfully!')
+            tprint(f'📊 Total cycles executed: {self.cycle_count}')
+            tprint(f'⏱️ Total duration: {duration:.2f} seconds')
             self.logger.info('✅ Pipeline completed successfully!')
             self.logger.info(f'📊 Total cycles executed: {self.cycle_count}')
             self.logger.info(f'⏱️ Total duration: {duration:.2f} seconds')
             return {'status': 'completed', 'cycles_executed': self.cycle_count, 'start_time': self.start_time, 'end_time': end_time, 'duration_seconds': duration}
         except Exception as e:
-            print(critical(f'Fatal error running pipeline: {e}'))
+            tprint(critical(f'Fatal error running pipeline: {e}'))
             self.logger.exception('Error running pipeline')
             return None
         finally:
             self.is_running = False
-            print('🧹 Pipeline cleanup completed')
+            tprint('🧹 Pipeline cleanup completed')
             self.logger.info('🧹 Pipeline cleanup completed')
 
     @handles_errors(default_return = None, context='pipeline cycle execution')
@@ -420,12 +422,12 @@ class AresPipeline:
         """Execute a single pipeline cycle with comprehensive logging."""
         try:
             cycle_start = datetime.now()
-            print(f'🔄 Starting pipeline cycle {self.cycle_count + 1}')
+            tprint(f'🔄 Starting pipeline cycle {self.cycle_count + 1}')
             self.logger.info(f'🔄 Starting pipeline cycle {self.cycle_count + 1}')
-            print('📊 Step 1: Market Analysis')
+            tprint('📊 Step 1: Market Analysis')
             self.logger.info('📊 Step 1: Market Analysis')
             if self.analyst:
-                print('   🔍 Executing market analysis...')
+                tprint('   🔍 Executing market analysis...')
                 self.logger.info('   🔍 Executing market analysis...')
                 
                 # Set current timestamp for lookahead bias detection
@@ -454,56 +456,56 @@ class AresPipeline:
                         if transition_result['should_exit']:
                             self.logger.warning("⚠️ Emergency position exit recommended due to regime transition")
                 if analysis_result:
-                    print('   ✅ Market analysis completed successfully')
+                    tprint('   ✅ Market analysis completed successfully')
                     self.logger.info('   ✅ Market analysis completed successfully')
                 else:
-                    print('   ⚠️ Market analysis had issues')
+                    tprint('   ⚠️ Market analysis had issues')
                     self.logger.warning('   ⚠️ Market analysis had issues')
             else:
-                print('   ❌ Analyst component not available')
+                tprint('   ❌ Analyst component not available')
                 self.logger.error('   ❌ Analyst component not available')
-            print('🧠 Step 2: Strategy Development')
+            tprint('🧠 Step 2: Strategy Development')
             self.logger.info('🧠 Step 2: Strategy Development')
             if self.strategist:
-                print('   🎯 Developing trading strategy...')
+                tprint('   🎯 Developing trading strategy...')
                 self.logger.info('   🎯 Developing trading strategy...')
                 strategy_market_data = pd.DataFrame({'open': [100.0] * 100, 'high': [101.0] * 100, 'low': [99.0] * 100, 'close': [100.5] * 100, 'volume': [1000.0] * 100})
                 strategy_current_price = 100.5
                 strategy_result = await self.strategist.generate_strategy(market_data = strategy_market_data, current_price = strategy_current_price)
                 if strategy_result:
-                    print('   ✅ Strategy development completed successfully')
+                    tprint('   ✅ Strategy development completed successfully')
                     self.logger.info('   ✅ Strategy development completed successfully')
                 else:
-                    print('   ⚠️ Strategy development had issues')
+                    tprint('   ⚠️ Strategy development had issues')
                     self.logger.warning('   ⚠️ Strategy development had issues')
             else:
-                print('   ❌ Strategist component not available')
+                tprint('   ❌ Strategist component not available')
                 self.logger.error('   ❌ Strategist component not available')
-            print('🎯 Step 3: Tactical Execution')
+            tprint('🎯 Step 3: Tactical Execution')
             self.logger.info('🎯 Step 3: Tactical Execution')
             if self.tactician:
-                print('   ⚡ Executing tactical decisions...')
+                tprint('   ⚡ Executing tactical decisions...')
                 self.logger.info('   ⚡ Executing tactical decisions...')
                 tactical_result = await self.tactician.run()
                 if tactical_result:
-                    print('   ✅ Tactical execution completed successfully')
+                    tprint('   ✅ Tactical execution completed successfully')
                     self.logger.info('   ✅ Tactical execution completed successfully')
                 else:
-                    print('   ⚠️ Tactical execution had issues')
+                    tprint('   ⚠️ Tactical execution had issues')
                     self.logger.warning('   ⚠️ Tactical execution had issues')
             else:
-                print('   ❌ Tactician component not available')
+                tprint('   ❌ Tactician component not available')
                 self.logger.error('   ❌ Tactician component not available')
-            print('🤖 Step 4: Dual Model System Decision Making')
+            tprint('🤖 Step 4: Dual Model System Decision Making')
             self.logger.info('🤖 Step 4: Dual Model System Decision Making')
             if self.dual_model_system:
-                print('   🧠 Making trading decisions with dual model system...')
+                tprint('   🧠 Making trading decisions with dual model system...')
                 self.logger.info('   🧠 Making trading decisions with dual model system...')
                 market_data = pd.DataFrame({'open': [100.0] * 100, 'high': [101.0] * 100, 'low': [99.0] * 100, 'close': [100.5] * 100, 'volume': [1000.0] * 100})
                 current_price = 100.5
                 decision_result = await self.dual_model_system.make_trading_decision(market_data = market_data, current_price = current_price)
                 if decision_result:
-                    print('   ✅ Dual model system decision completed successfully')
+                    tprint('   ✅ Dual model system decision completed successfully')
                     self.logger.info('   ✅ Dual model system decision completed successfully')
                     integrated_decision = await self._integrate_dual_model_with_tactician(dual_model_decision = decision_result, market_data = market_data, current_price = current_price)
                     action = decision_result.get('action', 'UNKNOWN')
@@ -512,49 +514,49 @@ class AresPipeline:
                     final_confidence = decision_result.get('final_confidence', 0.0)
                     position_size = integrated_decision.get('position_sizing', {}).get('final_position_size', 0.0)
                     leverage = integrated_decision.get('leverage_sizing', {}).get('final_leverage', 1.0)
-                    print(f'   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}')
-                    print(f'   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x')
+                    tprint(f'   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}')
+                    tprint(f'   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x')
                     self.logger.info(f'   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}')
                     self.logger.info(f'   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x')
                     
                     # Record trade decision in enhanced monitoring system
                     await self._record_trade_decision_in_monitoring(decision_result, integrated_decision, market_data, current_price)
                     if self.dual_model_system.should_trigger_training():
-                        print('   🔄 Model training conditions met - triggering training...')
+                        tprint('   🔄 Model training conditions met - triggering training...')
                         self.logger.info('   🔄 Model training conditions met - triggering training...')
                         training_result = await self.dual_model_system.trigger_model_training(market_data = market_data, force_training = False)
                         if training_result.get('success', False):
-                            print('   ✅ Model training completed successfully')
+                            tprint('   ✅ Model training completed successfully')
                             self.logger.info('   ✅ Model training completed successfully')
                         else:
-                            print(f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}")
+                            tprint(f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}")
                             self.logger.warning(f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}")
                 else:
-                    print('   ⚠️ Dual model system decision had issues')
+                    tprint('   ⚠️ Dual model system decision had issues')
                     self.logger.warning('   ⚠️ Dual model system decision had issues')
             else:
-                print('   ❌ Dual model system not available')
+                tprint('   ❌ Dual model system not available')
                 self.logger.error('   ❌ Dual model system not available')
-            print('👁️ Step 5: Supervision and Monitoring')
+            tprint('👁️ Step 5: Supervision and Monitoring')
             self.logger.info('👁️ Step 5: Supervision and Monitoring')
             if self.supervisor:
-                print('   📊 Monitoring system performance...')
+                tprint('   📊 Monitoring system performance...')
                 self.logger.info('   📊 Monitoring system performance...')
                 supervision_result = True
                 if supervision_result:
-                    print('   ✅ Supervision completed successfully')
+                    tprint('   ✅ Supervision completed successfully')
                     self.logger.info('   ✅ Supervision completed successfully')
                 else:
-                    print('   ⚠️ Supervision had issues')
+                    tprint('   ⚠️ Supervision had issues')
                     self.logger.warning('   ⚠️ Supervision had issues')
             else:
-                print('   ❌ Supervisor component not available')
+                tprint('   ❌ Supervisor component not available')
                 self.logger.error('   ❌ Supervisor component not available')
             cycle_duration = (datetime.now() - cycle_start).total_seconds()
-            print(f'✅ Pipeline cycle completed in {cycle_duration:.2f}s')
+            tprint(f'✅ Pipeline cycle completed in {cycle_duration:.2f}s')
             self.logger.info(f'✅ Pipeline cycle completed in {cycle_duration:.2f}s')
         except Exception as e:
-            print(warning(f'Error executing pipeline cycle: {e}'))
+            tprint(warning(f'Error executing pipeline cycle: {e}'))
             self.logger.exception('Error executing pipeline cycle')
             raise
 
@@ -871,19 +873,19 @@ async def main() -> None:
     pipeline = AresPipeline()
     try:
         if not await pipeline.initialize():
-            print(failed('❌ Failed to initialize pipeline'))
+            tprint(failed('❌ Failed to initialize pipeline'))
             sys.exit(1)
         result = await pipeline.run()
         if result:
             logger.info('✅ Pipeline completed successfully')
         else:
-            print(failed('❌ Pipeline failed'))
+            tprint(failed('❌ Pipeline failed'))
             sys.exit(1)
     except KeyboardInterrupt:
         logger.info('🛑 Received interrupt signal, shutting down gracefully...')
         await pipeline.stop()
     except Exception as e:
-        print(error(f'💥 Unexpected error: {e}'))
+        tprint(error(f'💥 Unexpected error: {e}'))
         await pipeline.stop()
         sys.exit(1)
 if __name__ == '__main__':

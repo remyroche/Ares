@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Example Usage of Enhanced Monitoring System
 
@@ -174,21 +176,21 @@ def create_mock_market_data(symbol: str, days: int = 30) -> pd.DataFrame:
 async def example_enhanced_monitoring_usage():
     """Example of how to use the enhanced monitoring system."""
     
-    print("🚀 Starting Enhanced Monitoring Example")
+    tprint("🚀 Starting Enhanced Monitoring Example")
     
     # 1. Load configuration
     config_path = Path(__file__).parent / "enhanced_monitoring_config.yaml"
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
-    print("✅ Configuration loaded")
+    tprint("✅ Configuration loaded")
     
     # 2. Initialize enhanced monitoring orchestrator
     orchestrator = EnhancedMonitoringOrchestrator(config)
     context_capture = TradeDecisionContextCapture(config)
     explainability_integrator = ExplainabilityIntegrator(config)
     
-    print("✅ Enhanced monitoring components initialized")
+    tprint("✅ Enhanced monitoring components initialized")
     
     # 3. Create mock trading systems
     backtesting_system = MockTradingSystem("backtesting")
@@ -235,7 +237,7 @@ async def example_enhanced_monitoring_usage():
         }
     }
     
-    print("✅ Mock systems and models created")
+    tprint("✅ Mock systems and models created")
     
     # 5. Integrate with trading systems
     await orchestrator.integrate_trading_systems(
@@ -244,14 +246,14 @@ async def example_enhanced_monitoring_usage():
         live_trading_system=live_trading_system
     )
     
-    print("✅ Trading systems integrated")
+    tprint("✅ Trading systems integrated")
     
     # 6. Simulate trading decisions across different modes
     symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT']
     trading_modes = [TradingMode.BACKTEST, TradingMode.PAPER, TradingMode.LIVE]
     
     for mode in trading_modes:
-        print(f"\n📊 Simulating {mode.value} trading decisions...")
+        tprint(f"\n📊 Simulating {mode.value} trading decisions...")
         
         for i in range(5):  # Simulate 5 decisions per mode
             symbol = symbols[i % len(symbols)]
@@ -287,7 +289,7 @@ async def example_enhanced_monitoring_usage():
             )
             
             if not comprehensive_context:
-                print(f"❌ Failed to capture context for {symbol}")
+                tprint(f"❌ Failed to capture context for {symbol}")
                 continue
             
             # Create trading indicators
@@ -416,7 +418,7 @@ async def example_enhanced_monitoring_usage():
             )
             
             if comprehensive_decision:
-                print(f"✅ Recorded {mode.value} decision for {symbol}: {action} at {current_price:.2f}")
+                tprint(f"✅ Recorded {mode.value} decision for {symbol}: {action} at {current_price:.2f}")
                 
                 # Simulate trade execution
                 if action in ["buy", "sell"]:
@@ -437,12 +439,12 @@ async def example_enhanced_monitoring_usage():
                         'commission': trade_result['commission']
                     }
             else:
-                print(f"❌ Failed to record {mode.value} decision for {symbol}")
+                tprint(f"❌ Failed to record {mode.value} decision for {symbol}")
     
-    print("\n📈 Trading simulation completed")
+    tprint("\n📈 Trading simulation completed")
     
     # 7. Generate SHAP/LIME explanations for some decisions
-    print("\n🔍 Generating model explanations...")
+    tprint("\n🔍 Generating model explanations...")
     
     for i, decision in enumerate(orchestrator.comprehensive_decisions[-3:]):  # Last 3 decisions
         for model_decision in decision.individual_model_decisions:
@@ -461,87 +463,87 @@ async def example_enhanced_monitoring_usage():
             explanations = await explainability_integrator.explain_model_prediction(explanation_request)
             
             if explanations:
-                print(f"✅ Generated explanations for {model_decision.model_id}")
+                tprint(f"✅ Generated explanations for {model_decision.model_id}")
             else:
-                print(f"⚠️ No explanations generated for {model_decision.model_id}")
+                tprint(f"⚠️ No explanations generated for {model_decision.model_id}")
     
     # 8. Export monitoring data
-    print("\n📊 Exporting monitoring data...")
+    tprint("\n📊 Exporting monitoring data...")
     
     # Export monthly report
     monthly_success = await orchestrator.export_monthly_report()
     if monthly_success:
-        print("✅ Monthly report exported")
+        tprint("✅ Monthly report exported")
     else:
-        print("❌ Failed to export monthly report")
+        tprint("❌ Failed to export monthly report")
     
     # Export daily ongoing CSV
     daily_success = await orchestrator.export_daily_ongoing_csv()
     if daily_success:
-        print("✅ Daily ongoing CSV exported")
+        tprint("✅ Daily ongoing CSV exported")
     else:
-        print("❌ Failed to export daily ongoing CSV")
+        tprint("❌ Failed to export daily ongoing CSV")
     
     # Force export all data
     export_success = await orchestrator.force_export_all()
     if export_success:
-        print("✅ All monitoring data exported")
+        tprint("✅ All monitoring data exported")
     else:
-        print("❌ Failed to export all monitoring data")
+        tprint("❌ Failed to export all monitoring data")
     
     # 9. Display monitoring statistics
-    print("\n📊 Monitoring Statistics:")
+    tprint("\n📊 Monitoring Statistics:")
     stats = orchestrator.get_monitoring_stats()
     
-    print(f"Total comprehensive decisions: {stats['orchestrator_stats']['total_comprehensive_decisions']}")
-    print(f"Decision count: {stats['orchestrator_stats']['decision_count']}")
-    print(f"Monitoring duration: {stats['orchestrator_stats']['monitoring_duration_hours']:.2f} hours")
-    print(f"Monthly reports generated: {stats['orchestrator_stats']['monthly_reports_generated']}")
+    tprint(f"Total comprehensive decisions: {stats['orchestrator_stats']['total_comprehensive_decisions']}")
+    tprint(f"Decision count: {stats['orchestrator_stats']['decision_count']}")
+    tprint(f"Monitoring duration: {stats['orchestrator_stats']['monitoring_duration_hours']:.2f} hours")
+    tprint(f"Monthly reports generated: {stats['orchestrator_stats']['monthly_reports_generated']}")
     
     # Enhanced ML Monitor stats
     ml_stats = stats['enhanced_ml_monitor_stats']
-    print(f"ML Monitor decisions: {ml_stats['total_decisions']}")
-    print(f"ML Monitor model performances: {ml_stats['total_model_performances']}")
-    print(f"ML Monitor ensemble performances: {ml_stats['total_ensemble_performances']}")
+    tprint(f"ML Monitor decisions: {ml_stats['total_decisions']}")
+    tprint(f"ML Monitor model performances: {ml_stats['total_model_performances']}")
+    tprint(f"ML Monitor ensemble performances: {ml_stats['total_ensemble_performances']}")
     
     # Daily Summary Tracker stats
     daily_stats = stats['daily_summary_tracker_stats']
-    print(f"Daily summaries tracked: {daily_stats['total_days_tracked']}")
-    print(f"Regimes tracked: {daily_stats['regimes_tracked']}")
+    tprint(f"Daily summaries tracked: {daily_stats['total_days_tracked']}")
+    tprint(f"Regimes tracked: {daily_stats['regimes_tracked']}")
     
     # Explainability stats
     explainability_stats = explainability_integrator.get_explanation_stats()
-    print(f"SHAP available: {explainability_stats['shap_available']}")
-    print(f"LIME available: {explainability_stats['lime_available']}")
-    print(f"SHAP explanations generated: {explainability_stats['shap_explanations_generated']}")
-    print(f"LIME explanations generated: {explainability_stats['lime_explanations_generated']}")
-    print(f"Combined explanations generated: {explainability_stats['combined_explanations_generated']}")
+    tprint(f"SHAP available: {explainability_stats['shap_available']}")
+    tprint(f"LIME available: {explainability_stats['lime_available']}")
+    tprint(f"SHAP explanations generated: {explainability_stats['shap_explanations_generated']}")
+    tprint(f"LIME explanations generated: {explainability_stats['lime_explanations_generated']}")
+    tprint(f"Combined explanations generated: {explainability_stats['combined_explanations_generated']}")
     
     # Context capture stats
     context_stats = context_capture.get_capture_stats()
-    print(f"Contexts captured: {context_stats['total_contexts_captured']}")
-    print(f"Market conditions enabled: {context_stats['enable_market_conditions']}")
-    print(f"HMM context enabled: {context_stats['enable_hmm_context']}")
-    print(f"Signal context enabled: {context_stats['enable_signal_context']}")
-    print(f"Model context enabled: {context_stats['enable_model_context']}")
-    print(f"Ensemble context enabled: {context_stats['enable_ensemble_context']}")
+    tprint(f"Contexts captured: {context_stats['total_contexts_captured']}")
+    tprint(f"Market conditions enabled: {context_stats['enable_market_conditions']}")
+    tprint(f"HMM context enabled: {context_stats['enable_hmm_context']}")
+    tprint(f"Signal context enabled: {context_stats['enable_signal_context']}")
+    tprint(f"Model context enabled: {context_stats['enable_model_context']}")
+    tprint(f"Ensemble context enabled: {context_stats['enable_ensemble_context']}")
     
-    print("\n🎉 Enhanced monitoring example completed successfully!")
+    tprint("\n🎉 Enhanced monitoring example completed successfully!")
     
     # 10. Display export directory contents
     export_dir = Path(config['enhanced_monitoring']['export_directory'])
     if export_dir.exists():
-        print(f"\n📁 Export directory contents ({export_dir}):")
+        tprint(f"\n📁 Export directory contents ({export_dir}):")
         for file_path in export_dir.rglob("*"):
             if file_path.is_file():
-                print(f"  📄 {file_path.relative_to(export_dir)}")
+                tprint(f"  📄 {file_path.relative_to(export_dir)}")
     
     return orchestrator, context_capture, explainability_integrator
 
 async def example_backtesting_integration():
     """Example of integrating enhanced monitoring with backtesting."""
     
-    print("\n🔄 Backtesting Integration Example")
+    tprint("\n🔄 Backtesting Integration Example")
     
     # Load configuration
     config_path = Path(__file__).parent / "enhanced_monitoring_config.yaml"
@@ -576,27 +578,27 @@ async def example_backtesting_integration():
         
         current_date += timedelta(days=1)
     
-    print("✅ Backtesting integration example completed")
+    tprint("✅ Backtesting integration example completed")
 
 async def example_paper_trading_integration():
     """Example of integrating enhanced monitoring with paper trading."""
     
-    print("\n📝 Paper Trading Integration Example")
+    tprint("\n📝 Paper Trading Integration Example")
     
     # Similar to backtesting but with real-time monitoring
     # ... (implementation would be similar to backtesting example)
     
-    print("✅ Paper trading integration example completed")
+    tprint("✅ Paper trading integration example completed")
 
 async def example_live_trading_integration():
     """Example of integrating enhanced monitoring with live trading."""
     
-    print("\n⚡ Live Trading Integration Example")
+    tprint("\n⚡ Live Trading Integration Example")
     
     # Similar to paper trading but with real market data and risk management
     # ... (implementation would be similar to other examples)
     
-    print("✅ Live trading integration example completed")
+    tprint("✅ Live trading integration example completed")
 
 if __name__ == "__main__":
     import yaml

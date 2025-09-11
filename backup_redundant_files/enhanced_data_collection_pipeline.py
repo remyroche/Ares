@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 import numpy as np
 from src.core.errors.base import ValidationError
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
@@ -124,8 +126,8 @@ class EnhancedDataCollectionPipeline:
             self.pipeline_monitor.start_pipeline(total_steps = 3)
             
             self.logger.info(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}")
-            print(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}")
-            print("="*80)
+            tprint(f"🚀 Starting enhanced data collection pipeline for {symbol} on {exchange}")
+            tprint("="*80)
             
             # Step 1: Data Collection
             step1_result = await self._run_step1_data_collection()
@@ -152,7 +154,7 @@ class EnhancedDataCollectionPipeline:
             final_report = await self._generate_final_report()
             
             self.logger.info("✅ Enhanced data collection pipeline completed successfully")
-            print("✅ Enhanced data collection pipeline completed successfully")
+            tprint("✅ Enhanced data collection pipeline completed successfully")
             
             return final_report
             
@@ -177,7 +179,7 @@ class EnhancedDataCollectionPipeline:
         
         try:
             self.logger.info(f"📊 Running {step_name}")
-            print(f"📊 Running {step_name}")
+            tprint(f"📊 Running {step_name}")
             
             # Create error context
             error_context = ErrorContext(
@@ -232,7 +234,7 @@ class EnhancedDataCollectionPipeline:
         
         try:
             self.logger.info(f"🔍 Running {step_name}")
-            print(f"🔍 Running {step2_data_validation}")
+            tprint(f"🔍 Running {step2_data_validation}")
             
             # Create error context
             error_context = ErrorContext(
@@ -300,7 +302,7 @@ class EnhancedDataCollectionPipeline:
         
         try:
             self.logger.info(f"🔄 Running {step_name}")
-            print(f"🔄 Running {step_name}")
+            tprint(f"🔄 Running {step_name}")
             
             # Create error context
             error_context = ErrorContext(
@@ -434,7 +436,7 @@ class EnhancedDataCollectionPipeline:
     async def _handle_pipeline_failure(self, error_message: str) -> None:
         """Handle pipeline failure."""
         self.logger.error(f"Pipeline failure: {error_message}")
-        print(f"❌ Pipeline failure: {error_message}")
+        tprint(f"❌ Pipeline failure: {error_message}")
         
         if self.pipeline_monitor:
             self.pipeline_monitor.end_pipeline(MonitorStatus.FAILED)
@@ -504,6 +506,6 @@ if __name__ == "__main__":
             exchange="BINANCE",
             data_dir="data_cache"
         )
-        print(f"Pipeline result: {result}")
+        tprint(f"Pipeline result: {result}")
     
     asyncio.run(main())

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Model Persistence & Versioning Utilities
 
@@ -28,7 +30,7 @@ import os
 import time
 
 from ..common_operations import safe_json_dump, safe_json_load
-from ..file_utils import ensure_directory
+from ..common_operations import ensure_directory
 from ..common_operations import safe_file_exists
 from ..common_operations import create_fallback_logger
 
@@ -36,9 +38,9 @@ from ..common_operations import create_fallback_logger
 try:
     from ..logger import get_logger
     _LOGGER = get_logger("MLCommon.ModelRegistry")
-    print("✅ Custom logger available for MLCommon.ModelRegistry")
+    tprint("✅ Custom logger available for MLCommon.ModelRegistry")
 except Exception as e:
-    print(f"⚠️ Custom logger not available: {e}. Using standard logging.")
+    tprint(f"⚠️ Custom logger not available: {e}. Using standard logging.")
     _LOGGER = logging.getLogger("MLCommon.ModelRegistry")
     _LOGGER.setLevel(logging.INFO)
 

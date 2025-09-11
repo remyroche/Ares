@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 # handles_errors is defined in this file
 """Error handling decorators."""
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
@@ -22,7 +24,7 @@ def handles_errors(*args, **kwargs) -> Callable:
             try:
                 return func(*func_args, **func_kwargs)
             except Exception as e:
-                print(f'Error in {func.__name__}: {e}')
+                tprint(f'Error in {func.__name__}: {e}')
                 # Check if a fallback is specified in kwargs
                 if 'fallback' in kwargs:
                     return kwargs['fallback']
@@ -39,7 +41,7 @@ def converts_errors(*args, **kwargs) -> None:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                print(f'Error in {func.__name__}: {e}')
+                tprint(f'Error in {func.__name__}: {e}')
                 return None
         return wrapper
     return decorator
@@ -53,7 +55,7 @@ def error_boundary(*args, **kwargs) -> None:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                print(f'Error in {func.__name__}: {e}')
+                tprint(f'Error in {func.__name__}: {e}')
                 return None
         return wrapper
     return decorator

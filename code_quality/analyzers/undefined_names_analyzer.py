@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Any, Optional
 """
 Enhanced Undefined Names and Variables Analyzer - Detects undefined names, variables, and imports.
@@ -557,7 +559,7 @@ class UndefinedNamesAnalyzer:
         Returns:
             Dictionary containing analysis results
         """
-        print(f"Analyzing undefined names in: {file_path}")
+        tprint(f"Analyzing undefined names in: {file_path}")
         
         # Initialize file-specific state
         self._current_file_path = file_path
@@ -661,7 +663,7 @@ class UndefinedNamesAnalyzer:
         Returns:
             Dictionary containing analysis results for all files
         """
-        print(f"Analyzing undefined names in directory: {directory_path}")
+        tprint(f"Analyzing undefined names in directory: {directory_path}")
         
         # Find all Python files
         exclude_patterns = self.config.get('analysis_config', {}).get('exclude_patterns', [])
@@ -866,43 +868,43 @@ def main():
         summary = results.get("summary", {})
         total_errors = results.get("total_errors", 0)  # Get from top level for individual files
         
-        print(f"\nAnalysis completed successfully!")
-        print(f"Total files analyzed: {summary.get('total_files_analyzed', 1)}")
-        print(f"Total errors found: {total_errors}")
-        print(f"Files with errors: {summary.get('files_with_errors', 1 if total_errors > 0 else 0)}")
+        tprint(f"\nAnalysis completed successfully!")
+        tprint(f"Total files analyzed: {summary.get('total_files_analyzed', 1)}")
+        tprint(f"Total errors found: {total_errors}")
+        tprint(f"Files with errors: {summary.get('files_with_errors', 1 if total_errors > 0 else 0)}")
         
         if total_errors > 0:
-            print(f"\nError breakdown:")
-            print(f"  Undefined names: {summary.get('total_undefined_names', 0)}")
-            print(f"  Undefined imports: {summary.get('total_undefined_imports', 0)}")
-            print(f"  Unused imports: {summary.get('total_unused_imports', 0)}")
-            print(f"  Import conflicts: {summary.get('total_import_conflicts', 0)}")
+            tprint(f"\nError breakdown:")
+            tprint(f"  Undefined names: {summary.get('total_undefined_names', 0)}")
+            tprint(f"  Undefined imports: {summary.get('total_undefined_imports', 0)}")
+            tprint(f"  Unused imports: {summary.get('total_unused_imports', 0)}")
+            tprint(f"  Import conflicts: {summary.get('total_import_conflicts', 0)}")
             
             if args.verbose:
-                print(f"\nDetailed errors:")
+                tprint(f"\nDetailed errors:")
                 # Handle both individual file and directory results
                 if "files" in results:
                     for file_path, file_result in results.get("files", {}).items():
                         if file_result.get("total_errors", 0) > 0:
-                            print(f"\n{file_path}:")
+                            tprint(f"\n{file_path}:")
                             for error in file_result.get("errors", []):
-                                print(f"  Line {error['line']}: {error['name']} - {error['error_type']}")
+                                tprint(f"  Line {error['line']}: {error['name']} - {error['error_type']}")
                                 if error.get('context'):
-                                    print(f"    Context: {error['context']}")
+                                    tprint(f"    Context: {error['context']}")
                 else:
                     # Individual file result
                     for error in results.get("errors", []):
-                        print(f"  Line {error['line']}: {error['name']} - {error['error_type']}")
+                        tprint(f"  Line {error['line']}: {error['name']} - {error['error_type']}")
                         if error.get('context'):
-                            print(f"    Context: {error['context']}")
+                            tprint(f"    Context: {error['context']}")
     else:
-        print(f"Analysis failed: {results.get('error', 'Unknown error')}")
+        tprint(f"Analysis failed: {results.get('error', 'Unknown error')}")
         return 1
 
     # Save report if requested
     if args.output:
         analyzer.save_report(args.output, results)
-        print(f"\nReport saved to: {args.output}")
+        tprint(f"\nReport saved to: {args.output}")
 
     return 0 if total_errors == 0 else 1
 

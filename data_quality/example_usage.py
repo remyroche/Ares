@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Example Usage of the Unified Data Quality Orchestrator
 
@@ -23,7 +25,7 @@ import os
 
 def create_sample_data():
     """Create sample data for demonstration purposes."""
-    print("🔧 Creating sample data...")
+    tprint("🔧 Creating sample data...")
 
     # Create timestamp range
     start_time = datetime(2024, 1, 1)
@@ -91,19 +93,19 @@ def create_sample_data():
     # Add some highly correlated features
     features_df["highly_correlated"] = features_df["sma_20"] * 1.1 + np.random.normal(0, 0.01)
 
-    print("✅ Created sample data:")
-    print(f"   - Klines: {klines_df.shape}")
-    print(f"   - Features: {features_df.shape}")
-    print(f"   - Labels: {labels_df.shape}")
+    tprint("✅ Created sample data:")
+    tprint(f"   - Klines: {klines_df.shape}")
+    tprint(f"   - Features: {features_df.shape}")
+    tprint(f"   - Labels: {labels_df.shape}")
 
     return klines_df, features_df, labels_df
 
 
 def demonstrate_basic_quality_validation():
     """Demonstrate basic data quality validation."""
-    print("\n" + "="*60)
-    print("🔍 DEMONSTRATING BASIC DATA QUALITY VALIDATION")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🔍 DEMONSTRATING BASIC DATA QUALITY VALIDATION")
+    tprint("="*60)
 
     # Create sample data
     klines_df, features_df, labels_df = create_sample_data()
@@ -112,43 +114,43 @@ def demonstrate_basic_quality_validation():
     orchestrator = UnifiedQualityOrchestrator()
 
     # Validate klines data
-    print("\n📊 Validating klines data...")
+    tprint("\n📊 Validating klines data...")
     klines_quality = orchestrator.validate_dataframe_quality(klines_df, "Sample OHLCV Data")
 
-    print(f"   Quality check passed: {klines_quality.passed}")
-    print(f"   Issues found: {len(klines_quality.issues)}")
-    print(f"   Warnings: {len(klines_quality.warnings)}")
-    print(f"   Memory usage: {klines_quality.metrics.get('memory_mb', 0):.2f} MB")
+    tprint(f"   Quality check passed: {klines_quality.passed}")
+    tprint(f"   Issues found: {len(klines_quality.issues)}")
+    tprint(f"   Warnings: {len(klines_quality.warnings)}")
+    tprint(f"   Memory usage: {klines_quality.metrics.get('memory_mb', 0):.2f} MB")
 
     if klines_quality.issues:
-        print("   Issues:")
+        tprint("   Issues:")
         for issue in klines_quality.issues[:3]:  # Show first 3 issues
-            print(f"     - {issue}")
+            tprint(f"     - {issue}")
 
     # Validate features data
-    print("\n📊 Validating features data...")
+    tprint("\n📊 Validating features data...")
     features_quality = orchestrator.validate_dataframe_quality(features_df, "Sample Features Data")
 
-    print(f"   Quality check passed: {features_quality.passed}")
-    print(f"   Issues found: {len(features_quality.issues)}")
-    print(f"   Warnings: {len(features_quality.warnings)}")
+    tprint(f"   Quality check passed: {features_quality.passed}")
+    tprint(f"   Issues found: {len(features_quality.issues)}")
+    tprint(f"   Warnings: {len(features_quality.warnings)}")
 
     if features_quality.issues:
-        print("   Issues:")
+        tprint("   Issues:")
         for issue in features_quality.issues[:3]:
-            print(f"     - {issue}")
+            tprint(f"     - {issue}")
 
     if features_quality.warnings:
-        print("   Warnings:")
+        tprint("   Warnings:")
         for warning in features_quality.warnings[:3]:
-            print(f"     - {warning}")
+            tprint(f"     - {warning}")
 
 
 def demonstrate_advanced_analysis():
     """Demonstrate advanced analysis capabilities."""
-    print("\n" + "="*60)
-    print("🔍 DEMONSTRATING ADVANCED ANALYSIS")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🔍 DEMONSTRATING ADVANCED ANALYSIS")
+    tprint("="*60)
 
     # Create sample data
     klines_df, features_df, labels_df = create_sample_data()
@@ -157,61 +159,61 @@ def demonstrate_advanced_analysis():
     orchestrator = UnifiedQualityOrchestrator()
 
     # Multicollinearity analysis
-    print("\n📊 Analyzing multicollinearity...")
+    tprint("\n📊 Analyzing multicollinearity...")
     try:
         multicollinearity = orchestrator.analyze_multicollinearity(features_df)
 
-        print(f"   High VIF features: {len(multicollinearity['high_vif_features'])}")
+        tprint(f"   High VIF features: {len(multicollinearity['high_vif_features'])}")
         if multicollinearity["high_vif_features"]:
-            print(f"     - {multicollinearity['high_vif_features']}")
+            tprint(f"     - {multicollinearity['high_vif_features']}")
 
-        print(f"   High correlation pairs: {len(multicollinearity['high_correlation_pairs'])}")
+        tprint(f"   High correlation pairs: {len(multicollinearity['high_correlation_pairs'])}")
         if multicollinearity["high_correlation_pairs"]:
             for pair in multicollinearity["high_correlation_pairs"][:3]:
-                print(f"     - {pair[0]} ↔ {pair[1]} (r={pair[2]:.3f})")
+                tprint(f"     - {pair[0]} ↔ {pair[1]} (r={pair[2]:.3f})")
 
     except Exception as e:
-        print(f"   ❌ Multicollinearity analysis failed: {e}")
+        tprint(f"   ❌ Multicollinearity analysis failed: {e}")
 
     # Feature redundancy analysis
-    print("\n📊 Analyzing feature redundancy...")
+    tprint("\n📊 Analyzing feature redundancy...")
     try:
         feature_redundancy = orchestrator.analyze_feature_redundancy(features_df)
 
-        print(f"   Redundancy ratio: {feature_redundancy['redundancy_ratio']:.2%}")
-        print(f"   Redundant features: {len(feature_redundancy['redundant_features'])}")
+        tprint(f"   Redundancy ratio: {feature_redundancy['redundancy_ratio']:.2%}")
+        tprint(f"   Redundant features: {len(feature_redundancy['redundant_features'])}")
 
         if feature_redundancy["recommendations"]:
-            print("   Recommendations:")
+            tprint("   Recommendations:")
             for rec in feature_redundancy["recommendations"]:
-                print(f"     - {rec}")
+                tprint(f"     - {rec}")
 
     except Exception as e:
-        print(f"   ❌ Feature redundancy analysis failed: {e}")
+        tprint(f"   ❌ Feature redundancy analysis failed: {e}")
 
     # Label imbalance analysis
-    print("\n📊 Analyzing label imbalance...")
+    tprint("\n📊 Analyzing label imbalance...")
     try:
         label_imbalance = orchestrator.analyze_label_imbalance(labels_df["label"])
 
-        print(f"   Imbalance level: {label_imbalance['imbalance_level']}")
-        print(f"   Imbalance ratio: {label_imbalance['imbalance_ratio']:.2f}")
-        print(f"   Total samples: {label_imbalance['total_samples']}")
+        tprint(f"   Imbalance level: {label_imbalance['imbalance_level']}")
+        tprint(f"   Imbalance ratio: {label_imbalance['imbalance_ratio']:.2f}")
+        tprint(f"   Total samples: {label_imbalance['total_samples']}")
 
         if label_imbalance["recommendations"]:
-            print("   Recommendations:")
+            tprint("   Recommendations:")
             for rec in label_imbalance["recommendations"]:
-                print(f"     - {rec}")
+                tprint(f"     - {rec}")
 
     except Exception as e:
-        print(f"   ❌ Label imbalance analysis failed: {e}")
+        tprint(f"   ❌ Label imbalance analysis failed: {e}")
 
 
 def demonstrate_temporal_validation():
     """Demonstrate temporal data validation."""
-    print("\n" + "="*60)
-    print("🔍 DEMONSTRATING TEMPORAL VALIDATION")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🔍 DEMONSTRATING TEMPORAL VALIDATION")
+    tprint("="*60)
 
     # Create sample data
     klines_df, features_df, labels_df = create_sample_data()
@@ -220,34 +222,34 @@ def demonstrate_temporal_validation():
     orchestrator = UnifiedQualityOrchestrator()
 
     # Validate temporal aspects of klines data
-    print("\n📊 Validating temporal aspects of klines data...")
+    tprint("\n📊 Validating temporal aspects of klines data...")
     try:
         temporal_validation = orchestrator.validate_temporal_data(klines_df, "timestamp")
 
-        print(f"   Temporal validation passed: {temporal_validation.passed}")
-        print(f"   Issues found: {len(temporal_validation.issues)}")
-        print(f"   Warnings: {len(temporal_validation.warnings)}")
+        tprint(f"   Temporal validation passed: {temporal_validation.passed}")
+        tprint(f"   Issues found: {len(temporal_validation.issues)}")
+        tprint(f"   Warnings: {len(temporal_validation.warnings)}")
 
         if temporal_validation.metrics:
-            print("   Temporal metrics:")
+            tprint("   Temporal metrics:")
             for key, value in temporal_validation.metrics.items():
                 if key in ["max_gap", "min_gap", "mean_gap"]:
-                    print(f"     - {key}: {value}")
+                    tprint(f"     - {key}: {value}")
 
         if temporal_validation.issues:
-            print("   Issues:")
+            tprint("   Issues:")
             for issue in temporal_validation.issues:
-                print(f"     - {issue}")
+                tprint(f"     - {issue}")
 
     except Exception as e:
-        print(f"   ❌ Temporal validation failed: {e}")
+        tprint(f"   ❌ Temporal validation failed: {e}")
 
 
 def demonstrate_comprehensive_report():
     """Demonstrate comprehensive report generation."""
-    print("\n" + "="*60)
-    print("🔍 DEMONSTRATING COMPREHENSIVE REPORT GENERATION")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🔍 DEMONSTRATING COMPREHENSIVE REPORT GENERATION")
+    tprint("="*60)
 
     # Create sample data
     klines_df, features_df, labels_df = create_sample_data()
@@ -256,42 +258,42 @@ def demonstrate_comprehensive_report():
     orchestrator = UnifiedQualityOrchestrator()
 
     # Generate comprehensive report for features data
-    print("\n📊 Generating comprehensive quality report...")
+    tprint("\n📊 Generating comprehensive quality report...")
     try:
         report = orchestrator.generate_comprehensive_report(features_df, "Sample Features Dataset")
 
         # Display summary
         summary = report.get("summary", {})
-        print(f"   Overall Quality: {summary.get('overall_quality', 'unknown').upper()}")
-        print(f"   Critical Issues: {summary.get('critical_issues', 0)}")
-        print(f"   Recommendations: {len(summary.get('recommendations', []))}")
+        tprint(f"   Overall Quality: {summary.get('overall_quality', 'unknown').upper()}")
+        tprint(f"   Critical Issues: {summary.get('critical_issues', 0)}")
+        tprint(f"   Recommendations: {len(summary.get('recommendations', []))}")
 
         if summary.get("recommendations"):
-            print("   Top Recommendations:")
+            tprint("   Top Recommendations:")
             for rec in summary["recommendations"][:3]:
-                print(f"     - {rec}")
+                tprint(f"     - {rec}")
 
         # Save report
         output_file = orchestrator.save_report(report, "example_quality_report.json")
-        print(f"   ✅ Report saved to: {output_file}")
+        tprint(f"   ✅ Report saved to: {output_file}")
 
         # Display some detailed metrics
         if report.get("quality_validation"):
             quality_val = report["quality_validation"]
-            print("   Quality Metrics:")
-            print(f"     - Rows: {quality_val.get('metrics', {}).get('rows', 'N/A')}")
-            print(f"     - Columns: {quality_val.get('metrics', {}).get('columns', 'N/A')}")
-            print(f"     - Memory: {quality_val.get('metrics', {}).get('memory_mb', 0):.2f} MB")
+            tprint("   Quality Metrics:")
+            tprint(f"     - Rows: {quality_val.get('metrics', {}).get('rows', 'N/A')}")
+            tprint(f"     - Columns: {quality_val.get('metrics', {}).get('columns', 'N/A')}")
+            tprint(f"     - Memory: {quality_val.get('metrics', {}).get('memory_mb', 0):.2f} MB")
 
     except Exception as e:
-        print(f"   ❌ Comprehensive report generation failed: {e}")
+        tprint(f"   ❌ Comprehensive report generation failed: {e}")
 
 
 def demonstrate_custom_thresholds():
     """Demonstrate custom threshold usage."""
-    print("\n" + "="*60)
-    print("🔍 DEMONSTRATING CUSTOM THRESHOLDS")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🔍 DEMONSTRATING CUSTOM THRESHOLDS")
+    tprint("="*60)
 
     # Create sample data
     klines_df, features_df, labels_df = create_sample_data()
@@ -307,26 +309,26 @@ def demonstrate_custom_thresholds():
     # Initialize orchestrator with custom thresholds
     orchestrator = UnifiedQualityOrchestrator(custom_thresholds)
 
-    print("   Custom thresholds applied:")
-    print(f"     - Max NaN ratio: {custom_thresholds.max_nan_ratio:.1%}")
-    print(f"     - Max infinite count: {custom_thresholds.max_infinite_count}")
-    print(f"     - Max correlation threshold: {custom_thresholds.max_correlation_threshold}")
-    print(f"     - VIF threshold: {custom_thresholds.vif_threshold}")
+    tprint("   Custom thresholds applied:")
+    tprint(f"     - Max NaN ratio: {custom_thresholds.max_nan_ratio:.1%}")
+    tprint(f"     - Max infinite count: {custom_thresholds.max_infinite_count}")
+    tprint(f"     - Max correlation threshold: {custom_thresholds.max_correlation_threshold}")
+    tprint(f"     - VIF threshold: {custom_thresholds.vif_threshold}")
 
     # Validate with custom thresholds
-    print("\n📊 Validating with custom thresholds...")
+    tprint("\n📊 Validating with custom thresholds...")
     quality_result = orchestrator.validate_dataframe_quality(features_df, "Features with Custom Thresholds")
 
-    print(f"   Quality check passed: {quality_result.passed}")
-    print(f"   Issues found: {len(quality_result.issues)}")
-    print(f"   Warnings: {len(quality_result.warnings)}")
+    tprint(f"   Quality check passed: {quality_result.passed}")
+    tprint(f"   Issues found: {len(quality_result.issues)}")
+    tprint(f"   Warnings: {len(quality_result.warnings)}")
 
 
 def demonstrate_directory_analysis():
     """Demonstrate directory analysis capabilities."""
-    print("\n" + "="*60)
-    print("🔍 DEMONSTRATING DIRECTORY ANALYSIS")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🔍 DEMONSTRATING DIRECTORY ANALYSIS")
+    tprint("="*60)
 
     # Create sample data files in a temporary directory
     import tempfile
@@ -335,7 +337,7 @@ def demonstrate_directory_analysis():
         temp_path = Path(temp_dir)
 
         # Create sample data files
-        print(f"🔧 Creating sample data files in temporary directory: {temp_path}")
+        tprint(f"🔧 Creating sample data files in temporary directory: {temp_path}")
 
         # Create sample klines data
         klines_df, features_df, labels_df = create_sample_data()
@@ -349,63 +351,63 @@ def demonstrate_directory_analysis():
         features_df.to_csv(features_file, index=False)
         labels_df.to_json(labels_file, orient="records")
 
-        print("✅ Created sample files:")
-        print(f"   - {klines_file.name}")
-        print(f"   - {features_file.name}")
-        print(f"   - {labels_file.name}")
+        tprint("✅ Created sample files:")
+        tprint(f"   - {klines_file.name}")
+        tprint(f"   - {features_file.name}")
+        tprint(f"   - {labels_file.name}")
 
         # Initialize orchestrator
         orchestrator = UnifiedQualityOrchestrator()
 
         # Quick directory scan
-        print("\n📊 Performing quick directory scan...")
+        tprint("\n📊 Performing quick directory scan...")
         try:
             scan_summary = orchestrator.get_directory_summary(str(temp_path), recursive=True)
 
-            print(f"   Directory: {scan_summary['directory_path']}")
-            print(f"   Total data files: {scan_summary['total_files']}")
-            print(f"   Total size: {scan_summary['total_size_mb']:.2f} MB")
-            print("   File types:")
+            tprint(f"   Directory: {scan_summary['directory_path']}")
+            tprint(f"   Total data files: {scan_summary['total_files']}")
+            tprint(f"   Total size: {scan_summary['total_size_mb']:.2f} MB")
+            tprint("   File types:")
             for file_type, info in scan_summary["file_types"].items():
-                print(f"     - {file_type}: {info['count']} files ({info['total_size'] / (1024*1024):.2f} MB)")
+                tprint(f"     - {file_type}: {info['count']} files ({info['total_size'] / (1024*1024):.2f} MB)")
 
         except Exception as e:
-            print(f"   ❌ Quick scan failed: {e}")
+            tprint(f"   ❌ Quick scan failed: {e}")
 
         # Full directory analysis
-        print("\n📊 Performing full directory analysis...")
+        tprint("\n📊 Performing full directory analysis...")
         try:
             directory_report = orchestrator.analyze_directory(str(temp_path), recursive=True)
 
             if "error" in directory_report:
-                print(f"   ❌ Directory analysis failed: {directory_report['error']}")
+                tprint(f"   ❌ Directory analysis failed: {directory_report['error']}")
             else:
                 summary = directory_report.get("summary", {})
-                print(f"   Total files: {summary['total_files']}")
-                print(f"   Successful analyses: {summary['successful_analyses']}")
-                print(f"   Failed analyses: {summary['failed_analyses']}")
-                print(f"   Success rate: {summary['success_rate']:.1%}")
-                print(f"   Overall Quality: {summary['overall_quality'].upper()}")
-                print(f"   Critical Issues Total: {summary['critical_issues_total']}")
+                tprint(f"   Total files: {summary['total_files']}")
+                tprint(f"   Successful analyses: {summary['successful_analyses']}")
+                tprint(f"   Failed analyses: {summary['failed_analyses']}")
+                tprint(f"   Success rate: {summary['success_rate']:.1%}")
+                tprint(f"   Overall Quality: {summary['overall_quality'].upper()}")
+                tprint(f"   Critical Issues Total: {summary['critical_issues_total']}")
 
                 if summary.get("quality_distribution"):
-                    print("   Quality Distribution:")
+                    tprint("   Quality Distribution:")
                     for quality, count in summary["quality_distribution"].items():
-                        print(f"     - {quality.capitalize()}: {count} files")
+                        tprint(f"     - {quality.capitalize()}: {count} files")
 
                 # Save directory report
                 output_file = orchestrator.save_report(directory_report, "example_directory_report.json")
-                print(f"   ✅ Directory report saved to: {output_file}")
+                tprint(f"   ✅ Directory report saved to: {output_file}")
 
         except Exception as e:
-            print(f"   ❌ Full directory analysis failed: {e}")
+            tprint(f"   ❌ Full directory analysis failed: {e}")
 
 
 def demonstrate_batch_analysis():
     """Demonstrate batch file analysis capabilities."""
-    print("\n" + "="*60)
-    print("🔍 DEMONSTRATING BATCH FILE ANALYSIS")
-    print("="*60)
+    tprint("\n" + "="*60)
+    tprint("🔍 DEMONSTRATING BATCH FILE ANALYSIS")
+    tprint("="*60)
 
     # Create sample data files
     klines_df, features_df, labels_df = create_sample_data()
@@ -419,60 +421,60 @@ def demonstrate_batch_analysis():
     features_df.to_csv(features_file, index=False)
     labels_df.to_json(labels_file, orient="records")
 
-    print("🔧 Created temporary sample files:")
-    print(f"   - {klines_file}")
-    print(f"   - {features_file}")
-    print(f"   - {labels_file}")
+    tprint("🔧 Created temporary sample files:")
+    tprint(f"   - {klines_file}")
+    tprint(f"   - {features_file}")
+    tprint(f"   - {labels_file}")
 
     # Initialize orchestrator
     orchestrator = UnifiedQualityOrchestrator()
 
     # Batch analysis
-    print("\n📊 Performing batch file analysis...")
+    tprint("\n📊 Performing batch file analysis...")
     try:
         file_paths = [klines_file, features_file, labels_file]
         batch_report = orchestrator.analyze_file_batch(file_paths)
 
         summary = batch_report.get("summary", {})
-        print(f"   Total files: {summary['total_files']}")
-        print(f"   Successful analyses: {summary['successful_analyses']}")
-        print(f"   Failed analyses: {summary['failed_analyses']}")
-        print(f"   Success rate: {summary['success_rate']:.1%}")
-        print(f"   Overall Quality: {summary['overall_quality'].upper()}")
-        print(f"   Critical Issues Total: {summary['critical_issues_total']}")
+        tprint(f"   Total files: {summary['total_files']}")
+        tprint(f"   Successful analyses: {summary['successful_analyses']}")
+        tprint(f"   Failed analyses: {summary['failed_analyses']}")
+        tprint(f"   Success rate: {summary['success_rate']:.1%}")
+        tprint(f"   Overall Quality: {summary['overall_quality'].upper()}")
+        tprint(f"   Critical Issues Total: {summary['critical_issues_total']}")
 
         # Show individual file results
-        print("\n   Individual file results:")
+        tprint("\n   Individual file results:")
         for file_path, result in batch_report["file_results"].items():
             if "error" in result:
-                print(f"     ❌ {Path(file_path).name}: {result['error']}")
+                tprint(f"     ❌ {Path(file_path).name}: {result['error']}")
             else:
                 file_summary = result.get("summary", {})
                 quality = file_summary.get("overall_quality", "unknown")
                 issues = file_summary.get("critical_issues", 0)
-                print(f"     ✅ {Path(file_path).name}: {quality.upper()} ({issues} critical issues)")
+                tprint(f"     ✅ {Path(file_path).name}: {quality.upper()} ({issues} critical issues)")
 
         # Save batch report
         output_file = orchestrator.save_report(batch_report, "example_batch_report.json")
-        print(f"\n   ✅ Batch report saved to: {output_file}")
+        tprint(f"\n   ✅ Batch report saved to: {output_file}")
 
     except Exception as e:
-        print(f"   ❌ Batch analysis failed: {e}")
+        tprint(f"   ❌ Batch analysis failed: {e}")
 
     # Clean up temporary files
     try:
         os.remove(klines_file)
         os.remove(features_file)
         os.remove(labels_file)
-        print("   🧹 Cleaned up temporary files")
+        tprint("   🧹 Cleaned up temporary files")
     except:
         pass
 
 
 def main():
     """Main demonstration function."""
-    print("🚀 UNIFIED DATA QUALITY ORCHESTRATOR DEMONSTRATION")
-    print("="*60)
+    tprint("🚀 UNIFIED DATA QUALITY ORCHESTRATOR DEMONSTRATION")
+    tprint("="*60)
 
     try:
         # Demonstrate basic quality validation
@@ -496,17 +498,17 @@ def main():
         # Demonstrate batch analysis
         demonstrate_batch_analysis()
 
-        print("\n" + "="*60)
-        print("🎉 DEMONSTRATION COMPLETED SUCCESSFULLY!")
-        print("="*60)
-        print("\n💡 Next steps:")
-        print("   1. Review the generated quality report: example_quality_report.json")
-        print("   2. Try running the orchestrator on your own data")
-        print("   3. Customize thresholds for your specific use case")
-        print("   4. Integrate the orchestrator into your data pipeline")
+        tprint("\n" + "="*60)
+        tprint("🎉 DEMONSTRATION COMPLETED SUCCESSFULLY!")
+        tprint("="*60)
+        tprint("\n💡 Next steps:")
+        tprint("   1. Review the generated quality report: example_quality_report.json")
+        tprint("   2. Try running the orchestrator on your own data")
+        tprint("   3. Customize thresholds for your specific use case")
+        tprint("   4. Integrate the orchestrator into your data pipeline")
 
     except Exception as e:
-        print(f"\n❌ Demonstration failed: {e}")
+        tprint(f"\n❌ Demonstration failed: {e}")
         import traceback
         traceback.print_exc()
 

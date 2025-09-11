@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import asyncio
 import uuid
@@ -971,5 +973,5 @@ async def setup_enhanced_event_bus(
         return None
 
     except Exception as e:
-        print(f"Error setting up enhanced event bus: {e}")
+        tprint(f"Error setting up enhanced event bus: {e}")
         return None

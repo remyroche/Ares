@@ -73,19 +73,19 @@ def _get_default_training_modes_config() -> Dict[str, Any]:
                 "optimization": {"optuna_trials": 50, "optuna_timeout": 900}
             },
             "light": {
-                "description": "Development mode - Minimal data with all features/models",
+                "description": "Ultra-light development mode - Minimal data for code testing only",
                 "lookback_days": 10,
                 "training_mode": "light",
                 "enable_blank_training_mode": False,
                 "enable_light_training_mode": True,
                 "enable_full_training_mode": False,
-                "computational_intensity": "low",
-                "estimated_duration_minutes": 15,
+                "computational_intensity": "minimal",
+                "estimated_duration_minutes": 5,
                 "data_collection": {"enable_all_exchanges": False},
                 "feature_engineering": {"enable_all_features": True},
-                "model_training": {"max_trials": 10, "n_trials": 5},
-                "validation": {"monte_carlo_samples": 100, "ab_test_rounds": 2},
-                "optimization": {"optuna_trials": 10, "optuna_timeout": 300}
+                "model_training": {"max_trials": 5, "n_trials": 3},
+                "validation": {"monte_carlo_samples": 50, "ab_test_rounds": 1},
+                "optimization": {"optuna_trials": 5, "optuna_timeout": 120}
             }
         }
     }
@@ -95,7 +95,7 @@ def get_intensity_percentage(training_mode: str) -> float:
     intensity_map = {
         "full": 1.0,    # 100% intensity
         "blank": 0.1,   # 10% intensity
-        "light": 0.05   # 5% intensity
+        "light": 0.025  # 2.5% intensity (ultra-light for code testing)
     }
     return intensity_map.get(training_mode, 1.0)
 

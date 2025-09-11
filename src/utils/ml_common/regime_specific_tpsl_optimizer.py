@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from typing import Any
 import pandas as pd
@@ -92,7 +94,7 @@ class RegimeSpecificTPSLOptimizer:
         try:
             self.logger.info('Initializing Regime-Specific TP/SL Optimizer (Meta-Label)...')
             if self.meta_labeling_system and not await self._initialize_meta_label_system():
-                self.print(failed('Failed to initialize Meta-Labeling system'))
+                self.tprint(failed('Failed to initialize Meta-Labeling system'))
                 return False
             await self._load_optimization_results()
             self.logger.info('✅ Regime-Specific TP/SL Optimizer initialized successfully')
@@ -116,7 +118,7 @@ class RegimeSpecificTPSLOptimizer:
             self.logger.warning('Meta-Labeling system failed to initialize')
             return False
         except Exception as e:
-            self.print(initialization_error(f'Error initializing Meta-Labeling system: {e}'))
+            self.tprint(initialization_error(f'Error initializing Meta-Labeling system: {e}'))
             return False
 
     async def _load_optimization_results(self) -> None:
@@ -130,7 +132,7 @@ class RegimeSpecificTPSLOptimizer:
                     self.optimization_results = json.load(f)
                     self.logger.info(f'✅ Loaded {len(self.optimization_results)} regime optimization results')
         except Exception as e:
-            self.print(warning(f'Could not load optimization results: {e}'))
+            self.tprint(warning(f'Could not load optimization results: {e}'))
 
     async def _save_optimization_results(self) -> None:
         """Save optimization results to disk."""
@@ -140,7 +142,7 @@ class RegimeSpecificTPSLOptimizer:
                 json.dump(self.optimization_results, f, indent = 2, default = str)
             self.logger.info('✅ Saved optimization results')
         except Exception as e:
-            self.print(failed(f'Failed to save optimization results: {e}'))
+            self.tprint(failed(f'Failed to save optimization results: {e}'))
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='regime identification')
     async def identify_current_regime(self, current_data: pd.DataFrame) -> tuple[str, float, dict[str, Any]]:
@@ -154,7 +156,7 @@ class RegimeSpecificTPSLOptimizer:
         """
         try:
             if not self.meta_labeling_system or not getattr(self.meta_labeling_system, 'is_initialized', False):
-                self.print(warning('Meta-Labeling system not initialized, using default regime'))
+                self.tprint(warning('Meta-Labeling system not initialized, using default regime'))
                 return ('SIDEWAYS_RANGE', 0.5, {'method': 'default'})
             labels = await self.meta_labeling_system.generate_analyst_labels(price_data = current_data, volume_data = current_data, timeframe = self.analysis_timeframe)
             intensities: dict[str, float] = {}
@@ -168,7 +170,7 @@ class RegimeSpecificTPSLOptimizer:
             self.logger.info({'msg': 'Identified label-driven regime', 'regime': best_label, 'confidence': round(confidence, 3), 'top3': [(k, round(v, 3)) for k, v in top3], 'timeframe': self.analysis_timeframe})
             return (best_label, confidence, {'method': 'meta_labeling', 'timeframe': self.analysis_timeframe, 'top3': top3, 'actives': {k: actives.get(k, 0) for k in self.candidate_labels}})
         except Exception as e:
-            self.print(error(f'Error identifying regime: {e}'))
+            self.tprint(error(f'Error identifying regime: {e}'))
             return ('SIDEWAYS_RANGE', 0.5, {'method': 'fallback', 'error': str(e)})
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='regime-specific TP/SL optimization')
@@ -200,7 +202,7 @@ class RegimeSpecificTPSLOptimizer:
             self.logger.info(f'✅ Optimized TP/SL for {regime}: {best_params}')
             return optimized_params
         except Exception as e:
-            self.print(error(f'Error optimizing TP/SL for regime {regime}: {e}'))
+            self.tprint(error(f'Error optimizing TP/SL for regime {regime}: {e}'))
             return self.regime_parameters.get(regime, self.regime_parameters['SIDEWAYS_RANGE'])
     @log_all_calls
 
@@ -239,7 +241,7 @@ class RegimeSpecificTPSLOptimizer:
                 score = sharpe_ratio * 0.4 + total_return * 0.3 + win_rate * 0.3
             return score
         except Exception as e:
-            self.print(error(f'Error in parameter evaluation: {e}'))
+            self.tprint(error(f'Error in parameter evaluation: {e}'))
             return -1.0
     @log_all_calls
 
@@ -299,7 +301,7 @@ class RegimeSpecificTPSLOptimizer:
             optimized_params = await self.optimize_tpsl_for_regime(regime, historical_data, current_data)
             return {**optimized_params, 'regime': regime, 'confidence': confidence, 'regime_info': regime_info}
         except Exception as e:
-            self.print(error(f'Error getting optimized TP/SL: {e}'))
+            self.tprint(error(f'Error getting optimized TP/SL: {e}'))
             return {**self.regime_parameters['SIDEWAYS_RANGE'], 'regime': 'SIDEWAYS_RANGE', 'confidence': 0.5, 'regime_info': {'method': 'fallback', 'error': str(e)}}
 
     def get_regime_statistics(self) -> dict[str, Any]:

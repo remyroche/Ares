@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Extract and summarize code interactions from the function validation report.
 """
@@ -209,26 +211,26 @@ missing_await_functions = {
     script_content += '''
 }
 
-print("CODE INTERACTION VISUALIZATION DATA")
-print("=" * 50)
-print()
-print("Top 10 Undefined Functions:")
+tprint("CODE INTERACTION VISUALIZATION DATA")
+tprint("=" * 50)
+tprint()
+tprint("Top 10 Undefined Functions:")
 for func, count in sorted(undefined_functions.items(), key=lambda x: x[1], reverse=True)[:10]:
-    print(f"  {func}: {count} occurrences")
+    tprint(f"  {func}: {count} occurrences")
 
-print()
-print("Top 10 Async Functions Missing Await:")
+tprint()
+tprint("Top 10 Async Functions Missing Await:")
 for func, count in sorted(missing_await_functions.items(), key=lambda x: x[1], reverse=True)[:10]:
-    print(f"  {func}: {count} occurrences")
+    tprint(f"  {func}: {count} occurrences")
 
-print()
-print("To create visual graphs:")
-print("1. Use matplotlib/seaborn for bar charts of function counts")
-print("2. Use networkx for dependency graphs")
-print("3. Use graphviz for call flow diagrams")
-print()
-print("Example visualization code:")
-print("""
+tprint()
+tprint("To create visual graphs:")
+tprint("1. Use matplotlib/seaborn for bar charts of function counts")
+tprint("2. Use networkx for dependency graphs")
+tprint("3. Use graphviz for call flow diagrams")
+tprint()
+tprint("Example visualization code:")
+tprint("""
 import matplotlib.pyplot as plt
 
     import os
@@ -260,35 +262,35 @@ def main():
     # Load the validation report
     json_file = "/workspace/code_quality/interaction_analysis.json"
 
-    print("EXTRACTING CODE INTERACTIONS")
-    print("=" * 50)
+    tprint("EXTRACTING CODE INTERACTIONS")
+    tprint("=" * 50)
 
     # Extract interactions
     interactions, data = extract_interactions(json_file)
 
     # Generate report
     report_file = generate_interaction_report(interactions, data)
-    print(f"\nGenerated interaction report: {report_file}")
+    tprint(f"\nGenerated interaction report: {report_file}")
 
     # Generate visualization script
     viz_script = "/workspace/code_quality/visualize_interactions.py"
     generate_visualization_script(interactions, viz_script)
-    print(f"Generated visualization script: {viz_script}")
+    tprint(f"Generated visualization script: {viz_script}")
 
     # Print summary
-    print("\nINTERACTION SUMMARY:")
-    print("-" * 30)
-    print(f"Unique undefined functions: {len(interactions['undefined_functions'])}")
-    print(f"Total undefined function calls: {sum(len(v) for v in interactions['undefined_functions'].values())}")
-    print(f"Missing await calls: {len(interactions['missing_await'])}")
-    print(f"Modules analyzed: {len(interactions['module_dependencies'])}")
+    tprint("\nINTERACTION SUMMARY:")
+    tprint("-" * 30)
+    tprint(f"Unique undefined functions: {len(interactions['undefined_functions'])}")
+    tprint(f"Total undefined function calls: {sum(len(v) for v in interactions['undefined_functions'].values())}")
+    tprint(f"Missing await calls: {len(interactions['missing_await'])}")
+    tprint(f"Modules analyzed: {len(interactions['module_dependencies'])}")
 
     # Most problematic areas
-    print("\nMOST PROBLEMATIC AREAS:")
+    tprint("\nMOST PROBLEMATIC AREAS:")
     func_counts = Counter(interactions["undefined_functions"].keys())
     for func, _ in func_counts.most_common(5):
         count = len(interactions["undefined_functions"][func])
-        print(f"  - {func}: {count} undefined references")
+        tprint(f"  - {func}: {count} undefined references")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import gc
 import psutil
 import os
-from ..logger import system_logger
+from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards
 import logging
 import numpy as np

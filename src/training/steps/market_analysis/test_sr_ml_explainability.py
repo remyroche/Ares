@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Test script for SR ML Learning Explainability Integration
 
@@ -57,8 +59,8 @@ def create_mock_data():
 
 async def test_sr_ml_explainability():
     """Test the SR ML learning explainability integration."""
-    print("🧪 Testing SR ML Learning Explainability Integration")
-    print("=" * 60)
+    tprint("🧪 Testing SR ML Learning Explainability Integration")
+    tprint("=" * 60)
     
     try:
         # Import the SR ML learning step
@@ -86,25 +88,25 @@ async def test_sr_ml_explainability():
             }
         }
         
-        print("🔄 Initializing SR ML Learning Step...")
+        tprint("🔄 Initializing SR ML Learning Step...")
         sr_ml_step = SRMLLearningStep(config)
         
         # Check if explainability manager was initialized
         if hasattr(sr_ml_step, 'explainability_manager') and sr_ml_step.explainability_manager is not None:
-            print("✅ Model explainability manager initialized successfully")
+            tprint("✅ Model explainability manager initialized successfully")
         else:
-            print("⚠️ Model explainability manager not available")
+            tprint("⚠️ Model explainability manager not available")
         
-        print("🔄 Executing SR ML Learning...")
+        tprint("🔄 Executing SR ML Learning...")
         result = await sr_ml_step.execute({}, pipeline_state)
         
         if result['success']:
-            print("✅ SR ML Learning executed successfully")
+            tprint("✅ SR ML Learning executed successfully")
             
             ml_results = result.get('ml_results', {})
             model_results = ml_results.get('model_results', {})
             
-            print(f"📊 Models trained: {len(model_results)}")
+            tprint(f"📊 Models trained: {len(model_results)}")
             
             # Check explainability integration
             explanations_count = 0
@@ -112,40 +114,40 @@ async def test_sr_ml_explainability():
                 if 'model_explanation' in model_result and model_result['model_explanation'] is not None:
                     explanations_count += 1
                     explanation = model_result['model_explanation']
-                    print(f"🧠 {model_name}: Explanation generated")
-                    print(f"   • Model ID: {explanation.model_id}")
-                    print(f"   • Model type: {explanation.model_type}")
-                    print(f"   • Explanation confidence: {explanation.explanation_confidence:.3f}")
-                    print(f"   • Processing time: {explanation.processing_time_ms:.1f}ms")
+                    tprint(f"🧠 {model_name}: Explanation generated")
+                    tprint(f"   • Model ID: {explanation.model_id}")
+                    tprint(f"   • Model type: {explanation.model_type}")
+                    tprint(f"   • Explanation confidence: {explanation.explanation_confidence:.3f}")
+                    tprint(f"   • Processing time: {explanation.processing_time_ms:.1f}ms")
                 else:
-                    print(f"⚠️ {model_name}: No explanation generated")
+                    tprint(f"⚠️ {model_name}: No explanation generated")
             
-            print(f"📊 Summary: {explanations_count}/{len(model_results)} models have explanations")
+            tprint(f"📊 Summary: {explanations_count}/{len(model_results)} models have explanations")
             
             # Test cache statistics if available
             if hasattr(sr_ml_step, 'explainability_manager') and sr_ml_step.explainability_manager is not None:
                 cache_stats = sr_ml_step.explainability_manager.get_cache_stats()
-                print(f"📊 Cache statistics:")
-                print(f"   • Cache size: {cache_stats['cache_size']}")
-                print(f"   • Cache hits: {cache_stats['cache_hits']}")
-                print(f"   • Cache misses: {cache_stats['cache_misses']}")
-                print(f"   • Hit rate: {cache_stats['hit_rate']:.3f}")
+                tprint(f"📊 Cache statistics:")
+                tprint(f"   • Cache size: {cache_stats['cache_size']}")
+                tprint(f"   • Cache hits: {cache_stats['cache_hits']}")
+                tprint(f"   • Cache misses: {cache_stats['cache_misses']}")
+                tprint(f"   • Hit rate: {cache_stats['hit_rate']:.3f}")
             
         else:
-            print(f"❌ SR ML Learning failed: {result.get('error', 'Unknown error')}")
+            tprint(f"❌ SR ML Learning failed: {result.get('error', 'Unknown error')}")
             
     except ImportError as e:
-        print(f"❌ Import error: {e}")
-        print("This might be due to missing dependencies (numpy, pandas, sklearn)")
+        tprint(f"❌ Import error: {e}")
+        tprint("This might be due to missing dependencies (numpy, pandas, sklearn)")
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        tprint(f"❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
 
 def test_imports():
     """Test that the new imports work correctly."""
-    print("🧪 Testing Import Integration")
-    print("=" * 40)
+    tprint("🧪 Testing Import Integration")
+    tprint("=" * 40)
     
     try:
         # Test ML commons imports
@@ -153,43 +155,43 @@ def test_imports():
             ModelExplainabilityManager,
             ModelExplanationResult
         )
-        print("✅ ModelExplainabilityManager imported successfully")
-        print("✅ ModelExplanationResult imported successfully")
+        tprint("✅ ModelExplainabilityManager imported successfully")
+        tprint("✅ ModelExplanationResult imported successfully")
         
         # Test SR ML learning import
         from src.training.steps.market_analysis.sr_ml_learning import SRMLLearningStep
-        print("✅ SRMLLearningStep imported successfully")
+        tprint("✅ SRMLLearningStep imported successfully")
         
         # Test initialization
         manager = ModelExplainabilityManager()
-        print("✅ ModelExplainabilityManager initialized successfully")
+        tprint("✅ ModelExplainabilityManager initialized successfully")
         
         cache_stats = manager.get_cache_stats()
-        print(f"✅ Cache stats retrieved: {cache_stats}")
+        tprint(f"✅ Cache stats retrieved: {cache_stats}")
         
     except ImportError as e:
-        print(f"❌ Import error: {e}")
+        tprint(f"❌ Import error: {e}")
     except Exception as e:
-        print(f"❌ Test error: {e}")
+        tprint(f"❌ Test error: {e}")
 
 def main():
     """Run all tests."""
-    print("🧠 SR ML Learning Explainability Integration Test")
-    print("=" * 80)
+    tprint("🧠 SR ML Learning Explainability Integration Test")
+    tprint("=" * 80)
     
     # Test imports first
     test_imports()
     
-    print("\n" + "=" * 80)
+    tprint("\n" + "=" * 80)
     
     # Test full integration
     try:
         asyncio.run(test_sr_ml_explainability())
     except Exception as e:
-        print(f"❌ Async test failed: {e}")
+        tprint(f"❌ Async test failed: {e}")
     
-    print("\n" + "=" * 80)
-    print("✅ Integration test completed!")
+    tprint("\n" + "=" * 80)
+    tprint("✅ Integration test completed!")
 
 if __name__ == "__main__":
     main()

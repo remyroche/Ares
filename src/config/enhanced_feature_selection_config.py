@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -342,24 +344,24 @@ def get_regime_specific_feature_selection_config(regime_type: str) -> dict[str, 
 if __name__ == "__main__":
     # Test default configuration
     default_config = get_default_enhanced_feature_selection_config()
-    print("Default Configuration:")
-    print(f"Target features: {default_config['feature_reduction']['target_features']}")
-    print(
+    tprint("Default Configuration:")
+    tprint(f"Target features: {default_config['feature_reduction']['target_features']}")
+    tprint(
         f"Enable interaction features: {default_config['feature_reduction']['enable_interaction_features']}"
     )
-    print(
+    tprint(
         f"Correlation filtering method: {default_config['feature_reduction']['correlation_filtering_method']}"
     )
 
     # Test regime-specific configuration
     trending_config = get_regime_specific_feature_selection_config("trending")
-    print(
+    tprint(
         f"\nTrending Regime - Momentum weight: {trending_config['feature_reduction']['category_weights']['momentum']}"
     )
 
     # Test optimized configuration
     optimized_config = get_optimized_feature_selection_config()
-    print(
+    tprint(
         f"\nOptimized - Target features: {optimized_config['feature_reduction']['target_features']}"
     )
-    print(f"Optimized - CV folds: {optimized_config['feature_reduction']['cv_folds']}")
+    tprint(f"Optimized - CV folds: {optimized_config['feature_reduction']['cv_folds']}")

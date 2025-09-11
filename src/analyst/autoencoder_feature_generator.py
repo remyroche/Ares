@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 import logging
 import os
 import time
@@ -20,9 +22,9 @@ try:
 except ImportError as e:
     DEPENDENCIES_AVAILABLE = False
     MISSING_DEPENDENCY = str(e)
-    print(f' Missing dependency: {MISSING_DEPENDENCY}')
-    print('📦 Please install required packages:')
-    print('   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml')
+    tprint(f' Missing dependency: {MISSING_DEPENDENCY}')
+    tprint('📦 Please install required packages:')
+    tprint('   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml')
 from ...utils.logger import system_logger
 setup_logging()
 logger = logging.getLogger(__name__)

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 
 '\nPrometheus metrics collection utility for training step validators.\n'
@@ -74,7 +76,7 @@ class PrometheusMetrics:
             logger.info(f'Prometheus metrics server started on port {self.port}')
             self.metrics_initialized = True
         except Exception as e:
-            print(failed(f'Failed to start Prometheus metrics server: {e}'))
+            tprint(failed(f'Failed to start Prometheus metrics server: {e}'))
 
     def record_step_execution(self, step_name: str, duration: float, status: str) -> None:
         """Record step execution metrics."""

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Enhanced Pipeline Orchestrator
 
@@ -345,11 +347,11 @@ async def example_usage() -> None:
     pipeline = create_pipeline('config/basic_ml_pipeline.yaml')
     result = await pipeline.run()
     if result.is_success:
-        print('Pipeline completed successfully!')
-        print(f'Duration: {result.duration:.2f} seconds')
-        print(f'Steps completed: {len(result.step_results)}')
+        tprint('Pipeline completed successfully!')
+        tprint(f'Duration: {result.duration:.2f} seconds')
+        tprint(f'Steps completed: {len(result.step_results)}')
     else:
-        print(f'Pipeline failed: {result.errors}')
-        print(f'Failed steps: {result.failed_steps}')
+        tprint(f'Pipeline failed: {result.errors}')
+        tprint(f'Failed steps: {result.failed_steps}')
 if __name__ == '__main__':
     asyncio.run(example_usage())

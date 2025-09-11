@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Base classes for dependency injection support.
 
@@ -28,8 +30,8 @@ class InjectableBase:
                 try:
                     self.logger.error(str(message))
                 except Exception as e:
-                    print(f'Logger failed in shim_print: {e}', file = sys.stderr)
-                    print(f'Original message: {message}', file = sys.stderr)
+                    tprint(f'Logger failed in shim_print: {e}', file = sys.stderr)
+                    tprint(f'Original message: {message}', file = sys.stderr)
             self.print = _shim_print
 
     def configure(self, config: dict[str, Any]) -> None:

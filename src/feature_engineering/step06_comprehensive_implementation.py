@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Step06 Comprehensive Implementation with Extensive Utility Integration
 
@@ -1093,47 +1095,47 @@ async def run_step06_comprehensive_example():
         await implementation.cleanup()
     
     # Print summary
-    print("\n" + "="*80)
-    print("STEP06 COMPREHENSIVE IMPLEMENTATION WITH UTILITY INTEGRATION SUMMARY")
-    print("="*80)
-    print(f"Pipeline Status: {results['pipeline_status']}")
-    print(f"Total Execution Time: {results['performance_metrics']['total_execution_time']:.2f}s")
-    print(f"Features Created: {results['performance_metrics']['features_created']}")
-    print(f"Labels Generated: {results['performance_metrics']['labels_generated']}")
-    print(f"Validation Errors: {results['performance_metrics']['validation_errors']}")
-    print(f"Utility Errors: {results['performance_metrics']['utility_errors']}")
-    print(f"Utility Operations: {results['performance_metrics']['utility_operations_count']}")
+    tprint("\n" + "="*80)
+    tprint("STEP06 COMPREHENSIVE IMPLEMENTATION WITH UTILITY INTEGRATION SUMMARY")
+    tprint("="*80)
+    tprint(f"Pipeline Status: {results['pipeline_status']}")
+    tprint(f"Total Execution Time: {results['performance_metrics']['total_execution_time']:.2f}s")
+    tprint(f"Features Created: {results['performance_metrics']['features_created']}")
+    tprint(f"Labels Generated: {results['performance_metrics']['labels_generated']}")
+    tprint(f"Validation Errors: {results['performance_metrics']['validation_errors']}")
+    tprint(f"Utility Errors: {results['performance_metrics']['utility_errors']}")
+    tprint(f"Utility Operations: {results['performance_metrics']['utility_operations_count']}")
     
     # Utility integration results
     if 'utility_integration_results' in results:
-        print("\n🔧 UTILITY INTEGRATION RESULTS:")
+        tprint("\n🔧 UTILITY INTEGRATION RESULTS:")
         utility_results = results['utility_integration_results']
         if 'memory_optimization' in utility_results:
             mem_opt = utility_results['memory_optimization']
-            print(f"   Memory Optimization Applied: {mem_opt.get('memory_optimization_applied', False)}")
+            tprint(f"   Memory Optimization Applied: {mem_opt.get('memory_optimization_applied', False)}")
         if 'performance_optimization' in utility_results:
             perf_opt = utility_results['performance_optimization']
-            print(f"   GPU Optimization Applied: {perf_opt.get('gpu_optimization_applied', False)}")
-            print(f"   CPU Optimization Applied: {perf_opt.get('cpu_optimization_applied', False)}")
+            tprint(f"   GPU Optimization Applied: {perf_opt.get('gpu_optimization_applied', False)}")
+            tprint(f"   CPU Optimization Applied: {perf_opt.get('cpu_optimization_applied', False)}")
     
     # Utility health report
     if 'utility_health_report' in results and results['utility_health_report']:
         health_report = results['utility_health_report']
-        print(f"\n🏥 UTILITY HEALTH STATUS: {health_report['status']}")
-        print(f"   Healthy Services: {health_report['healthy_services']}/{health_report['total_services']}")
+        tprint(f"\n🏥 UTILITY HEALTH STATUS: {health_report['status']}")
+        tprint(f"   Healthy Services: {health_report['healthy_services']}/{health_report['total_services']}")
     
     if results['pipeline_status'] == 'completed':
-        print("\n✅ All enhancements successfully implemented:")
-        print("   ✅ Vectorized batch processing")
-        print("   ✅ Sophisticated feature interactions")
-        print("   ✅ Strict temporal validation")
-        print("   ✅ Memory-efficient chunking")
-        print("   ✅ Enhanced financial parameters")
-        print("   ✅ Transaction cost modeling")
-        print("   ✅ Comprehensive validation")
-        print("   ✅ Mathematical safety utilities")
-        print("   ✅ Utility integration with dependency injection")
-        print("   ✅ M1 optimization for performance")
+        tprint("\n✅ All enhancements successfully implemented:")
+        tprint("   ✅ Vectorized batch processing")
+        tprint("   ✅ Sophisticated feature interactions")
+        tprint("   ✅ Strict temporal validation")
+        tprint("   ✅ Memory-efficient chunking")
+        tprint("   ✅ Enhanced financial parameters")
+        tprint("   ✅ Transaction cost modeling")
+        tprint("   ✅ Comprehensive validation")
+        tprint("   ✅ Mathematical safety utilities")
+        tprint("   ✅ Utility integration with dependency injection")
+        tprint("   ✅ M1 optimization for performance")
     
     return results
 

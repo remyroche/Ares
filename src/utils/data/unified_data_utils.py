@@ -31,7 +31,7 @@ from .processing.data_processing import DataProcessor
 from .quality.data_cleaning import DataCleaner
 from .processing.transformers import DataStreamingManager
 from .validation.validators import CrossStepValidator
-from ..logger import system_logger
+from src.utils.logger import system_logger
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
@@ -74,7 +76,7 @@ class ModelExplainer:
     ) -> Dict[str, Any]:
         """Generate comprehensive model explanations using SHAP and LIME."""
         self.logger.info(f"🔍 Starting model interpretability analysis for {model_name}")
-        print(f"🔍 Starting model interpretability analysis for {model_name}")
+        tprint(f"🔍 Starting model interpretability analysis for {model_name}")
         
         # Ensure output directory exists
         ensure_directory(output_dir)
@@ -100,7 +102,7 @@ class ModelExplainer:
         
         try:
             # Step 1: SHAP Analysis
-            print("🧠 STEP 1/4: Running SHAP analysis...")
+            tprint("🧠 STEP 1/4: Running SHAP analysis...")
             self.logger.info("🧠 STEP 1/4: Running SHAP analysis...")
             
             if self.shap_analyzer:
@@ -113,14 +115,14 @@ class ModelExplainer:
                     output_dir = output_dir
                 )
                 results["shap_results"] = shap_results
-                print("✅ SHAP analysis completed successfully")
+                tprint("✅ SHAP analysis completed successfully")
                 self.logger.info("✅ SHAP analysis completed successfully")
             else:
-                print("⚠️ SHAP analyzer not available, skipping SHAP analysis")
+                tprint("⚠️ SHAP analyzer not available, skipping SHAP analysis")
                 self.logger.warning("⚠️ SHAP analyzer not available, skipping SHAP analysis")
             
             # Step 2: LIME Analysis
-            print("🔍 STEP 2/4: Running LIME analysis...")
+            tprint("🔍 STEP 2/4: Running LIME analysis...")
             self.logger.info("🔍 STEP 2/4: Running LIME analysis...")
             
             if self.lime_analyzer:
@@ -132,14 +134,14 @@ class ModelExplainer:
                     output_dir = output_dir
                 )
                 results["lime_results"] = lime_results
-                print("✅ LIME analysis completed successfully")
+                tprint("✅ LIME analysis completed successfully")
                 self.logger.info("✅ LIME analysis completed successfully")
             else:
-                print("⚠️ LIME analyzer not available, skipping LIME analysis")
+                tprint("⚠️ LIME analyzer not available, skipping LIME analysis")
                 self.logger.warning("⚠️ LIME analyzer not available, skipping LIME analysis")
             
             # Step 3: Feature Importance Analysis
-            print("📊 STEP 3/4: Analyzing feature importance...")
+            tprint("📊 STEP 3/4: Analyzing feature importance...")
             self.logger.info("📊 STEP 3/4: Analyzing feature importance...")
             
             feature_importance = await self._analyze_feature_importance(
@@ -150,11 +152,11 @@ class ModelExplainer:
                 lime_results = results.get("lime_results", {})
             )
             results["feature_importance"] = feature_importance
-            print("✅ Feature importance analysis completed successfully")
+            tprint("✅ Feature importance analysis completed successfully")
             self.logger.info("✅ Feature importance analysis completed successfully")
             
             # Step 4: Generate Insights and Visualizations
-            print("📈 STEP 4/4: Generating insights and visualizations...")
+            tprint("📈 STEP 4/4: Generating insights and visualizations...")
             self.logger.info("📈 STEP 4/4: Generating insights and visualizations...")
             
             insights = await self._generate_insights(results)
@@ -166,7 +168,7 @@ class ModelExplainer:
                     output_dir = output_dir
                 )
                 results["visualizations"] = visualizations
-                print("✅ Visualizations created successfully")
+                tprint("✅ Visualizations created successfully")
                 self.logger.info("✅ Visualizations created successfully")
             
             # Generate comprehensive report
@@ -184,7 +186,7 @@ class ModelExplainer:
                     exchange = exchange
                 )
                 results["report_path"] = report_path
-                print(f"📄 Comprehensive report generated: {report_path}")
+                tprint(f"📄 Comprehensive report generated: {report_path}")
                 self.logger.info(f"📄 Comprehensive report generated: {report_path}")
             
             # Log metrics
@@ -193,14 +195,14 @@ class ModelExplainer:
             safe_log_metric("shap_analysis_completed", 1.0 if results.get("shap_results") else 0.0)
             safe_log_metric("lime_analysis_completed", 1.0 if results.get("lime_results") else 0.0)
             
-            print("🎉 Model interpretability analysis completed successfully!")
+            tprint("🎉 Model interpretability analysis completed successfully!")
             self.logger.info("🎉 Model interpretability analysis completed successfully!")
             
             return results
             
         except Exception as e:
             self.logger.error(f"❌ Model interpretability analysis failed: {e}")
-            print(f"❌ Model interpretability analysis failed: {e}")
+            tprint(f"❌ Model interpretability analysis failed: {e}")
             raise
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -232,19 +234,19 @@ class ModelExplainer:
                 model_importance = model.feature_importances_
                 for i, feature in enumerate(feature_names):
                     feature_importance["model_based"][feature] = float(model_importance[i])
-                print("✅ Model-based feature importance extracted")
+                tprint("✅ Model-based feature importance extracted")
                 self.logger.info("✅ Model-based feature importance extracted")
             
             # 2. SHAP-based feature importance
             if shap_results and "feature_importance" in shap_results:
                 feature_importance["shap_based"] = shap_results["feature_importance"]
-                print("✅ SHAP-based feature importance extracted")
+                tprint("✅ SHAP-based feature importance extracted")
                 self.logger.info("✅ SHAP-based feature importance extracted")
             
             # 3. LIME-based feature importance
             if lime_results and "feature_importance" in lime_results:
                 feature_importance["lime_based"] = lime_results["feature_importance"]
-                print("✅ LIME-based feature importance extracted")
+                tprint("✅ LIME-based feature importance extracted")
                 self.logger.info("✅ LIME-based feature importance extracted")
             
             # 4. Combined ranking
@@ -284,14 +286,14 @@ class ModelExplainer:
             
             feature_importance["insights"] = insights
             
-            print(f"✅ Feature importance analysis completed - {len(feature_importance['top_features'])} top features identified")
+            tprint(f"✅ Feature importance analysis completed - {len(feature_importance['top_features'])} top features identified")
             self.logger.info(f"✅ Feature importance analysis completed - {len(feature_importance['top_features'])} top features identified")
             
             return feature_importance
             
         except Exception as e:
             self.logger.error(f"❌ Feature importance analysis failed: {e}")
-            print(f"❌ Feature importance analysis failed: {e}")
+            tprint(f"❌ Feature importance analysis failed: {e}")
             return feature_importance
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -373,14 +375,14 @@ class ModelExplainer:
             if len(top_features) > 0:
                 insights["risk_assessment"].append("Model has clear feature dependencies - monitor top features for stability")
             
-            print(f"✅ Generated {len(insights['summary']) + len(insights['feature_insights']) + len(insights['model_insights'])} insights")
+            tprint(f"✅ Generated {len(insights['summary']) + len(insights['feature_insights']) + len(insights['model_insights'])} insights")
             self.logger.info(f"✅ Generated {len(insights['summary']) + len(insights['feature_insights']) + len(insights['model_insights'])} insights")
             
             return insights
             
         except Exception as e:
             self.logger.error(f"❌ Insight generation failed: {e}")
-            print(f"❌ Insight generation failed: {e}")
+            tprint(f"❌ Insight generation failed: {e}")
             return insights
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -552,7 +554,7 @@ class ModelExplainer:
     ) -> Dict[str, Any]:
         """Generate explanations for multiple models."""
         self.logger.info(f"🔍 Starting multi-model interpretability analysis for {len(models)} models")
-        print(f"🔍 Starting multi-model interpretability analysis for {len(models)} models")
+        tprint(f"🔍 Starting multi-model interpretability analysis for {len(models)} models")
         
         results = {
             "models_analyzed": len(models),
@@ -567,7 +569,7 @@ class ModelExplainer:
         try:
             # Analyze each model individually
             for model_name, model in models.items():
-                print(f"🔍 Analyzing model: {model_name}")
+                tprint(f"🔍 Analyzing model: {model_name}")
                 self.logger.info(f"🔍 Analyzing model: {model_name}")
                 
                 model_results = await self.explain_model(
@@ -586,14 +588,14 @@ class ModelExplainer:
                 results["individual_results"][model_name] = model_results
             
             # Perform comparative analysis
-            print("📊 Performing comparative analysis...")
+            tprint("📊 Performing comparative analysis...")
             self.logger.info("📊 Performing comparative analysis...")
             
             comparative_analysis = await self._perform_comparative_analysis(results["individual_results"])
             results["comparative_analysis"] = comparative_analysis
             
             # Generate ensemble insights
-            print("🎯 Generating ensemble insights...")
+            tprint("🎯 Generating ensemble insights...")
             self.logger.info("🎯 Generating ensemble insights...")
             
             ensemble_insights = await self._generate_ensemble_insights(results["individual_results"])
@@ -603,8 +605,8 @@ class ModelExplainer:
             results_file = f"{output_dir}/multi_model_interpretability_results.json"
             safe_json_dump(results, results_file, indent = 2)
             
-            print(f"🎉 Multi-model interpretability analysis completed successfully!")
-            print(f"📄 Results saved to: {results_file}")
+            tprint(f"🎉 Multi-model interpretability analysis completed successfully!")
+            tprint(f"📄 Results saved to: {results_file}")
             self.logger.info(f"🎉 Multi-model interpretability analysis completed successfully!")
             self.logger.info(f"📄 Results saved to: {results_file}")
             
@@ -612,7 +614,7 @@ class ModelExplainer:
             
         except Exception as e:
             self.logger.error(f"❌ Multi-model interpretability analysis failed: {e}")
-            print(f"❌ Multi-model interpretability analysis failed: {e}")
+            tprint(f"❌ Multi-model interpretability analysis failed: {e}")
             raise
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -662,14 +664,14 @@ class ModelExplainer:
                     most_consistent = sorted(consistent_features.items(), key = lambda x: x[1], reverse = True)[:5]
                     comparative_analysis["insights"].append(f"Most consistent features across models: {', '.join([f[0] for f in most_consistent])}")
             
-            print("✅ Comparative analysis completed successfully")
+            tprint("✅ Comparative analysis completed successfully")
             self.logger.info("✅ Comparative analysis completed successfully")
             
             return comparative_analysis
             
         except Exception as e:
             self.logger.error(f"❌ Comparative analysis failed: {e}")
-            print(f"❌ Comparative analysis failed: {e}")
+            tprint(f"❌ Comparative analysis failed: {e}")
             return comparative_analysis
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
@@ -701,12 +703,12 @@ class ModelExplainer:
                 ensemble_insights["feature_consensus"]["total_unique_features"] = len(all_features)
                 ensemble_insights["recommendations"].append(f"Consider ensemble methods using {len(all_features)} unique important features")
             
-            print("✅ Ensemble insights generated successfully")
+            tprint("✅ Ensemble insights generated successfully")
             self.logger.info("✅ Ensemble insights generated successfully")
             
             return ensemble_insights
             
         except Exception as e:
             self.logger.error(f"❌ Ensemble insights generation failed: {e}")
-            print(f"❌ Ensemble insights generation failed: {e}")
+            tprint(f"❌ Ensemble insights generation failed: {e}")
             return ensemble_insights

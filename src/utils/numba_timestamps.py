@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Numba-Friendly Timestamp Utilities
 
@@ -78,21 +80,21 @@ if NUMBA_AVAILABLE:
         """Print with timestamp in numba nopython mode."""
         with objmode():
             timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-            print(f"[{timestamp}] {message}")
+            tprint(f"[{timestamp}] {message}")
     
     @njit
     def numba_print_detailed(message: str) -> None:
         """Print with detailed timestamp in numba nopython mode."""
         with objmode():
             timestamp = datetime.now().strftime(DETAILED_TIMESTAMP_FORMAT)[:-3]
-            print(f"[{timestamp}] {message}")
+            tprint(f"[{timestamp}] {message}")
     
     @njit
     def numba_print_simple(message: str) -> None:
         """Print with simple timestamp in numba nopython mode."""
         with objmode():
             timestamp = datetime.now().strftime(SIMPLE_TIMESTAMP_FORMAT)[:-3]
-            print(f"[{timestamp}] {message}")
+            tprint(f"[{timestamp}] {message}")
     
     @njit
     def numba_print_progress(step: int, total: int, message: str) -> None:
@@ -100,90 +102,90 @@ if NUMBA_AVAILABLE:
         with objmode():
             timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
             progress = (step / total) * 100 if total > 0 else 0
-            print(f"[{timestamp}] Progress: {step}/{total} ({progress:.1f}%) - {message}")
+            tprint(f"[{timestamp}] Progress: {step}/{total} ({progress:.1f}%) - {message}")
     
     @njit
     def numba_print_performance(operation: str, duration: float) -> None:
         """Print performance metrics with timestamp in numba nopython mode."""
         with objmode():
             timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-            print(f"[{timestamp}] Performance: {operation} took {duration:.3f}s")
+            tprint(f"[{timestamp}] Performance: {operation} took {duration:.3f}s")
     
     @njit
     def numba_print_error(error_msg: str) -> None:
         """Print error with timestamp in numba nopython mode."""
         with objmode():
             timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-            print(f"[{timestamp}] ERROR: {error_msg}")
+            tprint(f"[{timestamp}] ERROR: {error_msg}")
     
     @njit
     def numba_print_warning(warning_msg: str) -> None:
         """Print warning with timestamp in numba nopython mode."""
         with objmode():
             timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-            print(f"[{timestamp}] WARNING: {warning_msg}")
+            tprint(f"[{timestamp}] WARNING: {warning_msg}")
     
     @njit
     def numba_print_info(info_msg: str) -> None:
         """Print info with timestamp in numba nopython mode."""
         with objmode():
             timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-            print(f"[{timestamp}] INFO: {info_msg}")
+            tprint(f"[{timestamp}] INFO: {info_msg}")
     
     @njit
     def numba_print_debug(debug_msg: str) -> None:
         """Print debug with timestamp in numba nopython mode."""
         with objmode():
             timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-            print(f"[{timestamp}] DEBUG: {debug_msg}")
+            tprint(f"[{timestamp}] DEBUG: {debug_msg}")
 
 else:
     # Fallback functions for non-numba environments
     def numba_print_with_timestamp(message: str) -> None:
         """Fallback print with timestamp."""
         timestamp = get_numba_timestamp()
-        print(f"[{timestamp}] {message}")
+        tprint(f"[{timestamp}] {message}")
     
     def numba_print_detailed(message: str) -> None:
         """Fallback detailed print with timestamp."""
         timestamp = get_detailed_timestamp()
-        print(f"[{timestamp}] {message}")
+        tprint(f"[{timestamp}] {message}")
     
     def numba_print_simple(message: str) -> None:
         """Fallback simple print with timestamp."""
         timestamp = get_simple_timestamp()
-        print(f"[{timestamp}] {message}")
+        tprint(f"[{timestamp}] {message}")
     
     def numba_print_progress(step: int, total: int, message: str) -> None:
         """Fallback progress print with timestamp."""
         timestamp = get_numba_timestamp()
         progress = (step / total) * 100 if total > 0 else 0
-        print(f"[{timestamp}] Progress: {step}/{total} ({progress:.1f}%) - {message}")
+        tprint(f"[{timestamp}] Progress: {step}/{total} ({progress:.1f}%) - {message}")
     
     def numba_print_performance(operation: str, duration: float) -> None:
         """Fallback performance print with timestamp."""
         timestamp = get_numba_timestamp()
-        print(f"[{timestamp}] Performance: {operation} took {duration:.3f}s")
+        tprint(f"[{timestamp}] Performance: {operation} took {duration:.3f}s")
     
     def numba_print_error(error_msg: str) -> None:
         """Fallback error print with timestamp."""
         timestamp = get_numba_timestamp()
-        print(f"[{timestamp}] ERROR: {error_msg}")
+        tprint(f"[{timestamp}] ERROR: {error_msg}")
     
     def numba_print_warning(warning_msg: str) -> None:
         """Fallback warning print with timestamp."""
         timestamp = get_numba_timestamp()
-        print(f"[{timestamp}] WARNING: {warning_msg}")
+        tprint(f"[{timestamp}] WARNING: {warning_msg}")
     
     def numba_print_info(info_msg: str) -> None:
         """Fallback info print with timestamp."""
         timestamp = get_numba_timestamp()
-        print(f"[{timestamp}] INFO: {info_msg}")
+        tprint(f"[{timestamp}] INFO: {info_msg}")
     
     def numba_print_debug(debug_msg: str) -> None:
         """Fallback debug print with timestamp."""
         timestamp = get_numba_timestamp()
-        print(f"[{timestamp}] DEBUG: {debug_msg}")
+        tprint(f"[{timestamp}] DEBUG: {debug_msg}")
 
 
 # Utility functions for getting timestamps in numba functions

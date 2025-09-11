@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Launcher Integration Script
 
@@ -310,38 +312,38 @@ def get_available_exchanges() -> List[str]:
 if __name__ == "__main__":
     # Test the integration
     async def test():
-        print("Testing Launcher Integration...")
+        tprint("Testing Launcher Integration...")
         
         # Test validation
         if launcher_integration.validate_launcher_exists():
-            print("✅ ares_launcher.py found")
+            tprint("✅ ares_launcher.py found")
         else:
-            print("❌ ares_launcher.py not found")
+            tprint("❌ ares_launcher.py not found")
             return
         
         # Test available modes
-        print(f"Available modes: {get_available_modes()}")
-        print(f"Available training modes: {get_available_training_modes()}")
-        print(f"Available exchanges: {get_available_exchanges()}")
+        tprint(f"Available modes: {get_available_modes()}")
+        tprint(f"Available training modes: {get_available_training_modes()}")
+        tprint(f"Available exchanges: {get_available_exchanges()}")
         
         # Test starting a process (dry run)
-        print("\nTesting process start (dry run)...")
+        tprint("\nTesting process start (dry run)...")
         result = await start_launcher_mode("blank", "ETHUSDT", "BINANCE")
-        print(f"Result: {result}")
+        tprint(f"Result: {result}")
         
         if result["success"]:
             process_key = result["process_key"]
-            print(f"Started process: {process_key}")
+            tprint(f"Started process: {process_key}")
             
             # Wait a bit
             await asyncio.sleep(2)
             
             # Check status
             status = await get_process_status()
-            print(f"Status: {status}")
+            tprint(f"Status: {status}")
             
             # Stop process
             stop_result = await stop_process(process_key)
-            print(f"Stop result: {stop_result}")
+            tprint(f"Stop result: {stop_result}")
     
     asyncio.run( test())

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """
 from src.utils.logger import system_logger
@@ -29,7 +31,7 @@ try:
     from src.utils.validation import validate_data_quality
     import shutil
 except ImportError as e:
-    print(f'Warning: Could not import enhanced utilities: {e}')
+    tprint(f'Warning: Could not import enhanced utilities: {e}')
     system_logger = logging.getLogger('EnhancedStep1_5')
 
 class OptimizedUnifiedDataProcessor:
@@ -335,12 +337,12 @@ if __name__ == '__main__':
         pipeline_state = {'data_conversion_completed': False, 'quality_check_passed': False}
         try:
             result = await step1_5.execute(training_input, pipeline_state)
-            print('=' * 60)
-            print('ENHANCED STEP1_5 EXECUTION RESULTS')
-            print('=' * 60)
-            print(f"Data conversion completed: {result['data_conversion_completed']}")
-            print(f"Quality check passed: {result['quality_check_passed']}")
-            print('=' * 60)
+            tprint('=' * 60)
+            tprint('ENHANCED STEP1_5 EXECUTION RESULTS')
+            tprint('=' * 60)
+            tprint(f"Data conversion completed: {result['data_conversion_completed']}")
+            tprint(f"Quality check passed: {result['quality_check_passed']}")
+            tprint('=' * 60)
         except Exception as e:
-            print(f'❌ Enhanced Step1_5 execution failed: {e}')
+            tprint(f'❌ Enhanced Step1_5 execution failed: {e}')
     asyncio.run(main())

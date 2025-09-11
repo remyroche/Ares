@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 
 import asyncio
 from collections import defaultdict
@@ -301,5 +303,5 @@ async def setup_event_bus(config: dict[str, Any] | None = None) -> EventBus | No
             return event_bus
         return None
     except Exception as e:
-        print(f"Error setting up event bus: {e}")
+        tprint(f"Error setting up event bus: {e}")
         return None

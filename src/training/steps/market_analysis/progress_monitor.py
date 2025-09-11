@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict
 from typing import Any
 from typing import Dict, List, Optional, Union, Any, Tuple
@@ -103,15 +105,15 @@ class ProgressMonitor:
         """Display current progress with visual indicators."""
         if not self.steps:
             return
-        print('\x1b[2J\x1b[H', end='')
+        tprint('\x1b[2J\x1b[H', end='')
         elapsed = datetime.now() - self.start_time if self.start_time else timedelta(0)
-        print(f'🚀 Market Analysis Pipeline Progress - {elapsed.total_seconds():.0f}s elapsed')
-        print('=' * 80)
+        tprint(f'🚀 Market Analysis Pipeline Progress - {elapsed.total_seconds():.0f}s elapsed')
+        tprint('=' * 80)
         for step_name, step in self.steps.items():
             self._display_step_progress(step)
         self._display_summary()
-        print('=' * 80)
-        print('Press Ctrl+C to stop monitoring (pipeline will continue)')
+        tprint('=' * 80)
+        tprint('Press Ctrl+C to stop monitoring (pipeline will continue)')
     @log_all_calls
 
     def _display_step_progress(self, step: ProgressUpdate) -> None:
@@ -125,14 +127,14 @@ class ProgressMonitor:
             step_display_name = f'STEP {step.step_number}/{step.total_steps}: {step.step_name}'
         elif 'step_number' in step.details and 'total_steps' in step.details:
             step_display_name = f"STEP {step.details['step_number']}/{step.details['total_steps']}: {step.step_name}"
-        print(f'{status_emoji} {step_display_name:<35} {progress_bar} {progress_pct} [{time_str}]')
+        tprint(f'{status_emoji} {step_display_name:<35} {progress_bar} {progress_pct} [{time_str}]')
         if step.message:
-            print(f'   ℹ️ {step.message}')
+            tprint(f'   ℹ️ {step.message}')
         if step.details:
             for key, value in step.details.items():
                 if key not in ['step_number', 'total_steps']:
-                    print(f'   📊 {key}: {value}')
-        print()
+                    tprint(f'   📊 {key}: {value}')
+        tprint()
     @log_all_calls
 
     def _create_progress_bar(self, progress: float) -> str:
@@ -150,8 +152,8 @@ class ProgressMonitor:
         failed_steps = sum((1 for step in self.steps.values() if step.status == 'failed'))
         running_steps = sum((1 for step in self.steps.values() if step.status == 'running'))
         overall_progress = sum((step.progress for step in self.steps.values())) / max(1, total_steps)
-        print(f'📈 Overall Progress: {overall_progress * 100:.1f}%')
-        print(f'✅ Completed: {completed_steps} | ❌ Failed: {failed_steps} | 🔄 Running: {running_steps}')
+        tprint(f'📈 Overall Progress: {overall_progress * 100:.1f}%')
+        tprint(f'✅ Completed: {completed_steps} | ❌ Failed: {failed_steps} | 🔄 Running: {running_steps}')
         self.spinner_index += 1
 progress_monitor = ProgressMonitor()
 

@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import Dict, List, Any, Optional
 #!/usr/bin/env python3
 """
@@ -130,22 +132,22 @@ class IntelligentImportFixer:
             high_confidence_issues = [i for i in issues if i.confidence == ConfidenceLevel.HIGH]
             low_confidence_issues = [i for i in issues if i.confidence == ConfidenceLevel.LOW]
             
-            print(f"\n📊 Analysis Results for {file_path}:")
-            print(f"   High confidence (auto-fix): {len(high_confidence_issues)}")
-            print(f"   Low confidence (flag only): {len(low_confidence_issues)}")
+            tprint(f"\n📊 Analysis Results for {file_path}:")
+            tprint(f"   High confidence (auto-fix): {len(high_confidence_issues)}")
+            tprint(f"   Low confidence (flag only): {len(low_confidence_issues)}")
             
             # Auto-fix high confidence issues
             if high_confidence_issues and self.auto_fix_enabled:
                 auto_fixed = self._auto_fix_issues(file_path, high_confidence_issues)
                 result.auto_fixed = auto_fixed
                 result.fixed_lines.extend([i.line_number for i in high_confidence_issues[:auto_fixed]])
-                print(f"✅ Auto-fixed {auto_fixed} high-confidence issues")
+                tprint(f"✅ Auto-fixed {auto_fixed} high-confidence issues")
             
             # Flag low confidence issues
             if low_confidence_issues:
                 result.flagged_issues.extend(low_confidence_issues)
                 result.flagged_only += len(low_confidence_issues)
-                print(f"🚩 Flagged {len(low_confidence_issues)} low-confidence issues for manual review")
+                tprint(f"🚩 Flagged {len(low_confidence_issues)} low-confidence issues for manual review")
             
             return result
             
@@ -430,7 +432,7 @@ class IntelligentImportFixer:
     def _auto_fix_issues(self, file_path: str, issues: List[ImportIssue]) -> int:
         """Automatically fix high-confidence issues."""
         if self.dry_run:
-            print(f"DRY RUN: Would auto-fix {len(issues)} issues")
+            tprint(f"DRY RUN: Would auto-fix {len(issues)} issues")
             return len(issues)
         
         try:
@@ -449,14 +451,14 @@ class IntelligentImportFixer:
             return len(issues)
             
         except Exception as e:
-            print(f"Error auto-fixing issues: {e}")
+            tprint(f"Error auto-fixing issues: {e}")
             return 0
     
     
     def _fix_single_issue(self, file_path: str, issue: ImportIssue) -> bool:
         """Fix a single import issue."""
         if self.dry_run:
-            print(f"DRY RUN: Would fix {issue.issue_type} at line {issue.line_number}")
+            tprint(f"DRY RUN: Would fix {issue.issue_type} at line {issue.line_number}")
             return True
         
         try:
@@ -476,7 +478,7 @@ class IntelligentImportFixer:
             return True
             
         except Exception as e:
-            print(f"Error fixing issue: {e}")
+            tprint(f"Error fixing issue: {e}")
             return False
     
     def _create_backup(self, file_path: str) -> str:
@@ -565,24 +567,24 @@ def main():
     # Generate and display report
     report = fixer.generate_report(results)
     
-    print(f"\n📊 INTELLIGENT IMPORT FIXING REPORT")
-    print("=" * 50)
-    print(f"Files processed: {report['summary']['total_files_processed']}")
-    print(f"Total issues found: {report['summary']['total_issues_found']}")
-    print(f"Auto-fixed: {report['summary']['auto_fixed']} ({report['summary']['auto_fix_rate']:.1f}%)")
-    print(f"Flagged for review: {report['summary']['flagged_for_review']}")
-    print(f"Total fix rate: {report['summary']['total_fix_rate']:.1f}%")
+    tprint(f"\n📊 INTELLIGENT IMPORT FIXING REPORT")
+    tprint("=" * 50)
+    tprint(f"Files processed: {report['summary']['total_files_processed']}")
+    tprint(f"Total issues found: {report['summary']['total_issues_found']}")
+    tprint(f"Auto-fixed: {report['summary']['auto_fixed']} ({report['summary']['auto_fix_rate']:.1f}%)")
+    tprint(f"Flagged for review: {report['summary']['flagged_for_review']}")
+    tprint(f"Total fix rate: {report['summary']['total_fix_rate']:.1f}%")
     
     if report['flagged_issues']:
-        print(f"\n🚩 Issues flagged for manual review:")
+        tprint(f"\n🚩 Issues flagged for manual review:")
         for issue in report['flagged_issues']:
-            print(f"  {issue['file_path']}:{issue['line_number']} - {issue['reason']}")
+            tprint(f"  {issue['file_path']}:{issue['line_number']} - {issue['reason']}")
     
     # Save report if requested
     if args.output:
         with open(args.output, 'w') as f:
             json.dump(report, f, indent=2)
-        print(f"\n💾 Report saved to: {args.output}")
+        tprint(f"\n💾 Report saved to: {args.output}")
 
 
 if __name__ == "__main__":

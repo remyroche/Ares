@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Script to fix missing await statements for async function calls.
 """
@@ -116,7 +118,7 @@ class AsyncPatternFixer:
             return False
 
         except Exception as e:
-            print(f"Error fixing {file_path}: {e}")
+            tprint(f"Error fixing {file_path}: {e}")
             return False
 
     def fix_with_regex(self, file_path: str, issues: list[dict]) -> bool:
@@ -156,7 +158,7 @@ class AsyncPatternFixer:
             return False
 
         except Exception as e:
-            print(f"Error fixing {file_path}: {e}")
+            tprint(f"Error fixing {file_path}: {e}")
             return False
 
     def generate_report(self) -> dict:
@@ -180,26 +182,26 @@ class AsyncPatternFixer:
         """Fix all async/await issues."""
         if dry_run:
             report = self.generate_report()
-            print("\nDRY RUN - Async/await fixes needed:")
-            print("=" * 60)
+            tprint("\nDRY RUN - Async/await fixes needed:")
+            tprint("=" * 60)
 
-            print(f"\nTotal files with issues: {report['total_files']}")
-            print(f"Total missing await statements: {report['total_issues']}")
+            tprint(f"\nTotal files with issues: {report['total_files']}")
+            tprint(f"Total missing await statements: {report['total_issues']}")
 
-            print("\nAsync functions that need await:")
+            tprint("\nAsync functions that need await:")
             for func in sorted(report["functions_needing_await"][:10]):
-                print(f"  - {func}()")
+                tprint(f"  - {func}()")
 
             if len(report["functions_needing_await"]) > 10:
-                print(f"  ... and {len(report['functions_needing_await']) - 10} more")
+                tprint(f"  ... and {len(report['functions_needing_await']) - 10} more")
 
-            print("\nSample files to be fixed (showing first 5):")
+            tprint("\nSample files to be fixed (showing first 5):")
             for file_path, issues in list(report["issues_by_file"].items())[:5]:
-                print(f"\n{file_path}:")
+                tprint(f"\n{file_path}:")
                 for issue in issues[:3]:
-                    print(f"  - {issue}")
+                    tprint(f"  - {issue}")
                 if len(issues) > 3:
-                    print(f"  ... and {len(issues) - 3} more")
+                    tprint(f"  ... and {len(issues) - 3} more")
 
             return report
         # Actually fix the files
@@ -210,12 +212,12 @@ class AsyncPatternFixer:
             # Try regex approach first (simpler and preserves formatting)
             if self.fix_with_regex(file_path, issues):
                 fixed += 1
-                print(f"✓ Fixed {file_path}")
+                tprint(f"✓ Fixed {file_path}")
             else:
                 failed += 1
-                print(f"✗ Failed to fix {file_path}")
+                tprint(f"✗ Failed to fix {file_path}")
 
-        print(f"\nFixed {fixed} files, {failed} failures")
+        tprint(f"\nFixed {fixed} files, {failed} failures")
         return {"fixed": fixed, "failed": failed}
 
 
@@ -244,7 +246,7 @@ def main():
         report_file = f"code_quality/reports/async_fixes_report_{timestamp}.json"
         with open(report_file, "w") as f:
             json.dump(result, f, indent=2)
-        print(f"\nReport saved to: {report_file}")
+        tprint(f"\nReport saved to: {report_file}")
 
 
 if __name__ == "__main__":

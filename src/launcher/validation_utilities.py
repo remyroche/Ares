@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from src.utils.tprint import tprint
+
 """
 Validation Utilities for Ares Launcher
 
@@ -43,7 +45,7 @@ class PrerequisitesValidator(BaseValidator):
     def _validate_data_collection_prerequisites(self, symbol: str, exchange: str, **kwargs) -> bool:
         """Validate prerequisites for data collection."""
         self.logger.info("🔍 Validating data collection prerequisites...")
-        print("🔍 Validating data collection prerequisites...")
+        tprint("🔍 Validating data collection prerequisites...")
         
         try:
             # Check required directories
@@ -60,24 +62,24 @@ class PrerequisitesValidator(BaseValidator):
             script_path = "standalone_data_collection.py"
             if not safe_file_exists(script_path):
                 self.logger.error(f"❌ Data collection script not found: {script_path}")
-                print(f"❌ Data collection script not found: {script_path}")
+                tprint(f"❌ Data collection script not found: {script_path}")
                 return False
             else:
                 self.logger.info(f"✅ Data collection script found: {script_path}")
             
             self.logger.info("✅ Data collection prerequisites validation completed")
-            print("✅ Data collection prerequisites validation completed")
+            tprint("✅ Data collection prerequisites validation completed")
             return True
             
         except Exception as e:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
-            print(f"❌ Prerequisites validation failed: {e}")
+            tprint(f"❌ Prerequisites validation failed: {e}")
             return False
     
     def _validate_model_training_prerequisites(self, symbol: str, exchange: str, **kwargs) -> bool:
         """Validate prerequisites for model training."""
         self.logger.info("🔍 Validating model training prerequisites...")
-        print("🔍 Validating model training prerequisites...")
+        tprint("🔍 Validating model training prerequisites...")
         
         try:
             # Check required directories
@@ -105,11 +107,11 @@ class PrerequisitesValidator(BaseValidator):
             
             if missing_files:
                 self.logger.error(f"❌ Missing required data files: {missing_files}")
-                print(f"❌ Missing required data files:")
+                tprint(f"❌ Missing required data files:")
                 for file_path in missing_files:
-                    print(f"   • {file_path}")
-                print("💡 Please run data collection first:")
-                print(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
+                    tprint(f"   • {file_path}")
+                tprint("💡 Please run data collection first:")
+                tprint(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
                 return False
             
             # Check for previous step outputs
@@ -125,21 +127,21 @@ class PrerequisitesValidator(BaseValidator):
             
             if missing_previous:
                 self.logger.warning(f"⚠️ Some previous step outputs missing: {missing_previous}")
-                print("⚠️ Some previous step outputs are missing - model training will use defaults")
+                tprint("⚠️ Some previous step outputs are missing - model training will use defaults")
             
             self.logger.info("✅ Model training prerequisites validation completed")
-            print("✅ Model training prerequisites validation completed")
+            tprint("✅ Model training prerequisites validation completed")
             return True
             
         except Exception as e:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
-            print(f"❌ Prerequisites validation failed: {e}")
+            tprint(f"❌ Prerequisites validation failed: {e}")
             return False
     
     def _validate_optimisation_prerequisites(self, symbol: str, exchange: str, **kwargs) -> bool:
         """Validate prerequisites for optimisation."""
         self.logger.info("🔍 Validating optimisation prerequisites...")
-        print("🔍 Validating optimisation prerequisites...")
+        tprint("🔍 Validating optimisation prerequisites...")
         
         try:
             # Check required directories
@@ -167,11 +169,11 @@ class PrerequisitesValidator(BaseValidator):
             
             if missing_files:
                 self.logger.error(f"❌ Missing required data files: {missing_files}")
-                print(f"❌ Missing required data files:")
+                tprint(f"❌ Missing required data files:")
                 for file_path in missing_files:
-                    print(f"   • {file_path}")
-                print("💡 Please run data collection first:")
-                print(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
+                    tprint(f"   • {file_path}")
+                tprint("💡 Please run data collection first:")
+                tprint(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
                 return False
             
             # Check for previous step outputs
@@ -187,21 +189,21 @@ class PrerequisitesValidator(BaseValidator):
             
             if missing_previous:
                 self.logger.warning(f"⚠️ Some previous step outputs missing: {missing_previous}")
-                print("⚠️ Some previous step outputs are missing - optimisation will use defaults")
+                tprint("⚠️ Some previous step outputs are missing - optimisation will use defaults")
             
             self.logger.info("✅ Optimisation prerequisites validation completed")
-            print("✅ Optimisation prerequisites validation completed")
+            tprint("✅ Optimisation prerequisites validation completed")
             return True
             
         except Exception as e:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
-            print(f"❌ Prerequisites validation failed: {e}")
+            tprint(f"❌ Prerequisites validation failed: {e}")
             return False
     
     def _validate_backtesting_prerequisites(self, symbol: str, exchange: str, **kwargs) -> bool:
         """Validate prerequisites for backtesting."""
         self.logger.info("🔍 Validating backtesting prerequisites...")
-        print("🔍 Validating backtesting prerequisites...")
+        tprint("🔍 Validating backtesting prerequisites...")
         
         try:
             # Check required directories
@@ -229,20 +231,20 @@ class PrerequisitesValidator(BaseValidator):
             
             if missing_files:
                 self.logger.error(f"❌ Missing required data files: {missing_files}")
-                print(f"❌ Missing required data files:")
+                tprint(f"❌ Missing required data files:")
                 for file_path in missing_files:
-                    print(f"   • {file_path}")
-                print("💡 Please run data collection first:")
-                print(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
+                    tprint(f"   • {file_path}")
+                tprint("💡 Please run data collection first:")
+                tprint(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
                 return False
             
             self.logger.info("✅ Backtesting prerequisites validation completed")
-            print("✅ Backtesting prerequisites validation completed")
+            tprint("✅ Backtesting prerequisites validation completed")
             return True
             
         except Exception as e:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
-            print(f"❌ Prerequisites validation failed: {e}")
+            tprint(f"❌ Prerequisites validation failed: {e}")
             return False
 
 class StepValidationValidator(BaseValidator):
@@ -385,30 +387,30 @@ class StepValidationValidator(BaseValidator):
     
     def _print_validation_report(self, validation_results: Dict, symbol: str, exchange: str, start_step: str):
         """Print a formatted validation report."""
-        print("\n" + "="*80)
-        print("📊 STEP VALIDATION REPORT")
-        print(f"🎯 Symbol: {symbol}")
-        print(f"🏢 Exchange: {exchange}")
-        print(f"🚀 Starting from: {start_step}")
-        print("="*80)
+        tprint("\n" + "="*80)
+        tprint("📊 STEP VALIDATION REPORT")
+        tprint(f"🎯 Symbol: {symbol}")
+        tprint(f"🏢 Exchange: {exchange}")
+        tprint(f"🚀 Starting from: {start_step}")
+        tprint("="*80)
         
         all_passed = True
         for step, result in validation_results.items():
             passed = result.get("validation_passed", False)
             status = "✅ PASSED" if passed else "❌ FAILED"
-            print(f"{step:<35} {status}")
+            tprint(f"{step:<35} {status}")
             
             if not passed:
                 all_passed = False
                 error = result.get("error", "Unknown error")
-                print(f"   Error: {error}")
+                tprint(f"   Error: {error}")
         
-        print("="*80)
+        tprint("="*80)
         if all_passed:
-            print("🎉 All previous steps validated successfully!")
+            tprint("🎉 All previous steps validated successfully!")
         else:
-            print("❌ Some previous steps failed validation")
-        print("="*80)
+            tprint("❌ Some previous steps failed validation")
+        tprint("="*80)
 
 class DataValidationValidator(BaseValidator):
     """Validates data for step02 readiness."""
@@ -505,48 +507,48 @@ class DataValidationValidator(BaseValidator):
     
     def _print_step2_validation_report(self, step1_result: Dict, step1_5_result: Dict, symbol: str, exchange: str):
         """Print a formatted validation report for step02 readiness."""
-        print("\n" + "="*80)
-        print("📊 DATA VALIDATION REPORT FOR STEP2")
-        print(f"🎯 Symbol: {symbol}")
-        print(f"🏢 Exchange: {exchange}")
-        print("="*80)
+        tprint("\n" + "="*80)
+        tprint("📊 DATA VALIDATION REPORT FOR STEP2")
+        tprint(f"🎯 Symbol: {symbol}")
+        tprint(f"🏢 Exchange: {exchange}")
+        tprint("="*80)
         
         # Step1 status
         step1_passed = step1_result.get("validation_passed", False)
         step1_status = "✅ PASSED" if step1_passed else "❌ FAILED"
         step1_warnings = step1_result.get("warnings", [])
-        print(f"📁 Step1 Data Collection: {step1_status}")
+        tprint(f"📁 Step1 Data Collection: {step1_status}")
         if step1_warnings:
-            print(f"   ⚠️  Found {len(step1_warnings)} warnings")
+            tprint(f"   ⚠️  Found {len(step1_warnings)} warnings")
             for warning in step1_warnings:
-                print(f"     • {warning}")
+                tprint(f"     • {warning}")
         
         # Step1_5 status
         step1_5_passed = step1_5_result.get("validation_passed", False)
         step1_5_status = "✅ PASSED" if step1_5_passed else "❌ FAILED"
         step1_5_warnings = step1_5_result.get("warnings", [])
-        print(f"🔄 Step1_5 Data Converter: {step1_5_status}")
+        tprint(f"🔄 Step1_5 Data Converter: {step1_5_status}")
         if step1_5_warnings:
-            print(f"   ⚠️  Found {len(step1_5_warnings)} warnings")
+            tprint(f"   ⚠️  Found {len(step1_5_warnings)} warnings")
             for warning in step1_5_warnings:
-                print(f"     • {warning}")
+                tprint(f"     • {warning}")
         
         # Show validation details if available
         if step1_result.get("details"):
-            print(f"   📋 Step1 Details: {step1_result['details']}")
+            tprint(f"   📋 Step1 Details: {step1_result['details']}")
         if step1_5_result.get("details"):
-            print(f"   📋 Step1_5 Details: {step1_5_result['details']}")
+            tprint(f"   📋 Step1_5 Details: {step1_5_result['details']}")
         
         # Overall assessment
         can_start = step1_passed and step1_5_passed
         if can_start:
-            print("\n✅ READY TO START FROM STEP2")
-            print("   Proceeding with existing data...")
+            tprint("\n✅ READY TO START FROM STEP2")
+            tprint("   Proceeding with existing data...")
         else:
-            print("\n❌ NOT READY FOR STEP2")
-            print("   Data validation failed - missing or invalid data")
+            tprint("\n❌ NOT READY FOR STEP2")
+            tprint("   Data validation failed - missing or invalid data")
         
-        print("="*80 + "\n")
+        tprint("="*80 + "\n")
 
 class ValidationFactory:
     """Factory for creating validators."""

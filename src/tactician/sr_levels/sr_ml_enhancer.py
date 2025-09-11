@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 from typing import List, Dict, Any, Optional, Union, Tuple
 import pandas as pd
 import numpy as np
@@ -17,7 +19,7 @@ from ...core.sr_error_handlers import sr_error_handler, SROptimizationError, SRD
 from ...utils.ml_common.model_training import ModelTrainingManager
 from ...utils.ml_common.feature_selection import FeatureSelectionFramework
 from ...utils.ml_common.model_evaluation import ModelEvaluationUtilities
-from ...utils.ml_common.ensemble_manager import EnsembleManager
+from ...utils.ml_common.ensemble_manager import EnsembleManager, EnsembleConfig, EnsembleType
 from ...utils.ml_common.hpo_utils import HyperparameterOptimization
 from ...utils.ml_common.validation_utils import ValidationUtils
 from ...utils.ml_common.confidence_metrics import calculate_confidence_metrics
@@ -41,7 +43,7 @@ try:
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
-    print('Warning: scikit-learn not available, ML features disabled')
+    tprint('Warning: scikit-learn not available, ML features disabled')
 
 @dataclass
 class MLFeatureSet:
@@ -104,7 +106,19 @@ class SRMLEnhancer:
             self.model_training_manager = ModelTrainingManager()
             self.feature_selector = FeatureSelector()
             self.model_evaluator = ModelEvaluator()
-            self.ensemble_manager = EnsembleManager()
+
+            # Create ensemble config for SR ML enhancement
+            ensemble_config = EnsembleConfig(
+                ensemble_name="sr_ml_enhancement",
+                output_dir=str(Path(__file__).parent / "artifacts" / "ensemble"),
+                ensemble_type=EnsembleType.VOTING,
+                enable_gpu_acceleration=True,
+                enable_memory_optimization=True,
+                enable_parallel_processing=True,
+                memory_limit_gb=4.0
+            )
+            self.ensemble_manager = EnsembleManager(ensemble_config)
+
             self.hpo_optimizer = HPOptimizer()
             self.validation_utils = ValidationUtils()
             self.ml_enabled = self.ml_config.get('feature_engineering', {}).get('enable_ml_features', True)

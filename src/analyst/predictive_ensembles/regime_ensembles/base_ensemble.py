@@ -1,7 +1,9 @@
+from src.utils.tprint import tprint
+
 import logging
 import os
 import warnings
-from typing import Any, Callable
+from typing import Any, Callable, Tuple, Dict
 import joblib
 import optuna
 from sklearn.decomposition import PCA
@@ -34,7 +36,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Import M1 optimization utilities
 try:
-    from src.utils.hardware.m1_optimizations import get_m1_memory_optimizer, M1MemoryOptimizer
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
     from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations, M1EnhancedMatrixOperations
     from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
     M1_OPTIMIZATIONS_AVAILABLE = True
@@ -43,7 +45,7 @@ except ImportError as e:
     get_m1_memory_optimizer = None
     get_enhanced_matrix_operations = None
     get_memory_manager = None
-    print(f"⚠️ M1 optimizations not available: {e}")
+    tprint(f"⚠️ M1 optimizations not available: {e}")
 
 # Import PyTorch for MPS acceleration
 try:

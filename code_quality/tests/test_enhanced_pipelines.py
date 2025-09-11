@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Comprehensive test suite for enhanced pipelines with static analysis and AST analysis.
 """
@@ -497,20 +499,20 @@ if __name__ == "__main__":
     result = runner.run(test_suite)
     
     # Print summary
-    print(f"\n{'='*50}")
-    print("TEST SUMMARY")
-    print(f"{'='*50}")
-    print(f"Tests run: {result.testsRun}")
-    print(f"Failures: {len(result.failures)}")
-    print(f"Errors: {len(result.errors)}")
-    print(f"Success rate: {((result.testsRun - len(result.failures) - len(result.errors)) / result.testsRun * 100):.1f}%")
+    tprint(f"\n{'='*50}")
+    tprint("TEST SUMMARY")
+    tprint(f"{'='*50}")
+    tprint(f"Tests run: {result.testsRun}")
+    tprint(f"Failures: {len(result.failures)}")
+    tprint(f"Errors: {len(result.errors)}")
+    tprint(f"Success rate: {((result.testsRun - len(result.failures) - len(result.errors)) / result.testsRun * 100):.1f}%")
     
     if result.failures:
-        print("\nFAILURES:")
+        tprint("\nFAILURES:")
         for test, traceback in result.failures:
-            print(f"- {test}: {traceback}")
+            tprint(f"- {test}: {traceback}")
     
     if result.errors:
-        print("\nERRORS:")
+        tprint("\nERRORS:")
         for test, traceback in result.errors:
-            print(f"- {test}: {traceback}")
+            tprint(f"- {test}: {traceback}")

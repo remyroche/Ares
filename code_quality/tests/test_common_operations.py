@@ -1,3 +1,5 @@
+from src.utils.tprint import tprint
+
 """
 Comprehensive unit tests for common_operations module.
 
@@ -23,7 +25,7 @@ try:
     import pytest
 except ImportError:
     pytest = None
-    print("Warning: pytest not available")
+    tprint("Warning: pytest not available")
 
 from src.utils.common_operations import *
 import collections

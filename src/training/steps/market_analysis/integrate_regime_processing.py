@@ -40,7 +40,7 @@ class RegimeProcessingIntegrator:
 
     async def _backup_existing_files(self) -> None:
         """Backup existing step files."""
-        files_to_backup = ['src/training/steps/step05_labeling.py', 'src/training/steps/step06_feature_engineering.py', 'src/training/steps/step07_enhanced_matrix_operations.py']
+        files_to_backup = ['src/training/steps/step05_labeling.py', 'src/training/steps/step06_feature_engineering.py']
         for file_path in files_to_backup:
             if Path(file_path).exists():
                 dest = self.backup_dir / Path(file_path).name

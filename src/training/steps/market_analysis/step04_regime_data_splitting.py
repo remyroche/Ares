@@ -158,12 +158,7 @@ try:
 except ImportError as e:
     system_logger.warning(f"Vectorized optimizations not available: {e}")
     VECTORIZED_OPTIMIZATIONS_AVAILABLE = False
-REQUIRED_MODULES = ['pandas', 'numpy', 'src.utils.logger', 'src.utils.enhanced_mlflow_integration']
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 from src.utils.logger import system_logger
-enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
-pandas = pd
-numpy = np
 
 # Import financial metrics logging system
 try:

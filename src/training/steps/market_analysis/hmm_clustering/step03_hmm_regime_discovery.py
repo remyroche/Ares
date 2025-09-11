@@ -137,10 +137,7 @@ def secure_step_execution(*args, **kwargs):
         return func
     return decorator
 
-REQUIRED_MODULES = ['pandas', 'numpy', 'psutil', 'src.utils.logger']
-dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 # SR Breakout Predictor will be imported directly where needed
-enhanced_mlflow = PipelineStandards.safe_import('src.utils.enhanced_mlflow_integration', None)
 import psutil
 
 PSUTIL_AVAILABLE = psutil is not None

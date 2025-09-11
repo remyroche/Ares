@@ -154,11 +154,8 @@ def optimize_dataframe_dtypes(df):
 def validate_dataframe(df):
     return True
 
-def validate_finite(arr):
-    return np.all(np.isfinite(arr))
-
-def safe_divide(a, b):
-    return np.divide(a, b, out=np.zeros_like(a), where=b!=0)
+# Import standardized math validation utilities
+from src.utils.math_validation import validate_finite, safe_divide
 
 
 class SRMLLearningStep(BaseStep):

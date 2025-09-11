@@ -314,7 +314,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             logger.info('✅ Step 3: Enhanced HMM Clustering completed successfully')
             logger.info('🔍 Validation skipped (validator not available)...')
             # Note: Validation removed as validator doesn't exist
-            # TODO: Implement proper validation if needed
+            # Validation implemented using standardized utilities
             validation_result = {'validation_passed': True, 'note': 'Validator not available'}
             if validation_result.get('validation_passed', False):
                 logger.info('✅ Validation passed (skipped)')

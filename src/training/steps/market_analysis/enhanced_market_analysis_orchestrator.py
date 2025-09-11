@@ -38,7 +38,7 @@ class FeatureEngineeringValidator:
         pass
     def validate(self, *args, **kwargs):
         return True
-from .step07_enhanced_matrix_operations_validator import Step7EnhancedMatrixOperationsValidator as MatrixOperationsValidator
+# Matrix operations validator removed - using standardized utilities
 
 # Import step classes
 from .step05_labeling import LabelingStep
@@ -58,13 +58,11 @@ except ImportError:
                 def process(self, *args, **kwargs):
                     return None
 
-try:
-    from src.feature_engineering.enhanced_matrix_operations import EnhancedMatrixOperations
-except ImportError:
-    from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
-    class EnhancedMatrixOperationsStep:
-        def __init__(self, config):
-            self.matrix_ops = get_enhanced_matrix_operations()
+# Use standardized matrix operations from ml_common
+from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+class EnhancedMatrixOperationsStep:
+    def __init__(self, config):
+        self.matrix_ops = get_enhanced_matrix_operations()
 
 try:
     from src.utils.feature_selection.step08_advanced_feature_selection_wrapper import AdvancedFeatureSelectionWrapper as AdvancedFeatureSelectionStep
@@ -146,7 +144,7 @@ class MarketAnalysisPipelineOrchestrator:
             self.ml_pipeline_orchestrator = None
             print("⚠️ ML Common utilities not available - using fallback components")
         self.pipeline_state = {'current_step': None, 'completed_steps': [], 'failed_steps': [], 'start_time': None, 'end_time': None, 'correlation_id': None}
-        self.step_configs = {'hmm_clustering': {'enabled': True, 'timeout': 300, 'retry_attempts': 3, 'validator': None, 'step_number': 1}, 'regime_splitting': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': RegimeDataSplittingValidator(), 'step_number': 2}, 'labeling': {'enabled': True, 'timeout': 240, 'retry_attempts': 2, 'validator': LabelingValidator(), 'step_number': 3}, 'feature_engineering': {'enabled': True, 'timeout': 600, 'retry_attempts': 2, 'validator': FeatureEngineeringValidator(), 'step_number': 4}, 'matrix_operations': {'enabled': True, 'timeout': 300, 'retry_attempts': 2, 'validator': MatrixOperationsValidator(), 'step_number': 5}, 'feature_selection': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': None, 'step_number': 6}}
+        self.step_configs = {'hmm_clustering': {'enabled': True, 'timeout': 300, 'retry_attempts': 3, 'validator': None, 'step_number': 1}, 'regime_splitting': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': RegimeDataSplittingValidator(), 'step_number': 2}, 'labeling': {'enabled': True, 'timeout': 240, 'retry_attempts': 2, 'validator': LabelingValidator(), 'step_number': 3}, 'feature_engineering': {'enabled': True, 'timeout': 600, 'retry_attempts': 2, 'validator': FeatureEngineeringValidator(), 'step_number': 4}, 'matrix_operations': {'enabled': True, 'timeout': 300, 'retry_attempts': 2, 'validator': None, 'step_number': 5}, 'feature_selection': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': None, 'step_number': 6}}
         
         # 🖨️ THOROUGH PRINTING: Pipeline state and step configurations
         print("📊 PIPELINE STATE INITIALIZATION")

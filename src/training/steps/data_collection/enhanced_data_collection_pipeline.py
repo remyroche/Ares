@@ -4,6 +4,12 @@ from src.core.errors.base import ValidationError
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import pandas as pd
 
+# Import utility modules
+from src.utils.error_handler import handles_errors
+from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
+from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
+from src.utils.validation import validate_data_quality
+
 """
 Enhanced Data Collection Pipeline
 

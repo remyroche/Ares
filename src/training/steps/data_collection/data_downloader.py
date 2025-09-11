@@ -10,6 +10,9 @@ from typing import Any
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
+from src.utils.error_handler import handles_errors as utils_handles_errors
+from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
+from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
 
 @handles_errors(fallback = False)
 async def download_all_data_with_consolidation(

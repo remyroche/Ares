@@ -12,9 +12,15 @@ import sys
 from pathlib import Path
 import time
 import json
+
+# Import utility modules
+from src.utils.error_handler import handles_errors
+from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
+from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
+from src.utils.validation import validate_data_quality
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from .training.steps.data_collection.standalone_enhanced_pipeline import run_standalone_enhanced_data_collection_pipeline
+from .enhanced_data_collection_pipeline import run_enhanced_data_collection_pipeline
 
 async def main() -> None:
     """Main function to run data collection pipeline."""
@@ -35,7 +41,7 @@ async def main() -> None:
     print('=' * 80)
     start_time = time.time()
     try:
-        result = await run_standalone_enhanced_data_collection_pipeline(symbol = symbol, exchange = exchange, data_dir = data_dir, config = config)
+        result = await run_enhanced_data_collection_pipeline(symbol = symbol, exchange = exchange, data_dir = data_dir, config = config)
         success = result.get('success', False)
         total_time = time.time() - start_time
         if success:

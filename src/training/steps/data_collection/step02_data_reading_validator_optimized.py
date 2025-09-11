@@ -20,6 +20,12 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import gc
 
+# Import utility modules
+from src.utils.error_handler import handles_errors
+from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
+from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
+from src.utils.validation import validate_data_quality
+
 # Import the optimized monitoring and validation functions
 from .step02_data_reading_optimized import (
     OptimizedFunctionCallMonitor,

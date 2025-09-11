@@ -25,6 +25,10 @@ sys.path.insert(0, str(project_root))
 
 from typing import Any, Dict, List
 from src.utils.logger import system_logger
+from src.utils.error_handler import handles_errors
+from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
+from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
+from src.utils.validation import validate_data_quality
 from src.utils.enhanced_data_validation import (
     DataType, EnhancedDataValidator, get_validator, 
     ValidationSeverity, ValidationError

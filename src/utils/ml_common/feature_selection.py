@@ -402,12 +402,65 @@ class FeatureSelectionFramework:
             execution_time = time.time() - start_time
             _LOGGER.error(f"❌ {method_name} failed after {execution_time:.3f}s: {e}")
             
-            # Return fallback result
+            # Enhanced error context
+            error_context = {
+                'method_name': method_name,
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'execution_time': execution_time,
+                'args_count': len(args),
+                'kwargs_count': len(kwargs),
+                'memory_usage_mb': psutil.Process().memory_info().rss / 1024**2 if psutil else 0,
+                'optimization_tools': {
+                    'performance_monitor': self.performance_monitor is not None,
+                    'memory_optimizer': self.memory_optimizer is not None,
+                    'shared_cache': self.shared_cache is not None,
+                    'stability_analyzer': self.stability_analyzer is not None
+                }
+            }
+            
+            # Add input validation context if possible
+            try:
+                if len(args) >= 2 and hasattr(args[0], 'shape') and hasattr(args[1], 'shape'):
+                    X, y = args[0], args[1]
+                    error_context['input_shape'] = X.shape
+                    error_context['target_shape'] = y.shape
+                    
+                    # Check for data quality issues
+                    data_quality = self._validate_data_quality(X, y)
+                    error_context['data_quality_issues'] = data_quality.get('issues', [])
+                    error_context['data_quality_warnings'] = data_quality.get('warnings', [])
+                    error_context['suspicious_features'] = data_quality.get('suspicious_features', [])
+            except:
+                error_context['input_validation'] = 'Unable to validate inputs'
+            
+            # Log error with comprehensive context
+            self.log_error_with_context(error_context, "ERROR")
+            
+            # Return fallback result with enhanced context
             if hasattr(self, f'_fallback_{method_name}'):
-                fallback_func = getattr(self, f'_fallback_{method_name}')
-                return fallback_func(*args, **kwargs)
+                try:
+                    fallback_func = getattr(self, f'_fallback_{method_name}')
+                    result = fallback_func(*args, **kwargs)
+                    result['error_context'] = error_context
+                    result['error_report'] = self.generate_error_report(error_context)
+                    return result
+                except Exception as fallback_error:
+                    error_context['fallback_error'] = str(fallback_error)
+                    return {
+                        'error': str(e), 
+                        'fallback_error': str(fallback_error), 
+                        'error_context': error_context,
+                        'error_report': self.generate_error_report(error_context),
+                        'method': method_name
+                    }
             else:
-                return {'error': str(e), 'method': method_name}
+                return {
+                    'error': str(e), 
+                    'error_context': error_context,
+                    'error_report': self.generate_error_report(error_context),
+                    'method': method_name
+                }
 
     def _safe_correlation(self, x: np.ndarray, y: np.ndarray) -> float:
         """Calculate safe correlation with comprehensive error handling."""
@@ -455,20 +508,174 @@ class FeatureSelectionFramework:
             return base_threshold
 
     def _validate_data_quality(self, X: np.ndarray, y: np.ndarray = None) -> Dict[str, Any]:
-        """Validate data quality with comprehensive checks."""
+        """Validate data quality with comprehensive checks and detailed context."""
         try:
-            if self.stability_analyzer:
-                return self.stability_analyzer.validate_data_quality(X, y)
-            else:
-                # Basic validation
-                return {
-                    'is_valid': True,
-                    'issues': [],
-                    'warnings': []
+            issues = []
+            warnings = []
+            suspicious_features = []
+            
+            # Check for constant features
+            constant_features = self._detect_constant_features(X)
+            if constant_features:
+                issues.append(f"Constant features detected: {constant_features}")
+                suspicious_features.extend(constant_features)
+            
+            # Check for high correlation features
+            high_corr_features = self._detect_high_correlation_features(X)
+            if high_corr_features:
+                warnings.append(f"High correlation features detected: {high_corr_features}")
+                suspicious_features.extend(high_corr_features)
+            
+            # Check for suspicious correlations with target
+            if y is not None:
+                suspicious_target_corr = self._detect_suspicious_target_correlations(X, y)
+                if suspicious_target_corr:
+                    warnings.append(f"Suspicious target correlations: {suspicious_target_corr}")
+                    suspicious_features.extend(suspicious_target_corr)
+            
+            # Check for NaN/Inf values
+            nan_features = self._detect_nan_inf_features(X)
+            if nan_features:
+                issues.append(f"NaN/Inf values in features: {nan_features}")
+                suspicious_features.extend(nan_features)
+            
+            # Check for zero variance features
+            zero_var_features = self._detect_zero_variance_features(X)
+            if zero_var_features:
+                issues.append(f"Zero variance features: {zero_var_features}")
+                suspicious_features.extend(zero_var_features)
+            
+            # Check for perfect correlations (suspicious)
+            perfect_corr = self._detect_perfect_correlations(X)
+            if perfect_corr:
+                warnings.append(f"Perfect correlations detected: {perfect_corr}")
+                suspicious_features.extend(perfect_corr)
+            
+            # Check for suspicious mutual information
+            if y is not None:
+                suspicious_mi = self._detect_suspicious_mutual_information(X, y)
+                if suspicious_mi:
+                    warnings.append(f"Suspicious mutual information: {suspicious_mi}")
+                    suspicious_features.extend(suspicious_mi)
+            
+            is_valid = len(issues) == 0
+            
+            return {
+                'is_valid': is_valid,
+                'issues': issues,
+                'warnings': warnings,
+                'suspicious_features': suspicious_features,
+                'validation_details': {
+                    'constant_features': constant_features,
+                    'high_correlation_features': high_corr_features,
+                    'suspicious_target_correlations': suspicious_target_corr if y is not None else [],
+                    'nan_inf_features': nan_features,
+                    'zero_variance_features': zero_var_features,
+                    'perfect_correlations': perfect_corr,
+                    'suspicious_mutual_information': suspicious_mi if y is not None else []
                 }
+            }
+            
         except Exception as e:
             _LOGGER.warning(f"⚠️ Data quality validation failed: {e}")
-            return {'is_valid': True, 'issues': [], 'warnings': []}
+            return {
+                'is_valid': True, 
+                'issues': [], 
+                'warnings': [f"Validation error: {e}"],
+                'suspicious_features': []
+            }
+
+    def _detect_constant_features(self, X: np.ndarray) -> List[int]:
+        """Detect constant features (zero variance)."""
+        try:
+            constant_indices = []
+            for i in range(X.shape[1]):
+                if safe_std(X[:, i]) == 0:
+                    constant_indices.append(i)
+            return constant_indices
+        except:
+            return []
+
+    def _detect_high_correlation_features(self, X: np.ndarray, threshold: float = 0.99) -> List[Tuple[int, int, float]]:
+        """Detect features with suspiciously high correlations."""
+        try:
+            high_corr_pairs = []
+            for i in range(X.shape[1]):
+                for j in range(i + 1, X.shape[1]):
+                    corr = abs(safe_correlation(X[:, i], X[:, j]))
+                    if corr > threshold:
+                        high_corr_pairs.append((i, j, corr))
+            return high_corr_pairs
+        except:
+            return []
+
+    def _detect_suspicious_target_correlations(self, X: np.ndarray, y: np.ndarray, 
+                                             high_threshold: float = 0.99, 
+                                             low_threshold: float = 0.01) -> List[Tuple[int, float]]:
+        """Detect suspicious correlations with target (too high or too low)."""
+        try:
+            suspicious = []
+            for i in range(X.shape[1]):
+                corr = abs(safe_correlation(X[:, i], y))
+                if corr > high_threshold:
+                    suspicious.append((i, corr))
+                    _LOGGER.warning(f"⚠️ Suspiciously high correlation with target: Feature {i} = {corr:.4f}")
+                elif corr < low_threshold and safe_std(X[:, i]) > 0:
+                    suspicious.append((i, corr))
+                    _LOGGER.warning(f"⚠️ Suspiciously low correlation with target: Feature {i} = {corr:.4f}")
+            return suspicious
+        except:
+            return []
+
+    def _detect_nan_inf_features(self, X: np.ndarray) -> List[int]:
+        """Detect features with NaN or Inf values."""
+        try:
+            nan_inf_indices = []
+            for i in range(X.shape[1]):
+                if np.any(np.isnan(X[:, i])) or np.any(np.isinf(X[:, i])):
+                    nan_inf_indices.append(i)
+            return nan_inf_indices
+        except:
+            return []
+
+    def _detect_zero_variance_features(self, X: np.ndarray) -> List[int]:
+        """Detect features with zero variance."""
+        try:
+            zero_var_indices = []
+            for i in range(X.shape[1]):
+                if safe_std(X[:, i]) == 0:
+                    zero_var_indices.append(i)
+            return zero_var_indices
+        except:
+            return []
+
+    def _detect_perfect_correlations(self, X: np.ndarray, threshold: float = 0.999) -> List[Tuple[int, int, float]]:
+        """Detect perfect or near-perfect correlations (suspicious)."""
+        try:
+            perfect_corr_pairs = []
+            for i in range(X.shape[1]):
+                for j in range(i + 1, X.shape[1]):
+                    corr = abs(safe_correlation(X[:, i], X[:, j]))
+                    if corr > threshold:
+                        perfect_corr_pairs.append((i, j, corr))
+                        _LOGGER.warning(f"⚠️ Perfect correlation detected: Features {i}-{j} = {corr:.6f}")
+            return perfect_corr_pairs
+        except:
+            return []
+
+    def _detect_suspicious_mutual_information(self, X: np.ndarray, y: np.ndarray, 
+                                            high_threshold: float = 0.99) -> List[Tuple[int, float]]:
+        """Detect suspiciously high mutual information (potential data leakage)."""
+        try:
+            suspicious = []
+            for i in range(X.shape[1]):
+                mi = self._safe_mutual_information(X[:, i], y)
+                if mi > high_threshold:
+                    suspicious.append((i, mi))
+                    _LOGGER.warning(f"⚠️ Suspiciously high mutual information: Feature {i} = {mi:.4f} (potential data leakage)")
+            return suspicious
+        except:
+            return []
 
     def _enhance_existing_methods(self):
         """
@@ -699,6 +906,95 @@ class FeatureSelectionFramework:
         
         return requirements
 
+    def generate_error_report(self, error_context: Dict[str, Any]) -> str:
+        """Generate a comprehensive error report with detailed context."""
+        try:
+            report = []
+            report.append("=" * 80)
+            report.append("🚨 FEATURE SELECTION ERROR REPORT")
+            report.append("=" * 80)
+            
+            # Basic error information
+            report.append(f"❌ Error Type: {error_context.get('error_type', 'Unknown')}")
+            report.append(f"💬 Error Message: {error_context.get('error_message', 'No message')}")
+            report.append(f"⏱️ Execution Time: {error_context.get('execution_time', 0):.3f}s")
+            
+            # Method information
+            if 'method_name' in error_context:
+                report.append(f"🔧 Method: {error_context['method_name']}")
+            
+            # Input information
+            if 'input_shape' in error_context:
+                report.append(f"📊 Input Shape: {error_context['input_shape']}")
+            if 'target_shape' in error_context:
+                report.append(f"🎯 Target Shape: {error_context['target_shape']}")
+            if 'feature_count' in error_context:
+                report.append(f"🔢 Feature Count: {error_context['feature_count']}")
+            if 'target_count' in error_context:
+                report.append(f"🎯 Target Count: {error_context['target_count']}")
+            
+            # Data quality issues
+            if 'data_quality_issues' in error_context and error_context['data_quality_issues']:
+                report.append("\n🚨 DATA QUALITY ISSUES:")
+                for issue in error_context['data_quality_issues']:
+                    report.append(f"  • {issue}")
+            
+            if 'data_quality_warnings' in error_context and error_context['data_quality_warnings']:
+                report.append("\n⚠️ DATA QUALITY WARNINGS:")
+                for warning in error_context['data_quality_warnings']:
+                    report.append(f"  • {warning}")
+            
+            # Suspicious features
+            if 'suspicious_features' in error_context and error_context['suspicious_features']:
+                report.append("\n🔍 SUSPICIOUS FEATURES:")
+                for feature in error_context['suspicious_features']:
+                    report.append(f"  • {feature}")
+            
+            # System information
+            if 'memory_usage_mb' in error_context:
+                report.append(f"\n💾 Memory Usage: {error_context['memory_usage_mb']:.1f} MB")
+            
+            # Optimization tools status
+            if 'optimization_tools' in error_context:
+                report.append("\n🔧 OPTIMIZATION TOOLS STATUS:")
+                for tool, status in error_context['optimization_tools'].items():
+                    status_icon = "✅" if status else "❌"
+                    report.append(f"  {status_icon} {tool}: {'Enabled' if status else 'Disabled'}")
+            
+            # Recommendations
+            report.append("\n💡 RECOMMENDATIONS:")
+            if 'data_quality_issues' in error_context and error_context['data_quality_issues']:
+                report.append("  • Fix data quality issues before running feature selection")
+            if 'suspicious_features' in error_context and error_context['suspicious_features']:
+                report.append("  • Investigate suspicious features for potential data leakage")
+            if 'memory_usage_mb' in error_context and error_context['memory_usage_mb'] > 1000:
+                report.append("  • Consider reducing dataset size or using memory-efficient mode")
+            
+            report.append("  • Check system requirements and dependencies")
+            report.append("  • Enable all optimization tools for better performance")
+            
+            report.append("=" * 80)
+            
+            return "\n".join(report)
+            
+        except Exception as e:
+            return f"Error generating report: {e}"
+
+    def log_error_with_context(self, error_context: Dict[str, Any], level: str = "ERROR"):
+        """Log error with comprehensive context."""
+        try:
+            error_report = self.generate_error_report(error_context)
+            
+            if level.upper() == "ERROR":
+                _LOGGER.error(error_report)
+            elif level.upper() == "WARNING":
+                _LOGGER.warning(error_report)
+            else:
+                _LOGGER.info(error_report)
+                
+        except Exception as e:
+            _LOGGER.error(f"Failed to log error context: {e}")
+
     def run_comprehensive_feature_selection(self, X: np.ndarray, y: np.ndarray,
                                           feature_names: List[str],
                                           target_count: int,
@@ -792,10 +1088,37 @@ class FeatureSelectionFramework:
         except Exception as e:
             execution_time = time.time() - start_time
             _LOGGER.error(f"❌ Comprehensive feature selection failed after {execution_time:.3f}s: {e}")
+            
+            # Enhanced error context
+            error_context = {
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'execution_time': execution_time,
+                'input_shape': X.shape if X is not None else None,
+                'target_shape': y.shape if y is not None else None,
+                'feature_count': len(feature_names) if feature_names else None,
+                'target_count': target_count,
+                'model_type': model_type,
+                'optimizations_enabled': enable_all_optimizations
+            }
+            
+            # Add data quality issues if available
+            try:
+                data_quality = self._validate_data_quality(X, y)
+                error_context['data_quality_issues'] = data_quality.get('issues', [])
+                error_context['data_quality_warnings'] = data_quality.get('warnings', [])
+                error_context['suspicious_features'] = data_quality.get('suspicious_features', [])
+            except:
+                error_context['data_quality_issues'] = ['Unable to validate data quality']
+            
+            # Log error with comprehensive context
+            self.log_error_with_context(error_context, "ERROR")
+            
             return {
                 'error': str(e),
-                'execution_time': execution_time,
-                'selected_features': feature_names[:target_count]  # Fallback
+                'error_context': error_context,
+                'error_report': self.generate_error_report(error_context),
+                'selected_features': feature_names[:target_count] if feature_names else []  # Fallback
             }
 
     def hierarchical_feature_selection(self, X: np.ndarray, y: np.ndarray,
@@ -6184,8 +6507,8 @@ class FeatureSelectionFramework:
             variance = safe_std(feature_values) ** 2
             normalized_variance = min(1.0, variance / np.var(feature_values))
             
-            # 3. Feature stability
-            stability = self._calculate_feature_stability(feature_values)
+            # 3. Temporal stability (for crypto trading)
+            stability = self._calculate_temporal_stability(feature_values, target)
             
             # 4. Non-linearity (captures complex relationships)
             non_linearity = self._calculate_non_linearity(feature_values, target)
@@ -6452,8 +6775,8 @@ class FeatureSelectionFramework:
             # 3. Information content (variance and entropy)
             information_content = self._calculate_information_content(feature_values)
             
-            # 4. Feature stability
-            stability_score = self._calculate_feature_stability(feature_values)
+            # 4. Temporal stability (for crypto trading)
+            stability_score = self._calculate_temporal_stability(feature_values, target)
             
             # 5. Non-redundancy with other features
             redundancy_penalty = self._calculate_redundancy_penalty(
@@ -6506,6 +6829,36 @@ class FeatureSelectionFramework:
             # Coefficient of variation (higher = more information)
             cv = std_val / abs(mean_val)
             return min(1.0, cv)
+            
+        except:
+            return 0.0
+
+    def _calculate_temporal_stability(self, feature_values: np.ndarray, 
+                                    target: np.ndarray) -> float:
+        """Calculate temporal stability for crypto trading using rolling windows."""
+        try:
+            if len(feature_values) < 20:
+                return 0.0
+            
+            # Calculate rolling correlations
+            window_size = min(10, len(feature_values) // 2)
+            rolling_corrs = []
+            
+            for i in range(window_size, len(feature_values)):
+                feature_window = feature_values[i-window_size:i]
+                target_window = target[i-window_size:i]
+                corr = safe_correlation(feature_window, target_window)
+                if not np.isnan(corr):
+                    rolling_corrs.append(abs(corr))
+            
+            if not rolling_corrs:
+                return 0.0
+            
+            # Stability is inverse of correlation variance
+            corr_std = safe_std(rolling_corrs)
+            stability = max(0.0, 1.0 - corr_std)
+            
+            return stability
             
         except:
             return 0.0
@@ -6743,9 +7096,10 @@ class FeatureSelectionFramework:
             
             # Weight metrics for feature selection
             crypto_relevance = (
-                0.5 * relevance_metrics['target_correlation'] +
+                0.4 * relevance_metrics['target_correlation'] +
                 0.3 * relevance_metrics['information_content'] +
-                0.2 * relevance_metrics['mutual_information']
+                0.2 * relevance_metrics['mutual_information'] +
+                0.1 * relevance_metrics['temporal_stability']
             )
             
             return max(0.0, min(1.0, crypto_relevance))
@@ -6754,7 +7108,7 @@ class FeatureSelectionFramework:
             return 0.0
 
     def _calculate_relevance_metrics(self, x: np.ndarray, y: np.ndarray) -> Dict[str, float]:
-        """Calculate basic relevance metrics for feature selection."""
+        """Calculate comprehensive relevance metrics for feature selection."""
         try:
             metrics = {}
             
@@ -6767,13 +7121,17 @@ class FeatureSelectionFramework:
             # 3. Mutual information (non-linear relationships)
             metrics['mutual_information'] = self._safe_mutual_information(x, y)
             
+            # 4. Temporal stability (for crypto trading)
+            metrics['temporal_stability'] = self._calculate_temporal_stability(x, y)
+            
             return metrics
             
         except:
             return {
                 'target_correlation': 0.0,
                 'information_content': 0.0,
-                'mutual_information': 0.0
+                'mutual_information': 0.0,
+                'temporal_stability': 0.0
             }
 
     def _calculate_basic_correlation(self, x: np.ndarray, y: np.ndarray) -> float:
@@ -8243,7 +8601,36 @@ if __name__ == "__main__":
         else:
             print(f"❌ {method}")
     
+    # Test enhanced error handling
+    print("\n" + "=" * 60)
+    print("🧪 TESTING ENHANCED ERROR HANDLING")
+    print("=" * 60)
+    
+    # Test with invalid data to trigger error handling
+    try:
+        # Create test data with issues
+        X_test = np.array([[1, 2, 3], [1, 2, 3], [1, 2, 3]])  # Constant features
+        y_test = np.array([1, 2, 3])
+        feature_names_test = ['feature_1', 'feature_2', 'feature_3']
+        
+        print("Testing with constant features (should trigger warnings)...")
+        result = framework.run_comprehensive_feature_selection(
+            X_test, y_test, feature_names_test, target_count=2
+        )
+        
+        if 'error_context' in result:
+            print("✅ Error context captured successfully")
+            print(f"Data quality issues: {len(result['error_context'].get('data_quality_issues', []))}")
+            print(f"Data quality warnings: {len(result['error_context'].get('data_quality_warnings', []))}")
+            print(f"Suspicious features: {len(result['error_context'].get('suspicious_features', []))}")
+        else:
+            print("✅ Feature selection completed successfully")
+            
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
+    
     print("\n" + "=" * 60)
     print("🎉 FeatureSelectionFramework with comprehensive optimizations ready!")
     print("💡 Use framework.run_comprehensive_feature_selection() for full optimization")
     print("🔧 All methods automatically enhanced with performance monitoring, caching, and memory optimization")
+    print("🚨 Enhanced error handling with detailed context and suspicious feature detection")

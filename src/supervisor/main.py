@@ -18,6 +18,16 @@ from ..utils.logger import system_logger
 from ..utils.model_manager import ModelManager
 from ..utils.state_manager import StateManager
 from ..utils.config.loaders import initialize_sr_parameters
+# Enhanced error handling and performance monitoring
+from src.utils.enhanced_error_handler import handle_errors_with_tracking
+from src.utils.warning_symbols import failed, initialization_error, warning
+from src.utils.performance_utils import PerformanceMonitor, global_monitor
+from src.utils.caching import intelligent_caching
+# ML Common utilities
+from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
+from src.utils.ml_common.model_registry import ModelRegistry
+from src.utils.ml_common.data_quality import DataQualityUtilities
+from src.utils.ml_common.pipeline_orchestrator import MLPipelineOrchestrator
 
 from src.core.decorators import handles_errors
 import logging
@@ -57,6 +67,17 @@ class Supervisor:
             msg = f'Invalid TRADING_ENVIRONMENT: {env_settings.trading_environment}'
             raise ValueError(msg)
         self.model_manager = ModelManager(database_manager = self.db_manager, performance_reporter = self.performance_reporter)
+        
+        # ML Common utilities
+        self.model_evaluation_utilities: ModelEvaluationUtilities | None = None
+        self.model_registry: ModelRegistry | None = None
+        self.data_quality_utilities: DataQualityUtilities | None = None
+        self.ml_pipeline_orchestrator: MLPipelineOrchestrator | None = None
+        
+        # Performance monitoring
+        self.performance_monitor: PerformanceMonitor | None = None
+        self.global_monitor = global_monitor
+        
         if self.trader:
             self.dependency_container.register('sentinel', self.component_builder.build_sentinel(self.trader, self.state_manager))
             self.dependency_container.register('analyst', self.component_builder.build_analyst(self.trader, self.state_manager))
@@ -194,6 +215,13 @@ class MainSupervisor:
             if not self._validate_configuration():
                 self.logger.error('Invalid configuration for main supervisor')
                 return False
+            
+            # Initialize ML Common utilities
+            await self._initialize_ml_common_utilities()
+            
+            # Initialize performance monitoring
+            await self._initialize_performance_monitoring()
+            
             self.logger.info('✅ Main Supervisor initialization completed successfully')
             return True
         except Exception as e:
@@ -270,6 +298,209 @@ class MainSupervisor:
         if limit:
             history = history[-limit:]
         return history
+
+    @handle_errors_with_tracking(
+        context="ML common utilities initialization",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def _initialize_ml_common_utilities(self) -> bool:
+        """Initialize ML Common utilities."""
+        try:
+            self.logger.info("Initializing ML Common utilities...")
+            print("Initializing ML Common utilities...")
+            
+            # Initialize Model Evaluation Utilities
+            try:
+                self.model_evaluation_utilities = ModelEvaluationUtilities()
+                self.logger.info("✅ Model Evaluation Utilities initialized")
+                print("✅ Model Evaluation Utilities initialized")
+            except Exception as e:
+                self.logger.error(f"❌ Error initializing Model Evaluation Utilities: {e}")
+                print(f"❌ Error initializing Model Evaluation Utilities: {e}")
+                raise
+            
+            # Initialize Model Registry
+            try:
+                self.model_registry = ModelRegistry()
+                self.logger.info("✅ Model Registry initialized")
+                print("✅ Model Registry initialized")
+            except Exception as e:
+                self.logger.error(f"❌ Error initializing Model Registry: {e}")
+                print(f"❌ Error initializing Model Registry: {e}")
+                raise
+            
+            # Initialize Data Quality Utilities
+            try:
+                self.data_quality_utilities = DataQualityUtilities()
+                self.logger.info("✅ Data Quality Utilities initialized")
+                print("✅ Data Quality Utilities initialized")
+            except Exception as e:
+                self.logger.error(f"❌ Error initializing Data Quality Utilities: {e}")
+                print(f"❌ Error initializing Data Quality Utilities: {e}")
+                raise
+            
+            # Initialize ML Pipeline Orchestrator
+            try:
+                self.ml_pipeline_orchestrator = MLPipelineOrchestrator()
+                self.logger.info("✅ ML Pipeline Orchestrator initialized")
+                print("✅ ML Pipeline Orchestrator initialized")
+            except Exception as e:
+                self.logger.error(f"❌ Error initializing ML Pipeline Orchestrator: {e}")
+                print(f"❌ Error initializing ML Pipeline Orchestrator: {e}")
+                raise
+            
+            return True
+        except Exception as e:
+            error_msg = f"❌ Error initializing ML Common utilities: {e}"
+            self.logger.error(error_msg)
+            print(error_msg)
+            return False
+
+    @handles_errors(fallback = False)
+    async def _initialize_performance_monitoring(self) -> bool:
+        """Initialize performance monitoring."""
+        try:
+            self.logger.info("Initializing performance monitoring...")
+            
+            # Initialize Performance Monitor
+            self.performance_monitor = PerformanceMonitor()
+            self.logger.info("✅ Performance Monitor initialized")
+            
+            # Enable global monitoring
+            self.global_monitor.enable()
+            self.logger.info("✅ Global monitoring enabled")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing performance monitoring: {e}")
+            return False
+
+    @handle_errors_with_tracking(
+        context="supervisor ML pipeline orchestration",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def orchestrate_ml_pipeline(self, data: pd.DataFrame, pipeline_type: str = "supervision") -> dict[str, Any]:
+        """
+        Orchestrate ML pipeline for supervisor operations.
+        
+        Args:
+            data: Input data for ML pipeline
+            pipeline_type: Type of pipeline to run (supervision, monitoring, evaluation)
+            
+        Returns:
+            dict: ML pipeline results
+        """
+        if not self.ml_pipeline_orchestrator:
+            error_msg = "ML Pipeline Orchestrator not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            self.logger.info(f"Orchestrating supervisor ML pipeline: {pipeline_type}")
+            print(f"Orchestrating supervisor ML pipeline: {pipeline_type}")
+            
+            # Configure pipeline for supervisor operations
+            pipeline_config = {
+                "pipeline_type": pipeline_type,
+                "data_quality_check": True,
+                "model_evaluation": True,
+                "performance_monitoring": True,
+                "caching_enabled": True,
+                "supervisor_mode": True
+            }
+            
+            # Run the pipeline
+            results = await self.ml_pipeline_orchestrator.run_pipeline(
+                data=data,
+                config=pipeline_config
+            )
+            
+            self.logger.info(f"✅ Supervisor ML pipeline orchestration completed: {pipeline_type}")
+            print(f"✅ Supervisor ML pipeline orchestration completed: {pipeline_type}")
+            return results
+            
+        except Exception as e:
+            error_msg = f"Error orchestrating supervisor ML pipeline: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+
+    @handle_errors_with_tracking(
+        context="supervisor model registry operations",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def manage_models(self, operation: str, model_name: str = None, model_data: dict[str, Any] = None) -> dict[str, Any]:
+        """
+        Manage models in the supervisor's model registry.
+        
+        Args:
+            operation: Operation to perform (list, get, register, update, delete)
+            model_name: Name of the model (for get, register, update, delete)
+            model_data: Model data (for register, update)
+            
+        Returns:
+            dict: Operation results
+        """
+        if not self.model_registry:
+            error_msg = "Model Registry not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            self.logger.info(f"Managing models: {operation}")
+            print(f"Managing models: {operation}")
+            
+            if operation == "list":
+                models = await self.model_registry.list_models()
+                self.logger.info(f"✅ Listed {len(models)} models")
+                print(f"✅ Listed {len(models)} models")
+                return {"models": models}
+            
+            elif operation == "get" and model_name:
+                model = await self.model_registry.get_model(model_name)
+                if model:
+                    self.logger.info(f"✅ Retrieved model: {model_name}")
+                    print(f"✅ Retrieved model: {model_name}")
+                    return {"model": model}
+                else:
+                    error_msg = f"Model not found: {model_name}"
+                    self.logger.error(error_msg)
+                    print(f"❌ {error_msg}")
+                    return {"error": error_msg}
+            
+            elif operation == "register" and model_name and model_data:
+                success = await self.model_registry.register_model(
+                    name=model_name,
+                    model_data=model_data,
+                    metadata={"supervisor_managed": True}
+                )
+                if success:
+                    self.logger.info(f"✅ Registered model: {model_name}")
+                    print(f"✅ Registered model: {model_name}")
+                    return {"success": True}
+                else:
+                    error_msg = f"Failed to register model: {model_name}"
+                    self.logger.error(error_msg)
+                    print(f"❌ {error_msg}")
+                    return {"error": error_msg}
+            
+            else:
+                error_msg = f"Invalid operation or missing parameters: {operation}"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return {"error": error_msg}
+            
+        except Exception as e:
+            error_msg = f"Error managing models: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+
 main_supervisor: MainSupervisor | None = None
 
 async def setup_main_supervisor(config: dict[str, Any] | None = None) -> MainSupervisor | None:

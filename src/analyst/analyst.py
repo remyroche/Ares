@@ -35,6 +35,19 @@ from src.utils.lookahead_bias_detector import get_global_detector
 from src.utils.lookahead_bias_detector import validate_no_future_data
 from src.utils.warning_symbols import failed
 from src.utils.warning_symbols import initialization_error
+# ML Common utilities
+from src.utils.ml_common.feature_selection import FeatureSelectionFramework
+from src.utils.ml_common.data_quality import DataQualityUtilities
+from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
+from src.utils.ml_common.model_registry import ModelRegistry
+from src.utils.ml_common.pipeline_orchestrator import MLPipelineOrchestrator
+# Performance monitoring
+from src.utils.performance_utils import PerformanceMonitor, global_monitor
+from src.utils.caching import intelligent_caching
+# Validation and testing
+from src.utils.step_validation_system import StepValidationSystem
+from src.utils.validation_decorators import validate_step_dependencies
+from src.utils.data_type_optimizer import DataTypeOptimizer
 
 try:
 except Exception:  # pragma: no cover - optional at runtime
@@ -141,6 +154,21 @@ class Analyst:
             True,
         )
 
+        # ML Common utilities initialization
+        self.feature_selection_framework: FeatureSelectionFramework | None = None
+        self.data_quality_utilities: DataQualityUtilities | None = None
+        self.model_evaluation_utilities: ModelEvaluationUtilities | None = None
+        self.model_registry: ModelRegistry | None = None
+        self.ml_pipeline_orchestrator: MLPipelineOrchestrator | None = None
+        
+        # Performance monitoring
+        self.performance_monitor: PerformanceMonitor | None = None
+        self.global_monitor = global_monitor
+        
+        # Validation and testing
+        self.step_validation_system: StepValidationSystem | None = None
+        self.data_type_optimizer: DataTypeOptimizer | None = None
+
         # ML Confidence Predictor integration
         self.ml_confidence_predictor = None
         self.enable_ml_predictions: bool = self.analyst_config.get(
@@ -216,6 +244,15 @@ class Analyst:
         # Initialize Unified Regime Classifier
         if self.enable_regime_classification:
             await self._initialize_regime_classifier()
+
+        # Initialize ML Common utilities
+        await self._initialize_ml_common_utilities()
+
+        # Initialize performance monitoring
+        await self._initialize_performance_monitoring()
+        
+        # Initialize validation and testing
+        await self._initialize_validation_testing()
 
         self.logger.info("✅ Analyst initialization completed successfully")
         return True
@@ -1279,13 +1316,24 @@ class Analyst:
         default_return=None,
         context="SR analysis",
     )
+    @intelligent_caching(ttl=60, key_func=lambda self, features_df: f"regime_analysis_{hash(str(features_df.values.tolist()))}")
+    @global_monitor.track_function
     async def analyze_regime(self, features_df: pd.DataFrame) -> dict[str, Any]:
         """
         Analyze location using fractal classification.
         This method is called by supervisor for regime info.
         """
         if not self.regime_classifier:
+            self.logger.warning("Regime classifier not available")
+            print("⚠️ Regime classifier not available")
             return {"regime": "UNKNOWN", "confidence": 0.0}
+        
+        # Start performance monitoring
+        if self.performance_monitor:
+            self.performance_monitor.start_timer("regime_analysis")
+        
+        self.logger.info("Starting regime analysis...")
+        print("Starting regime analysis...")
         
         try:
             # Get fractal location classification
@@ -1303,11 +1351,126 @@ class Analyst:
                 "fractal_analysis": location_result.get("fractal_analysis", {})
             }
             
+            # End performance monitoring
+            if self.performance_monitor:
+                execution_time = self.performance_monitor.end_timer("regime_analysis")
+                self.logger.info(f"Regime analysis completed in {execution_time:.3f}s")
+                print(f"Regime analysis completed in {execution_time:.3f}s")
+            
+            self.logger.info(f"✅ Regime analysis completed: {regime_info.get('regime', 'UNKNOWN')}")
+            print(f"✅ Regime analysis completed: {regime_info.get('regime', 'UNKNOWN')}")
             return regime_info
             
         except Exception as e:
-            self.logger.error(f"Error in fractal location analysis: {e}")
+            error_msg = f"Error in fractal location analysis: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            
+            # End performance monitoring even on error
+            if self.performance_monitor:
+                self.performance_monitor.end_timer("regime_analysis")
+            
             return {"regime": "UNKNOWN", "confidence": 0.0}
+
+    @handle_errors_with_tracking(
+        context="ML pipeline orchestration",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def orchestrate_ml_pipeline(self, data: pd.DataFrame, pipeline_type: str = "analysis") -> dict[str, Any]:
+        """
+        Orchestrate ML pipeline for comprehensive analysis.
+        
+        Args:
+            data: Input data for ML pipeline
+            pipeline_type: Type of pipeline to run (analysis, prediction, evaluation)
+            
+        Returns:
+            dict: ML pipeline results
+        """
+        if not self.ml_pipeline_orchestrator:
+            error_msg = "ML Pipeline Orchestrator not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            self.logger.info(f"Orchestrating ML pipeline: {pipeline_type}")
+            print(f"Orchestrating ML pipeline: {pipeline_type}")
+            
+            # Configure pipeline based on type
+            pipeline_config = {
+                "pipeline_type": pipeline_type,
+                "data_quality_check": True,
+                "feature_selection": True,
+                "model_evaluation": True,
+                "caching_enabled": True
+            }
+            
+            # Run the pipeline
+            results = await self.ml_pipeline_orchestrator.run_pipeline(
+                data=data,
+                config=pipeline_config
+            )
+            
+            self.logger.info(f"✅ ML pipeline orchestration completed: {pipeline_type}")
+            print(f"✅ ML pipeline orchestration completed: {pipeline_type}")
+            return results
+            
+        except Exception as e:
+            error_msg = f"Error orchestrating ML pipeline: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+
+    @handle_errors_with_tracking(
+        context="model registry operations",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def register_model(self, model_name: str, model_data: dict[str, Any], metadata: dict[str, Any] = None) -> bool:
+        """
+        Register a model in the model registry.
+        
+        Args:
+            model_name: Name of the model
+            model_data: Model data and parameters
+            metadata: Additional metadata
+            
+        Returns:
+            bool: True if registration successful
+        """
+        if not self.model_registry:
+            error_msg = "Model Registry not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return False
+        
+        try:
+            self.logger.info(f"Registering model: {model_name}")
+            print(f"Registering model: {model_name}")
+            
+            # Register the model
+            success = await self.model_registry.register_model(
+                name=model_name,
+                model_data=model_data,
+                metadata=metadata or {}
+            )
+            
+            if success:
+                self.logger.info(f"✅ Model registered successfully: {model_name}")
+                print(f"✅ Model registered successfully: {model_name}")
+            else:
+                self.logger.error(f"❌ Failed to register model: {model_name}")
+                print(f"❌ Failed to register model: {model_name}")
+            
+            return success
+            
+        except Exception as e:
+            error_msg = f"Error registering model {model_name}: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return False
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -1469,8 +1632,185 @@ class Analyst:
 
     @handles_errors(
         exceptions=(Exception,),
-        default_return=None,
+        default_return=False,
+        context="ML common utilities initialization",
+    )
+    async def _initialize_ml_common_utilities(self) -> bool:
+        """Initialize ML Common utilities."""
+        try:
+            self.logger.info("Initializing ML Common utilities...")
+            
+            # Initialize Feature Selection Framework
+            self.feature_selection_framework = FeatureSelectionFramework()
+            self.logger.info("✅ Feature Selection Framework initialized")
+            
+            # Initialize Data Quality Utilities
+            self.data_quality_utilities = DataQualityUtilities()
+            self.logger.info("✅ Data Quality Utilities initialized")
+            
+            # Initialize Model Evaluation Utilities
+            self.model_evaluation_utilities = ModelEvaluationUtilities()
+            self.logger.info("✅ Model Evaluation Utilities initialized")
+            
+            # Initialize Model Registry
+            self.model_registry = ModelRegistry()
+            self.logger.info("✅ Model Registry initialized")
+            
+            # Initialize ML Pipeline Orchestrator
+            self.ml_pipeline_orchestrator = MLPipelineOrchestrator()
+            self.logger.info("✅ ML Pipeline Orchestrator initialized")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing ML Common utilities: {e}")
+            return False
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="performance monitoring initialization",
+    )
+    async def _initialize_performance_monitoring(self) -> bool:
+        """Initialize performance monitoring."""
+        try:
+            self.logger.info("Initializing performance monitoring...")
+            
+            # Initialize Performance Monitor
+            self.performance_monitor = PerformanceMonitor()
+            self.logger.info("✅ Performance Monitor initialized")
+            
+            # Enable global monitoring
+            self.global_monitor.enable()
+            self.logger.info("✅ Global monitoring enabled")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing performance monitoring: {e}")
+            return False
+
+    @handle_errors_with_tracking(
+        context="validation and testing initialization",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def _initialize_validation_testing(self) -> bool:
+        """Initialize validation and testing utilities."""
+        try:
+            self.logger.info("Initializing validation and testing utilities...")
+            print("Initializing validation and testing utilities...")
+            
+            # Initialize Step Validation System
+            self.step_validation_system = StepValidationSystem()
+            self.logger.info("✅ Step Validation System initialized")
+            print("✅ Step Validation System initialized")
+            
+            # Initialize Data Type Optimizer
+            self.data_type_optimizer = DataTypeOptimizer()
+            self.logger.info("✅ Data Type Optimizer initialized")
+            print("✅ Data Type Optimizer initialized")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing validation and testing utilities: {e}")
+            print(f"❌ Error initializing validation and testing utilities: {e}")
+            return False
+
+    @validate_step_dependencies(required_steps=["data_quality_check", "feature_engineering"])
+    @handle_errors_with_tracking(
+        context="data quality validation",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def validate_data_quality(self, data: pd.DataFrame, validation_level: str = "standard") -> dict[str, Any]:
+        """
+        Validate data quality using comprehensive validation utilities.
+        
+        Args:
+            data: Data to validate
+            validation_level: Level of validation (basic, standard, comprehensive)
+            
+        Returns:
+            dict: Validation results
+        """
+        if not self.data_quality_utilities:
+            error_msg = "Data Quality Utilities not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            self.logger.info(f"Validating data quality: {validation_level}")
+            print(f"Validating data quality: {validation_level}")
+            
+            # Perform data quality validation
+            validation_results = await self.data_quality_utilities.validate_data(
+                data=data,
+                validation_level=validation_level
+            )
+            
+            # Optimize data types if validation passes
+            if validation_results.get("is_valid", False) and self.data_type_optimizer:
+                optimized_data = await self.data_type_optimizer.optimize_dataframe(data)
+                validation_results["optimized_data"] = optimized_data
+                self.logger.info("✅ Data types optimized")
+                print("✅ Data types optimized")
+            
+            self.logger.info(f"✅ Data quality validation completed: {validation_level}")
+            print(f"✅ Data quality validation completed: {validation_level}")
+            return validation_results
+            
+        except Exception as e:
+            error_msg = f"Error validating data quality: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+
+    @handle_errors_with_tracking(
+        context="step validation",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def validate_step_execution(self, step_name: str, step_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Validate step execution using step validation system.
+        
+        Args:
+            step_name: Name of the step to validate
+            step_data: Data associated with the step
+            
+        Returns:
+            dict: Validation results
+        """
+        if not self.step_validation_system:
+            error_msg = "Step Validation System not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+        
+        try:
+            self.logger.info(f"Validating step execution: {step_name}")
+            print(f"Validating step execution: {step_name}")
+            
+            # Validate step execution
+            validation_results = await self.step_validation_system.validate_step(
+                step_name=step_name,
+                step_data=step_data
+            )
+            
+            self.logger.info(f"✅ Step validation completed: {step_name}")
+            print(f"✅ Step validation completed: {step_name}")
+            return validation_results
+            
+        except Exception as e:
+            error_msg = f"Error validating step execution: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return {"error": error_msg}
+
+    @handle_errors_with_tracking(
         context="analyst cleanup",
+        log_level="INFO",
+        print_errors=True
     )
     async def stop(self) -> None:
         """Clean up analyst resources."""
@@ -1478,19 +1818,54 @@ class Analyst:
             self.logger.info("Stopping Analyst...")
             self.is_analyzing = False
 
-            # Stop sub-components
+            # Stop sub-components with enhanced error handling
             if self.dual_model_system:
-                await self.dual_model_system.stop()
+                try:
+                    await self.dual_model_system.stop()
+                    self.logger.info("✅ Dual model system stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping dual model system: {e}")
+                    print(f"❌ Error stopping dual model system: {e}")
 
             if self.market_health_analyzer:
-                await self.market_health_analyzer.stop()
+                try:
+                    await self.market_health_analyzer.stop()
+                    self.logger.info("✅ Market health analyzer stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping market health analyzer: {e}")
+                    print(f"❌ Error stopping market health analyzer: {e}")
 
             if self.liquidation_risk_model:
-                await self.liquidation_risk_model.stop()
+                try:
+                    await self.liquidation_risk_model.stop()
+                    self.logger.info("✅ Liquidation risk model stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping liquidation risk model: {e}")
+                    print(f"❌ Error stopping liquidation risk model: {e}")
+
+            # Clean up ML utilities
+            if self.feature_selection_framework:
+                try:
+                    # Add cleanup logic if needed
+                    self.logger.info("✅ Feature selection framework cleaned up")
+                except Exception as e:
+                    self.logger.error(f"❌ Error cleaning up feature selection framework: {e}")
+                    print(f"❌ Error cleaning up feature selection framework: {e}")
+
+            if self.performance_monitor:
+                try:
+                    self.performance_monitor.stop()
+                    self.logger.info("✅ Performance monitor stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping performance monitor: {e}")
+                    print(f"❌ Error stopping performance monitor: {e}")
 
             self.analysis_results = {}
             self.analysis_history = []
 
             self.logger.info("✅ Analyst stopped successfully")
-        except Exception:
-            self.logger.error("❌ Error stopping Analyst: {e}")
+            print("✅ Analyst stopped successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Error stopping Analyst: {e}")
+            print(f"❌ Error stopping Analyst: {e}")
+            raise

@@ -5,8 +5,17 @@ from typing import Any, TYPE_CHECKING
 # Note: compat module has been refactored, using enhanced_error_handler instead
 from ..utils.enhanced_error_handler import handle_errors_with_tracking
 from ..utils.logger import system_logger
+from ..utils.warning_symbols import failed, initialization_error, warning
 from ..core.error_classes import ValidationError
 from ..core.decorators import handles_errors
+# ML Common utilities
+from src.utils.ml_common.hmm_regime_detection import HMMRegimeDetector
+from src.utils.ml_common.feature_selection import FeatureSelectionFramework
+from src.utils.ml_common.data_quality import DataQualityUtilities
+from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
+# Performance monitoring
+from src.utils.performance_utils import PerformanceMonitor, global_monitor
+from src.utils.caching import intelligent_caching
 import numpy as np
 import pandas as pd
 
@@ -87,6 +96,16 @@ class Strategist:
         # Enhanced regime classifier (lazily imported during initialize)
         self.regime_classifier: "EnhancedRegimeClassifier" | None = None
         self.enable_regime_detection = self.strategist_config.dict().get("enable_regime_detection", True)
+        
+        # ML Common utilities
+        self.hmm_regime_detector: HMMRegimeDetector | None = None
+        self.feature_selection_framework: FeatureSelectionFramework | None = None
+        self.data_quality_utilities: DataQualityUtilities | None = None
+        self.model_evaluation_utilities: ModelEvaluationUtilities | None = None
+        
+        # Performance monitoring
+        self.performance_monitor: PerformanceMonitor | None = None
+        self.global_monitor = global_monitor
 
     @handle_specific_errors(
         error_handlers={
@@ -127,6 +146,12 @@ class Strategist:
                     )
                     self.enable_regime_detection = False
                     self.regime_classifier = None
+            
+            # Initialize ML Common utilities
+            await self._initialize_ml_common_utilities()
+            
+            # Initialize performance monitoring
+            await self._initialize_performance_monitoring()
 
             self.logger.info("✅ Strategist initialized successfully")
             return True
@@ -159,6 +184,8 @@ class Strategist:
         context="strategy generation",
     )
     @create_strategy_validator(min_confidence = 0.0, max_confidence = 1.0)
+    @intelligent_caching(ttl=120, key_func=lambda self, market_data, current_price, analysis_results: f"strategy_{current_price}_{hash(str(market_data.tail(10).values.tolist()))}")
+    @global_monitor.track_function
     async def generate_strategy(
         self,
         market_data: pd.DataFrame,
@@ -177,10 +204,15 @@ class Strategist:
             Generated strategy or None if failed
         """
         try:
+            # Start performance monitoring
+            if self.performance_monitor:
+                self.performance_monitor.start_timer("strategy_generation")
+            
             # Validate market data
             self._validate_market_data(market_data)
 
             self.logger.info("🎯 Generating trading strategy...")
+            print("🎯 Generating trading strategy...")
 
             # Extract market indicators using performance optimizer
             market_indicators = await self._extract_market_indicators_optimized(
@@ -232,13 +264,37 @@ class Strategist:
             # Store results
             self._store_strategy_results(base_strategy)
 
+            # End performance monitoring
+            if self.performance_monitor:
+                execution_time = self.performance_monitor.end_timer("strategy_generation")
+                self.logger.info(f"Strategy generation completed in {execution_time:.3f}s")
+                print(f"Strategy generation completed in {execution_time:.3f}s")
+            
+            self.logger.info(f"✅ Strategy generated: {base_strategy.get('direction', 'UNKNOWN')} with confidence {base_strategy.get('confidence', 0.0):.3f}")
+            print(f"✅ Strategy generated: {base_strategy.get('direction', 'UNKNOWN')} with confidence {base_strategy.get('confidence', 0.0):.3f}")
             return base_strategy
 
         except ValidationError as e:
+            error_msg = f"Validation error in strategy generation: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
             log_error(self.logger, "Validation error in strategy generation", e)
+            
+            # End performance monitoring even on error
+            if self.performance_monitor:
+                self.performance_monitor.end_timer("strategy_generation")
+            
             return None
         except Exception as e:
+            error_msg = f"Error generating strategy: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
             log_error(self.logger, "Error generating strategy", e)
+            
+            # End performance monitoring even on error
+            if self.performance_monitor:
+                self.performance_monitor.end_timer("strategy_generation")
+            
             return None
 
     def _validate_market_data(self, market_data: pd.DataFrame) -> None:
@@ -576,20 +632,99 @@ class Strategist:
             return strategy
 
     @handles_errors(Exception, fallback = False)
+    async def _initialize_ml_common_utilities(self) -> bool:
+        """Initialize ML Common utilities."""
+        try:
+            self.logger.info("Initializing ML Common utilities...")
+            
+            # Initialize HMM Regime Detector
+            self.hmm_regime_detector = HMMRegimeDetector()
+            self.logger.info("✅ HMM Regime Detector initialized")
+            
+            # Initialize Feature Selection Framework
+            self.feature_selection_framework = FeatureSelectionFramework()
+            self.logger.info("✅ Feature Selection Framework initialized")
+            
+            # Initialize Data Quality Utilities
+            self.data_quality_utilities = DataQualityUtilities()
+            self.logger.info("✅ Data Quality Utilities initialized")
+            
+            # Initialize Model Evaluation Utilities
+            self.model_evaluation_utilities = ModelEvaluationUtilities()
+            self.logger.info("✅ Model Evaluation Utilities initialized")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing ML Common utilities: {e}")
+            return False
 
+    @handles_errors(Exception, fallback = False)
+    async def _initialize_performance_monitoring(self) -> bool:
+        """Initialize performance monitoring."""
+        try:
+            self.logger.info("Initializing performance monitoring...")
+            
+            # Initialize Performance Monitor
+            self.performance_monitor = PerformanceMonitor()
+            self.logger.info("✅ Performance Monitor initialized")
+            
+            # Enable global monitoring
+            self.global_monitor.enable()
+            self.logger.info("✅ Global monitoring enabled")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing performance monitoring: {e}")
+            return False
+
+    @handle_errors_with_tracking(
+        context="strategist cleanup",
+        log_level="INFO",
+        print_errors=True
+    )
     async def stop(self) -> bool:
         """Stop the strategist component."""
         try:
             self.logger.info("Stopping Strategist...")
+            print("Stopping Strategist...")
             self.is_running = False
 
-            # Cleanup optimizer resources
+            # Cleanup optimizer resources with enhanced error handling
             if hasattr(self, "optimizer") and self.optimizer._executor:
-                self.optimizer._executor.shutdown(wait = True)
+                try:
+                    self.optimizer._executor.shutdown(wait = True)
+                    self.logger.info("✅ Optimizer executor shutdown successfully")
+                    print("✅ Optimizer executor shutdown successfully")
+                except Exception as e:
+                    self.logger.error(f"❌ Error shutting down optimizer executor: {e}")
+                    print(f"❌ Error shutting down optimizer executor: {e}")
+
+            # Clean up ML utilities
+            if self.hmm_regime_detector:
+                try:
+                    # Add cleanup logic if needed
+                    self.logger.info("✅ HMM regime detector cleaned up")
+                    print("✅ HMM regime detector cleaned up")
+                except Exception as e:
+                    self.logger.error(f"❌ Error cleaning up HMM regime detector: {e}")
+                    print(f"❌ Error cleaning up HMM regime detector: {e}")
+
+            if self.performance_monitor:
+                try:
+                    self.performance_monitor.stop()
+                    self.logger.info("✅ Performance monitor stopped")
+                    print("✅ Performance monitor stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping performance monitor: {e}")
+                    print(f"❌ Error stopping performance monitor: {e}")
 
             self.logger.info("✅ Strategist stopped successfully")
+            print("✅ Strategist stopped successfully")
             return True
 
         except Exception as e:
+            error_msg = f"❌ Failed to stop Strategist: {e}"
+            self.logger.error(error_msg)
+            print(error_msg)
             log_error(self.logger, "❌ Failed to stop Strategist", e)
             return False

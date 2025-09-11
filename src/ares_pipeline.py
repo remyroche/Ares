@@ -35,8 +35,16 @@ import pandas as pd
 from strategist import Strategist
 from supervisor import Supervisor
 from tactician import Tactician
-from training.dual_model_system import DualModelSystem
-from training.dual_model_system import setup_dual_model_system
+# Note: dual_model_system has been refactored into training steps
+# Using training steps components instead
+try:
+    from training.steps.model_training import GeneralModelTrainer, AnalystModelTrainer, TacticianModelTrainer
+    TRAINING_STEPS_AVAILABLE = True
+except ImportError:
+    TRAINING_STEPS_AVAILABLE = False
+    GeneralModelTrainer = None
+    AnalystModelTrainer = None
+    TacticianModelTrainer = None
 from utils.dependency_manager import get_dependency_manager
 from utils.dependency_manager import optional_package
 from utils.dependency_manager import requires_package
@@ -712,17 +720,16 @@ class AresPipeline:
             self.logger.exception('Error stopping pipeline')
 
     async def _initialize_dual_model_system(self) -> None:
-        """Initialize dual model system."""
+        """Initialize training steps system."""
         try:
-            dual_model_config = self._get_dual_model_config()
-            self.dual_model_system = await setup_dual_model_system(dual_model_config)
-            if self.dual_model_system:
-                self.logger.info('✅ Dual Model System initialized successfully')
-                system_info = self.dual_model_system.get_system_info()
-                self.logger.info(f"   📊 Analyst timeframes: {system_info.get('analyst_timeframes', [])}")
-                self.logger.info(f"   📊 Tactician timeframes: {system_info.get('tactician_timeframes', [])}")
-                self.logger.info(f"   📊 Analyst confidence threshold: {system_info.get('analyst_confidence_threshold', 0.5)}")
-                self.logger.info(f"   📊 Tactician confidence threshold: {system_info.get('tactician_confidence_threshold', 0.6)}")
+            if TRAINING_STEPS_AVAILABLE:
+                # Initialize the new training steps components
+                self.dual_model_system = GeneralModelTrainer(self.config)
+                self.logger.info('✅ Training Steps System initialized successfully')
+                self.logger.info("   📊 Using new training steps architecture")
+                self.logger.info("   📊 General Model Trainer available")
+                self.logger.info("   📊 Analyst Model Trainer available")
+                self.logger.info("   📊 Tactician Model Trainer available")
             else:
                 self.logger.warning('Dual Model System not available')
         except Exception:

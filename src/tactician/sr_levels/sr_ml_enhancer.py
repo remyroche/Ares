@@ -15,10 +15,10 @@ from ...core.sr_error_handlers import sr_error_handler, SROptimizationError, SRD
 
 # ML Common utilities
 from ...utils.ml_common.model_training import ModelTrainingManager
-from ...utils.ml_common.feature_selection import FeatureSelector
-from ...utils.ml_common.model_evaluation import ModelEvaluator
+from ...utils.ml_common.feature_selection import FeatureSelectionFramework
+from ...utils.ml_common.model_evaluation import ModelEvaluationUtilities
 from ...utils.ml_common.ensemble_manager import EnsembleManager
-from ...utils.ml_common.hpo_utils import HPOptimizer
+from ...utils.ml_common.hpo_utils import HyperparameterOptimization
 from ...utils.ml_common.validation_utils import ValidationUtils
 from ...utils.ml_common.confidence_metrics import calculate_confidence_metrics
 from ...utils.ml_common.model_explanations import explain_model_with_shap_lime

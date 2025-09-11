@@ -9,7 +9,15 @@ from .analyst.liquidation_risk_model import LiquidationRiskModel
 from .analyst.market_health_analyzer import MarketHealthAnalyzer
 from .core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import AnalysisResult, IAnalyst, IEventBus, IExchangeClient, IStateManager, MarketData
-from .training.dual_model_system import DualModelSystem
+# Note: dual_model_system has been refactored into training steps
+# Using training steps components instead
+try:
+    from .training.steps.model_training import GeneralModelTrainer, AnalystModelTrainer
+    TRAINING_STEPS_AVAILABLE = True
+except ImportError:
+    TRAINING_STEPS_AVAILABLE = False
+    GeneralModelTrainer = None
+    AnalystModelTrainer = None
 from src.utils.warning_symbols import failed, initialization_error
 import pandas as pd
 import time
@@ -32,7 +40,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
         self.analysis_interval = self.analyst_config.get('analysis_interval', 3600)
         self.max_analysis_history = self.analyst_config.get('max_analysis_history', 100)
         self.enable_technical_analysis = self.analyst_config.get('enable_technical_analysis', True)
-        self.dual_model_system: DualModelSystem | None = None
+        self.dual_model_system: GeneralModelTrainer | None = None
         self.market_health_analyzer: MarketHealthAnalyzer | None = None
         self.liquidation_risk_model: LiquidationRiskModel | None = None
         self.feature_engineering_orchestrator: FeatureEngineeringOrchestrator | None = None

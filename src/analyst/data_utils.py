@@ -3,7 +3,8 @@ import os
 from datetime import datetime
 from typing import Any
 from scipy.signal import find_peaks
-from src.utils.compat import handle_specific_errors
+# Note: compat module has been refactored, using enhanced_error_handler instead
+from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import critical, failed, initialization_error, invalid, missing, warning
 from typing import Dict, List, Optional, Union, Any, Tuple

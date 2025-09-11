@@ -17,7 +17,7 @@ from .risk_allocator import RiskAllocator
 from ..utils.logger import system_logger
 from ..utils.model_manager import ModelManager
 from ..utils.state_manager import StateManager
-from ..utils.parameter_loader import initialize_sr_parameters
+from ..utils.config.loaders import initialize_sr_parameters
 
 from src.core.decorators import handles_errors
 import logging

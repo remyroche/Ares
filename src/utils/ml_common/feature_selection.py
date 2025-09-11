@@ -149,6 +149,293 @@ class FeatureSelectionFramework:
         
         _LOGGER.info("✅ FeatureSelectionFramework initialized successfully")
 
+    def hierarchical_feature_selection(self, X: np.ndarray, y: np.ndarray,
+                                     feature_names: List[str],
+                                     features_target_count: int,
+                                     config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Enhanced hierarchical feature selection pipeline with adaptive thresholds.
+        
+        Pipeline stages:
+        0. Define initial and target feature counts
+        1. Correlation-based filtering (remove highly correlated pairs)
+        2. mRMR selection (skip if < 150, reduce to ~100 if > 150)
+        3. LASSO stability + RFE consensus (reduce by half toward target)
+        4. Tree-based ensemble selection (final selection to target)
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            features_target_count: Final target number of features
+            config: Configuration dictionary with thresholds and parameters
+            
+        Returns:
+            Dictionary with comprehensive pipeline results
+        """
+        start_time = time.time()
+        features_initial_count = len(feature_names)
+        
+        # Configurable thresholds
+        default_config = {
+            'mrmr_skip_threshold': 150,        # Skip mRMR if features < this
+            'mrmr_target_threshold': 100,      # Target after mRMR
+            'consensus_reduction_factor': 0.5,  # Reduce by this fraction in consensus
+            'correlation_threshold': 0.95,     # Correlation filtering threshold
+            'stability_threshold': 0.6,        # LASSO stability threshold
+            'enable_parallel': self.enable_parallel,
+            'memory_optimization': True,
+            'verbose': True
+        }
+        
+        config = {**default_config, **(config or {})}
+        
+        _LOGGER.info(f"🚀 Starting Hierarchical Feature Selection Pipeline")
+        _LOGGER.info(f"📊 Initial features: {features_initial_count}")
+        _LOGGER.info(f"📊 Target features: {features_target_count}")
+        _LOGGER.info(f"📊 Configuration: {config}")
+        
+        pipeline_results = {
+            'pipeline_stages': {},
+            'final_selected_features': [],
+            'pipeline_summary': {
+                'initial_count': features_initial_count,
+                'target_count': features_target_count,
+                'final_count': 0,
+                'total_reduction': 0,
+                'execution_time': 0.0
+            }
+        }
+        
+        current_features = feature_names.copy()
+        current_X = X.copy()
+        
+        try:
+            # Stage 1: Correlation-based filtering
+            _LOGGER.info("🔍 Stage 1: Correlation-based filtering...")
+            correlation_result = self.correlation_based_filtering(
+                current_X, current_features, 
+                correlation_threshold=config['correlation_threshold']
+            )
+            
+            if 'selected_features' in correlation_result:
+                features_after_correlation = correlation_result['selected_features']
+                pipeline_results['pipeline_stages']['correlation_filtering'] = {
+                    'input_count': len(current_features),
+                    'output_count': len(features_after_correlation),
+                    'removed_count': len(current_features) - len(features_after_correlation),
+                    'result': correlation_result
+                }
+                
+                # Update current state
+                current_features = features_after_correlation
+                selected_indices = [feature_names.index(f) for f in current_features if f in feature_names]
+                current_X = X[:, selected_indices]
+                
+                _LOGGER.info(f"✅ Stage 1 complete: {len(current_features)} features remaining")
+            else:
+                _LOGGER.warning("⚠️ Stage 1 failed, continuing with original features")
+                pipeline_results['pipeline_stages']['correlation_filtering'] = {
+                    'error': 'Correlation filtering failed',
+                    'input_count': len(current_features),
+                    'output_count': len(current_features)
+                }
+            
+            # Stage 2: mRMR selection (conditional)
+            _LOGGER.info("🔍 Stage 2: mRMR selection (conditional)...")
+            features_after_mrmr = current_features.copy()
+            
+            if len(current_features) >= config['mrmr_skip_threshold']:
+                # Calculate target features for mRMR
+                mrmr_target = max(config['mrmr_target_threshold'], 
+                                features_target_count * 2)  # Ensure we don't go below target
+                mrmr_target = min(mrmr_target, len(current_features))
+                
+                _LOGGER.info(f"📊 mRMR target: {mrmr_target} (from {len(current_features)})")
+                
+                mrmr_result = self.mrmr_selection(current_X, y, current_features, mrmr_target)
+                
+                if 'selected_features' in mrmr_result:
+                    features_after_mrmr = mrmr_result['selected_features']
+                    pipeline_results['pipeline_stages']['mrmr_selection'] = {
+                        'input_count': len(current_features),
+                        'output_count': len(features_after_mrmr),
+                        'target_count': mrmr_target,
+                        'result': mrmr_result
+                    }
+                    
+                    # Update current state
+                    current_features = features_after_mrmr
+                    selected_indices = [feature_names.index(f) for f in current_features if f in feature_names]
+                    current_X = X[:, selected_indices]
+                    
+                    _LOGGER.info(f"✅ Stage 2 complete: {len(current_features)} features remaining")
+                else:
+                    _LOGGER.warning("⚠️ Stage 2 failed, continuing with previous features")
+                    pipeline_results['pipeline_stages']['mrmr_selection'] = {
+                        'error': 'mRMR selection failed',
+                        'input_count': len(current_features),
+                        'output_count': len(current_features)
+                    }
+            else:
+                _LOGGER.info(f"⏭️ Stage 2 skipped: {len(current_features)} < {config['mrmr_skip_threshold']} threshold")
+                pipeline_results['pipeline_stages']['mrmr_selection'] = {
+                    'skipped': True,
+                    'reason': f"Features ({len(current_features)}) below threshold ({config['mrmr_skip_threshold']})",
+                    'input_count': len(current_features),
+                    'output_count': len(current_features)
+                }
+            
+            # Stage 3: LASSO stability + RFE consensus
+            _LOGGER.info("🔍 Stage 3: LASSO stability + RFE consensus...")
+            
+            # Calculate target for consensus stage
+            consensus_target = max(features_target_count, 
+                                 int(len(current_features) * config['consensus_reduction_factor']))
+            consensus_target = min(consensus_target, len(current_features))
+            
+            _LOGGER.info(f"📊 Consensus target: {consensus_target} (from {len(current_features)})")
+            
+            # LASSO stability selection
+            lasso_result = self.lasso_stability_selection(
+                current_X, y, current_features,
+                stability_threshold=config['stability_threshold']
+            )
+            
+            # RFE selection
+            base_model = self._get_default_model(y)
+            rfe_result = None
+            if base_model is not None:
+                rfe_result = self.recursive_feature_elimination(
+                    base_model, current_X, y, current_features, consensus_target
+                )
+            
+            # Compute consensus
+            consensus_features = self._compute_lasso_rfe_consensus(
+                lasso_result.get('selected_features', []),
+                rfe_result.get('selected_features', []) if rfe_result else [],
+                consensus_target
+            )
+            
+            pipeline_results['pipeline_stages']['lasso_rfe_consensus'] = {
+                'input_count': len(current_features),
+                'output_count': len(consensus_features),
+                'target_count': consensus_target,
+                'lasso_result': lasso_result,
+                'rfe_result': rfe_result,
+                'consensus_features': consensus_features
+            }
+            
+            # Update current state
+            current_features = consensus_features
+            selected_indices = [feature_names.index(f) for f in current_features if f in feature_names]
+            current_X = X[:, selected_indices]
+            
+            _LOGGER.info(f"✅ Stage 3 complete: {len(current_features)} features remaining")
+            
+            # Stage 4: Tree-based ensemble selection (final)
+            _LOGGER.info("🔍 Stage 4: Tree-based ensemble selection (final)...")
+            
+            tree_result = self.tree_based_ensemble_selection(
+                current_X, y, current_features,
+                methods=['correlation', 'mrmr', 'lasso_stability'],
+                n_features=features_target_count,
+                cv_folds=5,
+                permutation_importance_repeats=10
+            )
+            
+            if 'selected_features' in tree_result:
+                final_features = tree_result['selected_features']
+                pipeline_results['pipeline_stages']['tree_ensemble'] = {
+                    'input_count': len(current_features),
+                    'output_count': len(final_features),
+                    'target_count': features_target_count,
+                    'result': tree_result
+                }
+                
+                _LOGGER.info(f"✅ Stage 4 complete: {len(final_features)} final features")
+            else:
+                _LOGGER.warning("⚠️ Stage 4 failed, using consensus features")
+                final_features = current_features
+                pipeline_results['pipeline_stages']['tree_ensemble'] = {
+                    'error': 'Tree ensemble selection failed',
+                    'input_count': len(current_features),
+                    'output_count': len(current_features)
+                }
+            
+            # Final results
+            execution_time = time.time() - start_time
+            pipeline_results['final_selected_features'] = final_features
+            pipeline_results['pipeline_summary'].update({
+                'final_count': len(final_features),
+                'total_reduction': features_initial_count - len(final_features),
+                'execution_time': execution_time,
+                'reduction_percentage': safe_divide(features_initial_count - len(final_features), features_initial_count) * 100
+            })
+            
+            # Enhanced reporting
+            additional_stats = {
+                'Pipeline stages': len(pipeline_results['pipeline_stages']),
+                'Target achieved': len(final_features) == features_target_count,
+                'Final vs target': f"{len(final_features)}/{features_target_count}",
+                'Total reduction': f"{features_initial_count - len(final_features)} ({pipeline_results['pipeline_summary']['reduction_percentage']:.1f}%)"
+            }
+            
+            self._log_feature_reduction_stats(
+                "Hierarchical Feature Selection Pipeline", 
+                features_initial_count, len(final_features), execution_time, additional_stats
+            )
+            
+            # Memory optimization
+            if config['memory_optimization']:
+                m1_optimize_memory()
+            
+            _LOGGER.info(f"🎉 Hierarchical pipeline completed successfully!")
+            _LOGGER.info(f"📊 Final result: {len(final_features)}/{features_target_count} target features")
+            
+            return pipeline_results
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            _LOGGER.error(f"❌ Hierarchical pipeline failed after {execution_time:.3f}s: {e}")
+            return {
+                'error': str(e),
+                'final_selected_features': current_features,
+                'pipeline_summary': {
+                    'initial_count': features_initial_count,
+                    'target_count': features_target_count,
+                    'final_count': len(current_features),
+                    'execution_time': execution_time
+                }
+            }
+
+    def _compute_lasso_rfe_consensus(self, lasso_features: List[str], rfe_features: List[str], 
+                                   target_count: int) -> List[str]:
+        """Compute consensus between LASSO stability and RFE with intelligent voting."""
+        
+        if not lasso_features and not rfe_features:
+            return []
+        
+        if not lasso_features:
+            return rfe_features[:target_count]
+        if not rfe_features:
+            return lasso_features[:target_count]
+        
+        # Feature voting with weights
+        feature_votes = {}
+        for feature in lasso_features:
+            feature_votes[feature] = feature_votes.get(feature, 0) + 0.6  # LASSO weight
+        for feature in rfe_features:
+            feature_votes[feature] = feature_votes.get(feature, 0) + 0.4  # RFE weight
+        
+        # Sort by votes and select top features
+        sorted_features = sorted(feature_votes.items(), key=lambda x: x[1], reverse=True)
+        consensus_features = [feature for feature, votes in sorted_features[:target_count]]
+        
+        _LOGGER.info(f"📊 Consensus: {len(consensus_features)} features from {len(lasso_features)} LASSO + {len(rfe_features)} RFE")
+        
+        return consensus_features
+
     def _log_feature_reduction_stats(self, method_name: str, original_count: int, 
                                    selected_count: int, execution_time: float,
                                    additional_stats: Optional[Dict[str, Any]] = None):

@@ -48,7 +48,7 @@ class SRLevel:
 
     def update_touch(self, current_time: datetime, price: float, volume: float = 0.0, 
                     market_data: pd.DataFrame = None, min_bounce_threshold: float = 0.001,
-                    min_time_between_touches: int = 300, volume_spike_threshold: float = 1.5) -> bool:
+                    min_time_between_touches: int = 300, volume_spike_threshold: float = 1.2) -> bool:
         """
         Update level with new touch information using meaningful bounce detection.
         
@@ -59,7 +59,7 @@ class SRLevel:
             market_data: Market data for context (optional)
             min_bounce_threshold: Minimum price movement away from level (0.1% = 0.001)
             min_time_between_touches: Minimum seconds between touches (5 minutes = 300)
-            volume_spike_threshold: Volume spike multiplier (1.5x average)
+            volume_spike_threshold: Volume spike multiplier (1.2x average)
             
         Returns:
             bool: True if touch was counted, False if filtered out
@@ -382,7 +382,7 @@ class SRLevelsManager:
                         market_data=market_data,
                         min_bounce_threshold=0.001,  # 0.1% minimum bounce
                         min_time_between_touches=300,  # 5 minutes
-                        volume_spike_threshold=1.5  # 1.5x volume spike
+                        volume_spike_threshold=1.2  # 1.2x volume spike
                     )
                     
                     if touch_counted:
@@ -593,9 +593,7 @@ class SRLevelsManager:
                 level.metadata['trend_context'] = trend_context
                 level.metadata['regime_context'] = regime_context
                 
-                # Adjust level type based on regime if needed
-                if regime_context != 'ranging':
-                    level.level_type = self._adjust_level_type_for_regime(level.level_type, regime_context)
+                # Regime context is informational only - no level type adjustment
             
             return level
         except Exception as e:
@@ -603,44 +601,40 @@ class SRLevelsManager:
             return None
     
     def _classify_level_type_with_trend(self, level_price: float, market_data: pd.DataFrame, lookback_bars: int = 20) -> str:
-        """Classify level as support or resistance based on recent price action and trend."""
+        """Classify level as support or resistance based on how price hits the level (from above or below)."""
         try:
             if len(market_data) < lookback_bars:
                 return 'both'
             
             recent_data = market_data.tail(lookback_bars)
-            
-            # Calculate trend direction
-            price_trend = (recent_data['close'].iloc[-1] - recent_data['close'].iloc[0]) / recent_data['close'].iloc[0]
-            
-            # Count touches above and below level
             tolerance = level_price * 0.002  # 0.2% tolerance
-            touches_above = len(recent_data[recent_data['high'] >= level_price - tolerance])
-            touches_below = len(recent_data[recent_data['low'] <= level_price + tolerance])
             
-            # Calculate price action around level
-            price_above_level = recent_data['close'] > level_price + tolerance
-            price_below_level = recent_data['close'] < level_price - tolerance
+            # Count how many times price hits the level from above vs below
+            hits_from_above = 0  # Price was above level, then hit it (resistance)
+            hits_from_below = 0  # Price was below level, then hit it (support)
             
-            # Determine level type based on trend and price action
-            if price_trend > 0.02:  # Strong uptrend
-                if touches_above > touches_below:
-                    return 'resistance'
-                else:
-                    return 'support'
-            elif price_trend < -0.02:  # Strong downtrend
-                if touches_below > touches_above:
-                    return 'support'
-                else:
-                    return 'resistance'
-            else:  # Sideways or weak trend
-                # Use price action context
-                if price_above_level.sum() > price_below_level.sum():
-                    return 'resistance'
-                elif price_below_level.sum() > price_above_level.sum():
-                    return 'support'
-                else:
-                    return 'both'  # Can act as both in ranging markets
+            for i in range(1, len(recent_data)):
+                current = recent_data.iloc[i]
+                previous = recent_data.iloc[i-1]
+                
+                # Check if current bar touches the level
+                level_touched = (current['low'] <= level_price + tolerance and 
+                               current['high'] >= level_price - tolerance)
+                
+                if level_touched:
+                    # Determine if price came from above or below
+                    if previous['close'] > level_price + tolerance:
+                        hits_from_above += 1  # Price came down to hit level (resistance)
+                    elif previous['close'] < level_price - tolerance:
+                        hits_from_below += 1  # Price came up to hit level (support)
+            
+            # Classify based on hit direction
+            if hits_from_above > hits_from_below:
+                return 'resistance'  # More hits from above = resistance
+            elif hits_from_below > hits_from_above:
+                return 'support'     # More hits from below = support
+            else:
+                return 'both'        # Equal hits = can act as both
             
         except Exception as e:
             self.logger.warning(f'Error classifying level type with trend: {e}')

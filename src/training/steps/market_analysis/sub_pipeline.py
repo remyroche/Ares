@@ -705,13 +705,11 @@ class MarketAnalysisSubPipeline:
             # Boost scores for SR-specific features
             for col in features_df.columns:
                 if any(pattern in col.lower() for pattern in sr_feature_patterns):
-                    feature_scores[col] *= 1.5  # 50% boost for SR features
+                    feature_scores[col] *= 1.2  # 20% boost for SR features
             
-            # 4. Technical indicator prioritization
+            # 4. Technical indicator prioritization (no boost)
             technical_patterns = ['rsi_', 'macd_', 'bb_', 'sma_', 'ema_', 'atr_', 'stoch_', 'adx_', 'obv_', 'mfi_']
-            for col in features_df.columns:
-                if any(pattern in col.lower() for pattern in technical_patterns):
-                    feature_scores[col] *= 1.2  # 20% boost for technical indicators
+            # No boost for technical indicators - they compete on merit alone
             
             # 5. Remove highly correlated features
             corr_matrix = features_df[high_variance_features].corr().abs()

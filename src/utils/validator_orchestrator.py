@@ -263,7 +263,7 @@ class ValidatorOrchestrator:
         """
         validator_mapping = {
             # Standardized naming convention using step0X format
-            'step01_data_collection': 'step01_data_collection_validator',
+            'step01_data_collection': 'unified_data_collection_validator',
             'step01_5_data_converter': 'step01_5_data_converter_validator', 
             'step02_data_reading': 'step02_data_reading_validator',
             'step02_5_sr_optimization': 'step02_5_sr_optimization_validator',
@@ -296,7 +296,7 @@ class ValidatorOrchestrator:
             'step20_ab_testing': 'consolidated_backtesting_validator',
             'step21_saving': 'step21_saving_validator',
             # Legacy support for old naming conventions (deprecated)
-            'step1_data_collection': 'step01_data_collection_validator',
+            'step1_data_collection': 'unified_data_collection_validator',
             'step1_5_data_converter': 'step01_5_data_converter_validator', 
             'step2_data_reading': 'step02_data_reading_validator',
             'step2_5_sr_optimization': 'step02_5_sr_optimization_validator',

@@ -1,0 +1,1275 @@
+"""
+Centralized logging configuration with Standardized Import Management.
+
+This module provides a unified logging system with JSON formatting,
+file rotation, and console output capabilities.
+"""
+import logging
+import os
+import sys
+import sys as _sys
+import threading
+import time
+import concurrent.futures
+from contextlib import contextmanager
+
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Callable, Any
+import builtins
+
+# Optional imports
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+
+try:
+    from ..utils.pipeline_standards import PipelineStandards
+    import collections
+
+except ImportError:
+    PipelineStandards = None
+REQUIRED_MODULES = ['structured_logging', 'warning_symbols']
+# Lazy initialization to avoid hanging during import
+dependency_status = None
+structured_logging = None
+warning_symbols = None
+
+def _lazy_initialize_dependencies():
+    """Initialize dependencies only when needed to avoid import-time hanging."""
+    global dependency_status, structured_logging, warning_symbols
+    if dependency_status is None:
+        if PipelineStandards is not None:
+            dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+            structured_logging = PipelineStandards.safe_import('structured_logging', None)
+            warning_symbols = PipelineStandards.safe_import('warning_symbols', None)
+        else:
+            dependency_status = {module: False for module in REQUIRED_MODULES}
+            structured_logging = None
+            warning_symbols = None
+
+def create_fallback_correlation_filter() -> Any:
+
+    class FallbackCorrelationIdFilter:
+
+        def filter(self, record: Any) -> bool:
+            return True
+    return FallbackCorrelationIdFilter()
+
+def create_fallback_json_formatter() -> Any:
+    """Create a fallback formatter that works like a logging.Formatter."""
+    class FallbackFormatter(logging.Formatter):
+        def format(self, record):
+            return f'{record.levelname}: {record.getMessage()}'
+    return FallbackFormatter()
+
+class HumanReadableFormatter(logging.Formatter):
+    """
+    Custom formatter that provides more human-readable timestamps with relative time information.
+    """
+    
+    def __init__(self, fmt=None, datefmt=None, include_relative=True):
+        super().__init__(fmt, datefmt)
+        self.include_relative = include_relative
+        self.start_time = datetime.now()
+    
+    def formatTime(self, record, datefmt=None):
+        """
+        Format the timestamp with human-readable format and optional relative time.
+        """
+        try:
+            # Get the timestamp from the record
+            ct = datetime.fromtimestamp(record.created)
+            
+            # Format the main timestamp
+            if datefmt:
+                timestamp = ct.strftime(datefmt)
+            else:
+                timestamp = ct.strftime('%b %d, %Y %H:%M:%S')
+            
+            # Add relative time if enabled
+            if self.include_relative:
+                now = datetime.now()
+                diff = now - ct
+                
+                if diff.total_seconds() < 1:
+                    relative = "just now"
+                elif diff.total_seconds() < 60:
+                    relative = f"{int(diff.total_seconds())}s ago"
+                elif diff.total_seconds() < 3600:
+                    relative = f"{int(diff.total_seconds() // 60)}m ago"
+                elif diff.total_seconds() < 86400:
+                    relative = f"{int(diff.total_seconds() // 3600)}h ago"
+                else:
+                    relative = f"{int(diff.total_seconds() // 86400)}d ago"
+                
+                # Add session duration
+                session_duration = now - self.start_time
+                if session_duration.total_seconds() > 0:
+                    session_str = f" (session: {self._format_duration(session_duration)})"
+                else:
+                    session_str = ""
+                
+                return f"{timestamp} ({relative}){session_str}"
+            else:
+                return timestamp
+                
+        except Exception:
+            # Fallback to default formatting
+            return super().formatTime(record, datefmt)
+    
+    def _format_duration(self, duration: timedelta) -> str:
+        """Format a duration in a human-readable way."""
+        total_seconds = int(duration.total_seconds())
+        
+        if total_seconds < 60:
+            return f"{total_seconds}s"
+        elif total_seconds < 3600:
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            return f"{minutes}m{seconds}s" if seconds > 0 else f"{minutes}m"
+        else:
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            return f"{hours}h{minutes}m" if minutes > 0 else f"{hours}h"
+
+def create_timestamped_print(include_relative=True, include_session=True):
+    """
+    Create a timestamped print function that adds human-readable timestamps to all print statements.
+    
+    Args:
+        include_relative: Whether to include relative time (e.g., "2m ago")
+        include_session: Whether to include session duration
+    
+    Returns:
+        Function that behaves like print but with timestamps
+    """
+    start_time = datetime.now()
+    
+    def timestamped_print(*args, **kwargs):
+        """Print function with human-readable timestamps."""
+        try:
+            # Get current time
+            now = datetime.now()
+            
+            # Format timestamp
+            timestamp = now.strftime('%b %d, %Y %H:%M:%S')
+            
+            # Add relative time if enabled
+            if include_relative:
+                # Calculate relative time (this is approximate since we don't have the original time)
+                # For print statements, we'll just show "now" or use a simple approach
+                relative = "now"
+            else:
+                relative = ""
+            
+            # Add session duration if enabled
+            if include_session:
+                session_duration = now - start_time
+                if session_duration.total_seconds() > 0:
+                    session_str = f" (session: {_format_duration(session_duration)})"
+                else:
+                    session_str = ""
+            else:
+                session_str = ""
+            
+            # Create timestamp prefix
+            if relative:
+                timestamp_prefix = f"[{timestamp} ({relative}){session_str}] "
+            else:
+                timestamp_prefix = f"[{timestamp}{session_str}] "
+            
+            # Convert all arguments to strings and add timestamp
+            if args:
+                # Add timestamp to the first argument
+                first_arg = str(args[0])
+                if first_arg.startswith('[') and ']' in first_arg:
+                    # If already has a timestamp-like prefix, don't add another
+                    timestamped_args = args
+                else:
+                    timestamped_args = (timestamp_prefix + first_arg,) + args[1:]
+            else:
+                timestamped_args = (timestamp_prefix,)
+            
+            # Call the original print function
+            return builtins.print(*timestamped_args, **kwargs)
+            
+        except Exception:
+            # Fallback to original print if anything goes wrong
+            return builtins.print(*args, **kwargs)
+    
+    return timestamped_print
+
+def _format_duration(duration: timedelta) -> str:
+    """Format a duration in a human-readable way."""
+    total_seconds = int(duration.total_seconds())
+    
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    elif total_seconds < 3600:
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}m{seconds}s" if seconds > 0 else f"{minutes}m"
+    else:
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        return f"{hours}h{minutes}m" if minutes > 0 else f"{hours}h"
+
+def enable_timestamped_prints(include_relative=True, include_session=True):
+    """
+    Enable timestamped prints globally by replacing the built-in print function.
+    
+    Args:
+        include_relative: Whether to include relative time
+        include_session: Whether to include session duration
+    """
+    try:
+        # Store the original print function
+        if not hasattr(builtins, '_original_print'):
+            builtins._original_print = builtins.print
+        
+        # Replace print with timestamped version
+        builtins.print = create_timestamped_print(include_relative, include_session)
+        return True
+    except Exception as e:
+        print(f"Failed to enable timestamped prints: {e}")
+        return False
+
+def disable_timestamped_prints():
+    """Disable timestamped prints and restore the original print function."""
+    try:
+        if hasattr(builtins, '_original_print'):
+            builtins.print = builtins._original_print
+            delattr(builtins, '_original_print')
+            return True
+    except Exception as e:
+        print(f"Failed to disable timestamped prints: {e}")
+    return False
+def _get_correlation_filter():
+    """Get the correlation filter, initializing dependencies if needed."""
+    _lazy_initialize_dependencies()
+    if structured_logging is None:
+        return create_fallback_correlation_filter
+    else:
+        return structured_logging.CorrelationIdFilter
+
+def _get_json_formatter():
+    """Get the JSON formatter, initializing dependencies if needed."""
+    _lazy_initialize_dependencies()
+    if structured_logging is None:
+        return create_fallback_json_formatter
+    else:
+        return structured_logging.get_json_formatter
+
+def _get_warning_symbols():
+    """Get warning symbols, initializing dependencies if needed."""
+    _lazy_initialize_dependencies()
+    if warning_symbols is None:
+        def critical(msg: Any) -> None:
+            return print(f'CRITICAL: {msg}')
+
+        def error(msg: Any) -> None:
+            return print(f'ERROR: {msg}')
+
+        def info(msg: Any) -> None:
+            return print(f'INFO: {msg}')
+
+        def failed(msg: Any) -> None:
+            return print(f'FAILED: {msg}')
+
+        def warning(msg: Any) -> None:
+            return print(f'WARNING: {msg}')
+        
+        return type('WarningSymbols', (), {
+            'critical': critical,
+            'error': error,
+            'info': info,
+            'failed': failed,
+            'warning': warning
+        })()
+    else:
+        return warning_symbols
+
+# Create instances for backward compatibility
+CorrelationIdFilter = _get_correlation_filter()
+get_json_formatter = _get_json_formatter()
+warning_symbols_instance = _get_warning_symbols()
+critical = warning_symbols_instance.critical
+error = warning_symbols_instance.error
+failed = warning_symbols_instance.failed
+warning = warning_symbols_instance.warning
+
+class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
+    """Filter to suppress noisy TensorFlow TPU client fallback warning."
+
+    Suppresses messages like:
+    "Falling back to TensorFlow client; we recommended you install the Cloud TPU client directly with pip install cloud-tpu-client."
+    """
+    TARGET_SUBSTRING = 'Falling back to TensorFlow client; we recommended you install the Cloud TPU client'
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            if record and isinstance(record.msg, str):
+                msg_text = record.getMessage()
+                if record.name.startswith('tensorflow') and self.TARGET_SUBSTRING in msg_text:
+                    return False
+        except Exception:
+            return True
+        return True
+
+def _configure_tensorflow_logging_suppression(system_logger: logging.Logger | None) -> None:
+    """Reduce TensorFlow logger verbosity and suppress specific TPU fallback warning."
+
+    This avoids requiring cloud-tpu-client installation when TPU is not needed.
+    """
+    try:
+        tf_logger = logging.getLogger('tensorflow')
+        tf_logger.setLevel(logging.ERROR)
+        tf_logger.propagate = True
+        suppress_filter = _SuppressTensorFlowTPUWarningFilter()
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers:
+            try:
+                handler.addFilter(suppress_filter)
+            except Exception:
+                pass
+        if system_logger is not None:
+            for handler in getattr(system_logger, 'handlers', [])[:]:
+                try:
+                    handler.addFilter(suppress_filter)
+                except Exception:
+                    pass
+        os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '2')
+    except Exception:
+        pass
+
+class EnhancedLogger:
+    """
+    Enhanced logger utility with comprehensive error handling and type safety.
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        """
+        Initialize enhanced logger with enhanced type safety.
+
+        Args:
+            config: Configuration dictionary
+        """
+        self.config: dict[str, Any] = config
+        self.logger: logging.Logger | None = None
+        self.log_config: dict[str, Any] = self.config.get('logging', {})
+        self.log_level: str = self.log_config.get('level', 'INFO')
+        self.log_format: str = self.log_config.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        self.date_format: str = self.log_config.get('date_format', '%Y-%m-%d %H:%M:%S')
+        self.log_file: str | None = self.log_config.get('file', None)
+        self.max_file_size: int = self.log_config.get('max_file_size', 10 * 1024 * 1024)
+        self.backup_count: int = self.log_config.get('backup_count', 5)
+        self.enable_json: bool = bool(self.log_config.get('json', True))
+        self.enable_correlation: bool = bool(self.log_config.get('correlation', True))
+        self.enable_warning_symbols: bool = bool(self.log_config.get('warning_symbols', True))
+        self.enable_human_readable: bool = bool(self.log_config.get('human_readable', True))
+
+    def initialize(self) -> bool:
+        """
+        Initialize enhanced logger with enhanced error handling.
+
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
+        try:
+            self._load_logger_configuration()
+            if not self._validate_configuration():
+                print('Invalid configuration for logger')
+                return False
+            if not self._setup_logger():
+                print('Failed to setup logger')
+                return False
+            self.logger.info('✅ Enhanced Logger initialization completed successfully')
+            return True
+        except Exception as e:
+            print(failed(f'Enhanced Logger initialization failed: {e}'))
+            return False
+
+    def _load_logger_configuration(self) -> None:
+        """Load logger configuration."""
+        try:
+            self.log_config.setdefault('level', 'INFO')
+            self.log_config.setdefault('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            self.log_config.setdefault('date_format', '%Y-%m-%d %H:%M:%S')
+            self.log_config.setdefault('file', None)
+            self.log_config.setdefault('max_file_size', 10 * 1024 * 1024)
+            self.log_config.setdefault('backup_count', 5)
+            self.log_config.setdefault('console_output', True)
+            self.log_config.setdefault('file_output', True)
+            self.log_config.setdefault('json', True)
+            self.log_config.setdefault('correlation', True)
+            self.log_config.setdefault('warning_symbols', True)
+            self.log_level = self.log_config['level']
+            self.log_format = self.log_config['format']
+            self.log_file = self.log_config['file']
+            self.max_file_size = self.log_config['max_file_size']
+            self.backup_count = self.log_config['backup_count']
+            self.enable_json = bool(self.log_config.get('json', True))
+            self.enable_correlation = bool(self.log_config.get('correlation', True))
+            self.enable_warning_symbols = bool(self.log_config.get('warning_symbols', True))
+            print('Logger configuration loaded successfully')
+        except Exception as e:
+            print(f'Error loading logger configuration: {e}')
+
+    def _validate_configuration(self) -> bool:
+        """
+        Validate logger configuration.
+
+        Returns:
+            bool: True if configuration is valid, False otherwise
+        """
+        try:
+            valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+            if self.log_level not in valid_levels:
+                print(f'Invalid log level: {self.log_level}')
+                return False
+            if not self.log_format or '%' not in self.log_format:
+                print('Invalid log format')
+                return False
+            if self.max_file_size <= 0:
+                print('Invalid max file size')
+                return False
+            if self.backup_count < 0:
+                print('Invalid backup count')
+                return False
+            print('Configuration validation successful')
+            return True
+        except Exception as e:
+            print(f'Error validating configuration: {e}')
+            return False
+
+    def _setup_logger(self) -> bool:
+        """
+        Setup logger with file and console handlers.
+
+        Returns:
+            bool: True if setup successful, False otherwise
+        """
+        try:
+            self.logger = logging.getLogger('AresTradingSystem')
+            self.logger.setLevel(getattr(logging, self.log_level))
+            self.logger.handlers.clear()
+            if self.enable_json:
+                formatter = get_json_formatter()
+            else:
+                formatter = logging.Formatter(self.log_format, datefmt=self.date_format)
+            if self.log_config.get('console_output', True):
+
+                class _SafeStreamHandler(logging.StreamHandler):
+
+                    def handleError(self, record: logging.LogRecord) -> None:
+                        exc_type, _, _ = _sys.exc_info()
+                        if exc_type is BrokenPipeError or exc_type is OSError:
+                            try:
+                                self.acquire()
+                                try:
+                                    try:
+                                        self.flush()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        self.close()
+                                    except Exception:
+                                        pass
+                                finally:
+                                    self.release()
+                            except Exception:
+                                pass
+                            return
+                        try:
+                            super().handleError(record)
+                        except Exception:
+                            pass
+                console_handler = _SafeStreamHandler(_sys.stdout)
+                console_handler.setFormatter(formatter)
+                self.logger.addHandler(console_handler)
+            if self.log_file and self.log_config.get('file_output', True):
+                log_dir = os.path.dirname(self.log_file)
+                if log_dir and (not os.path.exists(log_dir)):
+                    os.makedirs(log_dir, exist_ok = True)
+                from logging.handlers import RotatingFileHandler
+                file_handler = RotatingFileHandler(self.log_file, maxBytes = self.max_file_size, backupCount = self.backup_count)
+                file_handler.setFormatter(formatter)
+                self.logger.addHandler(file_handler)
+            if self.enable_correlation:
+                correlation_filter = CorrelationIdFilter()
+                self.logger.addFilter(correlation_filter)
+                for handler in self.logger.handlers:
+                    handler.addFilter(correlation_filter)
+            self.logger.propagate = False
+            logging.raiseExceptions = False
+            try:
+                logging.getLogger('hmmlearn').setLevel(logging.ERROR)
+                logging.getLogger('hmmlearn.hmm').setLevel(logging.ERROR)
+            except Exception:
+                pass
+            print('Logger setup completed successfully')
+            return True
+        except Exception as e:
+            print(f'Error setting up logger: {e}')
+            return False
+
+    def get_logger(self, name: str) -> logging.Logger:
+        """
+        Get a logger instance for a specific component.
+
+        Args:
+            name: Component name
+
+        Returns:
+            logging.Logger: Logger instance
+        """
+        if self.logger is None:
+            return logging.getLogger(name)
+        base_logger = self.logger.getChild(name)
+        if self.enable_warning_symbols:
+            _lazy_initialize_dependencies()  # Ensure dependencies are loaded
+            return self._create_enhanced_logger(base_logger)
+        return base_logger
+
+    def _create_enhanced_logger(self, base_logger: logging.Logger) -> logging.Logger:
+        """
+        Create an enhanced logger with warning symbols.
+
+        Args:
+            base_logger: Base logger to enhance
+
+        Returns:
+            Enhanced logger with warning symbols
+        """
+
+        class EnhancedLoggerWithWarnings:
+
+            def __init__(self, logger: logging.Logger) -> None:
+                self._logger = logger
+                self._original_methods = {}
+                self._original_methods['error'] = logger.error
+                self._original_methods['warning'] = logger.warning
+                self._original_methods['critical'] = logger.critical
+                self._original_methods['exception'] = logger.exception
+                self._original_methods['info'] = logger.info
+                self._original_methods['debug'] = logger.debug
+                self.error = self._enhanced_error
+                self.warning = self._enhanced_warning
+                self.critical = self._enhanced_critical
+                self.exception = self._enhanced_exception
+                self.info = self._enhanced_info
+                self.debug = self._enhanced_debug
+
+            def _enhanced_error(self, msg: str, *args, **kwargs) -> None:
+                """Enhanced error logging with warning symbol and context."""
+                enhanced_msg = error(msg)
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f'[{timestamp}] {enhanced_msg}'
+                return self._original_methods['error'](context_msg, *args, **kwargs)
+
+            def _enhanced_warning(self, msg: str, *args, **kwargs) -> None:
+                """Enhanced warning logging with warning symbol and context."""
+                enhanced_msg = warning(msg)
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f'[{timestamp}] {enhanced_msg}'
+                return self._original_methods['warning'](context_msg, *args, **kwargs)
+
+            def _enhanced_critical(self, msg: str, *args, **kwargs) -> None:
+                """Enhanced critical logging with warning symbol and context."""
+                enhanced_msg = critical(msg)
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f'[{timestamp}] {enhanced_msg}'
+                return self._original_methods['critical'](context_msg, *args, **kwargs)
+
+            def _enhanced_exception(self, msg: str, *args, **kwargs) -> None:
+                """Enhanced exception logging with warning symbol and context."""
+                enhanced_msg = error(msg)
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f'[{timestamp}] {enhanced_msg}'
+                return self._original_methods['exception'](context_msg, *args, **kwargs)
+
+            def _enhanced_info(self, msg: str, *args, **kwargs) -> None:
+                """Enhanced info logging with context (no emoji for normal operations)."""
+                if any((word in msg.lower() for word in ['troubleshoot', 'debug', 'investigate', 'issue', 'problem'])):
+                    enhanced_msg = info(msg)
+                else:
+                    enhanced_msg = msg
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f'[{timestamp}] {enhanced_msg}'
+                return self._logger.info(context_msg, *args, **kwargs)
+
+            def _enhanced_debug(self, msg: str, *args, **kwargs) -> None:
+                """Enhanced debug logging with emoji and context."""
+                enhanced_msg = f'🔍 {msg}'
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                context_msg = f'[{timestamp}] {enhanced_msg}'
+                return self._logger.debug(context_msg, *args, **kwargs)
+
+            def __getattr__(self, name: Any) -> None:
+                """Delegate all other attributes to the base logger."""
+                return getattr(self._logger, name)
+        return EnhancedLoggerWithWarnings(base_logger)
+
+    def set_level(self, level: str) -> bool:
+        """
+        Set log level.
+
+        Args:
+            level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if self.logger is None:
+                return False
+            valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+            if level not in valid_levels:
+                return False
+            self.logger.setLevel(getattr(logging, level))
+            return True
+        except Exception as e:
+            print(f'Error setting log level: {e}')
+            return False
+
+    def get_log_status(self) -> dict[str, Any]:
+        """
+        Get logger status information.
+
+        Returns:
+            Dict[str, Any]: Logger status
+        """
+        return {'is_initialized': self.logger is not None, 'log_level': self.log_level, 'log_file': self.log_file, 'max_file_size': self.max_file_size, 'backup_count': self.backup_count, 'console_output': self.log_config.get('console_output', True), 'file_output': self.log_config.get('file_output', True), 'json': self.enable_json, 'correlation': self.enable_correlation}
+
+    async def stop(self) -> None:
+        """Stop the enhanced logger."""
+        print(error('Stopping Enhanced Logger...'))
+        try:
+            if self.logger:
+                for handler in self.logger.handlers[:]:
+                    handler.close()
+                    self.logger.removeHandler(handler)
+                self.logger = None
+            print('✅ Enhanced Logger stopped successfully')
+        except Exception as e:
+            print(f'Error stopping enhanced logger: {e}')
+system_logger: logging.Logger | None = None
+
+def setup_logging(config: dict[str, Any] | None = None) -> logging.Logger | None:
+    """
+    Setup global logging system with comprehensive file logging.
+
+    Args:
+        config: Optional configuration dictionary
+
+    Returns:
+        Optional[logging.Logger]: Global logger instance
+    """
+    try:
+        global system_logger
+        if config is None:
+            log_dir = Path('logs')
+            log_dir.mkdir(exist_ok = True)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            log_file = log_dir / f'ares_{timestamp}.log'
+            config = {'logging': {'level': 'INFO', 'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s', 'date_format': '%b %d, %Y %H:%M:%S', 'file': str(log_file), 'console_output': True, 'file_output': True, 'max_file_size': 10 * 1024 * 1024, 'backup_count': 5, 'json': True, 'correlation': True, 'warning_symbols': True}}
+        enhanced_logger = EnhancedLogger(config)
+        # Now initialize synchronously since we made it synchronous
+        success = enhanced_logger.initialize()
+        if success:
+            system_logger = enhanced_logger.get_logger('System')
+            _configure_tensorflow_logging_suppression(system_logger)
+            # Enable timestamped prints globally - DISABLED during import to avoid conflicts
+            # enable_timestamped_prints(include_relative=True, include_session=True)
+            return system_logger
+        else:
+            system_logger = logging.getLogger('System')
+            system_logger.setLevel(logging.INFO)
+            console_handler = logging.StreamHandler(sys.stdout)
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s', datefmt='%b %d, %Y %H:%M:%S')
+            console_handler.setFormatter(formatter)
+            system_logger.addHandler(console_handler)
+            _configure_tensorflow_logging_suppression(system_logger)
+            # Enable timestamped prints globally (delayed to avoid numba conflicts)
+            # enable_timestamped_prints(include_relative=True, include_session=True)
+            return system_logger
+    except Exception as e:
+        print(f'Error in logger initialization: {e}')
+        system_logger = logging.getLogger('System')
+        system_logger.setLevel(logging.INFO)
+        _configure_tensorflow_logging_suppression(system_logger)
+        # Enable timestamped prints globally (delayed to avoid numba conflicts)
+        # enable_timestamped_prints(include_relative=True, include_session=True)
+        return system_logger
+    except Exception as e:
+        print(f'Error setting up logging: {e}')
+        system_logger = logging.getLogger('System')
+        system_logger.setLevel(logging.INFO)
+        _configure_tensorflow_logging_suppression(system_logger)
+        # Enable timestamped prints globally - DISABLED during import to avoid conflicts
+        # enable_timestamped_prints(include_relative=True, include_session=True)
+        return system_logger
+if system_logger is None:
+    system_logger = setup_logging()
+
+# Import numba-friendly timestamp utilities (temporarily disabled to fix circular import)
+# try:
+#     from .numba_timestamps import (
+#         numba_print_with_timestamp,
+#         numba_print_detailed,
+#         numba_print_simple,
+#         numba_print_progress,
+#         numba_print_performance,
+#         numba_print_error as numba_print_error_func,
+#         numba_print_warning as numba_print_warning_func,
+#         numba_print_info as numba_print_info_func,
+#         numba_print_debug as numba_print_debug_func,
+#         get_numba_timestamp,
+#         get_detailed_timestamp,
+#         get_simple_timestamp,
+#         NUMBA_AVAILABLE
+#     )
+#     NUMBA_TIMESTAMPS_AVAILABLE = True
+# except ImportError:
+NUMBA_TIMESTAMPS_AVAILABLE = False
+NUMBA_AVAILABLE = False
+
+# Create a simple timestamped print function that doesn't interfere with numba
+def timestamped_print(*args, **kwargs):
+    """Simple timestamped print function that doesn't interfere with numba."""
+    try:
+        # Get current time
+        now = datetime.now()
+        timestamp = now.strftime("%H:%M:%S")
+        
+        # Format the message with timestamp
+        if args:
+            message = ' '.join(str(arg) for arg in args)
+            print(f"[{timestamp}] {message}", **kwargs)
+        else:
+            print(**kwargs)
+    except Exception:
+        # Fallback to regular print
+        print(*args, **kwargs)
+
+# Make it available as a module function
+import sys
+current_module = sys.modules[__name__]
+current_module.timestamped_print = timestamped_print
+
+def enable_timestamped_prints_after_numba():
+    """Enable timestamped prints after numba is loaded to avoid conflicts."""
+    try:
+        enable_timestamped_prints(include_relative=True, include_session=True)
+        print("✅ Timestamped prints enabled after numba loading")
+    except Exception as e:
+        print(f"⚠️ Failed to enable timestamped prints: {e}")
+
+def ensure_logging_setup() -> logging.Logger | None:
+    """
+    Ensure logging is set up (backward compatibility function).
+
+    Returns:
+        Optional[logging.Logger]: Global logger instance
+    """
+    global system_logger
+    if system_logger is None:
+        system_logger = setup_logging()
+    return system_logger
+
+def get_logger(name: str) -> logging.Logger:
+    """
+    Get a logger with the specified name (backward compatibility function).
+
+    Args:
+        name: Logger name
+
+    Returns:
+        logging.Logger: Logger instance
+    """
+    global system_logger
+    if system_logger is None:
+        system_logger = setup_logging()
+    try:
+        # TODO: Import when module is available
+        # from .utils.comprehensive_logger import get_comprehensive_logger
+        # comprehensive_logger = get_comprehensive_logger()
+        # if comprehensive_logger:
+        #     return comprehensive_logger.get_component_logger(name)
+        pass
+    except ImportError:
+        pass
+    base_logger = system_logger.getChild(name)
+    try:
+        if hasattr(system_logger, '_logger') and hasattr(system_logger._logger, 'enable_warning_symbols') and system_logger._logger.enable_warning_symbols:
+            return system_logger._logger._create_enhanced_logger(base_logger)
+    except (AttributeError, TypeError):
+        pass
+    return base_logger
+
+def get_system_logger_with_comprehensive_integration() -> logging.Logger:
+    """
+    Get system logger with comprehensive logging integration.
+
+    Returns:
+        logging.Logger: System logger that integrates with comprehensive logging
+    """
+    global system_logger
+    if system_logger is None:
+        system_logger = setup_logging()
+
+    class ComprehensiveIntegratedLogger:
+
+        def __init__(self, base_logger: Any) -> None:
+            self.base_logger = base_logger
+            self.comprehensive_logger = None
+            try:
+                # TODO: Import when module is available
+                # from .utils.comprehensive_logger import get_comprehensive_logger
+                # self.comprehensive_logger = get_comprehensive_logger()
+                self.comprehensive_logger = None
+            except ImportError:
+                pass
+
+        def getChild(self, name: str) -> logging.Logger:
+            """Get child logger with comprehensive logging integration."""
+            if self.comprehensive_logger:
+                return self.comprehensive_logger.get_component_logger(name)
+            return self.base_logger.getChild(name)
+
+        def __getattr__(self, name: Any) -> None:
+            """Delegate all other attributes to the base logger."""
+            return getattr(self.base_logger, name)
+    return ComprehensiveIntegratedLogger(system_logger)
+
+def ensure_comprehensive_logging_available() -> bool:
+    """Ensure comprehensive logging is available for all logging calls."""
+    try:
+        # TODO: Import when module is available
+        # from .utils.comprehensive_logger import get_comprehensive_logger
+
+        # comprehensive_logger = get_comprehensive_logger()
+        # if comprehensive_logger:
+        #     initialize_comprehensive_integration()
+        #     return True
+        return False
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    return False
+
+def _format_bytes(num_bytes: int | None) -> str:
+    """Human-friendly byte size formatter."""
+    try:
+        if num_bytes is None:
+            return 'n/a'
+        step_unit = 1024.0
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        size = float(num_bytes)
+        for unit in units:
+            if size < step_unit:
+                return f'{size:.1f}{unit}'
+            size /= step_unit
+        return f'{size:.1f}PB'
+    except Exception:
+        return str(num_bytes) if num_bytes is not None else 'n/a'
+
+@contextmanager
+def log_io_operation(logger: logging.Logger, operation: str, path: str | os.PathLike | None = None, **context: Any) -> None:
+    """Context-managed I/O logging with duration and best-effort file size."
+
+    - Logs start and end of an I/O operation with optional context (e.g., columns, filters, compression)
+    - On exception, logs with exception() and re-raises (no swallowing)
+    """
+    start = time.perf_counter()
+    try:
+        ctx = ' '.join((f'{k}={v}' for k, v in context.items() if v is not None))
+        logger.info(f'🔧 {operation} start' + (f' path={path}' if path is not None else '') + (f' {ctx}' if ctx else ''))
+    except Exception:
+        pass
+    try:
+        yield
+        elapsed = time.perf_counter() - start
+        size_str = 'n/a'
+        try:
+            if path is not None and os.path.exists(str(path)) and os.path.isfile(str(path)):
+                size_str = _format_bytes(os.path.getsize(str(path)))
+        except Exception:
+            pass
+        try:
+            logger.info(f'✅ {operation} ok' + (f' path={path}' if path is not None else '') + f' elapsed={elapsed:.3f}s size={size_str}')
+        except Exception:
+            pass
+    except Exception as e:
+        elapsed = time.perf_counter() - start
+        try:
+            logger.exception(f'❌ {operation} failed' + (f' path={path}' if path is not None else '') + f' after {elapsed:.3f}s: {e}')
+        except Exception:
+            pass
+        raise
+
+def log_dataframe_overview(logger: logging.Logger, df: Any, *, name: str | None = None, sample_rows: int = 3) -> None:
+    """Log essential DataFrame diagnostics without heavy output."
+
+    - shape, columns count, memory usage, dtype summary
+    - null counts for up to first 10 columns
+    - sample of first rows (limited)
+    """
+    try:
+        if df is None:
+            logger.info('📭 DataFrame is None')
+            return
+        if not hasattr(df, 'shape') or not hasattr(df, 'columns'):
+            logger.info('📦 Object is not a pandas DataFrame-like; skipping overview')
+            return
+        df_name = name or 'DataFrame'
+        rows, cols = getattr(df, 'shape', (None, None))
+        columns_list = list(getattr(df, 'columns', []))
+        mem_mb = None
+        try:
+            mem_mb = float(df.memory_usage(deep = True).sum()) / 1024.0 ** 2
+        except Exception:
+            pass
+        try:
+            dtypes_summary = getattr(df, 'dtypes', None).astype(str).value_counts().to_dict() if hasattr(df, 'dtypes') else {}
+        except Exception:
+            dtypes_summary = {}
+        logger.info(f'🧮 {df_name}: rows={rows} cols={cols} memory={mem_mb:.2f}MB dtypes={dtypes_summary}')
+        try:
+            nulls = df[columns_list[:10]].isnull().sum().to_dict() if columns_list else {}
+            if nulls:
+                logger.info(f'🧪 {df_name} nulls (first 10 cols): {nulls}')
+        except Exception:
+            pass
+        try:
+            if rows and rows > 0:
+                sample = df.head(min(sample_rows, int(rows)))
+                preview = sample.to_dict(orient='records')
+                logger.debug(f'🔎 {df_name} sample: {preview}')
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+@contextmanager
+def heartbeat(logger: logging.Logger, name: str, interval_seconds: float = 15.0, details_provider: Callable[[], str] | None = None, context: dict[str, str] | None = None) -> None:
+    """
+    Periodically log a short progress message while a long-running block executes.
+
+    - Thread-based, safe for both sync and async code paths
+    - Emits start, periodic "still running" with elapsed time, and end (with total duration)
+    - Never raises; logging failures are swallowed
+    - Enhanced with context information (step, model, regime, asset, timeframe)
+    """
+    start_time = time.perf_counter()
+    stop_event = threading.Event()
+    exited_with_error = False
+
+    def _runner() -> None:
+        tick = 0
+        while not stop_event.wait(interval_seconds):
+            tick += 1
+            try:
+                elapsed = time.perf_counter() - start_time
+                context_str = ''
+                if context:
+                    context_parts = []
+                    if 'step' in context:
+                        context_parts.append(f"step={context['step']}")
+                    if 'model' in context:
+                        context_parts.append(f"model={context['model']}")
+                    if 'regime' in context:
+                        context_parts.append(f"regime={context['regime']}")
+                    if 'asset' in context and 'timeframe' in context:
+                        context_parts.append(f"asset={context['asset']}/{context['timeframe']}")
+                    elif 'asset' in context:
+                        context_parts.append(f"asset={context['asset']}")
+                    if context_parts:
+                        context_str = f" | {' | '.join(context_parts)}"
+                extra = ''
+                if details_provider is not None:
+                    try:
+                        details_text = details_provider()
+                        if details_text:
+                            extra = f' | {details_text}'
+                    except Exception:
+                        pass
+                logger.info(f'⏳ {name} still running... elapsed={elapsed:.1f}s{context_str}{extra}')
+            except Exception:
+                pass
+    try:
+        try:
+            logger.info(f'▶️ {name} start')
+        except Exception:
+            pass
+        t = threading.Thread(target = _runner, name = f'heartbeat:{name}', daemon = True)
+        t.start()
+        yield
+    except Exception as e:
+        exited_with_error = True
+        try:
+            elapsed = time.perf_counter() - start_time
+            logger.exception(f'❌ {name} failed after {elapsed:.1f}s: {e}')
+        except Exception:
+            pass
+        raise
+    finally:
+        stop_event.set()
+        try:
+            t.join(timeout = 1.0)
+        except Exception:
+            pass
+        try:
+            elapsed = time.perf_counter() - start_time
+            if not exited_with_error:
+                logger.info(f'✅ {name} done elapsed={elapsed:.1f}s')
+        except Exception:
+            pass
+
+def log_step_progress(logger: logging.Logger, step_name: str, step_number: int, total_steps: int, status: str='running', details: str='', context: dict = None) -> None:
+    """
+    Log step progress with comprehensive emoji-based status indicators.
+    
+    Args:
+        logger: Logger instance
+        step_name: Name of the current step
+        step_number: Current step number (1-based)
+        total_steps: Total number of steps
+        status: Status of the step (running, completed, failed, skipped)
+        details: Additional details about the step
+        context: Additional context information
+    """
+    try:
+        progress_percent = step_number / total_steps * 100
+        progress_bar = '█' * int(progress_percent / 5) + '░' * (20 - int(progress_percent / 5))
+        status_emojis = {'running': '🔄', 'completed': '✅', 'failed': '❌', 'skipped': '⏭️', 'warning': '⚠️', 'info': 'ℹ️'}
+        emoji = status_emojis.get(status, '📋')
+        context_str = ''
+        if context:
+            context_parts = []
+            for key, value in context.items():
+                if value is not None:
+                    context_parts.append(f'{key}={value}')
+            if context_parts:
+                context_str = f" | {' | '.join(context_parts)}"
+        message = f'{emoji} Step {step_number}/{total_steps} ({progress_percent:.1f}%) | {step_name} | {status.upper()}'
+        if details:
+            message += f' | {details}'
+        if context_str:
+            message += context_str
+        message += f'\n📊 Progress: [{progress_bar}] {progress_percent:.1f}%'
+        if status == 'failed':
+            logger.error(message)
+        elif status == 'warning':
+            logger.warning(message)
+        elif status == 'completed':
+            logger.info(message)
+        else:
+            logger.info(message)
+    except Exception as e:
+        logger.error(f'❌ Failed to log step progress: {e}')
+
+def log_validation_result(logger: logging.Logger, validator_name: str, result: bool, details: str='', metrics: dict = None) -> None:
+    """
+    Log validation results (only failures for troubleshooting).
+    
+    Args:
+        logger: Logger instance
+        validator_name: Name of the validator
+        result: Validation result (True/False)
+        details: Additional details about the validation
+        metrics: Optional metrics dictionary
+    """
+    try:
+        if result:
+            return
+        emoji = '❌'
+        status = 'FAILED'
+        message = f'{emoji} Validation {status} | {validator_name}'
+        if details:
+            message += f' | {details}'
+        if metrics:
+            metrics_str = ' | '.join([f'{k}={v}' for k, v in metrics.items()])
+            message += f' | Metrics: {metrics_str}'
+        logger.error(message)
+    except Exception as e:
+        logger.error(f'❌ Failed to log validation result: {e}')
+
+def log_data_quality_check(logger: logging.Logger, check_name: str, status: str, details: str='', stats: dict = None) -> None:
+    """
+    Log data quality check results (only failures and warnings for troubleshooting).
+    
+    Args:
+        logger: Logger instance
+        check_name: Name of the quality check
+        status: Status of the check (passed, failed, warning)
+        details: Additional details
+        stats: Optional statistics dictionary
+    """
+    try:
+        if status == 'passed':
+            return
+        status_emojis = {'failed': '❌', 'warning': '⚠️'}
+        emoji = status_emojis.get(status, '⚠️')
+        message = f'{emoji} Data Quality Check | {check_name} | {status.upper()}'
+        if details:
+            message += f' | {details}'
+        if stats:
+            stats_str = ' | '.join([f'{k}={v}' for k, v in stats.items()])
+            message += f' | Stats: {stats_str}'
+        if status == 'failed':
+            logger.error(message)
+        elif status == 'warning':
+            logger.warning(message)
+    except Exception as e:
+        logger.error(f'❌ Failed to log data quality check: {e}')
+
+def log_performance_metrics(logger: logging.Logger, operation_name: str, duration: float, memory_usage: float = None, additional_metrics: dict = None) -> None:
+    """
+    Log performance metrics (only for slow operations that need troubleshooting).
+    
+    Args:
+        logger: Logger instance
+        operation_name: Name of the operation
+        duration: Duration in seconds
+        memory_usage: Memory usage in MB (optional)
+        additional_metrics: Additional metrics dictionary
+    """
+    try:
+        should_log = False
+        emoji = '🐌'
+        if duration > 10.0:
+            should_log = True
+            emoji = '🐌'
+        elif memory_usage is not None and memory_usage > 1024:
+            should_log = True
+            emoji = '💾'
+        if not should_log:
+            return
+        message = f'{emoji} Performance Issue | {operation_name} | Duration: {duration:.3f}s'
+        if memory_usage is not None:
+            message += f' | Memory: {memory_usage:.2f}MB'
+        if additional_metrics:
+            metrics_str = ' | '.join([f'{k}={v}' for k, v in additional_metrics.items()])
+            message += f' | {metrics_str}'
+        logger.warning(message)
+    except Exception as e:
+        logger.error(f'❌ Failed to log performance metrics: {e}')
+
+def log_error_with_context(logger: logging.Logger, error: Exception, context: dict = None, operation: str='', recovery_attempted: bool = False) -> None:
+    """
+    Log errors with comprehensive context and recovery information.
+    
+    Args:
+        logger: Logger instance
+        error: The exception that occurred
+        context: Additional context information
+        operation: Name of the operation that failed
+        recovery_attempted: Whether recovery was attempted
+    """
+    try:
+        error_type = type(error).__name__
+        error_msg = str(error)
+        message = f'💥 Error in {operation} | Type: {error_type} | Message: {error_msg}'
+        if context:
+            context_str = ' | '.join([f'{k}={v}' for k, v in context.items()])
+            message += f' | Context: {context_str}'
+        if recovery_attempted:
+            message += ' | 🔄 Recovery attempted'
+        else:
+            message += ' | 🚫 No recovery attempted'
+        logger.error(message)
+        logger.debug(f'🔍 Stack trace for {operation}:', exc_info = True)
+    except Exception as e:
+        logger.error(f'❌ Failed to log error with context: {e}')
+
+def log_system_status(logger: logging.Logger, component: str, status: str, details: str='', health_metrics: dict = None) -> None:
+    """
+    Log system component status with health indicators (only for issues).
+    
+    Args:
+        logger: Logger instance
+        component: Name of the system component
+        status: Status of the component (healthy, degraded, failed, starting, stopping)
+        details: Additional details
+        health_metrics: Optional health metrics
+    """
+    try:
+        if status in ['healthy', 'starting']:
+            return
+        status_emojis = {'degraded': '🟡', 'failed': '🔴', 'stopping': '⏹️', 'maintenance': '🔧'}
+        emoji = status_emojis.get(status, '⚠️')
+        message = f'{emoji} System Status | {component} | {status.upper()}'
+        if details:
+            message += f' | {details}'
+        if health_metrics:
+            metrics_str = ' | '.join([f'{k}={v}' for k, v in health_metrics.items()])
+            message += f' | Health: {metrics_str}'
+        if status == 'failed':
+            logger.error(message)
+        elif status in ['degraded', 'stopping', 'maintenance']:
+            logger.warning(message)
+    except Exception as e:
+        logger.error(f'❌ Failed to log system status: {e}')
+
+def heartbeat(message: str='Heartbeat') -> None:
+    """Log a heartbeat message."""
+    system_logger.info(f'💓 {message}')
+
+def log_validation_result(result: dict) -> None:
+    """Log validation result."""
+    system_logger.info(f'Validation result: {result}')
+
+def log_data_quality_check(check: dict) -> None:
+    """Log data quality check."""
+    system_logger.info(f'Data quality check: {check}')
+
+# Export system_logger for external use
+__all__ = [
+    'system_logger',
+    'setup_logging',
+    'get_logger',
+    'get_system_logger',
+    'log_io_operation',
+    'log_dataframe_overview',
+    'heartbeat',
+    'log_validation_result',
+    'log_data_quality_check',
+    'enable_timestamped_prints',
+    'disable_timestamped_prints',
+    'enable_timestamped_prints_after_numba',
+    'create_timestamped_print',
+    'timestamped_print',
+    'HumanReadableFormatter'
+]
+
+# Add numba-friendly functions to exports if available
+if NUMBA_TIMESTAMPS_AVAILABLE:
+    __all__.extend([
+        'numba_print_with_timestamp',
+        'numba_print_detailed',
+        'numba_print_simple',
+        'numba_print_progress',
+        'numba_print_performance',
+        'numba_print_error_func',
+        'numba_print_warning_func',
+        'numba_print_info_func',
+        'numba_print_debug_func',
+        'get_numba_timestamp',
+        'get_detailed_timestamp',
+        'get_simple_timestamp',
+        'NUMBA_AVAILABLE',
+        'NUMBA_TIMESTAMPS_AVAILABLE'
+    ])

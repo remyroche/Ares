@@ -44,7 +44,6 @@ def failed(message):
 def initialization_error(message):
     """Fallback initialization error function"""
     return {'status': 'initialization_error', 'message': message}
-
 class WaveletFeaturePrecomputer:
     """Pre-computation system for wavelet features.
     Processes entire datasets and caches results for fast backtesting.

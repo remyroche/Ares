@@ -276,7 +276,3 @@ class ModelSerializer:
         except Exception as e:
             self.logger.error(f'Failed to load ONNX model: {str(e)}')
             return None
-from ....core.decorators import handles_errors
-from src.utils.enhanced_artifact_manager import get_artifact_manager
-from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
-from src.utils.version_manager import get_version_manager

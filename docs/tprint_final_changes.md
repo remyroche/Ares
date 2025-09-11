@@ -16,7 +16,7 @@ timestamp_format: TimestampFormat = TimestampFormat.WITH_MICROSECONDS
 include_microseconds: bool = True
 ```
 
-**Result:** All timestamps now show milliseconds by default: `[2025-09-11 08:08:28.061] INFO: message`
+**Result:** All timestamps now show milliseconds by default: `[2025-09-11 08:08:28.061] message`
 
 ### ✅ **2. File logging with automatic directory creation -> ensure a single file per run**
 
@@ -56,22 +56,40 @@ run_id: Optional[str] = None
 - Both console and file output when configured
 - Console output is always enabled by default
 
+### ✅ **5. Remove "INFO:" prefix from basic tprint**
+
+**Before:**
+```python
+tprint("Hello")  # [2025-09-11 08:08:28.061] INFO: Hello
+```
+
+**After:**
+```python
+tprint("Hello")  # [2025-09-11 08:08:28.061] Hello
+```
+
+**Implementation:**
+- Added `_log_without_level()` method to TPrintManager
+- Basic `tprint()` now shows clean timestamp + message
+- Level-specific functions (`tprint_info`, `tprint_error`, etc.) still show level prefixes
+
 ## Test Results
 
 The updated test suite shows:
 
-1. **✅ Microseconds timestamps working:** `[2025-09-11 08:08:28.061] INFO: message`
+1. **✅ Microseconds timestamps working:** `[2025-09-11 08:08:28.061] message`
 2. **✅ Single file per run working:** Creates unique files like `test_tprint_20250911_080828_061.log`
 3. **✅ Simplified logging working:** No thread safety complexity
 4. **✅ Console output maintained:** All messages still print to console
-5. **✅ Performance maintained:** ~0.007s for 1000 messages with caching
+5. **✅ Clean tprint output:** No "INFO:" prefix in basic tprint function
+6. **✅ Performance maintained:** ~0.007s for 1000 messages with caching
 
 ## Configuration Examples
 
 ### Default Configuration (Microseconds)
 ```python
 from src.utils.tprint import tprint
-tprint("Hello")  # [2025-09-11 08:08:28.061] INFO: Hello
+tprint("Hello")  # [2025-09-11 08:08:28.061] Hello
 ```
 
 ### Single File Per Run
@@ -119,6 +137,7 @@ with tprint_context(config):
 
 The enhanced tprint utility now provides:
 - **Microsecond timestamps by default** for better precision
+- **Clean output format** without "INFO:" prefix in basic tprint
 - **Single file per run** for better log organization
 - **Simplified architecture** without thread safety complexity
 - **Console output maintained** for immediate feedback

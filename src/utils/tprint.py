@@ -262,6 +262,20 @@ class TPrintManager:
         message = self._format_message(level, *args, **kwargs)
         self._write_to_outputs(message, level, **kwargs)
     
+    def _log_without_level(self, *args, **kwargs):
+        """Internal logging method without log level prefix."""
+        if not args:
+            message = f"[{self._get_timestamp()}]"
+        else:
+            timestamp = self._get_timestamp()
+            first_arg = str(args[0])
+            message = f"[{timestamp}] {first_arg}"
+            
+            if len(args) > 1:
+                message += " " + " ".join(str(arg) for arg in args[1:])
+        
+        self._write_to_outputs(message, LogLevel.INFO, **kwargs)
+    
     def close(self):
         """Close file handles and cleanup."""
         if self._file_handle:
@@ -306,10 +320,10 @@ def tprint(*args, **kwargs) -> None:
         **kwargs: Keyword arguments for print function
     
     Example:
-        tprint("User logged in")  # [2025-01-11 06:30:15] INFO: User logged in
-        tprint("Value:", 42)      # [2025-01-11 06:30:15] INFO: Value: 42
+        tprint("User logged in")  # [2025-01-11 06:30:15] User logged in
+        tprint("Value:", 42)      # [2025-01-11 06:30:15] Value: 42
     """
-    _global_manager._log(LogLevel.INFO, *args, **kwargs)
+    _global_manager._log_without_level(*args, **kwargs)
 
 
 def tprint_debug(*args, **kwargs) -> None:

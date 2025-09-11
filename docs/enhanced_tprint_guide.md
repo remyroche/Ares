@@ -30,9 +30,9 @@ The Enhanced TPrint Utility is a production-ready, feature-rich logging system t
 from src.utils.tprint import tprint, tprint_info, tprint_error
 
 # Basic logging
-tprint("Hello, world!")
-tprint_info("Process started")
-tprint_error("Something went wrong")
+tprint("Hello, world!")  # [2025-01-11 06:30:15] Hello, world!
+tprint_info("Process started")  # [2025-01-11 06:30:15] INFO: Process started
+tprint_error("Something went wrong")  # [2025-01-11 06:30:15] ERROR: Something went wrong
 ```
 
 ### Configuration
@@ -55,11 +55,11 @@ configure_tprint(config)
 ### Core Functions
 
 #### `tprint(*args, **kwargs)`
-Basic timestamped print with INFO level.
+Basic timestamped print without level prefix.
 
 ```python
-tprint("User logged in")  # [2025-01-11 06:30:15] INFO: User logged in
-tprint("Value:", 42)      # [2025-01-11 06:30:15] INFO: Value: 42
+tprint("User logged in")  # [2025-01-11 06:30:15] User logged in
+tprint("Value:", 42)      # [2025-01-11 06:30:15] Value: 42
 ```
 
 #### `tprint_debug(*args, **kwargs)`

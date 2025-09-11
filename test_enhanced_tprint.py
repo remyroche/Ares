@@ -26,7 +26,7 @@ def test_basic_functionality():
     print("Testing Basic TPrint Functionality")
     print("=" * 80)
     
-    tprint("Basic message")
+    tprint("Basic message (no level prefix)")
     tprint_debug("Debug message")
     tprint_info("Info message")
     tprint_warning("Warning message")

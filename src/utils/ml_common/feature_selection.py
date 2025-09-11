@@ -5389,6 +5389,1276 @@ class FeatureSelectionFramework:
         
         return importance_scores
 
+    def _causal_pre_filtering(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
+                            causal_graph: Optional[Dict[str, Any]] = None,
+                            domain_knowledge: Optional[Dict[str, Any]] = None) -> List[str]:
+        """
+        Causal pre-filtering to remove spurious features early in the pipeline.
+        
+        This method identifies and removes features that are likely to be spurious
+        (correlated but not causally related) before applying traditional feature
+        selection methods. This is particularly important for crypto trading where
+        many features may be correlated due to market conditions rather than causal relationships.
+        
+        Args:
+            X: Feature matrix
+            y: Target array (price/returns)
+            feature_names: List of feature names
+            causal_graph: Optional causal graph structure
+            domain_knowledge: Optional domain knowledge about feature relationships
+            
+        Returns:
+            List of causally relevant feature names
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting causal pre-filtering...")
+        _LOGGER.info(f"📊 Initial features: {len(feature_names)}")
+        
+        try:
+            causally_relevant_features = []
+            
+            # Method 1: Domain knowledge filtering
+            if domain_knowledge:
+                causally_relevant_features.extend(
+                    self._domain_knowledge_filtering(feature_names, domain_knowledge)
+                )
+                _LOGGER.info(f"📊 Domain knowledge filtering: {len(causally_relevant_features)} features")
+            
+            # Method 2: Causal graph filtering
+            if causal_graph:
+                graph_features = self._causal_graph_filtering(feature_names, causal_graph)
+                causally_relevant_features.extend(graph_features)
+                _LOGGER.info(f"📊 Causal graph filtering: {len(graph_features)} features")
+            
+            # Method 3: Statistical causal inference
+            statistical_causal_features = self._statistical_causal_inference(X, y, feature_names)
+            causally_relevant_features.extend(statistical_causal_features)
+            _LOGGER.info(f"📊 Statistical causal inference: {len(statistical_causal_features)} features")
+            
+            # Method 4: Crypto-specific causal filtering
+            crypto_causal_features = self._crypto_specific_causal_filtering(X, y, feature_names)
+            causally_relevant_features.extend(crypto_causal_features)
+            _LOGGER.info(f"📊 Crypto-specific causal filtering: {len(crypto_causal_features)} features")
+            
+            # Remove duplicates and validate
+            causally_relevant_features = list(set(causally_relevant_features))
+            causally_relevant_features = [f for f in causally_relevant_features if f in feature_names]
+            
+            # If too few features, relax criteria
+            if len(causally_relevant_features) < len(feature_names) * 0.1:  # Less than 10%
+                _LOGGER.warning("⚠️ Too few causally relevant features, relaxing criteria...")
+                causally_relevant_features = self._relaxed_causal_filtering(X, y, feature_names)
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Causal pre-filtering completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Causally relevant features: {len(causally_relevant_features)}/{len(feature_names)}")
+            _LOGGER.info(f"📊 Reduction: {len(feature_names) - len(causally_relevant_features)} features removed")
+            
+            return causally_relevant_features
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Causal pre-filtering failed: {e}")
+            return feature_names  # Fallback to all features
+
+    def _domain_knowledge_filtering(self, feature_names: List[str], 
+                                  domain_knowledge: Dict[str, Any]) -> List[str]:
+        """Filter features based on domain knowledge."""
+        causally_relevant = []
+        
+        # Crypto-specific domain knowledge
+        crypto_causal_patterns = domain_knowledge.get('crypto_causal_patterns', {})
+        
+        # Price-related features (always causally relevant)
+        price_patterns = crypto_causal_patterns.get('price_related', [
+            'price', 'close', 'open', 'high', 'low', 'volume', 'vwap'
+        ])
+        
+        # Technical indicators (causally relevant)
+        technical_patterns = crypto_causal_patterns.get('technical_indicators', [
+            'rsi', 'macd', 'bollinger', 'sma', 'ema', 'stochastic', 'williams'
+        ])
+        
+        # Market microstructure (causally relevant)
+        microstructure_patterns = crypto_causal_patterns.get('microstructure', [
+            'bid', 'ask', 'spread', 'depth', 'order_flow', 'trade_size'
+        ])
+        
+        # Sentiment indicators (potentially causally relevant)
+        sentiment_patterns = crypto_causal_patterns.get('sentiment', [
+            'fear_greed', 'social_sentiment', 'news_sentiment'
+        ])
+        
+        # Combine all patterns
+        all_patterns = price_patterns + technical_patterns + microstructure_patterns + sentiment_patterns
+        
+        for feature in feature_names:
+            feature_lower = feature.lower()
+            if any(pattern in feature_lower for pattern in all_patterns):
+                causally_relevant.append(feature)
+        
+        return causally_relevant
+
+    def _causal_graph_filtering(self, feature_names: List[str], 
+                              causal_graph: Dict[str, Any]) -> List[str]:
+        """Filter features based on causal graph structure."""
+        causally_relevant = []
+        
+        # Extract nodes and edges from causal graph
+        nodes = causal_graph.get('nodes', [])
+        edges = causal_graph.get('edges', [])
+        
+        # Find features with direct causal paths to target
+        target_variable = causal_graph.get('target', 'price')
+        
+        for feature in feature_names:
+            if self._has_causal_path_to_target(feature, target_variable, edges):
+                causally_relevant.append(feature)
+        
+        return causally_relevant
+
+    def _has_causal_path_to_target(self, feature: str, target: str, edges: List[Dict[str, Any]]) -> bool:
+        """Check if feature has a causal path to target."""
+        # Simple path finding algorithm
+        visited = set()
+        queue = [feature]
+        
+        while queue:
+            current = queue.pop(0)
+            if current == target:
+                return True
+            
+            if current in visited:
+                continue
+            visited.add(current)
+            
+            # Find edges from current node
+            for edge in edges:
+                if edge.get('source') == current:
+                    queue.append(edge.get('target'))
+        
+        return False
+
+    def _statistical_causal_inference(self, X: np.ndarray, y: np.ndarray, 
+                                    feature_names: List[str]) -> List[str]:
+        """Use statistical methods for causal inference."""
+        causally_relevant = []
+        
+        try:
+            # Method 1: Granger causality (simplified)
+            granger_features = self._granger_causality_test(X, y, feature_names)
+            causally_relevant.extend(granger_features)
+            
+            # Method 2: Conditional independence testing
+            conditional_features = self._conditional_independence_test(X, y, feature_names)
+            causally_relevant.extend(conditional_features)
+            
+            # Method 3: Instrumental variable approach
+            iv_features = self._instrumental_variable_test(X, y, feature_names)
+            causally_relevant.extend(iv_features)
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Statistical causal inference failed: {e}")
+        
+        return causally_relevant
+
+    def _granger_causality_test(self, X: np.ndarray, y: np.ndarray, 
+                              feature_names: List[str]) -> List[str]:
+        """Simplified Granger causality test."""
+        granger_features = []
+        
+        try:
+            from scipy import stats
+            
+            for i, feature in enumerate(feature_names):
+                # Calculate correlation between feature and target
+                corr, p_value = stats.pearsonr(X[:, i], y)
+                
+                # Check if correlation is significant and positive
+                if p_value < 0.05 and abs(corr) > 0.1:
+                    # Additional check: feature leads target (simplified)
+                    if len(X) > 10:
+                        # Check if feature at time t predicts target at time t+1
+                        feature_lead = X[:-1, i]
+                        target_lag = y[1:]
+                        lead_corr, lead_p = stats.pearsonr(feature_lead, target_lag)
+                        
+                        if lead_p < 0.1 and abs(lead_corr) > 0.05:
+                            granger_features.append(feature)
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Granger causality test failed: {e}")
+        
+        return granger_features
+
+    def _conditional_independence_test(self, X: np.ndarray, y: np.ndarray, 
+                                     feature_names: List[str]) -> List[str]:
+        """Test for conditional independence."""
+        conditional_features = []
+        
+        try:
+            from scipy import stats
+            
+            for i, feature in enumerate(feature_names):
+                # Test if feature is independent of target given other features
+                # Simplified: check if feature adds information beyond other features
+                
+                # Calculate partial correlation
+                other_features = np.delete(X, i, axis=1)
+                if other_features.shape[1] > 0:
+                    # Use a subset of other features to avoid curse of dimensionality
+                    n_other = min(5, other_features.shape[1])
+                    other_subset = other_features[:, :n_other]
+                    
+                    # Calculate partial correlation
+                    partial_corr = self._calculate_partial_correlation(
+                        X[:, i], y, other_subset
+                    )
+                    
+                    if abs(partial_corr) > 0.1:  # Significant partial correlation
+                        conditional_features.append(feature)
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Conditional independence test failed: {e}")
+        
+        return conditional_features
+
+    def _calculate_partial_correlation(self, x: np.ndarray, y: np.ndarray, 
+                                     z: np.ndarray) -> float:
+        """Calculate partial correlation between x and y given z."""
+        try:
+            from sklearn.linear_model import LinearRegression
+            
+            # Regress x on z
+            reg_x = LinearRegression().fit(z, x)
+            x_residual = x - reg_x.predict(z)
+            
+            # Regress y on z
+            reg_y = LinearRegression().fit(z, y)
+            y_residual = y - reg_y.predict(z)
+            
+            # Calculate correlation of residuals
+            from scipy.stats import pearsonr
+            corr, _ = pearsonr(x_residual, y_residual)
+            return corr
+            
+        except:
+            return 0.0
+
+    def _instrumental_variable_test(self, X: np.ndarray, y: np.ndarray, 
+                                  feature_names: List[str]) -> List[str]:
+        """Test for instrumental variable relationships."""
+        iv_features = []
+        
+        try:
+            # Look for features that could serve as instruments
+            # (correlated with target but not directly causally related)
+            
+            for i, feature in enumerate(feature_names):
+                # Check if feature is a good instrument
+                # (correlated with target but not with other features)
+                
+                corr_with_target = np.corrcoef(X[:, i], y)[0, 1]
+                
+                if abs(corr_with_target) > 0.2:  # Strong correlation with target
+                    # Check correlation with other features
+                    max_corr_with_others = 0.0
+                    for j in range(X.shape[1]):
+                        if i != j:
+                            corr_with_other = np.corrcoef(X[:, i], X[:, j])[0, 1]
+                            max_corr_with_others = max(max_corr_with_others, abs(corr_with_other))
+                    
+                    # Good instrument: correlated with target, not with other features
+                    if max_corr_with_others < 0.5:
+                        iv_features.append(feature)
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Instrumental variable test failed: {e}")
+        
+        return iv_features
+
+    def _crypto_specific_causal_filtering(self, X: np.ndarray, y: np.ndarray, 
+                                        feature_names: List[str]) -> List[str]:
+        """Crypto-specific causal filtering for 1-30 minute timeframes."""
+        crypto_causal_features = []
+        
+        try:
+            # High-frequency crypto trading patterns
+            for i, feature in enumerate(feature_names):
+                feature_lower = feature.lower()
+                
+                # Price impact features (causally relevant)
+                if any(pattern in feature_lower for pattern in [
+                    'price_impact', 'market_impact', 'slippage', 'spread'
+                ]):
+                    crypto_causal_features.append(feature)
+                
+                # Order flow features (causally relevant)
+                elif any(pattern in feature_lower for pattern in [
+                    'order_flow', 'trade_flow', 'buy_pressure', 'sell_pressure'
+                ]):
+                    crypto_causal_features.append(feature)
+                
+                # Volatility features (causally relevant for high leverage)
+                elif any(pattern in feature_lower for pattern in [
+                    'volatility', 'vol', 'atr', 'garch'
+                ]):
+                    crypto_causal_features.append(feature)
+                
+                # Momentum features (causally relevant for short timeframes)
+                elif any(pattern in feature_lower for pattern in [
+                    'momentum', 'roc', 'rate_of_change', 'acceleration'
+                ]):
+                    crypto_causal_features.append(feature)
+                
+                # Liquidity features (causally relevant)
+                elif any(pattern in feature_lower for pattern in [
+                    'liquidity', 'depth', 'bid_ask', 'order_book'
+                ]):
+                    crypto_causal_features.append(feature)
+                
+                # Market microstructure (causally relevant)
+                elif any(pattern in feature_lower for pattern in [
+                    'microstructure', 'tick', 'trade_size', 'trade_frequency'
+                ]):
+                    crypto_causal_features.append(feature)
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Crypto-specific causal filtering failed: {e}")
+        
+        return crypto_causal_features
+
+    def _relaxed_causal_filtering(self, X: np.ndarray, y: np.ndarray, 
+                                feature_names: List[str]) -> List[str]:
+        """Relaxed causal filtering when too few features pass strict criteria."""
+        relaxed_features = []
+        
+        try:
+            # Use correlation-based filtering as fallback
+            for i, feature in enumerate(feature_names):
+                corr = np.corrcoef(X[:, i], y)[0, 1]
+                if not np.isnan(corr) and abs(corr) > 0.05:  # Lower threshold
+                    relaxed_features.append(feature)
+            
+            # If still too few, use top features by variance
+            if len(relaxed_features) < len(feature_names) * 0.2:
+                variances = np.var(X, axis=0)
+                top_variance_indices = np.argsort(variances)[-int(len(feature_names) * 0.3):]
+                relaxed_features = [feature_names[i] for i in top_variance_indices]
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Relaxed causal filtering failed: {e}")
+            return feature_names  # Ultimate fallback
+        
+        return relaxed_features
+
+    def _enhanced_mrmr_selection(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
+                               target_count: int, interaction_network: Optional[Dict[str, Any]] = None,
+                               causal_graph: Optional[Dict[str, Any]] = None) -> List[str]:
+        """
+        Enhanced mRMR selection with interaction awareness and causal constraints.
+        
+        This method extends the traditional mRMR algorithm to consider:
+        1. Feature interactions and synergies
+        2. Causal relationships between features
+        3. Crypto-specific importance measures
+        4. Network-based feature centrality
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            target_count: Target number of features to select
+            interaction_network: Optional interaction network structure
+            causal_graph: Optional causal graph structure
+            
+        Returns:
+            List of selected feature names
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting enhanced mRMR selection with interaction awareness...")
+        _LOGGER.info(f"📊 Target features: {target_count}")
+        
+        try:
+            # Initialize selected features
+            selected_features = []
+            remaining_features = feature_names.copy()
+            
+            # Calculate initial relevance scores
+            relevance_scores = self._calculate_enhanced_relevance_scores(X, y, feature_names, causal_graph)
+            
+            # Select first feature (highest relevance)
+            first_feature = max(relevance_scores.items(), key=lambda x: x[1])[0]
+            selected_features.append(first_feature)
+            remaining_features.remove(first_feature)
+            
+            _LOGGER.info(f"📊 Selected first feature: {first_feature}")
+            
+            # Iteratively select remaining features
+            while len(selected_features) < target_count and remaining_features:
+                best_feature = None
+                best_score = -float('inf')
+                
+                for feature in remaining_features:
+                    # Calculate mRMR score with enhancements
+                    mrmr_score = self._calculate_enhanced_mrmr_score(
+                        feature, selected_features, X, y, feature_names,
+                        relevance_scores, interaction_network, causal_graph
+                    )
+                    
+                    if mrmr_score > best_score:
+                        best_score = mrmr_score
+                        best_feature = feature
+                
+                if best_feature:
+                    selected_features.append(best_feature)
+                    remaining_features.remove(best_feature)
+                    _LOGGER.info(f"📊 Selected feature {len(selected_features)}: {best_feature} (score: {best_score:.4f})")
+                else:
+                    break
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Enhanced mRMR selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Selected features: {len(selected_features)}")
+            
+            return selected_features
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Enhanced mRMR selection failed: {e}")
+            return feature_names[:target_count]  # Fallback
+
+    def _calculate_enhanced_relevance_scores(self, X: np.ndarray, y: np.ndarray, 
+                                           feature_names: List[str],
+                                           causal_graph: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
+        """Calculate enhanced relevance scores considering causal relationships."""
+        relevance_scores = {}
+        
+        try:
+            for i, feature in enumerate(feature_names):
+                # Base relevance (mutual information)
+                base_relevance = self._calculate_mutual_information(X[:, i], y)
+                
+                # Causal relevance boost
+                causal_boost = 1.0
+                if causal_graph:
+                    causal_boost = self._calculate_causal_relevance_boost(feature, causal_graph)
+                
+                # Crypto-specific relevance
+                crypto_relevance = self._calculate_crypto_relevance(X[:, i], y, feature)
+                
+                # Combined relevance score
+                relevance_scores[feature] = (
+                    0.5 * base_relevance +
+                    0.3 * base_relevance * causal_boost +
+                    0.2 * crypto_relevance
+                )
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Enhanced relevance calculation failed: {e}")
+            # Fallback to simple correlation
+            for i, feature in enumerate(feature_names):
+                corr = np.corrcoef(X[:, i], y)[0, 1]
+                relevance_scores[feature] = abs(corr) if not np.isnan(corr) else 0.0
+        
+        return relevance_scores
+
+    def _calculate_mutual_information(self, x: np.ndarray, y: np.ndarray) -> float:
+        """Calculate mutual information between feature and target."""
+        try:
+            from sklearn.feature_selection import mutual_info_regression
+            mi = mutual_info_regression(x.reshape(-1, 1), y, discrete_features=False)[0]
+            return mi
+        except:
+            # Fallback to correlation
+            corr = np.corrcoef(x, y)[0, 1]
+            return abs(corr) if not np.isnan(corr) else 0.0
+
+    def _calculate_causal_relevance_boost(self, feature: str, causal_graph: Dict[str, Any]) -> float:
+        """Calculate causal relevance boost for a feature."""
+        try:
+            edges = causal_graph.get('edges', [])
+            target = causal_graph.get('target', 'price')
+            
+            # Check if feature has direct causal path to target
+            if self._has_causal_path_to_target(feature, target, edges):
+                return 1.5  # 50% boost for causal features
+            
+            # Check if feature is in causal graph
+            nodes = causal_graph.get('nodes', [])
+            if feature in nodes:
+                return 1.2  # 20% boost for features in causal graph
+            
+            return 1.0  # No boost
+            
+        except:
+            return 1.0
+
+    def _calculate_crypto_relevance(self, x: np.ndarray, y: np.ndarray, feature: str) -> float:
+        """Calculate crypto-specific relevance for a feature."""
+        try:
+            feature_lower = feature.lower()
+            
+            # High-frequency trading relevance
+            if any(pattern in feature_lower for pattern in [
+                'volatility', 'momentum', 'order_flow', 'spread', 'volume'
+            ]):
+                # Calculate volatility-adjusted correlation
+                vol_adj_corr = self._calculate_volatility_adjusted_correlation(x, y)
+                return vol_adj_corr
+            
+            # Technical indicator relevance
+            elif any(pattern in feature_lower for pattern in [
+                'rsi', 'macd', 'bollinger', 'sma', 'ema'
+            ]):
+                # Calculate trend-following correlation
+                trend_corr = self._calculate_trend_correlation(x, y)
+                return trend_corr
+            
+            # Default relevance
+            else:
+                corr = np.corrcoef(x, y)[0, 1]
+                return abs(corr) if not np.isnan(corr) else 0.0
+                
+        except:
+            return 0.0
+
+    def _calculate_volatility_adjusted_correlation(self, x: np.ndarray, y: np.ndarray) -> float:
+        """Calculate volatility-adjusted correlation for crypto features."""
+        try:
+            # Calculate rolling correlation
+            if len(x) > 20:
+                window_size = min(20, len(x) // 2)
+                rolling_corrs = []
+                
+                for i in range(window_size, len(x)):
+                    x_window = x[i-window_size:i]
+                    y_window = y[i-window_size:i]
+                    corr = np.corrcoef(x_window, y_window)[0, 1]
+                    if not np.isnan(corr):
+                        rolling_corrs.append(abs(corr))
+                
+                if rolling_corrs:
+                    return np.mean(rolling_corrs)
+            
+            # Fallback to simple correlation
+            corr = np.corrcoef(x, y)[0, 1]
+            return abs(corr) if not np.isnan(corr) else 0.0
+            
+        except:
+            return 0.0
+
+    def _calculate_trend_correlation(self, x: np.ndarray, y: np.ndarray) -> float:
+        """Calculate trend correlation for technical indicators."""
+        try:
+            if len(x) > 5:
+                # Calculate trend strength
+                x_trend = np.polyfit(range(len(x)), x, 1)[0]
+                y_trend = np.polyfit(range(len(y)), y, 1)[0]
+                
+                # Trend correlation
+                if x_trend != 0 and y_trend != 0:
+                    trend_corr = (x_trend * y_trend) / (abs(x_trend) * abs(y_trend))
+                    return abs(trend_corr)
+            
+            # Fallback to simple correlation
+            corr = np.corrcoef(x, y)[0, 1]
+            return abs(corr) if not np.isnan(corr) else 0.0
+            
+        except:
+            return 0.0
+
+    def _calculate_enhanced_mrmr_score(self, candidate_feature: str, selected_features: List[str],
+                                     X: np.ndarray, y: np.ndarray, feature_names: List[str],
+                                     relevance_scores: Dict[str, float],
+                                     interaction_network: Optional[Dict[str, Any]] = None,
+                                     causal_graph: Optional[Dict[str, Any]] = None) -> float:
+        """Calculate enhanced mRMR score for a candidate feature."""
+        try:
+            # Base relevance
+            relevance = relevance_scores.get(candidate_feature, 0.0)
+            
+            # Calculate redundancy with selected features
+            redundancy = 0.0
+            if selected_features:
+                candidate_idx = feature_names.index(candidate_feature)
+                candidate_values = X[:, candidate_idx]
+                
+                redundancies = []
+                for selected_feature in selected_features:
+                    selected_idx = feature_names.index(selected_feature)
+                    selected_values = X[:, selected_idx]
+                    
+                    # Calculate mutual information between features
+                    mi = self._calculate_mutual_information(candidate_values, selected_values)
+                    redundancies.append(mi)
+                
+                redundancy = np.mean(redundancies)
+            
+            # Interaction bonus
+            interaction_bonus = 0.0
+            if interaction_network:
+                interaction_bonus = self._calculate_interaction_bonus(
+                    candidate_feature, selected_features, interaction_network
+                )
+            
+            # Causal bonus
+            causal_bonus = 0.0
+            if causal_graph:
+                causal_bonus = self._calculate_causal_bonus(
+                    candidate_feature, selected_features, causal_graph
+                )
+            
+            # Enhanced mRMR score
+            mrmr_score = relevance - redundancy + interaction_bonus + causal_bonus
+            
+            return mrmr_score
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Enhanced mRMR score calculation failed: {e}")
+            # Fallback to simple mRMR
+            relevance = relevance_scores.get(candidate_feature, 0.0)
+            return relevance
+
+    def _calculate_interaction_bonus(self, candidate_feature: str, selected_features: List[str],
+                                   interaction_network: Dict[str, Any]) -> float:
+        """Calculate interaction bonus for synergistic features."""
+        try:
+            edges = interaction_network.get('edges', [])
+            bonus = 0.0
+            
+            # Check for synergistic interactions with selected features
+            for selected_feature in selected_features:
+                for edge in edges:
+                    if ((edge.get('source') == candidate_feature and edge.get('target') == selected_feature) or
+                        (edge.get('source') == selected_feature and edge.get('target') == candidate_feature)):
+                        
+                        if edge.get('type') == 'synergistic':
+                            bonus += edge.get('weight', 0.0) * 0.1  # 10% of interaction weight
+            
+            return bonus
+            
+        except:
+            return 0.0
+
+    def _calculate_causal_bonus(self, candidate_feature: str, selected_features: List[str],
+                              causal_graph: Dict[str, Any]) -> float:
+        """Calculate causal bonus for causally relevant features."""
+        try:
+            edges = causal_graph.get('edges', [])
+            bonus = 0.0
+            
+            # Check if candidate feature has causal relationships with selected features
+            for selected_feature in selected_features:
+                for edge in edges:
+                    if ((edge.get('source') == candidate_feature and edge.get('target') == selected_feature) or
+                        (edge.get('source') == selected_feature and edge.get('target') == candidate_feature)):
+                        
+                        bonus += 0.05  # Small bonus for causal relationships
+            
+            return bonus
+            
+        except:
+            return 0.0
+
+    def _causal_aware_lasso_stability_selection(self, X: np.ndarray, y: np.ndarray,
+                                              feature_names: List[str],
+                                              causal_graph: Optional[Dict[str, Any]] = None,
+                                              interaction_network: Optional[Dict[str, Any]] = None,
+                                              n_bootstrap: int = 10,
+                                              stability_threshold: float = 0.6) -> List[str]:
+        """
+        Enhanced LASSO stability selection with causal constraints and interaction awareness.
+        
+        This method extends traditional LASSO stability selection to consider:
+        1. Causal relationships between features
+        2. Feature interactions and synergies
+        3. Crypto-specific regularization patterns
+        4. Network-based feature importance
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            causal_graph: Optional causal graph structure
+            interaction_network: Optional interaction network structure
+            n_bootstrap: Number of bootstrap samples
+            stability_threshold: Minimum stability score for feature selection
+            
+        Returns:
+            List of selected feature names
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting causal-aware LASSO stability selection...")
+        _LOGGER.info(f"📊 Bootstrap samples: {n_bootstrap}")
+        _LOGGER.info(f"📊 Stability threshold: {stability_threshold}")
+        
+        try:
+            # Calculate causal weights for features
+            causal_weights = self._calculate_causal_weights(feature_names, causal_graph)
+            
+            # Calculate interaction weights for features
+            interaction_weights = self._calculate_interaction_weights(feature_names, interaction_network)
+            
+            # Run enhanced bootstrap LASSO
+            bootstrap_results = []
+            feature_selection_counts = {feature: 0 for feature in feature_names}
+            
+            for bootstrap_idx in range(n_bootstrap):
+                _LOGGER.info(f"🔄 Bootstrap sample {bootstrap_idx + 1}/{n_bootstrap}")
+                
+                try:
+                    # Bootstrap sampling
+                    bootstrap_size = int(len(X) * 0.8)
+                    bootstrap_indices = np.random.choice(
+                        len(X), size=bootstrap_size, replace=True
+                    )
+                    X_bootstrap = X[bootstrap_indices]
+                    y_bootstrap = y[bootstrap_indices]
+                    
+                    # Run enhanced LASSO on bootstrap sample
+                    lasso_features = self._run_enhanced_lasso(
+                        X_bootstrap, y_bootstrap, feature_names,
+                        causal_weights, interaction_weights
+                    )
+                    
+                    bootstrap_results.append({
+                        'bootstrap_idx': bootstrap_idx,
+                        'selected_features': lasso_features,
+                        'n_features': len(lasso_features)
+                    })
+                    
+                    # Track feature selections
+                    for feature in lasso_features:
+                        feature_selection_counts[feature] += 1
+                    
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Bootstrap {bootstrap_idx + 1} failed: {e}")
+                    continue
+            
+            # Calculate stability scores
+            stability_scores = {}
+            for feature in feature_names:
+                selection_count = feature_selection_counts[feature]
+                stability_score = selection_count / len(bootstrap_results) if bootstrap_results else 0.0
+                stability_scores[feature] = stability_score
+            
+            # Apply causal and interaction constraints
+            constrained_features = self._apply_causal_interaction_constraints(
+                stability_scores, causal_weights, interaction_weights, stability_threshold
+            )
+            
+            # Select final features
+            final_features = self._select_final_lasso_features(
+                constrained_features, stability_scores, stability_threshold
+            )
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Causal-aware LASSO stability selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Final features: {len(final_features)}")
+            
+            return final_features
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Causal-aware LASSO stability selection failed: {e}")
+            return feature_names[:50]  # Fallback
+
+    def _calculate_causal_weights(self, feature_names: List[str], 
+                                causal_graph: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
+        """Calculate causal weights for features."""
+        causal_weights = {feature: 1.0 for feature in feature_names}
+        
+        if not causal_graph:
+            return causal_weights
+        
+        try:
+            edges = causal_graph.get('edges', [])
+            target = causal_graph.get('target', 'price')
+            
+            for feature in feature_names:
+                # Check if feature has causal path to target
+                if self._has_causal_path_to_target(feature, target, edges):
+                    causal_weights[feature] = 1.5  # 50% boost for causal features
+                
+                # Check causal centrality
+                centrality = self._calculate_causal_centrality(feature, edges)
+                causal_weights[feature] *= (1.0 + centrality * 0.2)  # Up to 20% boost
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Causal weight calculation failed: {e}")
+        
+        return causal_weights
+
+    def _calculate_causal_centrality(self, feature: str, edges: List[Dict[str, Any]]) -> float:
+        """Calculate causal centrality for a feature."""
+        try:
+            # Count incoming and outgoing edges
+            incoming = sum(1 for edge in edges if edge.get('target') == feature)
+            outgoing = sum(1 for edge in edges if edge.get('source') == feature)
+            
+            # Centrality as normalized edge count
+            total_edges = len(edges)
+            centrality = (incoming + outgoing) / total_edges if total_edges > 0 else 0.0
+            
+            return centrality
+            
+        except:
+            return 0.0
+
+    def _calculate_interaction_weights(self, feature_names: List[str], 
+                                    interaction_network: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
+        """Calculate interaction weights for features."""
+        interaction_weights = {feature: 1.0 for feature in feature_names}
+        
+        if not interaction_network:
+            return interaction_weights
+        
+        try:
+            edges = interaction_network.get('edges', [])
+            
+            for feature in feature_names:
+                # Count synergistic interactions
+                synergistic_count = sum(
+                    1 for edge in edges 
+                    if ((edge.get('source') == feature or edge.get('target') == feature) and
+                        edge.get('type') == 'synergistic')
+                )
+                
+                # Boost for features with many synergistic interactions
+                if synergistic_count > 0:
+                    interaction_weights[feature] = 1.0 + (synergistic_count * 0.1)
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Interaction weight calculation failed: {e}")
+        
+        return interaction_weights
+
+    def _run_enhanced_lasso(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
+                          causal_weights: Dict[str, float], interaction_weights: Dict[str, float]) -> List[str]:
+        """Run enhanced LASSO with causal and interaction weights."""
+        try:
+            from sklearn.linear_model import LassoCV
+            from sklearn.preprocessing import StandardScaler
+            
+            # Standardize features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # Create weighted feature matrix
+            X_weighted = X_scaled.copy()
+            for i, feature in enumerate(feature_names):
+                causal_weight = causal_weights.get(feature, 1.0)
+                interaction_weight = interaction_weights.get(feature, 1.0)
+                combined_weight = causal_weight * interaction_weight
+                X_weighted[:, i] *= combined_weight
+            
+            # Run LASSO with cross-validation
+            lasso = LassoCV(cv=5, random_state=42, max_iter=1000)
+            lasso.fit(X_weighted, y)
+            
+            # Get selected features
+            selected_indices = np.where(lasso.coef_ != 0)[0]
+            selected_features = [feature_names[i] for i in selected_indices]
+            
+            return selected_features
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Enhanced LASSO failed: {e}")
+            # Fallback to simple LASSO
+            try:
+                from sklearn.linear_model import LassoCV
+                lasso = LassoCV(cv=5, random_state=42)
+                lasso.fit(X, y)
+                selected_indices = np.where(lasso.coef_ != 0)[0]
+                return [feature_names[i] for i in selected_indices]
+            except:
+                return feature_names[:10]  # Ultimate fallback
+
+    def _apply_causal_interaction_constraints(self, stability_scores: Dict[str, float],
+                                            causal_weights: Dict[str, float],
+                                            interaction_weights: Dict[str, float],
+                                            stability_threshold: float) -> Dict[str, float]:
+        """Apply causal and interaction constraints to stability scores."""
+        constrained_scores = {}
+        
+        for feature, stability_score in stability_scores.items():
+            causal_weight = causal_weights.get(feature, 1.0)
+            interaction_weight = interaction_weights.get(feature, 1.0)
+            
+            # Apply constraints
+            constrained_score = stability_score * causal_weight * interaction_weight
+            
+            # Normalize to [0, 1] range
+            constrained_score = min(1.0, constrained_score)
+            
+            constrained_scores[feature] = constrained_score
+        
+        return constrained_scores
+
+    def _select_final_lasso_features(self, constrained_scores: Dict[str, float],
+                                   stability_scores: Dict[str, float],
+                                   stability_threshold: float) -> List[str]:
+        """Select final features based on constrained scores."""
+        # Sort features by constrained scores
+        sorted_features = sorted(
+            constrained_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+        
+        # Select features above threshold
+        final_features = [
+            feature for feature, score in sorted_features
+            if score >= stability_threshold
+        ]
+        
+        # If too few features, relax threshold
+        if len(final_features) < 10:
+            _LOGGER.warning("⚠️ Too few features above threshold, relaxing criteria...")
+            final_features = [feature for feature, _ in sorted_features[:20]]
+        
+        return final_features
+
+    def _interaction_aware_recursive_feature_elimination(self, X: np.ndarray, y: np.ndarray,
+                                                       feature_names: List[str],
+                                                       target_count: int,
+                                                       interaction_network: Optional[Dict[str, Any]] = None,
+                                                       causal_graph: Optional[Dict[str, Any]] = None,
+                                                       base_model: Any = None) -> List[str]:
+        """
+        Interaction-aware recursive feature elimination with causal constraints.
+        
+        This method extends traditional RFE to consider:
+        1. Feature interactions and synergies
+        2. Causal relationships between features
+        3. Network-based feature importance
+        4. Crypto-specific elimination criteria
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            target_count: Target number of features to select
+            interaction_network: Optional interaction network structure
+            causal_graph: Optional causal graph structure
+            base_model: Base model for RFE (default: RandomForestRegressor)
+            
+        Returns:
+            List of selected feature names
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔄 Starting interaction-aware RFE...")
+        _LOGGER.info(f"📊 Target features: {target_count}")
+        
+        try:
+            # Initialize base model
+            if base_model is None:
+                from sklearn.ensemble import RandomForestRegressor
+                base_model = RandomForestRegressor(n_estimators=50, random_state=42)
+            
+            # Calculate interaction importance scores
+            interaction_importance = self._calculate_interaction_importance(
+                X, y, feature_names, interaction_network
+            )
+            
+            # Calculate causal importance scores
+            causal_importance = self._calculate_causal_importance(
+                feature_names, causal_graph
+            )
+            
+            # Initialize RFE with enhanced scoring
+            current_features = feature_names.copy()
+            current_X = X.copy()
+            
+            # Run enhanced RFE
+            while len(current_features) > target_count:
+                _LOGGER.info(f"🔄 RFE iteration: {len(current_features)} features remaining")
+                
+                # Train model on current features
+                model = self._clone_model(base_model)
+                model.fit(current_X, y)
+                
+                # Get feature importance scores
+                if hasattr(model, 'feature_importances_'):
+                    importance_scores = model.feature_importances_
+                else:
+                    # Fallback: use coefficients or permutation importance
+                    importance_scores = self._calculate_fallback_importance(model, current_X, y)
+                
+                # Enhance importance scores with interaction and causal information
+                enhanced_scores = self._enhance_importance_scores(
+                    current_features, importance_scores, interaction_importance, causal_importance
+                )
+                
+                # Find feature to eliminate
+                feature_to_eliminate = self._find_feature_to_eliminate(
+                    current_features, enhanced_scores, interaction_network, causal_graph
+                )
+                
+                if feature_to_eliminate:
+                    # Remove feature
+                    feature_idx = current_features.index(feature_to_eliminate)
+                    current_features.remove(feature_to_eliminate)
+                    current_X = np.delete(current_X, feature_idx, axis=1)
+                    
+                    _LOGGER.info(f"📊 Eliminated feature: {feature_to_eliminate}")
+                else:
+                    # No more features can be safely eliminated
+                    break
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ Interaction-aware RFE completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Final features: {len(current_features)}")
+            
+            return current_features
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Interaction-aware RFE failed: {e}")
+            return feature_names[:target_count]  # Fallback
+
+    def _calculate_interaction_importance(self, X: np.ndarray, y: np.ndarray,
+                                        feature_names: List[str],
+                                        interaction_network: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
+        """Calculate interaction-based importance scores."""
+        interaction_importance = {feature: 0.0 for feature in feature_names}
+        
+        if not interaction_network:
+            return interaction_importance
+        
+        try:
+            edges = interaction_network.get('edges', [])
+            
+            for feature in feature_names:
+                # Count synergistic interactions
+                synergistic_interactions = [
+                    edge for edge in edges
+                    if ((edge.get('source') == feature or edge.get('target') == feature) and
+                        edge.get('type') == 'synergistic')
+                ]
+                
+                # Calculate interaction importance
+                if synergistic_interactions:
+                    interaction_weights = [edge.get('weight', 0.0) for edge in synergistic_interactions]
+                    interaction_importance[feature] = np.mean(interaction_weights)
+                
+                # Boost for features with many interactions
+                interaction_count = len(synergistic_interactions)
+                if interaction_count > 0:
+                    interaction_importance[feature] *= (1.0 + interaction_count * 0.1)
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Interaction importance calculation failed: {e}")
+        
+        return interaction_importance
+
+    def _calculate_causal_importance(self, feature_names: List[str],
+                                   causal_graph: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
+        """Calculate causal-based importance scores."""
+        causal_importance = {feature: 0.0 for feature in feature_names}
+        
+        if not causal_graph:
+            return causal_importance
+        
+        try:
+            edges = causal_graph.get('edges', [])
+            target = causal_graph.get('target', 'price')
+            
+            for feature in feature_names:
+                # Check if feature has causal path to target
+                if self._has_causal_path_to_target(feature, target, edges):
+                    causal_importance[feature] = 1.0
+                
+                # Calculate causal centrality
+                centrality = self._calculate_causal_centrality(feature, edges)
+                causal_importance[feature] = max(causal_importance[feature], centrality)
+        
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Causal importance calculation failed: {e}")
+        
+        return causal_importance
+
+    def _calculate_fallback_importance(self, model: Any, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Calculate fallback importance scores when model doesn't have feature_importances_."""
+        try:
+            # Try to get coefficients
+            if hasattr(model, 'coef_'):
+                return np.abs(model.coef_.flatten())
+            
+            # Use permutation importance as fallback
+            from sklearn.inspection import permutation_importance
+            perm_importance = permutation_importance(model, X, y, random_state=42)
+            return perm_importance.importances_mean
+            
+        except:
+            # Ultimate fallback: random importance
+            return np.random.random(X.shape[1])
+
+    def _enhance_importance_scores(self, feature_names: List[str], base_scores: np.ndarray,
+                                 interaction_importance: Dict[str, float],
+                                 causal_importance: Dict[str, float]) -> Dict[str, float]:
+        """Enhance base importance scores with interaction and causal information."""
+        enhanced_scores = {}
+        
+        for i, feature in enumerate(feature_names):
+            base_score = base_scores[i] if i < len(base_scores) else 0.0
+            interaction_score = interaction_importance.get(feature, 0.0)
+            causal_score = causal_importance.get(feature, 0.0)
+            
+            # Combine scores with weights
+            enhanced_score = (
+                0.6 * base_score +           # 60% base importance
+                0.2 * interaction_score +    # 20% interaction importance
+                0.2 * causal_score           # 20% causal importance
+            )
+            
+            enhanced_scores[feature] = enhanced_score
+        
+        return enhanced_scores
+
+    def _find_feature_to_eliminate(self, feature_names: List[str], enhanced_scores: Dict[str, float],
+                                 interaction_network: Optional[Dict[str, Any]] = None,
+                                 causal_graph: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Find the best feature to eliminate considering interactions and causal relationships."""
+        try:
+            # Sort features by enhanced scores (ascending - lowest scores first)
+            sorted_features = sorted(enhanced_scores.items(), key=lambda x: x[1])
+            
+            for feature, score in sorted_features:
+                # Check if feature can be safely eliminated
+                if self._can_safely_eliminate_feature(
+                    feature, feature_names, interaction_network, causal_graph
+                ):
+                    return feature
+            
+            return None  # No feature can be safely eliminated
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Feature elimination check failed: {e}")
+            # Fallback: eliminate feature with lowest score
+            if enhanced_scores:
+                return min(enhanced_scores.items(), key=lambda x: x[1])[0]
+            return None
+
+    def _can_safely_eliminate_feature(self, feature: str, remaining_features: List[str],
+                                    interaction_network: Optional[Dict[str, Any]] = None,
+                                    causal_graph: Optional[Dict[str, Any]] = None) -> bool:
+        """Check if a feature can be safely eliminated without breaking critical interactions."""
+        try:
+            # Check interaction constraints
+            if interaction_network:
+                if self._breaks_critical_interactions(feature, interaction_network, remaining_features):
+                    return False
+            
+            # Check causal constraints
+            if causal_graph:
+                if self._breaks_causal_relationships(feature, causal_graph, remaining_features):
+                    return False
+            
+            return True
+            
+        except:
+            return True  # Default: allow elimination
+
+    def _breaks_critical_interactions(self, feature: str, interaction_network: Dict[str, Any],
+                                    remaining_features: List[str]) -> bool:
+        """Check if eliminating a feature would break critical interactions."""
+        try:
+            edges = interaction_network.get('edges', [])
+            
+            # Find interactions involving this feature
+            feature_interactions = [
+                edge for edge in edges
+                if edge.get('source') == feature or edge.get('target') == feature
+            ]
+            
+            for interaction in feature_interactions:
+                # Check if this is a critical synergistic interaction
+                if interaction.get('type') == 'synergistic' and interaction.get('weight', 0.0) > 0.7:
+                    other_feature = (interaction.get('target') if interaction.get('source') == feature
+                                   else interaction.get('source'))
+                    
+                    # If the other feature is still in the remaining features, this is critical
+                    if other_feature in remaining_features:
+                        return True
+            
+            return False
+            
+        except:
+            return False
+
+    def _breaks_causal_relationships(self, feature: str, causal_graph: Dict[str, Any],
+                                   remaining_features: List[str]) -> bool:
+        """Check if eliminating a feature would break critical causal relationships."""
+        try:
+            edges = causal_graph.get('edges', [])
+            target = causal_graph.get('target', 'price')
+            
+            # Check if this feature is the only causal path to target for any other feature
+            for other_feature in remaining_features:
+                if other_feature != feature:
+                    # Check if other_feature depends on this feature for causal path to target
+                    if self._depends_on_feature_for_causal_path(other_feature, feature, target, edges):
+                        return True
+            
+            return False
+            
+        except:
+            return False
+
+    def _depends_on_feature_for_causal_path(self, source_feature: str, dependency_feature: str,
+                                          target: str, edges: List[Dict[str, Any]]) -> bool:
+        """Check if source_feature depends on dependency_feature for causal path to target."""
+        try:
+            # Find all paths from source_feature to target
+            paths = self._find_all_paths(source_feature, target, edges)
+            
+            # Check if all paths go through dependency_feature
+            for path in paths:
+                if dependency_feature not in path:
+                    return False  # Found a path that doesn't go through dependency_feature
+            
+            return len(paths) > 0  # True if there are paths and all go through dependency_feature
+            
+        except:
+            return False
+
+    def _find_all_paths(self, source: str, target: str, edges: List[Dict[str, Any]]) -> List[List[str]]:
+        """Find all paths from source to target in the causal graph."""
+        try:
+            # Build adjacency list
+            graph = {}
+            for edge in edges:
+                src = edge.get('source')
+                dst = edge.get('target')
+                if src not in graph:
+                    graph[src] = []
+                graph[src].append(dst)
+            
+            # Find all paths using DFS
+            paths = []
+            visited = set()
+            
+            def dfs(current, path):
+                if current == target:
+                    paths.append(path + [current])
+                    return
+                
+                if current in visited:
+                    return
+                
+                visited.add(current)
+                path.append(current)
+                
+                if current in graph:
+                    for neighbor in graph[current]:
+                        dfs(neighbor, path.copy())
+                
+                visited.remove(current)
+            
+            dfs(source, [])
+            return paths
+            
+        except:
+            return []
+
     def validate_feature_reduction_plan(self, initial_count: int, target_count: int, 
                                       model_type: str) -> Dict[str, Any]:
         """

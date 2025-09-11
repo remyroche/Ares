@@ -67,6 +67,44 @@ except ImportError:
 
 class FeatureSelectionFramework:
     """Comprehensive feature selection framework with multiple methods and stability analysis."""
+    
+    # Model-specific optimal feature counts
+    MODEL_FEATURE_TARGETS = {
+        # Linear models - work well with moderate feature counts
+        'linear_regression': 60,
+        'ridge_regression': 80,
+        'lasso_regression': 50,
+        'elastic_net': 70,
+        'logistic_regression': 60,
+        
+        # Tree-based models - can handle more features
+        'random_forest': 100,
+        'gradient_boosting': 120,
+        'xgboost': 100,
+        'lightgbm': 100,
+        'catboost': 100,
+        'extra_trees': 100,
+        
+        # SVM models - sensitive to feature count
+        'svm_linear': 50,
+        'svm_rbf': 80,
+        'svm_poly': 60,
+        
+        # Neural networks - can handle many features
+        'neural_network': 150,
+        'deep_learning': 200,
+        
+        # Ensemble methods
+        'voting_classifier': 100,
+        'stacking_classifier': 120,
+        'bagging_classifier': 100,
+        
+        # Default fallback
+        'default': 80
+    }
+    
+    # Minimum feature count for intermediate stages
+    MIN_FEATURES_INTERMEDIATE = 100
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize feature selection framework with configuration."""
@@ -152,6 +190,7 @@ class FeatureSelectionFramework:
     def hierarchical_feature_selection(self, X: np.ndarray, y: np.ndarray,
                                      feature_names: List[str],
                                      features_target_count: int,
+                                     model_type: str = 'default',
                                      config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Enhanced hierarchical feature selection pipeline with adaptive thresholds.
@@ -175,6 +214,30 @@ class FeatureSelectionFramework:
         """
         start_time = time.time()
         features_initial_count = len(feature_names)
+        
+        # Validate and plan feature reduction
+        validation_result = self.validate_feature_reduction_plan(
+            features_initial_count, features_target_count, model_type
+        )
+        
+        if not validation_result['valid']:
+            _LOGGER.error(f"❌ Invalid feature reduction plan: {validation_result['errors']}")
+            return {
+                'selected_features': feature_names,
+                'pipeline_stages': {},
+                'pipeline_summary': {
+                    'initial_count': features_initial_count,
+                    'final_count': len(feature_names),
+                    'total_reduction': 0,
+                    'execution_time': time.time() - start_time,
+                    'reduction_percentage': 0.0
+                },
+                'validation_result': validation_result
+            }
+        
+        # Use validated target count
+        features_target_count = validation_result['target_count']
+        reduction_plan = validation_result['reduction_plan']
         
         # Configurable thresholds with dynamic defaults
         default_config = {
@@ -200,8 +263,14 @@ class FeatureSelectionFramework:
         
         _LOGGER.info(f"🚀 Starting Hierarchical Feature Selection Pipeline")
         _LOGGER.info(f"📊 Initial features: {features_initial_count}")
-        _LOGGER.info(f"📊 Target features: {features_target_count}")
-        _LOGGER.info(f"📊 Configuration: {config}")
+        _LOGGER.info(f"🎯 Target features: {features_target_count} (for {model_type})")
+        _LOGGER.info(f"📉 Features to remove: {validation_result['removal_count']}")
+        _LOGGER.info(f"📋 Reduction plan: {len(reduction_plan)} stages")
+        
+        # Log warnings if any
+        if validation_result['warnings']:
+            for warning in validation_result['warnings']:
+                _LOGGER.warning(f"⚠️ {warning}")
         
         pipeline_results = {
             'pipeline_stages': {},
@@ -530,6 +599,40 @@ class FeatureSelectionFramework:
                     'output_count': len(current_features)
                 }
             
+            # Stage 5: RF Cross-Validation Refinement (if needed)
+            if reduction_plan['stage5_rf_refinement']['enabled']:
+                _LOGGER.info("🔍 Stage 5: RF Cross-Validation Refinement...")
+                
+                final_target = reduction_plan['stage5_rf_refinement']['target']
+                _LOGGER.info(f"🎯 Stage 5 target: {len(final_features)} → {final_target}")
+                
+                # Get current feature matrix
+                selected_indices = [feature_names.index(f) for f in final_features if f in feature_names]
+                current_X = X[:, selected_indices]
+                
+                rf_refinement_result = self.rf_cross_validation_refinement(
+                    current_X, y, final_features, final_target, config['cv_folds']
+                )
+                
+                final_features = rf_refinement_result.get('selected_features', final_features)
+                
+                pipeline_results['pipeline_stages']['rf_refinement'] = {
+                    'input_count': len(pipeline_results['pipeline_stages']['tree_ensemble']['output_count']),
+                    'output_count': len(final_features),
+                    'result': rf_refinement_result,
+                    'execution_time': rf_refinement_result.get('execution_time', 0)
+                }
+                
+                _LOGGER.info(f"✅ Stage 5 complete: {len(final_features)} features remaining")
+            else:
+                _LOGGER.info("⏭️ Stage 5 skipped: RF refinement not needed")
+                pipeline_results['pipeline_stages']['rf_refinement'] = {
+                    'skipped': True,
+                    'reason': 'RF refinement not needed',
+                    'input_count': len(final_features),
+                    'output_count': len(final_features)
+                }
+            
             # Final results
             execution_time = time.time() - start_time
             pipeline_results['final_selected_features'] = final_features
@@ -540,15 +643,19 @@ class FeatureSelectionFramework:
                 'reduction_percentage': safe_divide(features_initial_count - len(final_features), features_initial_count) * 100
             })
             
-            # Enhanced reporting with dynamic threshold and stability information
+            # Enhanced reporting with model-specific and dynamic threshold information
             additional_stats = {
                 'Pipeline stages': len(pipeline_results['pipeline_stages']),
                 'Target achieved': len(final_features) == features_target_count,
                 'Final vs target': f"{len(final_features)}/{features_target_count}",
                 'Total reduction': f"{features_initial_count - len(final_features)} ({pipeline_results['pipeline_summary']['reduction_percentage']:.1f}%)",
+                'Model type': model_type,
+                'Model target': validation_result['model_target'],
+                'Removal count': validation_result['removal_count'],
                 'Dynamic thresholds': config['use_dynamic_thresholds'],
                 'CV folds': config['cv_folds'],
-                'Bootstrap stability': config['enable_bootstrap_stability']
+                'Bootstrap stability': config['enable_bootstrap_stability'],
+                'RF refinement': reduction_plan['stage5_rf_refinement']['enabled']
             }
             
             # Add bootstrap stability information
@@ -587,6 +694,10 @@ class FeatureSelectionFramework:
             
             _LOGGER.info(f"🎉 Hierarchical pipeline completed successfully!")
             _LOGGER.info(f"📊 Final result: {len(final_features)}/{features_target_count} target features")
+            
+            # Add validation and reduction plan to results
+            pipeline_results['validation_result'] = validation_result
+            pipeline_results['reduction_plan'] = reduction_plan
             
             return pipeline_results
             
@@ -3083,6 +3194,277 @@ class FeatureSelectionFramework:
             return {
                 'n_estimators': params.get('n_estimators', 0),
                 'max_depth': params.get('max_depth', 0),
+                'error': str(e)
+            }
+
+    def get_model_target_features(self, model_type: str) -> int:
+        """
+        Get the optimal feature count for a specific model type.
+        
+        Args:
+            model_type: Type of model (e.g., 'random_forest', 'linear_regression')
+            
+        Returns:
+            Optimal feature count for the model
+        """
+        return self.MODEL_FEATURE_TARGETS.get(model_type, self.MODEL_FEATURE_TARGETS['default'])
+
+    def validate_feature_reduction_plan(self, initial_count: int, target_count: int, 
+                                      model_type: str) -> Dict[str, Any]:
+        """
+        Validate and plan the feature reduction strategy.
+        
+        Args:
+            initial_count: Initial number of features
+            target_count: Target number of features
+            model_type: Type of model to optimize for
+            
+        Returns:
+            Dictionary with validation results and reduction plan
+        """
+        # Get model-specific target
+        model_target = self.get_model_target_features(model_type)
+        
+        # Use model-specific target if not provided
+        if target_count is None:
+            target_count = model_target
+            _LOGGER.info(f"🎯 Using model-specific target: {target_count} features for {model_type}")
+        
+        # Calculate removal count
+        removal_count = initial_count - target_count
+        
+        # Validation checks
+        validation_result = {
+            'valid': True,
+            'initial_count': initial_count,
+            'target_count': target_count,
+            'removal_count': removal_count,
+            'model_type': model_type,
+            'model_target': model_target,
+            'warnings': [],
+            'errors': []
+        }
+        
+        # Check if reduction is feasible
+        if removal_count <= 0:
+            validation_result['errors'].append(f"No reduction needed: {initial_count} <= {target_count}")
+            validation_result['valid'] = False
+        
+        # Check if reduction is too aggressive
+        reduction_ratio = removal_count / initial_count
+        if reduction_ratio > 0.95:
+            validation_result['warnings'].append(f"Very aggressive reduction: {reduction_ratio:.1%}")
+        
+        # Check if target is reasonable for model type
+        if target_count < 10:
+            validation_result['warnings'].append(f"Very low target count: {target_count} features")
+        
+        # Check if we can maintain minimum intermediate features
+        if target_count < self.MIN_FEATURES_INTERMEDIATE:
+            validation_result['warnings'].append(
+                f"Target {target_count} < minimum intermediate {self.MIN_FEATURES_INTERMEDIATE}. "
+                f"Will use RF refinement for final reduction."
+            )
+        
+        # Plan reduction stages
+        if validation_result['valid']:
+            validation_result['reduction_plan'] = self._create_reduction_plan(
+                initial_count, target_count, model_type
+            )
+        
+        return validation_result
+
+    def _create_reduction_plan(self, initial_count: int, target_count: int, 
+                             model_type: str) -> Dict[str, Any]:
+        """
+        Create a detailed reduction plan with stage-specific targets.
+        
+        Args:
+            initial_count: Initial number of features
+            target_count: Target number of features
+            model_type: Type of model
+            
+        Returns:
+            Dictionary with reduction plan
+        """
+        removal_count = initial_count - target_count
+        
+        # Stage targets
+        if target_count >= self.MIN_FEATURES_INTERMEDIATE:
+            # Standard reduction plan
+            stage1_target = max(self.MIN_FEATURES_INTERMEDIATE, 
+                              initial_count - int(removal_count * 0.3))  # 30% reduction
+            stage2_target = max(self.MIN_FEATURES_INTERMEDIATE, 
+                              initial_count - int(removal_count * 0.6))  # 60% reduction
+            stage3_target = max(self.MIN_FEATURES_INTERMEDIATE, 
+                              initial_count - int(removal_count * 0.8))  # 80% reduction
+            final_target = target_count
+            use_rf_refinement = False
+        else:
+            # Need RF refinement for final precision
+            stage1_target = max(self.MIN_FEATURES_INTERMEDIATE, 
+                              initial_count - int(removal_count * 0.2))  # 20% reduction
+            stage2_target = max(self.MIN_FEATURES_INTERMEDIATE, 
+                              initial_count - int(removal_count * 0.4))  # 40% reduction
+            stage3_target = max(self.MIN_FEATURES_INTERMEDIATE, 
+                              initial_count - int(removal_count * 0.6))  # 60% reduction
+            final_target = self.MIN_FEATURES_INTERMEDIATE  # Stop at minimum
+            use_rf_refinement = True
+        
+        plan = {
+            'stage1_correlation': {
+                'target': stage1_target,
+                'reduction': initial_count - stage1_target,
+                'method': 'correlation_based_filtering'
+            },
+            'stage2_mrmr': {
+                'target': stage2_target,
+                'reduction': stage1_target - stage2_target,
+                'method': 'mrmr_selection'
+            },
+            'stage3_consensus': {
+                'target': stage3_target,
+                'reduction': stage2_target - stage3_target,
+                'method': 'lasso_rfe_consensus'
+            },
+            'stage4_bootstrap': {
+                'target': final_target,
+                'reduction': stage3_target - final_target,
+                'method': 'bootstrap_stability'
+            },
+            'stage5_rf_refinement': {
+                'target': target_count,
+                'reduction': final_target - target_count,
+                'method': 'rf_cross_validation',
+                'enabled': use_rf_refinement
+            }
+        }
+        
+        _LOGGER.info(f"📋 Reduction plan for {model_type}:")
+        _LOGGER.info(f"   Initial: {initial_count} → Target: {target_count}")
+        _LOGGER.info(f"   Stage 1 (Correlation): {initial_count} → {stage1_target}")
+        _LOGGER.info(f"   Stage 2 (mRMR): {stage1_target} → {stage2_target}")
+        _LOGGER.info(f"   Stage 3 (Consensus): {stage2_target} → {stage3_target}")
+        _LOGGER.info(f"   Stage 4 (Bootstrap): {stage3_target} → {final_target}")
+        if use_rf_refinement:
+            _LOGGER.info(f"   Stage 5 (RF Refinement): {final_target} → {target_count}")
+        
+        return plan
+
+    def rf_cross_validation_refinement(self, X: np.ndarray, y: np.ndarray,
+                                     feature_names: List[str], target_count: int,
+                                     cv_folds: int = 5) -> Dict[str, Any]:
+        """
+        Use Random Forest with cross-validation for precise final feature refinement.
+        
+        This method is used when the target feature count is below the minimum
+        intermediate threshold (100 features) to achieve precise final counts.
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            feature_names: List of feature names
+            target_count: Exact target number of features
+            cv_folds: Number of cross-validation folds
+            
+        Returns:
+            Dictionary with refined feature selection results
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🎯 RF Cross-Validation Refinement: {len(feature_names)} → {target_count}")
+        
+        try:
+            if not SKLEARN_AVAILABLE:
+                _LOGGER.warning("⚠️ Scikit-learn not available for RF refinement")
+                return {
+                    'selected_features': feature_names[:target_count],
+                    'refinement_scores': {},
+                    'cv_scores': [],
+                    'execution_time': time.time() - start_time,
+                    'method': 'fallback_slice'
+                }
+            
+            # Use RFECV for precise feature selection
+            base_model = self._get_default_model(y)
+            if base_model is None:
+                _LOGGER.warning("⚠️ No suitable base model for RF refinement")
+                return {
+                    'selected_features': feature_names[:target_count],
+                    'refinement_scores': {},
+                    'cv_scores': [],
+                    'execution_time': time.time() - start_time,
+                    'method': 'fallback_slice'
+                }
+            
+            # Create RFECV with target feature count
+            rfecv = RFECV(
+                estimator=base_model,
+                step=1,
+                cv=cv_folds,
+                scoring='accuracy' if len(np.unique(y)) <= 10 else 'neg_mean_squared_error',
+                min_features_to_select=target_count,
+                n_jobs=-1 if self.enable_parallel else 1
+            )
+            
+            # Fit RFECV
+            rfecv.fit(X, y)
+            
+            # Get selected features
+            selected_mask = rfecv.support_
+            selected_features = [feature_names[i] for i, selected in enumerate(selected_mask) if selected]
+            
+            # Ensure we have exactly target_count features
+            if len(selected_features) > target_count:
+                # If we have more than target, use feature importance to select top features
+                feature_importance = rfecv.estimator_.feature_importances_
+                importance_scores = dict(zip(selected_features, feature_importance))
+                sorted_features = sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)
+                selected_features = [feature for feature, _ in sorted_features[:target_count]]
+            elif len(selected_features) < target_count:
+                # If we have fewer than target, add remaining features by importance
+                remaining_features = [f for f in feature_names if f not in selected_features]
+                if remaining_features:
+                    # Use a simple RF to get importance for remaining features
+                    temp_rf = self._get_default_model(y)
+                    temp_rf.fit(X, y)
+                    remaining_importance = dict(zip(remaining_features, temp_rf.feature_importances_))
+                    sorted_remaining = sorted(remaining_importance.items(), key=lambda x: x[1], reverse=True)
+                    needed = target_count - len(selected_features)
+                    selected_features.extend([feature for feature, _ in sorted_remaining[:needed]])
+            
+            # Calculate refinement scores
+            refinement_scores = {}
+            if hasattr(rfecv, 'estimator_') and hasattr(rfecv.estimator_, 'feature_importances_'):
+                importance_scores = rfecv.estimator_.feature_importances_
+                for i, feature in enumerate(selected_features):
+                    if i < len(importance_scores):
+                        refinement_scores[feature] = importance_scores[i]
+            
+            execution_time = time.time() - start_time
+            
+            _LOGGER.info(f"✅ RF refinement completed: {len(selected_features)} features selected")
+            _LOGGER.info(f"📊 CV scores: {rfecv.cv_results_['mean_test_score']}")
+            _LOGGER.info(f"⏱️ Execution time: {execution_time:.3f}s")
+            
+            return {
+                'selected_features': selected_features,
+                'refinement_scores': refinement_scores,
+                'cv_scores': rfecv.cv_results_['mean_test_score'].tolist(),
+                'optimal_features': rfecv.n_features_,
+                'execution_time': execution_time,
+                'method': 'rfecv_refinement'
+            }
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ RF refinement failed: {e}")
+            # Fallback to simple selection
+            selected_features = feature_names[:target_count]
+            return {
+                'selected_features': selected_features,
+                'refinement_scores': {},
+                'cv_scores': [],
+                'execution_time': time.time() - start_time,
+                'method': 'fallback_slice',
                 'error': str(e)
             }
 

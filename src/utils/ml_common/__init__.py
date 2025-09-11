@@ -39,6 +39,8 @@ from .parallel_processing import ParallelProcessingCoordinator
 from .model_registry import *
 from .data_quality import *
 from .pipeline_orchestrator import *
+from .advanced_feature_engineering import *
+from .model_interpretability import *
 
 __version__ = "1.0.0"
 __all__ = [
@@ -124,4 +126,18 @@ __all__ = [
     # Pipeline orchestration
     'MLPipelineOrchestrator',
     '_to_jsonable',
+    
+    # Advanced feature engineering
+    'AdvancedFeatureEngineer',
+    'FeatureConfig',
+    'FeatureResult',
+    'FeatureType',
+    'FeatureComplexity',
+    
+    # Model interpretability
+    'ModelInterpretabilityEngine',
+    'ExplanationResult',
+    'InterpretabilityReport',
+    'InterpretabilityMethod',
+    'ExplanationType',
 ]

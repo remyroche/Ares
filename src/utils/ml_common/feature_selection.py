@@ -126,12 +126,14 @@ class FeatureSelectionFramework:
                 'cv_folds': 5
             },
             'tree_ensemble': {
-                'n_estimators': 100,
-                'max_depth': 10,
                 'cv_folds': 5,
                 'permutation_importance_repeats': 10,
                 'correlation_threshold': 0.8,
-                'use_lgbm': False,  # Set to True to use LightGBM instead of RandomForest
+                'hyperparameter_search': True,
+                'param_grid': {
+                    'n_estimators': [50, 100, 200],
+                    'max_depth': [5, 10, 15, None]
+                },
                 'random_state': 42
             }
         }
@@ -1326,17 +1328,16 @@ class FeatureSelectionFramework:
                                     weights: Optional[Dict[str, float]] = None,
                                     n_features: Optional[int] = None,
                                     cv_folds: int = 5,
-                                    n_estimators: int = 100,
-                                    max_depth: int = 10,
                                     permutation_importance_repeats: int = 10) -> Dict[str, Any]:
         """
-        Enhanced ensemble selection using tree-based permutation importance.
+        Enhanced ensemble selection using tree-based permutation importance with hyperparameter optimization.
         
         This method implements a sophisticated multi-stage approach:
         1. Collect candidate features from multiple methods
-        2. Train a fast tree-based model on all candidates
-        3. Use permutation importance to rank features
-        4. Cross-validate the final selection for generalization
+        2. Perform hyperparameter search for optimal tree model
+        3. Train optimized tree-based model on all candidates
+        4. Use grouped permutation importance to rank features (handles correlated features)
+        5. Cross-validate the final selection for generalization
         
         Args:
             X: Feature matrix
@@ -1346,8 +1347,6 @@ class FeatureSelectionFramework:
             weights: Weights for each method in initial voting
             n_features: Target number of features (None for automatic)
             cv_folds: Number of CV folds for final validation
-            n_estimators: Number of trees for the ensemble model
-            max_depth: Maximum depth of trees
             permutation_importance_repeats: Number of repeats for permutation importance
             
         Returns:
@@ -1356,7 +1355,7 @@ class FeatureSelectionFramework:
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting tree-based ensemble selection...")
         _LOGGER.info(f"📊 Data shape: {X.shape}, Methods: {methods}")
-        _LOGGER.info(f"📊 CV folds: {cv_folds}, Tree params: n_estimators={n_estimators}, max_depth={max_depth}")
+        _LOGGER.info(f"📊 CV folds: {cv_folds}, Permutation repeats: {permutation_importance_repeats}")
         
         try:
             if not SKLEARN_AVAILABLE:
@@ -1367,6 +1366,13 @@ class FeatureSelectionFramework:
             
             if weights is None:
                 weights = {method: 1.0 / len(methods) for method in methods}
+            
+            # Get hyperparameter search configuration
+            enable_hyperparameter_search = self.method_configs['tree_ensemble'].get('hyperparameter_search', True)
+            param_grid = self.method_configs['tree_ensemble'].get('param_grid', {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [5, 10, 15, None]
+            })
             
             ensemble_results = {
                 'selected_features': [],
@@ -1380,7 +1386,8 @@ class FeatureSelectionFramework:
                     'method_weights': weights,
                     'n_features_requested': n_features,
                     'cv_folds': cv_folds,
-                    'tree_params': {'n_estimators': n_estimators, 'max_depth': max_depth}
+                    'hyperparameter_search_enabled': enable_hyperparameter_search,
+                    'param_grid': param_grid
                 }
             }
             
@@ -1449,56 +1456,47 @@ class FeatureSelectionFramework:
             # Determine if classification or regression
             is_classification = len(np.unique(y)) <= 10 and not np.issubdtype(np.asarray(y).dtype, np.floating)
             
-            # Train the tree-based model (with option for LGBM)
-            use_lgbm = self.method_configs['tree_ensemble'].get('use_lgbm', False)
+            # Train the tree-based model with hyperparameter search
+            _LOGGER.info("🔍 Stage 2a: Hyperparameter search for tree model...")
             
-            if use_lgbm:
-                try:
-                    import lightgbm as lgb
-                    if is_classification:
-                        tree_model = lgb.LGBMClassifier(
-                            n_estimators=n_estimators,
-                            max_depth=max_depth,
-                            random_state=self.random_state,
-                            n_jobs=-1,
-                            verbose=-1
-                        )
-                    else:
-                        tree_model = lgb.LGBMRegressor(
-                            n_estimators=n_estimators,
-                            max_depth=max_depth,
-                            random_state=self.random_state,
-                            n_jobs=-1,
-                            verbose=-1
-                        )
-                    _LOGGER.info("📊 Using LightGBM for tree-based model")
-                except ImportError:
-                    _LOGGER.warning("⚠️ LightGBM not available, falling back to RandomForest")
-                    use_lgbm = False
+            if enable_hyperparameter_search:
+                # Perform hyperparameter search
+                best_params, best_score = self._search_tree_hyperparameters(
+                    X_candidates, y, param_grid, is_classification, cv_folds
+                )
+            else:
+                # Use default parameters
+                best_params = {
+                    'n_estimators': param_grid['n_estimators'][1],  # Use middle value
+                    'max_depth': param_grid['max_depth'][1]        # Use middle value
+                }
+                best_score = 0.0  # Will be calculated after training
             
-            if not use_lgbm:
-                if is_classification:
-                    from sklearn.ensemble import RandomForestClassifier
-                    tree_model = RandomForestClassifier(
-                        n_estimators=n_estimators,
-                        max_depth=max_depth,
-                        random_state=self.random_state,
-                        n_jobs=-1
-                    )
-                else:
-                    from sklearn.ensemble import RandomForestRegressor
-                    tree_model = RandomForestRegressor(
-                        n_estimators=n_estimators,
-                        max_depth=max_depth,
-                        random_state=self.random_state,
-                        n_jobs=-1
-                    )
-                _LOGGER.info("📊 Using RandomForest for tree-based model")
+            _LOGGER.info(f"📊 Best hyperparameters: {best_params}")
+            _LOGGER.info(f"📊 Best CV score: {best_score:.3f}")
+            
+            # Train final model with best hyperparameters
+            if is_classification:
+                from sklearn.ensemble import RandomForestClassifier
+                tree_model = RandomForestClassifier(
+                    n_estimators=best_params['n_estimators'],
+                    max_depth=best_params['max_depth'],
+                    random_state=self.random_state,
+                    n_jobs=-1
+                )
+            else:
+                from sklearn.ensemble import RandomForestRegressor
+                tree_model = RandomForestRegressor(
+                    n_estimators=best_params['n_estimators'],
+                    max_depth=best_params['max_depth'],
+                    random_state=self.random_state,
+                    n_jobs=-1
+                )
             
             tree_model.fit(X_candidates, y)
             baseline_score = tree_model.score(X_candidates, y)
             
-            _LOGGER.info(f"📊 Tree model trained - Baseline score: {baseline_score:.3f}")
+            _LOGGER.info(f"📊 Tree model trained with best params - Baseline score: {baseline_score:.3f}")
             
             # Stage 3: Calculate permutation importance with correlation grouping
             _LOGGER.info("🔍 Stage 3: Calculating permutation importance with correlation grouping...")
@@ -1652,6 +1650,8 @@ class FeatureSelectionFramework:
                 'n_features_selected': len(selected_features),
                 'n_methods_successful': len(method_results),
                 'baseline_score': baseline_score,
+                'best_hyperparameters': best_params,
+                'best_hyperparameter_score': best_score,
                 'permutation_importance_stats': {
                     'mean_importance': np.mean([data['importance'] for data in permutation_importance.values()]),
                     'std_importance': np.std([data['importance'] for data in permutation_importance.values()]),
@@ -1711,6 +1711,53 @@ class FeatureSelectionFramework:
             groups.append(current_group)
         
         return groups
+
+    def _search_tree_hyperparameters(self, X: np.ndarray, y: np.ndarray, 
+                                   param_grid: Dict[str, List], 
+                                   is_classification: bool, 
+                                   cv_folds: int) -> Tuple[Dict[str, Any], float]:
+        """
+        Search for optimal hyperparameters for the tree model.
+        
+        Args:
+            X: Feature matrix
+            y: Target array
+            param_grid: Dictionary of hyperparameters to search
+            is_classification: Whether this is a classification task
+            cv_folds: Number of CV folds for evaluation
+            
+        Returns:
+            Tuple of (best_params, best_score)
+        """
+        from sklearn.model_selection import GridSearchCV
+        
+        # Create base model
+        if is_classification:
+            from sklearn.ensemble import RandomForestClassifier
+            base_model = RandomForestClassifier(
+                random_state=self.random_state,
+                n_jobs=-1
+            )
+        else:
+            from sklearn.ensemble import RandomForestRegressor
+            base_model = RandomForestRegressor(
+                random_state=self.random_state,
+                n_jobs=-1
+            )
+        
+        # Perform grid search
+        grid_search = GridSearchCV(
+            base_model,
+            param_grid,
+            cv=cv_folds,
+            scoring='accuracy' if is_classification else 'r2',
+            n_jobs=-1,
+            verbose=0
+        )
+        
+        grid_search.fit(X, y)
+        
+        return grid_search.best_params_, grid_search.best_score_
 
     def _get_default_model(self, y: np.ndarray):
         """Get a default model based on the target type."""

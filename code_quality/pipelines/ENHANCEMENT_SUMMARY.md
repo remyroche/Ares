@@ -152,7 +152,7 @@ interactive_html = import_visualizer.create_interactive_import_network(import_re
 Build custom analysis pipelines:
 
 ```python
-class CustomImportPipeline(BasePipeline):
+class CustomImportPipeline(SimplePipeline):
     def run(self):
         import_results = self.import_verifier.analyze_directory()
         custom_analysis = self.analyze_with_imports(import_results)

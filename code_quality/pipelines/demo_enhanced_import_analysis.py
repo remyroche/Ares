@@ -23,8 +23,7 @@ parent_dir = Path(__file__).parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-from pipelines.import_verifier_pipeline import ImportVerifierPipeline
-from pipelines.enhanced_import_analysis_pipeline import EnhancedImportAnalysisPipeline
+from analysis_functions import run_import_verification, run_enhanced_import_analysis
 from visualizers.import_network_visualizer import ImportNetworkVisualizer
 
 
@@ -40,14 +39,9 @@ class ImportAnalysisDemo:
         print("🔍 Running Basic Import Verification Demo")
         print("=" * 60)
         
-        # Initialize basic import verifier pipeline
-        pipeline = ImportVerifierPipeline(
+        # Run import verification using simple function
+        results = run_import_verification(
             project_root=str(self.project_root),
-            enable_plugins=False
-        )
-        
-        # Run import verification
-        results = pipeline.run(
             target_directory=str(self.project_root),
             save_report=True,
             print_report=True
@@ -93,14 +87,9 @@ class ImportAnalysisDemo:
         print("\n🚀 Running Advanced Enhanced Import Analysis Demo")
         print("=" * 60)
         
-        # Initialize enhanced import analysis pipeline
-        pipeline = EnhancedImportAnalysisPipeline(
+        # Run comprehensive analysis using simple function
+        results = run_enhanced_import_analysis(
             project_root=str(self.project_root),
-            enable_plugins=True
-        )
-        
-        # Run comprehensive analysis
-        results = pipeline.run(
             target_directory=str(self.project_root),
             save_report=True,
             print_report=True,
@@ -151,12 +140,8 @@ class ImportAnalysisDemo:
         print("=" * 60)
         
         # First get import verification data
-        pipeline = ImportVerifierPipeline(
+        results = run_import_verification(
             project_root=str(self.project_root),
-            enable_plugins=False
-        )
-        
-        results = pipeline.run(
             target_directory=str(self.project_root),
             save_report=False,
             print_report=False
@@ -220,12 +205,8 @@ class ImportAnalysisDemo:
         print("=" * 60)
         
         # Get import verification data
-        pipeline = ImportVerifierPipeline(
+        results = run_import_verification(
             project_root=str(self.project_root),
-            enable_plugins=False
-        )
-        
-        results = pipeline.run(
             target_directory=str(self.project_root),
             save_report=False,
             print_report=False

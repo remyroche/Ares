@@ -16,7 +16,7 @@ from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
 from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
 from core.config import CodeQualityConfig, StaticAnalysisConfig, ASTAnalysisConfig
 from fixers.sequential_fixer import SequentialFixer
-from pipelines.pipeline_unified_enhanced import UnifiedEnhancedPipeline
+from analysis_functions import run_all_analyses
 
 
 class TestStaticAnalysisAnalyzer(unittest.TestCase):

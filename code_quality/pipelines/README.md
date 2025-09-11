@@ -175,7 +175,7 @@ overall_pipeline (orchestrator)
 Each pipeline supports advanced configuration with automatic validation:
 
 ```python
-from code_quality.pipelines.base_pipeline import PipelineConfig
+from code_quality.pipelines.simple_base import SimplePipelineConfig
 from pathlib import Path
 
 # Create validated configuration
@@ -289,13 +289,13 @@ print(f"Plugins loaded: {health['plugins_loaded']}")
 
 ### Base Pipeline Class
 ```python
-from code_quality.pipelines.base_pipeline import BasePipeline, PipelineConfig
+from code_quality.pipelines.simple_base import SimplePipeline, SimplePipelineConfig
 
-class BasePipeline:
+class SimplePipeline:
     """Enhanced base class with comprehensive features."""
 
     def __init__(self, project_root: Optional[Path] = None,
-                 config: Optional[PipelineConfig] = None,
+                 config: Optional[SimplePipelineConfig] = None,
                  enable_plugins: bool = True,
                  pipeline_name: str = "base") -> None:
         """Initialize pipeline with standardized setup."""
@@ -381,7 +381,7 @@ python pipelines/complexity_pipeline.py --analysis-type cyclomatic --verbose
 ### Configuration Examples
 ```python
 # Using Pydantic validation
-from code_quality.pipelines.base_pipeline import PipelineConfig
+from code_quality.pipelines.simple_base import SimplePipelineConfig
 
 config = PipelineConfig(
     project_root=Path("/path/to/project"),
@@ -439,7 +439,7 @@ pipeline.clear_cache()
 #### Configuration Validation Errors
 ```python
 from pydantic import ValidationError
-from code_quality.pipelines.base_pipeline import PipelineConfig
+from code_quality.pipelines.simple_base import SimplePipelineConfig
 
 try:
     config = PipelineConfig(

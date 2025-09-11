@@ -1,0 +1,2300 @@
+{
+  "pipeline": "function_import_analysis",
+  "timestamp": "2025-09-11T13:22:51.140568",
+  "project_root": "/workspace/code_quality",
+  "dead_functions": {
+    "analyzers.data_flow_analyzer": [
+      {
+        "function": "analyzers.data_flow_analyzer.visit_Assign",
+        "name": "visit_Assign",
+        "line": 429,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.data_flow_analyzer.visit_Call",
+        "name": "visit_Call",
+        "line": 522,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.data_flow_analyzer.visit_AnnAssign",
+        "name": "visit_AnnAssign",
+        "line": 467,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.data_flow_analyzer.analyze_data_flow",
+        "name": "analyze_data_flow",
+        "line": 248,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.data_flow_analyzer.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 418,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.data_flow_analyzer.visit_Name",
+        "name": "visit_Name",
+        "line": 488,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.data_flow_analyzer.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 387,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.data_flow_analyzer.visit_If",
+        "name": "visit_If",
+        "line": 502,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "reporters.html_reporter": [
+      {
+        "function": "reporters.html_reporter._generate_navigation",
+        "name": "_generate_navigation",
+        "line": 55,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.html_reporter._generate_charts_section",
+        "name": "_generate_charts_section",
+        "line": 188,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.html_reporter._get_css",
+        "name": "_get_css",
+        "line": 228,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.html_reporter._get_javascript",
+        "name": "_get_javascript",
+        "line": 407,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.html_reporter._generate_details_section",
+        "name": "_generate_details_section",
+        "line": 98,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.html_reporter._generate_header",
+        "name": "_generate_header",
+        "line": 25,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.html_reporter._generate_footer",
+        "name": "_generate_footer",
+        "line": 211,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "visualizers.dashboard_generator": [
+      {
+        "function": "visualizers.dashboard_generator.generate_comparison_dashboard",
+        "name": "generate_comparison_dashboard",
+        "line": 123,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "visualizers.dashboard_generator._get_dashboard_css",
+        "name": "_get_dashboard_css",
+        "line": 207,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "visualizers.dashboard_generator._get_comparison_css",
+        "name": "_get_comparison_css",
+        "line": 406,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.enhanced_dynamic_import_analyzer": [
+      {
+        "function": "analyzers.enhanced_dynamic_import_analyzer.visit_Try",
+        "name": "visit_Try",
+        "line": 264,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dynamic_import_analyzer.visit_Import",
+        "name": "visit_Import",
+        "line": 189,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dynamic_import_analyzer.is_optional_import",
+        "name": "is_optional_import",
+        "line": 167,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dynamic_import_analyzer.false_positives",
+        "name": "false_positives",
+        "line": 112,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dynamic_import_analyzer.is_fallback_import",
+        "name": "is_fallback_import",
+        "line": 163,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dynamic_import_analyzer.visit_Assign",
+        "name": "visit_Assign",
+        "line": 300,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dynamic_import_analyzer.visit_ImportFrom",
+        "name": "visit_ImportFrom",
+        "line": 215,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dynamic_import_analyzer.real_issues",
+        "name": "real_issues",
+        "line": 108,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dynamic_import_analyzer.visit_Name",
+        "name": "visit_Name",
+        "line": 343,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.documentation_analyzer": [
+      {
+        "function": "analyzers.documentation_analyzer.visit_Module",
+        "name": "visit_Module",
+        "line": 322,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.documentation_analyzer.analyze_readme",
+        "name": "analyze_readme",
+        "line": 123,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.documentation_analyzer.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 339,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.documentation_analyzer.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 364,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "mappers.map_code_interactions": [
+      {
+        "function": "mappers.map_code_interactions._check_string_references",
+        "name": "_check_string_references",
+        "line": 2212,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "mappers.map_code_interactions._analyze_string_patterns",
+        "name": "_analyze_string_patterns",
+        "line": 2122,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "mappers.map_code_interactions._analyze_ast_node",
+        "name": "_analyze_ast_node",
+        "line": 2067,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "mappers.map_code_interactions.analyze_dependencies",
+        "name": "analyze_dependencies",
+        "line": 71,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "mappers.map_code_interactions._validate_dead_code_findings",
+        "name": "_validate_dead_code_findings",
+        "line": 2127,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "mappers.map_code_interactions.analyze_call_graph",
+        "name": "analyze_call_graph",
+        "line": 82,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "mappers.map_code_interactions.analyze_architecture",
+        "name": "analyze_architecture",
+        "line": 93,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "mappers.map_code_interactions.analyze_imports",
+        "name": "analyze_imports",
+        "line": 104,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "mappers.map_code_interactions.map_interactions",
+        "name": "map_interactions",
+        "line": 2435,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.enhanced_security_analyzer": [
+      {
+        "function": "analyzers.enhanced_security_analyzer.visit_Attribute",
+        "name": "visit_Attribute",
+        "line": 276,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_security_analyzer.visit_Try",
+        "name": "visit_Try",
+        "line": 215,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_security_analyzer.false_positives",
+        "name": "false_positives",
+        "line": 86,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_security_analyzer.is_safe_attribute_access",
+        "name": "is_safe_attribute_access",
+        "line": 149,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_security_analyzer.is_safe_subscript_access",
+        "name": "is_safe_subscript_access",
+        "line": 178,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_security_analyzer.real_issues",
+        "name": "real_issues",
+        "line": 82,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_security_analyzer.visit_Subscript",
+        "name": "visit_Subscript",
+        "line": 304,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_security_analyzer.is_in_try_except_context",
+        "name": "is_in_try_except_context",
+        "line": 196,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_security_analyzer.visit_Call",
+        "name": "visit_Call",
+        "line": 236,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_security_analyzer.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 229,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.undefined_names_analyzer": [
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_ImportFrom",
+        "name": "visit_ImportFrom",
+        "line": 250,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_Import",
+        "name": "visit_Import",
+        "line": 241,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_Name",
+        "name": "visit_Name",
+        "line": 311,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_For",
+        "name": "visit_For",
+        "line": 271,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.push_scope",
+        "name": "push_scope",
+        "line": 85,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_Assign",
+        "name": "visit_Assign",
+        "line": 259,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_Lambda",
+        "name": "visit_Lambda",
+        "line": 220,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 153,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.pop_scope",
+        "name": "pop_scope",
+        "line": 96,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_Module",
+        "name": "visit_Module",
+        "line": 139,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_With",
+        "name": "visit_With",
+        "line": 282,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.add_imported_name",
+        "name": "add_imported_name",
+        "line": 117,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 172,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.get_scope_path",
+        "name": "get_scope_path",
+        "line": 122,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_Nonlocal",
+        "name": "visit_Nonlocal",
+        "line": 304,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.is_name_defined",
+        "name": "is_name_defined",
+        "line": 106,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_ExceptHandler",
+        "name": "visit_ExceptHandler",
+        "line": 290,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.undefined_names_analyzer.visit_Global",
+        "name": "visit_Global",
+        "line": 297,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "comprehensive_code_review": [
+      {
+        "function": "comprehensive_code_review.visit_Import",
+        "name": "visit_Import",
+        "line": 411,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "comprehensive_code_review.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 480,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "comprehensive_code_review.visit_Call",
+        "name": "visit_Call",
+        "line": 500,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "comprehensive_code_review.visit_Assign",
+        "name": "visit_Assign",
+        "line": 529,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "comprehensive_code_review.visit_For",
+        "name": "visit_For",
+        "line": 564,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "comprehensive_code_review.visit_ExceptHandler",
+        "name": "visit_ExceptHandler",
+        "line": 546,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "comprehensive_code_review.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 476,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "comprehensive_code_review.visit_ImportFrom",
+        "name": "visit_ImportFrom",
+        "line": 420,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "reporters.trend_reporter": [
+      {
+        "function": "reporters.trend_reporter.export_trend_data",
+        "name": "export_trend_data",
+        "line": 385,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.trend_reporter.clear_history",
+        "name": "clear_history",
+        "line": 483,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.trend_reporter.compare_periods",
+        "name": "compare_periods",
+        "line": 340,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.stub_object_analyzer": [
+      {
+        "function": "analyzers.stub_object_analyzer.expected_stubs",
+        "name": "expected_stubs",
+        "line": 102,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.is_stub_class",
+        "name": "is_stub_class",
+        "line": 165,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.stubs_by_type",
+        "name": "stubs_by_type",
+        "line": 88,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.visit_Try",
+        "name": "visit_Try",
+        "line": 197,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.is_placeholder",
+        "name": "is_placeholder",
+        "line": 173,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.unexpected_stubs",
+        "name": "unexpected_stubs",
+        "line": 106,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 224,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.total_stubs",
+        "name": "total_stubs",
+        "line": 84,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.is_mock_object",
+        "name": "is_mock_object",
+        "line": 169,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.is_fallback_class",
+        "name": "is_fallback_class",
+        "line": 177,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.is_interface_stub",
+        "name": "is_interface_stub",
+        "line": 181,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.stub_object_analyzer.stubs_by_category",
+        "name": "stubs_by_category",
+        "line": 95,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "scripts.fix_async_await": [
+      {
+        "function": "scripts.fix_async_await.fix_file_async",
+        "name": "fix_file_async",
+        "line": 93,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "scripts.fix_async_await.visit_Call",
+        "name": "visit_Call",
+        "line": 40,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "scripts.fix_async_await.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 24,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.call_graph_analyzer": [
+      {
+        "function": "analyzers.call_graph_analyzer.visit_Call",
+        "name": "visit_Call",
+        "line": 99,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.call_graph_analyzer.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 95,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.architecture_analyzer": [
+      {
+        "function": "analyzers.architecture_analyzer._analyze_component",
+        "name": "_analyze_component",
+        "line": 575,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.improved_signature_analyzer": [
+      {
+        "function": "analyzers.improved_signature_analyzer.get_function_signatures",
+        "name": "get_function_signatures",
+        "line": 698,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.improved_signature_analyzer.get_function_calls",
+        "name": "get_function_calls",
+        "line": 702,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.improved_signature_analyzer.analyze_signatures",
+        "name": "analyze_signatures",
+        "line": 707,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "utils.progress": [
+      {
+        "function": "utils.progress.track_file_operation",
+        "name": "track_file_operation",
+        "line": 267,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.track_file_processing",
+        "name": "track_file_processing",
+        "line": 93,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.show_file_results",
+        "name": "show_file_results",
+        "line": 148,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.end_operation",
+        "name": "end_operation",
+        "line": 86,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.show_tool_results",
+        "name": "show_tool_results",
+        "line": 169,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.track_tool_operation",
+        "name": "track_tool_operation",
+        "line": 285,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.show_summary",
+        "name": "show_summary",
+        "line": 131,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.complete_task",
+        "name": "complete_task",
+        "line": 68,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.track_tool_execution",
+        "name": "track_tool_execution",
+        "line": 113,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.show_live",
+        "name": "show_live",
+        "line": 227,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.update_status",
+        "name": "update_status",
+        "line": 208,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.progress.start_operation",
+        "name": "start_operation",
+        "line": 81,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "mappers.enhanced_map_code_interactions": [
+      {
+        "function": "mappers.enhanced_map_code_interactions.map_interactions",
+        "name": "map_interactions",
+        "line": 391,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "visualizers.code_visualizer": [
+      {
+        "function": "visualizers.code_visualizer.create_legend_entries",
+        "name": "create_legend_entries",
+        "line": 96,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "visualizers.code_visualizer.create_summary_stats",
+        "name": "create_summary_stats",
+        "line": 125,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.configuration_analyzer": [
+      {
+        "function": "analyzers.configuration_analyzer.analyze_project",
+        "name": "analyze_project",
+        "line": 93,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "reporters.error_reporter": [
+      {
+        "function": "reporters.error_reporter.add_security_issues",
+        "name": "add_security_issues",
+        "line": 122,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.error_reporter.add_syntax_errors",
+        "name": "add_syntax_errors",
+        "line": 110,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.error_reporter.add_linter_errors",
+        "name": "add_linter_errors",
+        "line": 106,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "reporters.error_reporter.get_error_statistics",
+        "name": "get_error_statistics",
+        "line": 609,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.syntax_validator": [
+      {
+        "function": "analyzers.syntax_validator.get_errors_by_severity",
+        "name": "get_errors_by_severity",
+        "line": 607,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.syntax_validator.get_file_errors",
+        "name": "get_file_errors",
+        "line": 574,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.syntax_validator.get_directory_errors",
+        "name": "get_directory_errors",
+        "line": 585,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.advanced_ast_analyzer": [
+      {
+        "function": "analyzers.advanced_ast_analyzer.analyze",
+        "name": "analyze",
+        "line": 659,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "utils.report_aggregator": [
+      {
+        "function": "utils.report_aggregator.add_enhanced_validation_results",
+        "name": "add_enhanced_validation_results",
+        "line": 190,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_circular_import_results",
+        "name": "add_circular_import_results",
+        "line": 126,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_type_results",
+        "name": "add_type_results",
+        "line": 104,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_function_validation_results",
+        "name": "add_function_validation_results",
+        "line": 115,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_syntax_results",
+        "name": "add_syntax_results",
+        "line": 55,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_import_results",
+        "name": "add_import_results",
+        "line": 72,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_dependency_results",
+        "name": "add_dependency_results",
+        "line": 226,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_async_results",
+        "name": "add_async_results",
+        "line": 93,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_undefined_names_results",
+        "name": "add_undefined_names_results",
+        "line": 250,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_dead_code_fix_results",
+        "name": "add_dead_code_fix_results",
+        "line": 182,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_dead_code_results",
+        "name": "add_dead_code_results",
+        "line": 163,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.report_aggregator.add_comprehensive_review_results",
+        "name": "add_comprehensive_review_results",
+        "line": 143,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "tests.test_common_operations": [
+      {
+        "function": "tests.test_common_operations.tearDown",
+        "name": "tearDown",
+        "line": 46,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.performance_analyzer": [
+      {
+        "function": "analyzers.performance_analyzer.visit_Subscript",
+        "name": "visit_Subscript",
+        "line": 262,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.performance_analyzer.visit_ListComp",
+        "name": "visit_ListComp",
+        "line": 206,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.performance_analyzer.visit_While",
+        "name": "visit_While",
+        "line": 190,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.performance_analyzer.visit_Call",
+        "name": "visit_Call",
+        "line": 220,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.performance_analyzer.visit_For",
+        "name": "visit_For",
+        "line": 170,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.performance_analyzer.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 145,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.performance_analyzer.visit_BinOp",
+        "name": "visit_BinOp",
+        "line": 248,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.metrics_analyzer": [
+      {
+        "function": "analyzers.metrics_analyzer.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 290,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.metrics_analyzer._get_high_complexity_functions",
+        "name": "_get_high_complexity_functions",
+        "line": 241,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.metrics_analyzer.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 334,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.metrics_analyzer._get_low_maintainability_functions",
+        "name": "_get_low_maintainability_functions",
+        "line": 257,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "validators.enhanced_validator": [
+      {
+        "function": "validators.enhanced_validator.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 370,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.enhanced_validator.visit_Assign",
+        "name": "visit_Assign",
+        "line": 397,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.enhanced_validator.visit_Attribute",
+        "name": "visit_Attribute",
+        "line": 379,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.enhanced_validator.visit_Call",
+        "name": "visit_Call",
+        "line": 374,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.enhanced_validator.visit_Subscript",
+        "name": "visit_Subscript",
+        "line": 384,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.enhanced_validator.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 350,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.enhanced_validator.visit_If",
+        "name": "visit_If",
+        "line": 389,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "utils.dependency_utils": [
+      {
+        "function": "utils.dependency_utils.detect_circular_imports",
+        "name": "detect_circular_imports",
+        "line": 27,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.dependency_utils.validate_dead_code_findings",
+        "name": "validate_dead_code_findings",
+        "line": 61,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.dependency_utils.build_dependency_map",
+        "name": "build_dependency_map",
+        "line": 12,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.secrets_analyzer": [
+      {
+        "function": "analyzers.secrets_analyzer.high_secrets",
+        "name": "high_secrets",
+        "line": 83,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.secrets_analyzer.critical_secrets",
+        "name": "critical_secrets",
+        "line": 79,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.secrets_analyzer.total_secrets",
+        "name": "total_secrets",
+        "line": 75,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.enhanced_function_analyzer": [
+      {
+        "function": "analyzers.enhanced_function_analyzer.is_stub_class",
+        "name": "is_stub_class",
+        "line": 142,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_function_analyzer.visit_Call",
+        "name": "visit_Call",
+        "line": 197,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_function_analyzer.is_fallback_function",
+        "name": "is_fallback_function",
+        "line": 138,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_function_analyzer.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 159,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "utils.gitignore_parser": [
+      {
+        "function": "utils.gitignore_parser.get_ignored_directories",
+        "name": "get_ignored_directories",
+        "line": 165,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.gitignore_parser.filter_ignored_files",
+        "name": "filter_ignored_files",
+        "line": 223,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "scripts.robust_async_fixer": [
+      {
+        "function": "scripts.robust_async_fixer.fix_async_issues",
+        "name": "fix_async_issues",
+        "line": 142,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.enhanced_fallback_detector": [
+      {
+        "function": "analyzers.enhanced_fallback_detector.is_fallback_indicator",
+        "name": "is_fallback_indicator",
+        "line": 134,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_fallback_detector.patterns_by_type",
+        "name": "patterns_by_type",
+        "line": 73,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_fallback_detector.visit_Try",
+        "name": "visit_Try",
+        "line": 153,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_fallback_detector.is_fallback_decorator",
+        "name": "is_fallback_decorator",
+        "line": 126,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_fallback_detector.is_stub_class",
+        "name": "is_stub_class",
+        "line": 130,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "": [
+      {
+        "function": "._lazy_import_analyzers",
+        "name": "_lazy_import_analyzers",
+        "line": 17,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "._lazy_import_reporters",
+        "name": "_lazy_import_reporters",
+        "line": 39,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "._lazy_import_fixers",
+        "name": "_lazy_import_fixers",
+        "line": 11,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.truly_enhanced_dead_code_analyzer": [
+      {
+        "function": "analyzers.truly_enhanced_dead_code_analyzer.classify_file",
+        "name": "classify_file",
+        "line": 880,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.truly_enhanced_dead_code_analyzer.is_likely_false_positive",
+        "name": "is_likely_false_positive",
+        "line": 931,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.truly_enhanced_dead_code_analyzer.get_file_type",
+        "name": "get_file_type",
+        "line": 901,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.code_duplication_analyzer": [
+      {
+        "function": "analyzers.code_duplication_analyzer.analyze",
+        "name": "analyze",
+        "line": 466,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.intelligent_import_fixer": [
+      {
+        "function": "analyzers.intelligent_import_fixer._fix_single_issue",
+        "name": "_fix_single_issue",
+        "line": 456,
+        "is_public": false,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "validators.function_validator": [
+      {
+        "function": "validators.function_validator.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 489,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.function_validator.visit_Call",
+        "name": "visit_Call",
+        "line": 506,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.function_validator.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 493,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.function_validator.visit_ImportFrom",
+        "name": "visit_ImportFrom",
+        "line": 438,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "validators.function_validator.visit_Import",
+        "name": "visit_Import",
+        "line": 425,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "visualizers.interaction_network": [
+      {
+        "function": "visualizers.interaction_network.create_enhanced_interaction_network_with_imports",
+        "name": "create_enhanced_interaction_network_with_imports",
+        "line": 136,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "visualizers.interaction_network.create_layered_architecture_view",
+        "name": "create_layered_architecture_view",
+        "line": 383,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "visualizers.chart_generator": [
+      {
+        "function": "visualizers.chart_generator.create_dead_code_severity_chart",
+        "name": "create_dead_code_severity_chart",
+        "line": 58,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "visualizers.chart_generator.create_dead_code_type_chart",
+        "name": "create_dead_code_type_chart",
+        "line": 16,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "tests.test_enhanced_pipelines": [
+      {
+        "function": "tests.test_enhanced_pipelines.tearDown",
+        "name": "tearDown",
+        "line": 402,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "utils.dependency_manager": [
+      {
+        "function": "utils.dependency_manager.get_rich_progress",
+        "name": "get_rich_progress",
+        "line": 63,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.dependency_manager.is_dependency_available",
+        "name": "is_dependency_available",
+        "line": 196,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.dependency_manager.get_rich_console",
+        "name": "get_rich_console",
+        "line": 55,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.dependency_manager.get_dependency_manager",
+        "name": "get_dependency_manager",
+        "line": 186,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.test_coverage_analyzer": [
+      {
+        "function": "analyzers.test_coverage_analyzer.visit_Call",
+        "name": "visit_Call",
+        "line": 392,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.test_coverage_analyzer.visit_Assert",
+        "name": "visit_Assert",
+        "line": 387,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.test_coverage_analyzer.analyze_project",
+        "name": "analyze_project",
+        "line": 87,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.test_coverage_analyzer.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 383,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.enhanced_dead_code_analyzer": [
+      {
+        "function": "analyzers.enhanced_dead_code_analyzer.generate_visualization",
+        "name": "generate_visualization",
+        "line": 770,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dead_code_analyzer.analyze",
+        "name": "analyze",
+        "line": 40,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_dead_code_analyzer.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 529,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "scripts.detect_circular_imports": [
+      {
+        "function": "scripts.detect_circular_imports.find_cycles_dfs",
+        "name": "find_cycles_dfs",
+        "line": 98,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.code_smell_detector": [
+      {
+        "function": "analyzers.code_smell_detector.visit_For",
+        "name": "visit_For",
+        "line": 374,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.code_smell_detector.visit_While",
+        "name": "visit_While",
+        "line": 380,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.code_smell_detector.visit_Call",
+        "name": "visit_Call",
+        "line": 285,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.code_smell_detector.visit_With",
+        "name": "visit_With",
+        "line": 386,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.code_smell_detector.visit_ClassDef",
+        "name": "visit_ClassDef",
+        "line": 176,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.code_smell_detector.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 222,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.code_smell_detector.visit_If",
+        "name": "visit_If",
+        "line": 269,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "visualizers.dependency_graph": [
+      {
+        "function": "visualizers.dependency_graph.create_enhanced_dependency_graph_with_imports",
+        "name": "create_enhanced_dependency_graph_with_imports",
+        "line": 111,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "visualizers.complexity_heatmap": [
+      {
+        "function": "visualizers.complexity_heatmap.create_complexity_timeline",
+        "name": "create_complexity_timeline",
+        "line": 155,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.enhanced_import_analysis": [
+      {
+        "function": "analyzers.enhanced_import_analysis.visit_Call",
+        "name": "visit_Call",
+        "line": 319,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_import_analysis.visit_Import",
+        "name": "visit_Import",
+        "line": 311,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_import_analysis.visit_Name",
+        "name": "visit_Name",
+        "line": 298,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_import_analysis.visit_ImportFrom",
+        "name": "visit_ImportFrom",
+        "line": 315,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_import_analysis.visit_Attribute",
+        "name": "visit_Attribute",
+        "line": 305,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.enhanced_import_analysis.analyze_unused_imports",
+        "name": "analyze_unused_imports",
+        "line": 333,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.linter_analyzer": [
+      {
+        "function": "analyzers.linter_analyzer.get_file_errors",
+        "name": "get_file_errors",
+        "line": 371,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.linter_analyzer.get_results",
+        "name": "get_results",
+        "line": 367,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.linter_analyzer.get_directory_errors",
+        "name": "get_directory_errors",
+        "line": 375,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "reporters.text_reporter": [
+      {
+        "function": "reporters.text_reporter.generate_detailed_report",
+        "name": "generate_detailed_report",
+        "line": 34,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "scripts.interaction_summary": [
+      {
+        "function": "scripts.interaction_summary.generate_summary",
+        "name": "generate_summary",
+        "line": 130,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "utils.file_utils": [
+      {
+        "function": "utils.file_utils.find_python_files_static",
+        "name": "find_python_files_static",
+        "line": 221,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "utils.file_utils.find_unused_imports",
+        "name": "find_unused_imports",
+        "line": 174,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.error_handling_analyzer": [
+      {
+        "function": "analyzers.error_handling_analyzer.analyze",
+        "name": "analyze",
+        "line": 462,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "pipelines.base_pipeline": [
+      {
+        "function": "pipelines.base_pipeline.save_result",
+        "name": "save_result",
+        "line": 280,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "scripts.advanced_syntax_fixer": [
+      {
+        "function": "scripts.advanced_syntax_fixer.fix_syntax_issues",
+        "name": "fix_syntax_issues",
+        "line": 45,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.type_checker": [
+      {
+        "function": "analyzers.type_checker.get_type_coverage_report",
+        "name": "get_type_coverage_report",
+        "line": 426,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "analyzers.type_checker.analyze",
+        "name": "analyze",
+        "line": 439,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "scripts.enhanced_type_hints": [
+      {
+        "function": "scripts.enhanced_type_hints.enhance_type_hints",
+        "name": "enhance_type_hints",
+        "line": 459,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      },
+      {
+        "function": "scripts.enhanced_type_hints.visit_AsyncFunctionDef",
+        "name": "visit_AsyncFunctionDef",
+        "line": 204,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.enhanced_dependency_analyzer": [
+      {
+        "function": "analyzers.enhanced_dependency_analyzer.analyze_project",
+        "name": "analyze_project",
+        "line": 47,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ],
+    "analyzers.concurrency_analyzer": [
+      {
+        "function": "analyzers.concurrency_analyzer.analyze",
+        "name": "analyze",
+        "line": 577,
+        "is_public": true,
+        "is_method": false,
+        "class_name": null,
+        "reason": "never_imported_or_called"
+      }
+    ]
+  },
+  "dead_function_summary": {
+    "total_dead_functions": 234,
+    "dead_functions_by_module": {
+      "analyzers.data_flow_analyzer": 8,
+      "reporters.html_reporter": 7,
+      "visualizers.dashboard_generator": 3,
+      "analyzers.enhanced_dynamic_import_analyzer": 9,
+      "analyzers.documentation_analyzer": 4,
+      "mappers.map_code_interactions": 9,
+      "analyzers.enhanced_security_analyzer": 10,
+      "analyzers.undefined_names_analyzer": 18,
+      "comprehensive_code_review": 8,
+      "reporters.trend_reporter": 3,
+      "analyzers.stub_object_analyzer": 12,
+      "scripts.fix_async_await": 3,
+      "analyzers.call_graph_analyzer": 2,
+      "analyzers.architecture_analyzer": 1,
+      "analyzers.improved_signature_analyzer": 3,
+      "utils.progress": 12,
+      "mappers.enhanced_map_code_interactions": 1,
+      "visualizers.code_visualizer": 2,
+      "analyzers.configuration_analyzer": 1,
+      "reporters.error_reporter": 4,
+      "analyzers.syntax_validator": 3,
+      "analyzers.advanced_ast_analyzer": 1,
+      "utils.report_aggregator": 12,
+      "tests.test_common_operations": 1,
+      "analyzers.performance_analyzer": 7,
+      "analyzers.metrics_analyzer": 4,
+      "validators.enhanced_validator": 7,
+      "utils.dependency_utils": 3,
+      "analyzers.secrets_analyzer": 3,
+      "analyzers.enhanced_function_analyzer": 4,
+      "utils.gitignore_parser": 2,
+      "scripts.robust_async_fixer": 1,
+      "analyzers.enhanced_fallback_detector": 5,
+      "": 3,
+      "analyzers.truly_enhanced_dead_code_analyzer": 3,
+      "analyzers.code_duplication_analyzer": 1,
+      "analyzers.intelligent_import_fixer": 1,
+      "validators.function_validator": 5,
+      "visualizers.interaction_network": 2,
+      "visualizers.chart_generator": 2,
+      "tests.test_enhanced_pipelines": 1,
+      "utils.dependency_manager": 4,
+      "analyzers.test_coverage_analyzer": 4,
+      "analyzers.enhanced_dead_code_analyzer": 3,
+      "scripts.detect_circular_imports": 1,
+      "analyzers.code_smell_detector": 7,
+      "visualizers.dependency_graph": 1,
+      "visualizers.complexity_heatmap": 1,
+      "analyzers.enhanced_import_analysis": 6,
+      "analyzers.linter_analyzer": 3,
+      "reporters.text_reporter": 1,
+      "scripts.interaction_summary": 1,
+      "utils.file_utils": 2,
+      "analyzers.error_handling_analyzer": 1,
+      "pipelines.base_pipeline": 1,
+      "scripts.advanced_syntax_fixer": 1,
+      "analyzers.type_checker": 2,
+      "scripts.enhanced_type_hints": 2,
+      "analyzers.enhanced_dependency_analyzer": 1,
+      "analyzers.concurrency_analyzer": 1
+    },
+    "dead_public_functions": 214,
+    "dead_private_functions": 20
+  }
+}

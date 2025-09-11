@@ -1,560 +1,707 @@
 #!/usr/bin/env python3
 """
-Import-Free Code Analysis Pipeline
+Import-Free Analysis Pipeline
 
-Specialized pipeline for code analysis using only built-in Python modules, including:
-- AST-based analysis
-- Syntax validation
-- Code structure analysis
-- Basic metrics calculation
-- Pattern detection
+This pipeline performs code analysis without importing external dependencies,
+making it easier to troubleshoot and run in isolated environments. It focuses on:
+- Static code analysis without imports
+- AST-based pattern detection
+- Built-in Python functionality analysis
+- Code structure and style analysis
+- Basic complexity metrics
 
-This pipeline avoids external dependencies to ensure maximum compatibility
-and portability across different Python environments.
+Stages:
+1. INITIALIZATION - Setup and file discovery
+2. PREPARATION - Parse files and build AST structures
+3. ANALYSIS - Perform import-free analysis
+4. PROCESSING - Categorize and prioritize findings
+5. AGGREGATION - Combine results across files
+6. REPORTING - Generate comprehensive reports
+7. CLEANUP - Clean up temporary structures
 """
 
 import ast
-import sys
-import time
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Set
-from collections import defaultdict, Counter
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Import analyzers (ONLY import-free analysis related)
-from analyzers.ast_analysis_analyzer import ASTAnalysisAnalyzer
-from analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer
-from analyzers.syntax_validator import SyntaxValidator
-from analyzers.static_analysis_analyzer import StaticAnalysisAnalyzer
-from analyzers.linter_analyzer import LinterAnalyzer
-from analyzers.type_checker import TypeChecker
-
-# Import scripts (ONLY import-free analysis related)
-from scripts.detect_circular_imports import ImportAnalyzer
-# from extract_non_pandas_tests import ExtractNonPandasTests  # Deleted during cleanup
-# from analyze_undefined_names import AnalyzeUndefinedNames  # Deleted during cleanup
-
-# Import core components
-from core.config import get_default_config
-
-# Import standardized base pipeline
-from .base_pipeline import BasePipeline
-import numpy as np
-
-
-class ImportFreeAnalyzer:
-    """Base class for import-free analysis."""
-    
-    def __init__(self, project_root: str):
-        self.project_root = Path(project_root)
-        self.results = {}
-    
-    def find_python_files(self) -> List[Path]:
-        """Find all Python files in the project, respecting .gitignore patterns."""
-        try:
-            from ..utils.gitignore_parser import filter_ignored_files
-        except ImportError:
-            # Fallback for when running as standalone script
-            import sys
-            from pathlib import Path
-            utils_path = Path(__file__).parent.parent / "utils"
-            if str(utils_path) not in sys.path:
-                sys.path.insert(0, str(utils_path))
-            from gitignore_parser import filter_ignored_files
-        python_files = []
-        for py_file in self.project_root.rglob("*.py"):
-            # Skip common directories to avoid
-            if any(skip_dir in str(py_file) for skip_dir in ["__pycache__", ".git", "venv", "env", "node_modules"]):
-                continue
-            python_files.append(py_file)
-        
-        # Filter out ignored files
-        python_files = filter_ignored_files(python_files, self.project_root)
-        return python_files
-    
-    def parse_file(self, file_path: Path) -> ast.AST:
-        """Parse a Python file and return AST."""
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            return ast.parse(content, filename=str(file_path))
-        except Exception as e:
-            print(f"Warning: Could not parse {file_path}: {e}")
-            return None
-
-
-class SyntaxAnalyzer(ImportFreeAnalyzer):
-    """Import-free syntax analyzer."""
-    
-    def analyze_syntax(self) -> Dict[str, Any]:
-        """Analyze syntax without imports."""
-        print("\n" + "="*60)
-        print("Running Import-Free Syntax Analysis")
-        print("="*60)
-        
-        python_files = self.find_python_files()
-        syntax_issues = []
-        valid_files = 0
-        
-        for file_path in python_files:
-            try:
-                tree = self.parse_file(file_path)
-                if tree is not None:
-                    valid_files += 1
-                    # Basic syntax validation
-                    issues = self._check_syntax_issues(tree, file_path)
-                    syntax_issues.extend(issues)
-            except SyntaxError as e:
-                syntax_issues.append({
-                    "file": str(file_path),
-                    "line": e.lineno,
-                    "issue": f"Syntax error: {e.msg}",
-                    "severity": "error"
-                })
-            except Exception as e:
-                syntax_issues.append({
-                    "file": str(file_path),
-                    "line": 0,
-                    "issue": f"Parse error: {str(e)}",
-                    "severity": "error"
-                })
-        
-        return {
-            "total_files": len(python_files),
-            "valid_files": valid_files,
-            "syntax_issues": syntax_issues,
-            "issues_by_severity": self._count_by_severity(syntax_issues)
-        }
-    
-    def _check_syntax_issues(self, tree: ast.AST, file_path: Path) -> List[Dict[str, Any]]:
-        """Check for common syntax issues."""
-        issues = []
-        
-        for node in ast.walk(tree):
-            # Check for common issues (excluding docstring warnings - these are documentation issues, not syntax issues)
-            if isinstance(node, ast.FunctionDef):
-                # Skip docstring checks - these are documentation issues, not syntax issues
-                pass
-            
-            elif isinstance(node, ast.Import):
-                # Check for wildcard imports
-                for alias in node.names:
-                    if alias.name == "*":
-                        issues.append({
-                            "file": str(file_path),
-                            "line": node.lineno,
-                            "issue": "Wildcard import detected",
-                            "severity": "warning"
-                        })
-        
-        return issues
-    
-    def _count_by_severity(self, issues: List[Dict[str, Any]]) -> Dict[str, int]:
-        """Count issues by severity."""
-        counts = defaultdict(int)
-        for issue in issues:
-            counts[issue["severity"]] += 1
-        return dict(counts)
-
-
-class StructureAnalyzer(ImportFreeAnalyzer):
-    """Import-free code structure analyzer."""
-    
-    def analyze_structure(self) -> Dict[str, Any]:
-        """Analyze code structure without imports."""
-        print("\n" + "="*60)
-        print("Running Import-Free Structure Analysis")
-        print("="*60)
-        
-        python_files = self.find_python_files()
-        structure_metrics = {
-            "total_files": len(python_files),
-            "total_functions": 0,
-            "total_classes": 0,
-            "total_lines": 0,
-            "average_function_length": 0,
-            "average_class_length": 0,
-            "complexity_distribution": defaultdict(int),
-            "file_metrics": []
-        }
-        
-        function_lengths = []
-        class_lengths = []
-        
-        for file_path in python_files:
-            try:
-                tree = self.parse_file(file_path)
-                if tree is None:
-                    continue
-                
-                file_metrics = self._analyze_file_structure(tree, file_path)
-                structure_metrics["file_metrics"].append(file_metrics)
-                
-                structure_metrics["total_functions"] += file_metrics["functions"]
-                structure_metrics["total_classes"] += file_metrics["classes"]
-                structure_metrics["total_lines"] += file_metrics["lines"]
-                
-                function_lengths.extend(file_metrics["function_lengths"])
-                class_lengths.extend(file_metrics["class_lengths"])
-                
-                # Complexity distribution
-                for complexity in file_metrics["complexities"]:
-                    structure_metrics["complexity_distribution"][complexity] += 1
-                
-            except Exception as e:
-                print(f"Warning: Could not analyze structure of {file_path}: {e}")
-        
-        # Calculate averages
-        if function_lengths:
-            structure_metrics["average_function_length"] = sum(function_lengths) / len(function_lengths)
-        if class_lengths:
-            structure_metrics["average_class_length"] = sum(class_lengths) / len(class_lengths)
-        
-        structure_metrics["complexity_distribution"] = dict(structure_metrics["complexity_distribution"])
-        
-        return structure_metrics
-    
-    def _analyze_file_structure(self, tree: ast.AST, file_path: Path) -> Dict[str, Any]:
-        """Analyze structure of a single file."""
-        functions = 0
-        classes = 0
-        lines = 0
-        function_lengths = []
-        class_lengths = []
-        complexities = []
-        
-        # Count lines
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = len(f.readlines())
-        except:
-            lines = 0
-        
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                functions += 1
-                # Calculate function length
-                if hasattr(node, 'end_lineno') and node.end_lineno:
-                    func_length = node.end_lineno - node.lineno + 1
-                    function_lengths.append(func_length)
-                
-                # Calculate basic complexity
-                complexity = self._calculate_complexity(node)
-                complexities.append(complexity)
-            
-            elif isinstance(node, ast.ClassDef):
-                classes += 1
-                # Calculate class length
-                if hasattr(node, 'end_lineno') and node.end_lineno:
-                    class_length = node.end_lineno - node.lineno + 1
-                    class_lengths.append(class_length)
-        
-        return {
-            "file": str(file_path),
-            "functions": functions,
-            "classes": classes,
-            "lines": lines,
-            "function_lengths": function_lengths,
-            "class_lengths": class_lengths,
-            "complexities": complexities
-        }
-    
-    def _calculate_complexity(self, node: ast.AST) -> int:
-        """Calculate basic cyclomatic complexity."""
-        complexity = 1  # Base complexity
-        
-        for child in ast.walk(node):
-            if isinstance(child, (ast.If, ast.While, ast.For, ast.AsyncFor)):
-                complexity += 1
-            elif isinstance(child, ast.ExceptHandler):
-                complexity += 1
-            elif isinstance(child, (ast.And, ast.Or)):
-                complexity += 1
-        
-        return complexity
-
-
-class PatternAnalyzer(ImportFreeAnalyzer):
-    """Import-free pattern analyzer."""
-    
-    def analyze_patterns(self) -> Dict[str, Any]:
-        """Analyze code patterns without imports."""
-        print("\n" + "="*60)
-        print("Running Import-Free Pattern Analysis")
-        print("="*60)
-        
-        python_files = self.find_python_files()
-        patterns = {
-            "total_files": len(python_files),
-            "pattern_counts": defaultdict(int),
-            "pattern_issues": [],
-            "file_patterns": []
-        }
-        
-        for file_path in python_files:
-            try:
-                tree = self.parse_file(file_path)
-                if tree is None:
-                    continue
-                
-                file_patterns = self._analyze_file_patterns(tree, file_path)
-                patterns["file_patterns"].append(file_patterns)
-                
-                # Aggregate pattern counts
-                for pattern, count in file_patterns["patterns"].items():
-                    patterns["pattern_counts"][pattern] += count
-                
-                # Collect pattern issues
-                patterns["pattern_issues"].extend(file_patterns["issues"])
-                
-            except Exception as e:
-                print(f"Warning: Could not analyze patterns in {file_path}: {e}")
-        
-        patterns["pattern_counts"] = dict(patterns["pattern_counts"])
-        
-        return patterns
-    
-    def _analyze_file_patterns(self, tree: ast.AST, file_path: Path) -> Dict[str, Any]:
-        """Analyze patterns in a single file."""
-        patterns = defaultdict(int)
-        issues = []
-        
-        for node in ast.walk(tree):
-            # Pattern detection
-            if isinstance(node, ast.ListComp):
-                patterns["list_comprehensions"] += 1
-            
-            elif isinstance(node, ast.DictComp):
-                patterns["dict_comprehensions"] += 1
-            
-            elif isinstance(node, ast.SetComp):
-                patterns["set_comprehensions"] += 1
-            
-            elif isinstance(node, ast.GeneratorExp):
-                patterns["generator_expressions"] += 1
-            
-            elif isinstance(node, ast.Lambda):
-                patterns["lambda_functions"] += 1
-            
-            elif isinstance(node, ast.FunctionDef):
-                patterns["functions"] += 1
-                # Count decorators on functions
-                patterns["decorators"] += len(node.decorator_list)
-            
-            # Decorators are handled in FunctionDef, ClassDef, and AsyncFunctionDef nodes
-            # No separate DecoratorList node exists in current Python AST
-            
-            elif isinstance(node, ast.AsyncFunctionDef):
-                patterns["async_functions"] += 1
-                # Count decorators on async functions
-                patterns["decorators"] += len(node.decorator_list)
-            
-            elif isinstance(node, ast.ClassDef):
-                # Count decorators on classes
-                patterns["decorators"] += len(node.decorator_list)
-                
-                # Check for common class patterns
-                if any(base.id == "Exception" for base in node.bases if isinstance(base, ast.Name)):
-                    patterns["exception_classes"] += 1
-                
-                # Check for abstract methods
-                for item in node.body:
-                    if isinstance(item, ast.FunctionDef) and any(
-                        isinstance(dec, ast.Name) and dec.id == "abstractmethod"
-                        for dec in item.decorator_list
-                    ):
-                        patterns["abstract_methods"] += 1
-            
-            # Issue detection
-            if isinstance(node, ast.FunctionDef):
-                # Check for long parameter lists
-                if len(node.args.args) > 5:
-                    issues.append({
-                        "file": str(file_path),
-                        "line": node.lineno,
-                        "issue": f"Function '{node.name}' has too many parameters ({len(node.args.args)})",
-                        "severity": "warning"
-                    })
-                
-                # Check for long functions
-                if hasattr(node, 'end_lineno') and node.end_lineno:
-                    func_length = node.end_lineno - node.lineno + 1
-                    if func_length > 50:
-                        issues.append({
-                            "file": str(file_path),
-                            "line": node.lineno,
-                            "issue": f"Function '{node.name}' is too long ({func_length} lines)",
-                            "severity": "warning"
-                        })
-        
-        return {
-            "file": str(file_path),
-            "patterns": dict(patterns),
-            "issues": issues
-        }
+from .base_pipeline import BasePipeline, PipelineConfig, PipelineStage, StageResult, PipelineStatus, PipelineResult
 
 
 class ImportFreeAnalysisPipeline(BasePipeline):
-    """Specialized pipeline for import-free code analysis with standardized initialization."""
-
-    def __init__(self, project_root: str = None):
-        # Use standardized initialization from base class (no plugins for import-free)
-        super().__init__(project_root=project_root, enable_plugins=False,
-                        pipeline_name="import_free_analysis")
-
-        # Setup pipeline-specific paths
-        self.setup_pipeline_paths()
-
-        # Initialize analyzers
-        self.syntax_analyzer = SyntaxAnalyzer(str(self.project_root))
-        self.structure_analyzer = StructureAnalyzer(str(self.project_root))
-        self.pattern_analyzer = PatternAnalyzer(str(self.project_root))
+    """Pipeline for import-free code analysis and troubleshooting."""
     
-    def run_syntax_analysis(self) -> Dict[str, Any]:
-        """Run import-free syntax analysis."""
-        try:
-            results = self.syntax_analyzer.analyze_syntax()
-            
-            # Save report
-            report_path = self.reports_dir / f"syntax_analysis_{self.timestamp}.json"
-            with open(report_path, "w") as f:
-                json.dump(results, f, indent=2)
-            
-            return {
-                "status": "completed",
-                "report_path": str(report_path),
-                "total_files": results["total_files"],
-                "valid_files": results["valid_files"],
-                "syntax_issues": len(results["syntax_issues"]),
-                "results": results
-            }
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
+    def __init__(self, config: PipelineConfig):
+        """Initialize the import-free analysis pipeline."""
+        super().__init__(config, "import_free_analysis")
+        self.python_files: List[Path] = []
+        self.parsed_files: Dict[Path, ast.AST] = {}
+        self.analysis_results: Dict[Path, Dict[str, Any]] = {}
+        self.pattern_issues: Dict[Path, List[Dict[str, Any]]] = {}
+        self.structure_issues: Dict[Path, List[Dict[str, Any]]] = {}
+        self.complexity_metrics: Dict[Path, Dict[str, Any]] = {}
     
-    def run_structure_analysis(self) -> Dict[str, Any]:
-        """Run import-free structure analysis."""
-        try:
-            results = self.structure_analyzer.analyze_structure()
-            
-            # Save report
-            report_path = self.reports_dir / f"structure_analysis_{self.timestamp}.json"
-            with open(report_path, "w") as f:
-                json.dump(results, f, indent=2)
-            
-            return {
-                "status": "completed",
-                "report_path": str(report_path),
-                "total_functions": results["total_functions"],
-                "total_classes": results["total_classes"],
-                "total_lines": results["total_lines"],
-                "results": results
-            }
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
+    def get_stages(self) -> List[PipelineStage]:
+        """Get the stages for import-free analysis pipeline."""
+        return [
+            PipelineStage.INITIALIZATION,
+            PipelineStage.PREPARATION,
+            PipelineStage.ANALYSIS,
+            PipelineStage.PROCESSING,
+            PipelineStage.AGGREGATION,
+            PipelineStage.REPORTING,
+            PipelineStage.CLEANUP
+        ]
     
-    def run_pattern_analysis(self) -> Dict[str, Any]:
-        """Run import-free pattern analysis."""
-        try:
-            results = self.pattern_analyzer.analyze_patterns()
-            
-            # Save report
-            report_path = self.reports_dir / f"pattern_analysis_{self.timestamp}.json"
-            with open(report_path, "w") as f:
-                json.dump(results, f, indent=2)
-            
-            return {
-                "status": "completed",
-                "report_path": str(report_path),
-                "total_files": results["total_files"],
-                "pattern_types": len(results["pattern_counts"]),
-                "pattern_issues": len(results["pattern_issues"]),
-                "results": results
-            }
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
-    
-    def run_all_import_free_analysis(self) -> Dict[str, Any]:
-        """Run comprehensive import-free analysis."""
-        print(f"\n{'='*80}")
-        print("COMPREHENSIVE IMPORT-FREE ANALYSIS PIPELINE")
-        print(f"{'='*80}")
-        print(f"Project root: {self.project_root}")
-        print(f"Timestamp: {self.timestamp}")
-        print("Note: This analysis runs without external imports for maximum compatibility")
+    async def execute_stage(self, stage: PipelineStage, context: Dict[str, Any]) -> StageResult:
+        """Execute a specific pipeline stage."""
+        stage_result = StageResult(
+            stage=stage,
+            status=PipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
         
-        total_start = time.time()
+        try:
+            if stage == PipelineStage.INITIALIZATION:
+                await self._execute_initialization(stage_result, context)
+            elif stage == PipelineStage.PREPARATION:
+                await self._execute_preparation(stage_result, context)
+            elif stage == PipelineStage.ANALYSIS:
+                await self._execute_analysis(stage_result, context)
+            elif stage == PipelineStage.PROCESSING:
+                await self._execute_processing(stage_result, context)
+            elif stage == PipelineStage.AGGREGATION:
+                await self._execute_aggregation(stage_result, context)
+            elif stage == PipelineStage.REPORTING:
+                await self._execute_reporting(stage_result, context)
+            elif stage == PipelineStage.CLEANUP:
+                await self._execute_cleanup(stage_result, context)
+            
+            return stage_result
+            
+        except Exception as e:
+            stage_result.fail([f"Stage {stage.value} failed: {e}"])
+            return stage_result
+    
+    async def _execute_initialization(self, stage_result: StageResult, context: Dict[str, Any]):
+        """Initialize the pipeline and discover Python files."""
+        self.logger.info("Initializing import-free analysis pipeline...")
         
-        # Run all import-free analyses
-        self.results["syntax_analysis"] = self.run_syntax_analysis()
-        self.results["structure_analysis"] = self.run_structure_analysis()
-        self.results["pattern_analysis"] = self.run_pattern_analysis()
+        # Discover Python files
+        self.python_files = list(self.config.project_root.rglob("*.py"))
         
-        # Generate summary
-        total_time = time.time() - total_start
-        self.results["summary"] = {
-            "timestamp": self.timestamp,
-            "project_root": str(self.project_root),
-            "total_execution_time": total_time,
-            "analysis_categories": len(self.results) - 1,  # Exclude summary
-            "import_free": True,
-            "status": "completed"
+        # Filter out common directories to ignore
+        ignore_dirs = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "venv"}
+        self.python_files = [
+            f for f in self.python_files 
+            if not any(part in ignore_dirs for part in f.parts)
+        ]
+        
+        stage_result.complete({
+            "files_discovered": len(self.python_files),
+            "project_root": str(self.config.project_root),
+            "files": [str(f) for f in self.python_files]
+        })
+        
+        self.logger.info(f"Discovered {len(self.python_files)} Python files")
+    
+    async def _execute_preparation(self, stage_result: StageResult, context: Dict[str, Any]):
+        """Parse Python files and build AST structures."""
+        self.logger.info("Preparing files for import-free analysis...")
+        
+        parse_errors = []
+        successfully_parsed = 0
+        
+        for file_path in self.python_files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Parse the file
+                tree = ast.parse(content, filename=str(file_path))
+                self.parsed_files[file_path] = tree
+                successfully_parsed += 1
+                
+            except SyntaxError as e:
+                parse_errors.append({
+                    "file": str(file_path),
+                    "line": e.lineno,
+                    "column": e.offset,
+                    "message": e.msg,
+                    "text": e.text
+                })
+            except Exception as e:
+                parse_errors.append({
+                    "file": str(file_path),
+                    "error": str(e)
+                })
+        
+        stage_result.complete({
+            "files_parsed": successfully_parsed,
+            "parse_errors": parse_errors,
+            "total_files": len(self.python_files)
+        })
+        
+        self.logger.info(f"Successfully parsed {successfully_parsed}/{len(self.python_files)} files")
+        if parse_errors:
+            self.logger.warning(f"Found {len(parse_errors)} parse errors")
+    
+    async def _execute_analysis(self, stage_result: StageResult, context: Dict[str, Any]):
+        """Perform comprehensive import-free analysis."""
+        self.logger.info("Performing import-free code analysis...")
+        
+        analysis_results = {
+            "pattern_issues": 0,
+            "structure_issues": 0,
+            "complexity_issues": 0,
+            "files_analyzed": 0
         }
         
-        # Save comprehensive report
-        report_path = self.reports_dir / f"import_free_analysis_{self.timestamp}.json"
-        with open(report_path, "w") as f:
-            json.dump(self.results, f, indent=2)
+        for file_path, tree in self.parsed_files.items():
+            # Analyze code patterns
+            pattern_issues = self._analyze_code_patterns(file_path, tree)
+            self.pattern_issues[file_path] = pattern_issues
+            analysis_results["pattern_issues"] += len(pattern_issues)
+            
+            # Analyze code structure
+            structure_issues = self._analyze_code_structure(file_path, tree)
+            self.structure_issues[file_path] = structure_issues
+            analysis_results["structure_issues"] += len(structure_issues)
+            
+            # Calculate complexity metrics
+            complexity_metrics = self._calculate_complexity_metrics(file_path, tree)
+            self.complexity_metrics[file_path] = complexity_metrics
+            
+            # Store combined analysis results
+            self.analysis_results[file_path] = {
+                "pattern_issues": pattern_issues,
+                "structure_issues": structure_issues,
+                "complexity_metrics": complexity_metrics,
+                "file_size": file_path.stat().st_size,
+                "line_count": len(open(file_path, 'r').readlines())
+            }
+            
+            analysis_results["files_analyzed"] += 1
         
-        print(f"\n{'='*80}")
-        print("IMPORT-FREE ANALYSIS COMPLETE")
-        print(f"{'='*80}")
-        print(f"Total execution time: {total_time:.2f} seconds")
-        print(f"Reports saved to: {self.reports_dir}")
-        print(f"Main report: {report_path}")
+        stage_result.complete({
+            "analysis_results": analysis_results,
+            "files_analyzed": len(self.parsed_files)
+        })
         
-        return self.results
+        total_issues = analysis_results["pattern_issues"] + analysis_results["structure_issues"]
+        self.logger.info(f"Analysis complete: {total_issues} issues found across {analysis_results['files_analyzed']} files")
+    
+    def _analyze_code_patterns(self, file_path: Path, tree: ast.AST) -> List[Dict[str, Any]]:
+        """Analyze code patterns and anti-patterns."""
+        issues = []
+        
+        class PatternVisitor(ast.NodeVisitor):
+            def visit_Compare(self, node):
+                # Check for dangerous comparisons
+                if isinstance(node.left, ast.Constant) and isinstance(node.left.value, str):
+                    if any(isinstance(op, ast.Is) or isinstance(op, ast.IsNot) for op in node.ops):
+                        issues.append({
+                            "type": "dangerous_string_comparison",
+                            "line": node.lineno,
+                            "message": "Using 'is' or 'is not' with string literals is dangerous",
+                            "severity": "high"
+                        })
+                self.generic_visit(node)
+            
+            def visit_Assign(self, node):
+                # Check for multiple assignments
+                if len(node.targets) > 1:
+                    issues.append({
+                        "type": "multiple_assignment",
+                        "line": node.lineno,
+                        "message": f"Multiple assignment to {len(node.targets)} targets",
+                        "severity": "medium"
+                    })
+                self.generic_visit(node)
+            
+            def visit_For(self, node):
+                # Check for range(len()) pattern
+                if isinstance(node.iter, ast.Call) and isinstance(node.iter.func, ast.Name):
+                    if node.iter.func.id == "range" and len(node.iter.args) == 1:
+                        if isinstance(node.iter.args[0], ast.Call) and isinstance(node.iter.args[0].func, ast.Name):
+                            if node.iter.args[0].func.id == "len":
+                                issues.append({
+                                    "type": "range_len_pattern",
+                                    "line": node.lineno,
+                                    "message": "Consider using enumerate() instead of range(len())",
+                                    "severity": "low"
+                                })
+                self.generic_visit(node)
+            
+            def visit_ListComp(self, node):
+                # Check for complex list comprehensions
+                if len(node.generators) > 1:
+                    issues.append({
+                        "type": "complex_listcomp",
+                        "line": node.lineno,
+                        "message": "Complex list comprehension with multiple generators",
+                        "severity": "medium"
+                    })
+                self.generic_visit(node)
+            
+            def visit_DictComp(self, node):
+                # Check for complex dict comprehensions
+                if len(node.generators) > 1:
+                    issues.append({
+                        "type": "complex_dictcomp",
+                        "line": node.lineno,
+                        "message": "Complex dict comprehension with multiple generators",
+                        "severity": "medium"
+                    })
+                self.generic_visit(node)
+            
+            def visit_ExceptHandler(self, node):
+                # Check for bare except
+                if node.type is None:
+                    issues.append({
+                        "type": "bare_except",
+                        "line": node.lineno,
+                        "message": "Bare except clause - should specify exception type",
+                        "severity": "high"
+                    })
+                # Check for broad except
+                elif isinstance(node.type, ast.Name) and node.type.id in ["Exception", "BaseException"]:
+                    issues.append({
+                        "type": "broad_except",
+                        "line": node.lineno,
+                        "message": f"Broad except clause catching {node.type.id}",
+                        "severity": "medium"
+                    })
+                self.generic_visit(node)
+        
+        visitor = PatternVisitor()
+        visitor.visit(tree)
+        return issues
+    
+    def _analyze_code_structure(self, file_path: Path, tree: ast.AST) -> List[Dict[str, Any]]:
+        """Analyze code structure and organization."""
+        issues = []
+        
+        class StructureVisitor(ast.NodeVisitor):
+            def __init__(self):
+                self.function_count = 0
+                self.class_count = 0
+                self.max_function_length = 0
+                self.max_class_length = 0
+                self.current_function_length = 0
+                self.current_class_length = 0
+                self.nested_depth = 0
+                self.max_nested_depth = 0
+            
+            def visit_FunctionDef(self, node):
+                self.function_count += 1
+                self.current_function_length = 0
+                self.nested_depth += 1
+                self.max_nested_depth = max(self.max_nested_depth, self.nested_depth)
+                
+                # Check function length
+                for child in ast.walk(node):
+                    if hasattr(child, 'lineno'):
+                        self.current_function_length += 1
+                
+                if self.current_function_length > 50:
+                    issues.append({
+                        "type": "long_function",
+                        "line": node.lineno,
+                        "message": f"Function '{node.name}' is {self.current_function_length} lines long",
+                        "severity": "medium"
+                    })
+                
+                # Check parameter count
+                if len(node.args.args) > 7:
+                    issues.append({
+                        "type": "too_many_parameters",
+                        "line": node.lineno,
+                        "message": f"Function '{node.name}' has {len(node.args.args)} parameters",
+                        "severity": "medium"
+                    })
+                
+                # Check for missing docstring
+                if not ast.get_docstring(node):
+                    issues.append({
+                        "type": "missing_docstring",
+                        "line": node.lineno,
+                        "message": f"Function '{node.name}' missing docstring",
+                        "severity": "low"
+                    })
+                
+                self.generic_visit(node)
+                self.nested_depth -= 1
+                self.max_function_length = max(self.max_function_length, self.current_function_length)
+            
+            def visit_ClassDef(self, node):
+                self.class_count += 1
+                self.current_class_length = 0
+                
+                # Check class length
+                for child in ast.walk(node):
+                    if hasattr(child, 'lineno'):
+                        self.current_class_length += 1
+                
+                if self.current_class_length > 200:
+                    issues.append({
+                        "type": "long_class",
+                        "line": node.lineno,
+                        "message": f"Class '{node.name}' is {self.current_class_length} lines long",
+                        "severity": "medium"
+                    })
+                
+                # Check for missing docstring
+                if not ast.get_docstring(node):
+                    issues.append({
+                        "type": "missing_class_docstring",
+                        "line": node.lineno,
+                        "message": f"Class '{node.name}' missing docstring",
+                        "severity": "low"
+                    })
+                
+                self.generic_visit(node)
+                self.max_class_length = max(self.max_class_length, self.current_class_length)
+        
+        visitor = StructureVisitor()
+        visitor.visit(tree)
+        
+        # Add file-level structure issues
+        if visitor.function_count > 20:
+            issues.append({
+                "type": "too_many_functions",
+                "line": 1,
+                "message": f"File has {visitor.function_count} functions - consider splitting",
+                "severity": "medium"
+            })
+        
+        if visitor.class_count > 10:
+            issues.append({
+                "type": "too_many_classes",
+                "line": 1,
+                "message": f"File has {visitor.class_count} classes - consider splitting",
+                "severity": "medium"
+            })
+        
+        if visitor.max_nested_depth > 4:
+            issues.append({
+                "type": "deep_nesting",
+                "line": 1,
+                "message": f"Maximum nesting depth is {visitor.max_nested_depth}",
+                "severity": "medium"
+            })
+        
+        return issues
+    
+    def _calculate_complexity_metrics(self, file_path: Path, tree: ast.AST) -> Dict[str, Any]:
+        """Calculate basic complexity metrics."""
+        metrics = {
+            "cyclomatic_complexity": 0,
+            "function_count": 0,
+            "class_count": 0,
+            "line_count": 0,
+            "statement_count": 0,
+            "expression_count": 0
+        }
+        
+        class ComplexityVisitor(ast.NodeVisitor):
+            def visit_FunctionDef(self, node):
+                metrics["function_count"] += 1
+                # Simple cyclomatic complexity calculation
+                complexity = 1  # Base complexity
+                for child in ast.walk(node):
+                    if isinstance(child, (ast.If, ast.While, ast.For, ast.ExceptHandler)):
+                        complexity += 1
+                    elif isinstance(child, ast.BoolOp):
+                        complexity += len(child.values) - 1
+                metrics["cyclomatic_complexity"] = max(metrics["cyclomatic_complexity"], complexity)
+                self.generic_visit(node)
+            
+            def visit_ClassDef(self, node):
+                metrics["class_count"] += 1
+                self.generic_visit(node)
+            
+            def visit_Expr(self, node):
+                metrics["expression_count"] += 1
+                self.generic_visit(node)
+            
+            def visit_Assign(self, node):
+                metrics["statement_count"] += 1
+                self.generic_visit(node)
+            
+            def visit_Return(self, node):
+                metrics["statement_count"] += 1
+                self.generic_visit(node)
+            
+            def visit_If(self, node):
+                metrics["statement_count"] += 1
+                self.generic_visit(node)
+            
+            def visit_For(self, node):
+                metrics["statement_count"] += 1
+                self.generic_visit(node)
+            
+            def visit_While(self, node):
+                metrics["statement_count"] += 1
+                self.generic_visit(node)
+        
+        visitor = ComplexityVisitor()
+        visitor.visit(tree)
+        
+        # Calculate line count
+        try:
+            with open(file_path, 'r') as f:
+                metrics["line_count"] = len(f.readlines())
+        except Exception:
+            metrics["line_count"] = 0
+        
+        return metrics
+    
+    async def _execute_processing(self, stage_result: StageResult, context: Dict[str, Any]):
+        """Process and categorize all findings."""
+        self.logger.info("Processing and categorizing findings...")
+        
+        # Categorize issues by severity
+        issue_categories = {
+            "critical": [],
+            "high": [],
+            "medium": [],
+            "low": []
+        }
+        
+        # Process pattern issues
+        for file_path, issues in self.pattern_issues.items():
+            for issue in issues:
+                severity = issue.get("severity", "medium")
+                issue_categories[severity].append({
+                    "file": str(file_path),
+                    "type": issue["type"],
+                    "line": issue["line"],
+                    "message": issue["message"],
+                    "severity": severity
+                })
+        
+        # Process structure issues
+        for file_path, issues in self.structure_issues.items():
+            for issue in issues:
+                severity = issue.get("severity", "medium")
+                issue_categories[severity].append({
+                    "file": str(file_path),
+                    "type": issue["type"],
+                    "line": issue["line"],
+                    "message": issue["message"],
+                    "severity": severity
+                })
+        
+        # Identify complexity issues
+        complexity_issues = []
+        for file_path, metrics in self.complexity_metrics.items():
+            if metrics["cyclomatic_complexity"] > 10:
+                complexity_issues.append({
+                    "file": str(file_path),
+                    "type": "high_complexity",
+                    "line": 1,
+                    "message": f"High cyclomatic complexity: {metrics['cyclomatic_complexity']}",
+                    "severity": "high"
+                })
+            
+            if metrics["function_count"] > 20:
+                complexity_issues.append({
+                    "file": str(file_path),
+                    "type": "too_many_functions",
+                    "line": 1,
+                    "message": f"Too many functions: {metrics['function_count']}",
+                    "severity": "medium"
+                })
+        
+        issue_categories["high"].extend(complexity_issues)
+        
+        stage_result.complete({
+            "issue_categories": issue_categories,
+            "total_issues": sum(len(issues) for issues in issue_categories.values())
+        })
+        
+        total_issues = sum(len(issues) for issues in issue_categories.values())
+        self.logger.info(f"Processed {total_issues} issues across all categories")
+    
+    async def _execute_aggregation(self, stage_result: StageResult, context: Dict[str, Any]):
+        """Aggregate results and generate summary statistics."""
+        self.logger.info("Aggregating import-free analysis results...")
+        
+        # Calculate summary statistics
+        summary = {
+            "total_files": len(self.python_files),
+            "parsed_files": len(self.parsed_files),
+            "total_issues": 0,
+            "issues_by_severity": {},
+            "complexity_stats": {
+                "total_functions": 0,
+                "total_classes": 0,
+                "avg_complexity": 0,
+                "max_complexity": 0
+            },
+            "file_stats": {
+                "total_lines": 0,
+                "total_statements": 0,
+                "avg_file_size": 0
+            }
+        }
+        
+        # Aggregate issues by severity
+        for severity, issues in context.get("issue_categories", {}).items():
+            summary["issues_by_severity"][severity] = len(issues)
+            summary["total_issues"] += len(issues)
+        
+        # Aggregate complexity metrics
+        total_complexity = 0
+        max_complexity = 0
+        total_lines = 0
+        total_statements = 0
+        
+        for metrics in self.complexity_metrics.values():
+            summary["complexity_stats"]["total_functions"] += metrics["function_count"]
+            summary["complexity_stats"]["total_classes"] += metrics["class_count"]
+            total_complexity += metrics["cyclomatic_complexity"]
+            max_complexity = max(max_complexity, metrics["cyclomatic_complexity"])
+            total_lines += metrics["line_count"]
+            total_statements += metrics["statement_count"]
+        
+        if self.complexity_metrics:
+            summary["complexity_stats"]["avg_complexity"] = total_complexity / len(self.complexity_metrics)
+        summary["complexity_stats"]["max_complexity"] = max_complexity
+        
+        summary["file_stats"]["total_lines"] = total_lines
+        summary["file_stats"]["total_statements"] = total_statements
+        if self.parsed_files:
+            summary["file_stats"]["avg_file_size"] = total_lines / len(self.parsed_files)
+        
+        stage_result.complete({
+            "summary": summary,
+            "aggregated_data": {
+                "analysis_results": self.analysis_results,
+                "pattern_issues": self.pattern_issues,
+                "structure_issues": self.structure_issues,
+                "complexity_metrics": self.complexity_metrics
+            }
+        })
+        
+        self.logger.info(f"Aggregation complete: {summary['total_issues']} total issues, "
+                        f"{summary['complexity_stats']['total_functions']} functions, "
+                        f"{summary['complexity_stats']['total_classes']} classes")
+    
+    async def _execute_reporting(self, stage_result: StageResult, context: Dict[str, Any]):
+        """Generate comprehensive import-free analysis reports."""
+        self.logger.info("Generating import-free analysis reports...")
+        
+        # Generate summary report
+        summary_report = self._generate_summary_report(context.get("summary", {}))
+        
+        # Generate detailed report
+        detailed_report = self._generate_detailed_report(context.get("aggregated_data", {}))
+        
+        # Generate complexity report
+        complexity_report = self._generate_complexity_report()
+        
+        # Save reports
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        summary_path = self.config.output_dir / f"import_free_analysis_summary_{timestamp}.json"
+        detailed_path = self.config.output_dir / f"import_free_analysis_detailed_{timestamp}.json"
+        complexity_path = self.config.output_dir / f"import_free_analysis_complexity_{timestamp}.json"
+        
+        with open(summary_path, 'w') as f:
+            json.dump(summary_report, f, indent=2)
+        
+        with open(detailed_path, 'w') as f:
+            json.dump(detailed_report, f, indent=2)
+        
+        with open(complexity_path, 'w') as f:
+            json.dump(complexity_report, f, indent=2)
+        
+        stage_result.complete({
+            "reports_generated": {
+                "summary": str(summary_path),
+                "detailed": str(detailed_path),
+                "complexity": str(complexity_path)
+            },
+            "summary_report": summary_report
+        })
+        
+        self.logger.info(f"Reports generated: {summary_path}, {detailed_path}, {complexity_path}")
+    
+    def _generate_summary_report(self, summary: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate summary report."""
+        return {
+            "pipeline": "import_free_analysis",
+            "timestamp": datetime.now().isoformat(),
+            "project_root": str(self.config.project_root),
+            "summary": summary,
+            "recommendations": self._generate_recommendations(summary)
+        }
+    
+    def _generate_detailed_report(self, aggregated_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate detailed report."""
+        return {
+            "pipeline": "import_free_analysis",
+            "timestamp": datetime.now().isoformat(),
+            "project_root": str(self.config.project_root),
+            "detailed_data": aggregated_data
+        }
+    
+    def _generate_complexity_report(self) -> Dict[str, Any]:
+        """Generate complexity report."""
+        return {
+            "pipeline": "import_free_analysis",
+            "timestamp": datetime.now().isoformat(),
+            "project_root": str(self.config.project_root),
+            "complexity_metrics": self.complexity_metrics
+        }
+    
+    def _generate_recommendations(self, summary: Dict[str, Any]) -> List[str]:
+        """Generate recommendations based on analysis results."""
+        recommendations = []
+        
+        if summary.get("issues_by_severity", {}).get("critical", 0) > 0:
+            recommendations.append("Address critical issues first (dangerous patterns, bare excepts)")
+        
+        if summary.get("issues_by_severity", {}).get("high", 0) > 0:
+            recommendations.append("Fix high-priority issues (complexity, structure problems)")
+        
+        if summary.get("complexity_stats", {}).get("max_complexity", 0) > 15:
+            recommendations.append("Refactor functions with high cyclomatic complexity")
+        
+        if summary.get("complexity_stats", {}).get("total_functions", 0) > 100:
+            recommendations.append("Consider splitting large files with many functions")
+        
+        return recommendations
+    
+    async def _execute_cleanup(self, stage_result: StageResult, context: Dict[str, Any]):
+        """Clean up temporary data structures."""
+        self.logger.info("Cleaning up...")
+        
+        # Clear large data structures
+        self.parsed_files.clear()
+        self.analysis_results.clear()
+        
+        stage_result.complete({
+            "cleanup_completed": True,
+            "memory_freed": True
+        })
+        
+        self.logger.info("Cleanup completed")
 
 
-def main():
-    """Main entry point for the import-free analysis pipeline."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(
-        description="Import-Free Analysis Pipeline - Code analysis without external dependencies"
-    )
-    parser.add_argument(
-        "--project-root",
-        type=str,
-        default=None,
-        help="Project root directory (default: current directory)"
-    )
-    parser.add_argument(
-        "--analysis-type",
-        type=str,
-        choices=["syntax", "structure", "patterns", "all"],
-        default="syntax",
-        help="Type of import-free analysis to perform (default: syntax)"
-    )
-    
-    args = parser.parse_args()
-    
-    pipeline = ImportFreeAnalysisPipeline(project_root=args.project_root)
-    
-    if args.analysis_type == "all":
-        results = pipeline.run_all_import_free_analysis()
-    elif args.analysis_type == "syntax":
-        results = pipeline.run_syntax_analysis()
-    elif args.analysis_type == "structure":
-        results = pipeline.run_structure_analysis()
-    elif args.analysis_type == "patterns":
-        results = pipeline.run_pattern_analysis()
-    
-    print(f"\nImport-free analysis pipeline completed with status: {results.get('status', 'unknown')}")
-
-
-if __name__ == "__main__":
-    main()
+# Convenience function for easy usage
+async def run_import_free_analysis(
+    project_root: Union[str, Path],
+    output_dir: Optional[Union[str, Path]] = None,
+    **kwargs
+) -> PipelineResult:
+    """Run import-free analysis pipeline."""
+    config = PipelineConfig(project_root=project_root, output_dir=output_dir, **kwargs)
+    pipeline = ImportFreeAnalysisPipeline(config)
+    return await pipeline.run()

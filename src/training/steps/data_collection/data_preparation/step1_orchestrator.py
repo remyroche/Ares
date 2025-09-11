@@ -71,8 +71,8 @@ class Step1Orchestrator:
         print("   ✅ Enhanced stability components initialized")
         print("   🎉 Step1 orchestrator initialization complete")
         try:
-            from .enhanced_data_resampler import EnhancedDataResampler
-            self.enhanced_resampler = EnhancedDataResampler(data_cache_path)
+            from ..unified_resampler import UnifiedResampler
+            self.enhanced_resampler = UnifiedResampler(data_cache_path)
             logger.info("✅ Enhanced stability features enabled")
         except ImportError as e:
             logger.warning(f"⚠️ Enhanced stability features not available: {e}")

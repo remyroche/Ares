@@ -39,6 +39,9 @@ import typing
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import the unified resampler
+from ..unified_resampler import UnifiedResampler
+
 logger = system_logger.getChild("DataPreparation")
 
 
@@ -419,7 +422,7 @@ class DataPreparation:
     def resample_all_timeframes(
         self, symbol: str, exchange: str, timeframes: list[str] | None = None, start_date: datetime | None = None, end_date: datetime | None = None, create_partitions: bool = True
     ) -> dict:
-        """Resample data to all specified timeframes.
+        """Resample data to all specified timeframes using unified resampler.
 
         Args:
             symbol: Trading symbol
@@ -433,6 +436,41 @@ class DataPreparation:
             Dictionary with resampling results
 
         """
+        resampling_start = datetime.now()
+        
+        if timeframes is None:
+            timeframes = ["1m", "5m", "15m", "30m", "1h"]
+        
+        # Use unified resampler
+        try:
+            import asyncio
+            unified_resampler = UnifiedResampler()
+            
+            # Run async function
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                unified_resampler.resample_all_timeframes(
+                    symbol, exchange, 
+                    source_timeframe="1m",
+                    target_timeframes=[tf for tf in timeframes if tf != "1m"],
+                    start_date=start_date,
+                    end_date=end_date
+                )
+            )
+            loop.close()
+            
+            return result
+            
+        except Exception as e:
+            logger.exception(f"❌ Error using unified resampler: {e}")
+            # Fallback to original implementation if needed
+            return self._fallback_resample_all_timeframes(symbol, exchange, timeframes, start_date, end_date, create_partitions)
+    
+    def _fallback_resample_all_timeframes(
+        self, symbol: str, exchange: str, timeframes: list[str] | None = None, start_date: datetime | None = None, end_date: datetime | None = None, create_partitions: bool = True
+    ) -> dict:
+        """Fallback resampling implementation."""
         resampling_start = datetime.now()
         
         if timeframes is None:

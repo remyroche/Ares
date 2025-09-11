@@ -106,27 +106,36 @@ class RawDataQualityChecker:
         # Initialize result builder
         result_builder = ValidationResultBuilder(symbol, exchange, data.shape)
         
-        # Run validation strategies
-        for strategy in self.validation_strategies:
-            try:
-                is_valid = strategy.validate(data, result_builder.get_current_state())
-                if not is_valid:
-                    result_builder.add_critical_issue(f"Validation failed in {strategy.__class__.__name__}")
-            except Exception as e:
-                self.logger.exception(f"Error in {strategy.__class__.__name__}: {e}")
-                result_builder.add_critical_issue(f"Error in {strategy.__class__.__name__}: {str(e)}")
-        
-        # Run data integrity checks
+        # Use utils/ validation tools instead of custom strategies
         try:
-            integrity_valid, integrity_results = self.integrity_checker.validate_data_integrity(data)
-            if not integrity_valid:
-                result_builder.add_critical_issue("Data integrity validation failed")
-            result_builder.add_detailed_analysis("integrity", integrity_results.get("detailed_analysis", {}))
+            # Use utils/ data quality validation
+            data_quality_valid = validate_data_quality(data)
+            if not data_quality_valid:
+                result_builder.add_critical_issue("Data quality validation failed using utils/")
+            
+            # Use utils/ DataFrame column validation
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            column_valid = validate_dataframe_columns(data, required_columns)
+            if not column_valid:
+                result_builder.add_critical_issue("Required columns validation failed using utils/")
+            
+            # Use utils/ safe DataFrame operations
+            processed_data = safe_dataframe_operation(data, lambda df: df.copy())
+            
+            # Use utils/ safe fillna
+            processed_data = safe_fillna(processed_data, method='forward')
+            
+            result_builder.add_detailed_analysis("utils_validation", {
+                "data_quality_valid": data_quality_valid,
+                "column_validation_valid": column_valid,
+                "processed_rows": len(processed_data)
+            })
+            
         except Exception as e:
-            self.logger.exception(f"Error in data integrity check: {e}")
-            result_builder.add_critical_issue(f"Data integrity check error: {str(e)}")
+            self.logger.exception(f"Error in utils/ validation: {e}")
+            result_builder.add_critical_issue(f"Utils/ validation error: {str(e)}")
         
-        # Run anomaly detection
+        # Keep existing anomaly detection for now (can be replaced later)
         try:
             anomaly_results = self.anomaly_detector.detect_anomalies(data)
             if anomaly_results["summary"].get("total_anomalies", 0) > 0:

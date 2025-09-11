@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import json
 import os
 from datetime import datetime
-from abc import ABC, abstractmethod
+# Removed unused ABC import
 
 # Core utilities
 from ...utils.logger import system_logger

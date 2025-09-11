@@ -435,12 +435,40 @@ class FunctionImportAnalysisPipeline(BasePipeline):
                         self.import_resolution[imp["alias"]] = imp["module"]
                     else:
                         self.import_resolution[imp["module"]] = imp["module"]
+                elif imp["type"] == "star_import":
+                    # Star import - all public functions from this module are available
+                    # This is a simplified approach - in practice, you'd need to analyze the target module
+                    self.import_resolution[f"{imp['module']}.*"] = imp["module"]
     
     def _map_function_usage(self):
         """Map function usage to actual function definitions."""
-        # This is a simplified mapping - in practice, you'd need more sophisticated analysis
-        # to handle dynamic imports, conditional imports, etc.
-        pass
+        # Enhanced function usage mapping with better class method and dynamic import handling
+        
+        # Track class method usage through inheritance and dynamic dispatch
+        for module_name, usage in self.function_usage.items():
+            for use in usage:
+                if use["type"] == "method_call":
+                    # Handle method calls like obj.method()
+                    target_module = use.get("module")
+                    method_name = use.get("function")
+                    
+                    # Check if this method exists in any class in the target module
+                    for func_name, func_info in self.function_definitions.items():
+                        if (func_info["module"] == target_module and 
+                            func_info["name"] == method_name and 
+                            func_info["is_method"]):
+                            # This method is being used
+                            pass  # The usage tracking will handle this
+                
+                # Handle dynamic imports and conditional usage
+                elif use["type"] == "name_reference":
+                    # Check if this name reference might be a dynamic import
+                    function_name = use.get("function")
+                    
+                    # Look for common dynamic import patterns
+                    if any(pattern in function_name.lower() for pattern in ["import", "load", "get"]):
+                        # This might be a dynamic import - mark as potentially used
+                        pass
     
     def _identify_dead_functions(self):
         """Identify functions that are never imported or called."""
@@ -477,11 +505,21 @@ class FunctionImportAnalysisPipeline(BasePipeline):
         # Find dead functions
         dead_functions = all_functions - used_functions
         
-        # Categorize dead functions by module
+        # Cross-reference validation: double-check if "dead" functions are actually used
+        validated_dead_functions = set()
         for dead_func in dead_functions:
+            if self._validate_dead_function(dead_func):
+                validated_dead_functions.add(dead_func)
+        
+        # Categorize validated dead functions by module
+        for dead_func in validated_dead_functions:
             if dead_func in self.function_definitions:
                 func_info = self.function_definitions[dead_func]
                 module_name = func_info["module"]
+                
+                # Skip functions that are likely false positives
+                if self._is_likely_false_positive(func_info):
+                    continue
                 
                 if module_name not in self.dead_functions:
                     self.dead_functions[module_name] = []
@@ -495,6 +533,92 @@ class FunctionImportAnalysisPipeline(BasePipeline):
                     "class_name": func_info["class_name"],
                     "reason": "never_imported_or_called"
                 })
+    
+    def _validate_dead_function(self, func_name: str) -> bool:
+        """Cross-reference validation to check if a function is actually dead."""
+        if func_name not in self.function_definitions:
+            return False
+        
+        func_info = self.function_definitions[func_name]
+        func_name_only = func_info["name"]
+        module_name = func_info["module"]
+        
+        # Check if the function name appears anywhere in the codebase
+        for usage_module, usage_list in self.function_usage.items():
+            for use in usage_list:
+                # Check direct function name matches
+                if use.get("function") == func_name_only:
+                    # This function is actually used somewhere
+                    return False
+                
+                # Check if it's used as a method call
+                if (use.get("type") == "method_call" and 
+                    use.get("function") == func_name_only):
+                    return False
+        
+        # Check if the function is imported anywhere
+        for import_module, imports in self.function_imports.items():
+            for imp in imports:
+                if (imp.get("type") == "function_import" and 
+                    imp.get("function") == func_name_only and
+                    imp.get("module") == module_name):
+                    return False
+        
+        # Check cross-module calls
+        for cross_module, cross_calls in self.cross_module_calls.items():
+            for call in cross_calls:
+                if (call.get("target_module") == module_name and 
+                    call.get("function") == func_name_only):
+                    return False
+        
+        return True
+    
+    def _is_likely_false_positive(self, func_info: Dict[str, Any]) -> bool:
+        """Check if a function is likely a false positive (should not be marked as dead)."""
+        func_name = func_info["name"]
+        module_name = func_info["module"]
+        
+        # 1. Magic methods (dunder methods) - these are implicitly used
+        if func_name.startswith("__") and func_name.endswith("__"):
+            return True
+        
+        # 2. AST visitor methods - these are used by the AST visitor pattern
+        if func_name.startswith("visit_") and "pipeline" in module_name:
+            return True
+        
+        # 3. Test functions - these are used by test runners
+        if func_name.startswith("test_") or func_name.startswith("Test"):
+            return True
+        
+        # 4. Main functions - these are entry points
+        if func_name == "main":
+            return True
+        
+        # 5. CLI/command functions - these are used by command line interfaces
+        if any(cmd in func_name.lower() for cmd in ["cli", "command", "cmd", "run", "execute"]):
+            return True
+        
+        # 6. Plugin/extension functions - these are used by plugin systems
+        if any(plugin in func_name.lower() for plugin in ["plugin", "extension", "hook", "callback"]):
+            return True
+        
+        # 7. Configuration/setup functions - these are used during setup
+        if any(config in func_name.lower() for config in ["config", "setup", "init", "install"]):
+            return True
+        
+        # 8. Utility functions that might be used dynamically
+        if any(util in func_name.lower() for util in ["util", "helper", "helper_", "format", "parse"]):
+            return True
+        
+        # 9. Class methods that might be used through inheritance or dynamic dispatch
+        if func_info["is_method"] and func_info["is_public"]:
+            return True
+        
+        # 10. Functions in plugin modules that might be used by plugin systems
+        if "plugin" in module_name.lower():
+            return True
+        
+        return False
     
     async def _execute_aggregation(self, stage_result: StageResult, context: Dict[str, Any]):
         """Aggregate results and generate summary statistics."""

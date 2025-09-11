@@ -67,10 +67,11 @@ def create_fallback_correlation_filter() -> Any:
     return FallbackCorrelationIdFilter()
 
 def create_fallback_json_formatter() -> Any:
-
-    def formatter(record: Any) -> None:
-        return f'{record.levelname}: {record.getMessage()}'
-    return formatter
+    """Create a fallback formatter that works like a logging.Formatter."""
+    class FallbackFormatter(logging.Formatter):
+        def format(self, record):
+            return f'{record.levelname}: {record.getMessage()}'
+    return FallbackFormatter()
 
 class HumanReadableFormatter(logging.Formatter):
     """

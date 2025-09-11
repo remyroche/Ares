@@ -45,6 +45,14 @@ class UnifiedResampler:
         self.data_cache_path.mkdir(exist_ok=True)
         self.logger = logger.getChild('UnifiedResampler')
         
+        # Initialize standardized parquet handler for compatibility
+        try:
+            from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+            self.parquet_handler = standardized_parquet_handler
+        except ImportError:
+            self.parquet_handler = None
+            self.logger.warning("⚠️ Standardized parquet handler not available")
+        
         # Supported timeframes
         self.supported_timeframes = ['1m', '5m', '15m', '30m', '1h']
         
@@ -335,12 +343,30 @@ class UnifiedResampler:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None
     ) -> Optional[pd.DataFrame]:
-        """Load source data for resampling."""
+        """Load source data for resampling using standardized paths."""
         try:
+            # Use standardized parquet handler if available
+            if self.parquet_handler:
+                # Try to load from unified data using standardized paths
+                try:
+                    unified_path = self.parquet_handler.get_standardized_path(
+                        'unified_data', exchange, symbol, timeframe
+                    )
+                    if Path(unified_path).exists():
+                        parquet_files = list(Path(unified_path).glob('**/*.parquet'))
+                        if parquet_files:
+                            # Use standardized parquet handler
+                            data = self.parquet_handler.read_parquet_standardized(parquet_files[0])
+                            if data is not None and not data.empty:
+                                return data
+                except Exception as e:
+                    self.logger.debug(f"Could not load from unified path: {e}")
+            
+            # Fallback to direct file system access
             # Try to load from unified data first
             unified_path = self.data_cache_path / 'unified' / exchange / symbol / timeframe
             if unified_path.exists():
-                parquet_files = list(unified_path.glob('*.parquet'))
+                parquet_files = list(unified_path.glob('**/*.parquet'))
                 if parquet_files:
                     # Use utils/ safe operations
                     data = safe_read_parquet(parquet_files[0])
@@ -350,7 +376,7 @@ class UnifiedResampler:
             # Try to load from raw data
             raw_path = self.data_cache_path / 'raw' / exchange / symbol / timeframe
             if raw_path.exists():
-                parquet_files = list(raw_path.glob('*.parquet'))
+                parquet_files = list(raw_path.glob('**/*.parquet'))
                 if parquet_files:
                     # Use utils/ safe operations
                     data = safe_read_parquet(parquet_files[0])

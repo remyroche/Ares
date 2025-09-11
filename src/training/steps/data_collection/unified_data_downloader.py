@@ -43,6 +43,14 @@ class UnifiedDataDownloader:
         self.data_cache_path.mkdir(exist_ok=True)
         self.logger = logger.getChild('UnifiedDataDownloader')
         
+        # Initialize standardized parquet handler for compatibility
+        try:
+            from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+            self.parquet_handler = standardized_parquet_handler
+        except ImportError:
+            self.parquet_handler = None
+            self.logger.warning("⚠️ Standardized parquet handler not available")
+        
         # Download statistics
         self.download_stats = {
             'total_downloads': 0,

@@ -1,0 +1,841 @@
+"""
+Unified Data Cleaning Module
+
+This module consolidates missing value handling and outlier detection functionality
+from multiple previous modules into a single, comprehensive framework.
+
+Consolidated from:
+- enhanced_missing_value_handler.py
+- enhanced_outlier_handler.py
+"""
+
+import logging
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from ..logger import system_logger
+
+logger = logging.getLogger(__name__)
+
+class GapType(Enum):
+    """Types of data gaps."""
+    SMALL = 'small'
+    MEDIUM = 'medium'
+    LARGE = 'large'
+    CRITICAL = 'critical'
+
+class OutlierSeverity(Enum):
+    """Outlier severity levels."""
+    LOW = 'low'
+    MEDIUM = 'medium'
+    HIGH = 'high'
+    CRITICAL = 'critical'
+
+class GapInfo:
+    """Information about a data gap."""
+
+    def __init__(self, start_time: int, end_time: int, gap_size: int, gap_type: GapType) -> None:
+        self.start_time = start_time
+        self.end_time = end_time
+        self.gap_size = gap_size
+        self.gap_type = gap_type
+        self.filled = False
+        self.fill_method = None
+        self.downloaded_data = None
+
+    def __str__(self) -> str:
+        return f'Gap({self.start_time} -> {self.end_time}, size={self.gap_size}s, type={self.gap_type.value})'
+
+class OutlierInfo:
+    """Information about detected outliers."""
+
+    def __init__(self, column: str, indices: List[int], values: List[Any], method: str, severity: OutlierSeverity, threshold: float) -> None:
+        self.column = column
+        self.indices = indices
+        self.values = values
+        self.method = method
+        self.severity = severity
+        self.threshold = threshold
+        self.timestamp = datetime.now()
+        self.context = {}
+
+    def __str__(self) -> str:
+        return f'OutlierInfo(column={self.column}, count={len(self.indices)}, severity={self.severity.value}, method={self.method})'
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+class DataSchema:
+    """Defines expected data schema for file operations."""
+
+    def __init__(self, name: str, required_columns: List[str], optional_columns: List[str] = None, data_types: Dict[str, str] = None, constraints: Dict[str, Dict[str, Any]] = None) -> None:
+        self.name = name
+        self.required_columns = set(required_columns)
+        self.optional_columns = set(optional_columns or [])
+        self.data_types = data_types or {}
+        self.constraints = constraints or {}
+        self.all_columns = self.required_columns.union(self.optional_columns)
+
+    def validate_dataframe(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Validate dataframe against schema."""
+        results = {
+            'valid': True,
+            'errors': [],
+            'warnings': [],
+            'missing_columns': [],
+            'extra_columns': [],
+            'type_mismatches': [],
+            'constraint_violations': []
+        }
+        
+        df_columns = set(df.columns)
+        missing_required = self.required_columns - df_columns
+        if missing_required:
+            results['valid'] = False
+            results['missing_columns'] = list(missing_required)
+            results['errors'].append(f'Missing required columns: {missing_required}')
+            
+        extra_columns = df_columns - self.all_columns
+        if extra_columns:
+            results['warnings'].append(f'Extra columns found: {extra_columns}')
+            results['extra_columns'] = list(extra_columns)
+            
+        for column, expected_type in self.data_types.items():
+            if column in df.columns:
+                actual_type = str(df[column].dtype)
+                if actual_type != expected_type:
+                    results['type_mismatches'].append({'column': column, 'expected': expected_type, 'actual': actual_type})
+                    results['warnings'].append(f'Type mismatch in {column}: expected {expected_type}, got {actual_type}')
+                    
+        for column, constraint in self.constraints.items():
+            if column in df.columns:
+                if 'not_null' in constraint and constraint['not_null']:
+                    if df[column].isnull().any():
+                        results['constraint_violations'].append(f'Column {column} contains null values')
+                        results['warnings'].append(f'Null values found in {column}')
+                if 'unique' in constraint and constraint['unique']:
+                    if df[column].duplicated().any():
+                        results['constraint_violations'].append(f'Column {column} contains duplicate values')
+                        results['warnings'].append(f'Duplicate values found in {column}')
+                if 'min' in constraint:
+                    min_val = constraint['min']
+                    if (df[column] < min_val).any():
+                        results['constraint_violations'].append(f'Column {column} contains values below minimum {min_val}')
+                        results['warnings'].append(f'Values below minimum {min_val} found in {column}')
+                if 'max' in constraint:
+                    max_val = constraint['max']
+                    if (df[column] > max_val).any():
+                        results['constraint_violations'].append(f'Column {column} contains values above maximum {max_val}')
+                        results['warnings'].append(f'Values above maximum {max_val} found in {column}')
+                        
+        return results
+
+class DataCleaner:
+    """Unified data cleaning with missing value handling and outlier detection."""
+
+    def __init__(self, max_forward_fill_gap: int = 5, download_threshold: int = 5, raise_errors: bool = True, log_details: bool = True) -> None:
+        """Initialize data cleaner."""
+        self.logger = system_logger.getChild('DataCleaner')
+        self.max_forward_fill_gap = max_forward_fill_gap
+        self.download_threshold = download_threshold
+        self.raise_errors = raise_errors
+        self.log_details = log_details
+        
+        self.gap_thresholds = {
+            GapType.SMALL: max_forward_fill_gap,
+            GapType.MEDIUM: 60,
+            GapType.LARGE: 300,
+            GapType.CRITICAL: float('inf')
+        }
+        
+        self.fill_strategies = {
+            GapType.SMALL: 'forward_fill',
+            GapType.MEDIUM: 'download',
+            GapType.LARGE: 'download',
+            GapType.CRITICAL: 'manual_intervention'
+        }
+        
+        self.outlier_history = []
+        self.standard_schemas = {
+            'klines': DataSchema(
+                name='klines',
+                required_columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'],
+                data_types={
+                    'timestamp': 'int64',
+                    'open': 'float64',
+                    'high': 'float64',
+                    'low': 'float64',
+                    'close': 'float64',
+                    'volume': 'float64'
+                },
+                constraints={
+                    'open': {'min': 0, 'not_null': True},
+                    'high': {'min': 0, 'not_null': True},
+                    'low': {'min': 0, 'not_null': True},
+                    'close': {'min': 0, 'not_null': True},
+                    'volume': {'min': 0, 'not_null': True}
+                }
+            ),
+            'features': DataSchema(
+                name='features',
+                required_columns=['timestamp'],
+                optional_columns=[],
+                data_types={'timestamp': 'int64'},
+                constraints={'timestamp': {'not_null': True}}
+            ),
+            'labels': DataSchema(
+                name='labels',
+                required_columns=['timestamp', 'label'],
+                data_types={'timestamp': 'int64', 'label': 'object'},
+                constraints={'timestamp': {'not_null': True}, 'label': {'not_null': True}}
+            )
+        }
+        
+        self.detection_methods = {
+            'zscore': self._detect_zscore_outliers,
+            'iqr': self._detect_iqr_outliers,
+            'isolation_forest': self._detect_isolation_forest_outliers,
+            'local_outlier_factor': self._detect_lof_outliers,
+            'mahalanobis': self._detect_mahalanobis_outliers
+        }
+        
+        self.logger.info(f'🧹 Data Cleaner initialized with {len(self.detection_methods)} outlier detection methods')
+
+    def handle_missing_values_intelligently(
+        self,
+        data: pd.DataFrame,
+        timestamp_column: str = 'timestamp',
+        symbol: str = None,
+        exchange: str = None,
+        timeframe: str = '1m'
+    ) -> pd.DataFrame:
+        """Handle missing values intelligently based on gap size."""
+        if timestamp_column not in data.columns:
+            self.logger.error(f"Timestamp column '{timestamp_column}' not found")
+            return data
+            
+        data = data.sort_values(timestamp_column).reset_index(drop=True)
+        gaps = self._analyze_gaps(data, timestamp_column)
+        
+        if not gaps:
+            self.logger.info('No gaps detected in data')
+            return data
+            
+        self._log_gap_analysis(gaps)
+        filled_data = data.copy()
+        
+        for gap in gaps:
+            if gap.gap_type == GapType.SMALL:
+                filled_data = self._handle_small_gap(filled_data, gap, timestamp_column)
+            elif gap.gap_type in [GapType.MEDIUM, GapType.LARGE]:
+                if symbol and exchange:
+                    filled_data = self._handle_large_gap_with_download(filled_data, gap, timestamp_column, symbol, exchange, timeframe)
+                else:
+                    self.logger.warning(f'Cannot download data for gap {gap}: missing symbol/exchange')
+                    filled_data = self._handle_large_gap_with_fallback(filled_data, gap, timestamp_column)
+            elif gap.gap_type == GapType.CRITICAL:
+                self.logger.error(f'Critical gap detected: {gap}. Manual intervention required.')
+                filled_data = self._handle_critical_gap(filled_data, gap, timestamp_column)
+                
+        final_gaps = self._analyze_gaps(filled_data, timestamp_column)
+        if final_gaps:
+            self.logger.warning(f'Remaining gaps after filling: {len(final_gaps)}')
+        else:
+            self.logger.info('All gaps successfully filled')
+            
+        return filled_data
+
+    def _analyze_gaps(self, data: pd.DataFrame, timestamp_column: str) -> List[GapInfo]:
+        """Analyze gaps in the data."""
+        gaps = []
+        timestamps = data[timestamp_column].values
+        
+        for i in range(len(timestamps) - 1):
+            current_time = timestamps[i]
+            next_time = timestamps[i + 1]
+            expected_next_time = current_time + 60
+            
+            if next_time > expected_next_time:
+                gap_size = next_time - expected_next_time
+                gap_type = self._classify_gap(gap_size)
+                gap = GapInfo(
+                    start_time=expected_next_time,
+                    end_time=next_time,
+                    gap_size=gap_size,
+                    gap_type=gap_type
+                )
+                gaps.append(gap)
+                
+        return gaps
+
+    def _classify_gap(self, gap_size: int) -> GapType:
+        """Classify gap based on size."""
+        if gap_size <= self.gap_thresholds[GapType.SMALL]:
+            return GapType.SMALL
+        elif gap_size <= self.gap_thresholds[GapType.MEDIUM]:
+            return GapType.MEDIUM
+        elif gap_size <= self.gap_thresholds[GapType.LARGE]:
+            return GapType.LARGE
+        else:
+            return GapType.CRITICAL
+
+    def _log_gap_analysis(self, gaps: List[GapInfo]) -> None:
+        """Log gap analysis results."""
+        gap_counts = {}
+        for gap in gaps:
+            gap_type = gap.gap_type.value
+            if gap_type not in gap_counts:
+                gap_counts[gap_type] = 0
+            gap_counts[gap_type] += 1
+            
+        self.logger.info(f'Gap analysis: {len(gaps)} total gaps')
+        for gap_type, count in gap_counts.items():
+            self.logger.info(f'  {gap_type}: {count} gaps')
+
+    def _handle_small_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
+        """Handle small gap with forward fill."""
+        self.logger.info(f'Handling small gap with forward fill: {gap}')
+        before_gap_idx = data[data[timestamp_column] <= gap.start_time].index[-1]
+        filled_data = data.copy()
+        
+        missing_timestamps = []
+        current_time = gap.start_time
+        while current_time < gap.end_time:
+            missing_timestamps.append(current_time)
+            current_time += 60
+            
+        new_rows = []
+        for timestamp in missing_timestamps:
+            new_row = data.iloc[before_gap_idx].copy()
+            new_row[timestamp_column] = timestamp
+            new_rows.append(new_row)
+            
+        if new_rows:
+            new_df = pd.DataFrame(new_rows)
+            filled_data = pd.concat([filled_data, new_df], ignore_index=True)
+            filled_data = filled_data.sort_values(timestamp_column).reset_index(drop=True)
+            
+        gap.filled = True
+        gap.fill_method = 'forward_fill'
+        return filled_data
+
+    def _handle_large_gap_with_download(
+        self,
+        data: pd.DataFrame,
+        gap: GapInfo,
+        timestamp_column: str,
+        symbol: str,
+        exchange: str,
+        timeframe: str
+    ) -> pd.DataFrame:
+        """Handle large gap by downloading missing data."""
+        self.logger.info(f'Downloading data for gap: {gap}')
+        try:
+            downloaded_data = self._download_missing_data(symbol, exchange, timeframe, gap.start_time, gap.end_time)
+            if downloaded_data is not None and len(downloaded_data) > 0:
+                filled_data = self._insert_downloaded_data(data, downloaded_data, timestamp_column)
+                gap.filled = True
+                gap.fill_method = 'download'
+                gap.downloaded_data = downloaded_data
+                self.logger.info(f'Successfully downloaded and inserted {len(downloaded_data)} rows')
+                return filled_data
+            else:
+                self.logger.warning(f'No data downloaded for gap {gap}, using fallback')
+                return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
+        except Exception as e:
+            self.logger.error(f'Failed to download data for gap {gap}: {e}')
+            return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
+
+    def _download_missing_data(self, symbol: str, exchange: str, timeframe: str, start_time: int, end_time: int) -> Optional[pd.DataFrame]:
+        """Download missing data from exchange."""
+        try:
+            start_dt = datetime.fromtimestamp(start_time)
+            end_dt = datetime.fromtimestamp(end_time)
+            self.logger.info(f'Downloading {symbol} data from {exchange} for {start_dt} to {end_dt}')
+            
+            if exchange.lower() == 'binance':
+                from ...training.steps.data_downloader import DataDownloader
+                
+                downloader = DataDownloader()
+                downloaded_data = downloader.download_klines(
+                    symbol=symbol,
+                    interval=timeframe,
+                    start_time=start_dt,
+                    end_time=end_dt
+                )
+                
+                if downloaded_data is not None and len(downloaded_data) > 0:
+                    downloaded_data['timestamp'] = pd.to_datetime(downloaded_data['timestamp']).astype(np.int64) // 10**9
+                    return downloaded_data
+                else:
+                    self.logger.warning('No data returned from downloader')
+                    return None
+            else:
+                self.logger.warning(f'Exchange {exchange} not supported for data download')
+                return None
+        except Exception as e:
+            self.logger.error(f'Error downloading data: {e}')
+            return None
+
+    def _insert_downloaded_data(self, data: pd.DataFrame, downloaded_data: pd.DataFrame, timestamp_column: str) -> pd.DataFrame:
+        """Insert downloaded data into the main dataset."""
+        combined_data = pd.concat([data, downloaded_data], ignore_index=True)
+        combined_data = combined_data.sort_values(timestamp_column).reset_index(drop=True)
+        combined_data = combined_data.drop_duplicates(subset=[timestamp_column])
+        return combined_data
+
+    def _handle_large_gap_with_fallback(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
+        """Handle large gap with fallback strategy (interpolation)."""
+        self.logger.info(f'Using fallback strategy for gap: {gap}')
+        filled_data = data.copy()
+        before_gap_idx = data[data[timestamp_column] <= gap.start_time].index[-1]
+        after_gap_idx = data[data[timestamp_column] >= gap.end_time].index[0]
+        
+        missing_timestamps = []
+        current_time = gap.start_time
+        while current_time < gap.end_time:
+            missing_timestamps.append(current_time)
+            current_time += 60
+            
+        for timestamp in missing_timestamps:
+            time_diff = timestamp - data.iloc[before_gap_idx][timestamp_column]
+            total_gap = data.iloc[after_gap_idx][timestamp_column] - data.iloc[before_gap_idx][timestamp_column]
+            weight = time_diff / total_gap if total_gap > 0 else 0
+            
+            new_row = data.iloc[before_gap_idx].copy()
+            new_row[timestamp_column] = timestamp
+            
+            numeric_columns = data.select_dtypes(include=[np.number]).columns
+            for col in numeric_columns:
+                if col != timestamp_column:
+                    before_val = data.iloc[before_gap_idx][col]
+                    after_val = data.iloc[after_gap_idx][col]
+                    interpolated_val = before_val + weight * (after_val - before_val)
+                    new_row[col] = interpolated_val
+                    
+            filled_data = pd.concat([filled_data, pd.DataFrame([new_row])], ignore_index=True)
+            
+        filled_data = filled_data.sort_values(timestamp_column).reset_index(drop=True)
+        gap.filled = True
+        gap.fill_method = 'interpolation_fallback'
+        return filled_data
+
+    def _handle_critical_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
+        """Handle critical gap (requires manual intervention)."""
+        self.logger.error(f'Critical gap detected: {gap}')
+        self.logger.error('Manual intervention required for critical gaps')
+        return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
+
+    def detect_outliers(
+        self,
+        data: pd.DataFrame,
+        method: str = 'zscore',
+        threshold: float = 3.0,
+        columns: List[str] = None,
+        raise_errors: bool = None
+    ) -> List[OutlierInfo]:
+        """Detect outliers in data using specified method."""
+        if raise_errors is None:
+            raise_errors = self.raise_errors
+            
+        if method not in self.detection_methods:
+            self.logger.error(f'Unknown detection method: {method}')
+            return []
+            
+        if columns is None:
+            columns = data.select_dtypes(include=[np.number]).columns.tolist()
+            
+        all_outliers = []
+        for column in columns:
+            if column not in data.columns:
+                self.logger.warning(f'Column {column} not found in data')
+                continue
+            if not np.issubdtype(data[column].dtype, np.number):
+                self.logger.warning(f'Column {column} is not numeric, skipping')
+                continue
+                
+            clean_data = data[column].dropna()
+            if len(clean_data) == 0:
+                self.logger.warning(f'Column {column} has no valid data')
+                continue
+                
+            outliers = self.detection_methods[method](data, column, threshold)
+            all_outliers.extend(outliers)
+            
+        if all_outliers:
+            self._log_outlier_details(all_outliers)
+            if raise_errors:
+                self._handle_outlier_errors(all_outliers)
+            self.outlier_history.extend(all_outliers)
+            
+        return all_outliers
+
+    def _detect_zscore_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+        """Detect outliers using Z-score method."""
+        outliers = []
+        try:
+            z_scores = np.abs((data[column] - data[column].mean()) / data[column].std())
+            outlier_indices = np.where(z_scores > threshold)[0]
+            
+            if len(outlier_indices) > 0:
+                outlier_values = data[column].iloc[outlier_indices].tolist()
+                max_z_score = z_scores.max()
+                
+                if max_z_score > threshold * 3:
+                    severity = OutlierSeverity.CRITICAL
+                elif max_z_score > threshold * 2:
+                    severity = OutlierSeverity.HIGH
+                elif max_z_score > threshold * 1.5:
+                    severity = OutlierSeverity.MEDIUM
+                else:
+                    severity = OutlierSeverity.LOW
+                    
+                outlier_info = OutlierInfo(
+                    column=column,
+                    indices=outlier_indices.tolist(),
+                    values=outlier_values,
+                    method='zscore',
+                    severity=severity,
+                    threshold=threshold
+                )
+                outlier_info.context = {
+                    'z_scores': z_scores[outlier_indices].tolist(),
+                    'max_z_score': max_z_score,
+                    'mean': data[column].mean(),
+                    'std': data[column].std()
+                }
+                outliers.append(outlier_info)
+        except Exception as e:
+            self.logger.exception(f'Error in Z-score outlier detection: {e}')
+        return outliers
+
+    def _detect_iqr_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+        """Detect outliers using IQR method."""
+        outliers = []
+        try:
+            Q1 = data[column].quantile(0.25)
+            Q3 = data[column].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - threshold * IQR
+            upper_bound = Q3 + threshold * IQR
+            outlier_indices = np.where((data[column] < lower_bound) | (data[column] > upper_bound))[0]
+            
+            if len(outlier_indices) > 0:
+                outlier_values = data[column].iloc[outlier_indices].tolist()
+                distances = []
+                for idx in outlier_indices:
+                    val = data[column].iloc[idx]
+                    if val < lower_bound:
+                        distances.append((lower_bound - val) / IQR)
+                    else:
+                        distances.append((val - upper_bound) / IQR)
+                        
+                max_distance = max(distances)
+                if max_distance > threshold * 2:
+                    severity = OutlierSeverity.CRITICAL
+                elif max_distance > threshold * 1.5:
+                    severity = OutlierSeverity.HIGH
+                elif max_distance > threshold * 1.2:
+                    severity = OutlierSeverity.MEDIUM
+                else:
+                    severity = OutlierSeverity.LOW
+                    
+                outlier_info = OutlierInfo(
+                    column=column,
+                    indices=outlier_indices.tolist(),
+                    values=outlier_values,
+                    method='iqr',
+                    severity=severity,
+                    threshold=threshold
+                )
+                outlier_info.context = {
+                    'Q1': Q1,
+                    'Q3': Q3,
+                    'IQR': IQR,
+                    'lower_bound': lower_bound,
+                    'upper_bound': upper_bound,
+                    'max_distance': max_distance
+                }
+                outliers.append(outlier_info)
+        except Exception as e:
+            self.logger.exception(f'Error in IQR outlier detection: {e}')
+        return outliers
+
+    def _detect_isolation_forest_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+        """Detect outliers using Isolation Forest method."""
+        outliers = []
+        try:
+            from sklearn.ensemble import IsolationForest
+            X = data[column].values.reshape(-1, 1)
+            iso_forest = IsolationForest(contamination=0.1, random_state=42)
+            predictions = iso_forest.fit_predict(X)
+            outlier_indices = np.where(predictions == -1)[0]
+            
+            if len(outlier_indices) > 0:
+                outlier_values = data[column].iloc[outlier_indices].tolist()
+                anomaly_scores = iso_forest.decision_function(X)
+                outlier_scores = anomaly_scores[outlier_indices]
+                min_score = min(outlier_scores)
+                
+                if min_score < -0.5:
+                    severity = OutlierSeverity.CRITICAL
+                elif min_score < -0.3:
+                    severity = OutlierSeverity.HIGH
+                elif min_score < -0.1:
+                    severity = OutlierSeverity.MEDIUM
+                else:
+                    severity = OutlierSeverity.LOW
+                    
+                outlier_info = OutlierInfo(
+                    column=column,
+                    indices=outlier_indices.tolist(),
+                    values=outlier_values,
+                    method='isolation_forest',
+                    severity=severity,
+                    threshold=threshold
+                )
+                outlier_info.context = {
+                    'anomaly_scores': outlier_scores.tolist(),
+                    'min_score': min_score,
+                    'contamination': 0.1
+                }
+                outliers.append(outlier_info)
+        except ImportError:
+            self.logger.warning('scikit-learn not available for isolation forest outlier detection')
+        except Exception as e:
+            self.logger.exception(f'Error in isolation forest outlier detection: {e}')
+        return outliers
+
+    def _detect_lof_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+        """Detect outliers using Local Outlier Factor method."""
+        outliers = []
+        try:
+            from sklearn.neighbors import LocalOutlierFactor
+            X = data[column].values.reshape(-1, 1)
+            lof = LocalOutlierFactor(contamination=0.1, n_neighbors=20)
+            predictions = lof.fit_predict(X)
+            outlier_indices = np.where(predictions == -1)[0]
+            
+            if len(outlier_indices) > 0:
+                outlier_values = data[column].iloc[outlier_indices].tolist()
+                lof_scores = lof.negative_outlier_factor_
+                outlier_scores = lof_scores[outlier_indices]
+                min_score = min(outlier_scores)
+                
+                if min_score < -1.5:
+                    severity = OutlierSeverity.CRITICAL
+                elif min_score < -1.2:
+                    severity = OutlierSeverity.HIGH
+                elif min_score < -1.0:
+                    severity = OutlierSeverity.MEDIUM
+                else:
+                    severity = OutlierSeverity.LOW
+                    
+                outlier_info = OutlierInfo(
+                    column=column,
+                    indices=outlier_indices.tolist(),
+                    values=outlier_values,
+                    method='local_outlier_factor',
+                    severity=severity,
+                    threshold=threshold
+                )
+                outlier_info.context = {
+                    'lof_scores': outlier_scores.tolist(),
+                    'min_score': min_score,
+                    'contamination': 0.1
+                }
+                outliers.append(outlier_info)
+        except ImportError:
+            self.logger.warning('scikit-learn not available for LOF outlier detection')
+        except Exception as e:
+            self.logger.exception(f'Error in LOF outlier detection: {e}')
+        return outliers
+
+    def _detect_mahalanobis_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
+        """Detect outliers using Mahalanobis distance method."""
+        outliers = []
+        try:
+            median = data[column].median()
+            mad = np.median(np.abs(data[column] - median))
+            if mad == 0:
+                return outliers
+                
+            modified_z_scores = 0.6745 * (data[column] - median) / mad
+            outlier_indices = np.where(np.abs(modified_z_scores) > threshold)[0]
+            
+            if len(outlier_indices) > 0:
+                outlier_values = data[column].iloc[outlier_indices].tolist()
+                max_score = np.abs(modified_z_scores).max()
+                
+                if max_score > threshold * 2:
+                    severity = OutlierSeverity.CRITICAL
+                elif max_score > threshold * 1.5:
+                    severity = OutlierSeverity.HIGH
+                elif max_score > threshold * 1.2:
+                    severity = OutlierSeverity.MEDIUM
+                else:
+                    severity = OutlierSeverity.LOW
+                    
+                outlier_info = OutlierInfo(
+                    column=column,
+                    indices=outlier_indices.tolist(),
+                    values=outlier_values,
+                    method='mahalanobis',
+                    severity=severity,
+                    threshold=threshold
+                )
+                outlier_info.context = {
+                    'modified_z_scores': modified_z_scores[outlier_indices].tolist(),
+                    'max_score': max_score,
+                    'median': median,
+                    'mad': mad
+                }
+                outliers.append(outlier_info)
+        except Exception as e:
+            self.logger.exception(f'Error in Mahalanobis outlier detection: {e}')
+        return outliers
+
+    def _log_outlier_details(self, outliers: List[OutlierInfo]) -> None:
+        """Log detailed outlier information."""
+        if not outliers:
+            return
+        self.logger.info(f'🔍 Detected {len(outliers)} outlier groups')
+        for outlier in outliers:
+            self.logger.warning(f'Outlier in {outlier.column}: {len(outlier.indices)} values, severity={outlier.severity.value}, method={outlier.method}')
+            if outlier.severity in [OutlierSeverity.HIGH, OutlierSeverity.CRITICAL]:
+                self.logger.error(f'Critical outlier details: {outlier}')
+                self.logger.error(f'  Values: {outlier.values[:5]}...')
+                self.logger.error(f'  Context: {outlier.context}')
+
+    def _handle_outlier_errors(self, outliers: List[OutlierInfo]) -> None:
+        """Handle outlier errors by raising exceptions or logging."""
+        critical_outliers = [o for o in outliers if o.severity == OutlierSeverity.CRITICAL]
+        high_outliers = [o for o in outliers if o.severity == OutlierSeverity.HIGH]
+        
+        if critical_outliers:
+            error_msg = f'Critical outliers detected: {len(critical_outliers)} groups'
+            for outlier in critical_outliers:
+                error_msg += f'\n  {outlier.column}: {len(outlier.indices)} values'
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+            
+        if high_outliers:
+            error_msg = f'High severity outliers detected: {len(high_outliers)} groups'
+            for outlier in high_outliers:
+                error_msg += f'\n  {outlier.column}: {len(outlier.indices)} values'
+            self.logger.error(error_msg)
+            if self.raise_errors:
+                raise ValueError(error_msg)
+
+    def validate_data_schema(self, data: pd.DataFrame, schema_name: str) -> Dict[str, Any]:
+        """Validate data against a standard schema."""
+        if schema_name not in self.standard_schemas:
+            self.logger.error(f'Unknown schema: {schema_name}')
+            return {'valid': False, 'error': f'Unknown schema: {schema_name}'}
+        schema = self.standard_schemas[schema_name]
+        return schema.validate_dataframe(data)
+
+    def get_gap_report(self, data: pd.DataFrame, timestamp_column: str = 'timestamp') -> Dict[str, Any]:
+        """Generate gap analysis report."""
+        gaps = self._analyze_gaps(data, timestamp_column)
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'total_gaps': len(gaps),
+            'gap_summary': {},
+            'gap_details': []
+        }
+        
+        for gap_type in GapType:
+            gap_type_gaps = [g for g in gaps if g.gap_type == gap_type]
+            report['gap_summary'][gap_type.value] = {
+                'count': len(gap_type_gaps),
+                'total_size': sum((g.gap_size for g in gap_type_gaps)),
+                'avg_size': np.mean([g.gap_size for g in gap_type_gaps]) if gap_type_gaps else 0
+            }
+            
+        for gap in gaps:
+            report['gap_details'].append({
+                'start_time': gap.start_time,
+                'end_time': gap.end_time,
+                'gap_size': gap.gap_size,
+                'gap_type': gap.gap_type.value,
+                'filled': gap.filled,
+                'fill_method': gap.fill_method
+            })
+            
+        return report
+
+    def get_outlier_report(self) -> Dict[str, Any]:
+        """Generate comprehensive outlier report."""
+        if not self.outlier_history:
+            return {'message': 'No outliers detected'}
+            
+        severity_counts = {}
+        column_counts = {}
+        method_counts = {}
+        
+        for outlier in self.outlier_history:
+            severity = outlier.severity.value
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+            
+            column = outlier.column
+            if column not in column_counts:
+                column_counts[column] = {'count': 0, 'total_values': 0}
+            column_counts[column]['count'] += 1
+            column_counts[column]['total_values'] += len(outlier.indices)
+            
+            method = outlier.method
+            method_counts[method] = method_counts.get(method, 0) + 1
+            
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'total_outlier_groups': len(self.outlier_history),
+            'severity_distribution': severity_counts,
+            'column_distribution': column_counts,
+            'method_distribution': method_counts,
+            'recent_outliers': [
+                {
+                    'column': o.column,
+                    'count': len(o.indices),
+                    'severity': o.severity.value,
+                    'method': o.method,
+                    'timestamp': o.timestamp.isoformat()
+                }
+                for o in self.outlier_history[-10:]
+            ]
+        }
+
+# Convenience functions for backwards compatibility
+def handle_missing_values_intelligently(
+    data: pd.DataFrame,
+    timestamp_column: str = 'timestamp',
+    symbol: str = None,
+    exchange: str = None,
+    timeframe: str = '1m'
+) -> pd.DataFrame:
+    """Handle missing values intelligently based on gap size."""
+    cleaner = DataCleaner()
+    return cleaner.handle_missing_values_intelligently(data, timestamp_column, symbol, exchange, timeframe)
+
+def detect_outliers(
+    data: pd.DataFrame,
+    method: str = 'zscore',
+    threshold: float = 3.0,
+    columns: List[str] = None,
+    raise_errors: bool = True
+) -> List[OutlierInfo]:
+    """Detect outliers in data using specified method."""
+    cleaner = DataCleaner()
+    return cleaner.detect_outliers(data, method, threshold, columns, raise_errors)
+
+def validate_data_schema(data: pd.DataFrame, schema_name: str) -> Dict[str, Any]:
+    """Validate data against a standard schema."""
+    cleaner = DataCleaner()
+    return cleaner.validate_data_schema(data, schema_name)
+
+# Create global instances for backwards compatibility
+enhanced_missing_value_handler = DataCleaner()
+enhanced_outlier_handler = DataCleaner()

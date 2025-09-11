@@ -23,13 +23,11 @@ from utils.warning_symbols import missing
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.performance_utils import PerformanceMonitor, global_monitor
 from src.utils.caching import intelligent_caching
-# ML Common utilities
-from src.utils.ml_common.data_quality import DataQualityUtilities
-from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
-# Validation and testing
-from src.utils.step_validation_system import StepValidationSystem
-from src.utils.validation_decorators import validate_step_dependencies
-from src.utils.data_type_optimizer import DataTypeOptimizer
+# Live trading utilities
+from src.utils.model_manager import ModelManager
+# Live trading validation
+from src.utils.trading_decorators import validate_trading_inputs
+from src.utils.error_handler import handle_trading_errors
 
 Simplified Position Sizer for high leverage trading.
 Uses ML confidence scores and Kelly criterion for position sizing.
@@ -74,17 +72,15 @@ class PositionSizer:
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []
         
-        # ML Common utilities
-        self.data_quality_utilities: DataQualityUtilities | None = None
-        self.model_evaluation_utilities: ModelEvaluationUtilities | None = None
+        # Live trading utilities
+        self.model_manager: ModelManager | None = None
+        self.selected_model: str | None = None
+        self.model_cache: dict[str, Any] = {}
         
-        # Performance monitoring
+        # Performance monitoring for live trading
         self.performance_monitor: PerformanceMonitor | None = None
         self.global_monitor = global_monitor
-        
-        # Validation and testing
-        self.step_validation_system: StepValidationSystem | None = None
-        self.data_type_optimizer: DataTypeOptimizer | None = None
+        self.position_cache: dict[str, Any] = {}
 
     @core_handles_errors(fallback = False)
     async def initialize(self) -> bool:
@@ -93,14 +89,11 @@ class PositionSizer:
         if not self._validate_configuration():
             return False
         
-        # Initialize ML Common utilities
-        await self._initialize_ml_utilities()
+        # Initialize live trading utilities
+        await self._initialize_live_trading_utilities()
         
         # Initialize performance monitoring
         await self._initialize_performance_monitoring()
-        
-        # Initialize validation and testing
-        await self._initialize_validation_testing()
         
         self.is_initialized = True
         self.logger.info('✅ Position sizer initialized successfully')
@@ -440,23 +433,37 @@ class PositionSizer:
             self.logger.exception(f'Error cleaning up position sizer: {e}')
             raise
 
-    @core_handles_errors(fallback = False)
-    async def _initialize_ml_utilities(self) -> bool:
-        """Initialize ML Common utilities."""
+    @handle_errors_with_tracking(
+        context="live trading utilities initialization",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def _initialize_live_trading_utilities(self) -> bool:
+        """Initialize live trading utilities."""
         try:
-            self.logger.info("Initializing ML utilities...")
+            self.logger.info("Initializing live trading utilities...")
+            print("Initializing live trading utilities...")
             
-            # Initialize Data Quality Utilities
-            self.data_quality_utilities = DataQualityUtilities()
-            self.logger.info("✅ Data Quality Utilities initialized")
+            # Initialize Model Manager for model selection and loading
+            self.model_manager = ModelManager()
+            self.logger.info("✅ Model Manager initialized")
+            print("✅ Model Manager initialized")
             
-            # Initialize Model Evaluation Utilities
-            self.model_evaluation_utilities = ModelEvaluationUtilities()
-            self.logger.info("✅ Model Evaluation Utilities initialized")
+            # Set default model selection for position sizing
+            self.selected_model = self.sizing_config.get("default_model", "tactician_position_sizing_model")
+            self.logger.info(f"✅ Default model selected: {self.selected_model}")
+            print(f"✅ Default model selected: {self.selected_model}")
+            
+            # Initialize caches
+            self.model_cache = {}
+            self.position_cache = {}
+            self.logger.info("✅ Model and position caches initialized")
+            print("✅ Model and position caches initialized")
             
             return True
         except Exception as e:
-            self.logger.error(f"❌ Error initializing ML utilities: {e}")
+            self.logger.error(f"❌ Error initializing live trading utilities: {e}")
+            print(f"❌ Error initializing live trading utilities: {e}")
             return False
 
     @core_handles_errors(fallback = False)
@@ -478,88 +485,124 @@ class PositionSizer:
             self.logger.error(f"❌ Error initializing performance monitoring: {e}")
             return False
 
+    @validate_trading_inputs(required_fields=["ml_confidence", "current_price", "account_balance"])
     @handle_errors_with_tracking(
-        context="validation and testing initialization",
+        context="live trading position sizing validation",
         log_level="INFO",
         print_errors=True
     )
-    async def _initialize_validation_testing(self) -> bool:
-        """Initialize validation and testing utilities."""
-        try:
-            self.logger.info("Initializing validation and testing utilities...")
-            print("Initializing validation and testing utilities...")
-            
-            # Initialize Step Validation System
-            self.step_validation_system = StepValidationSystem()
-            self.logger.info("✅ Step Validation System initialized")
-            print("✅ Step Validation System initialized")
-            
-            # Initialize Data Type Optimizer
-            self.data_type_optimizer = DataTypeOptimizer()
-            self.logger.info("✅ Data Type Optimizer initialized")
-            print("✅ Data Type Optimizer initialized")
-            
-            return True
-        except Exception as e:
-            self.logger.error(f"❌ Error initializing validation and testing utilities: {e}")
-            print(f"❌ Error initializing validation and testing utilities: {e}")
-            return False
-
-    @validate_step_dependencies(required_steps=["position_sizing_validation", "risk_management"])
-    @handle_errors_with_tracking(
-        context="position sizing validation",
-        log_level="INFO",
-        print_errors=True
-    )
-    async def validate_position_sizing(self, sizing_data: dict[str, Any]) -> dict[str, Any]:
+    async def validate_position_sizing_inputs(self, sizing_inputs: dict[str, Any]) -> dict[str, Any]:
         """
-        Validate position sizing calculations and parameters.
+        Validate position sizing inputs for live trading.
         
         Args:
-            sizing_data: Position sizing data to validate
+            sizing_inputs: Position sizing inputs to validate
             
         Returns:
             dict: Validation results
         """
-        if not self.step_validation_system:
-            error_msg = "Step Validation System not available"
-            self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
-            return {"error": error_msg}
-        
         try:
-            self.logger.info("Validating position sizing...")
-            print("Validating position sizing...")
+            self.logger.info("Validating position sizing inputs for live trading...")
+            print("Validating position sizing inputs for live trading...")
             
-            # Validate position sizing step
-            validation_results = await self.step_validation_system.validate_step(
-                step_name="position_sizing",
-                step_data=sizing_data
-            )
+            validation_results = {
+                "is_valid": True,
+                "errors": [],
+                "warnings": []
+            }
             
-            # Additional position sizing specific validation
-            if validation_results.get("is_valid", False):
-                # Validate position size bounds
-                position_size = sizing_data.get("final_position_size", 0.0)
-                if position_size < self.min_position_size or position_size > self.max_position_size:
-                    validation_results["is_valid"] = False
-                    validation_results["errors"].append(f"Position size {position_size} out of bounds [{self.min_position_size}, {self.max_position_size}]")
-                
-                # Validate confidence scores
-                confidence = sizing_data.get("combined_confidence", 0.0)
-                if confidence < 0.0 or confidence > 1.0:
-                    validation_results["is_valid"] = False
-                    validation_results["errors"].append(f"Confidence {confidence} out of bounds [0.0, 1.0]")
+            # Validate ML confidence
+            ml_confidence = sizing_inputs.get("ml_confidence", 0.0)
+            if not isinstance(ml_confidence, (int, float)) or ml_confidence < 0.0 or ml_confidence > 1.0:
+                validation_results["is_valid"] = False
+                validation_results["errors"].append(f"Invalid ML confidence: {ml_confidence}")
             
-            self.logger.info(f"✅ Position sizing validation completed: {'PASS' if validation_results.get('is_valid', False) else 'FAIL'}")
-            print(f"✅ Position sizing validation completed: {'PASS' if validation_results.get('is_valid', False) else 'FAIL'}")
+            # Validate current price
+            current_price = sizing_inputs.get("current_price", 0.0)
+            if not isinstance(current_price, (int, float)) or current_price <= 0:
+                validation_results["is_valid"] = False
+                validation_results["errors"].append(f"Invalid current price: {current_price}")
+            
+            # Validate account balance
+            account_balance = sizing_inputs.get("account_balance", 0.0)
+            if not isinstance(account_balance, (int, float)) or account_balance <= 0:
+                validation_results["is_valid"] = False
+                validation_results["errors"].append(f"Invalid account balance: {account_balance}")
+            
+            # Check for reasonable position size bounds
+            if validation_results["is_valid"]:
+                estimated_position_size = (ml_confidence * account_balance) / current_price
+                if estimated_position_size > self.max_position_size * 2:
+                    validation_results["warnings"].append(f"Estimated position size ({estimated_position_size:.4f}) is very large")
+            
+            self.logger.info(f"✅ Position sizing inputs validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
+            print(f"✅ Position sizing inputs validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
             return validation_results
             
         except Exception as e:
-            error_msg = f"Error validating position sizing: {e}"
+            error_msg = f"Error validating position sizing inputs: {e}"
             self.logger.error(error_msg)
             print(f"❌ {error_msg}")
             return {"error": error_msg}
+
+    @handle_errors_with_tracking(
+        context="model selection for position sizing",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def select_position_sizing_model(self, market_conditions: dict[str, Any]) -> bool:
+        """
+        Select appropriate model for position sizing based on market conditions.
+        
+        Args:
+            market_conditions: Current market conditions
+            
+        Returns:
+            bool: True if model selection successful
+        """
+        if not self.model_manager:
+            error_msg = "Model Manager not available"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return False
+        
+        try:
+            self.logger.info("Selecting position sizing model based on market conditions...")
+            print("Selecting position sizing model based on market conditions...")
+            
+            # Determine appropriate model based on conditions
+            volatility = market_conditions.get("volatility", "normal")
+            leverage_level = market_conditions.get("leverage_level", "medium")
+            
+            # Model selection logic for position sizing
+            if volatility == "high" and leverage_level == "high":
+                model_name = "tactician_high_vol_high_leverage_model"
+            elif volatility == "high":
+                model_name = "tactician_high_volatility_model"
+            elif leverage_level == "high":
+                model_name = "tactician_high_leverage_model"
+            else:
+                model_name = "tactician_position_sizing_model"  # default
+            
+            # Load and cache the model
+            model = await self.model_manager.load_model(model_name)
+            if model:
+                self.selected_model = model_name
+                self.model_cache[model_name] = model
+                self.logger.info(f"✅ Position sizing model selected and cached: {model_name}")
+                print(f"✅ Position sizing model selected and cached: {model_name}")
+                return True
+            else:
+                error_msg = f"Failed to load position sizing model: {model_name}"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return False
+            
+        except Exception as e:
+            error_msg = f"Error selecting position sizing model: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return False
 
 @core_handles_errors(fallback = None)
 async def setup_position_sizer(config: dict[str, Any] | None = None) -> PositionSizer | None:

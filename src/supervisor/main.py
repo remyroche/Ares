@@ -23,11 +23,8 @@ from src.utils.enhanced_error_handler import handle_errors_with_tracking
 from src.utils.warning_symbols import failed, initialization_error, warning
 from src.utils.performance_utils import PerformanceMonitor, global_monitor
 from src.utils.caching import intelligent_caching
-# ML Common utilities
-from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
-from src.utils.ml_common.model_registry import ModelRegistry
-from src.utils.ml_common.data_quality import DataQualityUtilities
-from src.utils.ml_common.pipeline_orchestrator import MLPipelineOrchestrator
+# Live trading utilities
+from src.utils.model_manager import ModelManager
 
 from src.core.decorators import handles_errors
 import logging
@@ -68,15 +65,15 @@ class Supervisor:
             raise ValueError(msg)
         self.model_manager = ModelManager(database_manager = self.db_manager, performance_reporter = self.performance_reporter)
         
-        # ML Common utilities
-        self.model_evaluation_utilities: ModelEvaluationUtilities | None = None
-        self.model_registry: ModelRegistry | None = None
-        self.data_quality_utilities: DataQualityUtilities | None = None
-        self.ml_pipeline_orchestrator: MLPipelineOrchestrator | None = None
+        # Live trading utilities
+        self.model_manager: ModelManager | None = None
+        self.selected_models: dict[str, str] = {}
+        self.model_cache: dict[str, Any] = {}
         
-        # Performance monitoring
+        # Performance monitoring for live trading
         self.performance_monitor: PerformanceMonitor | None = None
         self.global_monitor = global_monitor
+        self.supervision_cache: dict[str, Any] = {}
         
         if self.trader:
             self.dependency_container.register('sentinel', self.component_builder.build_sentinel(self.trader, self.state_manager))
@@ -216,8 +213,8 @@ class MainSupervisor:
                 self.logger.error('Invalid configuration for main supervisor')
                 return False
             
-            # Initialize ML Common utilities
-            await self._initialize_ml_common_utilities()
+            # Initialize live trading utilities
+            await self._initialize_live_trading_utilities()
             
             # Initialize performance monitoring
             await self._initialize_performance_monitoring()
@@ -300,59 +297,39 @@ class MainSupervisor:
         return history
 
     @handle_errors_with_tracking(
-        context="ML common utilities initialization",
+        context="live trading utilities initialization",
         log_level="INFO",
         print_errors=True
     )
-    async def _initialize_ml_common_utilities(self) -> bool:
-        """Initialize ML Common utilities."""
+    async def _initialize_live_trading_utilities(self) -> bool:
+        """Initialize live trading utilities."""
         try:
-            self.logger.info("Initializing ML Common utilities...")
-            print("Initializing ML Common utilities...")
+            self.logger.info("Initializing live trading utilities...")
+            print("Initializing live trading utilities...")
             
-            # Initialize Model Evaluation Utilities
-            try:
-                self.model_evaluation_utilities = ModelEvaluationUtilities()
-                self.logger.info("✅ Model Evaluation Utilities initialized")
-                print("✅ Model Evaluation Utilities initialized")
-            except Exception as e:
-                self.logger.error(f"❌ Error initializing Model Evaluation Utilities: {e}")
-                print(f"❌ Error initializing Model Evaluation Utilities: {e}")
-                raise
+            # Initialize Model Manager for model selection and loading
+            self.model_manager = ModelManager()
+            self.logger.info("✅ Model Manager initialized")
+            print("✅ Model Manager initialized")
             
-            # Initialize Model Registry
-            try:
-                self.model_registry = ModelRegistry()
-                self.logger.info("✅ Model Registry initialized")
-                print("✅ Model Registry initialized")
-            except Exception as e:
-                self.logger.error(f"❌ Error initializing Model Registry: {e}")
-                print(f"❌ Error initializing Model Registry: {e}")
-                raise
+            # Set default model selections for each component
+            self.selected_models = {
+                "analyst": "analyst_regime_classifier",
+                "strategist": "strategist_market_analysis_model",
+                "tactician": "tactician_position_sizing_model"
+            }
+            self.logger.info("✅ Default model selections configured")
+            print("✅ Default model selections configured")
             
-            # Initialize Data Quality Utilities
-            try:
-                self.data_quality_utilities = DataQualityUtilities()
-                self.logger.info("✅ Data Quality Utilities initialized")
-                print("✅ Data Quality Utilities initialized")
-            except Exception as e:
-                self.logger.error(f"❌ Error initializing Data Quality Utilities: {e}")
-                print(f"❌ Error initializing Data Quality Utilities: {e}")
-                raise
-            
-            # Initialize ML Pipeline Orchestrator
-            try:
-                self.ml_pipeline_orchestrator = MLPipelineOrchestrator()
-                self.logger.info("✅ ML Pipeline Orchestrator initialized")
-                print("✅ ML Pipeline Orchestrator initialized")
-            except Exception as e:
-                self.logger.error(f"❌ Error initializing ML Pipeline Orchestrator: {e}")
-                print(f"❌ Error initializing ML Pipeline Orchestrator: {e}")
-                raise
+            # Initialize caches
+            self.model_cache = {}
+            self.supervision_cache = {}
+            self.logger.info("✅ Model and supervision caches initialized")
+            print("✅ Model and supervision caches initialized")
             
             return True
         except Exception as e:
-            error_msg = f"❌ Error initializing ML Common utilities: {e}"
+            error_msg = f"❌ Error initializing live trading utilities: {e}"
             self.logger.error(error_msg)
             print(error_msg)
             return False
@@ -377,126 +354,113 @@ class MainSupervisor:
             return False
 
     @handle_errors_with_tracking(
-        context="supervisor ML pipeline orchestration",
+        context="supervisor model management",
         log_level="INFO",
         print_errors=True
     )
-    async def orchestrate_ml_pipeline(self, data: pd.DataFrame, pipeline_type: str = "supervision") -> dict[str, Any]:
+    async def manage_component_models(self, component: str, model_name: str) -> bool:
         """
-        Orchestrate ML pipeline for supervisor operations.
+        Manage model selection for specific components in live trading.
         
         Args:
-            data: Input data for ML pipeline
-            pipeline_type: Type of pipeline to run (supervision, monitoring, evaluation)
+            component: Component name (analyst, strategist, tactician)
+            model_name: Name of the pre-trained model to select
             
         Returns:
-            dict: ML pipeline results
+            bool: True if model selection successful
         """
-        if not self.ml_pipeline_orchestrator:
-            error_msg = "ML Pipeline Orchestrator not available"
+        if not self.model_manager:
+            error_msg = "Model Manager not available"
             self.logger.error(error_msg)
             print(f"❌ {error_msg}")
-            return {"error": error_msg}
+            return False
         
         try:
-            self.logger.info(f"Orchestrating supervisor ML pipeline: {pipeline_type}")
-            print(f"Orchestrating supervisor ML pipeline: {pipeline_type}")
+            self.logger.info(f"Managing model for component {component}: {model_name}")
+            print(f"Managing model for component {component}: {model_name}")
             
-            # Configure pipeline for supervisor operations
-            pipeline_config = {
-                "pipeline_type": pipeline_type,
-                "data_quality_check": True,
-                "model_evaluation": True,
-                "performance_monitoring": True,
-                "caching_enabled": True,
-                "supervisor_mode": True
-            }
+            # Check if model is available
+            available_models = await self.model_manager.list_available_models()
+            if model_name not in available_models:
+                error_msg = f"Model {model_name} not available for live trading"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return False
             
-            # Run the pipeline
-            results = await self.ml_pipeline_orchestrator.run_pipeline(
-                data=data,
-                config=pipeline_config
-            )
+            # Update selected model for component
+            self.selected_models[component] = model_name
             
-            self.logger.info(f"✅ Supervisor ML pipeline orchestration completed: {pipeline_type}")
-            print(f"✅ Supervisor ML pipeline orchestration completed: {pipeline_type}")
+            # Load and cache the model
+            model = await self.model_manager.load_model(model_name)
+            if model:
+                self.model_cache[model_name] = model
+                self.logger.info(f"✅ Model {model_name} selected and cached for {component}")
+                print(f"✅ Model {model_name} selected and cached for {component}")
+                return True
+            else:
+                error_msg = f"Failed to load model: {model_name}"
+                self.logger.error(error_msg)
+                print(f"❌ {error_msg}")
+                return False
+            
+        except Exception as e:
+            error_msg = f"Error managing model for component {component}: {e}"
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            return False
+
+    @handle_errors_with_tracking(
+        context="supervisor model coordination",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def coordinate_models(self, market_conditions: dict[str, Any]) -> dict[str, bool]:
+        """
+        Coordinate model selection across all components based on market conditions.
+        
+        Args:
+            market_conditions: Current market conditions
+            
+        Returns:
+            dict: Results of model coordination for each component
+        """
+        try:
+            self.logger.info("Coordinating models across all components...")
+            print("Coordinating models across all components...")
+            
+            results = {}
+            
+            # Determine appropriate models based on market conditions
+            volatility = market_conditions.get("volatility", "normal")
+            trend = market_conditions.get("trend", "sideways")
+            
+            # Model selection logic for each component
+            if volatility == "high":
+                analyst_model = "analyst_high_volatility_model"
+                strategist_model = "strategist_high_volatility_model"
+                tactician_model = "tactician_high_volatility_model"
+            elif trend == "strong_trend":
+                analyst_model = "analyst_trend_following_model"
+                strategist_model = "strategist_trend_following_model"
+                tactician_model = "tactician_trend_following_model"
+            else:
+                analyst_model = "analyst_regime_classifier"
+                strategist_model = "strategist_market_analysis_model"
+                tactician_model = "tactician_position_sizing_model"
+            
+            # Update models for each component
+            results["analyst"] = await self.manage_component_models("analyst", analyst_model)
+            results["strategist"] = await self.manage_component_models("strategist", strategist_model)
+            results["tactician"] = await self.manage_component_models("tactician", tactician_model)
+            
+            success_count = sum(results.values())
+            self.logger.info(f"✅ Model coordination completed: {success_count}/3 components updated")
+            print(f"✅ Model coordination completed: {success_count}/3 components updated")
+            
             return results
             
         except Exception as e:
-            error_msg = f"Error orchestrating supervisor ML pipeline: {e}"
-            self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
-            return {"error": error_msg}
-
-    @handle_errors_with_tracking(
-        context="supervisor model registry operations",
-        log_level="INFO",
-        print_errors=True
-    )
-    async def manage_models(self, operation: str, model_name: str = None, model_data: dict[str, Any] = None) -> dict[str, Any]:
-        """
-        Manage models in the supervisor's model registry.
-        
-        Args:
-            operation: Operation to perform (list, get, register, update, delete)
-            model_name: Name of the model (for get, register, update, delete)
-            model_data: Model data (for register, update)
-            
-        Returns:
-            dict: Operation results
-        """
-        if not self.model_registry:
-            error_msg = "Model Registry not available"
-            self.logger.error(error_msg)
-            print(f"❌ {error_msg}")
-            return {"error": error_msg}
-        
-        try:
-            self.logger.info(f"Managing models: {operation}")
-            print(f"Managing models: {operation}")
-            
-            if operation == "list":
-                models = await self.model_registry.list_models()
-                self.logger.info(f"✅ Listed {len(models)} models")
-                print(f"✅ Listed {len(models)} models")
-                return {"models": models}
-            
-            elif operation == "get" and model_name:
-                model = await self.model_registry.get_model(model_name)
-                if model:
-                    self.logger.info(f"✅ Retrieved model: {model_name}")
-                    print(f"✅ Retrieved model: {model_name}")
-                    return {"model": model}
-                else:
-                    error_msg = f"Model not found: {model_name}"
-                    self.logger.error(error_msg)
-                    print(f"❌ {error_msg}")
-                    return {"error": error_msg}
-            
-            elif operation == "register" and model_name and model_data:
-                success = await self.model_registry.register_model(
-                    name=model_name,
-                    model_data=model_data,
-                    metadata={"supervisor_managed": True}
-                )
-                if success:
-                    self.logger.info(f"✅ Registered model: {model_name}")
-                    print(f"✅ Registered model: {model_name}")
-                    return {"success": True}
-                else:
-                    error_msg = f"Failed to register model: {model_name}"
-                    self.logger.error(error_msg)
-                    print(f"❌ {error_msg}")
-                    return {"error": error_msg}
-            
-            else:
-                error_msg = f"Invalid operation or missing parameters: {operation}"
-                self.logger.error(error_msg)
-                print(f"❌ {error_msg}")
-                return {"error": error_msg}
-            
-        except Exception as e:
-            error_msg = f"Error managing models: {e}"
+            error_msg = f"Error coordinating models: {e}"
             self.logger.error(error_msg)
             print(f"❌ {error_msg}")
             return {"error": error_msg}

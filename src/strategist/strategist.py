@@ -8,14 +8,14 @@ from ..utils.logger import system_logger
 from ..utils.warning_symbols import failed, initialization_error, warning
 from ..core.error_classes import ValidationError
 from ..core.decorators import handles_errors
-# ML Common utilities
-from src.utils.ml_common.hmm_regime_detection import HMMRegimeDetector
-from src.utils.ml_common.feature_selection import FeatureSelectionFramework
-from src.utils.ml_common.data_quality import DataQualityUtilities
-from src.utils.ml_common.model_evaluation import ModelEvaluationUtilities
+# Live trading utilities
+from src.utils.model_manager import ModelManager
 # Performance monitoring
 from src.utils.performance_utils import PerformanceMonitor, global_monitor
 from src.utils.caching import intelligent_caching
+# Live trading validation
+from src.utils.trading_decorators import validate_trading_inputs
+from src.utils.error_handler import handle_trading_errors
 import numpy as np
 import pandas as pd
 
@@ -97,15 +97,15 @@ class Strategist:
         self.regime_classifier: "EnhancedRegimeClassifier" | None = None
         self.enable_regime_detection = self.strategist_config.dict().get("enable_regime_detection", True)
         
-        # ML Common utilities
-        self.hmm_regime_detector: HMMRegimeDetector | None = None
-        self.feature_selection_framework: FeatureSelectionFramework | None = None
-        self.data_quality_utilities: DataQualityUtilities | None = None
-        self.model_evaluation_utilities: ModelEvaluationUtilities | None = None
+        # Live trading utilities
+        self.model_manager: ModelManager | None = None
+        self.selected_model: str | None = None
+        self.model_cache: dict[str, Any] = {}
         
-        # Performance monitoring
+        # Performance monitoring for live trading
         self.performance_monitor: PerformanceMonitor | None = None
         self.global_monitor = global_monitor
+        self.strategy_cache: dict[str, Any] = {}
 
     @handle_specific_errors(
         error_handlers={
@@ -147,8 +147,8 @@ class Strategist:
                     self.enable_regime_detection = False
                     self.regime_classifier = None
             
-            # Initialize ML Common utilities
-            await self._initialize_ml_common_utilities()
+            # Initialize live trading utilities
+            await self._initialize_live_trading_utilities()
             
             # Initialize performance monitoring
             await self._initialize_performance_monitoring()
@@ -631,31 +631,37 @@ class Strategist:
             self.logger.error(f"Failed to apply regime adjustments: {e}")
             return strategy
 
-    @handles_errors(Exception, fallback = False)
-    async def _initialize_ml_common_utilities(self) -> bool:
-        """Initialize ML Common utilities."""
+    @handle_errors_with_tracking(
+        context="live trading utilities initialization",
+        log_level="INFO",
+        print_errors=True
+    )
+    async def _initialize_live_trading_utilities(self) -> bool:
+        """Initialize live trading utilities."""
         try:
-            self.logger.info("Initializing ML Common utilities...")
+            self.logger.info("Initializing live trading utilities...")
+            print("Initializing live trading utilities...")
             
-            # Initialize HMM Regime Detector
-            self.hmm_regime_detector = HMMRegimeDetector()
-            self.logger.info("✅ HMM Regime Detector initialized")
+            # Initialize Model Manager for model selection and loading
+            self.model_manager = ModelManager()
+            self.logger.info("✅ Model Manager initialized")
+            print("✅ Model Manager initialized")
             
-            # Initialize Feature Selection Framework
-            self.feature_selection_framework = FeatureSelectionFramework()
-            self.logger.info("✅ Feature Selection Framework initialized")
+            # Set default model selection for strategy generation
+            self.selected_model = self.strategist_config.dict().get("default_model", "strategist_market_analysis_model")
+            self.logger.info(f"✅ Default model selected: {self.selected_model}")
+            print(f"✅ Default model selected: {self.selected_model}")
             
-            # Initialize Data Quality Utilities
-            self.data_quality_utilities = DataQualityUtilities()
-            self.logger.info("✅ Data Quality Utilities initialized")
-            
-            # Initialize Model Evaluation Utilities
-            self.model_evaluation_utilities = ModelEvaluationUtilities()
-            self.logger.info("✅ Model Evaluation Utilities initialized")
+            # Initialize caches
+            self.model_cache = {}
+            self.strategy_cache = {}
+            self.logger.info("✅ Model and strategy caches initialized")
+            print("✅ Model and strategy caches initialized")
             
             return True
         except Exception as e:
-            self.logger.error(f"❌ Error initializing ML Common utilities: {e}")
+            self.logger.error(f"❌ Error initializing live trading utilities: {e}")
+            print(f"❌ Error initializing live trading utilities: {e}")
             return False
 
     @handles_errors(Exception, fallback = False)
@@ -699,15 +705,17 @@ class Strategist:
                     self.logger.error(f"❌ Error shutting down optimizer executor: {e}")
                     print(f"❌ Error shutting down optimizer executor: {e}")
 
-            # Clean up ML utilities
-            if self.hmm_regime_detector:
+            # Clean up live trading utilities
+            if self.model_manager:
                 try:
-                    # Add cleanup logic if needed
-                    self.logger.info("✅ HMM regime detector cleaned up")
-                    print("✅ HMM regime detector cleaned up")
+                    # Clear model cache
+                    self.model_cache.clear()
+                    self.strategy_cache.clear()
+                    self.logger.info("✅ Model and strategy caches cleared")
+                    print("✅ Model and strategy caches cleared")
                 except Exception as e:
-                    self.logger.error(f"❌ Error cleaning up HMM regime detector: {e}")
-                    print(f"❌ Error cleaning up HMM regime detector: {e}")
+                    self.logger.error(f"❌ Error cleaning up model caches: {e}")
+                    print(f"❌ Error cleaning up model caches: {e}")
 
             if self.performance_monitor:
                 try:

@@ -23,6 +23,10 @@ sys.path.insert(0, str(project_root))
 try:
     from .utils.enhanced_config_management import Step1_5Config
     from src.utils.logger import system_logger
+    from src.utils.error_handler import handles_errors
+    from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
+    from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
+    from src.utils.validation import validate_data_quality
     import shutil
 except ImportError as e:
     print(f'Warning: Could not import enhanced utilities: {e}')

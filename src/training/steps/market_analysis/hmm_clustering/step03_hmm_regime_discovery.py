@@ -253,7 +253,7 @@ class HMMRegimeDiscoveryStep:
         self._initialize_optimized_components()
 
         try:
-            from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+            from src.training.steps.data_collection.data_preparation.enhanced_data_quality_manager import EnhancedDataQualityManager
             self.data_quality_manager = EnhancedDataQualityManager()
             self.logger.info('✅ Data quality manager initialized successfully')
         except Exception as e:

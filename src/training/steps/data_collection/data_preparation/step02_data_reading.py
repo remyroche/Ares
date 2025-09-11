@@ -204,7 +204,7 @@ class DataReadingStep(BaseStep):
                 # Attempt centralized auto re-collection and one retry
                 self.logger.warning(f"⚠️ Empty data after read. Attempting auto re-collection and retry...")
                 try:
-                    from src.training.steps.market_analysis.step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+                    from src.training.steps.data_collection.data_preparation.enhanced_data_quality_manager import EnhancedDataQualityManager
                     _qm2 = EnhancedDataQualityManager(str(Path(data_path).parents[3])) if len(Path(data_path).parts) > 3 else EnhancedDataQualityManager('data_cache')
                     symbol_q2 = training_input.get('symbol', symbol)
                     exchange_q2 = training_input.get('exchange', exchange)

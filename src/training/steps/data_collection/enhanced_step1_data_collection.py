@@ -25,6 +25,10 @@ sys.path.insert(0, str(project_root))
 try:
     from .utils.enhanced_config_management import Step1Config
     from src.utils.logger import system_logger
+    from src.utils.error_handler import handles_errors
+    from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
+    from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
+    from src.utils.validation import validate_data_quality
     from .training.steps.data_downloader import download_all_data_with_consolidation
     from .training.steps.data_downloader import download_all_data_with_consolidation as _dl
 import typing

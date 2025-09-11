@@ -103,8 +103,11 @@ class ModelTrainingConfig:
     enable_hyperparameter_optimization: bool = True
     hpo_trials: int = 100
     hpo_timeout: int = 3600  # 1 hour
-    hpo_sampler: str = "TPE"  # TPE, Random, CMA-ES
+    hpo_sampler: str = "TPE"  # TPE, Random, CMA-ES, GridSearch, HalvingGridSearch
     hpo_pruner: str = "MedianPruner"  # MedianPruner, PercentilePruner, SuccessiveHalvingPruner
+    hpo_strategy: str = "adaptive"  # adaptive, coarse_first, fine_tune, budget_aware
+    enable_coarse_grid_search: bool = True  # Use coarse grid before fine-tuning
+    coarse_grid_trials: int = 20  # Trials for coarse grid search
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
     
@@ -430,20 +433,26 @@ class GeneralModelTrainer:
         self.logger.info(f"✂️ Pruner: {self.config.hpo_pruner}")
         
         try:
-            # Use ML commons HPO optimizer with enhanced configuration
-            best_params = await self.hpo_optimizer.optimize(
-                model_type=self.config.model_type.value,
-                X_train=X_train,
-                y_train=y_train,
-                X_val=X_val,
-                y_val=y_val,
-                n_trials=self.config.hpo_trials,
-                timeout=self.config.hpo_timeout,
-                task_type=self.config.task_type.value,
-                sampler=self.config.hpo_sampler,
-                pruner=self.config.hpo_pruner,
-                search_space=self._get_enhanced_search_space()
-            )
+            # Choose HPO strategy based on configuration
+            if self.config.hpo_strategy == "coarse_first" and self.config.enable_coarse_grid_search:
+                best_params = await self._coarse_then_fine_hpo(X_train, y_train, X_val, y_val)
+            elif self.config.hpo_strategy == "budget_aware":
+                best_params = await self._budget_aware_hpo(X_train, y_train, X_val, y_val)
+            else:
+                # Use ML commons HPO optimizer with enhanced configuration
+                best_params = await self.hpo_optimizer.optimize(
+                    model_type=self.config.model_type.value,
+                    X_train=X_train,
+                    y_train=y_train,
+                    X_val=X_val,
+                    y_val=y_val,
+                    n_trials=self.config.hpo_trials,
+                    timeout=self.config.hpo_timeout,
+                    task_type=self.config.task_type.value,
+                    sampler=self.config.hpo_sampler,
+                    pruner=self.config.hpo_pruner,
+                    search_space=self._get_enhanced_search_space()
+                )
             
             self.logger.info(f"✅ Enhanced HPO completed successfully")
             self.logger.info(f"📊 Best parameters: {best_params}")
@@ -657,6 +666,319 @@ class GeneralModelTrainer:
         else:
             # Default parameters
             return self.config.model_params
+    
+    async def _coarse_then_fine_hpo(
+        self, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> Dict[str, Any]:
+        """Coarse grid search followed by fine-tuning for computational efficiency."""
+        
+        self.logger.info("🔍 Starting coarse-then-fine HPO strategy...")
+        
+        # Step 1: Coarse grid search
+        self.logger.info("📊 Phase 1: Coarse grid search...")
+        coarse_params = await self._coarse_grid_search(X_train, y_train, X_val, y_val)
+        
+        # Step 2: Fine-tuning around best coarse parameters
+        self.logger.info("🎯 Phase 2: Fine-tuning around best parameters...")
+        fine_params = await self._fine_tune_around_params(
+            coarse_params, X_train, y_train, X_val, y_val
+        )
+        
+        self.logger.info("✅ Coarse-then-fine HPO completed")
+        return fine_params
+    
+    async def _coarse_grid_search(
+        self, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> Dict[str, Any]:
+        """Perform coarse grid search for initial parameter estimation."""
+        
+        import optuna
+        
+        # Create study for coarse search
+        study = optuna.create_study(
+            direction='maximize',
+            study_name=f"{self.config.model_name}_coarse_hpo"
+        )
+        
+        def coarse_objective(trial):
+            return self._coarse_objective_function(trial, X_train, y_train, X_val, y_val)
+        
+        # Run coarse search with fewer trials
+        study.optimize(
+            coarse_objective, 
+            n_trials=self.config.coarse_grid_trials,
+            timeout=min(600, self.config.hpo_timeout // 3)  # 1/3 of total time
+        )
+        
+        return study.best_params
+    
+    def _coarse_objective_function(
+        self, 
+        trial: optuna.Trial, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> float:
+        """Coarse objective function with reduced parameter ranges."""
+        
+        try:
+            # Get coarse hyperparameters (fewer options, wider ranges)
+            params = self._suggest_coarse_hyperparameters(trial)
+            
+            # Create and train model
+            model = self.model_factory.create_model(self.config.model_type, params)
+            model.fit(X_train, y_train)
+            
+            # Quick evaluation
+            y_pred = model.predict(X_val)
+            if self.config.task_type == TaskType.REGRESSION:
+                from sklearn.metrics import r2_score
+                score = r2_score(y_val, y_pred)
+            else:
+                from sklearn.metrics import accuracy_score
+                score = accuracy_score(y_val, y_pred)
+            
+            return score
+            
+        except Exception as e:
+            self.logger.error(f"Error in coarse objective function: {e}")
+            return 0.0
+    
+    def _suggest_coarse_hyperparameters(self, trial: optuna.Trial) -> Dict[str, Any]:
+        """Suggest coarse hyperparameters with reduced search space."""
+        
+        if self.config.model_type == ModelType.RANDOM_FOREST:
+            return {
+                'n_estimators': trial.suggest_categorical('n_estimators', [50, 100, 200, 500]),
+                'max_depth': trial.suggest_categorical('max_depth', [5, 10, 15, 20, None]),
+                'min_samples_split': trial.suggest_categorical('min_samples_split', [2, 5, 10, 20]),
+                'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None]),
+                'random_state': 42
+            }
+        
+        elif self.config.model_type == ModelType.XGBOOST:
+            return {
+                'n_estimators': trial.suggest_categorical('n_estimators', [50, 100, 200, 500]),
+                'max_depth': trial.suggest_categorical('max_depth', [3, 6, 9, 12]),
+                'learning_rate': trial.suggest_categorical('learning_rate', [0.01, 0.1, 0.2, 0.3]),
+                'subsample': trial.suggest_categorical('subsample', [0.6, 0.8, 1.0]),
+                'colsample_bytree': trial.suggest_categorical('colsample_bytree', [0.6, 0.8, 1.0]),
+                'random_state': 42
+            }
+        
+        elif self.config.model_type == ModelType.LIGHTGBM:
+            return {
+                'n_estimators': trial.suggest_categorical('n_estimators', [50, 100, 200, 500]),
+                'max_depth': trial.suggest_categorical('max_depth', [3, 6, 9, 12]),
+                'learning_rate': trial.suggest_categorical('learning_rate', [0.01, 0.1, 0.2, 0.3]),
+                'subsample': trial.suggest_categorical('subsample', [0.6, 0.8, 1.0]),
+                'colsample_bytree': trial.suggest_categorical('colsample_bytree', [0.6, 0.8, 1.0]),
+                'random_state': 42
+            }
+        
+        else:
+            # Fallback to regular parameters
+            return self._suggest_hyperparameters(trial)
+    
+    async def _fine_tune_around_params(
+        self, 
+        coarse_params: Dict[str, Any],
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> Dict[str, Any]:
+        """Fine-tune around the best coarse parameters."""
+        
+        import optuna
+        
+        # Create study for fine-tuning
+        study = optuna.create_study(
+            direction='maximize',
+            study_name=f"{self.config.model_name}_fine_hpo"
+        )
+        
+        def fine_objective(trial):
+            return self._fine_objective_function(trial, coarse_params, X_train, y_train, X_val, y_val)
+        
+        # Run fine-tuning with remaining trials
+        remaining_trials = max(10, self.config.hpo_trials - self.config.coarse_grid_trials)
+        remaining_time = max(300, self.config.hpo_timeout - 600)  # At least 5 minutes
+        
+        study.optimize(
+            fine_objective, 
+            n_trials=remaining_trials,
+            timeout=remaining_time
+        )
+        
+        return study.best_params
+    
+    def _fine_objective_function(
+        self, 
+        trial: optuna.Trial, 
+        coarse_params: Dict[str, Any],
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> float:
+        """Fine objective function with narrow parameter ranges around coarse best."""
+        
+        try:
+            # Get fine-tuned hyperparameters around coarse best
+            params = self._suggest_fine_hyperparameters(trial, coarse_params)
+            
+            # Create and train model
+            model = self.model_factory.create_model(self.config.model_type, params)
+            model.fit(X_train, y_train)
+            
+            # Evaluate model
+            if hasattr(model, 'predict_proba'):
+                y_pred_proba = model.predict_proba(X_val)
+                if self.config.task_type == TaskType.CLASSIFICATION:
+                    from sklearn.metrics import roc_auc_score
+                    score = roc_auc_score(y_val, y_pred_proba[:, 1])
+                else:
+                    from sklearn.metrics import accuracy_score
+                    y_pred = np.argmax(y_pred_proba, axis=1)
+                    score = accuracy_score(y_val, y_pred)
+            else:
+                y_pred = model.predict(X_val)
+                if self.config.task_type == TaskType.REGRESSION:
+                    from sklearn.metrics import r2_score
+                    score = r2_score(y_val, y_pred)
+                else:
+                    from sklearn.metrics import accuracy_score
+                    score = accuracy_score(y_val, y_pred)
+            
+            return score
+            
+        except Exception as e:
+            self.logger.error(f"Error in fine objective function: {e}")
+            return 0.0
+    
+    def _suggest_fine_hyperparameters(self, trial: optuna.Trial, coarse_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Suggest fine-tuned hyperparameters around coarse best parameters."""
+        
+        params = coarse_params.copy()
+        
+        # Fine-tune numeric parameters with narrow ranges
+        for param_name, param_value in coarse_params.items():
+            if param_name == 'n_estimators' and isinstance(param_value, int):
+                # Fine-tune around the coarse value
+                low = max(10, param_value - 50)
+                high = param_value + 50
+                params[param_name] = trial.suggest_int(param_name, low, high, step=5)
+            
+            elif param_name == 'max_depth' and isinstance(param_value, int):
+                low = max(1, param_value - 2)
+                high = param_value + 2
+                params[param_name] = trial.suggest_int(param_name, low, high)
+            
+            elif param_name == 'learning_rate' and isinstance(param_value, float):
+                # Fine-tune learning rate with log scale
+                low = max(0.001, param_value * 0.5)
+                high = min(1.0, param_value * 2.0)
+                params[param_name] = trial.suggest_float(param_name, low, high, log=True)
+            
+            elif param_name in ['subsample', 'colsample_bytree'] and isinstance(param_value, float):
+                # Fine-tune subsample parameters
+                low = max(0.1, param_value - 0.1)
+                high = min(1.0, param_value + 0.1)
+                params[param_name] = trial.suggest_float(param_name, low, high)
+        
+        return params
+    
+    async def _budget_aware_hpo(
+        self, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> Dict[str, Any]:
+        """Budget-aware HPO that adapts strategy based on available resources."""
+        
+        self.logger.info("💰 Starting budget-aware HPO strategy...")
+        
+        # Determine strategy based on data size and time budget
+        data_size = len(X_train)
+        time_budget = self.config.hpo_timeout
+        
+        if data_size < 1000 and time_budget < 1800:  # Small data, limited time
+            self.logger.info("📊 Using Random search for small dataset...")
+            return await self._random_search_hpo(X_train, y_train, X_val, y_val)
+        
+        elif data_size < 10000 and time_budget < 3600:  # Medium data, moderate time
+            self.logger.info("🔍 Using coarse-then-fine strategy...")
+            return await self._coarse_then_fine_hpo(X_train, y_train, X_val, y_val)
+        
+        else:  # Large data or plenty of time
+            self.logger.info("🎯 Using full TPE optimization...")
+            return await self._full_tpe_hpo(X_train, y_train, X_val, y_val)
+    
+    async def _random_search_hpo(
+        self, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> Dict[str, Any]:
+        """Fast random search for small datasets."""
+        
+        import optuna
+        
+        study = optuna.create_study(
+            direction='maximize',
+            sampler=optuna.samplers.RandomSampler(),
+            study_name=f"{self.config.model_name}_random_hpo"
+        )
+        
+        def objective(trial):
+            return self._objective_function(trial, X_train, y_train, X_val, y_val)
+        
+        # Use fewer trials for random search
+        n_trials = min(20, self.config.hpo_trials // 2)
+        study.optimize(objective, n_trials=n_trials, timeout=self.config.hpo_timeout // 2)
+        
+        return study.best_params
+    
+    async def _full_tpe_hpo(
+        self, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> Dict[str, Any]:
+        """Full TPE optimization for large datasets with sufficient time."""
+        
+        import optuna
+        
+        study = optuna.create_study(
+            direction='maximize',
+            sampler=optuna.samplers.TPESampler(),
+            pruner=optuna.pruners.MedianPruner(),
+            study_name=f"{self.config.model_name}_full_tpe_hpo"
+        )
+        
+        def objective(trial):
+            return self._objective_function(trial, X_train, y_train, X_val, y_val)
+        
+        study.optimize(
+            objective, 
+            n_trials=self.config.hpo_trials,
+            timeout=self.config.hpo_timeout
+        )
+        
+        return study.best_params
     
     async def _train_final_model_enhanced(
         self, 

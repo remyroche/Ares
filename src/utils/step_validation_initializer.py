@@ -26,12 +26,13 @@ class StepValidationInitializer:
         """Initialize all pipeline steps with validation."""
         self.logger.info('🚀 Initializing all pipeline steps with validation...')
         steps_config = {
-            'step02_data_reading': {'module': 'src.training.steps.data_collection.step02_data_reading', 'class': 'DataReadingStep', 'priority': 1},
-            'step2_5_sr_optimization': {'module': 'src.training.steps.market_analysis.sub_pipeline', 'class': 'MarketAnalysisSubPipeline', 'priority': 2},
-            'step03_hmm_regime_discovery': {'module': 'src.training.steps.data_collection.data_preparation.step03_hmm_regime_discovery', 'class': 'Step03HMMRegimeDiscovery', 'priority': 3},
-            'step04_regime_data_splitting': {'module': 'src.training.steps.step08_regime_data_splitting', 'class': 'RegimeDataSplittingStep', 'priority': 4},
-            'step05_labeling': {'module': 'src.training.steps.step5_labeling', 'class': 'LabelingStep', 'priority': 5},
-            'step06_advanced_feature_engineering': {'module': 'src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'class': 'FeatureEngineeringStep', 'priority': 6},
+            'step01_data_collection': {'module': 'src.training.steps.data_collection.sub_pipeline', 'class': 'DataCollectionSubPipeline', 'priority': 1},
+            'step02_data_reading': {'module': 'src.training.steps.data_collection.step02_data_reading', 'class': 'DataReadingStep', 'priority': 2},
+            'step2_5_sr_optimization': {'module': 'src.training.steps.market_analysis.sub_pipeline', 'class': 'MarketAnalysisSubPipeline', 'priority': 3},
+            'step03_hmm_regime_discovery': {'module': 'src.training.steps.data_collection.data_preparation.step03_hmm_regime_discovery', 'class': 'Step03HMMRegimeDiscovery', 'priority': 4},
+            'step04_regime_data_splitting': {'module': 'src.training.steps.step08_regime_data_splitting', 'class': 'RegimeDataSplittingStep', 'priority': 5},
+            'step05_labeling': {'module': 'src.training.steps.step5_labeling', 'class': 'LabelingStep', 'priority': 6},
+            'step06_advanced_feature_engineering': {'module': 'src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'class': 'FeatureEngineeringStep', 'priority': 7},
             'step08_advanced_feature_selection': {'module': 'src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection', 'class': 'FeatureSelectionStep', 'priority': 8},
             # Simplified model training steps
             'general_model_training': {'module': 'src.training.steps.model_training.simplified.general_model_training', 'class': 'GeneralModelTrainer', 'priority': 9},

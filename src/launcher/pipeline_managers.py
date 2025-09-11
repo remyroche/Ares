@@ -65,15 +65,29 @@ class DataCollectionPipelineManager(BasePipelineManager):
     """Manages data collection pipeline execution."""
     
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
-        """Execute enhanced data collection pipeline."""
-        self.logger.info(f"📊 Running enhanced data collection pipeline for {symbol} on {exchange}")
+        """Execute unified data collection pipeline with all 12 steps."""
+        self.logger.info(f"📊 Running unified data collection pipeline for {symbol} on {exchange}")
         print("=" * 80)
-        print("🚀 ENHANCED DATA COLLECTION PIPELINE")
+        print("🚀 UNIFIED DATA COLLECTION PIPELINE")
         print("=" * 80)
         print(f"ℹ️ Symbol: {symbol}")
         print(f"ℹ️ Exchange: {exchange}")
         print(f"ℹ️ GUI Mode: {with_gui}")
         print(f"ℹ️ Start Time: {format_datetime(get_current_datetime(), '%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+        print("📋 Pipeline Steps:")
+        print("   1. Data Download - Download raw data from exchanges")
+        print("   2. Data Conversion - Convert data formats and standardize")
+        print("   3. Data Validation - Validate data quality and integrity")
+        print("   4. Data Preparation - Prepare data for further processing")
+        print("   5. Feature Engineering - Limited feature engineering (price returns, volume returns)")
+        print("   6. Data Resampling - Resample to multiple timeframes")
+        print("   7. Gap Filling - Detect and fill data gaps")
+        print("   8. Data Quality Check - Comprehensive quality assessment")
+        print("   9. Data Integration - Integrate multiple data sources with backwards compatibility")
+        print("  10. Data Storage - Store processed data")
+        print("  11. Data Monitoring - Monitor data collection process")
+        print("  12. Data Export - Export data in various formats")
         print("=" * 80)
 
         # Pre-flight validation
@@ -83,18 +97,48 @@ class DataCollectionPipelineManager(BasePipelineManager):
         if with_gui and not self.launcher.launch_gui("data-collection", symbol, exchange):
             return False
 
-        # Set up environment
-        env = os.environ.copy()
-        env.update({
-            'PYTHONPATH': str(Path(__file__).parent.parent.parent),
-            'DATA_COLLECTION_MODE': 'enhanced',
-            'SYMBOL': symbol,
-            'EXCHANGE': exchange
-        })
+        # Execute unified data collection pipeline using standalone script
+        return self._execute_standalone_pipeline(symbol, exchange)
+    
+    def _execute_standalone_pipeline(self, symbol: str, exchange: str) -> bool:
+        """Execute the unified data collection pipeline using the standalone script."""
+        try:
+            # Set up environment
+            env = os.environ.copy()
+            env.update({
+                'PYTHONPATH': str(Path(__file__).parent.parent.parent),
+                'DATA_COLLECTION_MODE': 'unified',
+                'SYMBOL': symbol,
+                'EXCHANGE': exchange
+            })
 
-        cmd = [sys.executable, "standalone_data_collection.py"]
-        
-        return self._run_subprocess_with_monitoring(cmd, env)
+            # Build command for standalone script
+            cmd = [
+                sys.executable, 
+                "standalone_data_collection.py",
+                "--symbol", symbol,
+                "--exchange", exchange.upper(),
+                "--mode", "full",
+                "--data-dir", "data_cache",
+                "--lookback-days", "30",
+                "--timeframes", "5m", "15m", "30m", "1h",
+                "--add-technical-indicators",
+                "--parallel-processing",
+                "--max-workers", "4"
+            ]
+            
+            self.logger.info(f"🔄 Executing standalone data collection pipeline: {' '.join(cmd)}")
+            
+            return self._run_subprocess_with_monitoring(cmd, env)
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to execute standalone data collection pipeline: {e}")
+            print("=" * 80)
+            print("❌ DATA COLLECTION PIPELINE FAILED")
+            print("=" * 80)
+            print(f"Error: {str(e)}")
+            print("=" * 80)
+            return False
     
     def _validate_prerequisites(self, symbol: str, exchange: str) -> bool:
         """Validate prerequisites for data collection."""

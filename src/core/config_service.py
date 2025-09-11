@@ -8,11 +8,26 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 import yaml
-from .utils.logger import system_logger
-from .utils.warning_symbols import failed, warning
+try:
+    from ..utils.logger import system_logger
+    from ..utils.warning_symbols import failed, warning
+except ImportError:
+    import logging
+    system_logger = logging.getLogger('System')
+    failed = lambda x: f"❌ {x}"
+    warning = lambda x: f"⚠️ {x}"
+
+from .unified_config_service import UnifiedConfigService
 
 from logging import error
-from .core.decorators import handles_errors
+try:
+    from .decorators import handles_errors
+except ImportError:
+    # Fallback decorator if handles_errors is not available
+    def handles_errors(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 try:
     _watchdog_events = importlib.import_module('watchdog.events')
     _watchdog_observers = importlib.import_module('watchdog.observers')
@@ -129,6 +144,9 @@ class ConfigurationService:
         self.encryption_key: str | None = None
         self.load_times: list[float] = []
         self.last_load_time: float = 0
+        
+        # Initialize unified config service for backward compatibility
+        self.unified_service = UnifiedConfigService()
 
     def get_value(self, dotted_key: str, default: Any = None) -> Any:
         """Retrieve a configuration value using a dotted path from config_data.
@@ -422,6 +440,47 @@ class ConfigurationService:
             self.logger.info('Configuration service shutdown completed')
         except Exception as e:
             self.logger.exception(f'Error during shutdown: {e}')
+    
+    # Unified config service integration methods
+    def load_config(self, config_path: str) -> dict[str, Any]:
+        """Load configuration using unified service (backward compatibility)."""
+        try:
+            return self.unified_service.load_config(config_path)
+        except Exception as e:
+            self.logger.exception(f'Error loading config from unified service: {e}')
+            return {}
+    
+    def load_environment_config(self, environment: str) -> dict[str, Any]:
+        """Load environment-specific configuration."""
+        try:
+            return self.unified_service.load_environment_config(environment)
+        except Exception as e:
+            self.logger.exception(f'Error loading environment config: {e}')
+            return {}
+    
+    def load_feature_config(self, feature_name: str) -> dict[str, Any]:
+        """Load feature-specific configuration."""
+        try:
+            return self.unified_service.load_feature_config(feature_name)
+        except Exception as e:
+            self.logger.exception(f'Error loading feature config: {e}')
+            return {}
+    
+    def load_version_config(self) -> dict[str, Any]:
+        """Load version configuration."""
+        try:
+            return self.unified_service.load_version_config()
+        except Exception as e:
+            self.logger.exception(f'Error loading version config: {e}')
+            return {}
+    
+    def list_available_configs(self) -> dict[str, list]:
+        """List all available configurations."""
+        try:
+            return self.unified_service.list_available_configs()
+        except Exception as e:
+            self.logger.exception(f'Error listing available configs: {e}')
+            return {'environments': [], 'features': [], 'system': []}
 config_service: ConfigurationService | None = None
 
 def get_config_service() -> ConfigurationService:

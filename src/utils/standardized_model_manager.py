@@ -9,6 +9,7 @@ from typing import Any
 import joblib
 from .logger import system_logger
 from .pipeline_standards import pipeline_standards
+from .version_manager import get_version_manager
 import numpy as np
 
 import torch
@@ -54,6 +55,7 @@ class StandardizedModelManager:
         """
         self.standards = pipeline_standards
         self.logger = system_logger
+        self.version_manager = get_version_manager()
         if base_path is None:
             self.base_path = Path('data_cache/models')
         else:
@@ -99,7 +101,10 @@ class StandardizedModelManager:
             if isinstance(metadata, dict):
                 metadata = ModelMetadata(**metadata)
             if model_id is None:
-                model_id = f"{step_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                # Use versioned naming for model_id
+                version = self.version_manager.get_ares_version()
+                timestamp = self.version_manager.generate_timestamp()
+                model_id = f"{step_name}_{version}_{timestamp}"
             metadata.model_id = model_id
             metadata.step_name = step_name
             step_dir = self.base_path / step_name

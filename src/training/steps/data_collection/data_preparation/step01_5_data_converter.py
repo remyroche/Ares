@@ -139,6 +139,10 @@ class ColumnVerifier:
         self.required_futures_columns = ['timestamp', 'fundingRate']
         self.optional_calculated_columns = {'price_returns': ['close_return', 'open_return', 'high_return', 'low_return'], 'vwap': ['vwap', 'vwap_return', 'price_vwap_ratio', 'price_vwap_deviation'], 'volume_features': ['volume_return', 'volume_ma', 'volume_ratio'], 'technical_indicators': ['sma_20', 'ema_12', 'rsi', 'macd']}
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def verify_missing_columns(self, df: pd.DataFrame, data_type: str='unified') -> dict[str, Any]:
         """
         Verify which columns are missing from the dataframe.
@@ -315,6 +319,10 @@ class TimingTracker:
         self.checkpoints: dict[str, dict[str, Any]] = {}
         self.current_phase: str | None = None
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def start(self, phase_name: str) -> None:
         if self.start_time is None:
             self.start_time = time.time()
@@ -388,6 +396,10 @@ class ParquetDatasetManager:
             except Exception:
                 self._proxy_pool = None
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def _ensure_pyarrow(self) -> None:
         if not PYARROW_AVAILABLE:
             msg = 'pyarrow is required for ParquetDatasetManager operations'
@@ -684,6 +696,10 @@ class UnifiedDataConverter:
         ensure_directory(self.unified_dir)
         ensure_directory(self.backup_dir)
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info('🔍 Validating environment dependencies...')
@@ -1217,7 +1233,7 @@ class UnifiedDataConverter:
             pkl_path = os.path.join(data_cache_dir, f'klines_{exchange}_{symbol}_{timeframe}_consolidated_cached_data.pkl')
             if os.path.exists(pkl_path):
                 self.logger.info(f'📊 Loading klines from PKL: {pkl_path}')
-                df = pd.read_pickle(pkl_path)
+                df = self.pickup_utils.load_most_recent_artifact("data", "artifacts", extension=".pkl")[0]
                 df = self.standards.standardize_timestamp(df, 'timestamp')
                 df = self.standards.enforce_schema(df, 'klines')
                 self.logger.info(f'   ✅ Loaded {len(df)} klines rows')
@@ -1460,4 +1476,7 @@ if __name__ == '__main__':
         pass
     finally:
         import gc
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
         gc.collect()

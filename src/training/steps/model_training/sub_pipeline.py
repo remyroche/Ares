@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.version_manager import get_version_manager
 
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 
@@ -88,6 +90,10 @@ class ModelTrainingSubPipeline:
         self.config = config or SubPipelineConfig()
         self.logger = logger.getChild('ModelTrainingSubPipeline')
         self.results: List[SubPipelineResult] = []
+        
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.version_manager = get_version_manager()
         
         # Initialize sub-pipeline registry
         self.sub_pipelines = {
@@ -262,9 +268,9 @@ class ModelTrainingSubPipeline:
             artifacts['trained_models'] = ['general_model.pkl']
             return artifacts
         
-        # Import and use enhanced general model training
+        # Import and use general model training
         try:
-            from .general_model_training import GeneralModelTrainer
+            from .simplified.general_model_training import GeneralModelTrainer
             
             trainer = GeneralModelTrainer()
             training_result = await trainer.train_model(
@@ -313,9 +319,9 @@ class ModelTrainingSubPipeline:
             artifacts['analyst_models'] = ['analyst_model.pkl']
             return artifacts
         
-        # Import and use enhanced analyst model training
+        # Import and use analyst model training
         try:
-            from .analyst_model_training import AnalystModelTrainer
+            from .simplified.analyst_model_training import AnalystModelTrainer
             
             trainer = AnalystModelTrainer()
             training_result = await trainer.train_analyst_model(
@@ -364,9 +370,9 @@ class ModelTrainingSubPipeline:
             artifacts['tactician_models'] = ['tactician_model.pkl']
             return artifacts
         
-        # Import and use enhanced tactician model training
+        # Import and use tactician model training
         try:
-            from .tactician_model_training import TacticianModelTrainer
+            from .simplified.tactician_model_training import TacticianModelTrainer
             
             trainer = TacticianModelTrainer()
             training_result = await trainer.train_tactician_model(
@@ -666,7 +672,12 @@ class ModelTrainingSubPipeline:
             return artifacts
         
         # Model persistence logic would go here
-        artifacts['saved_models'] = [f"saved_{config.symbol}_{config.exchange}_{config.timeframe}_model.pkl"]
+        # Use versioned filename for saved models
+        model_filename = self.artifact_manager.get_versioned_filename(
+            f"saved_{config.symbol}_{config.exchange}_{config.timeframe}_model", 
+            ".pkl"
+        )
+        artifacts['saved_models'] = [model_filename]
         artifacts['persistence_metrics'] = {'models_saved': 1, 'total_size_mb': 5.2}
         
         # Log completion with emojis and artifact paths

@@ -36,6 +36,10 @@ class Step1DataCollectionValidator:
         self.price_tolerance = 0.001  # Allow very small negative prices due to precision
         self.volume_tolerance = 0.001  # Allow very small negative volumes due to precision
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     async def validate(
         self,
         training_input: Dict[str, Any],
@@ -396,7 +400,7 @@ class Step1DataCollectionValidator:
                 elif klines_file.endswith(".csv"):
                     df = pd.read_csv(klines_file)
                 elif klines_file.endswith(".pkl"):
-                    df = pd.read_pickle(klines_file)
+                    df = self.pickup_utils.load_most_recent_artifact("data", "artifacts", extension=".pkl")[0]
                 else:
                     validation_result["valid"] = False
                     validation_result["critical_issues"].append(f"Unsupported file format: {klines_file}")
@@ -590,6 +594,9 @@ async def run_validator(
 
 if __name__ == "__main__":
     import asyncio
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
     # Example usage
     async def test_validator() -> None:

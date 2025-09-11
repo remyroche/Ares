@@ -28,14 +28,14 @@ This package contains all the components for model training:
 - Tactician labeling and specialist training
 - Model persistence and validation components
 """
-# Import from enhanced model training modules with ML commons integration
+# Import from simplified model training structure
 try:
-    from .general_model_training import GeneralModelTrainer
-    from .analyst_model_training import AnalystModelTrainer
-    from .tactician_model_training import TacticianModelTrainer
-    ENHANCED_TRAINING_AVAILABLE = True
+    from .simplified.general_model_training import GeneralModelTrainer
+    from .simplified.analyst_model_training import AnalystModelTrainer
+    from .simplified.tactician_model_training import TacticianModelTrainer
+    SIMPLIFIED_TRAINING_AVAILABLE = True
 except ImportError:
-    ENHANCED_TRAINING_AVAILABLE = False
+    SIMPLIFIED_TRAINING_AVAILABLE = False
     GeneralModelTrainer = None
     AnalystModelTrainer = None
     TacticianModelTrainer = None
@@ -793,8 +793,8 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         post_data_memory = await _monitor_memory_usage()
         print('🚀 STEP 4/6: Executing training steps...')
         logger.info('🚀 STEP 4/6: Executing training steps...')
-        # Use enhanced training steps if available
-        if ENHANCED_TRAINING_AVAILABLE:
+        # Use simplified training steps if available
+        if SIMPLIFIED_TRAINING_AVAILABLE:
             training_steps = [
                 ('General Model Training', GeneralModelTrainer, config.get('general_training', True)),
                 ('Analyst Model Training', AnalystModelTrainer, config.get('analyst_training', True)),
@@ -898,7 +898,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         logger.error(f'📋 Exception details: {str(e)}')
         return False
 __all__ = [
-    # Enhanced training components with ML commons integration
+    # Simplified training components
     'GeneralModelTrainer', 'AnalystModelTrainer', 'TacticianModelTrainer',
     # Legacy compatibility aliases
     'HMMBasedTrainingStep', 'UnifiedRegimeIntelligenceStep', 'AnalystCreationStep', 

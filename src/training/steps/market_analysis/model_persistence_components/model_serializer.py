@@ -41,6 +41,10 @@ class ModelSerializer:
         self.base_dir = Path(self.config.get('base_dir', 'models'))
         self.format_handlers = {'pickle': self._save_pickle, 'joblib': self._save_joblib, 'onnx': self._save_onnx, 'json': self._save_json}
 
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @handles_errors(exceptions=(Exception,), default_return = None, context='model serialization')
     async def save_model(self, model: Any, model_id: str, format_name: str, version_info: Dict[str, Any], metadata: Optional[Dict[str, Any]]=None) -> Optional[str]:
         """Save a model in specified format.
@@ -272,4 +276,3 @@ class ModelSerializer:
         except Exception as e:
             self.logger.error(f'Failed to load ONNX model: {str(e)}')
             return None
-from ....core.decorators import handles_errors

@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 import pandas as pd
 
-from .utils.logger import get_logger
-from .utils.validation import (
+from src.utils.logger import get_logger
+from src.utils.validation import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection
 )

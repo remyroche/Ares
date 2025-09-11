@@ -34,7 +34,7 @@ class RegimeAwareLabeling:
             
             # Detect regime column
             try:
-                from .utils.regime_data_access import get_regime_column
+                from src.utils.regime_data_access import get_regime_column
                 detected = get_regime_column(pd.DataFrame(columns=['composite_cluster_id'])) or 'hmm_regime'
             except ImportError:
                 detected = 'hmm_regime'

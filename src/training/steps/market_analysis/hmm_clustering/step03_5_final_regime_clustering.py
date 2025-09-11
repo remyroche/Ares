@@ -209,6 +209,10 @@ class UtilityDependencyInjector:
         self._injected_utilities = {}
         self._initialization_status = {}
         
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def inject_all_utilities(self) -> dict[str, Any]:
         """Inject all utilities with comprehensive error handling and health monitoring."""
         self.logger.info("🔧 Starting comprehensive utility dependency injection...")
@@ -523,6 +527,10 @@ class CircuitBreaker:
         self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
         self._lock = threading.Lock()
     
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def call(self, func: Callable, *args, **kwargs) -> Any:
         """Execute function with circuit breaker protection."""
         with self._lock:
@@ -620,6 +628,10 @@ class FastFailValidator:
     def __init__(self, logger):
         self.logger = logger
     
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def validate_data_quality_fast_fail(self, df: pd.DataFrame) -> bool:
         """Fast-fail data quality validation with specific timestamp criteria using common operations."""
         # Check data size
@@ -739,6 +751,10 @@ class FeatureCache:
         self.current_size_mb = 0
         self.logger = logger or logging.getLogger(__name__)
     
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def get_cache_key(self, data_hash: str, params: dict) -> str:
         """Generate cache key from data hash and parameters."""
         param_str = "_".join(f"{k}_{v}" for k, v in sorted(params.items()))
@@ -771,6 +787,10 @@ class PerformanceMonitor:
         self.metrics = {}
         self._lock = threading.Lock()
     
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     @contextmanager
     def monitor_operation(self, operation_name: str):
         """Context manager for monitoring operation performance."""
@@ -951,6 +971,10 @@ class FinalRegimeClusteringStep:
         # Log comprehensive utility integration status
         self._log_utility_integration_status()
     
+        # Initialize artifact and version managers
+        self.artifact_manager = get_artifact_manager()
+        self.pickup_utils = get_artifact_pickup_utils()
+        self.version_manager = get_version_manager()
     def _log_utility_integration_status(self) -> None:
         """Log comprehensive utility integration status."""
         self.logger.info("📊 Comprehensive Utility Integration Status:")
@@ -4606,6 +4630,9 @@ class FinalRegimeClusteringStep:
         """Train ML models with chunked processing, class imbalance handling, and single-class detection."""
         try:
             import gc
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
             self.logger.info(f'🚀 Starting optimized chunked ML training: {len(X)} samples, chunk_size={chunk_size}')
 

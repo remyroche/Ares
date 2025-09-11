@@ -665,6 +665,79 @@ class MarketAnalysisSubPipeline:
         
         return artifacts
     
+    async def _filter_meaningful_features(self, features_df: pd.DataFrame, labels: np.ndarray, max_features: int = 150) -> pd.DataFrame:
+        """
+        Filter features to select the most meaningful ones using multiple criteria.
+        
+        Args:
+            features_df: DataFrame with all features
+            labels: Target labels
+            max_features: Maximum number of features to select
+            
+        Returns:
+            DataFrame with filtered features
+        """
+        try:
+            print(f"   🔍 Filtering {len(features_df.columns)} features down to {max_features}...")
+            
+            # Calculate feature importance using multiple methods
+            feature_scores = {}
+            
+            # 1. Correlation with target
+            for col in features_df.columns:
+                try:
+                    corr = np.corrcoef(features_df[col].fillna(0), labels)[0, 1]
+                    feature_scores[col] = abs(corr) if not np.isnan(corr) else 0
+                except:
+                    feature_scores[col] = 0
+            
+            # 2. Variance (remove low-variance features)
+            variances = features_df.var()
+            high_variance_features = variances[variances > variances.quantile(0.1)].index
+            
+            # 3. SR-specific feature prioritization
+            sr_feature_patterns = [
+                'touch_count', 'strength', 'age_bars', 'bounce_ratio', 'volume_confirmation',
+                'consistency_score', 'failure_count', 'proximity', 'level_density', 'confluence',
+                'hvn_', 'fib_', 'pivot_', 'trendline_', 'psychological_', 'sr_'
+            ]
+            
+            # Boost scores for SR-specific features
+            for col in features_df.columns:
+                if any(pattern in col.lower() for pattern in sr_feature_patterns):
+                    feature_scores[col] *= 1.5  # 50% boost for SR features
+            
+            # 4. Technical indicator prioritization
+            technical_patterns = ['rsi_', 'macd_', 'bb_', 'sma_', 'ema_', 'atr_', 'stoch_', 'adx_', 'obv_', 'mfi_']
+            for col in features_df.columns:
+                if any(pattern in col.lower() for pattern in technical_patterns):
+                    feature_scores[col] *= 1.2  # 20% boost for technical indicators
+            
+            # 5. Remove highly correlated features
+            corr_matrix = features_df[high_variance_features].corr().abs()
+            upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > 0.95)]
+            
+            # Filter features
+            available_features = [f for f in high_variance_features if f not in to_drop]
+            
+            # Sort by score and select top features
+            sorted_features = sorted(available_features, key=lambda x: feature_scores.get(x, 0), reverse=True)
+            selected_features = sorted_features[:max_features]
+            
+            print(f"   ✅ Selected {len(selected_features)} features from {len(features_df.columns)}")
+            print(f"   📊 Removed {len(to_drop)} highly correlated features")
+            print(f"   📊 Removed {len(features_df.columns) - len(high_variance_features)} low-variance features")
+            
+            return features_df[selected_features]
+            
+        except Exception as e:
+            print(f"   ⚠️ Feature filtering failed: {e}")
+            # Return top features by variance as fallback
+            variances = features_df.var()
+            top_features = variances.nlargest(max_features).index
+            return features_df[top_features]
+    
     async def _load_market_data_for_sr_detection(self, config: SubPipelineConfig) -> Optional[pd.DataFrame]:
         """Load market data for SR detection using standardized utilities."""
         try:
@@ -1221,24 +1294,147 @@ class MarketAnalysisSubPipeline:
                     print(f"      ✅ Labels created: {len(labels)} samples")
                     print(f"      📊 Label distribution: {np.bincount(labels)} (0=down, 1=up)")
                     
-                    # Create feature matrix
-                    print("🧮 Building Feature Matrix...")
-                    print("   🔄 Combining all features into training matrix")
-                    print("   📊 Each row = one training sample, each column = one feature")
-                    feature_data = []
-                    max_samples = min(len(price_changes), 10000)  # Limit to 10k samples for speed
-                    print(f"   📈 Processing {max_samples} samples for training...")
+                    # Create comprehensive feature matrix using EnhancedFeatureEngineering
+                    print("🧮 Building Comprehensive Feature Matrix...")
+                    print("   🔄 Using EnhancedFeatureEngineering for 100+ features")
+                    print("   📊 Including SR-specific features, technical indicators, and interactions")
                     
-                    for i in range(1, max_samples):
-                        feature_row = [
-                            price_changes.iloc[i-1] if i > 0 else 0,
-                            high_low_ratio.iloc[i] if i < len(high_low_ratio) else 1.0,
-                            volume_ratio.iloc[i] if not volume_ratio.empty and i < len(volume_ratio) else 0.0
-                        ]
-                        feature_data.append(feature_row)
-                    
-                    features = np.array(feature_data)
-                    labels = labels[1:len(feature_data)+1]  # Align labels with features
+                    try:
+                        # Import EnhancedFeatureEngineering
+                        from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering
+                        from src.training.steps.model_training.sr_ml_enhancer import SRMLEnhancer
+                        
+                        print("   🔧 Initializing Enhanced Feature Engineering...")
+                        feature_config = {
+                            'step06_feature_engineering': {
+                                'chunk_size': 10000,
+                                'max_features': 200,
+                                'polynomial_degree': 2,
+                                'correlation_threshold': 0.95,
+                                'memory_limit_mb': 1000
+                            }
+                        }
+                        
+                        # Initialize feature engineering
+                        feature_engineer = EnhancedFeatureEngineering(feature_config)
+                        await feature_engineer.initialize_utilities()
+                        
+                        print("   📊 Extracting comprehensive features...")
+                        # Extract all features except wavelet
+                        enhanced_features = await feature_engineer.create_enhanced_features_with_utilities(market_data)
+                        
+                        # Get technical indicators
+                        periods_config = {
+                            'RSI': [14, 21, 28],
+                            'MACD': [12, 26, 9],
+                            'Bollinger_Bands': [20, 50],
+                            'SMA': [20, 50, 100],
+                            'EMA': [12, 26, 50],
+                            'ATR': [14, 21],
+                            'Stochastic': [14, 21],
+                            'ADX': [14, 21],
+                            'OBV': [1],
+                            'MFI': [14, 21]
+                        }
+                        
+                        technical_indicators = feature_engineer.extract_indicators_batch(market_data, periods_config)
+                        
+                        # Combine all features
+                        all_features = pd.concat([enhanced_features, technical_indicators], axis=1)
+                        
+                        # Remove wavelet features as requested
+                        wavelet_columns = [col for col in all_features.columns if 'wavelet' in col.lower()]
+                        if wavelet_columns:
+                            all_features = all_features.drop(columns=wavelet_columns)
+                            print(f"   🚫 Removed {len(wavelet_columns)} wavelet features")
+                        
+                        # Add SR-specific features using SRMLEnhancer
+                        print("   🎯 Adding SR-specific features...")
+                        sr_enhancer = SRMLEnhancer(config)
+                        
+                        # Create dummy SR levels for feature extraction
+                        dummy_sr_levels = []
+                        price_range = market_data['high'].max() - market_data['low'].min()
+                        for i in range(10):  # Create 10 dummy levels
+                            level_price = market_data['low'].min() + (i * price_range / 10)
+                            dummy_level = {
+                                'price': level_price,
+                                'touch_count': np.random.randint(1, 20),
+                                'strength': np.random.uniform(0.3, 0.9),
+                                'age_bars': np.random.randint(10, 100),
+                                'avg_bounce_ratio': np.random.uniform(0.1, 0.8),
+                                'max_bounce_ratio': np.random.uniform(0.2, 1.0),
+                                'volume_confirmation_score': np.random.uniform(0.2, 0.9),
+                                'consistency_score': np.random.uniform(0.3, 0.8),
+                                'failure_count': np.random.randint(0, 5),
+                                'id': f'level_{i}'
+                            }
+                            dummy_sr_levels.append(dummy_level)
+                        
+                        # Extract SR-specific features
+                        sr_features_list = []
+                        for level in dummy_sr_levels:
+                            sr_features = await sr_enhancer._extract_level_features(market_data, level)
+                            if sr_features:
+                                sr_features_list.append(sr_features)
+                        
+                        if sr_features_list:
+                            sr_features_array = np.array(sr_features_list)
+                            sr_feature_names = await sr_enhancer._get_feature_names()
+                            
+                            # Create SR features DataFrame
+                            sr_features_df = pd.DataFrame(sr_features_array, columns=sr_feature_names)
+                            sr_features_df.index = all_features.index[:len(sr_features_df)]
+                            
+                            # Combine with other features
+                            all_features = pd.concat([all_features, sr_features_df], axis=1)
+                            print(f"   ✅ Added {len(sr_feature_names)} SR-specific features")
+                        
+                        # Clean and prepare features
+                        all_features = all_features.fillna(0).replace([np.inf, -np.inf], 0)
+                        
+                        # Feature filtering - select most meaningful features
+                        print("   🔍 Applying feature filtering...")
+                        filtered_features = await self._filter_meaningful_features(all_features, labels, max_features=150)
+                        
+                        features = filtered_features.values
+                        feature_names = list(filtered_features.columns)
+                        
+                        print(f"   ✅ Feature filtering complete: {len(feature_names)} features selected")
+                        print(f"   📊 Feature categories:")
+                        sr_count = len([f for f in feature_names if any(pattern in f.lower() for pattern in ['touch', 'bounce', 'strength', 'level', 'hvn', 'fib', 'pivot', 'trendline'])])
+                        technical_count = len([f for f in feature_names if any(pattern in f.lower() for pattern in ['rsi', 'macd', 'bb_', 'sma', 'ema', 'atr', 'stoch', 'adx', 'obv', 'mfi'])])
+                        other_count = len(feature_names) - sr_count - technical_count
+                        print(f"      - SR-specific features: {sr_count}")
+                        print(f"      - Technical indicators: {technical_count}")
+                        print(f"      - Other features: {other_count}")
+                        
+                        # Align labels with features
+                        labels = labels[:len(features)]
+                        
+                        # Cleanup
+                        await feature_engineer.cleanup()
+                        
+                    except Exception as e:
+                        print(f"   ⚠️ Enhanced feature engineering failed: {e}")
+                        print("   🔄 Falling back to basic features...")
+                        self.logger.warning(f"Enhanced feature engineering failed: {e}")
+                        
+                        # Fallback to basic features
+                        feature_data = []
+                        max_samples = min(len(price_changes), 10000)
+                        
+                        for i in range(1, max_samples):
+                            feature_row = [
+                                price_changes.iloc[i-1] if i > 0 else 0,
+                                high_low_ratio.iloc[i] if i < len(high_low_ratio) else 1.0,
+                                volume_ratio.iloc[i] if not volume_ratio.empty and i < len(volume_ratio) else 0.0
+                            ]
+                            feature_data.append(feature_row)
+                        
+                        features = np.array(feature_data)
+                        feature_names = ['price_change', 'high_low_ratio', 'volume_change']
+                        labels = labels[1:len(feature_data)+1]
                     
                     print(f"✅ Feature Matrix Created Successfully")
                     print(f"   📊 Matrix shape: {features.shape[0]} samples × {features.shape[1]} features")
@@ -1357,7 +1553,7 @@ class MarketAnalysisSubPipeline:
                             'train_samples': X_train.shape[0],
                             'test_samples': X_test.shape[0],
                             'feature_importance': model.feature_importances_.tolist(),
-                            'feature_names': ['price_change', 'high_low_ratio', 'volume_change']
+                            'feature_names': feature_names if 'feature_names' in locals() else ['price_change', 'high_low_ratio', 'volume_change']
                         }
                     else:
                         print("⚠️ Insufficient data for training (need >100 samples)")

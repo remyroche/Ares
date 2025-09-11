@@ -46,14 +46,89 @@ class SRLevel:
         """Create level from dictionary."""
         return cls(price = data['price'], level_type = data['level_type'], method = data['method'], data_source = data['data_source'], timestamp = datetime.fromisoformat(data['timestamp']), strength = data.get('strength', 0.5), volume = data.get('volume', 0.0), touch_count = data.get('touch_count', 0), age_hours = data.get('age_hours', 0.0), bounce_rate = data.get('bounce_rate', 0.0), isolation_score = data.get('isolation_score', 0.0), confidence = data.get('confidence', 0.5), metadata = data.get('metadata', {}))
 
-    def update_touch(self, current_time: datetime, price: float, volume: float = 0.0) -> None:
-        """Update level with new touch information."""
-        self.last_touch = current_time
-        self.touch_count += 1
-        self.total_touches += 1
-        self.volume = max(self.volume, volume)
-        self.age_hours = (current_time - self.creation_time).total_seconds() / 3600
-        self.strength = min(1.0, 0.5 + self.touch_count * 0.1)
+    def update_touch(self, current_time: datetime, price: float, volume: float = 0.0, 
+                    market_data: pd.DataFrame = None, min_bounce_threshold: float = 0.001,
+                    min_time_between_touches: int = 300, volume_spike_threshold: float = 1.5) -> bool:
+        """
+        Update level with new touch information using meaningful bounce detection.
+        
+        Args:
+            current_time: Current timestamp
+            price: Current price
+            volume: Current volume
+            market_data: Market data for context (optional)
+            min_bounce_threshold: Minimum price movement away from level (0.1% = 0.001)
+            min_time_between_touches: Minimum seconds between touches (5 minutes = 300)
+            volume_spike_threshold: Volume spike multiplier (1.5x average)
+            
+        Returns:
+            bool: True if touch was counted, False if filtered out
+        """
+        # Check time-based filtering
+        if (current_time - self.last_touch).total_seconds() < min_time_between_touches:
+            return False  # Too soon since last touch
+        
+        # Check for meaningful bounce
+        price_moved_away = abs(price - self.price) / self.price > min_bounce_threshold
+        if not price_moved_away:
+            return False  # No meaningful bounce detected
+        
+        # Check volume confirmation if market data available
+        volume_confirmed = True
+        if market_data is not None and len(market_data) > 20:
+            avg_volume = market_data['volume'].tail(20).mean()
+            volume_confirmed = volume >= avg_volume * volume_spike_threshold
+        
+        # Only count as touch if all criteria met
+        if price_moved_away and volume_confirmed:
+            self.last_touch = current_time
+            self.touch_count += 1
+            self.total_touches += 1
+            self.volume = max(self.volume, volume)
+            self.age_hours = (current_time - self.creation_time).total_seconds() / 3600
+            self.strength = min(1.0, 0.5 + self.touch_count * 0.1)
+            
+            # Update bounce rate calculation
+            self._update_bounce_rate(market_data)
+            return True
+        
+        return False
+    
+    def _update_bounce_rate(self, market_data: pd.DataFrame = None) -> None:
+        """Update bounce rate based on recent price action."""
+        if market_data is None or len(market_data) < 10:
+            return
+        
+        # Look at recent price action around this level
+        recent_data = market_data.tail(50)  # Last 50 bars
+        level_price = self.price
+        tolerance = level_price * 0.002  # 0.2% tolerance
+        
+        bounces = 0
+        total_tests = 0
+        
+        for i in range(1, len(recent_data)):
+            current = recent_data.iloc[i]
+            previous = recent_data.iloc[i-1]
+            
+            # Check if price tested the level
+            if (abs(current['low'] - level_price) <= tolerance or 
+                abs(current['high'] - level_price) <= tolerance):
+                total_tests += 1
+                
+                # Check if price bounced away
+                if self.level_type == 'support':
+                    if current['close'] > level_price + tolerance:
+                        bounces += 1
+                elif self.level_type == 'resistance':
+                    if current['close'] < level_price - tolerance:
+                        bounces += 1
+                else:  # both
+                    if (abs(current['close'] - level_price) > tolerance):
+                        bounces += 1
+        
+        if total_tests > 0:
+            self.bounce_rate = bounces / total_tests
 
     def calculate_quality_score(self) -> float:
         """Calculate overall quality score for this level."""
@@ -148,11 +223,11 @@ class SRLevelsManager:
                 try:
                     sr_context = await self.sr_predictor.get_sr_context(market_data, current_price)
                     for level_data in sr_context.get('support_levels', []):
-                        level = self._create_sr_level_from_data(level_data, 'support')
+                        level = self._create_sr_level_from_data(level_data, 'support', market_data)
                         if level:
                             support_levels.append(level)
                     for level_data in sr_context.get('resistance_levels', []):
-                        level = self._create_sr_level_from_data(level_data, 'resistance')
+                        level = self._create_sr_level_from_data(level_data, 'resistance', market_data)
                         if level:
                             resistance_levels.append(level)
                     self.logger.info(f'✅ Retrieved {len(support_levels)} support and {len(resistance_levels)} resistance levels from SR context')
@@ -166,12 +241,12 @@ class SRLevelsManager:
                     try:
                         direct_support = await self.sr_predictor._detect_support_levels(market_data)
                         for level_data in direct_support:
-                            level = self._create_sr_level_from_data(level_data, 'support')
+                            level = self._create_sr_level_from_data(level_data, 'support', market_data)
                             if level and (not self._level_exists(level, support_levels)):
                                 support_levels.append(level)
                         direct_resistance = await self.sr_predictor._detect_resistance_levels(market_data)
                         for level_data in direct_resistance:
-                            level = self._create_sr_level_from_data(level_data, 'resistance')
+                            level = self._create_sr_level_from_data(level_data, 'resistance', market_data)
                             if level and (not self._level_exists(level, resistance_levels)):
                                 resistance_levels.append(level)
                         self.logger.info(f'✅ Added {len(direct_support)} direct support and {len(direct_resistance)} direct resistance levels')
@@ -196,7 +271,7 @@ class SRLevelsManager:
                             
                             method_support = await self.sr_predictor._detect_support_levels(market_data)
                             for level_data in method_support:
-                                level = self._create_sr_level_from_data(level_data, 'support')
+                                level = self._create_sr_level_from_data(level_data, 'support', market_data)
                                 if level and (not self._level_exists(level, support_levels)):
                                     level.metadata['detection_method'] = method
                                     support_levels.append(level)
@@ -206,7 +281,7 @@ class SRLevelsManager:
                             
                             method_resistance = await self.sr_predictor._detect_resistance_levels(market_data)
                             for level_data in method_resistance:
-                                level = self._create_sr_level_from_data(level_data, 'resistance')
+                                level = self._create_sr_level_from_data(level_data, 'resistance', market_data)
                                 if level and (not self._level_exists(level, resistance_levels)):
                                     level.metadata['detection_method'] = method
                                     resistance_levels.append(level)
@@ -220,11 +295,16 @@ class SRLevelsManager:
                     self.logger.warning('⚠️ SR predictor not available, skipping specific detection methods')
             support_levels = self._filter_and_deduplicate_levels(support_levels)
             resistance_levels = self._filter_and_deduplicate_levels(resistance_levels)
-            self.support_levels = support_levels
-            self.resistance_levels = resistance_levels
+            
+            # Merge support and resistance levels while preserving original detection info
+            merged_levels = self._merge_support_resistance_levels(support_levels, resistance_levels)
+            
+            self.support_levels = merged_levels['support_levels']
+            self.resistance_levels = merged_levels['resistance_levels']
             await self.save_levels()
-            self.logger.info(f'✅ Final calculation: {len(support_levels)} support and {len(resistance_levels)} resistance levels')
-            return {'support_levels': support_levels, 'resistance_levels': resistance_levels}
+            self.logger.info(f'✅ Final calculation: {len(self.support_levels)} support and {len(self.resistance_levels)} resistance levels')
+            self.logger.info(f'   📊 Merged levels preserve original detection method and regime context')
+            return {'support_levels': self.support_levels, 'resistance_levels': self.resistance_levels}
         except Exception as e:
             self.logger.exception(f'❌ Error calculating SR levels from backtest: {e}')
             return {'support_levels': [], 'resistance_levels': []}
@@ -251,7 +331,7 @@ class SRLevelsManager:
                 try:
                     support_data = await self.sr_predictor._detect_support_levels(market_data)
                     for level_data in support_data:
-                        level = self._create_sr_level_from_data(level_data, 'support')
+                        level = self._create_sr_level_from_data(level_data, 'support', market_data)
                         if level:
                             level.metadata['detection_method'] = method
                             support_levels.append(level)
@@ -262,7 +342,7 @@ class SRLevelsManager:
                 try:
                     resistance_data = await self.sr_predictor._detect_resistance_levels(market_data)
                     for level_data in resistance_data:
-                        level = self._create_sr_level_from_data(level_data, 'resistance')
+                        level = self._create_sr_level_from_data(level_data, 'resistance', market_data)
                         if level:
                             level.metadata['detection_method'] = method
                             resistance_levels.append(level)
@@ -276,28 +356,43 @@ class SRLevelsManager:
             self.sr_predictor.sr_detection_method = original_method
             return {'support_levels': [], 'resistance_levels': [], 'method_used': method}
 
-    async def update_levels_with_live_data(self, current_price: float, current_volume: float, current_time: datetime) -> dict[str, Any]:
+    async def update_levels_with_live_data(self, current_price: float, current_volume: float, current_time: datetime, 
+                                         market_data: pd.DataFrame = None) -> dict[str, Any]:
         """
-        Update SR levels with live trading data.
+        Update SR levels with live trading data using meaningful bounce detection.
 
         Args:
             current_price: Current market price
             current_volume: Current volume
             current_time: Current timestamp
+            market_data: Recent market data for context
 
         Returns:
             Update summary
         """
         try:
             self.logger.info(f'🔄 Updating SR levels with live data (price: {current_price:.4f})')
-            updates = {'support_touches': 0, 'resistance_touches': 0, 'new_levels_created': 0, 'levels_removed': 0}
+            updates = {'support_touches': 0, 'resistance_touches': 0, 'new_levels_created': 0, 'levels_removed': 0, 'filtered_touches': 0}
+            
             for level in self.support_levels + self.resistance_levels:
                 if self._is_price_near_level(current_price, level.price):
-                    level.update_touch(current_time, current_price, current_volume)
-                    if level.level_type == 'support':
-                        updates['support_touches'] += 1
+                    # Use meaningful bounce detection
+                    touch_counted = level.update_touch(
+                        current_time, current_price, current_volume, 
+                        market_data=market_data,
+                        min_bounce_threshold=0.001,  # 0.1% minimum bounce
+                        min_time_between_touches=300,  # 5 minutes
+                        volume_spike_threshold=1.5  # 1.5x volume spike
+                    )
+                    
+                    if touch_counted:
+                        if level.level_type == 'support':
+                            updates['support_touches'] += 1
+                        else:
+                            updates['resistance_touches'] += 1
                     else:
-                        updates['resistance_touches'] += 1
+                        updates['filtered_touches'] += 1
+            
             self._cleanup_old_levels()
             self.last_update = current_time
             self.update_count += 1
@@ -360,21 +455,58 @@ class SRLevelsManager:
             return {}
 
     def _filter_and_deduplicate_levels(self, levels: list[SRLevel]) -> list[SRLevel]:
-        """Filter and deduplicate levels based on quality and proximity."""
+        """Filter and deduplicate levels based on quality, proximity, and time."""
         if not levels:
             return []
+        
+        # Sort by quality score
         levels.sort(key = lambda x: x.calculate_quality_score(), reverse = True)
         levels = [l for l in levels if l.strength >= self.min_strength]
-        filtered = []
-        for level in levels:
+        
+        # Apply time-based deduplication (1 hour minimum between levels)
+        filtered = self._deduplicate_levels_by_time(levels, min_time_gap_hours=1.0)
+        
+        # Apply price-based deduplication
+        final_filtered = []
+        for level in filtered:
             is_duplicate = False
-            for existing in filtered:
+            for existing in final_filtered:
                 if self._is_price_near_level(level.price, existing.price):
                     is_duplicate = True
                     break
             if not is_duplicate:
-                filtered.append(level)
-        return filtered[:self.max_levels]
+                final_filtered.append(level)
+        
+        return final_filtered[:self.max_levels]
+    
+    def _deduplicate_levels_by_time(self, levels: list[SRLevel], min_time_gap_hours: float = 1.0) -> list[SRLevel]:
+        """Remove duplicate levels that are too close in time."""
+        if not levels:
+            return []
+        
+        # Sort by creation time
+        sorted_levels = sorted(levels, key=lambda x: x.creation_time)
+        filtered_levels = []
+        
+        for level in sorted_levels:
+            is_duplicate = False
+            for existing in filtered_levels:
+                time_gap = (level.creation_time - existing.creation_time).total_seconds() / 3600
+                price_gap = abs(level.price - existing.price) / existing.price if existing.price > 0 else 1.0
+                
+                # Consider duplicate if too close in time AND price
+                if time_gap < min_time_gap_hours and price_gap < 0.005:  # 0.5% price threshold
+                    is_duplicate = True
+                    # Keep the one with higher quality score
+                    if level.calculate_quality_score() > existing.calculate_quality_score():
+                        filtered_levels.remove(existing)
+                        filtered_levels.append(level)
+                    break
+            
+            if not is_duplicate:
+                filtered_levels.append(level)
+        
+        return filtered_levels
 
     def _is_price_near_level(self, price1: float, price2: float) -> bool:
         """Check if two prices are near each other."""
@@ -423,8 +555,8 @@ class SRLevelsManager:
         overlap_rate = overlap_count / min(len(levels1), len(levels2)) if min(len(levels1), len(levels2)) > 0 else 0.0
         return {'overlap_count': overlap_count, 'overlap_rate': overlap_rate, 'overlap_details': overlap_details}
 
-    def _create_sr_level_from_data(self, level_data: dict[str, Any], level_type: str) -> SRLevel | None:
-        """Create SRLevel object from level data dictionary."""
+    def _create_sr_level_from_data(self, level_data: dict[str, Any], level_type: str, market_data: pd.DataFrame = None) -> SRLevel | None:
+        """Create SRLevel object from level data dictionary with trend context."""
         try:
             if not level_data or not isinstance(level_data, dict):
                 return None
@@ -433,10 +565,252 @@ class SRLevelsManager:
                 timestamp = datetime.fromisoformat(timestamp)
             elif timestamp is None:
                 timestamp = datetime.now()
-            return SRLevel(price = level_data.get('price', 0), level_type = level_type, method = level_data.get('method', 'unknown'), data_source = level_data.get('data_source', 'price'), timestamp = timestamp, strength = level_data.get('enhanced_strength', level_data.get('strength', 0.5)), volume = level_data.get('volume', 0.0), touch_count = level_data.get('touch_count', 0), age_hours = level_data.get('age_hours', 0.0), bounce_rate = level_data.get('bounce_rate', 0.0), isolation_score = level_data.get('isolation_score', 0.0), confidence = level_data.get('confidence', 0.5), metadata = level_data.get('metadata', {}))
+            
+            # Create base level
+            level = SRLevel(
+                price = level_data.get('price', 0), 
+                level_type = level_type, 
+                method = level_data.get('method', 'unknown'), 
+                data_source = level_data.get('data_source', 'price'), 
+                timestamp = timestamp, 
+                strength = level_data.get('enhanced_strength', level_data.get('strength', 0.5)), 
+                volume = level_data.get('volume', 0.0), 
+                touch_count = level_data.get('touch_count', 0), 
+                age_hours = level_data.get('age_hours', 0.0), 
+                bounce_rate = level_data.get('bounce_rate', 0.0), 
+                isolation_score = level_data.get('isolation_score', 0.0), 
+                confidence = level_data.get('confidence', 0.5), 
+                metadata = level_data.get('metadata', {})
+            )
+            
+            # Add trend context and regime context if market data available
+            if market_data is not None and len(market_data) > 20:
+                trend_context = self._classify_level_type_with_trend(level.price, market_data)
+                regime_context = self._classify_market_regime(market_data)
+                
+                level.level_type = trend_context
+                level.metadata['original_detection_type'] = level_type
+                level.metadata['trend_context'] = trend_context
+                level.metadata['regime_context'] = regime_context
+                
+                # Adjust level type based on regime if needed
+                if regime_context != 'ranging':
+                    level.level_type = self._adjust_level_type_for_regime(level.level_type, regime_context)
+            
+            return level
         except Exception as e:
             self.logger.exception(f'❌ Error creating SR level from data: {e}')
             return None
+    
+    def _classify_level_type_with_trend(self, level_price: float, market_data: pd.DataFrame, lookback_bars: int = 20) -> str:
+        """Classify level as support or resistance based on recent price action and trend."""
+        try:
+            if len(market_data) < lookback_bars:
+                return 'both'
+            
+            recent_data = market_data.tail(lookback_bars)
+            
+            # Calculate trend direction
+            price_trend = (recent_data['close'].iloc[-1] - recent_data['close'].iloc[0]) / recent_data['close'].iloc[0]
+            
+            # Count touches above and below level
+            tolerance = level_price * 0.002  # 0.2% tolerance
+            touches_above = len(recent_data[recent_data['high'] >= level_price - tolerance])
+            touches_below = len(recent_data[recent_data['low'] <= level_price + tolerance])
+            
+            # Calculate price action around level
+            price_above_level = recent_data['close'] > level_price + tolerance
+            price_below_level = recent_data['close'] < level_price - tolerance
+            
+            # Determine level type based on trend and price action
+            if price_trend > 0.02:  # Strong uptrend
+                if touches_above > touches_below:
+                    return 'resistance'
+                else:
+                    return 'support'
+            elif price_trend < -0.02:  # Strong downtrend
+                if touches_below > touches_above:
+                    return 'support'
+                else:
+                    return 'resistance'
+            else:  # Sideways or weak trend
+                # Use price action context
+                if price_above_level.sum() > price_below_level.sum():
+                    return 'resistance'
+                elif price_below_level.sum() > price_above_level.sum():
+                    return 'support'
+                else:
+                    return 'both'  # Can act as both in ranging markets
+            
+        except Exception as e:
+            self.logger.warning(f'Error classifying level type with trend: {e}')
+            return 'both'
+    
+    def _classify_market_regime(self, market_data: pd.DataFrame, lookback_bars: int = 50) -> str:
+        """Classify current market regime based on price action and volatility."""
+        try:
+            if len(market_data) < lookback_bars:
+                return 'unknown'
+            
+            recent_data = market_data.tail(lookback_bars)
+            
+            # Calculate trend strength
+            price_change = (recent_data['close'].iloc[-1] - recent_data['close'].iloc[0]) / recent_data['close'].iloc[0]
+            
+            # Calculate volatility (ATR-based)
+            high_low = recent_data['high'] - recent_data['low']
+            high_close = np.abs(recent_data['high'] - recent_data['close'].shift())
+            low_close = np.abs(recent_data['low'] - recent_data['close'].shift())
+            true_range = np.maximum(high_low, np.maximum(high_close, low_close))
+            atr = true_range.rolling(window=14).mean().iloc[-1]
+            volatility = atr / recent_data['close'].iloc[-1]
+            
+            # Calculate momentum indicators
+            sma_20 = recent_data['close'].rolling(window=20).mean()
+            sma_50 = recent_data['close'].rolling(window=50).mean()
+            sma_ratio = sma_20.iloc[-1] / sma_50.iloc[-1] if not sma_50.empty else 1.0
+            
+            # RSI for momentum
+            delta = recent_data['close'].diff()
+            gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = 100 - 100 / (1 + rs)
+            current_rsi = rsi.iloc[-1] if not rsi.empty else 50
+            
+            # Classify regime
+            if abs(price_change) > 0.05 and volatility > 0.02:  # Strong trend with high volatility
+                if price_change > 0:
+                    return 'trending_up'
+                else:
+                    return 'trending_down'
+            elif abs(price_change) > 0.02 and volatility < 0.015:  # Moderate trend with low volatility
+                if price_change > 0:
+                    return 'trending_up'
+                else:
+                    return 'trending_down'
+            elif abs(sma_ratio - 1.0) < 0.01 and volatility < 0.01:  # Low volatility, sideways
+                return 'ranging'
+            elif volatility > 0.03:  # High volatility regardless of trend
+                return 'volatile'
+            else:
+                return 'ranging'  # Default to ranging
+                
+        except Exception as e:
+            self.logger.warning(f'Error classifying market regime: {e}')
+            return 'unknown'
+    
+    def _adjust_level_type_for_regime(self, level_type: str, regime: str) -> str:
+        """Adjust level type based on market regime context."""
+        try:
+            if regime == 'trending_up':
+                # In uptrends, levels are more likely to be resistance
+                if level_type == 'both':
+                    return 'resistance'
+                elif level_type == 'support':
+                    return 'support'  # Keep support as is
+                else:
+                    return level_type
+            elif regime == 'trending_down':
+                # In downtrends, levels are more likely to be support
+                if level_type == 'both':
+                    return 'support'
+                elif level_type == 'resistance':
+                    return 'resistance'  # Keep resistance as is
+                else:
+                    return level_type
+            elif regime == 'volatile':
+                # In volatile markets, levels can act as both
+                return 'both'
+            else:  # ranging or unknown
+                return level_type
+                
+        except Exception as e:
+            self.logger.warning(f'Error adjusting level type for regime: {e}')
+            return level_type
+    
+    def _merge_support_resistance_levels(self, support_levels: list[SRLevel], resistance_levels: list[SRLevel]) -> dict[str, list[SRLevel]]:
+        """
+        Merge support and resistance levels while preserving original detection information.
+        
+        This method ensures that:
+        1. Original detection method is preserved in metadata
+        2. Regime context is maintained
+        3. Levels are properly classified based on trend and regime
+        4. No information is lost during the merge process
+        """
+        try:
+            merged_support = []
+            merged_resistance = []
+            
+            # Process support levels
+            for level in support_levels:
+                # Preserve original detection info
+                if 'original_detection_type' not in level.metadata:
+                    level.metadata['original_detection_type'] = 'support'
+                
+                # Add to appropriate list based on current classification
+                if level.level_type in ['support', 'both']:
+                    merged_support.append(level)
+                if level.level_type in ['resistance', 'both']:
+                    merged_resistance.append(level)
+            
+            # Process resistance levels
+            for level in resistance_levels:
+                # Preserve original detection info
+                if 'original_detection_type' not in level.metadata:
+                    level.metadata['original_detection_type'] = 'resistance'
+                
+                # Add to appropriate list based on current classification
+                if level.level_type in ['support', 'both']:
+                    merged_support.append(level)
+                if level.level_type in ['resistance', 'both']:
+                    merged_resistance.append(level)
+            
+            # Remove duplicates based on price proximity
+            merged_support = self._remove_duplicate_levels_by_price(merged_support)
+            merged_resistance = self._remove_duplicate_levels_by_price(merged_resistance)
+            
+            self.logger.info(f'📊 Level merge complete:')
+            self.logger.info(f'   - Support levels: {len(merged_support)} (from {len(support_levels)} original)')
+            self.logger.info(f'   - Resistance levels: {len(merged_resistance)} (from {len(resistance_levels)} original)')
+            
+            return {
+                'support_levels': merged_support,
+                'resistance_levels': merged_resistance
+            }
+            
+        except Exception as e:
+            self.logger.error(f'Error merging support/resistance levels: {e}')
+            return {
+                'support_levels': support_levels,
+                'resistance_levels': resistance_levels
+            }
+    
+    def _remove_duplicate_levels_by_price(self, levels: list[SRLevel]) -> list[SRLevel]:
+        """Remove duplicate levels based on price proximity while preserving the best one."""
+        if not levels:
+            return []
+        
+        # Sort by quality score (best first)
+        levels.sort(key=lambda x: x.calculate_quality_score(), reverse=True)
+        
+        filtered_levels = []
+        for level in levels:
+            is_duplicate = False
+            for existing in filtered_levels:
+                if self._is_price_near_level(level.price, existing.price):
+                    is_duplicate = True
+                    # If current level is better, replace the existing one
+                    if level.calculate_quality_score() > existing.calculate_quality_score():
+                        filtered_levels.remove(existing)
+                        filtered_levels.append(level)
+                    break
+            
+            if not is_duplicate:
+                filtered_levels.append(level)
+        
+        return filtered_levels
 
     def _level_exists(self, new_level: SRLevel, existing_levels: list[SRLevel]) -> bool:
         """Check if a level already exists in the list based on price proximity."""

@@ -2,22 +2,14 @@ from src.utils.tprint import tprint
 import pandas as pd
 
 """
-Model Training Sub-Pipeline
+Model Training Sub-Pipeline - Final Structure
 
-This module provides granular sub-pipeline functionality for model training,
-allowing execution of specific model training steps with different modes.
+This module provides the final model training sub-pipeline with only 4 required steps:
 
-Sub-pipelines:
-1. General Model Training - Train general ML models
-2. Analyst Model Training - Train analyst-specific models
-3. Tactician Model Training - Train tactician-specific models
-4. HMM Training - HMM-based model training
-5. Ensemble Training - Ensemble model training
-6. Multi-timeframe Training - Multi-timeframe model training
-7. Regime-specific Training - Regime-specific model training
-8. Model Validation - Model validation and testing
-9. Model Persistence - Save and load models
-10. Model Evaluation - Comprehensive model evaluation
+1. analyst_models_training - Per-regime individual model training with HPO, saving, and metrics
+2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics
+3. tactician_models_training - All-regime individual model training with HPO, saving, and metrics
+4. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics
 """
 
 import asyncio
@@ -100,14 +92,12 @@ class ModelTrainingSubPipeline:
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
         
-        # Initialize sub-pipeline registry
+        # Initialize sub-pipeline registry with only the 4 required steps
         self.sub_pipelines = {
-            'general_model_training': self._general_model_training_pipeline,
-            'analyst_model_training': self._analyst_model_training_pipeline,
-            'tactician_model_training': self._tactician_model_training_pipeline,
-            'hmm_training': self._hmm_training_pipeline,
-            'ensemble_training': self._ensemble_training_pipeline,
-            'multi_timeframe_training': self._multi_timeframe_training_pipeline,
+            'analyst_models_training': self._analyst_models_training_pipeline,
+            'analyst_ensemble_training': self._analyst_ensemble_training_pipeline,
+            'tactician_models_training': self._tactician_models_training_pipeline,
+            'tactician_ensemble_training': self._tactician_ensemble_training_pipeline,
         }
         
         # Initialize temporal feature integration
@@ -327,14 +317,14 @@ class ModelTrainingSubPipeline:
         }
     
     # Sub-pipeline implementations
-    async def _general_model_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """General model training sub-pipeline."""
-        self.logger.info("🤖 Executing general model training pipeline")
+    async def _analyst_models_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Analyst Models Training sub-pipeline - Per-regime individual model training."""
+        self.logger.info("👨‍💼 Executing analyst models training pipeline (per-regime individual models)")
         
         artifacts = {
-            'trained_models': [],
+            'analyst_models': [],
             'training_metrics': {},
-            'model_performance': {},
+            'analyst_performance': {},
             'temporal_features_used': False,
             'temporal_feature_info': {}
         }
@@ -348,13 +338,13 @@ class ModelTrainingSubPipeline:
             self.logger.info(f"✅ Using {temporal_info['count']} temporal features in model training")
         
         if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual general model training")
-            artifacts['trained_models'] = ['general_model.pkl']
+            self.logger.info("🔄 Blank mode: Skipping actual analyst models training")
+            artifacts['analyst_models'] = ['analyst_model.pkl']
             return artifacts
         
-        # Import and use general model training
+        # Import and use analyst models training
         try:
-            from .simplified.general_model_training import GeneralModelTrainer
+            from .analyst_models_training import AnalystModelsTrainingStep
             
             # Create enhanced configuration with temporal features
             enhanced_config = config.custom_params.copy() if config.custom_params else {}
@@ -363,47 +353,38 @@ class ModelTrainingSubPipeline:
                 enhanced_config['temporal_feature_columns'] = list(self.temporal_features.keys())
                 enhanced_config['temporal_feature_metadata'] = self.temporal_feature_metadata
             
-            trainer = GeneralModelTrainer()
-            training_result = await trainer.train_model(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                force_rerun=config.force_rerun,
-                enhanced_config=enhanced_config
+            trainer = AnalystModelsTrainingStep()
+            training_result = await trainer.execute(
+                training_input={
+                    'symbol': config.symbol,
+                    'exchange': config.exchange,
+                    'timeframe': config.timeframe,
+                    'data_dir': config.data_dir
+                },
+                pipeline_state={}
             )
             
-            artifacts['trained_models'] = training_result.get('models', [])
+            artifacts['analyst_models'] = training_result.get('models', [])
             artifacts['training_metrics'] = training_result.get('metrics', {})
-            artifacts['model_performance'] = training_result.get('performance', {})
+            artifacts['analyst_performance'] = training_result.get('performance', {})
             
         except ImportError:
-            self.logger.warning("⚠️ General model trainer not available, using mock training")
-            artifacts['trained_models'] = ['general_model.pkl']
+            self.logger.warning("⚠️ Analyst models trainer not available, using mock training")
+            artifacts['analyst_models'] = ['analyst_model.pkl']
         
         # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("general_model_training", config, artifacts)
-        
-        # Automatically trigger the next sub-pipeline: analyst_model_training
-        self.logger.info("🔄 General model training completed, triggering next: analyst_model_training")
-        try:
-            next_artifacts = await self._analyst_model_training_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ Analyst model training pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute analyst model training pipeline: {e}")
+        self._log_sub_pipeline_completion("analyst_models_training", config, artifacts)
         
         return artifacts
     
-    async def _analyst_model_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Analyst model training sub-pipeline."""
-        self.logger.info("📊 Executing analyst model training pipeline")
+    async def _analyst_ensemble_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Analyst Ensemble Training sub-pipeline - Per-regime ensemble training."""
+        self.logger.info("🎭 Executing analyst ensemble training pipeline (per-regime ensemble models)")
         
         artifacts = {
-            'analyst_models': [],
+            'analyst_ensembles': [],
             'training_metrics': {},
-            'analyst_performance': {},
+            'analyst_ensemble_performance': {},
             'temporal_features_used': False,
             'temporal_feature_info': {}
         }

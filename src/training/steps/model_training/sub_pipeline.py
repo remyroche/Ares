@@ -20,7 +20,9 @@ Sub-pipelines:
 """
 
 import asyncio
+import json
 import logging
+import pandas as pd
 from typing import Any, Dict, List, Optional, Union, Callable
 from datetime import datetime
 from pathlib import Path
@@ -110,6 +112,11 @@ class ModelTrainingSubPipeline:
             'model_persistence': self._model_persistence_pipeline,
             'model_evaluation': self._model_evaluation_pipeline
         }
+        
+        # Initialize temporal feature integration
+        self.temporal_features_available = False
+        self.temporal_features = {}
+        self.temporal_feature_metadata = {}
     
     def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
         """Helper method to log sub-pipeline completion with emojis and artifact paths."""
@@ -254,6 +261,74 @@ class ModelTrainingSubPipeline:
             tasks = [self.execute_sub_pipeline(name, config) for name in sub_pipeline_names]
             return await asyncio.gather(*tasks, return_exceptions=True)
     
+    async def _load_temporal_features(self, config: SubPipelineConfig) -> bool:
+        """Load temporal features from MARKET_ANALYSIS stage."""
+        try:
+            # Try to load temporal features from various sources
+            temporal_feature_sources = [
+                f"{config.data_dir}/temporal_features_{config.symbol}_{config.exchange}_{config.timeframe}.parquet",
+                f"{config.data_dir}/training/temporal_features_{config.symbol}_{config.exchange}_{config.timeframe}.parquet",
+                f"{config.data_dir}/processed/temporal_features_{config.symbol}_{config.exchange}_{config.timeframe}.parquet"
+            ]
+            
+            for feature_path in temporal_feature_sources:
+                if Path(feature_path).exists():
+                    self.logger.info(f"📊 Loading temporal features from: {feature_path}")
+                    temporal_df = pd.read_parquet(feature_path)
+                    if not temporal_df.empty:
+                        self.temporal_features = temporal_df.to_dict('series')
+                        self.temporal_features_available = True
+                        self.logger.info(f"✅ Loaded {len(self.temporal_features)} temporal features")
+                        
+                        # Load metadata if available
+                        metadata_path = feature_path.replace('temporal_features_', 'temporal_feature_metadata_').replace('.parquet', '.json')
+                        if Path(metadata_path).exists():
+                            with open(metadata_path, 'r') as f:
+                                self.temporal_feature_metadata = json.load(f)
+                            self.logger.info(f"✅ Loaded temporal feature metadata")
+                        
+                        return True
+            
+            self.logger.warning("⚠️ No temporal features found, using standard features only")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load temporal features: {e}")
+            return False
+    
+    def _get_enhanced_feature_columns(self, base_features: List[str]) -> List[str]:
+        """Get enhanced feature columns including temporal features."""
+        if not self.temporal_features_available:
+            return base_features
+        
+        # Combine base features with temporal features
+        temporal_feature_names = list(self.temporal_features.keys())
+        enhanced_features = base_features + temporal_feature_names
+        
+        self.logger.info(f"📊 Enhanced features: {len(base_features)} base + {len(temporal_feature_names)} temporal = {len(enhanced_features)} total")
+        return enhanced_features
+    
+    def _get_temporal_feature_info(self) -> Dict[str, Any]:
+        """Get information about available temporal features."""
+        if not self.temporal_features_available:
+            return {'available': False, 'count': 0, 'types': {}}
+        
+        # Analyze temporal feature types
+        lookback_features = [name for name in self.temporal_features.keys() if name.startswith('lookback_')]
+        cross_tf_features = [name for name in self.temporal_features.keys() if name.startswith('cross_tf_')]
+        
+        return {
+            'available': True,
+            'count': len(self.temporal_features),
+            'lookback_features': len(lookback_features),
+            'cross_timeframe_features': len(cross_tf_features),
+            'types': {
+                'lookback': lookback_features,
+                'cross_timeframe': cross_tf_features
+            },
+            'metadata_available': bool(self.temporal_feature_metadata)
+        }
+    
     # Sub-pipeline implementations
     async def _general_model_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """General model training sub-pipeline."""
@@ -262,8 +337,18 @@ class ModelTrainingSubPipeline:
         artifacts = {
             'trained_models': [],
             'training_metrics': {},
-            'model_performance': {}
+            'model_performance': {},
+            'temporal_features_used': False,
+            'temporal_feature_info': {}
         }
+        
+        # Load temporal features from MARKET_ANALYSIS stage
+        temporal_loaded = await self._load_temporal_features(config)
+        if temporal_loaded:
+            temporal_info = self._get_temporal_feature_info()
+            artifacts['temporal_features_used'] = True
+            artifacts['temporal_feature_info'] = temporal_info
+            self.logger.info(f"✅ Using {temporal_info['count']} temporal features in model training")
         
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual general model training")
@@ -274,13 +359,21 @@ class ModelTrainingSubPipeline:
         try:
             from .simplified.general_model_training import GeneralModelTrainer
             
+            # Create enhanced configuration with temporal features
+            enhanced_config = config.custom_params.copy() if config.custom_params else {}
+            if temporal_loaded:
+                enhanced_config['temporal_features_available'] = True
+                enhanced_config['temporal_feature_columns'] = list(self.temporal_features.keys())
+                enhanced_config['temporal_feature_metadata'] = self.temporal_feature_metadata
+            
             trainer = GeneralModelTrainer()
             training_result = await trainer.train_model(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                force_rerun=config.force_rerun
+                force_rerun=config.force_rerun,
+                enhanced_config=enhanced_config
             )
             
             artifacts['trained_models'] = training_result.get('models', [])
@@ -313,8 +406,18 @@ class ModelTrainingSubPipeline:
         artifacts = {
             'analyst_models': [],
             'training_metrics': {},
-            'analyst_performance': {}
+            'analyst_performance': {},
+            'temporal_features_used': False,
+            'temporal_feature_info': {}
         }
+        
+        # Load temporal features from MARKET_ANALYSIS stage
+        temporal_loaded = await self._load_temporal_features(config)
+        if temporal_loaded:
+            temporal_info = self._get_temporal_feature_info()
+            artifacts['temporal_features_used'] = True
+            artifacts['temporal_feature_info'] = temporal_info
+            self.logger.info(f"✅ Using {temporal_info['count']} temporal features in analyst model training")
         
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual analyst model training")
@@ -325,13 +428,21 @@ class ModelTrainingSubPipeline:
         try:
             from .simplified.analyst_model_training import AnalystModelTrainer
             
+            # Create enhanced configuration with temporal features
+            enhanced_config = config.custom_params.copy() if config.custom_params else {}
+            if temporal_loaded:
+                enhanced_config['temporal_features_available'] = True
+                enhanced_config['temporal_feature_columns'] = list(self.temporal_features.keys())
+                enhanced_config['temporal_feature_metadata'] = self.temporal_feature_metadata
+            
             trainer = AnalystModelTrainer()
             training_result = await trainer.train_analyst_model(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                force_rerun=config.force_rerun
+                force_rerun=config.force_rerun,
+                enhanced_config=enhanced_config
             )
             
             artifacts['analyst_models'] = training_result.get('models', [])

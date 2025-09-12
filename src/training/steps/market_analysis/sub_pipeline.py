@@ -17,9 +17,11 @@ Sub-pipelines:
 8. Feature Lookback Optimization - Optimize feature lookback periods
 9. Fractional Differentiation - Apply fractional differentiation
 10. Cross Timeframe Analysis - Cross timeframe interaction features
+11. Temporal Feature Integration - Integrate and deduplicate temporal features
 """
 
 import asyncio
+import json
 import logging
 import numpy as np
 import pandas as pd
@@ -161,6 +163,7 @@ class MarketAnalysisSubPipeline:
             'feature_lookback_optimization': self._feature_lookback_optimization_pipeline,
             'fractional_differentiation': self._fractional_differentiation_pipeline,
             'cross_timeframe_analysis': self._cross_timeframe_analysis_pipeline,
+            'temporal_feature_integration': self._temporal_feature_integration_pipeline,
             'sr_feature_integration': self._sr_feature_integration_pipeline
         }
     
@@ -527,6 +530,7 @@ class MarketAnalysisSubPipeline:
             'feature_lookback_optimization',
             'fractional_differentiation',
             'cross_timeframe_analysis',
+            'temporal_feature_integration',
             'sr_feature_integration'
         ]
         
@@ -2440,9 +2444,140 @@ class MarketAnalysisSubPipeline:
         self._log_sub_pipeline_completion("cross_timeframe_analysis", config, artifacts)
 
         # This is the final pipeline in the MARKET_ANALYSIS stage sequence
-        self.logger.info("🎉 MARKET_ANALYSIS stage completed successfully - all 10 sub-pipelines executed")
+        self.logger.info("🎉 MARKET_ANALYSIS stage completed successfully - all 11 sub-pipelines executed")
 
         return artifacts
+    
+    async def _temporal_feature_integration_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Temporal feature integration sub-pipeline."""
+        self.logger.info("🔄 Executing temporal feature integration pipeline")
+        
+        artifacts = {
+            'temporal_features': {},
+            'feature_metadata': {},
+            'quality_metrics': {},
+            'integration_summary': {}
+        }
+        
+        try:
+            # Import temporal feature integration
+            from src.feature_engineering.temporal_feature_integration import (
+                integrate_temporal_features,
+                create_temporal_config
+            )
+            
+            # Load data for temporal feature integration
+            data = await self._load_data_for_temporal_integration(config)
+            if data is None or data.empty:
+                self.logger.warning("⚠️ No data available for temporal feature integration")
+                return artifacts
+            
+            # Create temporal feature integration configuration
+            temporal_config = create_temporal_config(
+                enable_lookback=True,
+                enable_cross_timeframe=True,
+                correlation_threshold=0.7,
+                parallel_processing=True
+            )
+            
+            # Execute temporal feature integration
+            result = await integrate_temporal_features(
+                data=data,
+                config=temporal_config,
+                data_dir=config.data_dir,
+                symbol=config.symbol,
+                exchange=config.exchange
+            )
+            
+            # Store results in artifacts
+            artifacts['temporal_features'] = result.deduplicated_features
+            artifacts['feature_metadata'] = result.feature_metadata
+            artifacts['quality_metrics'] = {
+                'total_features_before': result.total_features_before,
+                'total_features_after': result.total_features_after,
+                'redundancy_removed': result.redundancy_removed,
+                'integration_time': result.integration_time,
+                'average_correlation': result.average_correlation,
+                'average_information_content': result.average_information_content,
+                'average_stability': result.average_stability
+            }
+            artifacts['integration_summary'] = {
+                'lookback_features': len(result.lookback_features or {}),
+                'cross_timeframe_features': len(result.cross_timeframe_features or {}),
+                'integrated_features': len(result.integrated_features),
+                'deduplicated_features': len(result.deduplicated_features)
+            }
+            
+            # Save artifacts
+            await self._save_temporal_integration_artifacts(artifacts, config)
+            
+            self.logger.info(f"✅ Temporal feature integration completed:")
+            self.logger.info(f"   - Features: {result.total_features_before} → {result.total_features_after}")
+            self.logger.info(f"   - Redundancy removed: {result.redundancy_removed}")
+            self.logger.info(f"   - Integration time: {result.integration_time:.2f}s")
+            
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Temporal feature integration not available: {e}")
+            artifacts['error'] = f"Temporal feature integration not available: {e}"
+        except Exception as e:
+            self.logger.error(f"❌ Temporal feature integration failed: {e}")
+            artifacts['error'] = str(e)
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("temporal_feature_integration", config, artifacts)
+        
+        return artifacts
+    
+    async def _load_data_for_temporal_integration(self, config: SubPipelineConfig) -> Optional[pd.DataFrame]:
+        """Load data for temporal feature integration."""
+        try:
+            # Try to load data from various sources
+            data_sources = [
+                f"{config.data_dir}/training/{config.symbol}_{config.exchange}_{config.timeframe}.parquet",
+                f"{config.data_dir}/processed/{config.symbol}_{config.exchange}_{config.timeframe}.parquet",
+                f"{config.data_dir}/{config.symbol}_{config.exchange}_{config.timeframe}.parquet"
+            ]
+            
+            for data_path in data_sources:
+                if Path(data_path).exists():
+                    self.logger.info(f"📊 Loading data from: {data_path}")
+                    data = pd.read_parquet(data_path)
+                    if not data.empty:
+                        return data
+            
+            self.logger.warning("⚠️ No data found for temporal feature integration")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load data for temporal integration: {e}")
+            return None
+    
+    async def _save_temporal_integration_artifacts(self, artifacts: Dict[str, Any], config: SubPipelineConfig):
+        """Save temporal integration artifacts."""
+        try:
+            # Save temporal features
+            if artifacts.get('temporal_features'):
+                features_path = f"{config.data_dir}/temporal_features_{config.symbol}_{config.exchange}_{config.timeframe}.parquet"
+                features_df = pd.DataFrame(artifacts['temporal_features'])
+                features_df.to_parquet(features_path)
+                self.logger.info(f"💾 Saved temporal features to: {features_path}")
+            
+            # Save metadata
+            if artifacts.get('feature_metadata'):
+                metadata_path = f"{config.data_dir}/temporal_feature_metadata_{config.symbol}_{config.exchange}_{config.timeframe}.json"
+                with open(metadata_path, 'w') as f:
+                    json.dump(artifacts['feature_metadata'], f, indent=2, default=str)
+                self.logger.info(f"💾 Saved feature metadata to: {metadata_path}")
+            
+            # Save quality metrics
+            if artifacts.get('quality_metrics'):
+                metrics_path = f"{config.data_dir}/temporal_quality_metrics_{config.symbol}_{config.exchange}_{config.timeframe}.json"
+                with open(metrics_path, 'w') as f:
+                    json.dump(artifacts['quality_metrics'], f, indent=2, default=str)
+                self.logger.info(f"💾 Saved quality metrics to: {metrics_path}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save temporal integration artifacts: {e}")
     
     async def _sr_feature_integration_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """SR feature integration sub-pipeline."""

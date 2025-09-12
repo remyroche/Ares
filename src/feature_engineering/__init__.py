@@ -105,6 +105,17 @@ from .feature_generation_optimization import (
     optimize_feature_lookback
 )
 
+# Import feature validation utilities
+from .math_validation import (
+    validate_feature_quality,
+    validate_features_dataframe,
+    feature_validation_decorator,
+    validate_generated_features,
+    validate_feature_pipeline,
+    strict_feature_validation,
+    FeatureValidationError
+)
+
 __all__ = [
     # Utility container
     'Step06UtilityContainer',
@@ -148,7 +159,16 @@ __all__ = [
     'FeatureOptimizationResult',
     'OptimizationMethod',
     'get_feature_optimizer',
-    'optimize_feature_lookback'
+    'optimize_feature_lookback',
+    
+    # Feature validation utilities
+    'validate_feature_quality',
+    'validate_features_dataframe',
+    'feature_validation_decorator',
+    'validate_generated_features',
+    'validate_feature_pipeline',
+    'strict_feature_validation',
+    'FeatureValidationError'
 ]
 
 __version__ = "1.0.0"

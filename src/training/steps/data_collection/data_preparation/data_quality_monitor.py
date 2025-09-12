@@ -24,6 +24,15 @@ from src.utils.logger import system_logger
 from .enhanced_data_quality_manager import EnhancedDataQualityManager
 import time
 
+# Import comprehensive data quality tools
+try:
+    from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+    from src.utils.data.quality.data_quality import DataQualityFramework
+    from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+    QUALITY_TOOLS_AVAILABLE = True
+except ImportError:
+    QUALITY_TOOLS_AVAILABLE = False
+
 logger = system_logger.getChild('DataQualityMonitor')
 
 class DataQualityAlert:
@@ -61,6 +70,23 @@ class DataQualityMonitor:
         self.alert_callbacks: List[Callable[[DataQualityAlert], None]] = []
         self.monitoring_active = False
         self.monitoring_interval = 300
+        
+        # Initialize comprehensive quality tools
+        if QUALITY_TOOLS_AVAILABLE:
+            try:
+                self.quality_scorer = get_quality_scorer()
+                self.quality_framework = DataQualityFramework()
+                self.advanced_quality_metrics = AdvancedQualityMetrics()
+                logger.info("✅ DataQualityMonitor initialized with comprehensive quality tools")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize quality tools: {e}")
+                self.quality_scorer = None
+                self.quality_framework = None
+                self.advanced_quality_metrics = None
+        else:
+            self.quality_scorer = None
+            self.quality_framework = None
+            self.advanced_quality_metrics = None
         self.quality_thresholds = {'gap_threshold': 10, 'format_issues_threshold': 5, 'data_freshness_hours': 24, 'min_data_rows': 10000, 'max_null_ratio': 0.1}
         self.performance_metrics = {'total_checks': 0, 'total_alerts': 0, 'last_check_time': None, 'average_check_duration': 0.0}
 

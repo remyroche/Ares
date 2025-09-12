@@ -1,21 +1,92 @@
 """
-Feature Generators for Lookback Optimization
+Enhanced Feature Generators for Lookback Optimization
 
-This module provides standardized feature generator functions for various
-technical indicators that can be used in feature lookback optimization.
-Each generator function takes a DataFrame and lookback period as input
-and returns a pandas Series with the calculated indicator.
+This module provides comprehensive feature generator functions for all
+available technical indicators and features from the feature engineering
+pipeline. Each generator function is optimized for hardware acceleration
+and includes safe math operations.
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Callable, Any, Optional
+from typing import Dict, Callable, Any, Optional, List, Tuple
 import logging
+from pathlib import Path
+import sys
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logger = logging.getLogger(__name__)
 
+# Import hardware optimization tools
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Hardware optimization tools not available: {e}")
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
+# Import safe math operations
+try:
+    from src.utils.math_validation import safe_divide, safe_log, safe_sqrt
+    SAFE_MATH_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Safe math operations not available: {e}")
+    SAFE_MATH_AVAILABLE = False
+
+# Import feature selection tools
+try:
+    from src.utils.feature_selection.step08_optimized_methods import (
+        fast_correlation_matrix, optimized_mutual_information, 
+        vectorized_feature_stability, parallel_feature_importance
+    )
+    FEATURE_SELECTION_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Feature selection tools not available: {e}")
+    FEATURE_SELECTION_AVAILABLE = False
+
 class FeatureGenerators:
-    """Collection of feature generator functions for optimization."""
+    """Enhanced collection of feature generator functions with hardware optimization."""
+    
+    def __init__(self):
+        """Initialize feature generators with hardware optimization."""
+        self.logger = logger.getChild('FeatureGenerators')
+        
+        # Initialize hardware optimization if available
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            self.gpu_manager = M1GPUManager()
+            self.cpu_optimizer = M1CPUOptimizer()
+            self.memory_optimizer = M1MemoryOptimizer()
+            self.logger.info("✅ Hardware optimization initialized")
+        else:
+            self.gpu_manager = None
+            self.cpu_optimizer = None
+            self.memory_optimizer = None
+            self.logger.info("ℹ️ Hardware optimization not available")
+    
+    def _safe_divide(self, numerator: float, denominator: float, default: float = 0.0) -> float:
+        """Safe division with fallback."""
+        if SAFE_MATH_AVAILABLE:
+            return safe_divide(numerator, denominator, default)
+        else:
+            return numerator / denominator if denominator != 0 else default
+    
+    def _safe_log(self, value: float, default: float = 0.0) -> float:
+        """Safe logarithm with fallback."""
+        if SAFE_MATH_AVAILABLE:
+            return safe_log(value, default)
+        else:
+            return np.log(value) if value > 0 else default
+    
+    def _safe_sqrt(self, value: float, default: float = 0.0) -> float:
+        """Safe square root with fallback."""
+        if SAFE_MATH_AVAILABLE:
+            return safe_sqrt(value, default)
+        else:
+            return np.sqrt(value) if value >= 0 else default
     
     @staticmethod
     def rsi_generator(data: pd.DataFrame, lookback: int, price_column: str = 'close') -> pd.Series:

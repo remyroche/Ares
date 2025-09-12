@@ -98,11 +98,17 @@ class BacktestConfig:
     time_persistence_weight: float = 0.15
     touch_frequency_weight: float = 0.1
     
-    # Overfitting protection parameters
-    min_samples_for_learning: int = 100  # Minimum samples needed to learn rules
-    max_features_per_sample_ratio: float = 0.1  # Max features = samples * ratio
-    cross_validation_folds: int = 5
-    early_stopping_patience: int = 10  # Stop if no improvement for N iterations
+    # Overfitting protection parameters - ADAPTIVE
+    min_samples_for_learning: int = 10  # Reduced minimum samples (was 100)
+    max_features_per_sample_ratio: float = 0.3  # Increased ratio for small samples (was 0.1)
+    cross_validation_folds: int = 3  # Reduced folds for small samples (was 5)
+    early_stopping_patience: int = 5  # Reduced patience for small samples (was 10)
+    
+    # Adaptive learning parameters
+    enable_adaptive_learning: bool = True  # Enable adaptive learning for small samples
+    use_feature_selection: bool = True  # Use feature selection to reduce features
+    conservative_learning_threshold: int = 50  # Use conservative learning below this
+    minimal_learning_threshold: int = 20  # Use minimal learning below this
     
     # M1 optimization parameters
     enable_m1_optimizations: bool = True
@@ -493,29 +499,30 @@ class SRBacktestingEngine:
     def learn_quality_rules(self, results: List[BacktestResult], 
                            optimize_weights: bool = True,
                            market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
-        """Learn quality rules from backtesting results with overfitting protection."""
+        """Learn quality rules from backtesting results with adaptive overfitting protection."""
         try:
-            self.logger.info(f"🧠 Learning quality rules from {len(results)} backtesting results with overfitting protection")
+            self.logger.info(f"🧠 Learning quality rules from {len(results)} backtesting results with adaptive overfitting protection")
             
             if not results:
                 self.logger.warning("No results provided for learning quality rules")
                 return {}
             
-            # OVERFITTING PROTECTION: Check minimum samples
-            if len(results) < self.config.min_samples_for_learning:
-                self.logger.warning(f"⚠️ Insufficient samples for learning: {len(results)} < {self.config.min_samples_for_learning}")
-                self.logger.warning("⚠️ Skipping quality rules learning to prevent overfitting")
-                return {
-                    'quality_distribution': {},
-                    'feature_quality_correlations': {},
-                    'quality_predictors': {},
-                    'learned_weights': {},
-                    'quality_thresholds': {},
-                    'strength_scoring_model': {},
-                    'optimized_weights': {},
-                    'weight_optimization_enabled': False,
-                    'overfitting_protection': 'insufficient_samples'
-                }
+            # ADAPTIVE LEARNING: Determine learning strategy based on sample size
+            n_samples = len(results)
+            learning_strategy = self._determine_learning_strategy(n_samples)
+            
+            self.logger.info(f"📊 Learning strategy: {learning_strategy} (samples: {n_samples})")
+            
+            # Apply adaptive learning strategy
+            if learning_strategy == 'minimal':
+                return self._minimal_learning(results, market_data)
+            elif learning_strategy == 'conservative':
+                return self._conservative_learning(results, market_data, optimize_weights)
+            elif learning_strategy == 'standard':
+                return self._standard_learning(results, market_data, optimize_weights)
+            else:
+                self.logger.warning(f"Unknown learning strategy: {learning_strategy}")
+                return self._minimal_learning(results, market_data)
             
             # Use continuous quality scoring instead of binary categories
             quality_scores = [r.quality_score for r in results]
@@ -1806,6 +1813,357 @@ class SRBacktestingEngine:
         
         # Final fallback
         return features.get('strength', 0.5)
+    
+    def _determine_learning_strategy(self, n_samples: int) -> str:
+        """Determine learning strategy based on sample size."""
+        if n_samples < self.config.minimal_learning_threshold:
+            return 'minimal'
+        elif n_samples < self.config.conservative_learning_threshold:
+            return 'conservative'
+        else:
+            return 'standard'
+    
+    def _minimal_learning(self, results: List[BacktestResult], 
+                         market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Minimal learning for very small samples (10-20 samples)."""
+        self.logger.info("🔬 Using minimal learning strategy for very small samples")
+        
+        # Use only basic quality scoring without ML
+        quality_scores = [r.quality_score for r in results]
+        
+        # Calculate basic statistics
+        quality_stats = {
+            'mean': np.mean(quality_scores),
+            'std': np.std(quality_scores),
+            'min': np.min(quality_scores),
+            'max': np.max(quality_scores),
+            'percentiles': {
+                '25th': np.percentile(quality_scores, 25),
+                '50th': np.percentile(quality_scores, 50),
+                '75th': np.percentile(quality_scores, 75),
+                '90th': np.percentile(quality_scores, 90)
+            }
+        }
+        
+        # Use simple correlation-based feature selection
+        if self.config.use_feature_selection and market_data is not None:
+            selected_features = self._simple_feature_selection(results, market_data)
+        else:
+            # Use only primary features
+            selected_features = ['success_rate', 'avg_bounce_strength', 'total_touches']
+        
+        # Simple quality thresholds
+        quality_thresholds = {
+            'excellent': quality_stats['percentiles']['90th'],
+            'good': quality_stats['percentiles']['75th'],
+            'average': quality_stats['percentiles']['50th'],
+            'poor': quality_stats['percentiles']['25th']
+        }
+        
+        # Simple learned weights (equal weights)
+        learned_weights = {feature: 1.0 / len(selected_features) for feature in selected_features}
+        
+        return {
+            'quality_distribution': quality_stats,
+            'feature_quality_correlations': {},
+            'quality_predictors': selected_features,
+            'learned_weights': learned_weights,
+            'quality_thresholds': quality_thresholds,
+            'strength_scoring_model': {},
+            'optimized_weights': {},
+            'weight_optimization_enabled': False,
+            'learning_strategy': 'minimal',
+            'overfitting_protection': 'minimal_learning',
+            'selected_features': selected_features
+        }
+    
+    def _conservative_learning(self, results: List[BacktestResult], 
+                             market_data: Optional[pd.DataFrame] = None,
+                             optimize_weights: bool = True) -> Dict[str, Any]:
+        """Conservative learning for small samples (20-50 samples)."""
+        self.logger.info("🛡️ Using conservative learning strategy for small samples")
+        
+        # Use feature selection to reduce features
+        if self.config.use_feature_selection and market_data is not None:
+            selected_features = self._adaptive_feature_selection(results, market_data)
+        else:
+            # Use limited feature set
+            selected_features = ['success_rate', 'avg_bounce_strength', 'total_touches', 
+                               'time_persistence', 'total_volume_at_level']
+        
+        # Calculate quality distribution
+        quality_scores = [r.quality_score for r in results]
+        quality_stats = {
+            'mean': np.mean(quality_scores),
+            'std': np.std(quality_scores),
+            'min': np.min(quality_scores),
+            'max': np.max(quality_scores),
+            'percentiles': {
+                '25th': np.percentile(quality_scores, 25),
+                '50th': np.percentile(quality_scores, 50),
+                '75th': np.percentile(quality_scores, 75),
+                '90th': np.percentile(quality_scores, 90)
+            }
+        }
+        
+        # Conservative weight optimization (if enabled and sufficient data)
+        optimized_weights = {}
+        if optimize_weights and len(results) >= 20:
+            try:
+                from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
+                
+                # Use conservative weight optimization
+                weight_config = WeightOptimizationConfig(
+                    min_samples_for_optimization=10,  # Lower threshold
+                    max_features_per_sample_ratio=0.5,  # Higher ratio for small samples
+                    regularization_strength=0.1,  # Higher regularization
+                    n_splits=2  # Fewer CV folds
+                )
+                
+                weight_optimizer = get_weight_optimization_engine(weight_config)
+                optimization_result = weight_optimizer.optimize_weights(results, market_data)
+                
+                if optimization_result and optimization_result.get('optimization_success', False):
+                    optimized_weights = optimization_result.get('best_weights', {})
+                    self.logger.info("✅ Conservative weight optimization completed")
+                else:
+                    self.logger.warning("⚠️ Conservative weight optimization failed, using simple weights")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Conservative weight optimization failed: {e}")
+        
+        # Use simple weights if optimization failed
+        if not optimized_weights:
+            optimized_weights = {feature: 1.0 / len(selected_features) for feature in selected_features}
+        
+        # Build simple strength scoring model
+        strength_model = self._build_simple_strength_model(results, selected_features)
+        
+        # Calculate quality thresholds
+        quality_thresholds = self._calculate_quality_thresholds(quality_stats)
+        
+        return {
+            'quality_distribution': quality_stats,
+            'feature_quality_correlations': {},
+            'quality_predictors': selected_features,
+            'learned_weights': optimized_weights,
+            'quality_thresholds': quality_thresholds,
+            'strength_scoring_model': strength_model,
+            'optimized_weights': optimized_weights,
+            'weight_optimization_enabled': optimize_weights,
+            'learning_strategy': 'conservative',
+            'overfitting_protection': 'conservative_learning',
+            'selected_features': selected_features
+        }
+    
+    def _standard_learning(self, results: List[BacktestResult], 
+                          market_data: Optional[pd.DataFrame] = None,
+                          optimize_weights: bool = True) -> Dict[str, Any]:
+        """Standard learning for larger samples (50+ samples)."""
+        self.logger.info("📚 Using standard learning strategy for larger samples")
+        
+        # Use feature selection if enabled
+        if self.config.use_feature_selection and market_data is not None:
+            selected_features = self._adaptive_feature_selection(results, market_data)
+        else:
+            # Use all available features
+            selected_features = ['success_rate', 'avg_bounce_strength', 'max_bounce_strength', 
+                               'total_touches', 'time_persistence', 'total_volume_at_level', 
+                               'avg_hold_time', 'penetration_depth', 'penetration_frequency', 
+                               'pattern_consistency', 'pattern_strength', 'order_flow_confirmation']
+        
+        # Calculate quality distribution
+        quality_scores = [r.quality_score for r in results]
+        quality_stats = {
+            'mean': np.mean(quality_scores),
+            'std': np.std(quality_scores),
+            'min': np.min(quality_scores),
+            'max': np.max(quality_scores),
+            'percentiles': {
+                '25th': np.percentile(quality_scores, 25),
+                '50th': np.percentile(quality_scores, 50),
+                '75th': np.percentile(quality_scores, 75),
+                '90th': np.percentile(quality_scores, 90)
+            }
+        }
+        
+        # Full weight optimization
+        optimized_weights = {}
+        if optimize_weights and market_data is not None:
+            try:
+                from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
+                
+                weight_config = WeightOptimizationConfig(
+                    min_samples_for_optimization=20,
+                    max_features_per_sample_ratio=0.2,
+                    regularization_strength=0.01,
+                    n_splits=self.config.cross_validation_folds
+                )
+                
+                weight_optimizer = get_weight_optimization_engine(weight_config)
+                optimization_result = weight_optimizer.optimize_weights(results, market_data)
+                
+                if optimization_result and optimization_result.get('optimization_success', False):
+                    optimized_weights = optimization_result.get('best_weights', {})
+                    self.logger.info("✅ Standard weight optimization completed")
+                else:
+                    self.logger.warning("⚠️ Standard weight optimization failed, using simple weights")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Standard weight optimization failed: {e}")
+        
+        # Use simple weights if optimization failed
+        if not optimized_weights:
+            optimized_weights = {feature: 1.0 / len(selected_features) for feature in selected_features}
+        
+        # Build full strength scoring model
+        strength_model = self._build_strength_scoring_model_with_overfitting_protection(
+            results, len(selected_features)
+        )
+        
+        # Calculate quality thresholds
+        quality_thresholds = self._calculate_quality_thresholds(quality_stats)
+        
+        return {
+            'quality_distribution': quality_stats,
+            'feature_quality_correlations': {},
+            'quality_predictors': selected_features,
+            'learned_weights': optimized_weights,
+            'quality_thresholds': quality_thresholds,
+            'strength_scoring_model': strength_model,
+            'optimized_weights': optimized_weights,
+            'weight_optimization_enabled': optimize_weights,
+            'learning_strategy': 'standard',
+            'overfitting_protection': 'standard_learning',
+            'selected_features': selected_features
+        }
+    
+    def _simple_feature_selection(self, results: List[BacktestResult], 
+                                market_data: pd.DataFrame) -> List[str]:
+        """Simple feature selection using correlation with quality scores."""
+        try:
+            # Extract features from results
+            features = {}
+            for result in results:
+                for attr in ['success_rate', 'avg_bounce_strength', 'total_touches', 
+                           'time_persistence', 'total_volume_at_level', 'avg_hold_time']:
+                    if attr not in features:
+                        features[attr] = []
+                    features[attr].append(getattr(result, attr, 0.0))
+            
+            # Calculate correlations with quality scores
+            quality_scores = [r.quality_score for r in results]
+            correlations = {}
+            
+            for feature, values in features.items():
+                if len(values) > 1 and np.std(values) > 0:
+                    corr, _ = pearsonr(values, quality_scores)
+                    correlations[feature] = abs(corr)
+            
+            # Select top 3-5 features
+            n_select = min(5, len(correlations))
+            selected_features = sorted(correlations.items(), key=lambda x: x[1], reverse=True)[:n_select]
+            selected_features = [f[0] for f in selected_features]
+            
+            self.logger.info(f"Simple feature selection: selected {selected_features}")
+            return selected_features
+            
+        except Exception as e:
+            self.logger.warning(f"Simple feature selection failed: {e}")
+            return ['success_rate', 'avg_bounce_strength', 'total_touches']
+    
+    def _adaptive_feature_selection(self, results: List[BacktestResult], 
+                                  market_data: pd.DataFrame) -> List[str]:
+        """Use adaptive feature selection for small samples."""
+        try:
+            from .adaptive_feature_selection import get_adaptive_feature_selector, AdaptiveFeatureSelectionConfig
+            
+            # Configure adaptive feature selection
+            config = AdaptiveFeatureSelectionConfig(
+                min_samples_absolute=10,
+                min_samples_per_feature=2.0,  # Very permissive for small samples
+                max_features_absolute=8,  # Limit features for small samples
+                conservative_mode_threshold=30
+            )
+            
+            # Extract features
+            feature_data = []
+            feature_names = []
+            
+            for result in results:
+                features = [
+                    result.success_rate,
+                    result.avg_bounce_strength,
+                    result.max_bounce_strength,
+                    result.total_touches,
+                    result.time_persistence,
+                    result.total_volume_at_level,
+                    result.avg_hold_time
+                ]
+                feature_data.append(features)
+            
+            if not feature_names:
+                feature_names = ['success_rate', 'avg_bounce_strength', 'max_bounce_strength', 
+                               'total_touches', 'time_persistence', 'total_volume_at_level', 'avg_hold_time']
+            
+            # Create DataFrame
+            X = pd.DataFrame(feature_data, columns=feature_names)
+            y = np.array([r.quality_score for r in results])
+            
+            # Use adaptive feature selection
+            selector = get_adaptive_feature_selector(config)
+            result = selector.select_features(X, y, feature_names)
+            
+            self.logger.info(f"Adaptive feature selection: selected {result.selected_features}")
+            return result.selected_features
+            
+        except Exception as e:
+            self.logger.warning(f"Adaptive feature selection failed: {e}")
+            return self._simple_feature_selection(results, market_data)
+    
+    def _build_simple_strength_model(self, results: List[BacktestResult], 
+                                   selected_features: List[str]) -> Dict[str, Any]:
+        """Build a simple strength scoring model for small samples."""
+        try:
+            # Extract features
+            X = []
+            for result in results:
+                features = [getattr(result, feature, 0.0) for feature in selected_features]
+                X.append(features)
+            
+            X = np.array(X)
+            y = np.array([r.quality_score for r in results])
+            
+            # Use simple linear regression with high regularization
+            from sklearn.linear_model import Ridge
+            from sklearn.preprocessing import StandardScaler
+            
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # High regularization for small samples
+            model = Ridge(alpha=1.0, random_state=42)
+            model.fit(X_scaled, y)
+            
+            # Calculate simple metrics
+            y_pred = model.predict(X_scaled)
+            r_squared = r2_score(y, y_pred)
+            
+            return {
+                'model_type': 'Simple Ridge Regression',
+                'feature_names': selected_features,
+                'coefficients': model.coef_.tolist(),
+                'intercept': model.intercept_,
+                'r_squared': r_squared,
+                'model_object': model,
+                'scaler_object': scaler,
+                'overfitting_detected': r_squared > 0.9,  # Simple overfitting detection
+                'sample_to_feature_ratio': len(y) / len(selected_features)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Simple strength model building failed: {e}")
+            return {}
     
     def _get_conservative_weights(self, optimized_weights: Dict[str, float]) -> Dict[str, float]:
         """Get conservative weights to prevent overfitting."""

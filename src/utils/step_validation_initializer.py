@@ -35,11 +35,9 @@ class StepValidationInitializer:
             'step06_advanced_feature_engineering': {'module': 'src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'class': 'FeatureEngineeringStep', 'priority': 7},
             'step08_advanced_feature_selection': {'module': 'src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection', 'class': 'FeatureSelectionStep', 'priority': 8},
             # Simplified model training steps
-            'general_model_training': {'module': 'src.training.steps.model_training.simplified.general_model_training', 'class': 'GeneralModelTrainer', 'priority': 9},
             'analyst_model_training': {'module': 'src.training.steps.model_training.simplified.analyst_model_training', 'class': 'AnalystModelTrainer', 'priority': 10},
             'tactician_model_training': {'module': 'src.training.steps.model_training.simplified.tactician_model_training', 'class': 'TacticianModelTrainer', 'priority': 11},
             # Legacy step names for backward compatibility
-            'step10_unified_regime_intelligence': {'module': 'src.training.steps.model_training.simplified.general_model_training', 'class': 'GeneralModelTrainer', 'priority': 10},
             'step11_analyst_creation': {'module': 'src.training.steps.model_training.simplified.analyst_model_training', 'class': 'AnalystModelTrainer', 'priority': 11},
             'step12_analyst_enhancement': {'module': 'src.training.steps.model_training.simplified.analyst_model_training', 'class': 'AnalystModelTrainer', 'priority': 12},
             'step13_analyst_ensemble_creation': {'module': 'src.training.steps.model_training.simplified.analyst_model_training', 'class': 'AnalystModelTrainer', 'priority': 13},

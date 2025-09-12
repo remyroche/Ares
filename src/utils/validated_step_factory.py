@@ -177,11 +177,9 @@ class ValidatedStepFactory:
             'step06_advanced_feature_engineering': ('src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'FeatureEngineeringStep'),
             'step08_advanced_feature_selection': ('src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection', 'FeatureSelectionStep'),
             # Simplified model training steps
-            'general_model_training': ('src.training.steps.model_training.simplified.general_model_training', 'GeneralModelTrainer'),
             'analyst_model_training': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
             'tactician_model_training': ('src.training.steps.model_training.simplified.tactician_model_training', 'TacticianModelTrainer'),
             # Legacy step names for backward compatibility
-            'step10_unified_regime_intelligence': ('src.training.steps.model_training.simplified.general_model_training', 'GeneralModelTrainer'),
             'step11_analyst_creation': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
             'step12_analyst_enhancement': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
             'step13_analyst_ensemble_creation': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),

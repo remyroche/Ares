@@ -102,10 +102,9 @@ class ModelTrainingSubPipeline:
         
         # Initialize sub-pipeline registry
         self.sub_pipelines = {
-            'general_model_training': self._general_model_training_pipeline,
+            'hmm_training': self._hmm_training_pipeline,
             'analyst_model_training': self._analyst_model_training_pipeline,
             'tactician_model_training': self._tactician_model_training_pipeline,
-            'hmm_training': self._hmm_training_pipeline,
             'ensemble_training': self._ensemble_training_pipeline,
             'multi_timeframe_training': self._multi_timeframe_training_pipeline,
         }
@@ -327,74 +326,6 @@ class ModelTrainingSubPipeline:
         }
     
     # Sub-pipeline implementations
-    async def _general_model_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """General model training sub-pipeline."""
-        self.logger.info("🤖 Executing general model training pipeline")
-        
-        artifacts = {
-            'trained_models': [],
-            'training_metrics': {},
-            'model_performance': {},
-            'temporal_features_used': False,
-            'temporal_feature_info': {}
-        }
-        
-        # Load temporal features from MARKET_ANALYSIS stage
-        temporal_loaded = await self._load_temporal_features(config)
-        if temporal_loaded:
-            temporal_info = self._get_temporal_feature_info()
-            artifacts['temporal_features_used'] = True
-            artifacts['temporal_feature_info'] = temporal_info
-            self.logger.info(f"✅ Using {temporal_info['count']} temporal features in model training")
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual general model training")
-            artifacts['trained_models'] = ['general_model.pkl']
-            return artifacts
-        
-        # Import and use general model training
-        try:
-            from .simplified.general_model_training import GeneralModelTrainer
-            
-            # Create enhanced configuration with temporal features
-            enhanced_config = config.custom_params.copy() if config.custom_params else {}
-            if temporal_loaded:
-                enhanced_config['temporal_features_available'] = True
-                enhanced_config['temporal_feature_columns'] = list(self.temporal_features.keys())
-                enhanced_config['temporal_feature_metadata'] = self.temporal_feature_metadata
-            
-            trainer = GeneralModelTrainer()
-            training_result = await trainer.train_model(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                force_rerun=config.force_rerun,
-                enhanced_config=enhanced_config
-            )
-            
-            artifacts['trained_models'] = training_result.get('models', [])
-            artifacts['training_metrics'] = training_result.get('metrics', {})
-            artifacts['model_performance'] = training_result.get('performance', {})
-            
-        except ImportError:
-            self.logger.warning("⚠️ General model trainer not available, using mock training")
-            artifacts['trained_models'] = ['general_model.pkl']
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("general_model_training", config, artifacts)
-        
-        # Automatically trigger the next sub-pipeline: analyst_model_training
-        self.logger.info("🔄 General model training completed, triggering next: analyst_model_training")
-        try:
-            next_artifacts = await self._analyst_model_training_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ Analyst model training pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute analyst model training pipeline: {e}")
-        
-        return artifacts
     
     async def _analyst_model_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Analyst model training sub-pipeline."""
@@ -504,15 +435,15 @@ class ModelTrainingSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("tactician_model_training", config, artifacts)
         
-        # Automatically trigger the next sub-pipeline: hmm_training
-        self.logger.info("🔄 Tactician model training completed, triggering next: hmm_training")
+        # Automatically trigger the next sub-pipeline: ensemble_training
+        self.logger.info("🔄 Tactician model training completed, triggering next: ensemble_training")
         try:
-            next_artifacts = await self._hmm_training_pipeline(config)
+            next_artifacts = await self._ensemble_training_pipeline(config)
             # Merge artifacts from next pipeline
             artifacts.update(next_artifacts)
-            self.logger.info("✅ HMM training pipeline completed successfully")
+            self.logger.info("✅ Ensemble training pipeline completed successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to execute HMM training pipeline: {e}")
+            self.logger.error(f"❌ Failed to execute ensemble training pipeline: {e}")
         
         return artifacts
     
@@ -590,15 +521,15 @@ class ModelTrainingSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("hmm_training", config, artifacts)
         
-        # Automatically trigger the next sub-pipeline: ensemble_training
-        self.logger.info("🔄 HMM training completed, triggering next: ensemble_training")
+        # Automatically trigger the next sub-pipeline: analyst_model_training
+        self.logger.info("🔄 HMM training completed, triggering next: analyst_model_training")
         try:
-            next_artifacts = await self._ensemble_training_pipeline(config)
+            next_artifacts = await self._analyst_model_training_pipeline(config)
             # Merge artifacts from next pipeline
             artifacts.update(next_artifacts)
-            self.logger.info("✅ Ensemble training pipeline completed successfully")
+            self.logger.info("✅ Analyst model training pipeline completed successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to execute ensemble training pipeline: {e}")
+            self.logger.error(f"❌ Failed to execute analyst model training pipeline: {e}")
         
         return artifacts
     

@@ -15,6 +15,15 @@ from pathlib import Path
 
 from src.utils.logger import system_logger
 from src.utils.data.real_data_loader import real_data_loader
+from src.utils.intensity_scaler import (
+    get_intensity_from_environment, get_scaled_hpo_trials, 
+    get_scaled_hpo_timeout, log_intensity_info, apply_intensity_scaling
+)
+from src.training.steps.model_training.hmm_training_components import HyperparameterOptimizer
+from src.utils.ml_common.post_training.model_evaluation import ModelEvaluator, EvaluationConfig
+from src.utils.ml_common.post_training.model_validation import ModelValidator, ValidationConfig
+from src.utils.performance_utils import PerformanceMetrics
+from src.utils.comprehensive_function_logger import log_important_calls, log_all_calls
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +38,44 @@ class HMMTrainingPipeline:
         """
         self.config = config or {}
         self.logger = system_logger.getChild('HMMTrainingPipeline')
+        
+        # Apply intensity scaling
+        intensity_pct = get_intensity_from_environment()
+        if intensity_pct < 1.0:
+            self.config = apply_intensity_scaling(self.config, intensity_pct)
+            self.logger.info(f"🔧 Applied intensity scaling ({intensity_pct*100:.0f}%) to HMM training config")
+        
+        # Initialize HPO optimizer
+        hpo_config = self.config.get('hpo', {
+            'n_trials': 50,
+            'cv_folds': 5,
+            'timeout_minutes': 30
+        })
+        self.hpo_optimizer = HyperparameterOptimizer(hpo_config)
+        
+        # Initialize evaluation and validation systems
+        eval_config = EvaluationConfig(
+            enable_pre_hpo_evaluation=True,
+            enable_post_training_evaluation=True,
+            enable_cross_validation=True,
+            cv_folds=5,
+            test_size=0.2,
+            random_state=42
+        )
+        self.model_evaluator = ModelEvaluator(eval_config)
+        
+        val_config = ValidationConfig(
+            enable_cross_validation=True,
+            enable_holdout_validation=True,
+            cv_folds=5,
+            holdout_size=0.2,
+            random_state=42
+        )
+        self.model_validator = ModelValidator(val_config)
+        
+        # Performance tracking
+        self.performance_metrics = {}
+        self.training_start_time = None
         
     async def train_hmm_models(
         self,
@@ -54,6 +101,7 @@ class HMMTrainingPipeline:
             Training results dictionary with regime probabilities and confidence scores
         """
         try:
+            self.training_start_time = datetime.now()
             self.logger.info(f"🔄 Starting HMM training for {symbol}/{exchange}/{timeframe}")
             
             # Check if regime discovery results are available
@@ -79,9 +127,25 @@ class HMMTrainingPipeline:
                 market_data, symbol, exchange, timeframe
             )
             
-            # Train single HMM model that predicts regime membership probabilities
+            # Prepare training data for HPO
+            training_data = self._prepare_training_data(processed_data, regime_data)
+            
+            # Run hyperparameter optimization
+            hpo_results = await self._run_hyperparameter_optimization(training_data)
+            
+            # Train final model with optimized parameters
             hmm_model_results = await self._train_regime_probability_model(
-                processed_data, regime_data
+                processed_data, regime_data, hpo_results.get('best_params', {})
+            )
+            
+            # Run comprehensive model evaluation
+            evaluation_results = await self._run_model_evaluation(
+                hmm_model_results, training_data
+            )
+            
+            # Run model validation
+            validation_results = await self._run_model_validation(
+                hmm_model_results, training_data
             )
             
             # Calculate regime confidence scores
@@ -94,12 +158,17 @@ class HMMTrainingPipeline:
                 hmm_model_results, symbol, exchange, timeframe, data_dir
             )
             
-            # Calculate performance metrics
-            metrics = await self._calculate_hmm_metrics(
-                processed_data, hmm_model_results, confidence_scores
+            # Calculate comprehensive performance metrics
+            metrics = await self._calculate_comprehensive_metrics(
+                processed_data, hmm_model_results, confidence_scores, 
+                evaluation_results, validation_results, hpo_results
             )
             
-            self.logger.info("✅ HMM training completed successfully")
+            # Update performance tracking
+            self._update_performance_tracking(metrics)
+            
+            training_duration = (datetime.now() - self.training_start_time).total_seconds()
+            self.logger.info(f"✅ HMM training completed successfully in {training_duration:.2f}s")
             
             return {
                 'models': model_paths,
@@ -107,11 +176,17 @@ class HMMTrainingPipeline:
                 'regime_probabilities': hmm_model_results['regime_probabilities'],
                 'regime_confidence': confidence_scores,
                 'hmm_state_probs': hmm_model_results['hmm_state_probs'],
+                'evaluation_results': evaluation_results,
+                'validation_results': validation_results,
+                'hpo_results': hpo_results,
                 'performance': {
                     'regime_accuracy': metrics.get('regime_accuracy', 0.0),
                     'prediction_accuracy': metrics.get('prediction_accuracy', 0.0),
                     'data_points': len(processed_data),
-                    'n_regimes': hmm_model_results['n_regimes']
+                    'n_regimes': hmm_model_results['n_regimes'],
+                    'training_duration': training_duration,
+                    'hpo_trials': hpo_results.get('n_trials', 0),
+                    'best_hpo_score': hpo_results.get('best_score', 0.0)
                 }
             }
             
@@ -148,10 +223,140 @@ class HMMTrainingPipeline:
             'transition_matrix': pipeline_state.get('transition_matrix', None)
         }
     
+    def _prepare_training_data(self, market_data: pd.DataFrame, regime_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare training data for HPO and evaluation."""
+        try:
+            features = self._prepare_training_features(market_data)
+            regime_labels = np.array(regime_data['regime_states'])
+            
+            # Align data lengths
+            min_len = min(len(features), len(regime_labels))
+            features = features.iloc[:min_len]
+            regime_labels = regime_labels[:min_len]
+            
+            # Split data
+            from sklearn.model_selection import train_test_split
+            X_train, X_test, y_train, y_test = train_test_split(
+                features, regime_labels, test_size=0.2, random_state=42, stratify=regime_labels
+            )
+            
+            return {
+                'X_train': X_train,
+                'X_test': X_test,
+                'y_train': y_train,
+                'y_test': y_test,
+                'feature_names': features.columns.tolist(),
+                'n_regimes': len(np.unique(regime_labels))
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error preparing training data: {e}")
+            raise
+    
+    @log_important_calls
+    async def _run_hyperparameter_optimization(self, training_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Run hyperparameter optimization for HMM models."""
+        try:
+            self.logger.info("🔍 Running hyperparameter optimization...")
+            
+            # Prepare data for HPO
+            hpo_data = {
+                'features': training_data['X_train'].values,
+                'labels': training_data['y_train'],
+                'feature_names': training_data['feature_names']
+            }
+            
+            # Run HPO for Random Forest
+            rf_hpo_results = await self.hpo_optimizer.optimize_hyperparameters('random_forest', hpo_data)
+            
+            # Run HPO for LightGBM if available
+            lgb_hpo_results = await self.hpo_optimizer.optimize_hyperparameters('lightgbm', hpo_data)
+            
+            # Select best model based on HPO scores
+            best_model = 'random_forest'
+            best_score = rf_hpo_results.get('best_score', 0.0)
+            best_params = rf_hpo_results.get('best_params', {})
+            
+            if lgb_hpo_results.get('best_score', 0.0) > best_score:
+                best_model = 'lightgbm'
+                best_score = lgb_hpo_results.get('best_score', 0.0)
+                best_params = lgb_hpo_results.get('best_params', {})
+            
+            self.logger.info(f"✅ HPO completed: best model={best_model}, score={best_score:.4f}")
+            
+            return {
+                'best_model': best_model,
+                'best_params': best_params,
+                'best_score': best_score,
+                'rf_results': rf_hpo_results,
+                'lgb_results': lgb_hpo_results,
+                'n_trials': self.hpo_optimizer.n_trials
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ HPO failed: {e}")
+            return {
+                'best_model': 'random_forest',
+                'best_params': {},
+                'best_score': 0.0,
+                'n_trials': 0
+            }
+    
+    @log_important_calls
+    async def _run_model_evaluation(self, hmm_model_results: Dict[str, Any], training_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Run comprehensive model evaluation."""
+        try:
+            self.logger.info("📊 Running model evaluation...")
+            
+            # Prepare evaluation data
+            eval_data = {
+                'X_test': training_data['X_test'],
+                'y_test': training_data['y_test'],
+                'model': hmm_model_results['model'],
+                'feature_names': training_data['feature_names']
+            }
+            
+            # Run evaluation
+            evaluation_results = await self.model_evaluator.evaluate_model(eval_data)
+            
+            self.logger.info(f"✅ Model evaluation completed: accuracy={evaluation_results.get('accuracy', 0.0):.4f}")
+            return evaluation_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Model evaluation failed: {e}")
+            return {'error': str(e)}
+    
+    @log_important_calls
+    async def _run_model_validation(self, hmm_model_results: Dict[str, Any], training_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Run model validation."""
+        try:
+            self.logger.info("🔍 Running model validation...")
+            
+            # Prepare validation data
+            val_data = {
+                'X_train': training_data['X_train'],
+                'y_train': training_data['y_train'],
+                'X_test': training_data['X_test'],
+                'y_test': training_data['y_test'],
+                'model': hmm_model_results['model'],
+                'feature_names': training_data['feature_names']
+            }
+            
+            # Run validation
+            validation_results = await self.model_validator.validate_model(val_data)
+            
+            self.logger.info(f"✅ Model validation completed: valid={validation_results.get('is_valid', False)}")
+            return validation_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Model validation failed: {e}")
+            return {'error': str(e), 'is_valid': False}
+    
     async def _train_regime_probability_model(
         self, 
         market_data: pd.DataFrame, 
-        regime_data: Dict[str, Any]
+        regime_data: Dict[str, Any],
+        hpo_params: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """Train a single HMM model that predicts regime membership probabilities."""
         try:
@@ -183,15 +388,22 @@ class HMMTrainingPipeline:
                 features_scaled, regime_labels, test_size=0.2, random_state=42, stratify=regime_labels
             )
             
+            # Use HPO parameters if available
+            rf_params = {
+                'n_estimators': 100,
+                'max_depth': 15,
+                'min_samples_split': 5,
+                'min_samples_leaf': 2,
+                'random_state': 42,
+                'n_jobs': -1
+            }
+            
+            if hpo_params:
+                rf_params.update(hpo_params)
+                self.logger.info(f"🔧 Using HPO parameters: {hpo_params}")
+            
             # Train Random Forest for regime classification
-            rf_model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=15,
-                min_samples_split=5,
-                min_samples_leaf=2,
-                random_state=42,
-                n_jobs=-1
-            )
+            rf_model = RandomForestClassifier(**rf_params)
             rf_model.fit(X_train, y_train)
             
             # Get predictions and probabilities
@@ -368,14 +580,18 @@ class HMMTrainingPipeline:
             self.logger.error(f"❌ Error saving HMM models: {e}")
             raise
     
-    async def _calculate_hmm_metrics(
+    async def _calculate_comprehensive_metrics(
         self,
         market_data: pd.DataFrame,
         hmm_model_results: Dict[str, Any],
-        confidence_scores: np.ndarray
+        confidence_scores: np.ndarray,
+        evaluation_results: Dict[str, Any],
+        validation_results: Dict[str, Any],
+        hpo_results: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Calculate HMM training metrics."""
+        """Calculate comprehensive HMM training metrics."""
         try:
+            # Basic metrics
             metrics = {
                 'regime_accuracy': hmm_model_results.get('accuracy', 0.0),
                 'prediction_accuracy': hmm_model_results.get('accuracy', 0.0),
@@ -387,18 +603,95 @@ class HMMTrainingPipeline:
                 'max_confidence': float(np.max(confidence_scores))
             }
             
+            # HPO metrics
+            metrics.update({
+                'hpo_best_score': hpo_results.get('best_score', 0.0),
+                'hpo_best_model': hpo_results.get('best_model', 'unknown'),
+                'hpo_trials': hpo_results.get('n_trials', 0),
+                'hpo_improvement': hpo_results.get('best_score', 0.0) - 0.5  # Baseline improvement
+            })
+            
+            # Evaluation metrics
+            if 'error' not in evaluation_results:
+                metrics.update({
+                    'evaluation_accuracy': evaluation_results.get('accuracy', 0.0),
+                    'evaluation_f1': evaluation_results.get('f1_score', 0.0),
+                    'evaluation_precision': evaluation_results.get('precision', 0.0),
+                    'evaluation_recall': evaluation_results.get('recall', 0.0),
+                    'evaluation_auc': evaluation_results.get('auc_score', 0.0)
+                })
+            
+            # Validation metrics
+            if 'error' not in validation_results:
+                metrics.update({
+                    'validation_passed': validation_results.get('is_valid', False),
+                    'validation_score': validation_results.get('validation_score', 0.0),
+                    'cross_validation_mean': validation_results.get('cv_mean_score', 0.0),
+                    'cross_validation_std': validation_results.get('cv_std_score', 0.0)
+                })
+            
             # Regime distribution
             regime_predictions = hmm_model_results.get('regime_predictions', [])
             if len(regime_predictions) > 0:
                 unique_regimes, counts = np.unique(regime_predictions, return_counts=True)
                 regime_distribution = {f'regime_{regime}': int(count) for regime, count in zip(unique_regimes, counts)}
                 metrics['regime_distribution'] = regime_distribution
+                
+                # Regime balance metrics
+                regime_balance = np.std(counts) / np.mean(counts) if len(counts) > 1 else 0.0
+                metrics['regime_balance'] = float(regime_balance)
+            
+            # Performance timing
+            if self.training_start_time:
+                training_duration = (datetime.now() - self.training_start_time).total_seconds()
+                metrics['training_duration'] = training_duration
+                metrics['samples_per_second'] = len(market_data) / max(training_duration, 1.0)
+            
+            # Model complexity metrics
+            if 'model' in hmm_model_results:
+                model = hmm_model_results['model']
+                if hasattr(model, 'n_estimators'):
+                    metrics['model_complexity'] = model.n_estimators
+                if hasattr(model, 'feature_importances_'):
+                    feature_importance_entropy = -np.sum(model.feature_importances_ * np.log(model.feature_importances_ + 1e-10))
+                    metrics['feature_importance_entropy'] = float(feature_importance_entropy)
             
             return metrics
             
         except Exception as e:
-            self.logger.error(f"❌ Error calculating HMM metrics: {e}")
+            self.logger.error(f"❌ Error calculating comprehensive metrics: {e}")
             return {'error': str(e)}
+    
+    @log_all_calls
+    def _update_performance_tracking(self, metrics: Dict[str, Any]) -> None:
+        """Update performance tracking with latest metrics."""
+        try:
+            # Store key performance metrics
+            self.performance_metrics.update({
+                'last_training_time': datetime.now().isoformat(),
+                'regime_accuracy': metrics.get('regime_accuracy', 0.0),
+                'prediction_accuracy': metrics.get('prediction_accuracy', 0.0),
+                'hpo_best_score': metrics.get('hpo_best_score', 0.0),
+                'validation_passed': metrics.get('validation_passed', False),
+                'training_duration': metrics.get('training_duration', 0.0),
+                'n_regimes': metrics.get('n_regimes', 0),
+                'total_samples': metrics.get('total_samples', 0)
+            })
+            
+            # Log performance summary
+            self.logger.info(f"📊 Performance Summary:")
+            self.logger.info(f"   - Regime Accuracy: {metrics.get('regime_accuracy', 0.0):.4f}")
+            self.logger.info(f"   - HPO Best Score: {metrics.get('hpo_best_score', 0.0):.4f}")
+            self.logger.info(f"   - Validation Passed: {metrics.get('validation_passed', False)}")
+            self.logger.info(f"   - Training Duration: {metrics.get('training_duration', 0.0):.2f}s")
+            self.logger.info(f"   - Regimes: {metrics.get('n_regimes', 0)}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error updating performance tracking: {e}")
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get current performance tracking summary."""
+        return self.performance_metrics.copy()
 
 # Global instance for convenience
 hmm_training_pipeline = HMMTrainingPipeline()

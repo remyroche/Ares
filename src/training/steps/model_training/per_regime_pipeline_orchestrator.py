@@ -564,31 +564,30 @@ class PerRegimePipelineOrchestrator:
         self.continuity_validator = RegimeContinuityValidator(self.config)
         self.pipeline_integrator = PerRegimePipelineIntegrator(self.config)
         
-        # Define pipeline steps based on current training pipeline structure
-        # Note: HMM training has been moved to MARKET_ANALYSIS stage
+        # Define pipeline steps based on final MODEL_TRAINING structure
+        # Only 4 required steps remain in MODEL_TRAINING stage
         self.pipeline_steps = [
-            'general_model_training',      # General ML models
-            'analyst_model_training',      # Analyst-specific models  
-            'tactician_model_training',    # Tactician-specific models
-            'ensemble_training',          # Ensemble model training
-            'multi_timeframe_training'    # Multi-timeframe model training
+            'analyst_models_training',      # Per-regime individual model training
+            'analyst_ensemble_training',    # Per-regime ensemble training
+            'tactician_models_training',    # All-regime individual model training
+            'tactician_ensemble_training'   # All-regime ensemble training
         ]
         
         # Steps that require per-regime processing (uses HMM-retagged regimes from MARKET_ANALYSIS)
         self.per_regime_steps = [
-            'analyst_model_training',      # Uses HMM-retagged regimes from MARKET_ANALYSIS
-            'tactician_model_training',    # Uses HMM-retagged regimes from MARKET_ANALYSIS
-            'ensemble_training',          # Uses HMM-retagged regimes from MARKET_ANALYSIS
-            'multi_timeframe_training'    # Uses HMM-retagged regimes from MARKET_ANALYSIS
+            'analyst_models_training',      # Per-regime individual models
+            'analyst_ensemble_training'     # Per-regime ensemble models
         ]
         
-        # Steps that use original MARKET_ANALYSIS regimes
-        self.market_analysis_regime_steps = [
-            'general_model_training'      # Uses original MARKET_ANALYSIS regimes
+        # Steps that use all-regime processing (uses all data regardless of regime)
+        self.all_regime_steps = [
+            'tactician_models_training',    # All-regime individual models
+            'tactician_ensemble_training'   # All-regime ensemble models
         ]
         
-        # HMM training is now handled in MARKET_ANALYSIS stage
-        self.regime_retagging_steps = []  # No longer needed in MODEL_TRAINING
+        # No longer needed in final MODEL_TRAINING structure
+        self.market_analysis_regime_steps = []
+        self.regime_retagging_steps = []
     @log_all_calls
 
     def _load_per_regime_config(self) -> None:
@@ -669,13 +668,13 @@ class PerRegimePipelineOrchestrator:
                 try:
                     # Determine step execution type based on regime requirements
                     if step_name in self.per_regime_steps:
-                        # Steps that use HMM-retagged regimes from MARKET_ANALYSIS
+                        # Steps that use per-regime processing (analyst models)
                         step_success = await self._execute_per_regime_step(
                             step_name, symbol, exchange, timeframe, data_dir, force_rerun
                         )
-                    elif step_name in self.market_analysis_regime_steps:
-                        # Steps that use original MARKET_ANALYSIS regimes
-                        step_success = await self._execute_market_analysis_regime_step(
+                    elif step_name in self.all_regime_steps:
+                        # Steps that use all-regime processing (tactician models)
+                        step_success = await self._execute_all_regime_step(
                             step_name, symbol, exchange, timeframe, data_dir, force_rerun
                         )
                     else:
@@ -817,8 +816,8 @@ class PerRegimePipelineOrchestrator:
         try:
             self.logger.info(f'🔄 Executing per-regime step (HMM-retagged): {step_name}')
             
-            # Execute using the actual sub-pipeline structure
-            from .sub_pipeline import ModelTrainingSubPipeline, SubPipelineConfig
+            # Execute using the final sub-pipeline structure
+            from .sub_pipeline_final import ModelTrainingSubPipelineFinal, SubPipelineConfig
             
             # Create sub-pipeline configuration
             sub_config = SubPipelineConfig(
@@ -832,7 +831,7 @@ class PerRegimePipelineOrchestrator:
             )
             
             # Execute the specific sub-pipeline
-            sub_pipeline = ModelTrainingSubPipeline(sub_config)
+            sub_pipeline = ModelTrainingSubPipelineFinal(sub_config)
             result = await sub_pipeline.execute_sub_pipeline(step_name, sub_config)
             
             # Check if step completed successfully
@@ -905,6 +904,62 @@ class PerRegimePipelineOrchestrator:
                 
         except Exception as e:
             self.logger.exception(f'❌ Error executing regime re-tagging step {step_name}: {e}')
+            return False
+
+    @log_all_calls
+    async def _execute_all_regime_step(
+        self, 
+        step_name: str, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        data_dir: str, 
+        force_rerun: bool
+    ) -> bool:
+        """Execute a step with all-regime processing (tactician models).
+        
+        Args:
+            step_name: Name of the step
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            data_dir: Data directory
+            force_rerun: Force rerun flag
+            
+        Returns:
+            True if successful
+        """
+        try:
+            self.logger.info(f'🔄 Executing all-regime step (tactician models): {step_name}')
+            
+            # Execute using the final sub-pipeline structure
+            from .sub_pipeline_final import ModelTrainingSubPipelineFinal, SubPipelineConfig
+            
+            # Create sub-pipeline configuration
+            sub_config = SubPipelineConfig(
+                mode=self.config.get('mode', 'full'),
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                force_rerun=force_rerun,
+                custom_params=self.config
+            )
+            
+            # Execute the specific sub-pipeline
+            sub_pipeline = ModelTrainingSubPipelineFinal(sub_config)
+            result = await sub_pipeline.execute_sub_pipeline(step_name, sub_config)
+            
+            # Check if step completed successfully
+            if result.status.value == 'completed':
+                self.logger.info(f'✅ All-regime step {step_name} completed successfully')
+                return True
+            else:
+                self.logger.error(f'❌ All-regime step {step_name} failed: {result.error_message}')
+                return False
+                
+        except Exception as e:
+            self.logger.error(f'❌ Error executing all-regime step {step_name}: {e}')
             return False
 
     @log_all_calls

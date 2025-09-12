@@ -278,7 +278,6 @@ class ValidatorOrchestrator:
             'analyst_model_training': 'analyst_model_training_validator',
             'tactician_model_training': 'tactician_model_training_validator',
             # Legacy step names for backward compatibility
-            'step09_hmm_based_training': 'general_model_training_validator',
             'step09_5_multi_timeframe_hmm_ensemble': 'general_model_training_validator',
             'step09_5_hmm_lm_generalist_training': 'general_model_training_validator',
             'step10_unified_regime_intelligence': 'general_model_training_validator',

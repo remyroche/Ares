@@ -66,7 +66,7 @@ class PerRegimePipelineOrchestrator:
         # self.continuity_validator = regime_continuity_validator
         # self.pipeline_integrator = PerRegimePipelineIntegrator(self.config)
         # self.regime_handler = regime_handler
-        self.pipeline_steps = ['step04_regime_data_splitting', 'step05_labeling', 'step06_feature_engineering', 'step07_enhanced_matrix_operations', 'step08_advanced_feature_selection', 'step09_hmm_based_training', 'step10_unified_regime_intelligence', 'step11_analyst_creation', 'step12_analyst_enhancement', 'step13_analyst_ensemble_creation', 'step14_tactician_labeling', 'step15_tactician_specialist_training', 'step16_confidence_calibration', 'step17_final_parameters_optimization', 'step18_walk_forward_validation', 'step19_monte_carlo_validation', 'step20_ab_testing', 'step21_saving']
+        self.pipeline_steps = ['step04_regime_data_splitting', 'step05_labeling', 'step06_feature_engineering', 'step07_enhanced_matrix_operations', 'step08_advanced_feature_selection', 'step10_unified_regime_intelligence', 'step11_analyst_creation', 'step12_analyst_enhancement', 'step13_analyst_ensemble_creation', 'step14_tactician_labeling', 'step15_tactician_specialist_training', 'step16_confidence_calibration', 'step17_final_parameters_optimization', 'step18_walk_forward_validation', 'step19_monte_carlo_validation', 'step20_ab_testing', 'step21_saving']
         self.per_regime_steps = [step for step in self.pipeline_steps if step != 'step04_regime_data_splitting']
     @log_all_calls
 

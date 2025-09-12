@@ -39,7 +39,6 @@ class StepValidationInitializer:
             'analyst_model_training': {'module': 'src.training.steps.model_training.simplified.analyst_model_training', 'class': 'AnalystModelTrainer', 'priority': 10},
             'tactician_model_training': {'module': 'src.training.steps.model_training.simplified.tactician_model_training', 'class': 'TacticianModelTrainer', 'priority': 11},
             # Legacy step names for backward compatibility
-            'step09_hmm_based_training': {'module': 'src.training.steps.model_training.simplified.general_model_training', 'class': 'GeneralModelTrainer', 'priority': 9},
             'step10_unified_regime_intelligence': {'module': 'src.training.steps.model_training.simplified.general_model_training', 'class': 'GeneralModelTrainer', 'priority': 10},
             'step11_analyst_creation': {'module': 'src.training.steps.model_training.simplified.analyst_model_training', 'class': 'AnalystModelTrainer', 'priority': 11},
             'step12_analyst_enhancement': {'module': 'src.training.steps.model_training.simplified.analyst_model_training', 'class': 'AnalystModelTrainer', 'priority': 12},

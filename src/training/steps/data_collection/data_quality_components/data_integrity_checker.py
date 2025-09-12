@@ -1,12 +1,17 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Data Integrity Checker Component
-from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 Validates data integrity and logical consistency for market data.
 Extracted from raw_data_quality_checker.py
 """
+
 from typing import Any, Optional, Tuple
+from datetime import timedelta
+import pandas as pd
+import logging
+import numpy as np
+
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from datetime import timedelta
 from src.utils.logger import system_logger
 

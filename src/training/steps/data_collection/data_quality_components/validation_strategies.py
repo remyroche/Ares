@@ -1,23 +1,23 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Validation Strategies Component
-from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 Contains validation strategy classes for different types of data validation.
 Extracted from raw_data_quality_checker.py
 """
+
 from datetime import timedelta
 from typing import Any, Optional
 import pandas as pd
-
-from src.utils.logger import system_logger
 import logging
 import numpy as np
 
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+
 class ValidationStrategy:
     """Base class for validation strategies."""
-    @log_important_calls
     
+    @log_important_calls
     def __init__(self, config: Optional[dict[str, Any]] = None):
         self.config = config or {}
         self.logger = system_logger.getChild(self.__class__.__name__)
@@ -32,7 +32,27 @@ class ValidationStrategy:
         Returns:
             True if validation passed, False otherwise
         """
-        raise NotImplementedError
+        # Base implementation - can be overridden by subclasses
+        self.logger.info(f'Running base validation strategy: {self.__class__.__name__}')
+        
+        # Basic validation that all strategies should perform
+        if data is None:
+            results['critical_issues'].append('Data is None')
+            return False
+            
+        if data.empty:
+            results['critical_issues'].append('Data is empty')
+            return False
+            
+        # Check if results dictionary has required structure
+        if 'critical_issues' not in results:
+            results['critical_issues'] = []
+        if 'warnings' not in results:
+            results['warnings'] = []
+        if 'detailed_analysis' not in results:
+            results['detailed_analysis'] = {}
+            
+        return True
 
 class StructureValidationStrategy(ValidationStrategy):
     """Validates data structure and basic requirements."""

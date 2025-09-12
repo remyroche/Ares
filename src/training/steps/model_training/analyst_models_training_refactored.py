@@ -36,7 +36,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             config = PerRegimeTrainingConfig(
                 model_name="analyst_models",
                 timeframe="5m",
-                model_types=["TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor"],
+                model_types=["TEMPORAL_FUSION_TRANSFORMER", "TABNET", "HIST_GRADIENT_BOOSTING", "EXTRA_TREES"],
                 hpo_n_trials=100,
                 hpo_timeout_seconds=3600,
                 min_samples_per_regime=1000,
@@ -176,7 +176,7 @@ if __name__ == "__main__":
     config = PerRegimeTrainingConfig(
         model_name="analyst_models",
         timeframe="5m",
-        model_types=["TCN", "CatBoostRegressor", "LGBMRegressor"],
+        model_types=["TEMPORAL_FUSION_TRANSFORMER", "TABNET", "HIST_GRADIENT_BOOSTING"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,

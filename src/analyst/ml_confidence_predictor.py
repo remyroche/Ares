@@ -681,7 +681,7 @@ class MLConfidencePredictor:
         if not tactician_models:
             self.logger.warning('No tactician models available in enhanced training manager')
             return
-        for model_name in ['lstm', 'tcn', 'transformer']:
+        for model_name in ['lstm', 'wavenet', 'tft']:
             model_key = f'1m_{model_name}'
             if model_key in tactician_models:
                 for level in self.adversarial_movement_levels:
@@ -1429,7 +1429,7 @@ class MLConfidencePredictor:
                 return {'success': False, 'error': 'Enhanced training manager not available'}
             if not force_training and (not self._should_trigger_training()):
                 return {'success': False, 'reason': 'Training conditions not met', 'last_training': self.last_training_time, 'performance_degradation': self._calculate_performance_degradation()}
-            training_input = {'symbol': 'ETHUSDT', 'exchange': 'binance', 'timeframes': self.analyst_timeframes + self.tactician_timeframes, 'training_data': training_data, 'training_type': training_type, 'model_types': {'analyst': ['tcn', 'tabnet', 'transformer'], 'tactician': ['lstm', 'tcn', 'transformer']}, 'enable_ensemble_training': self.training_config.get('enable_ensemble_training', True), 'enable_multi_timeframe_training': self.training_config.get('enable_multi_timeframe_training', True), 'enable_dual_model_training': self.training_config.get('enable_dual_model_training', True), 'enable_confidence_calibration': self.training_config.get('enable_confidence_calibration', True)}
+            training_input = {'symbol': 'ETHUSDT', 'exchange': 'binance', 'timeframes': self.analyst_timeframes + self.tactician_timeframes, 'training_data': training_data, 'training_type': training_type, 'model_types': {'analyst': ['tft', 'tabnet', 'hist_gb'], 'tactician': ['tabnet_attention', 'xgboost_custom', 'hist_gb']}, 'enable_ensemble_training': self.training_config.get('enable_ensemble_training', True), 'enable_multi_timeframe_training': self.training_config.get('enable_multi_timeframe_training', True), 'enable_dual_model_training': self.training_config.get('enable_dual_model_training', True), 'enable_confidence_calibration': self.training_config.get('enable_confidence_calibration', True)}
             training_success = await self.enhanced_training_manager.execute_enhanced_training(training_input)
             if training_success:
                 self.last_training_time = datetime.now()

@@ -142,6 +142,168 @@ class TCNRegimePredictor:
         return y_pred_proba_padded
 
 
+class WaveNetRegimePredictor:
+    """WaveNet-based regime predictor with dilated causal convolutions."""
+    
+    def __init__(self, sequence_length: int = 20, n_regimes: int = 3, 
+                 dilations: list = [1, 2, 4, 8, 16, 32, 64],
+                 residual_channels: int = 64, skip_channels: int = 64,
+                 kernel_size: int = 3, dropout_rate: float = 0.2):
+        """Initialize WaveNet regime predictor."""
+        self.sequence_length = sequence_length
+        self.n_regimes = n_regimes
+        self.dilations = dilations
+        self.residual_channels = residual_channels
+        self.skip_channels = skip_channels
+        self.kernel_size = kernel_size
+        self.dropout_rate = dropout_rate
+        self.model = None
+        self.scaler = StandardScaler()
+        
+    def _create_sequences(self, X: np.ndarray, y: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
+        """Create sequences for WaveNet training."""
+        X_seq, y_seq = [], []
+        
+        for i in range(self.sequence_length, len(X)):
+            X_seq.append(X[i-self.sequence_length:i])
+            if y is not None:
+                y_seq.append(y[i])
+        
+        X_seq = np.array(X_seq)
+        y_seq = np.array(y_seq) if y is not None else None
+        
+        return X_seq, y_seq
+    
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        """Train WaveNet model."""
+        # Scale features
+        X_scaled = self.scaler.fit_transform(X)
+        
+        # Create sequences
+        X_seq, y_seq = self._create_sequences(X_scaled, y)
+        
+        # Build WaveNet model
+        from tensorflow.keras.models import Sequential
+        from tensorflow.keras.layers import Conv1D, BatchNormalization, Dropout, Dense, Add, Activation
+        from tensorflow.keras.optimizers import Adam
+        from tensorflow.keras.callbacks import EarlyStopping
+        
+        # This is a simplified WaveNet implementation
+        self.model = Sequential([
+            Conv1D(filters=self.residual_channels, kernel_size=self.kernel_size, 
+                   activation='relu', input_shape=(self.sequence_length, X.shape[1]), 
+                   padding='causal'),
+            BatchNormalization(),
+            Dropout(self.dropout_rate),
+            # Dilated convolutions
+            Conv1D(filters=self.residual_channels, kernel_size=self.kernel_size, 
+                   activation='relu', padding='causal', dilation_rate=2),
+            BatchNormalization(),
+            Dropout(self.dropout_rate),
+            Conv1D(filters=self.residual_channels, kernel_size=self.kernel_size, 
+                   activation='relu', padding='causal', dilation_rate=4),
+            BatchNormalization(),
+            Dropout(self.dropout_rate),
+            Conv1D(filters=self.residual_channels, kernel_size=self.kernel_size, 
+                   activation='relu', padding='causal', dilation_rate=8),
+            BatchNormalization(),
+            Dropout(self.dropout_rate),
+            # Global pooling and output
+            Dense(64, activation='relu'),
+            Dropout(self.dropout_rate),
+            Dense(self.n_regimes, activation='softmax')
+        ])
+        
+        # Compile model
+        self.model.compile(
+            optimizer=Adam(learning_rate=0.001),
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        
+        # Train model
+        early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+        
+        self.model.fit(
+            X_seq, y_seq,
+            epochs=100,
+            batch_size=32,
+            validation_split=0.2,
+            callbacks=[early_stopping],
+            verbose=0
+        )
+        
+        return self
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict regime classes."""
+        if self.model is None:
+            raise ValueError("Model not trained yet")
+        
+        # Scale features
+        X_scaled = self.scaler.transform(X)
+        
+        # Create sequences
+        X_seq, _ = self._create_sequences(X_scaled)
+        
+        # Predict
+        y_pred_proba = self.model.predict(X_seq, verbose=0)
+        y_pred = np.argmax(y_pred_proba, axis=1)
+        
+        # Pad predictions to match original length
+        y_pred_padded = np.zeros(len(X))
+        y_pred_padded[self.sequence_length:] = y_pred
+        
+        return y_pred_padded
+
+
+class QuantileRegression:
+    """Quantile Regression for risk-aware regime prediction."""
+    
+    def __init__(self, quantiles: list = [0.05, 0.25, 0.5, 0.75, 0.95], 
+                 alpha: float = 0.1, solver: str = 'highs'):
+        """Initialize Quantile Regression."""
+        self.quantiles = quantiles
+        self.alpha = alpha
+        self.solver = solver
+        self.models = {}
+        self.is_fitted = False
+        
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        """Train quantile regression models for each quantile."""
+        from sklearn.linear_model import QuantileRegressor
+        
+        for quantile in self.quantiles:
+            model = QuantileRegressor(
+                quantile=quantile,
+                alpha=self.alpha,
+                solver=self.solver
+            )
+            model.fit(X, y)
+            self.models[quantile] = model
+        
+        self.is_fitted = True
+        return self
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict using median quantile (0.5)."""
+        if not self.is_fitted:
+            raise ValueError("Model not trained yet")
+        
+        return self.models[0.5].predict(X)
+    
+    def predict_quantiles(self, X: np.ndarray) -> dict:
+        """Predict all quantiles."""
+        if not self.is_fitted:
+            raise ValueError("Model not trained yet")
+        
+        predictions = {}
+        for quantile, model in self.models.items():
+            predictions[quantile] = model.predict(X)
+        
+        return predictions
+
+
 class HMMModelsTrainingRefactored(BaseTrainingStep):
     """HMM base models training for regime prediction using common dependencies."""
     
@@ -159,7 +321,7 @@ class HMMModelsTrainingRefactored(BaseTrainingStep):
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
-                model_types=["logistic_regression", "lightgbm", "tcn"],
+                model_types=["quantile_regression", "hist_gradient_boosting", "wavenet"],
                 hpo_trials=100,
                 enable_multi_objective=True,
                 objectives=["accuracy", "f1_score", "regime_stability"],
@@ -194,41 +356,45 @@ class HMMModelsTrainingRefactored(BaseTrainingStep):
         self.logger.info("✅ HMM Models Training (Refactored) initialized")
     
     def get_base_models(self, is_classification: bool, n_regimes: int) -> Dict[str, Any]:
-        """Get specific base models: Logistic Regression + LightGBM + TCN."""
+        """Get specific base models: Quantile Regression + HistGradientBoosting + WaveNet."""
         from sklearn.linear_model import LogisticRegression, Ridge
+        from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
         import lightgbm as lgb
         
         if is_classification:
             models = {
-                'logistic_regression': LogisticRegression(
-                    C=1.0, max_iter=1000, random_state=42,
-                    class_weight='balanced', multi_class='ovr'
+                'quantile_regression': QuantileRegression(
+                    quantiles=[0.05, 0.25, 0.5, 0.75, 0.95],
+                    alpha=0.1, solver='highs'
                 ),
-                'lightgbm': lgb.LGBMClassifier(
-                    n_estimators=200, num_leaves=31, learning_rate=0.05,
-                    feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=5,
-                    random_state=42, n_jobs=-1, class_weight='balanced'
+                'hist_gradient_boosting': HistGradientBoostingClassifier(
+                    max_iter=100, max_leaf_nodes=31,
+                    min_samples_leaf=20, random_state=42
                 ),
-                'tcn': TCNRegimePredictor(
+                'wavenet': WaveNetRegimePredictor(
                     sequence_length=self.config.sequence_length,
                     n_regimes=n_regimes,
-                    hidden_units=50,
-                    dropout_rate=0.2
+                    dilations=[1, 2, 4, 8, 16, 32, 64],
+                    residual_channels=64,
+                    skip_channels=64
                 )
             }
         else:
             models = {
-                'ridge': Ridge(alpha=1.0, random_state=42),
-                'lightgbm': lgb.LGBMRegressor(
-                    n_estimators=200, num_leaves=31, learning_rate=0.05,
-                    feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=5,
-                    random_state=42, n_jobs=-1
+                'quantile_regression': QuantileRegression(
+                    quantiles=[0.05, 0.25, 0.5, 0.75, 0.95],
+                    alpha=0.1, solver='highs'
                 ),
-                'tcn': TCNRegimePredictor(
+                'hist_gradient_boosting': HistGradientBoostingRegressor(
+                    max_iter=100, max_leaf_nodes=31,
+                    min_samples_leaf=20, random_state=42
+                ),
+                'wavenet': WaveNetRegimePredictor(
                     sequence_length=self.config.sequence_length,
                     n_regimes=n_regimes,
-                    hidden_units=50,
-                    dropout_rate=0.2
+                    dilations=[1, 2, 4, 8, 16, 32, 64],
+                    residual_channels=64,
+                    skip_channels=64
                 )
             }
         
@@ -429,7 +595,7 @@ if __name__ == "__main__":
         n_features=50,  # Reduced for demo
         sequence_length=20,
         n_regimes=3,
-        model_types=["logistic_regression", "lightgbm", "tcn"],
+        model_types=["quantile_regression", "hist_gradient_boosting", "wavenet"],
         hpo_trials=50,  # Reduced for demo
         enable_multi_objective=True
     )

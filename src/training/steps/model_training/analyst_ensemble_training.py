@@ -110,10 +110,10 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         from sklearn.linear_model import LinearRegression
         
         mock_models = {
-            'tcn_model': RandomForestRegressor(n_estimators=10, random_state=42),
-            'catboost_model': RandomForestRegressor(n_estimators=10, random_state=43),
-            'lightgbm_model': RandomForestRegressor(n_estimators=10, random_state=44),
-            'rf_model': RandomForestRegressor(n_estimators=10, random_state=45)
+            'tft_model': RandomForestRegressor(n_estimators=10, random_state=42),
+            'tabnet_model': RandomForestRegressor(n_estimators=10, random_state=43),
+            'hist_gb_model': RandomForestRegressor(n_estimators=10, random_state=44),
+            'extratrees_model': RandomForestRegressor(n_estimators=10, random_state=45)
         }
         
         self.logger.info(f"📊 Created {len(mock_models)} mock base models for ensemble training")

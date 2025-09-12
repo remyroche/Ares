@@ -54,33 +54,33 @@ performance_monitor:
 # Regime-Specific Model Performance Multipliers
 regime_performance_multipliers:
   BULL:
-    tcn: 1.1
+    wavenet: 1.1
     transformer: 1.0
     lstm: 0.9
     tabnet: 1.0
   BEAR:
-    tcn: 0.9
+    wavenet: 0.9
     transformer: 1.1
     lstm: 1.0
-    tcn: 1.0
+    wavenet: 1.0
     tabnet: 0.9
   SIDEWAYS:
-    tcn: 1.0
+    wavenet: 1.0
     transformer: 1.0
     lstm: 1.1
-    tcn: 1.0
+    wavenet: 1.0
     tabnet: 1.0
   SR:
-    tcn: 1.2
+    wavenet: 1.2
     transformer: 1.0
     lstm: 0.8
-    tcn: 0.8
+    wavenet: 0.8
     tabnet: 1.1
   CANDLE:
-    tcn: 0.9
+    wavenet: 0.9
     transformer: 1.2
     lstm: 1.0
-    tcn: 1.0
+    wavenet: 1.0
     tabnet: 0.9
 
 # System Health Thresholds

@@ -38,7 +38,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             config = EnsembleTrainingConfig(
                 model_name="tactician_ensemble_models",
                 timeframe="1m",
-                model_types=["VotingRegressor", "StackingRegressor", "BaggingRegressor", "AdaBoostRegressor"],
+                model_types=["TABNET_ATTENTION", "XGBOOST_CUSTOM", "HIST_GRADIENT_BOOSTING", "ELASTIC_NET_QUANTILE"],
                 hpo_n_trials=100,
                 hpo_timeout_seconds=3600,
                 min_samples_per_regime=1000,
@@ -342,7 +342,7 @@ if __name__ == "__main__":
     config = EnsembleTrainingConfig(
         model_name="tactician_ensemble_models",
         timeframe="1m",
-        model_types=["VotingRegressor", "StackingRegressor", "BaggingRegressor", "AdaBoostRegressor"],
+        model_types=["TABNET_ATTENTION", "XGBOOST_CUSTOM", "HIST_GRADIENT_BOOSTING", "ELASTIC_NET_QUANTILE"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,

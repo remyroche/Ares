@@ -1362,38 +1362,38 @@ class DynamicWeighter:
         """Get base weights for models in a specific regime."""
         regime_weights = {
             "BULL": {
-                "tcn": 0.4,
+                "wavenet": 0.4,
                 "transformer": 0.3,
                 "lstm": 0.3,
-                "tcn": 0.2,
+                "wavenet": 0.2,
                 "tabnet": 0.3,
             },
             "BEAR": {
-                "tcn": 0.3,
+                "wavenet": 0.3,
                 "transformer": 0.4,
                 "lstm": 0.3,
-                "tcn": 0.3,
+                "wavenet": 0.3,
                 "tabnet": 0.2,
             },
             "SIDEWAYS": {
-                "tcn": 0.3,
+                "wavenet": 0.3,
                 "transformer": 0.3,
                 "lstm": 0.4,
-                "tcn": 0.3,
+                "wavenet": 0.3,
                 "tabnet": 0.3,
             },
             "SR": {
-                "tcn": 0.5,
+                "wavenet": 0.5,
                 "transformer": 0.3,
                 "lstm": 0.2,
-                "tcn": 0.2,
+                "wavenet": 0.2,
                 "tabnet": 0.4,
             },
             "CANDLE": {
-                "tcn": 0.3,
+                "wavenet": 0.3,
                 "transformer": 0.5,
                 "lstm": 0.3,
-                "tcn": 0.3,
+                "wavenet": 0.3,
                 "tabnet": 0.2,
             },
         }

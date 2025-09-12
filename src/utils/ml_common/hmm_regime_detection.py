@@ -1242,10 +1242,9 @@ class EnhancedHMMRegimeDetector:
                 # Calculate time differences
                 time_diffs = timestamps.diff().dt.total_seconds()
 
-                # Determine expected interval based on data characteristics
+                # Determine expected interval and data-type specific thresholds
                 expected_interval = self._determine_expected_interval(data, timestamps)
-                gap_threshold = expected_interval * 2  # Consider gaps 2x the expected interval as significant
-                download_threshold = expected_interval * 3  # Attempt download for gaps 3x the expected interval
+                gap_threshold, download_threshold = self._get_data_type_specific_thresholds(expected_interval)
 
                 self.logger.info(f"📊 Expected data interval: {expected_interval:.1f}s")
                 self.logger.info(f"📊 Gap detection threshold: {gap_threshold:.1f}s")
@@ -1258,38 +1257,8 @@ class EnhancedHMMRegimeDetector:
                 if len(large_gaps) > 0:
                     self.logger.info(f"📊 Found {len(large_gaps)} gaps larger than {gap_threshold:.1f}s")
 
-                    # Process each gap
-                    for idx in large_gaps.index:
-                        gap_size = large_gaps.loc[idx]
-
-                        if gap_size > download_threshold:  # Large gap - attempt download
-                            self.logger.info(f"📥 Large gap detected ({gap_size:.1f}s > {download_threshold:.1f}s) - attempting download")
-                            gap_start = timestamps.loc[idx-1]
-                            gap_end = timestamps.loc[idx]
-
-                            # Validate dates before attempting download
-                            current_time = pd.Timestamp.now(tz='UTC')
-                            if gap_start > current_time or gap_end > current_time:
-                                self.logger.warning(f"⚠️ Cannot download future data: gap from {gap_start} to {gap_end} (current: {current_time})")
-                                # Skip download and use interpolation
-                                data = self._interpolate_gap(data, idx, gap_size)
-                                continue
-
-                            # Attempt to download missing data
-                            downloaded_data = self._download_missing_data(gap_start, gap_end)
-
-                            if downloaded_data is not None and not downloaded_data.empty:
-                                self.logger.info(f"✅ Successfully downloaded {len(downloaded_data)} rows for gap")
-                                # Insert downloaded data
-                                data = self._insert_downloaded_data(data, downloaded_data, idx)
-                            else:
-                                self.logger.warning(f"❌ Failed to download data for gap - using interpolation")
-                                # Fall back to interpolation
-                                data = self._interpolate_gap(data, idx, gap_size)
-
-                        else:  # Medium gap - use interpolation
-                            self.logger.info(f"🔧 Gap detected ({gap_size:.1f}s) - using interpolation")
-                            data = self._interpolate_gap(data, idx, gap_size)
+                    # Batch process gaps for efficiency
+                    data = self._batch_process_gaps(data, large_gaps, timestamps, gap_threshold, download_threshold)
 
                     # Re-validate after gap filling
                     self.logger.info("🔄 Re-validating data after gap filling...")
@@ -1365,6 +1334,69 @@ class EnhancedHMMRegimeDetector:
             self.logger.warning(f"⚠️ Error determining expected interval: {e}, assuming 60s")
             return 60.0
 
+    def _get_data_type_specific_thresholds(self, expected_interval: float) -> Tuple[float, float]:
+        """Get data-type specific gap detection and download thresholds."""
+        try:
+            # Define thresholds based on data type
+            if expected_interval <= 2:
+                # Aggtrades data (1-2 second intervals)
+                data_type = "aggtrades"
+                gap_threshold = 0.5  # 0.5 seconds for aggtrades
+                download_threshold = 1.0  # 1 second for download attempts
+            elif expected_interval <= 90:
+                # Klines data (1 minute intervals)
+                data_type = "klines_1m"
+                gap_threshold = 60.0  # 1 minute for klines
+                download_threshold = 120.0  # 2 minutes for download attempts
+            elif expected_interval <= 600:
+                # Klines data (5 minute intervals)
+                data_type = "klines_5m"
+                gap_threshold = 300.0  # 5 minutes for klines
+                download_threshold = 600.0  # 10 minutes for download attempts
+            elif expected_interval <= 1800:
+                # Klines data (15-30 minute intervals)
+                data_type = "klines_15m_30m"
+                gap_threshold = 900.0  # 15 minutes for klines
+                download_threshold = 1800.0  # 30 minutes for download attempts
+            elif expected_interval <= 3600:
+                # Klines data (1 hour intervals)
+                data_type = "klines_1h"
+                gap_threshold = 1800.0  # 30 minutes for klines
+                download_threshold = 3600.0  # 1 hour for download attempts
+            elif expected_interval <= 14400:
+                # Klines data (4 hour intervals)
+                data_type = "klines_4h"
+                gap_threshold = 7200.0  # 2 hours for klines
+                download_threshold = 14400.0  # 4 hours for download attempts
+            elif expected_interval <= 28800:
+                # Futures data (8 hour intervals)
+                data_type = "futures_8h"
+                gap_threshold = 32400.0  # 9 hours for futures
+                download_threshold = 43200.0  # 12 hours for download attempts
+            elif expected_interval <= 86400:
+                # Daily data
+                data_type = "daily"
+                gap_threshold = 43200.0  # 12 hours for daily data
+                download_threshold = 86400.0  # 24 hours for download attempts
+            else:
+                # Weekly/monthly data
+                data_type = "weekly_monthly"
+                gap_threshold = expected_interval * 2  # 2x interval
+                download_threshold = expected_interval * 3  # 3x interval
+            
+            self.logger.info(f"📊 Data type: {data_type}")
+            self.logger.info(f"📊 Gap threshold: {gap_threshold:.1f}s ({gap_threshold/60:.1f}min)")
+            self.logger.info(f"📊 Download threshold: {download_threshold:.1f}s ({download_threshold/60:.1f}min)")
+            
+            return gap_threshold, download_threshold
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error setting data-type specific thresholds: {e}")
+            # Fallback to generic thresholds
+            gap_threshold = expected_interval * 2
+            download_threshold = expected_interval * 3
+            return gap_threshold, download_threshold
+
     def _download_missing_data(self, gap_start: pd.Timestamp, gap_end: pd.Timestamp) -> pd.DataFrame | None:
         """Download missing data for large gaps using existing data collection pipeline."""
         try:
@@ -1407,27 +1439,53 @@ class EnhancedHMMRegimeDetector:
                     in_event_loop = False
 
                 if inspect.iscoroutinefunction(download_all_data_with_consolidation):
-                    # Function is async
+                    # Function is async - handle event loop properly
                     if in_event_loop:
-                        # We're already in an event loop, skip download to avoid conflict
-                        self.logger.warning("⚠️ FAST-FAIL: Skipping download attempt due to data quality issues")
-                        return None
+                        # We're already in an event loop, use run_in_executor to avoid conflict
+                        self.logger.info("🔄 Running async download in executor to avoid event loop conflict")
+                        loop = asyncio.get_running_loop()
+                        downloaded_data = await loop.run_in_executor(
+                            None, 
+                            lambda: asyncio.run(download_all_data_with_consolidation(
+                                symbol="ETHUSDT",
+                                exchange="binance", 
+                                timeframe=timeframe,
+                                start_date=gap_start,
+                                end_date=gap_end
+                            ))
+                        )
                     else:
                         # Safe to run in new event loop
-                        # FAST-FAIL: Don't attempt downloads due to data quality issues
-                        self.logger.warning("⚠️ FAST-FAIL: Skipping download attempt due to data quality issues")
-                        self.logger.warning("   Please fix the data converter to generate proper features")
-                        return None
+                        downloaded_data = await download_all_data_with_consolidation(
+                            symbol="ETHUSDT",
+                            exchange="binance",
+                            timeframe=timeframe, 
+                            start_date=gap_start,
+                            end_date=gap_end
+                        )
                 else:
-                    # Function is synchronous
-                    # FAST-FAIL: Don't attempt downloads due to data quality issues
-                    self.logger.warning("⚠️ FAST-FAIL: Skipping download attempt due to data quality issues")
-                    self.logger.warning("   Please fix the data converter to generate proper features")
+                    # Function is synchronous - run in executor if in event loop
+                    if in_event_loop:
+                        self.logger.info("🔄 Running sync download in executor to avoid blocking event loop")
+                        loop = asyncio.get_running_loop()
+                        downloaded_data = await loop.run_in_executor(
+                            None,
+                            download_all_data_with_consolidation,
+                            "ETHUSDT", "binance", timeframe, gap_start, gap_end
+                        )
+                    else:
+                        # Safe to run directly
+                        downloaded_data = download_all_data_with_consolidation(
+                            "ETHUSDT", "binance", timeframe, gap_start, gap_end
+                        )
+                
+                # Return the downloaded data if successful
+                if downloaded_data is not None and not downloaded_data.empty:
+                    self.logger.info(f"✅ Successfully downloaded {len(downloaded_data)} rows for gap")
+                    return downloaded_data
+                else:
+                    self.logger.warning("⚠️ Download completed but returned empty data")
                     return None
-
-                # This code should never be reached due to FAST-FAIL above
-                self.logger.warning("⚠️ FAST-FAIL: This should not be reached")
-                return None
 
             except ImportError:
                 self.logger.warning("⚠️ Unified data downloader not available, trying alternative methods")
@@ -1519,6 +1577,146 @@ class EnhancedHMMRegimeDetector:
         except Exception as e:
             self.logger.error(f"❌ Error inserting downloaded data: {e}")
             return original_data
+
+    def _batch_process_gaps(self, data: pd.DataFrame, large_gaps: pd.Series, timestamps: pd.Series, 
+                           gap_threshold: float, download_threshold: float) -> pd.DataFrame:
+        """Batch process gaps for efficiency with prioritization."""
+        try:
+            # Categorize gaps by size and priority
+            download_gaps = []
+            interpolation_gaps = []
+            
+            for idx in large_gaps.index:
+                gap_size = large_gaps.loc[idx]
+                if gap_size > download_threshold:
+                    download_gaps.append((idx, gap_size))
+                else:
+                    interpolation_gaps.append((idx, gap_size))
+            
+            self.logger.info(f"📊 Gap categorization: {len(download_gaps)} for download, {len(interpolation_gaps)} for interpolation")
+            
+            # Process download gaps in batches (limit concurrent downloads)
+            if download_gaps:
+                self.logger.info(f"🔄 Processing {len(download_gaps)} gaps for download in batches...")
+                data = self._process_download_gaps_batch(data, download_gaps, timestamps)
+            
+            # Process interpolation gaps in batches
+            if interpolation_gaps:
+                self.logger.info(f"🔄 Processing {len(interpolation_gaps)} gaps for interpolation in batches...")
+                data = self._process_interpolation_gaps_batch(data, interpolation_gaps)
+            
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in batch gap processing: {e}")
+            # Fall back to individual processing
+            return self._fallback_individual_gap_processing(data, large_gaps, timestamps, gap_threshold, download_threshold)
+
+    def _process_download_gaps_batch(self, data: pd.DataFrame, download_gaps: list, timestamps: pd.Series) -> pd.DataFrame:
+        """Process download gaps in batches with concurrency control."""
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        # Limit concurrent downloads to avoid overwhelming the system
+        max_concurrent_downloads = 3
+        batch_size = 10
+        
+        self.logger.info(f"🔄 Processing download gaps in batches of {batch_size} with max {max_concurrent_downloads} concurrent downloads")
+        
+        # Process gaps in batches
+        for i in range(0, len(download_gaps), batch_size):
+            batch = download_gaps[i:i + batch_size]
+            self.logger.info(f"📥 Processing download batch {i//batch_size + 1}/{(len(download_gaps) + batch_size - 1)//batch_size}")
+            
+            # Use ThreadPoolExecutor for concurrent downloads
+            with ThreadPoolExecutor(max_workers=max_concurrent_downloads) as executor:
+                futures = []
+                for idx, gap_size in batch:
+                    gap_start = timestamps.loc[idx-1]
+                    gap_end = timestamps.loc[idx]
+                    
+                    # Validate dates before attempting download
+                    current_time = pd.Timestamp.now(tz='UTC')
+                    if gap_start > current_time or gap_end > current_time:
+                        self.logger.warning(f"⚠️ Skipping future gap: {gap_start} to {gap_end}")
+                        continue
+                    
+                    # Submit download task
+                    future = executor.submit(self._download_missing_data, gap_start, gap_end)
+                    futures.append((future, idx, gap_size, gap_start, gap_end))
+                
+                # Process completed downloads
+                for future, idx, gap_size, gap_start, gap_end in futures:
+                    try:
+                        downloaded_data = future.result(timeout=30)  # 30 second timeout per download
+                        
+                        if downloaded_data is not None and not downloaded_data.empty:
+                            self.logger.info(f"✅ Downloaded {len(downloaded_data)} rows for gap {gap_size:.1f}s")
+                            data = self._insert_downloaded_data(data, downloaded_data, idx)
+                        else:
+                            self.logger.warning(f"❌ Download failed for gap {gap_size:.1f}s - using interpolation")
+                            data = self._interpolate_gap(data, idx, gap_size)
+                            
+                    except Exception as e:
+                        self.logger.warning(f"❌ Download error for gap {gap_size:.1f}s: {e} - using interpolation")
+                        data = self._interpolate_gap(data, idx, gap_size)
+        
+        return data
+
+    def _process_interpolation_gaps_batch(self, data: pd.DataFrame, interpolation_gaps: list) -> pd.DataFrame:
+        """Process interpolation gaps in batches for efficiency."""
+        batch_size = 50  # Process more interpolation gaps per batch since they're faster
+        
+        self.logger.info(f"🔄 Processing interpolation gaps in batches of {batch_size}")
+        
+        for i in range(0, len(interpolation_gaps), batch_size):
+            batch = interpolation_gaps[i:i + batch_size]
+            self.logger.info(f"🔧 Processing interpolation batch {i//batch_size + 1}/{(len(interpolation_gaps) + batch_size - 1)//batch_size}")
+            
+            # Process interpolation gaps in the batch
+            for idx, gap_size in batch:
+                try:
+                    data = self._interpolate_gap(data, idx, gap_size)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Interpolation error for gap {gap_size:.1f}s: {e}")
+        
+        return data
+
+    def _fallback_individual_gap_processing(self, data: pd.DataFrame, large_gaps: pd.Series, 
+                                          timestamps: pd.Series, gap_threshold: float, 
+                                          download_threshold: float) -> pd.DataFrame:
+        """Fallback to individual gap processing if batch processing fails."""
+        self.logger.warning("⚠️ Falling back to individual gap processing")
+        
+        for idx in large_gaps.index:
+            gap_size = large_gaps.loc[idx]
+            
+            if gap_size > download_threshold:
+                self.logger.info(f"📥 Large gap detected ({gap_size:.1f}s > {download_threshold:.1f}s) - attempting download")
+                gap_start = timestamps.loc[idx-1]
+                gap_end = timestamps.loc[idx]
+                
+                # Validate dates before attempting download
+                current_time = pd.Timestamp.now(tz='UTC')
+                if gap_start > current_time or gap_end > current_time:
+                    self.logger.warning(f"⚠️ Cannot download future data: gap from {gap_start} to {gap_end}")
+                    data = self._interpolate_gap(data, idx, gap_size)
+                    continue
+                
+                # Attempt to download missing data
+                downloaded_data = self._download_missing_data(gap_start, gap_end)
+                
+                if downloaded_data is not None and not downloaded_data.empty:
+                    self.logger.info(f"✅ Successfully downloaded {len(downloaded_data)} rows for gap")
+                    data = self._insert_downloaded_data(data, downloaded_data, idx)
+                else:
+                    self.logger.warning(f"❌ Failed to download data for gap - using interpolation")
+                    data = self._interpolate_gap(data, idx, gap_size)
+            else:
+                self.logger.info(f"🔧 Gap detected ({gap_size:.1f}s) - using interpolation")
+                data = self._interpolate_gap(data, idx, gap_size)
+        
+        return data
 
     def _interpolate_gap(self, data: pd.DataFrame, gap_index: int, gap_size: float) -> pd.DataFrame:
         """Interpolate data for small gaps using various methods."""

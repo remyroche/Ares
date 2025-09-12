@@ -2,18 +2,21 @@
 Model Management Utilities
 
 Common model management patterns shared across all training modules.
+Uses existing serialization utilities for consistency.
 """
 
 import joblib
-import pickle
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import logging
-import time
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+# Use existing serialization utilities
+from src.utils.serialization_utils import JSONSerializer, PickleSerializer
+from src.utils.common_operations import safe_json_dump, safe_file_exists
+from src.utils.logger import system_logger
+
+logger = system_logger.getChild('ModelManager')
 
 
 class ModelManager:
@@ -78,12 +81,11 @@ class ModelManager:
             model_file = model_dir / filename
             
             try:
-                # Save model based on format
+                # Save model based on format using existing utilities
                 if self.save_format == "joblib":
                     joblib.dump(model, model_file)
                 elif self.save_format == "pickle":
-                    with open(model_file, 'wb') as f:
-                        pickle.dump(model, f)
+                    PickleSerializer.save(model, str(model_file))
                 elif self.save_format == "h5":
                     # For Keras models
                     if hasattr(model, 'save'):
@@ -142,12 +144,11 @@ class ModelManager:
             model_name = model_file.stem
             
             try:
-                # Load model based on format
+                # Load model based on format using existing utilities
                 if self.save_format == "joblib":
                     model = joblib.load(model_file)
                 elif self.save_format == "pickle":
-                    with open(model_file, 'rb') as f:
-                        model = pickle.load(f)
+                    model = PickleSerializer.load(str(model_file))
                 elif self.save_format == "h5":
                     # For Keras models
                     from tensorflow.keras.models import load_model
@@ -210,9 +211,8 @@ class ModelManager:
         # Add timestamp
         metadata['saved_at'] = datetime.now().isoformat()
         
-        # Save metadata
-        with open(metadata_file, 'w') as f:
-            json.dump(metadata, f, indent=2, default=str)
+        # Save metadata using existing utilities
+        safe_json_dump(metadata, str(metadata_file), indent=2)
         
         logger.info(f"💾 Saved metadata to {metadata_file}")
         return str(metadata_file)
@@ -255,14 +255,14 @@ class ModelManager:
         
         metadata_file = model_dir / "_".join(filename_parts) + ".json"
         
-        if not metadata_file.exists():
+        if not safe_file_exists(str(metadata_file)):
             logger.warning(f"⚠️ Metadata file not found: {metadata_file}")
             return None
         
         try:
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-            logger.info(f"📂 Loaded metadata from {metadata_file}")
+            metadata = JSONSerializer.load(str(metadata_file))
+            if metadata is not None:
+                logger.info(f"📂 Loaded metadata from {metadata_file}")
             return metadata
         except Exception as e:
             logger.error(f"❌ Failed to load metadata: {e}")

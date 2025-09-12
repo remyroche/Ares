@@ -2,6 +2,7 @@
 Evaluation Utilities
 
 Common evaluation patterns shared across all training modules.
+Uses existing math validation utilities for safe calculations.
 """
 
 import numpy as np
@@ -11,9 +12,12 @@ from sklearn.metrics import (
     mean_squared_error, mean_absolute_error, r2_score,
     classification_report, confusion_matrix, log_loss, roc_auc_score
 )
-import logging
 
-logger = logging.getLogger(__name__)
+# Use existing utilities
+from src.utils.math_validation import safe_divide, safe_log, validate_finite
+from src.utils.logger import system_logger
+
+logger = system_logger.getChild('EvaluationUtils')
 
 
 class EvaluationUtils:
@@ -98,22 +102,31 @@ class EvaluationUtils:
                 calculated_metrics['r2'] = r2_score(y_true, y_pred)
             
             if 'mape' in metrics:
-                # Avoid division by zero
+                # Use safe division to avoid division by zero
                 mask = y_true != 0
                 if np.any(mask):
-                    calculated_metrics['mape'] = np.mean(
-                        np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])
-                    ) * 100
+                    mape_values = np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])
+                    calculated_metrics['mape'] = np.mean(mape_values) * 100
                 else:
                     calculated_metrics['mape'] = 0.0
             
             if 'smape' in metrics:
-                calculated_metrics['smape'] = np.mean(
-                    2 * np.abs(y_true - y_pred) / (np.abs(y_true) + np.abs(y_pred))
-                ) * 100
+                # Use safe division for SMAPE calculation
+                denominator = np.abs(y_true) + np.abs(y_pred)
+                smape_values = np.where(
+                    denominator != 0,
+                    2 * np.abs(y_true - y_pred) / denominator,
+                    0.0
+                )
+                calculated_metrics['smape'] = np.mean(smape_values) * 100
             
             if 'explained_variance' in metrics:
-                calculated_metrics['explained_variance'] = 1 - np.var(y_true - y_pred) / np.var(y_true)
+                # Use safe division for explained variance
+                y_var = np.var(y_true)
+                if y_var != 0:
+                    calculated_metrics['explained_variance'] = 1 - np.var(y_true - y_pred) / y_var
+                else:
+                    calculated_metrics['explained_variance'] = 0.0
         
         return calculated_metrics
     

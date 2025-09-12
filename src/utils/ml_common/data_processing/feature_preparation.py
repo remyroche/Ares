@@ -2,14 +2,19 @@
 Feature Preparation Utilities
 
 Common feature preparation patterns shared across all training modules.
+Uses existing data utilities for consistency and efficiency.
 """
 
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
-import logging
 
-logger = logging.getLogger(__name__)
+# Use existing utilities
+from src.utils.data.unified_data_utils import UnifiedDataUtils
+from src.utils.data.processing.data_processing import DataProcessor
+from src.utils.logger import system_logger
+
+logger = system_logger.getChild('FeaturePreparator')
 
 
 class FeaturePreparator:

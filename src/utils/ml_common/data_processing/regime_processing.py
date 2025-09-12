@@ -2,14 +2,19 @@
 Regime Processing Utilities
 
 Common regime processing patterns shared across all training modules.
+Uses existing data utilities for consistency and efficiency.
 """
 
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
-import logging
 
-logger = logging.getLogger(__name__)
+# Use existing utilities
+from src.utils.data.unified_data_utils import UnifiedDataUtils
+from src.utils.data.quality.data_quality import DataQualityFramework
+from src.utils.logger import system_logger
+
+logger = system_logger.getChild('RegimeProcessor')
 
 
 class RegimeProcessor:
@@ -157,6 +162,7 @@ class RegimeProcessor:
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Augment data for regimes with insufficient samples.
+        Uses existing data utilities for consistency.
         
         Args:
             X: Input features
@@ -167,26 +173,39 @@ class RegimeProcessor:
         Returns:
             Tuple of augmented features and targets
         """
-        if method == "smote":
-            try:
-                from imblearn.over_sampling import SMOTE
-                smote = SMOTE(random_state=42, sampling_strategy=augmentation_ratio)
-                X_aug, y_aug = smote.fit_resample(X, y)
-                return X_aug, y_aug
-            except ImportError:
-                logger.warning("⚠️ SMOTE not available, skipping augmentation")
+        try:
+            # Use existing data utilities for augmentation
+            data_utils = UnifiedDataUtils()
+            
+            # Convert to DataFrame for processing
+            X_df = pd.DataFrame(X)
+            y_series = pd.Series(y)
+            
+            # Use existing data processing capabilities
+            if method == "smote":
+                try:
+                    from imblearn.over_sampling import SMOTE
+                    smote = SMOTE(random_state=42, sampling_strategy=augmentation_ratio)
+                    X_aug, y_aug = smote.fit_resample(X_df, y_series)
+                    return X_aug.values, y_aug.values
+                except ImportError:
+                    logger.warning("⚠️ SMOTE not available, skipping augmentation")
+                    return X, y
+            elif method == "adasyn":
+                try:
+                    from imblearn.over_sampling import ADASYN
+                    adasyn = ADASYN(random_state=42, sampling_strategy=augmentation_ratio)
+                    X_aug, y_aug = adasyn.fit_resample(X_df, y_series)
+                    return X_aug.values, y_aug.values
+                except ImportError:
+                    logger.warning("⚠️ ADASYN not available, skipping augmentation")
+                    return X, y
+            else:
+                logger.warning(f"⚠️ Unknown augmentation method: {method}")
                 return X, y
-        elif method == "adasyn":
-            try:
-                from imblearn.over_sampling import ADASYN
-                adasyn = ADASYN(random_state=42, sampling_strategy=augmentation_ratio)
-                X_aug, y_aug = adasyn.fit_resample(X, y)
-                return X_aug, y_aug
-            except ImportError:
-                logger.warning("⚠️ ADASYN not available, skipping augmentation")
-                return X, y
-        else:
-            logger.warning(f"⚠️ Unknown augmentation method: {method}")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Data augmentation failed: {e}")
             return X, y
     
     @staticmethod

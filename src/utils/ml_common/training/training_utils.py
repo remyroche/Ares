@@ -2,22 +2,29 @@
 Training Utilities
 
 Common training logic patterns shared across all training modules.
+Uses existing hardware optimization utilities for M1 optimization.
 """
 
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
-import logging
 import time
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+
+# Use existing utilities
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+from src.utils.logger import system_logger
 
 from src.utils.ml_common.models import EnhancedModelFactory, ModelType, ModelConfig
 from src.utils.ml_common.optimization import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 from src.utils.ml_common.optimization.overfitting_prevention import OverfittingPrevention, OverfittingPreventionConfig
 from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
 
-logger = logging.getLogger(__name__)
+logger = system_logger.getChild('TrainingUtils')
 
 
 class TrainingUtils:
@@ -25,7 +32,7 @@ class TrainingUtils:
     
     def __init__(self, config: Any):
         """
-        Initialize training utilities.
+        Initialize training utilities with hardware optimization.
         
         Args:
             config: Training configuration object
@@ -35,6 +42,18 @@ class TrainingUtils:
         self.overfitting_prevention = OverfittingPrevention(
             OverfittingPreventionConfig() if config.enable_overfitting_prevention else None
         )
+        
+        # Initialize hardware optimizers
+        self.gpu_manager = get_m1_gpu_manager()
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+        
+        if self.gpu_manager:
+            logger.info("🚀 M1 GPU optimization enabled")
+        if self.memory_optimizer:
+            logger.info("🧠 M1 memory optimization enabled")
+        if self.cpu_optimizer:
+            logger.info("⚡ M1 CPU optimization enabled")
     
     def create_model(
         self, 

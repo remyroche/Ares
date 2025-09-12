@@ -2,16 +2,21 @@
 Base Training Step
 
 Base class for all training steps with common functionality.
+Uses existing utilities for maximum efficiency and consistency.
 """
 
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
-import logging
 import time
 from abc import ABC, abstractmethod
 
+# Use existing utilities
 from src.utils.logger import system_logger
+from src.utils.common_operations import safe_file_exists, safe_json_dump
+from src.utils.parquet_utils import ParquetUtils
+from src.utils.data.unified_data_utils import UnifiedDataUtils
+
 from src.utils.ml_common.config.base_training_config import BaseTrainingConfig
 from src.utils.ml_common.data_processing.regime_processing import RegimeProcessor
 from src.utils.ml_common.data_processing.feature_preparation import FeaturePreparator
@@ -49,15 +54,15 @@ class BaseTrainingStep(ABC):
         self.logger.info("✅ Base Training Step initialized")
     
     def _initialize_common_components(self):
-        """Initialize common components used by all training steps."""
-        # Initialize training utilities
+        """Initialize common components using existing utilities."""
+        # Initialize training utilities with hardware optimization
         self.training_utils = TrainingUtils(self.config)
         
         # Initialize data processors
         self.regime_processor = RegimeProcessor()
         self.feature_preparator = FeaturePreparator()
         
-        # Initialize model manager
+        # Initialize model manager with existing serialization utilities
         self.model_manager = ModelManager(
             save_path=self.config.model_save_path,
             save_format=self.config.save_format
@@ -65,6 +70,12 @@ class BaseTrainingStep(ABC):
         
         # Initialize evaluation utilities
         self.evaluation_utils = EvaluationUtils()
+        
+        # Initialize existing data utilities
+        self.data_utils = UnifiedDataUtils()
+        self.parquet_utils = ParquetUtils()
+        
+        self.logger.info("✅ Common components initialized with existing utilities")
     
     @abstractmethod
     def execute(

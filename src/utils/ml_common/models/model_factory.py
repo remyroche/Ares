@@ -64,7 +64,10 @@ class ModelType(Enum):
     # Neural network models
     TABNET = "TabNetRegressor"
     TABNET_CLASSIFIER = "TabNetClassifier"
+    NODE = "NODE"  # Neural Oblivious Decision Ensembles
+    NODE_CLASSIFIER = "NODEClassifier"
     TIME_SERIES_TRANSFORMER = "TimeSeriesTransformer"
+    GRU = "GRU"  # Gated Recurrent Unit
     TCN = "TCN"
     LSTM = "LSTM"
     
@@ -261,6 +264,10 @@ class EnhancedModelFactory:
                 model = self._create_tcn_model(model_config)
             elif model_config.model_type == ModelType.LSTM:
                 model = self._create_lstm_model(model_config)
+            elif model_config.model_type == ModelType.GRU:
+                model = self._create_gru_model(model_config)
+            elif model_config.model_type in [ModelType.NODE, ModelType.NODE_CLASSIFIER]:
+                model = self._create_node_model(model_config)
             elif model_config.model_type in [ModelType.RIDGE, ModelType.RIDGE_CLASSIFIER]:
                 model = self._create_ridge_model(model_config)
             elif model_config.model_type in [ModelType.LOGISTIC_REGRESSION, ModelType.LINEAR_REGRESSION]:
@@ -529,6 +536,52 @@ class EnhancedModelFactory:
         
         return LSTM(**model_config.model_params)
     
+    def _create_gru_model(self, model_config: ModelConfig) -> Any:
+        """Create GRU model."""
+        
+        # This is a placeholder implementation
+        # In practice, you would implement a custom GRU class
+        class GRU:
+            def __init__(self, **kwargs):
+                self.params = kwargs
+                self.is_fitted = False
+            
+            def fit(self, X, y):
+                # Placeholder implementation
+                self.is_fitted = True
+                return self
+            
+            def predict(self, X):
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation
+                return np.zeros(len(X))
+        
+        return GRU(**model_config.model_params)
+    
+    def _create_node_model(self, model_config: ModelConfig) -> Any:
+        """Create Neural Oblivious Decision Ensembles (NODE) model."""
+        
+        # This is a placeholder implementation
+        # In practice, you would implement a custom NODE class
+        class NODE:
+            def __init__(self, **kwargs):
+                self.params = kwargs
+                self.is_fitted = False
+            
+            def fit(self, X, y):
+                # Placeholder implementation
+                self.is_fitted = True
+                return self
+            
+            def predict(self, X):
+                if not self.is_fitted:
+                    raise ValueError("Model not fitted")
+                # Placeholder implementation
+                return np.zeros(len(X))
+        
+        return NODE(**model_config.model_params)
+    
     def _create_ridge_model(self, model_config: ModelConfig) -> Any:
         """Create Ridge model."""
         
@@ -630,7 +683,7 @@ def create_analyst_models() -> Dict[str, Any]:
     
     # Analyst fixed models
     analyst_models = {
-        "transformer": ModelType.TIME_SERIES_TRANSFORMER,
+        "gru": ModelType.GRU,  # Replaced Transformer with GRU
         "catboost": ModelType.CATBOOST,
         "lightgbm": ModelType.LIGHTGBM,
         "ensemble_rf": ModelType.RANDOM_FOREST
@@ -656,7 +709,7 @@ def create_tactician_models() -> Dict[str, Any]:
     
     # Tactician fixed models
     tactician_models = {
-        "tabnet": ModelType.TABNET,
+        "node": ModelType.NODE,  # Replaced TabNet with NODE
         "catboost": ModelType.CATBOOST,
         "lightgbm": ModelType.LIGHTGBM,
         "linear_ridge": ModelType.RIDGE

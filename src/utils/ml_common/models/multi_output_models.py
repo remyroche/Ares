@@ -381,9 +381,14 @@ class MultiOutputStackingModel(MultiOutputModel):
                 # Get target for this output
                 y_output = y[:, output_idx]
                 
-                # Train meta model
+                # Train meta model on features + base model predictions
                 meta_model = self.meta_models[output_name]
-                meta_model.fit(base_predictions[output_name], y_output)
+                
+                # Combine original features with base model predictions
+                meta_features = np.hstack([X, base_predictions[output_name]])
+                
+                # Train meta model
+                meta_model.fit(meta_features, y_output)
                 
                 self.logger.info(f"✅ Meta model trained for {output_name}")
             
@@ -446,9 +451,12 @@ class MultiOutputStackingModel(MultiOutputModel):
                 # Stack base predictions
                 base_pred_array = np.column_stack(base_predictions)
                 
+                # Combine original features with base model predictions
+                meta_features = np.hstack([X, base_pred_array])
+                
                 # Get meta model prediction
                 meta_model = self.meta_models[output_name]
-                meta_pred = meta_model.predict(base_pred_array)
+                meta_pred = meta_model.predict(meta_features)
                 
                 predictions.append(meta_pred)
                 self.logger.debug(f"✅ Predictions generated for {output_name}: {len(meta_pred)} samples")

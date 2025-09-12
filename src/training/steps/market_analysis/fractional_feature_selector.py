@@ -1,4 +1,4 @@
-from ...core.decorators import handles_errors
+from ...core.decorators import handles_errors, traced
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 
@@ -12,6 +12,7 @@ and feature importance ranking.
 import json
 import time
 from pathlib import Path
+from typing import Optional, Dict, Any, List, Tuple
 from sklearn.feature_selection import (
     SelectKBest, f_regression, mutual_info_regression,
     RFE, SelectFromModel
@@ -22,7 +23,6 @@ from src.utils.logger import get_logger
 import pandas as pd
 import datetime
 import logging
-import typing
 
 from .quality_validation_decorator import (
     validate_data_quality,
@@ -746,10 +746,15 @@ def get_fractional_feature_selector_config(
             F-regression scores Series
         """
         try:
-            f_scores, _ = f_regression(features, labels)
-            return pd.Series(f_scores, index = features.columns)
-        except Exception:
-            return pd.Series(0.0, index = features.columns)
+            # Handle NaN values
+            clean_features = features.fillna(features.mean())
+            clean_labels = labels.fillna(labels.mean())
+            
+            f_scores, _ = f_regression(clean_features, clean_labels)
+            return pd.Series(f_scores, index=features.columns)
+        except Exception as e:
+            self.logger.warning(f"F-regression calculation failed: {e}")
+            return pd.Series(0.0, index=features.columns)
 
     def _calculate_mutual_info_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
         """Calculate mutual information scores safely.
@@ -762,10 +767,15 @@ def get_fractional_feature_selector_config(
             Mutual information scores Series
         """
         try:
-            mi_scores = mutual_info_regression(features, labels, random_state = 42)
-            return pd.Series(mi_scores, index = features.columns)
-        except Exception:
-            return pd.Series(0.0, index = features.columns)
+            # Handle NaN values
+            clean_features = features.fillna(features.mean())
+            clean_labels = labels.fillna(labels.mean())
+            
+            mi_scores = mutual_info_regression(clean_features, clean_labels, random_state=42)
+            return pd.Series(mi_scores, index=features.columns)
+        except Exception as e:
+            self.logger.warning(f"Mutual information calculation failed: {e}")
+            return pd.Series(0.0, index=features.columns)
 
     def _calculate_random_forest_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
         """Calculate Random Forest importance scores safely.
@@ -778,8 +788,14 @@ def get_fractional_feature_selector_config(
             Random Forest importance scores Series
         """
         try:
-            rf = RandomForestRegressor(n_estimators = 50, random_state = 42, n_jobs=-1)
-            rf.fit(features, labels)
-            return pd.Series(rf.feature_importances_, index = features.columns)
-        except Exception:
-            return pd.Series(0.0, index = features.columns)
+            # Handle NaN values
+            clean_features = features.fillna(features.mean())
+            clean_labels = labels.fillna(labels.mean())
+            
+            # Use smaller number of estimators for speed
+            rf = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=-1, max_depth=10)
+            rf.fit(clean_features, clean_labels)
+            return pd.Series(rf.feature_importances_, index=features.columns)
+        except Exception as e:
+            self.logger.warning(f"Random Forest importance calculation failed: {e}")
+            return pd.Series(0.0, index=features.columns)

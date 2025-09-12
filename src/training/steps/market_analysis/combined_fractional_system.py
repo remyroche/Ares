@@ -1,4 +1,4 @@
-from ...core.decorators import handles_errors
+from ...core.decorators import handles_errors, traced
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
@@ -10,7 +10,7 @@ Designed to work with existing HMM regime system without redundant regime tuning
 
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 import pandas as pd
 
 from src.utils.logger import get_logger
@@ -22,10 +22,10 @@ from .quality_validation_decorator import (
 )
 
 # Import fractional components
-from src.training.steps.step06_labeling_components.fractional_triple_barrier_labeling import (
+from src.feature_engineering.step06_labeling_components.fractional_triple_barrier_labeling import (
     FractionalTripleBarrierLabeling
 )
-from .training.steps.fractional_differentiation import FractionalFeatureGenerator
+from .fractional_differentiation import FractionalFeatureGenerator
 import numpy as np
 import datetime
 import logging
@@ -222,18 +222,30 @@ class CombinedFractionalSystem:
         """
         self.config = config or {}
         
-        # Initialize components
-        self.fractional_labeler = FractionalTripleBarrierLabeling(
-            fractional_config = self.config.get('labeling', {})
-        )
+        # Initialize components with error handling
+        try:
+            self.fractional_labeler = FractionalTripleBarrierLabeling(
+                fractional_config = self.config.get('labeling', {})
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize fractional labeler: {e}")
+            self.fractional_labeler = None
         
-        self.fractional_feature_generator = FractionalFeatureGenerator(
-            config = self.config.get('differentiation', {})
-        )
+        try:
+            self.fractional_feature_generator = FractionalFeatureGenerator(
+                config = self.config.get('differentiation', {})
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to initialize fractional feature generator: {e}")
+            raise
         
-        self.hmm_integration = HMMFractionalIntegration(
-            config = self.config.get('hmm_integration', {})
-        )
+        try:
+            self.hmm_integration = HMMFractionalIntegration(
+                config = self.config.get('hmm_integration', {})
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize HMM integration: {e}")
+            self.hmm_integration = None
         
         # Performance tracking
         self.performance_history = []
@@ -266,17 +278,33 @@ class CombinedFractionalSystem:
             
             # 1. Generate fractional differentiation features (Step 6)
             self.logger.info("📊 Generating fractional differentiation features...")
-            features = self.fractional_feature_generator.generate_features(price_data, volume_data)
+            features = self.fractional_feature_generator.generate_features_with_volume(price_data, volume_data)
             
             # 2. Apply fractional labeling
-            self.logger.info("🏷️ Applying fractional labeling...")
-            labels = self.fractional_labeler.apply_fractional_triple_barrier_labeling(
-                price_data, regime_labels = hmm_regime
-            )
+            if self.fractional_labeler is not None:
+                self.logger.info("🏷️ Applying fractional labeling...")
+                try:
+                    labels = self.fractional_labeler.apply_fractional_triple_barrier_labeling(
+                        price_data, regime_labels = hmm_regime
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Fractional labeling failed: {e}")
+                    labels = pd.DataFrame()  # Empty labels as fallback
+            else:
+                self.logger.warning("Fractional labeler not available, skipping labeling")
+                labels = pd.DataFrame()  # Empty labels as fallback
             
             # 3. Enhance features with HMM regime information
-            self.logger.info("🔧 Enhancing features with HMM regime information...")
-            enhanced_features = self.hmm_integration.enhance_features(features, hmm_regime)
+            if self.hmm_integration is not None:
+                self.logger.info("🔧 Enhancing features with HMM regime information...")
+                try:
+                    enhanced_features = self.hmm_integration.enhance_features(features, hmm_regime)
+                except Exception as e:
+                    self.logger.warning(f"HMM integration failed: {e}")
+                    enhanced_features = features  # Use original features as fallback
+            else:
+                self.logger.warning("HMM integration not available, using original features")
+                enhanced_features = features
             
             # 4. Calculate performance metrics
             performance_metrics = self._calculate_performance_metrics(

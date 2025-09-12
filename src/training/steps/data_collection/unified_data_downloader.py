@@ -112,7 +112,8 @@ class UnifiedDataDownloader:
         timeframe: str = "1m",
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        batch_size: int = 1000
+        batch_size: int = 1000,
+        use_append_mode: bool = True
     ) -> Tuple[bool, List[Dict[str, Any]], Optional[str]]:
         """
         Download klines data for a symbol and exchange.
@@ -124,6 +125,7 @@ class UnifiedDataDownloader:
             start_date: Start date for download
             end_date: End date for download
             batch_size: Number of records per batch
+            use_append_mode: Whether to use append mode (creates new files instead of overwriting)
             
         Returns:
             Tuple of (success, data, error_message)
@@ -139,6 +141,41 @@ class UnifiedDataDownloader:
                 
             self.logger.info(f"📅 Download period: {start_date} to {end_date}")
             
+            # Use enhanced append downloader if append mode is enabled
+            if use_append_mode:
+                try:
+                    from .enhanced_append_data_downloader import EnhancedAppendDataDownloader
+                    append_downloader = EnhancedAppendDataDownloader(str(self.data_cache_path))
+                    
+                    result = await append_downloader.download_with_append(
+                        symbol=symbol,
+                        exchange=exchange,
+                        data_type="klines",
+                        timeframe=timeframe,
+                        start_date=start_date,
+                        end_date=end_date,
+                        batch_size=batch_size,
+                        max_batches=10
+                    )
+                    
+                    if result['success']:
+                        # Update statistics
+                        self.download_stats['total_downloads'] += 1
+                        self.download_stats['successful_downloads'] += 1
+                        self.download_stats['total_rows'] += result['total_rows']
+                        
+                        self.logger.info(f"✅ Downloaded {result['total_rows']} klines records using append mode")
+                        return True, [], None  # Data is saved to files, not returned
+                    else:
+                        self.logger.error(f"❌ Append download failed: {result.get('error', 'Unknown error')}")
+                        return False, [], result.get('error', 'Append download failed')
+                        
+                except ImportError:
+                    self.logger.warning("⚠️ Enhanced append downloader not available, falling back to standard mode")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Append download failed, falling back to standard mode: {e}")
+            
+            # Standard download mode (fallback)
             # Get exchange instance
             exchange_instance = await self._get_exchange_instance(exchange)
             if not exchange_instance:
@@ -192,7 +229,8 @@ class UnifiedDataDownloader:
         exchange: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        batch_size: int = 1000
+        batch_size: int = 1000,
+        use_append_mode: bool = True
     ) -> Tuple[bool, List[Dict[str, Any]], Optional[str]]:
         """
         Download aggtrades data for a symbol and exchange.
@@ -203,6 +241,7 @@ class UnifiedDataDownloader:
             start_date: Start date for download
             end_date: End date for download
             batch_size: Number of records per batch
+            use_append_mode: Whether to use append mode (creates new files instead of overwriting)
             
         Returns:
             Tuple of (success, data, error_message)
@@ -218,6 +257,41 @@ class UnifiedDataDownloader:
                 
             self.logger.info(f"📅 Download period: {start_date} to {end_date}")
             
+            # Use enhanced append downloader if append mode is enabled
+            if use_append_mode:
+                try:
+                    from .enhanced_append_data_downloader import EnhancedAppendDataDownloader
+                    append_downloader = EnhancedAppendDataDownloader(str(self.data_cache_path))
+                    
+                    result = await append_downloader.download_with_append(
+                        symbol=symbol,
+                        exchange=exchange,
+                        data_type="aggtrades",
+                        timeframe="1m",  # Aggtrades don't have timeframes
+                        start_date=start_date,
+                        end_date=end_date,
+                        batch_size=batch_size,
+                        max_batches=10
+                    )
+                    
+                    if result['success']:
+                        # Update statistics
+                        self.download_stats['total_downloads'] += 1
+                        self.download_stats['successful_downloads'] += 1
+                        self.download_stats['total_rows'] += result['total_rows']
+                        
+                        self.logger.info(f"✅ Downloaded {result['total_rows']} aggtrades records using append mode")
+                        return True, [], None  # Data is saved to files, not returned
+                    else:
+                        self.logger.error(f"❌ Append download failed: {result.get('error', 'Unknown error')}")
+                        return False, [], result.get('error', 'Append download failed')
+                        
+                except ImportError:
+                    self.logger.warning("⚠️ Enhanced append downloader not available, falling back to standard mode")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Append download failed, falling back to standard mode: {e}")
+            
+            # Standard download mode (fallback)
             # Get exchange instance
             exchange_instance = await self._get_exchange_instance(exchange)
             if not exchange_instance:
@@ -271,7 +345,8 @@ class UnifiedDataDownloader:
         exchange: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        batch_size: int = 1000
+        batch_size: int = 1000,
+        use_append_mode: bool = True
     ) -> Tuple[bool, List[Dict[str, Any]], Optional[str]]:
         """
         Download futures data for a symbol and exchange.
@@ -282,6 +357,7 @@ class UnifiedDataDownloader:
             start_date: Start date for download
             end_date: End date for download
             batch_size: Number of records per batch
+            use_append_mode: Whether to use append mode (creates new files instead of overwriting)
             
         Returns:
             Tuple of (success, data, error_message)
@@ -297,6 +373,41 @@ class UnifiedDataDownloader:
                 
             self.logger.info(f"📅 Download period: {start_date} to {end_date}")
             
+            # Use enhanced append downloader if append mode is enabled
+            if use_append_mode:
+                try:
+                    from .enhanced_append_data_downloader import EnhancedAppendDataDownloader
+                    append_downloader = EnhancedAppendDataDownloader(str(self.data_cache_path))
+                    
+                    result = await append_downloader.download_with_append(
+                        symbol=symbol,
+                        exchange=exchange,
+                        data_type="futures",
+                        timeframe="1m",  # Futures don't have timeframes
+                        start_date=start_date,
+                        end_date=end_date,
+                        batch_size=batch_size,
+                        max_batches=10
+                    )
+                    
+                    if result['success']:
+                        # Update statistics
+                        self.download_stats['total_downloads'] += 1
+                        self.download_stats['successful_downloads'] += 1
+                        self.download_stats['total_rows'] += result['total_rows']
+                        
+                        self.logger.info(f"✅ Downloaded {result['total_rows']} futures records using append mode")
+                        return True, [], None  # Data is saved to files, not returned
+                    else:
+                        self.logger.error(f"❌ Append download failed: {result.get('error', 'Unknown error')}")
+                        return False, [], result.get('error', 'Append download failed')
+                        
+                except ImportError:
+                    self.logger.warning("⚠️ Enhanced append downloader not available, falling back to standard mode")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Append download failed, falling back to standard mode: {e}")
+            
+            # Standard download mode (fallback)
             # Get exchange instance
             exchange_instance = await self._get_exchange_instance(exchange)
             if not exchange_instance:

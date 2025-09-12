@@ -268,151 +268,199 @@ steps:
       description: "Select optimal feature subset using multi-objective optimization"
       tags: ["feature_selection", "optimization", "multi_objective"]
 
-  - name: analyst_stacking_training
-    class_name: AnalystStackingTrainer
+  - name: analyst_models_training
+    class_name: AnalystModelsTrainingStep
     enabled: true
-    timeout_seconds: 3600
+    timeout_seconds: 7200
     retry_count: 1
     retry_delay_seconds: 120
     fail_fast: true
     priority: 2
     parameters:
-      ensemble_method: multi_output_stacking
-      base_models:
-        - type: time_series_transformer
-          hyperparameters:
-            d_model: 64
-            n_heads: 8
-            n_layers: 4
-            dropout: 0.1
-            max_length: 100
-        - type: catboost
-          hyperparameters:
-            n_estimators: 2000
-            learning_rate: 0.05
-            max_depth: 8
-            subsample: 0.8
-            colsample_bytree: 0.8
-        - type: lightgbm
-          hyperparameters:
-            n_estimators: 2000
-            learning_rate: 0.05
-            max_depth: 8
-            subsample: 0.8
-            colsample_bytree: 0.8
-        - type: random_forest
-          hyperparameters:
-            n_estimators: 500
-            max_depth: 10
-            min_samples_split: 5
-            min_samples_leaf: 2
-      meta_learner:
-        type: ridge
-        hyperparameters:
-          alpha: 1.0
-          fit_intercept: true
-      outputs:
-        - signal_strength
-        - confidence
-        - risk_score
-        - regime_label
-      cross_validation:
-        method: time_series_split
-        n_splits: 5
-        test_size: 0.2
-      early_stopping:
-        enabled: true
-        patience: 20
-        min_delta: 0.001
-      confidence_calibration:
-        enabled: true
-        method: platt_scaling
-        calibration_split: 0.2
-    dependencies: [feature_selection]
+      model_types:
+        - "GRU"
+        - "CatBoostRegressor"
+        - "LGBMRegressor"
+        - "RandomForestRegressor"
+      enable_hpo: true
+      hpo_n_trials: 100
+      hpo_timeout_seconds: 3600
+      hpo_cv_folds: 5
+      min_samples_per_regime: 1000
+      enable_data_augmentation: true
+      augmentation_method: "smote"
+      validation_split: 0.2
+      enable_cross_validation: true
+      cv_folds: 5
+      save_models: true
+      model_save_path: "./models/analyst_models"
+      enable_evaluation: true
+      evaluation_metrics:
+        - "mse"
+        - "mae"
+        - "r2"
+        - "mape"
+        - "smape"
+      enable_overfitting_prevention: true
+      overfitting_threshold: 0.1
+    dependencies: [feature_selection, hmm_regime_discovery]
     validation_rules:
-      - type: ensemble_quality
-        min_base_accuracy: 0.6
-        min_ensemble_improvement: 0.02
-        min_multi_output_accuracy: 0.5
+      - type: model_quality
+        min_accuracy: 0.6
+        max_overfitting: 0.1
     resource_limits:
-      max_memory_mb: 12288
+      max_memory_mb: 16384
     metadata:
-      description: "Train Analyst multi-output stacking ensemble (5m timeframe)"
-      tags: ["analyst", "ensemble", "training", "stacking", "multi_output", "5m"]
+      description: "Train Analyst individual models per-regime with HPO, saving, and metrics"
+      tags: ["analyst", "models", "training", "per_regime", "hpo", "saving", "metrics"]
 
-  - name: tactician_stacking_training
-    class_name: TacticianStackingTrainer
+  - name: analyst_ensemble_training
+    class_name: AnalystEnsembleTrainingStep
     enabled: true
-    timeout_seconds: 3600
+    timeout_seconds: 7200
     retry_count: 1
     retry_delay_seconds: 120
     fail_fast: true
     priority: 2
     parameters:
-      ensemble_method: multi_output_stacking
       base_models:
-        - type: tabnet
-          hyperparameters:
-            n_d: 64
-            n_a: 64
-            n_steps: 5
-            gamma: 1.5
-            lambda_sparse: 1e-3
-        - type: catboost
-          hyperparameters:
-            n_estimators: 1500
-            learning_rate: 0.05
-            max_depth: 6
-            subsample: 0.8
-            colsample_bytree: 0.8
-        - type: lightgbm
-          hyperparameters:
-            n_estimators: 1500
-            learning_rate: 0.05
-            max_depth: 6
-            subsample: 0.8
-            colsample_bytree: 0.8
-        - type: ridge
-          hyperparameters:
-            alpha: 1.0
-            fit_intercept: true
-      meta_learner:
-        type: ridge
-        hyperparameters:
-          alpha: 0.5
-          fit_intercept: true
-      outputs:
-        - entry_timing
-        - position_size
-        - stop_loss
-        - take_profit
-      cross_validation:
-        method: time_series_split
-        n_splits: 5
-        test_size: 0.2
-      early_stopping:
-        enabled: true
-        patience: 20
-        min_delta: 0.001
-      confidence_calibration:
-        enabled: true
-        method: platt_scaling
-        calibration_split: 0.2
-      analyst_dependency:
-        enabled: true
-        require_green_light: true
-        include_analyst_outputs: true
-    dependencies: [analyst_stacking_training]
+        - "GRU"
+        - "CatBoostRegressor"
+        - "LGBMRegressor"
+        - "RandomForestRegressor"
+      meta_model: "Ridge"
+      enable_hpo: true
+      hpo_n_trials: 50
+      hpo_timeout_seconds: 1800
+      hpo_cv_folds: 5
+      min_samples_per_regime: 1000
+      enable_data_augmentation: true
+      augmentation_method: "smote"
+      validation_split: 0.2
+      enable_cross_validation: true
+      cv_folds: 5
+      save_models: true
+      model_save_path: "./models/analyst_ensemble"
+      enable_evaluation: true
+      evaluation_metrics:
+        - "mse"
+        - "mae"
+        - "r2"
+        - "mape"
+        - "smape"
+      enable_overfitting_prevention: true
+      overfitting_threshold: 0.1
+    dependencies: [analyst_models_training]
     validation_rules:
       - type: ensemble_quality
         min_base_accuracy: 0.6
         min_ensemble_improvement: 0.02
-        min_multi_output_accuracy: 0.5
     resource_limits:
-      max_memory_mb: 12288
+      max_memory_mb: 16384
     metadata:
-      description: "Train Tactician multi-output stacking ensemble (1m timeframe)"
-      tags: ["tactician", "ensemble", "training", "stacking", "multi_output", "1m"]
+      description: "Train Analyst ensemble models per-regime with HPO, saving, and metrics"
+      tags: ["analyst", "ensemble", "training", "per_regime", "hpo", "saving", "metrics"]
+
+  - name: tactician_models_training
+    class_name: TacticianModelsTrainingStep
+    enabled: true
+    timeout_seconds: 7200
+    retry_count: 1
+    retry_delay_seconds: 120
+    fail_fast: true
+    priority: 3
+    parameters:
+      model_types:
+        - "NODE"
+        - "CatBoostRegressor"
+        - "LGBMRegressor"
+        - "Ridge"
+      enable_hpo: true
+      hpo_n_trials: 100
+      hpo_timeout_seconds: 3600
+      hpo_cv_folds: 5
+      analyst_model_path: "./models/analyst_ensemble"
+      analyst_output_names:
+        - "signal_strength"
+        - "confidence"
+        - "risk_score"
+        - "regime_label"
+      analyst_threshold: 0.6
+      validation_split: 0.2
+      enable_cross_validation: true
+      cv_folds: 5
+      save_models: true
+      model_save_path: "./models/tactician_models"
+      enable_evaluation: true
+      evaluation_metrics:
+        - "mse"
+        - "mae"
+        - "r2"
+        - "mape"
+        - "smape"
+      enable_overfitting_prevention: true
+      overfitting_threshold: 0.1
+    dependencies: [analyst_ensemble_training]
+    validation_rules:
+      - type: model_quality
+        min_accuracy: 0.6
+        max_overfitting: 0.1
+    resource_limits:
+      max_memory_mb: 16384
+    metadata:
+      description: "Train Tactician individual models on all regime data with HPO, saving, and metrics"
+      tags: ["tactician", "models", "training", "all_regime", "hpo", "saving", "metrics"]
+
+  - name: tactician_ensemble_training
+    class_name: TacticianEnsembleTrainingStep
+    enabled: true
+    timeout_seconds: 7200
+    retry_count: 1
+    retry_delay_seconds: 120
+    fail_fast: true
+    priority: 3
+    parameters:
+      base_models:
+        - "NODE"
+        - "CatBoostRegressor"
+        - "LGBMRegressor"
+        - "Ridge"
+      meta_model: "Ridge"
+      enable_hpo: true
+      hpo_n_trials: 50
+      hpo_timeout_seconds: 1800
+      hpo_cv_folds: 5
+      analyst_model_path: "./models/analyst_ensemble"
+      analyst_output_names:
+        - "signal_strength"
+        - "confidence"
+        - "risk_score"
+        - "regime_label"
+      analyst_threshold: 0.6
+      validation_split: 0.2
+      enable_cross_validation: true
+      cv_folds: 5
+      save_models: true
+      model_save_path: "./models/tactician_ensemble"
+      enable_evaluation: true
+      evaluation_metrics:
+        - "mse"
+        - "mae"
+        - "r2"
+        - "mape"
+        - "smape"
+      enable_overfitting_prevention: true
+      overfitting_threshold: 0.1
+    dependencies: [tactician_models_training]
+    validation_rules:
+      - type: ensemble_quality
+        min_base_accuracy: 0.6
+        min_ensemble_improvement: 0.02
+    resource_limits:
+      max_memory_mb: 16384
+    metadata:
+      description: "Train Tactician ensemble models on all regime data with HPO, saving, and metrics"
+      tags: ["tactician", "ensemble", "training", "all_regime", "hpo", "saving", "metrics"]
 
   - name: model_validation
     class_name: ModelValidationStep

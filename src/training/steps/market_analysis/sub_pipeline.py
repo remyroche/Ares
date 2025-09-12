@@ -109,6 +109,7 @@ class SubPipelineConfig:
     max_workers: int = 4
     validation_enabled: bool = True
     monitoring_enabled: bool = True
+    enable_fractional_differentiation: bool = True
     custom_params: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
@@ -1797,82 +1798,82 @@ class MarketAnalysisSubPipeline:
                         # Add enhanced optimization metrics
                         artifacts['enhanced_optimization_summary'] = enhanced_results['optimization_summary']
                             
-                        elif FALLBACK_GENERATORS_AVAILABLE:
-                            self.logger.info("🔄 Using fallback optimization system")
+                    elif not ENHANCED_OPTIMIZATION_AVAILABLE and FALLBACK_GENERATORS_AVAILABLE:
+                        self.logger.info("🔄 Using fallback optimization system")
+                        
+                        # Fallback to original optimization logic
+                        if optimization_config:
+                            # Use configuration system
+                            enabled_features = optimization_config.get_enabled_features()
+                            optimization_configs = []
                             
-                            # Fallback to original optimization logic
-                            if optimization_config:
-                                # Use configuration system
-                                enabled_features = optimization_config.get_enabled_features()
-                                optimization_configs = []
+                            for feature_config in enabled_features:
+                                # Map feature name to generator
+                                generator_map = {
+                                    'rsi': FeatureGenerators.rsi_generator,
+                                    'sma': FeatureGenerators.sma_generator,
+                                    'ema': FeatureGenerators.ema_generator,
+                                    'bollinger_bands': FeatureGenerators.bollinger_bands_generator,
+                                    'macd': FeatureGenerators.macd_generator,
+                                    'volatility': FeatureGenerators.volatility_generator
+                                }
                                 
-                                for feature_config in enabled_features:
-                                    # Map feature name to generator
-                                    generator_map = {
-                                        'rsi': FeatureGenerators.rsi_generator,
-                                        'sma': FeatureGenerators.sma_generator,
-                                        'ema': FeatureGenerators.ema_generator,
-                                        'bollinger_bands': FeatureGenerators.bollinger_bands_generator,
-                                        'macd': FeatureGenerators.macd_generator,
-                                        'volatility': FeatureGenerators.volatility_generator
-                                    }
-                                    
-                                    if feature_config.name in generator_map:
-                                        optimization_configs.append({
-                                            'name': feature_config.name,
-                                            'periods': feature_config.periods,
-                                            'method': feature_config.method.value,
-                                            'generator': generator_map[feature_config.name],
-                                            'weight': feature_config.weight
-                                        })
-                                
-                                self.logger.info(f"📋 Using configured features: {[c['name'] for c in optimization_configs]}")
-                            else:
-                                # Fallback to default configurations
-                                optimization_configs = [
-                                    {
-                                        'name': 'rsi',
-                                        'periods': [7, 14, 21, 28],
-                                        'method': 'signal_strength',
-                                        'generator': FeatureGenerators.rsi_generator,
-                                        'weight': 1.0
-                                    },
-                                    {
-                                        'name': 'sma',
-                                        'periods': [10, 20, 30, 50],
-                                        'method': 'noise_reduction',
-                                        'generator': FeatureGenerators.sma_generator,
-                                        'weight': 1.0
-                                    },
-                                    {
-                                        'name': 'ema',
-                                        'periods': [8, 12, 20, 26],
-                                        'method': 'trend_following',
-                                        'generator': FeatureGenerators.ema_generator,
-                                        'weight': 1.0
-                                    },
-                                    {
-                                        'name': 'bollinger_bands',
-                                        'periods': [15, 20, 25, 30],
-                                        'method': 'information_content',
-                                        'generator': FeatureGenerators.bollinger_bands_generator,
-                                        'weight': 0.8
-                                    },
-                                    {
-                                        'name': 'macd',
-                                        'periods': [7, 9, 12, 15],
-                                        'method': 'signal_strength',
-                                        'generator': FeatureGenerators.macd_generator,
-                                        'weight': 0.9
-                                    },
-                                    {
-                                        'name': 'volatility',
-                                        'periods': [10, 15, 20, 25],
-                                        'method': 'regime_adaptation',
-                                        'generator': FeatureGenerators.volatility_generator,
-                                        'weight': 0.7
-                                    }
-                                ]
+                                if feature_config.name in generator_map:
+                                    optimization_configs.append({
+                                        'name': feature_config.name,
+                                        'periods': feature_config.periods,
+                                        'method': feature_config.method.value,
+                                        'generator': generator_map[feature_config.name],
+                                        'weight': feature_config.weight
+                                    })
+                            
+                            self.logger.info(f"📋 Using configured features: {[c['name'] for c in optimization_configs]}")
+                        else:
+                            # Fallback to default configurations
+                            optimization_configs = [
+                                {
+                                    'name': 'rsi',
+                                    'periods': [7, 14, 21, 28],
+                                    'method': 'signal_strength',
+                                    'generator': FeatureGenerators.rsi_generator,
+                                    'weight': 1.0
+                                },
+                                {
+                                    'name': 'sma',
+                                    'periods': [10, 20, 30, 50],
+                                    'method': 'noise_reduction',
+                                    'generator': FeatureGenerators.sma_generator,
+                                    'weight': 1.0
+                                },
+                                {
+                                    'name': 'ema',
+                                    'periods': [8, 12, 20, 26],
+                                    'method': 'trend_following',
+                                    'generator': FeatureGenerators.ema_generator,
+                                    'weight': 1.0
+                                },
+                                {
+                                    'name': 'bollinger_bands',
+                                    'periods': [15, 20, 25, 30],
+                                    'method': 'information_content',
+                                    'generator': FeatureGenerators.bollinger_bands_generator,
+                                    'weight': 0.8
+                                },
+                                {
+                                    'name': 'macd',
+                                    'periods': [7, 9, 12, 15],
+                                    'method': 'signal_strength',
+                                    'generator': FeatureGenerators.macd_generator,
+                                    'weight': 0.9
+                                },
+                                {
+                                    'name': 'volatility',
+                                    'periods': [10, 15, 20, 25],
+                                    'method': 'regime_adaptation',
+                                    'generator': FeatureGenerators.volatility_generator,
+                                    'weight': 0.7
+                                }
+                            ]
                         
                         # Optimize each indicator
                         for config in optimization_configs:
@@ -1889,8 +1890,8 @@ class MarketAnalysisSubPipeline:
                                 # Use default period
                                 optimal_lookbacks[config['name']] = config['periods'][len(config['periods']) // 2]
                         
-                    except ImportError as e:
-                        self.logger.warning(f"⚠️ Feature generators not available: {e}, using fallback optimization")
+                    else:
+                        self.logger.warning("⚠️ No optimization system available, using fallback optimization")
                         
                         # Fallback to simple optimization
                         rsi_periods = [7, 14, 21, 28]
@@ -2336,6 +2337,24 @@ class MarketAnalysisSubPipeline:
             'differentiation_params': {},
             'stationarity_metrics': {}
         }
+        
+        # Check if fractional differentiation is disabled
+        if not config.enable_fractional_differentiation:
+            self.logger.info("⏭️ Fractional differentiation disabled in config, skipping execution")
+            artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
+            # Still proceed to next pipeline
+            self._log_sub_pipeline_completion("fractional_differentiation", config, artifacts)
+            
+            # Automatically trigger the next sub-pipeline: cross_timeframe_analysis
+            self.logger.info("🔄 Fractional differentiation skipped, triggering next: cross_timeframe_analysis")
+            try:
+                next_artifacts = await self._cross_timeframe_analysis_pipeline(config)
+                artifacts.update(next_artifacts)
+                self.logger.info("✅ Cross timeframe analysis pipeline completed successfully")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to execute cross timeframe analysis pipeline: {e}")
+            
+            return artifacts
         
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual fractional differentiation")

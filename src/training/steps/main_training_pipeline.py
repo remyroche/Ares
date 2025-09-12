@@ -121,6 +121,9 @@ class MainPipelineConfig:
         PipelineStage.BACKTESTING
     ])
     
+    # Sub-pipeline feature flags
+    enable_fractional_differentiation: bool = True
+    
     # Sub-pipeline control
     enabled_sub_pipelines: Dict[PipelineStage, List[str]] = field(default_factory=lambda: {
         PipelineStage.DATA_COLLECTION: [
@@ -131,7 +134,7 @@ class MainPipelineConfig:
         PipelineStage.MARKET_ANALYSIS: [
             'sr_detection', 'sr_clustering', 'hmm_clustering',
             'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-            'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis',
+            'feature_lookback_optimization', 'cross_timeframe_analysis',
             'sr_feature_integration'
         ],
         PipelineStage.MODEL_TRAINING: [
@@ -203,6 +206,50 @@ class MainTrainingPipeline:
         # Pipeline state
         self.current_stage: Optional[PipelineStage] = None
         self.pipeline_results: List[MainPipelineResult] = []
+        
+        # Update enabled sub-pipelines based on feature flags
+        self._update_enabled_sub_pipelines()
+    
+    def _update_enabled_sub_pipelines(self) -> None:
+        """Update enabled sub-pipelines based on feature flags."""
+        # Start with base sub-pipelines
+        base_sub_pipelines = {
+            PipelineStage.DATA_COLLECTION: [
+                'data_download', 'data_conversion', 'data_validation', 'data_preparation',
+                'feature_engineering', 'data_quality_check', 'data_storage', 'data_monitoring',
+                'data_integration', 'data_export'
+            ],
+            PipelineStage.MARKET_ANALYSIS: [
+                'sr_detection', 'sr_clustering', 'hmm_clustering',
+                'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
+                'feature_lookback_optimization', 'cross_timeframe_analysis',
+                'sr_feature_integration'
+            ],
+            PipelineStage.MODEL_TRAINING: [
+                'general_model_training', 'analyst_model_training', 'tactician_model_training',
+                'hmm_training', 'ensemble_training', 'multi_timeframe_training'
+            ],
+            PipelineStage.BACKTESTING: [
+                'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
+                'model_persistence', 'performance_analytics',
+                'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting'
+            ]
+        }
+        
+        # Apply feature flags
+        if self.config.enable_fractional_differentiation:
+            # Insert fractional_differentiation after feature_lookback_optimization
+            market_analysis_pipelines = base_sub_pipelines[PipelineStage.MARKET_ANALYSIS]
+            feature_lookback_idx = market_analysis_pipelines.index('feature_lookback_optimization')
+            market_analysis_pipelines.insert(feature_lookback_idx + 1, 'fractional_differentiation')
+        
+        # Update the config
+        self.config.enabled_sub_pipelines = base_sub_pipelines
+        
+        if self.config.enable_fractional_differentiation:
+            self.logger.info("✅ Fractional differentiation enabled in market analysis pipeline")
+        else:
+            self.logger.info("⏭️ Fractional differentiation disabled in market analysis pipeline")
     
     async def execute_pipeline(
         self,
@@ -380,7 +427,9 @@ class MainTrainingPipeline:
                 return base_config
         elif stage == PipelineStage.MARKET_ANALYSIS:
             if MARKET_ANALYSIS_AVAILABLE:
-                return MarketAnalysisConfig(**base_config)
+                market_config = MarketAnalysisConfig(**base_config)
+                market_config.enable_fractional_differentiation = config.enable_fractional_differentiation
+                return market_config
             else:
                 return base_config
         elif stage == PipelineStage.MODEL_TRAINING:
@@ -510,7 +559,8 @@ class MainTrainingPipeline:
 
         # For MARKET_ANALYSIS, always use sequential execution with automatic progression
         # Start with the first sub-pipeline and let it trigger the next ones
-        self.logger.info("🚀 Starting automatic sequential execution: sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> fractional_differentiation -> cross_timeframe_analysis -> sr_feature_integration")
+        fractional_diff_text = "fractional_differentiation -> " if config.enable_fractional_differentiation else ""
+        self.logger.info(f"🚀 Starting automatic sequential execution: sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> {fractional_diff_text}cross_timeframe_analysis -> sr_feature_integration")
 
         results = []
         if sub_pipeline_names:
@@ -706,6 +756,7 @@ def get_full_pipeline_config(
         end_date=end_date.strftime('%Y-%m-%d'),
         intensity_percentage=intensity_pct,
         training_mode_config=mode_config.__dict__,
+        enable_fractional_differentiation=True,  # Enable by default in full mode
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -720,7 +771,7 @@ def get_full_pipeline_config(
             PipelineStage.MARKET_ANALYSIS: [
                 'sr_detection', 'sr_clustering', 'hmm_clustering',
                 'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis',
+                'feature_lookback_optimization', 'cross_timeframe_analysis',
                 'sr_feature_integration'
             ],
             PipelineStage.MODEL_TRAINING: [
@@ -763,6 +814,7 @@ def get_light_pipeline_config(
         end_date=end_date.strftime('%Y-%m-%d'),
         intensity_percentage=intensity_pct,
         training_mode_config=mode_config.__dict__,
+        enable_fractional_differentiation=False,  # Disable by default in light mode for speed
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
@@ -813,6 +865,7 @@ def get_blank_pipeline_config(
         end_date=end_date.strftime('%Y-%m-%d'),
         intensity_percentage=intensity_pct,
         training_mode_config=mode_config.__dict__,
+        enable_fractional_differentiation=False,  # Disable by default in blank mode for testing
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,

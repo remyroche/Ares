@@ -979,84 +979,84 @@ class DataCollectionSubPipeline:
                 if os.path.exists(file_path):
                     df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     if not df.empty:
-        # Enhanced data cleaning integration with memory optimization
-        try:
-            from src.utils.data.quality.data_cleaning import DataCleaner
-            
-            # Determine data type from filename
-            data_type = 'klines'  # Default
-            if 'aggtrades' in file_name:
-                data_type = 'aggtrades'
-            elif 'futures' in file_name:
-                data_type = 'futures'
-            
-            # Create data cleaner with appropriate data type
-            cleaner = DataCleaner(data_type=data_type)
-            
-            # Apply enhanced data cleaning with memory optimization
-            @with_memory_optimization(chunk_size=5000, max_memory_mb=1024)
-            def clean_dataframe_chunked(df_chunk):
-                return cleaner.clean_dataframe(
-                    df_chunk, 
-                    remove_constant_features=True,
-                    symbol=config.symbol,
-                    exchange=config.exchange,
-                    timeframe=config.timeframe
-                )
-            
-            cleaned_df = clean_dataframe_chunked(df)
+                        # Enhanced data cleaning integration with memory optimization
+                        try:
+                            from src.utils.data.quality.data_cleaning import DataCleaner
                             
-            if cleaned_df is not None and not cleaned_df.empty:
-                artifacts['cleaning_results'][file_name] = {
-                    'original_rows': len(df),
-                    'cleaned_rows': len(cleaned_df),
-                    'original_columns': len(df.columns),
-                    'cleaned_columns': len(cleaned_df.columns),
-                    'data_type': data_type
-                }
-                
-                # Use comprehensive quality scoring
-                quality_assessment = self.quality_scorer.assess_data_quality(
-                    cleaned_df, 
-                    context="data_collection",
-                    step_name="data_quality_check",
-                    data_type=data_type
-                )
-                
-                # Store comprehensive quality results
-                artifacts['quality_assessments'][file_name] = {
-                    'overall_score': quality_assessment.overall_score,
-                    'level': quality_assessment.level.value,
-                    'component_scores': quality_assessment.component_scores,
-                    'issues': quality_assessment.issues,
-                    'warnings': quality_assessment.warnings,
-                    'recommendations': quality_assessment.recommendations
-                }
-                
-                # Use cleaned data for legacy quality assessment
-                quality_score = self._calculate_quality_score(cleaned_df, file_name)
-            else:
-                self.logger.warning(f"⚠️ Data cleaning failed for {file_name}, using original data")
-                
-                # Use comprehensive quality scoring on original data
-                quality_assessment = self.quality_scorer.assess_data_quality(
-                    df, 
-                    context="data_collection",
-                    step_name="data_quality_check",
-                    data_type=data_type
-                )
-                
-                # Store comprehensive quality results
-                artifacts['quality_assessments'][file_name] = {
-                    'overall_score': quality_assessment.overall_score,
-                    'level': quality_assessment.level.value,
-                    'component_scores': quality_assessment.component_scores,
-                    'issues': quality_assessment.issues,
-                    'warnings': quality_assessment.warnings,
-                    'recommendations': quality_assessment.recommendations
-                }
-                
-                quality_score = self._calculate_quality_score(df, file_name)
+                            # Determine data type from filename
+                            data_type = 'klines'  # Default
+                            if 'aggtrades' in file_name:
+                                data_type = 'aggtrades'
+                            elif 'futures' in file_name:
+                                data_type = 'futures'
+                            
+                            # Create data cleaner with appropriate data type
+                            cleaner = DataCleaner(data_type=data_type)
+                            
+                            # Apply enhanced data cleaning with memory optimization
+                            @with_memory_optimization(chunk_size=5000, max_memory_mb=1024)
+                            def clean_dataframe_chunked(df_chunk):
+                                return cleaner.clean_dataframe(
+                                    df_chunk, 
+                                    remove_constant_features=True,
+                                    symbol=config.symbol,
+                                    exchange=config.exchange,
+                                    timeframe=config.timeframe
+                                )
+                            
+                            cleaned_df = clean_dataframe_chunked(df)
+                            
+                            if cleaned_df is not None and not cleaned_df.empty:
+                                artifacts['cleaning_results'][file_name] = {
+                                    'original_rows': len(df),
+                                    'cleaned_rows': len(cleaned_df),
+                                    'original_columns': len(df.columns),
+                                    'cleaned_columns': len(cleaned_df.columns),
+                                    'data_type': data_type
+                                }
+                                
+                                # Use comprehensive quality scoring
+                                quality_assessment = self.quality_scorer.assess_data_quality(
+                                    cleaned_df, 
+                                    context="data_collection",
+                                    step_name="data_quality_check",
+                                    data_type=data_type
+                                )
+                                
+                                # Store comprehensive quality results
+                                artifacts['quality_assessments'][file_name] = {
+                                    'overall_score': quality_assessment.overall_score,
+                                    'level': quality_assessment.level.value,
+                                    'component_scores': quality_assessment.component_scores,
+                                    'issues': quality_assessment.issues,
+                                    'warnings': quality_assessment.warnings,
+                                    'recommendations': quality_assessment.recommendations
+                                }
+                                
+                                # Use cleaned data for legacy quality assessment
+                                quality_score = self._calculate_quality_score(cleaned_df, file_name)
+                            else:
+                                self.logger.warning(f"⚠️ Data cleaning failed for {file_name}, using original data")
+                                
+                                # Use comprehensive quality scoring on original data
+                                quality_assessment = self.quality_scorer.assess_data_quality(
+                                    df, 
+                                    context="data_collection",
+                                    step_name="data_quality_check",
+                                    data_type=data_type
+                                )
+                                
+                                # Store comprehensive quality results
+                                artifacts['quality_assessments'][file_name] = {
+                                    'overall_score': quality_assessment.overall_score,
+                                    'level': quality_assessment.level.value,
+                                    'component_scores': quality_assessment.component_scores,
+                                    'issues': quality_assessment.issues,
+                                    'warnings': quality_assessment.warnings,
+                                    'recommendations': quality_assessment.recommendations
+                                }
+                                
+                                quality_score = self._calculate_quality_score(df, file_name)
                                 
                         except Exception as e:
                             self.logger.warning(f"⚠️ Enhanced data cleaning not available for {file_name}: {e}")

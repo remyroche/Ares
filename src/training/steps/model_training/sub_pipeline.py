@@ -345,7 +345,7 @@ class ModelTrainingSubPipeline:
         
         # Import and use analyst models training
         try:
-            from .analyst_models_training import AnalystModelsTrainingStep
+            from .analyst_models_training_refactored import AnalystModelsTrainingStepRefactored as AnalystModelsTrainingStep
             
             # Create enhanced configuration with temporal features and HMM data
             enhanced_config = config.custom_params.copy() if config.custom_params else {}

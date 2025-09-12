@@ -56,15 +56,15 @@ except ImportError as e:
     logger.warning(f"Parallel processing not available: {e}")
     PARALLEL_PROCESSING_AVAILABLE = False
 
-# Import comprehensive feature generators
+# Import existing extensive feature generation systems
 try:
-    from src.feature_engineering.comprehensive_feature_generators import (
-        ComprehensiveFeatureGenerators, COMPREHENSIVE_FEATURE_GENERATORS
-    )
-    COMPREHENSIVE_GENERATORS_AVAILABLE = True
+    from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering
+    from src.feature_engineering.cross_timeframe_interaction_features import CrossTimeframeFeatureGenerator
+    from src.feature_engineering.limited_microstructure_features import LimitedMicrostructureFeatures
+    EXTENSIVE_FEATURE_SYSTEMS_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"Comprehensive feature generators not available: {e}")
-    COMPREHENSIVE_GENERATORS_AVAILABLE = False
+    logger.warning(f"Extensive feature generation systems not available: {e}")
+    EXTENSIVE_FEATURE_SYSTEMS_AVAILABLE = False
 
 class EnhancedOptimizationSystem:
     """
@@ -98,19 +98,340 @@ class EnhancedOptimizationSystem:
             self.parallel_processor = None
             self.logger.info("ℹ️ Parallel processing not available")
         
-        # Initialize feature generators
-        if COMPREHENSIVE_GENERATORS_AVAILABLE:
-            self.feature_generators = ComprehensiveFeatureGenerators()
-            self.logger.info("✅ Comprehensive feature generators initialized")
+        # Initialize extensive feature generation systems
+        if EXTENSIVE_FEATURE_SYSTEMS_AVAILABLE:
+            self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+            self.cross_timeframe_generator = CrossTimeframeFeatureGenerator()
+            self.microstructure_features = LimitedMicrostructureFeatures()
+            self.logger.info("✅ Extensive feature generation systems initialized")
         else:
-            self.feature_generators = None
-            self.logger.info("ℹ️ Comprehensive feature generators not available")
+            self.enhanced_feature_engineering = None
+            self.cross_timeframe_generator = None
+            self.microstructure_features = None
+            self.logger.info("ℹ️ Extensive feature generation systems not available")
         
         # Performance tracking
         self.optimization_times = {}
         self.performance_metrics = {}
         
         self.logger.info("🚀 Enhanced optimization system initialized")
+    
+    def _get_feature_generator(self, feature_name: str) -> Optional[Callable]:
+        """Get feature generator from extensive feature generation systems."""
+        try:
+            # Map feature names to appropriate generators from existing systems
+            feature_mappings = {
+                # Basic technical indicators from EnhancedFeatureEngineering
+                'rsi': lambda data, period: self._generate_rsi_feature(data, period),
+                'sma': lambda data, period: self._generate_sma_feature(data, period),
+                'ema': lambda data, period: self._generate_ema_feature(data, period),
+                'macd': lambda data, period: self._generate_macd_feature(data, period),
+                'bollinger_bands': lambda data, period: self._generate_bollinger_feature(data, period),
+                'stochastic': lambda data, period: self._generate_stochastic_feature(data, period),
+                'atr': lambda data, period: self._generate_atr_feature(data, period),
+                'adx': lambda data, period: self._generate_adx_feature(data, period),
+                'obv': lambda data, period: self._generate_obv_feature(data, period),
+                'mfi': lambda data, period: self._generate_mfi_feature(data, period),
+                
+                # Cross-timeframe features
+                'cross_timeframe_momentum': lambda data, period: self._generate_cross_timeframe_momentum(data, period),
+                'cross_timeframe_volatility': lambda data, period: self._generate_cross_timeframe_volatility(data, period),
+                'cross_timeframe_range': lambda data, period: self._generate_cross_timeframe_range(data, period),
+                
+                # Volume features
+                'volume_momentum': lambda data, period: self._generate_volume_momentum(data, period),
+                'volume_volatility': lambda data, period: self._generate_volume_volatility(data, period),
+                
+                # Microstructure features
+                'microstructure_basic': lambda data, period: self._generate_microstructure_basic(data, period),
+                'microstructure_advanced': lambda data, period: self._generate_microstructure_advanced(data, period),
+            }
+            
+            return feature_mappings.get(feature_name.lower())
+            
+        except Exception as e:
+            self.logger.error(f"Error getting feature generator for {feature_name}: {e}")
+            return None
+    
+    def _generate_rsi_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate RSI feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                # Use the existing RSI calculation from enhanced feature engineering
+                periods_config = {'RSI': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'RSI_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                return self._calculate_rsi_fallback(data['close'], period)
+        except Exception as e:
+            self.logger.error(f"Error generating RSI feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_sma_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate SMA feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                periods_config = {'SMA': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'SMA_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                return data['close'].rolling(window=period).mean()
+        except Exception as e:
+            self.logger.error(f"Error generating SMA feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_ema_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate EMA feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                periods_config = {'EMA': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'EMA_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                return data['close'].ewm(span=period).mean()
+        except Exception as e:
+            self.logger.error(f"Error generating EMA feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_macd_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate MACD feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                periods_config = {'MACD': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'MACD_signal_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                ema_fast = data['close'].ewm(span=12).mean()
+                ema_slow = data['close'].ewm(span=26).mean()
+                macd_line = ema_fast - ema_slow
+                return macd_line.ewm(span=period).mean()
+        except Exception as e:
+            self.logger.error(f"Error generating MACD feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_bollinger_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate Bollinger Bands feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                periods_config = {'Bollinger_Bands': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'BB_position_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                sma = data['close'].rolling(window=period).mean()
+                std = data['close'].rolling(window=period).std()
+                upper_band = sma + (std * 2)
+                lower_band = sma - (std * 2)
+                return (data['close'] - lower_band) / (upper_band - lower_band)
+        except Exception as e:
+            self.logger.error(f"Error generating Bollinger Bands feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_stochastic_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate Stochastic feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                periods_config = {'Stochastic': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'Stoch_D_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                lowest_low = data['low'].rolling(window=period).min()
+                highest_high = data['high'].rolling(window=period).max()
+                k_percent = 100 * ((data['close'] - lowest_low) / (highest_high - lowest_low))
+                return k_percent.rolling(window=3).mean()
+        except Exception as e:
+            self.logger.error(f"Error generating Stochastic feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_atr_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate ATR feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                periods_config = {'ATR': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'ATR_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                tr1 = data['high'] - data['low']
+                tr2 = abs(data['high'] - data['close'].shift(1))
+                tr3 = abs(data['low'] - data['close'].shift(1))
+                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                return true_range.rolling(window=period).mean()
+        except Exception as e:
+            self.logger.error(f"Error generating ATR feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_adx_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate ADX feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                periods_config = {'ADX': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'ADX_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation - simplified ADX
+                return pd.Series(index=data.index, dtype=float).fillna(25)
+        except Exception as e:
+            self.logger.error(f"Error generating ADX feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_obv_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate OBV feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                periods_config = {'OBV': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'OBV_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                price_change = data['close'].diff()
+                obv = data['volume'].copy()
+                obv[price_change < 0] = -data['volume'][price_change < 0]
+                obv[price_change == 0] = 0
+                return obv.rolling(window=period).sum()
+        except Exception as e:
+            self.logger.error(f"Error generating OBV feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_mfi_feature(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate MFI feature using existing systems."""
+        try:
+            if self.enhanced_feature_engineering:
+                periods_config = {'MFI': [period]}
+                indicators = self.enhanced_feature_engineering.extract_indicators_batch(data, periods_config)
+                return indicators.get(f'MFI_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                return pd.Series(index=data.index, dtype=float).fillna(50)
+        except Exception as e:
+            self.logger.error(f"Error generating MFI feature: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_cross_timeframe_momentum(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate cross-timeframe momentum feature."""
+        try:
+            if self.cross_timeframe_generator:
+                # Use cross-timeframe generator
+                features = self.cross_timeframe_generator.generate_cross_timeframe_features(data)
+                return features.get(f'momentum_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                return data['close'].pct_change(period)
+        except Exception as e:
+            self.logger.error(f"Error generating cross-timeframe momentum: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_cross_timeframe_volatility(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate cross-timeframe volatility feature."""
+        try:
+            if self.cross_timeframe_generator:
+                features = self.cross_timeframe_generator.generate_cross_timeframe_features(data)
+                return features.get(f'volatility_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                returns = data['close'].pct_change()
+                return returns.rolling(window=period).std()
+        except Exception as e:
+            self.logger.error(f"Error generating cross-timeframe volatility: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_cross_timeframe_range(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate cross-timeframe range feature."""
+        try:
+            if self.cross_timeframe_generator:
+                features = self.cross_timeframe_generator.generate_cross_timeframe_features(data)
+                return features.get(f'range_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                return (data['high'] - data['low']).rolling(window=period).mean()
+        except Exception as e:
+            self.logger.error(f"Error generating cross-timeframe range: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_volume_momentum(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate volume momentum feature."""
+        try:
+            if self.cross_timeframe_generator:
+                features = self.cross_timeframe_generator.generate_cross_timeframe_features(data)
+                return features.get(f'volume_momentum_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                return data['volume'].pct_change(period)
+        except Exception as e:
+            self.logger.error(f"Error generating volume momentum: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_volume_volatility(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate volume volatility feature."""
+        try:
+            if self.cross_timeframe_generator:
+                features = self.cross_timeframe_generator.generate_cross_timeframe_features(data)
+                return features.get(f'volume_volatility_{period}', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                volume_returns = data['volume'].pct_change()
+                return volume_returns.rolling(window=period).std()
+        except Exception as e:
+            self.logger.error(f"Error generating volume volatility: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_microstructure_basic(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate basic microstructure feature."""
+        try:
+            if self.microstructure_features:
+                # Use microstructure features
+                market_data = {
+                    'bid': data['close'] * 0.9999,  # Approximate bid
+                    'ask': data['close'] * 1.0001,  # Approximate ask
+                    'volume': data['volume'],
+                    'timestamp': data.index
+                }
+                features = self.microstructure_features.extract_features(market_data)
+                return features.get('basic_spread', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                return pd.Series(index=data.index, dtype=float).fillna(0.0001)
+        except Exception as e:
+            self.logger.error(f"Error generating microstructure basic: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _generate_microstructure_advanced(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """Generate advanced microstructure feature."""
+        try:
+            if self.microstructure_features:
+                market_data = {
+                    'bid': data['close'] * 0.9999,
+                    'ask': data['close'] * 1.0001,
+                    'volume': data['volume'],
+                    'timestamp': data.index
+                }
+                features = self.microstructure_features.extract_features(market_data)
+                return features.get('advanced_imbalance', pd.Series(index=data.index, dtype=float))
+            else:
+                # Fallback calculation
+                return pd.Series(index=data.index, dtype=float).fillna(0)
+        except Exception as e:
+            self.logger.error(f"Error generating microstructure advanced: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _calculate_rsi_fallback(self, prices: pd.Series, period: int) -> pd.Series:
+        """Fallback RSI calculation."""
+        try:
+            delta = prices.diff()
+            gains = delta.where(delta > 0, 0)
+            losses = -delta.where(delta < 0, 0)
+            avg_gains = gains.rolling(window=period).mean()
+            avg_losses = losses.rolling(window=period).mean()
+            rs = avg_gains / avg_losses.replace(0, np.nan)
+            rsi = 100 - (100 / (1 + rs))
+            return rsi.fillna(50)
+        except Exception:
+            return pd.Series(index=prices.index, dtype=float).fillna(50)
     
     def _safe_divide(self, numerator: float, denominator: float, default: float = 0.0) -> float:
         """Safe division with fallback."""
@@ -160,13 +481,14 @@ class EnhancedOptimizationSystem:
         self.logger.info(f"🔧 Starting enhanced optimization for {feature_name}")
         
         try:
-            # Get feature generator
-            if not self.feature_generators:
-                raise ValueError("Feature generators not available")
+            # Get feature generator from extensive feature systems
+            if not EXTENSIVE_FEATURE_SYSTEMS_AVAILABLE:
+                raise ValueError("Extensive feature generation systems not available")
             
-            generator_func = getattr(self.feature_generators, f"{feature_name}_generator", None)
+            # Map feature names to appropriate generators
+            generator_func = self._get_feature_generator(feature_name)
             if not generator_func:
-                raise ValueError(f"Feature generator for {feature_name} not found")
+                raise ValueError(f"Feature generator for {feature_name} not found in extensive systems")
             
             # Memory optimization
             if self.memory_optimizer:

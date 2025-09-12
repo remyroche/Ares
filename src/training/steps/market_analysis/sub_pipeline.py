@@ -1630,9 +1630,9 @@ class MarketAnalysisSubPipeline:
                         from src.feature_engineering.enhanced_optimization_system import (
                             EnhancedOptimizationSystem, optimize_features_enhanced
                         )
-                        from src.feature_engineering.comprehensive_feature_generators import (
-                            COMPREHENSIVE_FEATURE_GENERATORS, list_all_available_generators
-                        )
+                        from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering
+                        from src.feature_engineering.cross_timeframe_interaction_features import CrossTimeframeFeatureGenerator
+                        from src.feature_engineering.limited_microstructure_features import LimitedMicrostructureFeatures
                         ENHANCED_OPTIMIZATION_AVAILABLE = True
                     except ImportError as e:
                         self.logger.warning(f"Enhanced optimization system not available: {e}")
@@ -1675,47 +1675,47 @@ class MarketAnalysisSubPipeline:
                             
                             self.logger.info(f"📋 Using configured features: {[c['name'] for c in feature_configs]}")
                         else:
-                            # Use comprehensive default configurations
-                            available_generators = list_all_available_generators()
+                            # Use extensive feature systems default configurations
                             feature_configs = []
                             
-                            # Define comprehensive feature configurations
-                            comprehensive_configs = {
+                            # Define extensive feature configurations from existing systems
+                            extensive_configs = {
+                                # Basic technical indicators from EnhancedFeatureEngineering
                                 'rsi': {'periods': [7, 14, 21, 28], 'method': 'signal_strength'},
                                 'sma': {'periods': [10, 20, 30, 50], 'method': 'noise_reduction'},
                                 'ema': {'periods': [8, 12, 20, 26], 'method': 'trend_following'},
-                                'bollinger_bands': {'periods': [15, 20, 25, 30], 'method': 'information_content'},
                                 'macd': {'periods': [7, 9, 12, 15], 'method': 'signal_strength'},
+                                'bollinger_bands': {'periods': [15, 20, 25, 30], 'method': 'information_content'},
                                 'stochastic': {'periods': [14, 21, 28], 'method': 'signal_strength'},
                                 'atr': {'periods': [10, 14, 20], 'method': 'noise_reduction'},
-                                'volume_sma': {'periods': [10, 20, 30], 'method': 'noise_reduction'},
-                                'volume_weighted_price': {'periods': [10, 20, 30], 'method': 'trend_following'},
-                                'on_balance_volume': {'periods': [10, 20, 30], 'method': 'trend_following'},
-                                'price_momentum': {'periods': [5, 10, 20], 'method': 'signal_strength'},
-                                'rate_of_change': {'periods': [5, 10, 20], 'method': 'signal_strength'},
-                                'williams_r': {'periods': [14, 21, 28], 'method': 'signal_strength'},
-                                'volatility': {'periods': [10, 15, 20, 25], 'method': 'regime_adaptation'},
-                                'keltner_channels': {'periods': [15, 20, 25], 'method': 'information_content'},
                                 'adx': {'periods': [10, 14, 20], 'method': 'trend_following'},
+                                'obv': {'periods': [10, 20, 30], 'method': 'trend_following'},
+                                'mfi': {'periods': [10, 14, 20], 'method': 'signal_strength'},
+                                
+                                # Cross-timeframe features from CrossTimeframeFeatureGenerator
                                 'cross_timeframe_momentum': {'periods': [5, 10, 15], 'method': 'signal_strength'},
                                 'cross_timeframe_volatility': {'periods': [5, 10, 15], 'method': 'regime_adaptation'},
-                                'price_pattern': {'periods': [10, 15, 20], 'method': 'information_content'},
-                                'support_resistance': {'periods': [10, 15, 20], 'method': 'information_content'},
-                                'regime_volatility': {'periods': [10, 15, 20], 'method': 'regime_adaptation'},
-                                'regime_trend': {'periods': [10, 15, 20], 'method': 'trend_following'}
+                                'cross_timeframe_range': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                
+                                # Volume features
+                                'volume_momentum': {'periods': [5, 10, 20], 'method': 'signal_strength'},
+                                'volume_volatility': {'periods': [5, 10, 20], 'method': 'regime_adaptation'},
+                                
+                                # Microstructure features from LimitedMicrostructureFeatures
+                                'microstructure_basic': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'microstructure_advanced': {'periods': [5, 10, 15], 'method': 'information_content'},
                             }
                             
-                            # Add available features
-                            for feature_name, config in comprehensive_configs.items():
-                                if feature_name in available_generators:
-                                    feature_configs.append({
-                                        'name': feature_name,
-                                        'periods': config['periods'],
-                                        'method': config['method'],
-                                        'weight': 1.0
-                                    })
+                            # Add all available features
+                            for feature_name, config in extensive_configs.items():
+                                feature_configs.append({
+                                    'name': feature_name,
+                                    'periods': config['periods'],
+                                    'method': config['method'],
+                                    'weight': 1.0
+                                })
                             
-                            self.logger.info(f"📋 Using comprehensive features: {[c['name'] for c in feature_configs]}")
+                            self.logger.info(f"📋 Using extensive feature systems: {[c['name'] for c in feature_configs]}")
                         
                         # Run enhanced optimization
                         enhanced_results = await optimize_features_enhanced(

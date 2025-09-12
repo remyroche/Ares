@@ -76,19 +76,20 @@ def _create_enhanced_features(self, df, use_existing_tools=True):
 ```
 
 #### C. Comprehensive Feature Categories
-The enhanced feature engineering creates 100+ features across multiple categories:
-- **Price Features**: 20+ features (momentum, ratios, patterns, moving averages)
-- **Volume Features**: 15+ features (ratios, spikes, correlations)
-- **Volatility Features**: 15+ features (rolling, EWMA, GARCH-like)
-- **Technical Indicators**: 20+ features (RSI, MACD, Bollinger Bands, ATR, ADX)
-- **Momentum Features**: 15+ features (price and volume momentum)
-- **Support/Resistance Features**: 10+ features (pivot points, swing levels)
-- **Statistical Features**: 15+ features (skewness, kurtosis, quantiles)
-- **Time Features**: 8+ features (cyclical encoding)
-- **Feature Interactions**: 5+ features (cross-feature relationships)
+The enhanced feature engineering creates **168 features** across multiple categories:
+- **Price Features**: 38 features (momentum, ratios, patterns, moving averages, gaps)
+- **Volume Features**: 18 features (ratios, spikes, correlations, momentum)
+- **Volatility Features**: 14 features (rolling, EWMA, GARCH-like, ratios)
+- **Technical Indicators**: 19 features (RSI, MACD, Bollinger Bands, ATR, ADX)
+- **Momentum Features**: 22 features (price and volume momentum, ratios)
+- **Support/Resistance Features**: 20 features (pivot points, swing levels, distances)
+- **Statistical Features**: 26 features (skewness, kurtosis, quantiles, autocorrelation)
+- **Time Features**: 8 features (cyclical encoding, time components)
+- **Feature Interactions**: 3 features (cross-feature relationships)
 
 ### Benefits:
-- **Comprehensive Feature Set**: 100+ engineered features vs. original 20
+- **Comprehensive Feature Set**: 168 engineered features vs. original 20 (8.4x increase)
+- **Volume-Enhanced Analysis**: 18 volume features for sophisticated volume analysis
 - **Integration with Existing Tools**: Uses `src/utils/feature_selection/step08_unified_complete.py`
 - **Regime-Aware**: Features designed for regime discrimination
 - **Scalable**: Handles large feature sets efficiently
@@ -241,14 +242,16 @@ result = optimizer.multi_objective_optimization(hmm_results, kmeans_results, dbs
 
 ### Expected Benefits:
 1. **Better Regime Detection**: Dynamic parameters adapt to data characteristics
-2. **Improved Feature Quality**: 100+ comprehensive features vs. original 20
-3. **Optimal Ensemble Performance**: Dynamic weights based on actual performance
-4. **Integration with Existing Tools**: Leverages existing feature selection infrastructure
-5. **Scalability**: Handles larger feature sets and datasets efficiently
+2. **Improved Feature Quality**: 168 comprehensive features vs. original 20 (8.4x increase)
+3. **Volume-Enhanced Regime Analysis**: 18 volume features enable sophisticated volume-based regime interpretation
+4. **Optimal Ensemble Performance**: Dynamic weights based on actual performance
+5. **Integration with Existing Tools**: Leverages existing feature selection infrastructure
+6. **Scalability**: Handles larger feature sets and datasets efficiently
 
 ### Benchmarking:
 - Parameter optimization: 2-5x improvement in HMM likelihood scores
-- Enhanced feature engineering: 100+ features vs. original 20 (5x increase)
+- Enhanced feature engineering: 168 features vs. original 20 (8.4x increase)
+- Volume-enhanced regime analysis: 6 distinct volume-based regime types
 - Ensemble optimization: 10-25% improvement in overall clustering performance
 
 ## Integration with Existing Codebase
@@ -281,7 +284,8 @@ result = optimizer.multi_objective_optimization(hmm_results, kmeans_results, dbs
 The implemented enhancements provide a significant improvement to the HMM discovery and clustering system:
 
 - **Dynamic Parameter Optimization** makes the system adaptive to different market conditions
-- **Enhanced Feature Engineering** creates 100+ comprehensive features (5x increase from original 20)
+- **Enhanced Feature Engineering** creates 168 comprehensive features (8.4x increase from original 20)
+- **Volume-Enhanced Regime Analysis** enables sophisticated volume-based regime interpretation with 6 distinct regime types
 - **Integration with Existing Tools** leverages existing feature selection infrastructure
 - **Ensemble Weight Optimization** ensures optimal performance from the multi-algorithm approach
 

@@ -273,7 +273,23 @@ class EnhancedFeatureEngineer:
         # Clean features
         features = self._clean_features(features)
         
-        self.logger.info(f"✅ Created {len(features.columns)} comprehensive features")
+        # Count features by category
+        feature_counts = {
+            'price_features': len([col for col in features.columns if 'price' in col or 'ma_' in col or 'ema_' in col or 'gap' in col or 'doji' in col or 'hammer' in col]),
+            'volume_features': len([col for col in features.columns if 'volume' in col]),
+            'volatility_features': len([col for col in features.columns if 'volatility' in col]),
+            'technical_indicators': len([col for col in features.columns if any(ind in col for ind in ['rsi', 'macd', 'bb_', 'atr', 'adx'])]),
+            'momentum_features': len([col for col in features.columns if 'momentum' in col]),
+            'sr_features': len([col for col in features.columns if any(sr in col for sr in ['support', 'resistance', 'pivot', 'swing'])]),
+            'statistical_features': len([col for col in features.columns if any(stat in col for stat in ['skewness', 'kurtosis', 'quantile', 'autocorr'])]),
+            'time_features': len([col for col in features.columns if any(time in col for time in ['hour', 'day', 'month', 'sin', 'cos'])]),
+            'interaction_features': len([col for col in features.columns if 'interaction' in col])
+        }
+        
+        total_features = sum(feature_counts.values())
+        self.logger.info(f"✅ Created {total_features} comprehensive features:")
+        for category, count in feature_counts.items():
+            self.logger.info(f"   {category}: {count} features")
         return features
     
     def _add_price_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
@@ -926,33 +942,63 @@ class HMMRegimeDiscoveryStep:
         volume_features = [k for k in feature_means.keys() if 'volume' in k]
         avg_volume = np.mean([feature_means[k] for k in volume_features if k in feature_means])
         
-        # Classify regime based on characteristics
+        # Classify regime based on characteristics (including volume)
         if avg_volatility > 0.02:  # High volatility threshold
             if avg_momentum > 0.01:
-                interpretation['regime_type'] = 'bull_trend'
-                interpretation['description'] = 'Strong upward trend with high volatility'
-                interpretation['confidence'] = 0.8
+                if avg_volume > 1.2:  # High volume threshold
+                    interpretation['regime_type'] = 'bull_breakout'
+                    interpretation['description'] = 'Strong upward trend with high volatility and volume'
+                    interpretation['confidence'] = 0.9
+                else:
+                    interpretation['regime_type'] = 'bull_trend'
+                    interpretation['description'] = 'Strong upward trend with high volatility but normal volume'
+                    interpretation['confidence'] = 0.8
             elif avg_momentum < -0.01:
-                interpretation['regime_type'] = 'bear_trend'
-                interpretation['description'] = 'Strong downward trend with high volatility'
-                interpretation['confidence'] = 0.8
+                if avg_volume > 1.2:
+                    interpretation['regime_type'] = 'bear_breakdown'
+                    interpretation['description'] = 'Strong downward trend with high volatility and volume'
+                    interpretation['confidence'] = 0.9
+                else:
+                    interpretation['regime_type'] = 'bear_trend'
+                    interpretation['description'] = 'Strong downward trend with high volatility but normal volume'
+                    interpretation['confidence'] = 0.8
             else:
-                interpretation['regime_type'] = 'high_volatility'
-                interpretation['description'] = 'High volatility without clear trend'
-                interpretation['confidence'] = 0.6
+                if avg_volume > 1.5:
+                    interpretation['regime_type'] = 'high_volatility_volume'
+                    interpretation['description'] = 'High volatility with very high volume (potential reversal)'
+                    interpretation['confidence'] = 0.7
+                else:
+                    interpretation['regime_type'] = 'high_volatility'
+                    interpretation['description'] = 'High volatility without clear trend'
+                    interpretation['confidence'] = 0.6
         else:  # Low volatility
             if abs(avg_momentum) < 0.005:
-                interpretation['regime_type'] = 'consolidation'
-                interpretation['description'] = 'Low volatility consolidation phase'
-                interpretation['confidence'] = 0.7
+                if avg_volume < 0.8:
+                    interpretation['regime_type'] = 'consolidation_low_volume'
+                    interpretation['description'] = 'Low volatility consolidation with low volume'
+                    interpretation['confidence'] = 0.8
+                else:
+                    interpretation['regime_type'] = 'consolidation'
+                    interpretation['description'] = 'Low volatility consolidation phase'
+                    interpretation['confidence'] = 0.7
             elif avg_momentum > 0.005:
-                interpretation['regime_type'] = 'gentle_bull'
-                interpretation['description'] = 'Gentle upward trend with low volatility'
-                interpretation['confidence'] = 0.6
+                if avg_volume > 1.1:
+                    interpretation['regime_type'] = 'gentle_bull_volume'
+                    interpretation['description'] = 'Gentle upward trend with low volatility and above-average volume'
+                    interpretation['confidence'] = 0.7
+                else:
+                    interpretation['regime_type'] = 'gentle_bull'
+                    interpretation['description'] = 'Gentle upward trend with low volatility'
+                    interpretation['confidence'] = 0.6
             else:
-                interpretation['regime_type'] = 'gentle_bear'
-                interpretation['description'] = 'Gentle downward trend with low volatility'
-                interpretation['confidence'] = 0.6
+                if avg_volume > 1.1:
+                    interpretation['regime_type'] = 'gentle_bear_volume'
+                    interpretation['description'] = 'Gentle downward trend with low volatility and above-average volume'
+                    interpretation['confidence'] = 0.7
+                else:
+                    interpretation['regime_type'] = 'gentle_bear'
+                    interpretation['description'] = 'Gentle downward trend with low volatility'
+                    interpretation['confidence'] = 0.6
         
         # Add key indicators
         interpretation['key_indicators'] = [

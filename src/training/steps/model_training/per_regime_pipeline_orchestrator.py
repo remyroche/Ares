@@ -565,22 +565,21 @@ class PerRegimePipelineOrchestrator:
         self.pipeline_integrator = PerRegimePipelineIntegrator(self.config)
         
         # Define pipeline steps based on current training pipeline structure
-        # These correspond to the sub-pipelines in model_training/sub_pipeline.py
+        # Note: HMM training has been moved to MARKET_ANALYSIS stage
         self.pipeline_steps = [
             'general_model_training',      # General ML models
             'analyst_model_training',      # Analyst-specific models  
             'tactician_model_training',    # Tactician-specific models
-            'hmm_training',               # HMM-based model training (includes regime re-tagging)
             'ensemble_training',          # Ensemble model training
             'multi_timeframe_training'    # Multi-timeframe model training
         ]
         
-        # Steps that require per-regime processing (after HMM re-tagging)
+        # Steps that require per-regime processing (uses HMM-retagged regimes from MARKET_ANALYSIS)
         self.per_regime_steps = [
-            'analyst_model_training',      # Uses HMM-retagged regimes
-            'tactician_model_training',    # Uses HMM-retagged regimes
-            'ensemble_training',          # Uses HMM-retagged regimes
-            'multi_timeframe_training'    # Uses HMM-retagged regimes
+            'analyst_model_training',      # Uses HMM-retagged regimes from MARKET_ANALYSIS
+            'tactician_model_training',    # Uses HMM-retagged regimes from MARKET_ANALYSIS
+            'ensemble_training',          # Uses HMM-retagged regimes from MARKET_ANALYSIS
+            'multi_timeframe_training'    # Uses HMM-retagged regimes from MARKET_ANALYSIS
         ]
         
         # Steps that use original MARKET_ANALYSIS regimes
@@ -588,10 +587,8 @@ class PerRegimePipelineOrchestrator:
             'general_model_training'      # Uses original MARKET_ANALYSIS regimes
         ]
         
-        # Steps that handle regime re-tagging
-        self.regime_retagging_steps = [
-            'hmm_training'               # Re-tags regimes from MARKET_ANALYSIS to HMM
-        ]
+        # HMM training is now handled in MARKET_ANALYSIS stage
+        self.regime_retagging_steps = []  # No longer needed in MODEL_TRAINING
     @log_all_calls
 
     def _load_per_regime_config(self) -> None:
@@ -671,13 +668,8 @@ class PerRegimePipelineOrchestrator:
                 self.logger.info(f'🔄 Executing step: {step_name}')
                 try:
                     # Determine step execution type based on regime requirements
-                    if step_name in self.regime_retagging_steps:
-                        # Steps that handle regime re-tagging (HMM training)
-                        step_success = await self._execute_regime_retagging_step(
-                            step_name, symbol, exchange, timeframe, data_dir, force_rerun
-                        )
-                    elif step_name in self.per_regime_steps:
-                        # Steps that use HMM-retagged regimes
+                    if step_name in self.per_regime_steps:
+                        # Steps that use HMM-retagged regimes from MARKET_ANALYSIS
                         step_success = await self._execute_per_regime_step(
                             step_name, symbol, exchange, timeframe, data_dir, force_rerun
                         )

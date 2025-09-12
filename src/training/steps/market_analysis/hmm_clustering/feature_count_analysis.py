@@ -265,27 +265,114 @@ def count_enhanced_features():
     feature_counts['time_features'] = len(time_features)
     print(f"   TOTAL TIME FEATURES: {len(time_features)}")
     
-    # 9. Feature Interactions
-    print("\n9. FEATURE INTERACTIONS:")
+    # 9. Feature Interactions (Enhanced)
+    print("\n9. FEATURE INTERACTIONS (ENHANCED):")
     interaction_features = []
     
-    # Price-volume interactions (1)
-    price_volume = ['price_volume_interaction']
+    # Price-volume interactions (5)
+    price_volume = [
+        'price_volume_interaction', 'price_volume_ratio', 'price_volume_correlation',
+        'price_volume_momentum', 'price_volume_volatility'
+    ]
     interaction_features.extend(price_volume)
     print(f"   Price-volume interactions: {len(price_volume)}")
     
-    # Volatility-momentum interactions (1)
-    vol_momentum_interaction = ['volatility_momentum_interaction']
-    interaction_features.extend(vol_momentum_interaction)
-    print(f"   Volatility-momentum interactions: {len(vol_momentum_interaction)}")
+    # Volatility-momentum interactions (9)
+    vol_momentum_interactions = []
+    for vol in ['volatility_5', 'volatility_10', 'volatility_20']:
+        for mom in ['momentum_5', 'momentum_10', 'momentum_20']:
+            vol_momentum_interactions.extend([
+                f'{vol}_{mom}_interaction', f'{vol}_{mom}_ratio', f'{vol}_{mom}_correlation'
+            ])
+    interaction_features.extend(vol_momentum_interactions)
+    print(f"   Volatility-momentum interactions: {len(vol_momentum_interactions)}")
     
-    # RSI-momentum interactions (1)
-    rsi_momentum_interaction = ['rsi_momentum_interaction']
-    interaction_features.extend(rsi_momentum_interaction)
-    print(f"   RSI-momentum interactions: {len(rsi_momentum_interaction)}")
+    # Technical indicator interactions (15)
+    tech_interactions = []
+    # RSI-MACD interactions (6)
+    for rsi in ['rsi_14', 'rsi_21', 'rsi_30']:
+        for macd in ['macd', 'macd_signal', 'macd_histogram']:
+            tech_interactions.extend([f'{rsi}_{macd}_interaction', f'{rsi}_{macd}_divergence'])
+    # RSI-BB interactions (9)
+    for rsi in ['rsi_14', 'rsi_21', 'rsi_30']:
+        for bb in ['bb_upper_20', 'bb_middle_20', 'bb_lower_20']:
+            tech_interactions.append(f'{rsi}_{bb}_interaction')
+    interaction_features.extend(tech_interactions)
+    print(f"   Technical indicator interactions: {len(tech_interactions)}")
+    
+    # Multi-timeframe interactions (10)
+    timeframe_interactions = []
+    short_term = ['price_ma_5', 'price_ma_10', 'volatility_5', 'volatility_10', 'momentum_5']
+    long_term = ['price_ma_20', 'price_ma_50', 'volatility_20', 'volatility_50', 'momentum_20']
+    for short in short_term:
+        for long in long_term:
+            timeframe_interactions.extend([f'{short}_{long}_ratio', f'{short}_{long}_spread'])
+    interaction_features.extend(timeframe_interactions)
+    print(f"   Multi-timeframe interactions: {len(timeframe_interactions)}")
+    
+    # Feature accelerations (20)
+    acceleration_features = [
+        'price_acceleration', 'price_acceleration_ma', 'price_acceleration_volatility',
+        'volume_acceleration', 'volume_acceleration_ma',
+        'volatility_5_acceleration', 'volatility_5_acceleration_ma',
+        'volatility_10_acceleration', 'volatility_10_acceleration_ma',
+        'volatility_20_acceleration', 'volatility_20_acceleration_ma',
+        'momentum_5_acceleration', 'momentum_5_acceleration_ma',
+        'momentum_10_acceleration', 'momentum_10_acceleration_ma',
+        'momentum_20_acceleration', 'momentum_20_acceleration_ma',
+        'rsi_14_acceleration', 'macd_acceleration', 'bb_upper_20_acceleration'
+    ]
+    interaction_features.extend(acceleration_features)
+    print(f"   Feature accelerations: {len(acceleration_features)}")
+    
+    # Feature returns (15)
+    return_features = [
+        'price_return_5', 'price_return_10', 'price_return_20',
+        'volume_return_5', 'volume_return_10', 'volume_return_20',
+        'volatility_5_return_5', 'volatility_5_return_10',
+        'volatility_10_return_5', 'volatility_10_return_10',
+        'volatility_20_return_5', 'volatility_20_return_10',
+        'rsi_14_return_5', 'rsi_14_return_10',
+        'macd_return_5', 'macd_return_10'
+    ]
+    interaction_features.extend(return_features)
+    print(f"   Feature returns: {len(return_features)}")
+    
+    # Cross-category interactions (25)
+    cross_category = []
+    # Price-Volatility (9)
+    for price in ['price_change', 'price_range', 'price_position']:
+        for vol in ['volatility_5', 'volatility_10', 'volatility_20']:
+            cross_category.extend([f'{price}_{vol}_interaction', f'{price}_{vol}_ratio'])
+    # Volume-Volatility (9)
+    for vol in ['volume_change', 'volume_ma_ratio', 'volume_price_trend']:
+        for vol_vol in ['volatility_5', 'volatility_10', 'volatility_20']:
+            cross_category.append(f'{vol}_{vol_vol}_interaction')
+    # Momentum-Volatility (9)
+    for mom in ['momentum_5', 'momentum_10', 'momentum_20']:
+        for vol in ['volatility_5', 'volatility_10', 'volatility_20']:
+            cross_category.append(f'{mom}_{vol}_interaction')
+    interaction_features.extend(cross_category)
+    print(f"   Cross-category interactions: {len(cross_category)}")
+    
+    # Statistical interactions (15)
+    statistical_interactions = []
+    # Z-scores (20)
+    for i in range(10):
+        statistical_interactions.extend([f'feature_{i}_zscore', f'feature_{i}_zscore_ma'])
+    # Percentiles (10)
+    for i in range(5):
+        statistical_interactions.extend([f'feature_{i}_percentile', f'feature_{i}_percentile_ma'])
+    # Momentum ratios (15)
+    for i in range(5):
+        statistical_interactions.extend([
+            f'feature_{i}_momentum_5', f'feature_{i}_momentum_10', f'feature_{i}_momentum_ratio'
+        ])
+    interaction_features.extend(statistical_interactions)
+    print(f"   Statistical interactions: {len(statistical_interactions)}")
     
     feature_counts['interaction_features'] = len(interaction_features)
-    print(f"   TOTAL INTERACTION FEATURES: {len(interaction_features)}")
+    print(f"   TOTAL ENHANCED INTERACTION FEATURES: {len(interaction_features)}")
     
     # Total count
     total_features = sum(feature_counts.values())

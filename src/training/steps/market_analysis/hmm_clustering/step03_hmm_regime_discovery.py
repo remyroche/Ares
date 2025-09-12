@@ -466,18 +466,183 @@ class EnhancedFeatureEngineer:
             features['day_cos'] = np.cos(2 * np.pi * features['day_of_week'] / 7)
     
     def _add_feature_interactions(self, features: pd.DataFrame) -> None:
-        """Add feature interactions"""
-        # Price-volume interactions
+        """Add comprehensive feature interactions, accelerations, and returns"""
+        self.logger.info("🔗 Creating comprehensive feature interactions...")
+        
+        # 1. Price-Volume Interactions (10+ features)
         if 'price_change' in features.columns and 'volume_change' in features.columns:
             features['price_volume_interaction'] = features['price_change'] * features['volume_change']
+            features['price_volume_ratio'] = features['price_change'] / (features['volume_change'] + 1e-8)
+            features['price_volume_correlation'] = features['price_change'].rolling(20).corr(features['volume_change'])
+            features['price_volume_momentum'] = features['price_volume_interaction'].rolling(10).mean()
+            features['price_volume_volatility'] = features['price_volume_interaction'].rolling(20).std()
         
-        # Volatility-momentum interactions
-        if 'volatility_20' in features.columns and 'momentum_10' in features.columns:
-            features['volatility_momentum_interaction'] = features['volatility_20'] * features['momentum_10']
+        # 2. Volatility-Momentum Interactions (15+ features)
+        volatility_cols = [col for col in features.columns if 'volatility' in col]
+        momentum_cols = [col for col in features.columns if 'momentum' in col]
         
-        # RSI-momentum interactions
-        if 'rsi_14' in features.columns and 'momentum_5' in features.columns:
-            features['rsi_momentum_interaction'] = features['rsi_14'] * features['momentum_5']
+        for vol_col in volatility_cols[:3]:  # Top 3 volatility features
+            for mom_col in momentum_cols[:3]:  # Top 3 momentum features
+                if vol_col in features.columns and mom_col in features.columns:
+                    features[f'{vol_col}_{mom_col}_interaction'] = features[vol_col] * features[mom_col]
+                    features[f'{vol_col}_{mom_col}_ratio'] = features[vol_col] / (features[mom_col] + 1e-8)
+                    features[f'{vol_col}_{mom_col}_correlation'] = features[vol_col].rolling(20).corr(features[mom_col])
+        
+        # 3. Technical Indicator Interactions (20+ features)
+        rsi_cols = [col for col in features.columns if 'rsi' in col]
+        macd_cols = [col for col in features.columns if 'macd' in col]
+        bb_cols = [col for col in features.columns if 'bb_' in col]
+        
+        # RSI-MACD interactions
+        for rsi_col in rsi_cols:
+            for macd_col in macd_cols:
+                if rsi_col in features.columns and macd_col in features.columns:
+                    features[f'{rsi_col}_{macd_col}_interaction'] = features[rsi_col] * features[macd_col]
+                    features[f'{rsi_col}_{macd_col}_divergence'] = features[rsi_col] - features[macd_col]
+        
+        # RSI-Bollinger Bands interactions
+        for rsi_col in rsi_cols:
+            for bb_col in bb_cols[:3]:  # Top 3 BB features
+                if rsi_col in features.columns and bb_col in features.columns:
+                    features[f'{rsi_col}_{bb_col}_interaction'] = features[rsi_col] * features[bb_col]
+        
+        # 4. Multi-timeframe Interactions (15+ features)
+        short_term_cols = [col for col in features.columns if any(x in col for x in ['_5', '_10'])]
+        long_term_cols = [col for col in features.columns if any(x in col for x in ['_20', '_50'])]
+        
+        for short_col in short_term_cols[:5]:  # Top 5 short-term features
+            for long_col in long_term_cols[:5]:  # Top 5 long-term features
+                if short_col in features.columns and long_col in features.columns:
+                    features[f'{short_col}_{long_col}_ratio'] = features[short_col] / (features[long_col] + 1e-8)
+                    features[f'{short_col}_{long_col}_spread'] = features[short_col] - features[long_col]
+        
+        # 5. Feature Accelerations (20+ features)
+        self._add_feature_accelerations(features)
+        
+        # 6. Feature Returns (15+ features)
+        self._add_feature_returns(features)
+        
+        # 7. Cross-Category Interactions (25+ features)
+        self._add_cross_category_interactions(features)
+        
+        # 8. Statistical Interactions (10+ features)
+        self._add_statistical_interactions(features)
+    
+    def _add_feature_accelerations(self, features: pd.DataFrame) -> None:
+        """Add acceleration features (second derivatives)"""
+        # Price accelerations
+        if 'price_change' in features.columns:
+            features['price_acceleration'] = features['price_change'].diff()
+            features['price_acceleration_ma'] = features['price_acceleration'].rolling(10).mean()
+            features['price_acceleration_volatility'] = features['price_acceleration'].rolling(20).std()
+        
+        # Volume accelerations
+        if 'volume_change' in features.columns:
+            features['volume_acceleration'] = features['volume_change'].diff()
+            features['volume_acceleration_ma'] = features['volume_acceleration'].rolling(10).mean()
+        
+        # Volatility accelerations
+        volatility_cols = [col for col in features.columns if 'volatility' in col and 'acceleration' not in col]
+        for vol_col in volatility_cols[:3]:
+            if vol_col in features.columns:
+                features[f'{vol_col}_acceleration'] = features[vol_col].diff()
+                features[f'{vol_col}_acceleration_ma'] = features[f'{vol_col}_acceleration'].rolling(10).mean()
+        
+        # Momentum accelerations
+        momentum_cols = [col for col in features.columns if 'momentum' in col and 'acceleration' not in col]
+        for mom_col in momentum_cols[:3]:
+            if mom_col in features.columns:
+                features[f'{mom_col}_acceleration'] = features[mom_col].diff()
+                features[f'{mom_col}_acceleration_ma'] = features[f'{mom_col}_acceleration'].rolling(10).mean()
+        
+        # Technical indicator accelerations
+        tech_cols = [col for col in features.columns if any(x in col for x in ['rsi', 'macd', 'bb_', 'atr', 'adx'])]
+        for tech_col in tech_cols[:5]:
+            if tech_col in features.columns:
+                features[f'{tech_col}_acceleration'] = features[tech_col].diff()
+    
+    def _add_feature_returns(self, features: pd.DataFrame) -> None:
+        """Add return features (percentage changes)"""
+        # Price return features
+        if 'price_change' in features.columns:
+            features['price_return_5'] = features['price_change'].rolling(5).sum()
+            features['price_return_10'] = features['price_change'].rolling(10).sum()
+            features['price_return_20'] = features['price_change'].rolling(20).sum()
+        
+        # Volume return features
+        if 'volume_change' in features.columns:
+            features['volume_return_5'] = features['volume_change'].rolling(5).sum()
+            features['volume_return_10'] = features['volume_change'].rolling(10).sum()
+            features['volume_return_20'] = features['volume_change'].rolling(20).sum()
+        
+        # Volatility return features
+        volatility_cols = [col for col in features.columns if 'volatility' in col and 'return' not in col]
+        for vol_col in volatility_cols[:3]:
+            if vol_col in features.columns:
+                features[f'{vol_col}_return_5'] = features[vol_col].pct_change(5)
+                features[f'{vol_col}_return_10'] = features[vol_col].pct_change(10)
+        
+        # Technical indicator returns
+        tech_cols = [col for col in features.columns if any(x in col for x in ['rsi', 'macd', 'bb_', 'atr', 'adx'])]
+        for tech_col in tech_cols[:5]:
+            if tech_col in features.columns:
+                features[f'{tech_col}_return_5'] = features[tech_col].pct_change(5)
+                features[f'{tech_col}_return_10'] = features[tech_col].pct_change(10)
+    
+    def _add_cross_category_interactions(self, features: pd.DataFrame) -> None:
+        """Add cross-category interactions"""
+        # Price-Volatility interactions
+        price_cols = [col for col in features.columns if 'price' in col][:3]
+        volatility_cols = [col for col in features.columns if 'volatility' in col][:3]
+        
+        for price_col in price_cols:
+            for vol_col in volatility_cols:
+                if price_col in features.columns and vol_col in features.columns:
+                    features[f'{price_col}_{vol_col}_interaction'] = features[price_col] * features[vol_col]
+                    features[f'{price_col}_{vol_col}_ratio'] = features[price_col] / (features[vol_col] + 1e-8)
+        
+        # Volume-Volatility interactions
+        volume_cols = [col for col in features.columns if 'volume' in col][:3]
+        for vol_col in volume_cols:
+            for vol_vol_col in volatility_cols:
+                if vol_col in features.columns and vol_vol_col in features.columns:
+                    features[f'{vol_col}_{vol_vol_col}_interaction'] = features[vol_col] * features[vol_vol_col]
+        
+        # Momentum-Volatility interactions
+        momentum_cols = [col for col in features.columns if 'momentum' in col][:3]
+        for mom_col in momentum_cols:
+            for vol_col in volatility_cols:
+                if mom_col in features.columns and vol_col in features.columns:
+                    features[f'{mom_col}_{vol_col}_interaction'] = features[mom_col] * features[vol_col]
+        
+        # Support/Resistance-Volatility interactions
+        sr_cols = [col for col in features.columns if any(x in col for x in ['support', 'resistance', 'swing'])][:3]
+        for sr_col in sr_cols:
+            for vol_col in volatility_cols:
+                if sr_col in features.columns and vol_col in features.columns:
+                    features[f'{sr_col}_{vol_col}_interaction'] = features[sr_col] * features[vol_col]
+    
+    def _add_statistical_interactions(self, features: pd.DataFrame) -> None:
+        """Add statistical interaction features"""
+        # Feature z-scores
+        numeric_cols = features.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols[:10]:  # Top 10 numeric features
+            if col in features.columns:
+                features[f'{col}_zscore'] = (features[col] - features[col].rolling(50).mean()) / features[col].rolling(50).std()
+                features[f'{col}_zscore_ma'] = features[f'{col}_zscore'].rolling(10).mean()
+        
+        # Feature percentiles
+        for col in numeric_cols[:5]:  # Top 5 numeric features
+            if col in features.columns:
+                features[f'{col}_percentile'] = features[col].rolling(50).rank(pct=True)
+                features[f'{col}_percentile_ma'] = features[f'{col}_percentile'].rolling(10).mean()
+        
+        # Feature momentum interactions
+        for col in numeric_cols[:5]:
+            if col in features.columns:
+                features[f'{col}_momentum_5'] = features[col].pct_change(5)
+                features[f'{col}_momentum_10'] = features[col].pct_change(10)
+                features[f'{col}_momentum_ratio'] = features[f'{col}_momentum_5'] / (features[f'{col}_momentum_10'] + 1e-8)
     
     def _clean_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Clean and validate features"""

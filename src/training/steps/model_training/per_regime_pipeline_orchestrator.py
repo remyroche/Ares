@@ -388,13 +388,6 @@ async def run_per_regime_pipeline(symbol: str, exchange: str, timeframe: str, da
     else:
         logger.error(f'❌ Per-Regime Pipeline failed: {result.error_message}')
     return result.overall_success
-if __name__ == '__main__':
-
-    async def test() -> None:
-        """Test the per-regime pipeline."""
-        success = await run_per_regime_pipeline(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
-        tprint(f'Per-regime pipeline result: {success}')
-    asyncio.run(test())
 
 """
 Per-Regime Pipeline Orchestrator.

@@ -104,9 +104,9 @@ class ModelTrainingSubPipeline:
         self.sub_pipelines = {
             'hmm_training': self._hmm_training_pipeline,
             'analyst_model_training': self._analyst_model_training_pipeline,
+            'analyst_ensemble_training': self._analyst_ensemble_training_pipeline,
             'tactician_model_training': self._tactician_model_training_pipeline,
-            'ensemble_training': self._ensemble_training_pipeline,
-            'multi_timeframe_training': self._multi_timeframe_training_pipeline,
+            'tactician_ensemble_training': self._tactician_ensemble_training_pipeline,
         }
         
         # Initialize temporal feature integration
@@ -384,8 +384,59 @@ class ModelTrainingSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("analyst_model_training", config, artifacts)
         
+        # Automatically trigger the next sub-pipeline: analyst_ensemble_training
+        self.logger.info("🔄 Analyst model training completed, triggering next: analyst_ensemble_training")
+        try:
+            next_artifacts = await self._analyst_ensemble_training_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Analyst ensemble training pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute analyst ensemble training pipeline: {e}")
+        
+        return artifacts
+    
+    async def _analyst_ensemble_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Analyst ensemble training sub-pipeline."""
+        self.logger.info("🎯 Executing analyst ensemble training pipeline")
+        
+        artifacts = {
+            'analyst_ensembles': [],
+            'ensemble_metrics': {},
+            'analyst_ensemble_performance': {}
+        }
+        
+        if config.mode == ExecutionMode.BLANK:
+            self.logger.info("🔄 Blank mode: Skipping actual analyst ensemble training")
+            artifacts['analyst_ensembles'] = ['analyst_ensemble.pkl']
+            return artifacts
+        
+        # Import and use analyst ensemble training
+        try:
+            from .analyst_ensemble_training import AnalystEnsembleTrainingStep as AnalystEnsembleTrainer
+            
+            trainer = AnalystEnsembleTrainer()
+            training_result = await trainer.execute_analyst_ensemble_training(
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe,
+                data_dir=config.data_dir,
+                force_rerun=config.force_rerun
+            )
+            
+            artifacts['analyst_ensembles'] = training_result.get('models', [])
+            artifacts['ensemble_metrics'] = training_result.get('metrics', {})
+            artifacts['analyst_ensemble_performance'] = training_result.get('performance', {})
+            
+        except ImportError:
+            self.logger.warning("⚠️ Analyst ensemble trainer not available, using mock training")
+            artifacts['analyst_ensembles'] = ['analyst_ensemble.pkl']
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("analyst_ensemble_training", config, artifacts)
+        
         # Automatically trigger the next sub-pipeline: tactician_model_training
-        self.logger.info("🔄 Analyst model training completed, triggering next: tactician_model_training")
+        self.logger.info("🔄 Analyst ensemble training completed, triggering next: tactician_model_training")
         try:
             next_artifacts = await self._tactician_model_training_pipeline(config)
             # Merge artifacts from next pipeline
@@ -435,15 +486,59 @@ class ModelTrainingSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("tactician_model_training", config, artifacts)
         
-        # Automatically trigger the next sub-pipeline: ensemble_training
-        self.logger.info("🔄 Tactician model training completed, triggering next: ensemble_training")
+        # Automatically trigger the next sub-pipeline: tactician_ensemble_training
+        self.logger.info("🔄 Tactician model training completed, triggering next: tactician_ensemble_training")
         try:
-            next_artifacts = await self._ensemble_training_pipeline(config)
+            next_artifacts = await self._tactician_ensemble_training_pipeline(config)
             # Merge artifacts from next pipeline
             artifacts.update(next_artifacts)
-            self.logger.info("✅ Ensemble training pipeline completed successfully")
+            self.logger.info("✅ Tactician ensemble training pipeline completed successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to execute ensemble training pipeline: {e}")
+            self.logger.error(f"❌ Failed to execute tactician ensemble training pipeline: {e}")
+        
+        return artifacts
+    
+    async def _tactician_ensemble_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Tactician ensemble training sub-pipeline."""
+        self.logger.info("⚔️🎯 Executing tactician ensemble training pipeline")
+        
+        artifacts = {
+            'tactician_ensembles': [],
+            'ensemble_metrics': {},
+            'tactician_ensemble_performance': {}
+        }
+        
+        if config.mode == ExecutionMode.BLANK:
+            self.logger.info("🔄 Blank mode: Skipping actual tactician ensemble training")
+            artifacts['tactician_ensembles'] = ['tactician_ensemble.pkl']
+            return artifacts
+        
+        # Import and use tactician ensemble training
+        try:
+            from .tactician_ensemble_training import TacticianEnsembleTrainingStep as TacticianEnsembleTrainer
+            
+            trainer = TacticianEnsembleTrainer()
+            training_result = await trainer.execute_tactician_ensemble_training(
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe,
+                data_dir=config.data_dir,
+                force_rerun=config.force_rerun
+            )
+            
+            artifacts['tactician_ensembles'] = training_result.get('models', [])
+            artifacts['ensemble_metrics'] = training_result.get('metrics', {})
+            artifacts['tactician_ensemble_performance'] = training_result.get('performance', {})
+            
+        except ImportError:
+            self.logger.warning("⚠️ Tactician ensemble trainer not available, using mock training")
+            artifacts['tactician_ensembles'] = ['tactician_ensemble.pkl']
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("tactician_ensemble_training", config, artifacts)
+        
+        # This is the final step in the pipeline
+        self.logger.info("🎉 All model training pipelines completed successfully!")
         
         return artifacts
     

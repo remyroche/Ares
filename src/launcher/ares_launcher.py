@@ -251,8 +251,8 @@ class AresLauncher:
                 'next_stage': 'backtesting',
                 'required_files': ['trained_models.pkl', 'validation_results.json', 'evaluation_results.json'],
                 'required_artifacts': ['model_metadata', 'performance_metrics', 'ensemble_models'],
-                'sub_pipelines': ['hmm_training', 'analyst_model_training', 'tactician_model_training',
-                                'ensemble_training', 'multi_timeframe_training',
+                'sub_pipelines': ['hmm_training', 'analyst_model_training', 'analyst_ensemble_training', 
+                                'tactician_model_training', 'tactician_ensemble_training',
                                 'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation']
             },
             'backtesting': {
@@ -922,10 +922,10 @@ class AresLauncher:
             # Model Training dependencies
             'hmm_training': ['sr_feature_integration'],
             'analyst_model_training': ['hmm_training'],
-            'tactician_model_training': ['analyst_model_training'],
-            'ensemble_training': ['tactician_model_training'],
-            'multi_timeframe_training': ['ensemble_training'],
-            'regime_specific_training': ['multi_timeframe_training'],
+            'analyst_ensemble_training': ['analyst_model_training'],
+            'tactician_model_training': ['analyst_ensemble_training'],
+            'tactician_ensemble_training': ['tactician_model_training'],
+            'regime_specific_training': ['tactician_ensemble_training'],
             'model_validation': ['regime_specific_training'],
             'model_persistence': ['model_validation'],
             'model_evaluation': ['model_persistence'],
@@ -973,11 +973,11 @@ class AresLauncher:
             'sr_feature_integration': ['sr_features.json'],
             
             # Model Training outputs
-            'analyst_model_training': ['analyst_model.pkl'],
-            'tactician_model_training': ['tactician_model.pkl'],
             'hmm_training': ['hmm_model.pkl'],
-            'ensemble_training': ['ensemble_model.pkl'],
-            'multi_timeframe_training': ['multi_tf_model.pkl'],
+            'analyst_model_training': ['analyst_model.pkl'],
+            'analyst_ensemble_training': ['analyst_ensemble.pkl'],
+            'tactician_model_training': ['tactician_model.pkl'],
+            'tactician_ensemble_training': ['tactician_ensemble.pkl'],
             'regime_specific_training': ['regime_models.pkl'],
             'model_validation': ['validation_results.json'],
             'model_persistence': ['persisted_models.pkl'],
@@ -1132,7 +1132,7 @@ Examples:
     
     parser.add_argument(
         '--sub-pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, hmm_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, hmm_regime_discovery, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_model_training, tactician_ensemble_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(

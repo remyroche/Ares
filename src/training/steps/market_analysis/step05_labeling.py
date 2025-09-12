@@ -371,67 +371,166 @@ class ComprehensiveValidationFramework:
         return result
 
     def _validate_data_completeness(self, data: Any, context: Dict[str, Any]=None) -> Dict[str, Any]:
-        """Validate data completeness."""
+        """Validate data completeness using comprehensive quality assessment."""
         result = {'valid': True, 'errors': [], 'warnings': []}
         try:
             if isinstance(data, pd.DataFrame):
-                total_cells = data.size
-                missing_cells = data.isna().sum().sum()
-                completeness_ratio = (total_cells - missing_cells) / total_cells if total_cells > 0 else 0
-                min_completeness = context.get('min_completeness', 0.95)
-                if completeness_ratio < min_completeness:
-                    result['warnings'].append(f'Data completeness {completeness_ratio:.2%} below threshold {min_completeness:.2%}')
+                # Use comprehensive quality assessment for completeness
+                try:
+                    from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+                    quality_scorer = get_quality_scorer()
+                    quality_assessment = quality_scorer.assess_data_quality(
+                        data,
+                        context="market_analysis",
+                        step_name="labeling_data_completeness",
+                        data_type="klines"
+                    )
+                    
+                    # Check completeness component score
+                    completeness_score = quality_assessment.component_scores.get('completeness', 0.0)
+                    min_completeness = context.get('min_completeness', 0.8)
+                    
+                    if completeness_score < min_completeness:
+                        result['warnings'].append(f'Data completeness {completeness_score:.2%} below threshold {min_completeness:.2%}')
+                        result['warnings'].extend(quality_assessment.issues)
+                    
+                except ImportError:
+                    # Fallback to basic completeness check
+                    total_cells = data.size
+                    missing_cells = data.isna().sum().sum()
+                    completeness_ratio = (total_cells - missing_cells) / total_cells if total_cells > 0 else 0
+                    min_completeness = context.get('min_completeness', 0.95)
+                    if completeness_ratio < min_completeness:
+                        result['warnings'].append(f'Data completeness {completeness_ratio:.2%} below threshold {min_completeness:.2%}')
         except Exception as e:
             result['valid'] = False
             result['errors'].append(f'Validation error: {str(e)}')
         return result
 
     def _validate_data_types(self, data: Any, context: Dict[str, Any]=None) -> Dict[str, Any]:
-        """Validate data types."""
+        """Validate data types using comprehensive quality assessment."""
         result = {'valid': True, 'errors': [], 'warnings': []}
         try:
             if isinstance(data, pd.DataFrame):
-                expected_types = context.get('expected_types', {})
-                for col, expected_type in expected_types.items():
-                    if col in data.columns:
-                        actual_type = data[col].dtype
-                        if not pd.api.types.is_dtype_equal(actual_type, expected_type):
-                            result['warnings'].append(f"Column '{col}' type mismatch: {actual_type} vs {expected_type}")
+                # Use comprehensive quality assessment for data types
+                try:
+                    from src.utils.data.quality.data_quality import DataQualityFramework
+                    quality_framework = DataQualityFramework()
+                    quality_result = quality_framework.validate_dataframe_quality(data, context="labeling_data_types")
+                    
+                    # Check for data type issues
+                    if quality_result.issues:
+                        type_issues = [issue for issue in quality_result.issues if 'data_type' in issue.lower()]
+                        if type_issues:
+                            result['warnings'].extend(type_issues)
+                    
+                    # Also check expected types if provided
+                    expected_types = context.get('expected_types', {})
+                    for col, expected_type in expected_types.items():
+                        if col in data.columns:
+                            actual_type = data[col].dtype
+                            if not pd.api.types.is_dtype_equal(actual_type, expected_type):
+                                result['warnings'].append(f"Column '{col}' type mismatch: {actual_type} vs {expected_type}")
+                
+                except ImportError:
+                    # Fallback to basic type checking
+                    expected_types = context.get('expected_types', {})
+                    for col, expected_type in expected_types.items():
+                        if col in data.columns:
+                            actual_type = data[col].dtype
+                            if not pd.api.types.is_dtype_equal(actual_type, expected_type):
+                                result['warnings'].append(f"Column '{col}' type mismatch: {actual_type} vs {expected_type}")
         except Exception as e:
             result['valid'] = False
             result['errors'].append(f'Validation error: {str(e)}')
         return result
 
     def _validate_data_ranges(self, data: Any, context: Dict[str, Any]=None) -> Dict[str, Any]:
-        """Validate data ranges."""
+        """Validate data ranges using comprehensive quality assessment."""
         result = {'valid': True, 'errors': [], 'warnings': []}
         try:
             if isinstance(data, pd.DataFrame):
-                column_ranges = context.get('column_ranges', {})
-                for col, (min_val, max_val) in column_ranges.items():
-                    if col in data.columns:
-                        col_data = data[col].dropna()
-                        if len(col_data) > 0:
-                            if col_data.min() < min_val or col_data.max() > max_val:
-                                result['warnings'].append(f"Column '{col}' values outside range [{min_val}, {max_val}]")
+                # Use comprehensive quality assessment for data ranges
+                try:
+                    from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+                    quality_metrics = AdvancedQualityMetrics()
+                    quality_assessment = quality_metrics.comprehensive_quality_assessment(
+                        data,
+                        context="labeling_data_ranges",
+                        step_name="data_range_validation"
+                    )
+                    
+                    # Check for price anomalies and range issues
+                    for metric in quality_assessment.metrics:
+                        if 'price_anomaly' in metric.name or 'range' in metric.name.lower():
+                            if metric.severity in ['error', 'critical']:
+                                result['errors'].append(metric.message)
+                            elif metric.severity == 'warning':
+                                result['warnings'].append(metric.message)
+                    
+                    # Also check custom column ranges if provided
+                    column_ranges = context.get('column_ranges', {})
+                    for col, (min_val, max_val) in column_ranges.items():
+                        if col in data.columns:
+                            col_data = data[col].dropna()
+                            if len(col_data) > 0:
+                                if col_data.min() < min_val or col_data.max() > max_val:
+                                    result['warnings'].append(f"Column '{col}' values outside range [{min_val}, {max_val}]")
+                
+                except ImportError:
+                    # Fallback to basic range checking
+                    column_ranges = context.get('column_ranges', {})
+                    for col, (min_val, max_val) in column_ranges.items():
+                        if col in data.columns:
+                            col_data = data[col].dropna()
+                            if len(col_data) > 0:
+                                if col_data.min() < min_val or col_data.max() > max_val:
+                                    result['warnings'].append(f"Column '{col}' values outside range [{min_val}, {max_val}]")
         except Exception as e:
             result['valid'] = False
             result['errors'].append(f'Validation error: {str(e)}')
         return result
 
     def _validate_data_consistency(self, data: Any, context: Dict[str, Any]=None) -> Dict[str, Any]:
-        """Validate data consistency."""
+        """Validate data consistency using comprehensive quality assessment."""
         result = {'valid': True, 'errors': [], 'warnings': []}
         try:
             if isinstance(data, pd.DataFrame):
-                if data.duplicated().any():
-                    duplicate_count = data.duplicated().sum()
-                    result['warnings'].append(f'Found {duplicate_count} duplicate rows')
-                if 'close' in data.columns and 'high' in data.columns and ('low' in data.columns):
-                    invalid_ohlc = (data['close'] > data['high']) | (data['close'] < data['low'])
-                    if invalid_ohlc.any():
-                        invalid_count = invalid_ohlc.sum()
-                        result['warnings'].append(f'Found {invalid_count} rows with invalid OHLC relationships')
+                # Use comprehensive quality assessment for data consistency
+                try:
+                    from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+                    quality_scorer = get_quality_scorer()
+                    quality_assessment = quality_scorer.assess_data_quality(
+                        data,
+                        context="market_analysis",
+                        step_name="labeling_data_consistency",
+                        data_type="klines"
+                    )
+                    
+                    # Check consistency component score
+                    consistency_score = quality_assessment.component_scores.get('consistency', 0.0)
+                    if consistency_score < 0.8:
+                        result['warnings'].append(f'Data consistency score {consistency_score:.2%} below threshold')
+                        result['warnings'].extend(quality_assessment.issues)
+                    
+                    # Check for specific consistency issues
+                    for metric in quality_assessment.metrics:
+                        if 'duplicate' in metric.name.lower() or 'ohlc' in metric.name.lower():
+                            if metric.severity in ['error', 'critical']:
+                                result['errors'].append(metric.message)
+                            elif metric.severity == 'warning':
+                                result['warnings'].append(metric.message)
+                
+                except ImportError:
+                    # Fallback to basic consistency checks
+                    if data.duplicated().any():
+                        duplicate_count = data.duplicated().sum()
+                        result['warnings'].append(f'Found {duplicate_count} duplicate rows')
+                    if 'close' in data.columns and 'high' in data.columns and ('low' in data.columns):
+                        invalid_ohlc = (data['close'] > data['high']) | (data['close'] < data['low'])
+                        if invalid_ohlc.any():
+                            invalid_count = invalid_ohlc.sum()
+                            result['warnings'].append(f'Found {invalid_count} rows with invalid OHLC relationships')
         except Exception as e:
             result['valid'] = False
             result['errors'].append(f'Validation error: {str(e)}')

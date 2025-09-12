@@ -24,9 +24,10 @@ import datetime
 import logging
 import typing
 
-from src.utils.validation import (
+from .quality_validation_decorator import (
     validate_data_quality,
-    validate_feature_engineering_with_lookahead_bias_detection
+    validate_feature_engineering_with_lookahead_bias_detection,
+    validate_feature_data_quality
 )
 
 class FractionalFeatureSelector:
@@ -74,7 +75,7 @@ class FractionalFeatureSelector:
         self.logger.info("✅ Fractional Feature Selector initialized successfully")
     
     @handles_errors("Fractional feature selection")
-    @validate_data_quality
+    @validate_feature_data_quality
     def select_features(
         self, 
         features: pd.DataFrame, 

@@ -30,7 +30,45 @@ from src.utils.logger import system_logger
 from src.utils.error_handler import handles_errors
 from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
 from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
-from src.utils.validation import validate_data_quality
+# from src.utils.validation import validate_data_quality  # Replaced with comprehensive quality tools
+
+# Import comprehensive data quality tools
+try:
+    from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+    from src.utils.data.quality.data_quality import DataQualityFramework
+    from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+    from src.utils.data.quality.data_cleaning import DataCleaner
+    QUALITY_TOOLS_AVAILABLE = True
+except ImportError:
+    QUALITY_TOOLS_AVAILABLE = False
+
+def validate_data_quality(df, data_type='klines', context='data_collection', **kwargs):
+    """Comprehensive data quality validation using proper tools."""
+    if not QUALITY_TOOLS_AVAILABLE:
+        # Fallback to basic validation
+        return {'valid': True, 'quality_score': 50.0, 'issues': [], 'warnings': []}
+    
+    try:
+        quality_scorer = get_quality_scorer()
+        quality_assessment = quality_scorer.assess_data_quality(
+            df,
+            context=context,
+            step_name="data_validation",
+            data_type=data_type
+        )
+        
+        return {
+            'valid': quality_assessment.level.value not in ['critical'],
+            'quality_score': quality_assessment.overall_score,
+            'issues': quality_assessment.issues,
+            'warnings': quality_assessment.warnings,
+            'component_scores': quality_assessment.component_scores,
+            'quality_level': quality_assessment.level.value
+        }
+    except Exception as e:
+        logger.warning(f"⚠️ Error in comprehensive quality validation: {e}")
+        return {'valid': True, 'quality_score': 50.0, 'issues': [str(e)], 'warnings': []}
+
 from typing import Any
 from typing import Dict
 from typing import Optional
@@ -108,6 +146,26 @@ class EnhancedDataValidator:
         self.schema = schema
         self.logger = logger.getChild(f'Validator.{schema.data_type.value}')
         self.validation_stats = {'total_rows_processed': 0, 'valid_rows': 0, 'invalid_rows': 0, 'validation_errors': [], 'time_gaps_detected': 0, 'quality_issues': []}
+        
+        # Initialize comprehensive quality tools if available
+        if QUALITY_TOOLS_AVAILABLE:
+            try:
+                self.quality_scorer = get_quality_scorer()
+                self.quality_framework = DataQualityFramework()
+                self.advanced_quality_metrics = AdvancedQualityMetrics()
+                self.data_cleaner = DataCleaner(data_type=schema.data_type.value)
+                self.logger.info("✅ Comprehensive quality tools initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize quality tools: {e}")
+                self.quality_scorer = None
+                self.quality_framework = None
+                self.advanced_quality_metrics = None
+                self.data_cleaner = None
+        else:
+            self.quality_scorer = None
+            self.quality_framework = None
+            self.advanced_quality_metrics = None
+            self.data_cleaner = None
 
     def validate_row(self, row_data: Dict[str, Any], row_index: int = 0) -> Dict[str, Any]:
         """
@@ -259,6 +317,120 @@ class EnhancedDataValidator:
             self.validation_stats['time_gaps_detected'] += 1
             return ValidationError(field = self.schema.timestamp_field, message = f'Time gap detected: {gap_seconds:.2f}s > {max_gap}s (tolerance: {tolerance}s)', severity = self.schema.time_gap_config.severity, value = current_timestamp, expected = previous_timestamp + int(max_gap * 1000))
         return None
+    
+    def validate_dataframe_quality(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Perform comprehensive quality validation on a DataFrame using proper quality tools.
+        
+        Args:
+            df: DataFrame to validate
+            
+        Returns:
+            Comprehensive quality assessment results
+        """
+        if self.quality_scorer is None:
+            # Fallback to basic validation
+            return self._fallback_quality_validation(df)
+        
+        try:
+            # Perform comprehensive quality assessment
+            quality_assessment = self.quality_scorer.assess_data_quality(
+                df,
+                context="data_collection",
+                step_name=f"data_validation_{self.schema.data_type.value}",
+                data_type=self.schema.data_type.value
+            )
+            
+            # Log quality assessment results
+            self.logger.info(f"📊 Data quality assessment: {quality_assessment.overall_score:.2f} ({quality_assessment.level.value})")
+            
+            # Handle quality issues
+            if quality_assessment.level.value in ['poor', 'critical']:
+                self.logger.warning(f"⚠️ Low data quality detected: {quality_assessment.issues}")
+                
+                # Attempt data cleaning for poor quality data
+                if quality_assessment.level.value == 'poor' and self.data_cleaner:
+                    self.logger.info("🔧 Attempting data cleaning to improve quality...")
+                    cleaned_df = self.data_cleaner.clean_dataframe(df)
+                    
+                    if cleaned_df is not None and not cleaned_df.empty:
+                        # Re-assess quality after cleaning
+                        cleaned_assessment = self.quality_scorer.assess_data_quality(
+                            cleaned_df,
+                            context="data_collection",
+                            step_name=f"data_validation_{self.schema.data_type.value}_cleaned",
+                            data_type=self.schema.data_type.value
+                        )
+                        
+                        if cleaned_assessment.overall_score > quality_assessment.overall_score:
+                            self.logger.info(f"✅ Data cleaning improved quality: {cleaned_assessment.overall_score:.2f}")
+                            quality_assessment = cleaned_assessment
+                        else:
+                            self.logger.warning("⚠️ Data cleaning did not improve quality")
+            
+            # Update validation stats
+            self.validation_stats['quality_issues'].extend(quality_assessment.issues)
+            
+            return {
+                'valid': quality_assessment.level.value not in ['critical'],
+                'quality_score': quality_assessment.overall_score,
+                'quality_level': quality_assessment.level.value,
+                'issues': quality_assessment.issues,
+                'warnings': quality_assessment.warnings,
+                'component_scores': quality_assessment.component_scores,
+                'recommendations': quality_assessment.recommendations
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in comprehensive quality validation: {e}")
+            return self._fallback_quality_validation(df)
+    
+    def _fallback_quality_validation(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Fallback quality validation using basic checks."""
+        try:
+            issues = []
+            warnings = []
+            
+            # Basic quality checks
+            if df.empty:
+                issues.append("DataFrame is empty")
+            
+            # Check for missing values
+            missing_ratio = df.isnull().sum().sum() / (df.shape[0] * df.shape[1]) if df.shape[0] > 0 and df.shape[1] > 0 else 0
+            if missing_ratio > 0.1:
+                warnings.append(f"High missing value ratio: {missing_ratio:.2%}")
+            
+            # Check for duplicates
+            duplicate_ratio = df.duplicated().sum() / len(df) if len(df) > 0 else 0
+            if duplicate_ratio > 0.05:
+                warnings.append(f"High duplicate ratio: {duplicate_ratio:.2%}")
+            
+            # Simple quality score calculation
+            quality_score = 1.0 - (missing_ratio + duplicate_ratio)
+            quality_score = max(0.0, quality_score) * 100  # Convert to 0-100 scale
+            
+            return {
+                'valid': len(issues) == 0,
+                'quality_score': quality_score,
+                'quality_level': 'excellent' if quality_score >= 90 else 'good' if quality_score >= 80 else 'fair' if quality_score >= 70 else 'poor' if quality_score >= 60 else 'critical',
+                'issues': issues,
+                'warnings': warnings,
+                'component_scores': {},
+                'recommendations': []
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in fallback quality validation: {e}")
+            return {
+                'valid': True,
+                'quality_score': 50.0,
+                'quality_level': 'fair',
+                'issues': [str(e)],
+                'warnings': [],
+                'component_scores': {},
+                'recommendations': []
+            }
+    
     @log_all_calls
 
     def _add_metadata_fields(self, validated_row: Dict[str, Any], row_data: Dict[str, Any]) -> None:

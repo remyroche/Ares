@@ -39,6 +39,27 @@ class EnhancedDataQualityManager:
 
     def _initialize_components(self) -> None:
         """Initialize all quality management components."""
+        # Initialize comprehensive quality tools
+        try:
+            from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+            from src.utils.data.quality.data_quality import DataQualityFramework
+            from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+            from src.utils.data.quality.data_cleaning import DataCleaner
+            
+            self.quality_scorer = get_quality_scorer()
+            self.quality_framework = DataQualityFramework()
+            self.advanced_quality_metrics = AdvancedQualityMetrics()
+            self.data_cleaner = DataCleaner(data_type='klines')
+            
+            logger.info("✅ Comprehensive quality tools initialized")
+        except ImportError as e:
+            logger.warning(f"⚠️ Comprehensive quality tools not available: {e}")
+            self.quality_scorer = None
+            self.quality_framework = None
+            self.advanced_quality_metrics = None
+            self.data_cleaner = None
+        
+        # Initialize legacy components for backward compatibility
         try:
             from .data_gap_detector import DataGapDetector
             self.gap_detector = DataGapDetector(str(self.data_cache_path))
@@ -101,6 +122,58 @@ import logging
         }
 
         try:
+            # Step 0: Perform comprehensive quality assessment if tools are available
+            if hasattr(self, 'quality_scorer') and self.quality_scorer:
+                try:
+                    # Load data for comprehensive quality assessment
+                    data_file = self.data_cache_path / f"{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+                    if data_file.exists():
+                        df = pd.read_parquet(data_file)
+                        
+                        # Perform comprehensive quality assessment
+                        quality_assessment = self.quality_scorer.assess_data_quality(
+                            df,
+                            context="data_collection",
+                            step_name="enhanced_data_quality_manager",
+                            data_type="klines"
+                        )
+                        
+                        results["quality_metrics"] = {
+                            "overall_score": quality_assessment.overall_score,
+                            "quality_level": quality_assessment.level.value,
+                            "component_scores": quality_assessment.component_scores,
+                            "issues": quality_assessment.issues,
+                            "warnings": quality_assessment.warnings,
+                            "recommendations": quality_assessment.recommendations
+                        }
+                        
+                        logger.info(f"📊 Comprehensive quality assessment: {quality_assessment.overall_score:.2f} ({quality_assessment.level.value})")
+                        
+                        # Attempt data cleaning if quality is poor
+                        if quality_assessment.level.value == 'poor' and hasattr(self, 'data_cleaner') and self.data_cleaner:
+                            logger.info("🔧 Attempting data cleaning to improve quality...")
+                            cleaned_df = self.data_cleaner.clean_dataframe(df)
+                            
+                            if cleaned_df is not None and not cleaned_df.empty:
+                                # Re-assess quality after cleaning
+                                cleaned_assessment = self.quality_scorer.assess_data_quality(
+                                    cleaned_df,
+                                    context="data_collection",
+                                    step_name="enhanced_data_quality_manager_cleaned",
+                                    data_type="klines"
+                                )
+                                
+                                if cleaned_assessment.overall_score > quality_assessment.overall_score:
+                                    logger.info(f"✅ Data cleaning improved quality: {cleaned_assessment.overall_score:.2f}")
+                                    # Save cleaned data
+                                    cleaned_df.to_parquet(data_file)
+                                    results["quality_metrics"]["cleaned_score"] = cleaned_assessment.overall_score
+                                else:
+                                    logger.warning("⚠️ Data cleaning did not improve quality")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Comprehensive quality assessment failed: {e}")
+            
             # Step 1: Check for data gaps
             if check_gaps and self.gap_detector:
                 gap_results = await self._check_data_gaps(symbol, exchange, timeframe)

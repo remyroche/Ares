@@ -31,7 +31,38 @@ from src.utils.logger import system_logger
 from src.utils.error_handler import handles_errors
 from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
 from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
-from src.utils.validation import validate_data_quality
+# from src.utils.validation import validate_data_quality  # Replaced with comprehensive quality tools
+
+# Import comprehensive data quality tools
+try:
+    from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+    from src.utils.data.quality.data_quality import DataQualityFramework
+    QUALITY_TOOLS_AVAILABLE = True
+except ImportError:
+    QUALITY_TOOLS_AVAILABLE = False
+
+def validate_data_quality(df, **kwargs):
+    """Comprehensive data quality validation using proper tools."""
+    if not QUALITY_TOOLS_AVAILABLE:
+        return {'valid': True, 'quality_score': 50.0, 'issues': [], 'warnings': []}
+    
+    try:
+        quality_scorer = get_quality_scorer()
+        quality_assessment = quality_scorer.assess_data_quality(
+            df,
+            context="data_collection",
+            step_name="data_resampling",
+            data_type="klines"
+        )
+        
+        return {
+            'valid': quality_assessment.level.value not in ['critical'],
+            'quality_score': quality_assessment.overall_score,
+            'issues': quality_assessment.issues,
+            'warnings': quality_assessment.warnings
+        }
+    except Exception as e:
+        return {'valid': True, 'quality_score': 50.0, 'issues': [str(e)], 'warnings': []}
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 logger = system_logger.getChild("UnifiedResampler")

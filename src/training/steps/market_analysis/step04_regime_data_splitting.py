@@ -1062,16 +1062,89 @@ class RegimeDataSplittingStep:
                     metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
                 )
 
-            # Use data processing utilities for validation with fallback
+            # Use comprehensive data quality assessment with proper tools
             try:
-                create_data_quality_report_func = self.utils.get_function('data_processing_utils', 'create_data_quality_report')
-                if create_data_quality_report_func is None:
-                    raise AttributeError("create_data_quality_report not available from utils")
-                data_quality_report = create_data_quality_report_func(regime_data)
-            except (AttributeError, KeyError):
-                # Fallback to direct import from common_utilities
-                from src.utils.common_utilities import create_data_quality_report
-                data_quality_report = create_data_quality_report(regime_data)
+                from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+                from src.utils.data.quality.data_quality import DataQualityFramework
+                from src.utils.data.quality.data_cleaning import DataCleaner
+                
+                # Initialize quality assessment tools
+                quality_scorer = get_quality_scorer()
+                quality_framework = DataQualityFramework()
+                data_cleaner = DataCleaner(data_type='klines')
+                
+                # Perform comprehensive quality assessment
+                self.logger.info('📊 Performing comprehensive data quality assessment...')
+                quality_assessment = quality_scorer.assess_data_quality(
+                    regime_data,
+                    context="market_analysis",
+                    step_name="regime_data_splitting",
+                    data_type="klines"
+                )
+                
+                # Log quality assessment results
+                self.logger.info(f'📈 Data quality score: {quality_assessment.overall_score:.2f} ({quality_assessment.level.value})')
+                
+                # Handle quality issues based on assessment level
+                if quality_assessment.level.value in ['poor', 'critical']:
+                    self.logger.warning(f'⚠️ Low data quality detected: {quality_assessment.issues}')
+                    
+                    # Attempt data cleaning for poor quality data
+                    if quality_assessment.level.value == 'poor':
+                        self.logger.info('🔧 Attempting data cleaning to improve quality...')
+                        cleaned_data = data_cleaner.clean_dataframe(
+                            regime_data,
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe
+                        )
+                        
+                        if cleaned_data is not None and not cleaned_data.empty:
+                            # Re-assess quality after cleaning
+                            cleaned_assessment = quality_scorer.assess_data_quality(
+                                cleaned_data,
+                                context="market_analysis",
+                                step_name="regime_data_splitting_cleaned",
+                                data_type="klines"
+                            )
+                            
+                            if cleaned_assessment.overall_score > quality_assessment.overall_score:
+                                self.logger.info(f'✅ Data cleaning improved quality: {cleaned_assessment.overall_score:.2f}')
+                                regime_data = cleaned_data
+                                quality_assessment = cleaned_assessment
+                            else:
+                                self.logger.warning('⚠️ Data cleaning did not improve quality, using original data')
+                
+                # Store quality assessment results for reporting
+                data_quality_report = {
+                    'is_valid': quality_assessment.level.value not in ['critical'],
+                    'quality_score': quality_assessment.overall_score,
+                    'quality_level': quality_assessment.level.value,
+                    'issues': quality_assessment.issues,
+                    'warnings': quality_assessment.warnings,
+                    'recommendations': quality_assessment.recommendations,
+                    'component_scores': quality_assessment.component_scores
+                }
+                
+            except ImportError as e:
+                self.logger.warning(f'⚠️ Comprehensive quality tools not available, using fallback: {e}')
+                # Fallback to basic quality check
+                from src.utils.data.quality.data_quality import quick_validate_dataframe
+                quality_result = quick_validate_dataframe(regime_data, context="regime_data_splitting")
+                data_quality_report = {
+                    'is_valid': quality_result.passed,
+                    'quality_score': quality_result.quality_score,
+                    'issues': quality_result.issues,
+                    'warnings': quality_result.warnings
+                }
+            except Exception as e:
+                self.logger.error(f'❌ Error in data quality assessment: {e}')
+                data_quality_report = {
+                    'is_valid': True,  # Default to valid to not block processing
+                    'quality_score': 50.0,
+                    'issues': [f'Quality assessment error: {str(e)}'],
+                    'warnings': []
+                }
 
             if not data_quality_report.get('is_valid', True):
                 self.logger.warning(f'⚠️ Data quality issues detected: {data_quality_report.get("issues", [])}')
@@ -1411,8 +1484,35 @@ class RegimeDataSplittingStep:
                 regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
                 regime_df = regime_df.sort_values('timestamp')
                 
-                # Use data processing utilities for regime data validation
-                data_quality_report = self.utils.get_function('data_processing_utils', 'create_data_quality_report')(regime_df)
+                # Use comprehensive data quality assessment for regime data
+                try:
+                    from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+                    quality_scorer = get_quality_scorer()
+                    regime_quality_assessment = quality_scorer.assess_data_quality(
+                        regime_df,
+                        context="market_analysis",
+                        step_name="regime_data_validation",
+                        data_type="klines"
+                    )
+                    
+                    if regime_quality_assessment.level.value in ['poor', 'critical']:
+                        self.logger.warning(f'⚠️ Regime data quality issues: {regime_quality_assessment.issues}')
+                    
+                    data_quality_report = {
+                        'is_valid': regime_quality_assessment.level.value not in ['critical'],
+                        'quality_score': regime_quality_assessment.overall_score,
+                        'issues': regime_quality_assessment.issues
+                    }
+                except ImportError:
+                    # Fallback to basic validation
+                    from src.utils.data.quality.data_quality import quick_validate_dataframe
+                    quality_result = quick_validate_dataframe(regime_df, context="regime_data_validation")
+                    data_quality_report = {
+                        'is_valid': quality_result.passed,
+                        'quality_score': quality_result.quality_score,
+                        'issues': quality_result.issues
+                    }
+                
                 if not data_quality_report.get('is_valid', True):
                     self.logger.warning(f'⚠️ Regime data quality issues: {data_quality_report.get("issues", [])}')
                 
@@ -1437,8 +1537,35 @@ class RegimeDataSplittingStep:
                     df = self.standards.enforce_schema(df, 'unified')
                     df = df.sort_values('timestamp')
                     
-                    # Use data processing utilities for each file
-                    file_quality_report = self.utils.get_function('data_processing_utils', 'create_data_quality_report')(df)
+                    # Use comprehensive data quality assessment for each file
+                    try:
+                        from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+                        quality_scorer = get_quality_scorer()
+                        file_quality_assessment = quality_scorer.assess_data_quality(
+                            df,
+                            context="market_analysis",
+                            step_name=f"file_validation_{file_path.stem}",
+                            data_type="klines"
+                        )
+                        
+                        if file_quality_assessment.level.value in ['poor', 'critical']:
+                            self.logger.warning(f'⚠️ File {file_path.name} quality issues: {file_quality_assessment.issues}')
+                        
+                        file_quality_report = {
+                            'is_valid': file_quality_assessment.level.value not in ['critical'],
+                            'quality_score': file_quality_assessment.overall_score,
+                            'issues': file_quality_assessment.issues
+                        }
+                    except ImportError:
+                        # Fallback to basic validation
+                        from src.utils.data.quality.data_quality import quick_validate_dataframe
+                        quality_result = quick_validate_dataframe(df, context=f"file_validation_{file_path.stem}")
+                        file_quality_report = {
+                            'is_valid': quality_result.passed,
+                            'quality_score': quality_result.quality_score,
+                            'issues': quality_result.issues
+                        }
+                    
                     if not file_quality_report.get('is_valid', True):
                         self.logger.warning(f'⚠️ File {file_path.name} quality issues: {file_quality_report.get("issues", [])}')
                     

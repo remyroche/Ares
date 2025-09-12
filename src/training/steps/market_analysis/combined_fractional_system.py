@@ -14,9 +14,11 @@ from typing import Optional, Dict, Any
 import pandas as pd
 
 from src.utils.logger import get_logger
-from src.utils.validation import (
+from .quality_validation_decorator import (
     validate_data_quality,
-    validate_feature_engineering_with_lookahead_bias_detection
+    validate_feature_engineering_with_lookahead_bias_detection,
+    validate_market_data_quality,
+    validate_feature_data_quality
 )
 
 # Import fractional components
@@ -240,7 +242,7 @@ class CombinedFractionalSystem:
         self.logger.info("✅ Combined Fractional System initialized successfully")
     
     @handles_errors("Combined fractional system processing")
-    @validate_data_quality
+    @validate_market_data_quality
     async def process_data(
         self, 
         price_data: pd.DataFrame, 

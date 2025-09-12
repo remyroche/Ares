@@ -1253,11 +1253,33 @@ class HMMRegimeDiscoveryStep:
         self._initialize_optimized_components()
 
         try:
-            from src.training.steps.data_collection.data_preparation.enhanced_data_quality_manager import EnhancedDataQualityManager
-            self.data_quality_manager = EnhancedDataQualityManager()
-            self.logger.info('✅ Data quality manager initialized successfully')
+            # Use comprehensive data quality tools instead of the old manager
+            from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+            from src.utils.data.quality.data_quality import DataQualityFramework
+            from src.utils.data.quality.data_cleaning import DataCleaner
+            from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+            
+            self.quality_scorer = get_quality_scorer()
+            self.quality_framework = DataQualityFramework()
+            self.data_cleaner = DataCleaner(data_type='klines')
+            self.advanced_quality_metrics = AdvancedQualityMetrics()
+            
+            # Keep the old manager for backward compatibility if available
+            try:
+                from src.training.steps.data_collection.data_preparation.enhanced_data_quality_manager import EnhancedDataQualityManager
+                self.data_quality_manager = EnhancedDataQualityManager()
+                self.logger.info('✅ Legacy data quality manager initialized successfully')
+            except Exception:
+                self.data_quality_manager = None
+                self.logger.info('ℹ️ Legacy data quality manager unavailable, using comprehensive quality tools only')
+            
+            self.logger.info('✅ Comprehensive data quality tools initialized successfully')
         except Exception as e:
-            self.logger.info(f'ℹ️ Data quality manager unavailable: {e}')
+            self.logger.warning(f'⚠️ Comprehensive data quality tools unavailable: {e}')
+            self.quality_scorer = None
+            self.quality_framework = None
+            self.data_cleaner = None
+            self.advanced_quality_metrics = None
             self.data_quality_manager = None
 
         # Try to import SR Breakout Predictor with better error handling
@@ -1821,46 +1843,108 @@ class HMMRegimeDiscoveryStep:
     @traced(span_name='ensure_data_quality')
     @handles_errors(fallback = False)
     async def _ensure_data_quality(self, training_input: dict[str, Any]) -> bool:
-        """Ensure data quality and readiness for HMM regime discovery."""
-        self.logger.info('🔍 Starting data quality validation...')
-        if not self.data_quality_manager:
-            self.logger.warning('⚠️ Data quality manager not available, proceeding without quality check')
-            self.logger.info('📝 Skipping enhanced data quality validation')
+        """Ensure data quality and readiness for HMM regime discovery using comprehensive quality tools."""
+        self.logger.info('🔍 Starting comprehensive data quality validation...')
+        
+        # Use comprehensive quality tools if available
+        if hasattr(self, 'quality_scorer') and self.quality_scorer:
+            try:
+                symbol = training_input.get('symbol', 'UNKNOWN')
+                exchange = training_input.get('exchange', 'BINANCE')
+                timeframe = training_input.get('timeframe', '1m')
+                
+                self.logger.info(f'🎯 Validating data quality for {symbol} on {exchange} ({timeframe})...')
+                
+                # Load data for quality assessment
+                data_path = f"data_cache/{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+                try:
+                    import pandas as pd
+                    data = pd.read_parquet(data_path)
+                    
+                    # Perform comprehensive quality assessment
+                    quality_assessment = self.quality_scorer.assess_data_quality(
+                        data,
+                        context="market_analysis",
+                        step_name="hmm_regime_discovery",
+                        data_type="klines"
+                    )
+                    
+                    self.logger.info(f'📈 Data quality score: {quality_assessment.overall_score:.2f} ({quality_assessment.level.value})')
+                    
+                    # Handle quality issues
+                    if quality_assessment.level.value in ['poor', 'critical']:
+                        self.logger.warning(f'⚠️ Low data quality detected: {quality_assessment.issues}')
+                        
+                        # Attempt data cleaning for poor quality data
+                        if quality_assessment.level.value == 'poor' and hasattr(self, 'data_cleaner') and self.data_cleaner:
+                            self.logger.info('🔧 Attempting data cleaning to improve quality...')
+                            cleaned_data = self.data_cleaner.clean_dataframe(
+                                data,
+                                symbol=symbol,
+                                exchange=exchange,
+                                timeframe=timeframe
+                            )
+                            
+                            if cleaned_data is not None and not cleaned_data.empty:
+                                # Re-assess quality after cleaning
+                                cleaned_assessment = self.quality_scorer.assess_data_quality(
+                                    cleaned_data,
+                                    context="market_analysis",
+                                    step_name="hmm_regime_discovery_cleaned",
+                                    data_type="klines"
+                                )
+                                
+                                if cleaned_assessment.overall_score > quality_assessment.overall_score:
+                                    self.logger.info(f'✅ Data cleaning improved quality: {cleaned_assessment.overall_score:.2f}')
+                                    # Save cleaned data
+                                    cleaned_data.to_parquet(data_path)
+                                else:
+                                    self.logger.warning('⚠️ Data cleaning did not improve quality')
+                    
+                    # Return True if quality is acceptable for processing
+                    return quality_assessment.level.value not in ['critical']
+                    
+                except FileNotFoundError:
+                    self.logger.warning(f'⚠️ Data file not found: {data_path}')
+                    return False
+                except Exception as e:
+                    self.logger.error(f'❌ Error in data quality assessment: {e}')
+                    return False
+                    
+            except Exception as e:
+                self.logger.error(f'❌ Error in comprehensive data quality validation: {e}')
+                return False
+        
+        # Fallback to legacy data quality manager if available
+        if self.data_quality_manager:
+            self.logger.info('📝 Using legacy data quality manager for validation')
+            return await self._legacy_data_quality_check(training_input)
+        else:
+            self.logger.warning('⚠️ No data quality tools available, proceeding without quality check')
             return True
+    
+    async def _legacy_data_quality_check(self, training_input: dict[str, Any]) -> bool:
+        """Legacy data quality check using the old manager."""
         try:
-            symbol = training_input.get('symbol', get_default_symbol())
+            symbol = training_input.get('symbol', 'UNKNOWN')
             exchange = training_input.get('exchange', 'BINANCE')
             timeframe = training_input.get('timeframe', '1m')
+            
             self.logger.info(f'🎯 Validating data quality for {symbol} on {exchange} ({timeframe})...')
             self.logger.info('📋 Requesting data from quality manager...')
-            data_results = await self.data_quality_manager.get_data_for_step3_step4(symbol = symbol, exchange = exchange, timeframe = timeframe)
+            data_results = await self.data_quality_manager.get_data_for_step3_step4(symbol=symbol, exchange=exchange, timeframe=timeframe)
             if data_results.get('success', False):
                 self.logger.info('✅ Data quality check passed')
                 self.logger.info('📊 Data quality metrics:')
-                for key, value in data_results.items():
-                    if key != 'success':
-                        self.logger.info(f'   - {key}: {value}')
+                for key, value in data_results.get('metrics', {}).items():
+                    self.logger.info(f'   {key}: {value}')
                 return True
             else:
-                self.logger.error('❌ Data quality check failed')
-                error = data_results.get('error', 'Unknown error')
-                self.logger.error(f'   Error: {error}')
-                self.logger.info('🔄 Attempting to fix missing data...')
-                fix_results = await self._fix_missing_data(training_input)
-                if fix_results.get('success', False):
-                    self.logger.info('✅ Successfully fixed missing data')
-                    self.logger.info('📊 Fix results:')
-                    for key, value in fix_results.items():
-                        if key != 'success':
-                            self.logger.info(f'   - {key}: {value}')
-                    return True
-                else:
-                    self.logger.error('❌ Failed to fix missing data')
-                    fix_error = fix_results.get('error', 'Unknown error')
-                    self.logger.error(f'   Fix error: {fix_error}')
-                    return False
+                self.logger.warning('⚠️ Data quality check failed')
+                self.logger.warning(f'   Issues: {data_results.get("issues", [])}')
+                return False
         except Exception as e:
-            self.logger.exception(f'❌ Error ensuring data quality: {e}')
+            self.logger.error(f'❌ Error in legacy data quality check: {e}')
             return False
 
     @traced(span_name='fix_missing_data')

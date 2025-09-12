@@ -15,12 +15,12 @@ import datetime
 import logging
 
 class QualityMetricsCalculator:
-    """Calculates comprehensive quality metrics for market data.
+    """Calculates comprehensive quality metrics for market data using proper quality tools.
     
     This class provides functionality for:
-    - Calculating overall data quality scores
+    - Calculating overall data quality scores using comprehensive quality assessment
     - Computing detailed metrics for different quality aspects
-    - Generating quality reports
+    - Generating quality reports with advanced metrics
     - Tracking quality trends over time
     """
     @log_important_calls
@@ -28,22 +28,57 @@ class QualityMetricsCalculator:
     def __init__(self, config: Optional[dict[str, Any]]=None) -> None:
         self.logger = system_logger.getChild('QualityMetricsCalculator')
         self.config = config or self._get_default_config()
+        
+        # Initialize comprehensive quality tools
+        try:
+            from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+            from src.utils.data.quality.data_quality import DataQualityFramework
+            from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+            
+            self.quality_scorer = get_quality_scorer()
+            self.quality_framework = DataQualityFramework()
+            self.advanced_quality_metrics = AdvancedQualityMetrics()
+            
+            self.logger.info("✅ QualityMetricsCalculator initialized with comprehensive quality tools")
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Comprehensive quality tools not available: {e}")
+            self.quality_scorer = None
+            self.quality_framework = None
+            self.advanced_quality_metrics = None
     @log_all_calls
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for quality metrics."""
         return {'score_weights': {'completeness': 0.25, 'consistency': 0.25, 'timeliness': 0.2, 'validity': 0.2, 'accuracy': 0.1}, 'thresholds': {'critical_issue_penalty': 0.3, 'warning_penalty': 0.05, 'missing_data_penalty': 0.1, 'outlier_penalty': 0.02}}
 
-    def calculate_quality_score(self, results: dict[str, Any]) -> float:
+    def calculate_quality_score(self, results: dict[str, Any], df: Optional[pd.DataFrame] = None) -> float:
         """
-        Calculate overall data quality score based on various metrics.
+        Calculate overall data quality score using comprehensive quality assessment.
         
         Args:
             results: Dictionary containing quality check results
+            df: Optional DataFrame for comprehensive quality assessment
             
         Returns:
             Quality score between 0.0 and 1.0
         """
+        # Use comprehensive quality assessment if DataFrame is provided and tools are available
+        if df is not None and self.quality_scorer is not None:
+            try:
+                quality_assessment = self.quality_scorer.assess_data_quality(
+                    df,
+                    context="data_collection",
+                    step_name="quality_metrics_calculation",
+                    data_type="klines"
+                )
+                
+                # Convert to 0-1 scale
+                return quality_assessment.overall_score / 100.0
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Comprehensive quality assessment failed, using fallback: {e}")
+        
+        # Fallback to basic calculation
         score = 1.0
         critical_penalty = self.config['thresholds']['critical_issue_penalty']
         score -= len(results.get('critical_issues', [])) * critical_penalty

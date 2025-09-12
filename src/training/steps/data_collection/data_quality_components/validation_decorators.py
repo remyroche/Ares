@@ -16,10 +16,10 @@ import numpy as np
 import time
 
 def validate_data(func: Callable) -> Callable:
-    """Simplified decorator for data validation.
+    """Comprehensive data validation decorator using proper quality tools.
     
-    This decorator replaces the complex decorators from the original file
-    with a single, focused validation decorator.
+    This decorator provides comprehensive data validation using the proper
+    data quality tools from src/utils/data/quality/.
     
     Args:
         func: Function to decorate
@@ -37,7 +37,36 @@ def validate_data(func: Callable) -> Callable:
             if func.__name__ == "validate_raw_data":
                 return self._create_error_result("Empty or None data provided", kwargs)
             return None
+        
+        # Comprehensive quality validation if tools are available
+        try:
+            from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+            quality_scorer = get_quality_scorer()
             
+            # Perform comprehensive quality assessment
+            quality_assessment = quality_scorer.assess_data_quality(
+                data,
+                context="data_collection",
+                step_name=f"validation_decorator_{func.__name__}",
+                data_type="klines"
+            )
+            
+            # Log quality assessment results
+            logger.info(f"📊 Data quality assessment: {quality_assessment.overall_score:.2f} ({quality_assessment.level.value})")
+            
+            # Handle quality issues
+            if quality_assessment.level.value in ['poor', 'critical']:
+                logger.warning(f"⚠️ Low data quality detected: {quality_assessment.issues}")
+                
+                # For critical quality issues, return error result
+                if quality_assessment.level.value == 'critical' and func.__name__ == "validate_raw_data":
+                    return self._create_error_result(f"Critical data quality issues: {quality_assessment.issues}", kwargs)
+            
+        except ImportError:
+            logger.info("ℹ️ Comprehensive quality tools not available, using basic validation")
+        except Exception as e:
+            logger.warning(f"⚠️ Comprehensive quality validation failed: {e}")
+        
         # Check required columns
         required_columns = ["open", "high", "low", "close", "volume"]
         missing_columns = [col for col in required_columns if col not in data.columns]

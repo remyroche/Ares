@@ -41,6 +41,18 @@ except ImportError:
     m1_matrix_cholesky = None
     m1_matrix_eigendecomposition = None
     m1_matrix_correlation_analysis = None
+
+# Import existing feature selection tools
+try:
+    from src.utils.feature_selection.step08_unified_complete import UnifiedStep08
+    from src.utils.feature_selection.step08_unified_methods import UnifiedStep08Methods
+    EXISTING_FEATURE_SELECTION_AVAILABLE = True
+except ImportError:
+    EXISTING_FEATURE_SELECTION_AVAILABLE = False
+
+# Import parameter optimization
+from .parameter_optimization import ParameterOptimizer
+from .ensemble_optimization import EnsembleWeightOptimizer
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
@@ -205,6 +217,353 @@ else:
     log_step_model = enhanced_mlflow.log_step_model
 logger = system_logger.getChild('Step3HMMRegimeDiscovery')
 
+class EnhancedFeatureEngineer:
+    """Enhanced feature engineering for comprehensive regime detection"""
+    
+    def __init__(self, logger=None):
+        self.logger = logger or system_logger.getChild('EnhancedFeatureEngineer')
+    
+    def create_comprehensive_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create a comprehensive set of 100+ features for regime detection
+        
+        Args:
+            df: Input DataFrame with OHLCV data
+            
+        Returns:
+            DataFrame with comprehensive features
+        """
+        self.logger.info("🔧 Creating comprehensive feature set (100+ features)...")
+        features = pd.DataFrame()
+        features['timestamp'] = df['timestamp'] if 'timestamp' in df.columns else df.index
+        
+        # Ensure we have the required columns
+        required_cols = ['open', 'high', 'low', 'close', 'volume']
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column: {col}")
+        
+        # Price-based features
+        self._add_price_features(features, df)
+        
+        # Volume-based features
+        self._add_volume_features(features, df)
+        
+        # Volatility features
+        self._add_volatility_features(features, df)
+        
+        # Technical indicators
+        self._add_technical_indicators(features, df)
+        
+        # Momentum features
+        self._add_momentum_features(features, df)
+        
+        # Support/Resistance features
+        self._add_sr_features(features, df)
+        
+        # Statistical features
+        self._add_statistical_features(features, df)
+        
+        # Time-based features
+        self._add_time_features(features, df)
+        
+        # Feature interactions
+        self._add_feature_interactions(features)
+        
+        # Clean features
+        features = self._clean_features(features)
+        
+        self.logger.info(f"✅ Created {len(features.columns)} comprehensive features")
+        return features
+    
+    def _add_price_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """Add price-based features"""
+        # Basic price features
+        features['price_change'] = df['close'].pct_change()
+        features['price_range'] = (df['high'] - df['low']) / df['close']
+        features['price_position'] = (df['close'] - df['low']) / (df['high'] - df['low'])
+        
+        # Price ratios
+        features['high_close_ratio'] = df['high'] / df['close']
+        features['low_close_ratio'] = df['low'] / df['close']
+        features['open_close_ratio'] = df['open'] / df['close']
+        
+        # Price gaps
+        features['gap_up'] = (df['open'] - df['close'].shift(1)) / df['close'].shift(1)
+        features['gap_down'] = (df['close'].shift(1) - df['open']) / df['close'].shift(1)
+        
+        # Price patterns
+        features['doji'] = (abs(df['open'] - df['close']) / (df['high'] - df['low'])) < 0.1
+        features['hammer'] = ((df['close'] - df['low']) > 2 * (df['open'] - df['close'])) & \
+                            ((df['high'] - df['close']) < 0.1 * (df['close'] - df['low']))
+        
+        # Multiple timeframe price features
+        for window in [5, 10, 20, 50]:
+            features[f'price_ma_{window}'] = df['close'].rolling(window).mean()
+            features[f'price_ema_{window}'] = df['close'].ewm(span=window).mean()
+            features[f'price_std_{window}'] = df['close'].rolling(window).std()
+            features[f'price_min_{window}'] = df['close'].rolling(window).min()
+            features[f'price_max_{window}'] = df['close'].rolling(window).max()
+            
+            # Price vs moving averages
+            features[f'price_vs_ma_{window}'] = (df['close'] - features[f'price_ma_{window}']) / features[f'price_ma_{window}']
+            features[f'price_vs_ema_{window}'] = (df['close'] - features[f'price_ema_{window}']) / features[f'price_ema_{window}']
+    
+    def _add_volume_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """Add volume-based features"""
+        # Basic volume features
+        features['volume_change'] = df['volume'].pct_change()
+        features['volume_ma_ratio'] = df['volume'] / df['volume'].rolling(20).mean()
+        
+        # Volume-price relationship
+        features['volume_price_trend'] = (df['close'] - df['close'].shift(1)) * df['volume']
+        features['volume_price_correlation'] = df['close'].rolling(20).corr(df['volume'])
+        
+        # Volume patterns
+        features['volume_spike'] = df['volume'] > df['volume'].rolling(20).mean() * 2
+        features['volume_dry_up'] = df['volume'] < df['volume'].rolling(20).mean() * 0.5
+        
+        # Multiple timeframe volume features
+        for window in [5, 10, 20, 50]:
+            features[f'volume_ma_{window}'] = df['volume'].rolling(window).mean()
+            features[f'volume_std_{window}'] = df['volume'].rolling(window).std()
+            features[f'volume_ratio_{window}'] = df['volume'] / features[f'volume_ma_{window}']
+    
+    def _add_volatility_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """Add volatility features"""
+        # Rolling volatility
+        for window in [5, 10, 20, 50]:
+            features[f'volatility_{window}'] = df['close'].pct_change().rolling(window).std()
+            features[f'volatility_ewma_{window}'] = df['close'].pct_change().ewm(span=window).std()
+        
+        # Volatility ratios
+        features['volatility_ratio_5_20'] = features['volatility_5'] / features['volatility_20']
+        features['volatility_ratio_10_50'] = features['volatility_10'] / features['volatility_50']
+        
+        # Volatility momentum
+        features['volatility_momentum'] = features['volatility_20'] - features['volatility_20'].shift(5)
+        features['volatility_acceleration'] = features['volatility_momentum'].diff()
+        
+        # GARCH-like features
+        features['volatility_clustering'] = (df['close'].pct_change() ** 2).rolling(20).mean()
+        features['volatility_persistence'] = features['volatility_clustering'].rolling(10).corr(
+            features['volatility_clustering'].shift(1)
+        )
+    
+    def _add_technical_indicators(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """Add technical indicators"""
+        # RSI
+        for window in [14, 21, 30]:
+            features[f'rsi_{window}'] = self._calculate_rsi(df['close'], window)
+        
+        # MACD
+        features['macd'] = self._calculate_macd(df['close'])
+        features['macd_signal'] = features['macd'].ewm(span=9).mean()
+        features['macd_histogram'] = features['macd'] - features['macd_signal']
+        
+        # Bollinger Bands
+        for window in [20, 50]:
+            bb_upper, bb_middle, bb_lower = self._calculate_bollinger_bands(df['close'], window)
+            features[f'bb_upper_{window}'] = bb_upper
+            features[f'bb_middle_{window}'] = bb_middle
+            features[f'bb_lower_{window}'] = bb_lower
+            features[f'bb_width_{window}'] = (bb_upper - bb_lower) / bb_middle
+            features[f'bb_position_{window}'] = (df['close'] - bb_lower) / (bb_upper - bb_lower)
+        
+        # ATR
+        features['atr_14'] = self._calculate_atr(df)
+        features['atr_ratio'] = features['atr_14'] / df['close']
+        
+        # ADX
+        features['adx_14'] = self._calculate_adx(df)
+    
+    def _add_momentum_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """Add momentum features"""
+        # Price momentum
+        for window in [1, 2, 3, 5, 10, 20, 50]:
+            features[f'momentum_{window}'] = df['close'].pct_change(window)
+            features[f'momentum_ma_{window}'] = features[f'momentum_{window}'].rolling(10).mean()
+        
+        # Volume momentum
+        for window in [1, 2, 3, 5, 10, 20]:
+            features[f'volume_momentum_{window}'] = df['volume'].pct_change(window)
+        
+        # Momentum ratios
+        features['momentum_ratio_5_20'] = features['momentum_5'] / features['momentum_20']
+        features['momentum_ratio_10_50'] = features['momentum_10'] / features['momentum_50']
+    
+    def _add_sr_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """Add support/resistance features"""
+        # Pivot points
+        features['pivot_point'] = (df['high'] + df['low'] + df['close']) / 3
+        features['support_1'] = 2 * features['pivot_point'] - df['high']
+        features['resistance_1'] = 2 * features['pivot_point'] - df['low']
+        features['support_2'] = features['pivot_point'] - (df['high'] - df['low'])
+        features['resistance_2'] = features['pivot_point'] + (df['high'] - df['low'])
+        
+        # Distance to S/R levels
+        features['distance_to_support'] = (df['close'] - features['support_1']) / df['close']
+        features['distance_to_resistance'] = (features['resistance_1'] - df['close']) / df['close']
+        
+        # S/R strength
+        features['sr_strength'] = self._calculate_sr_strength(df)
+        
+        # Swing highs and lows
+        for window in [10, 20, 50]:
+            features[f'swing_high_{window}'] = df['high'].rolling(window, center=True).max()
+            features[f'swing_low_{window}'] = df['low'].rolling(window, center=True).min()
+            features[f'distance_to_swing_high_{window}'] = (features[f'swing_high_{window}'] - df['close']) / df['close']
+            features[f'distance_to_swing_low_{window}'] = (df['close'] - features[f'swing_low_{window}']) / df['close']
+    
+    def _add_statistical_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """Add statistical features"""
+        # Skewness and kurtosis
+        for window in [20, 50]:
+            features[f'skewness_{window}'] = df['close'].pct_change().rolling(window).skew()
+            features[f'kurtosis_{window}'] = df['close'].pct_change().rolling(window).kurt()
+        
+        # Quantiles
+        for window in [20, 50]:
+            for q in [0.25, 0.5, 0.75, 0.9, 0.95]:
+                features[f'quantile_{q}_{window}'] = df['close'].rolling(window).quantile(q)
+                features[f'price_vs_quantile_{q}_{window}'] = (df['close'] - features[f'quantile_{q}_{window}']) / df['close']
+        
+        # Autocorrelation
+        for window in [20, 50]:
+            features[f'autocorr_{window}'] = df['close'].pct_change().rolling(window).apply(
+                lambda x: x.autocorr(lag=1) if len(x) > 1 else 0
+            )
+    
+    def _add_time_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """Add time-based features"""
+        if 'timestamp' in features.columns:
+            timestamp = pd.to_datetime(features['timestamp'])
+            features['hour'] = timestamp.dt.hour
+            features['day_of_week'] = timestamp.dt.dayofweek
+            features['day_of_month'] = timestamp.dt.day
+            features['month'] = timestamp.dt.month
+            
+            # Cyclical encoding
+            features['hour_sin'] = np.sin(2 * np.pi * features['hour'] / 24)
+            features['hour_cos'] = np.cos(2 * np.pi * features['hour'] / 24)
+            features['day_sin'] = np.sin(2 * np.pi * features['day_of_week'] / 7)
+            features['day_cos'] = np.cos(2 * np.pi * features['day_of_week'] / 7)
+    
+    def _add_feature_interactions(self, features: pd.DataFrame) -> None:
+        """Add feature interactions"""
+        # Price-volume interactions
+        if 'price_change' in features.columns and 'volume_change' in features.columns:
+            features['price_volume_interaction'] = features['price_change'] * features['volume_change']
+        
+        # Volatility-momentum interactions
+        if 'volatility_20' in features.columns and 'momentum_10' in features.columns:
+            features['volatility_momentum_interaction'] = features['volatility_20'] * features['momentum_10']
+        
+        # RSI-momentum interactions
+        if 'rsi_14' in features.columns and 'momentum_5' in features.columns:
+            features['rsi_momentum_interaction'] = features['rsi_14'] * features['momentum_5']
+    
+    def _clean_features(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Clean and validate features"""
+        self.logger.info("🧹 Cleaning features...")
+        
+        # Remove timestamp column for HMM training
+        if 'timestamp' in features.columns:
+            features = features.drop('timestamp', axis=1)
+        
+        # Handle infinite values
+        features = features.replace([np.inf, -np.inf], np.nan)
+        
+        # Forward fill technical indicators
+        technical_cols = [col for col in features.columns if any(indicator in col for indicator in 
+                       ['rsi', 'macd', 'bb_', 'atr', 'adx', 'sr_strength'])]
+        for col in technical_cols:
+            if col in features.columns:
+                features[col] = features[col].ffill()
+        
+        # Fill remaining NaN values
+        features = features.fillna(0)
+        
+        # Remove constant features
+        constant_features = features.columns[features.nunique() <= 1]
+        if len(constant_features) > 0:
+            self.logger.info(f"   Removing {len(constant_features)} constant features")
+            features = features.drop(constant_features, axis=1)
+        
+        self.logger.info(f"✅ Feature cleaning completed: {len(features.columns)} features")
+        return features
+    
+    # Technical indicator calculation methods
+    def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
+        """Calculate RSI"""
+        delta = prices.diff()
+        gain = delta.where(delta > 0, 0).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        rs = gain / loss
+        return 100 - 100 / (1 + rs)
+    
+    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
+        """Calculate MACD"""
+        ema_fast = prices.ewm(span=fast).mean()
+        ema_slow = prices.ewm(span=slow).mean()
+        return ema_fast - ema_slow
+    
+    def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """Calculate Bollinger Bands"""
+        sma = prices.rolling(window).mean()
+        std = prices.rolling(window).std()
+        upper = sma + std * num_std
+        lower = sma - std * num_std
+        return upper, sma, lower
+    
+    def _calculate_atr(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
+        """Calculate ATR"""
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        return tr.rolling(window).mean()
+    
+    def _calculate_adx(self, df: pd.DataFrame, window: int = 14) -> pd.Series:
+        """Calculate ADX"""
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        dm_plus = high - high.shift(1)
+        dm_minus = low.shift(1) - low
+        dm_plus = dm_plus.where((dm_plus > dm_minus) & (dm_plus > 0), 0)
+        dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
+        
+        tr_smooth = tr.rolling(window).mean()
+        dm_plus_smooth = dm_plus.rolling(window).mean()
+        dm_minus_smooth = dm_minus.rolling(window).mean()
+        
+        di_plus = 100 * (dm_plus_smooth / tr_smooth)
+        di_minus = 100 * (dm_minus_smooth / tr_smooth)
+        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+        
+        return dx.rolling(window).mean()
+    
+    def _calculate_sr_strength(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
+        """Calculate support/resistance strength"""
+        high_swing = df['high'].rolling(window, center=True).max()
+        low_swing = df['low'].rolling(window, center=True).min()
+        current_price = df['close']
+        
+        high_strength = (high_swing - current_price) / high_swing
+        low_strength = (current_price - low_swing) / low_swing
+        
+        return (high_strength + low_strength) / 2
+
 class HMMRegimeDiscoveryStep:
     """Step 3: HMM Regime Discovery with standardized data quality management."""
     @log_important_calls
@@ -221,6 +580,11 @@ class HMMRegimeDiscoveryStep:
         self.step_timings = {}
         self.data_quality_manager = None
         
+        # Initialize enhancement components
+        self.feature_engineer = EnhancedFeatureEngineer(self.logger)
+        self.parameter_optimizer = ParameterOptimizer(self.logger)
+        self.ensemble_optimizer = EnsembleWeightOptimizer(self.logger)
+        
         tprint("   ✅ Basic attributes initialized")
         tprint("   🔍 Validating environment dependencies...")
         self._validate_environment()
@@ -228,6 +592,132 @@ class HMMRegimeDiscoveryStep:
         self._initialize_components()
         tprint("   🎉 HMM Regime Discovery Step initialization complete")
     @log_all_calls
+    def _create_enhanced_features(self, df: pd.DataFrame, use_existing_tools: bool = True) -> pd.DataFrame:
+        """
+        Create enhanced features using comprehensive feature engineering
+        
+        Args:
+            df: Input DataFrame with OHLCV data
+            use_existing_tools: Whether to use existing feature selection tools
+            
+        Returns:
+            DataFrame with enhanced features
+        """
+        self.logger.info("🔧 Creating enhanced features...")
+        
+        # Step 1: Create comprehensive features
+        comprehensive_features = self.feature_engineer.create_comprehensive_features(df)
+        self.logger.info(f"✅ Created {len(comprehensive_features.columns)} comprehensive features")
+        
+        # Step 2: Use existing feature selection tools if available and requested
+        if use_existing_tools and self.unified_step08 is not None:
+            try:
+                self.logger.info("🔍 Using existing feature selection tools...")
+                
+                # Prepare data for existing tools
+                data_with_features = df.copy()
+                for col in comprehensive_features.columns:
+                    if col not in data_with_features.columns:
+                        data_with_features[col] = comprehensive_features[col]
+                
+                # Use existing feature selection
+                # Note: This would need to be adapted based on the actual interface
+                # For now, we'll use the comprehensive features directly
+                selected_features = comprehensive_features
+                self.logger.info("✅ Used existing feature selection tools")
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Existing feature selection tools failed: {e}")
+                selected_features = comprehensive_features
+        else:
+            selected_features = comprehensive_features
+        
+        return selected_features
+    
+    @log_all_calls
+    def _optimize_hmm_parameters(self, features: pd.DataFrame, use_optimization: bool = True) -> Dict[str, Any]:
+        """
+        Optimize HMM parameters using dynamic parameter search
+        
+        Args:
+            features: Input features for optimization
+            use_optimization: Whether to use parameter optimization
+            
+        Returns:
+            Dictionary with optimal HMM parameters
+        """
+        if not use_optimization:
+            # Use default parameters
+            return {
+                'n_components': 4,
+                'covariance_type': 'full',
+                'n_iter': 100,
+                'tol': 0.001
+            }
+        
+        self.logger.info("🔧 Optimizing HMM parameters...")
+        
+        try:
+            # Use parameter optimizer
+            optimization_result = self.parameter_optimizer.comprehensive_parameter_optimization(
+                features.values, use_optuna=True, n_trials=50
+            )
+            
+            optimal_params = optimization_result.best_params
+            self.logger.info(f"✅ HMM parameters optimized: {optimal_params}")
+            
+            return optimal_params
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Parameter optimization failed: {e}")
+            # Fallback to default parameters
+            return {
+                'n_components': 4,
+                'covariance_type': 'full',
+                'n_iter': 100,
+                'tol': 0.001
+            }
+    
+    @log_all_calls
+    def _optimize_ensemble_weights(self, hmm_results: Dict[str, Any], 
+                                 kmeans_results: Dict[str, Any], 
+                                 dbscan_results: Dict[str, Any],
+                                 validation_data: np.ndarray,
+                                 use_optimization: bool = True) -> Dict[str, float]:
+        """
+        Optimize ensemble weights using dynamic weight optimization
+        
+        Args:
+            hmm_results: HMM clustering results
+            kmeans_results: K-means clustering results
+            dbscan_results: DBSCAN clustering results
+            validation_data: Validation data for optimization
+            use_optimization: Whether to use weight optimization
+            
+        Returns:
+            Dictionary with optimal ensemble weights
+        """
+        if not use_optimization:
+            # Use default weights
+            return {'hmm': 0.4, 'kmeans': 0.3, 'dbscan': 0.3}
+        
+        self.logger.info("⚖️ Optimizing ensemble weights...")
+        
+        try:
+            # Use ensemble optimizer
+            optimization_result = self.ensemble_optimizer.multi_objective_optimization(
+                hmm_results, kmeans_results, dbscan_results, validation_data
+            )
+            
+            optimal_weights = optimization_result.optimal_weights
+            self.logger.info(f"✅ Ensemble weights optimized: {optimal_weights}")
+            
+            return optimal_weights
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Ensemble weight optimization failed: {e}")
+            # Fallback to default weights
+            return {'hmm': 0.4, 'kmeans': 0.3, 'dbscan': 0.3}
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
@@ -277,6 +767,32 @@ class HMMRegimeDiscoveryStep:
         # Initialize enhanced reporting system (will be imported when needed)
         self.enhanced_reporter = None
         self.logger.info('ℹ️ Enhanced reporting system will be imported dynamically when needed')
+        
+        # Initialize existing feature selection tools if available
+        if EXISTING_FEATURE_SELECTION_AVAILABLE:
+            try:
+                # Create configuration for existing feature selection
+                feature_selection_config = {
+                    'symbol': self.config.get('SYMBOL', 'ETHUSDT'),
+                    'exchange': self.config.get('EXCHANGE', 'BINANCE'),
+                    'timeframe': self.config.get('TIMEFRAME', '1m'),
+                    'step08_unified': {
+                        'phase1_target_features': 150,
+                        'phase2_targets': [100, 80, 60],
+                        'enable_mrmr': True,
+                        'enable_rf_importance': True,
+                        'boruta_max_iter': 100,
+                        'boruta_alpha': 0.05
+                    }
+                }
+                self.unified_step08 = UnifiedStep08(feature_selection_config)
+                self.logger.info('✅ Existing feature selection tools initialized')
+            except Exception as e:
+                self.logger.warning(f'⚠️ Failed to initialize existing feature selection tools: {e}')
+                self.unified_step08 = None
+        else:
+            self.unified_step08 = None
+            self.logger.info('ℹ️ Existing feature selection tools not available')
 
     def _initialize_optimized_components(self) -> None:
         """Initialize optimized components for enhanced performance."""

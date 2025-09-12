@@ -10,8 +10,9 @@ A centralized feature validation system has been implemented in `src/feature_eng
 - Infinite values (`inf`, `-inf`)
 - Constant features (all values identical)
 - NaN values
-- Excessive zero values (>50% zeros)
+- Excessive zero values (>1% zeros)
 - Zero standard deviation
+- **Warm-up period exclusion** (first 50 rows excluded by default)
 
 ✅ **Multiple Usage Patterns:**
 - Individual feature validation
@@ -32,13 +33,20 @@ A centralized feature validation system has been implemented in `src/feature_eng
 from src.feature_engineering.math_validation import validate_feature_quality
 import numpy as np
 
-# Validate a single feature
+# Validate a single feature (excludes first 50 rows by default)
 feature_data = np.array([1.0, 2.0, np.nan, 4.0, np.inf])
 report = validate_feature_quality(feature_data, "my_feature")
 
 print(f"Issues found: {len(report['issues'])}")
+print(f"Excluded rows: {report.get('excluded_first_rows', 0)}")
 for issue in report['issues']:
     print(f"- {issue}")
+
+# Custom exclusion settings
+report_custom = validate_feature_quality(
+    feature_data, "my_feature", 
+    exclude_first_rows=100  # Exclude first 100 rows instead of 50
+)
 ```
 
 ### 2. DataFrame Validation
@@ -47,7 +55,7 @@ for issue in report['issues']:
 from src.feature_engineering.math_validation import validate_features_dataframe
 import pandas as pd
 
-# Validate all numeric columns in a DataFrame
+# Validate all numeric columns in a DataFrame (excludes first 50 rows by default)
 df = pd.DataFrame({
     'good_feature': [1, 2, 3, 4, 5],
     'constant_feature': [1, 1, 1, 1, 1],
@@ -58,6 +66,12 @@ validation_results = validate_features_dataframe(df)
 for feature_name, report in validation_results.items():
     if report['issues']:
         print(f"{feature_name}: {len(report['issues'])} issues")
+        print(f"  Excluded rows: {report.get('excluded_first_rows', 0)}")
+
+# Custom exclusion settings
+validation_results_custom = validate_features_dataframe(
+    df, exclude_first_rows=100  # Exclude first 100 rows
+)
 ```
 
 ### 3. Automatic Validation with Decorators
@@ -135,6 +149,7 @@ Each validation returns a comprehensive report:
 {
     'feature_name': 'my_feature',
     'total_values': 1000,
+    'excluded_first_rows': 50,  # NEW: Number of rows excluded from validation
     'valid_values': 950,
     'infinite_values': 10,
     'nan_values': 40,
@@ -147,13 +162,16 @@ Each validation returns a comprehensive report:
     'std_value': 3.4,
     'issues': [
         "Feature 'my_feature' contains 10 infinite values",
-        "Feature 'my_feature' contains 40 NaN values"
+        "Feature 'my_feature' contains 40 NaN values",
+        "Feature 'my_feature' has 2.1% zero values"  # NEW: 1% threshold
     ],
     'critical_issues': [
         "Feature 'my_feature' contains 10 infinite values",
         "Feature 'my_feature' contains 40 NaN values"
     ],
-    'warnings': []
+    'warnings': [
+        "Feature 'my_feature' has 2.1% zero values"
+    ]
 }
 ```
 
@@ -171,6 +189,13 @@ Each validation returns a comprehensive report:
 - `raise_on_critical=True`: Raises exceptions for critical issues
 - `validate_input=True`: Validates input DataFrame
 - `validate_output=True`: Validates output DataFrame
+- `exclude_first_rows=50`: Number of rows to exclude from validation (default: 50)
+
+### Zero Value Threshold
+
+- **New threshold**: 1% (was 50%)
+- **Rationale**: More sensitive detection of problematic features
+- **Example**: A feature with 2% zeros will now trigger a warning
 
 ## Best Practices
 
@@ -219,6 +244,8 @@ def process_with_validation(data):
 4. **Configurable**: Different validation levels for different use cases
 5. **Comprehensive Reporting**: Detailed information about feature quality issues
 6. **Performance Friendly**: Validation can be disabled in production if needed
+7. **Sensitive Detection**: 1% zero threshold catches more problematic features
+8. **Warm-up Period Handling**: Excludes first 50 rows to avoid false warnings during initialization
 
 ## Migration Guide
 
@@ -252,6 +279,21 @@ Potential future improvements to the validation system:
 - **Integration with Monitoring**: Connect validation results to monitoring systems
 - **Feature Quality Scoring**: Provide overall quality scores for feature sets
 
+## Recent Updates
+
+### Version 2.0 Changes
+
+1. **Zero Threshold Reduced**: From 50% to 1% for more sensitive detection
+2. **Warm-up Period Exclusion**: First 50 rows excluded by default to avoid false warnings
+3. **Enhanced Configuration**: All functions support `exclude_first_rows` parameter
+4. **Backward Compatibility**: Existing code continues to work with new defaults
+
+### Impact of Changes
+
+- **More Sensitive**: Features with just 2% zeros now trigger warnings
+- **Fewer False Positives**: Warm-up periods don't cause validation failures
+- **Better Production Ready**: Handles real-world data initialization patterns
+
 ## Conclusion
 
 The centralized feature validation system provides a robust, easy-to-use solution for ensuring feature quality across the entire feature engineering pipeline. By automatically detecting problematic features, it helps maintain data quality and prevents downstream issues in machine learning models.
@@ -261,5 +303,7 @@ The system is designed to be:
 - **Comprehensive**: Covers all common feature quality issues
 - **Flexible**: Configurable for different use cases
 - **Reliable**: Thoroughly tested and validated
+- **Sensitive**: 1% zero threshold catches subtle issues
+- **Smart**: Excludes warm-up periods to avoid false warnings
 
-This implementation addresses the original requirement to "immediately generate a warning if we generate features that have infinite values, are constant, generate NaN or are 0" while providing a foundation for more advanced feature quality management.
+This implementation addresses the original requirement to "immediately generate a warning if we generate features that have infinite values, are constant, generate NaN or are 0" while providing a foundation for more advanced feature quality management. The recent updates make the system even more practical for production use.

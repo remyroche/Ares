@@ -169,6 +169,11 @@ async def example_individual_feature_extraction():
     print("\n📈 Trading Features:")
     for key, value in trading_features.items():
         print(f"   {key}: {value:.4f}")
+    
+    print(f"\n📊 Total SR Features: {len(proximity_features) + len(strength_features) + len(trading_features)}")
+    print("   - Proximity Features: 11")
+    print("   - Strength Features: 3") 
+    print("   - Trading Features: 4")
 
 if __name__ == "__main__":
     # Run examples

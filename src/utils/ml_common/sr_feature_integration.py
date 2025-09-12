@@ -263,18 +263,8 @@ class SRFeatureIntegration:
             levels_in_range = [l for l in sr_levels if abs(l.get('price', 0) - current_price) <= price_range]
             features['sr_level_density'] = float(len(levels_in_range) / max(1, price_range / current_price))
             
-            # Breakout probability (based on proximity and strength)
-            nearest_level = self._find_nearest_level(sr_levels, current_price)
-            if nearest_level:
-                distance = abs(current_price - nearest_level.get('price', 0)) / current_price
-                strength = nearest_level.get('strength', 0.5)
-                # Higher proximity + lower strength = higher breakout probability
-                features['sr_breakout_probability'] = float((1 - distance) * (1 - strength))
-            else:
-                features['sr_breakout_probability'] = 0.5
-            
-            # Reversal probability (opposite of breakout)
-            features['sr_reversal_probability'] = 1.0 - features['sr_breakout_probability']
+            # Remove ML-decision features - let ML models decide based on raw data
+            # Instead, provide raw proximity and strength data for ML to process
             
             # Confluence score (levels clustering around current price)
             confluence_range = current_price * 0.02  # 2% range
@@ -288,17 +278,33 @@ class SRFeatureIntegration:
             else:
                 features['sr_time_since_last_touch'] = 0.5
             
-            # Trend alignment (simplified: price direction vs SR level type)
+            # Trend alignment with strength consideration
             if len(market_data) > 1:
                 recent_trend = (market_data['close'].iloc[-1] - market_data['close'].iloc[-2]) / market_data['close'].iloc[-2]
                 if recent_trend > 0:
-                    # Uptrend: check if approaching resistance
+                    # Uptrend: check if approaching resistance (with strength weighting)
                     resistances_above = [l for l in sr_levels if l.get('level_type', '').lower() == 'resistance' and l.get('price', 0) > current_price]
-                    features['sr_trend_alignment'] = float(len(resistances_above) / max(1, len(sr_levels)))
+                    if resistances_above:
+                        # Weight by strength and proximity
+                        weighted_alignment = sum(
+                            l.get('strength', 0.5) * (1 - abs(l.get('price', 0) - current_price) / current_price)
+                            for l in resistances_above
+                        ) / len(resistances_above)
+                        features['sr_trend_alignment'] = float(weighted_alignment)
+                    else:
+                        features['sr_trend_alignment'] = 0.0  # No resistance above = perfect alignment
                 else:
-                    # Downtrend: check if approaching support
+                    # Downtrend: check if approaching support (with strength weighting)
                     supports_below = [l for l in sr_levels if l.get('level_type', '').lower() == 'support' and l.get('price', 0) < current_price]
-                    features['sr_trend_alignment'] = float(len(supports_below) / max(1, len(sr_levels)))
+                    if supports_below:
+                        # Weight by strength and proximity
+                        weighted_alignment = sum(
+                            l.get('strength', 0.5) * (1 - abs(l.get('price', 0) - current_price) / current_price)
+                            for l in supports_below
+                        ) / len(supports_below)
+                        features['sr_trend_alignment'] = float(weighted_alignment)
+                    else:
+                        features['sr_trend_alignment'] = 0.0  # No support below = perfect alignment
             else:
                 features['sr_trend_alignment'] = 0.5
             
@@ -312,8 +318,6 @@ class SRFeatureIntegration:
         """Get default trading features when no data is available."""
         return {
             'sr_level_density': 0.0,
-            'sr_breakout_probability': 0.5,
-            'sr_reversal_probability': 0.5,
             'sr_confluence_score': 0.0,
             'sr_time_since_last_touch': 0.5,
             'sr_trend_alignment': 0.5
@@ -395,8 +399,7 @@ class SRFeatureIntegration:
         ]
         
         trading_features = [
-            'sr_level_density', 'sr_breakout_probability', 'sr_reversal_probability',
-            'sr_confluence_score', 'sr_time_since_last_touch', 'sr_trend_alignment'
+            'sr_level_density', 'sr_confluence_score', 'sr_time_since_last_touch', 'sr_trend_alignment'
         ]
         
         return proximity_features + strength_features + trading_features

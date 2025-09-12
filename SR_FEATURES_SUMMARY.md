@@ -1,6 +1,6 @@
 # 🎯 **Refined SR Features for ML Trading**
 
-## 📊 **Complete Feature Set (20 Features)**
+## 📊 **Complete Feature Set (18 Features)**
 
 ### **📍 SR Proximity Features (11 features)**
 **Core Proximity:**
@@ -23,49 +23,46 @@
 - `sr_support_resistance_strength_ratio`: Support strength / resistance strength - **>1 = bullish bias, <1 = bearish bias**
 - `sr_nearest_level_strength_ratio`: Nearest level strength / overall strength - **Local vs global strength**
 
-### **📈 SR Trading Features (6 features)**
+### **📈 SR Trading Features (4 features)**
 - `sr_level_density`: Number of levels per price range - **Clustered vs sparse areas**
-- `sr_breakout_probability`: Estimated breakout probability (0-1) - **Based on proximity and strength**
-- `sr_reversal_probability`: Estimated reversal probability (0-1) - **Opposite of breakout**
 - `sr_confluence_score`: How many levels cluster around current price (0-1) - **Confluence strength**
 - `sr_time_since_last_touch`: Time since price last touched an SR level (0-1) - **Freshness indicator**
-- `sr_trend_alignment`: Whether current trend aligns with SR levels (0-1) - **Trend vs level conflict**
+- `sr_trend_alignment`: Whether current trend aligns with SR levels (0-1) - **Weighted by strength and proximity**
 
 ## 🎯 **Trading Relevance Analysis**
 
 ### **✅ Highly Relevant for ML Trading:**
-1. **`sr_breakout_probability`** - Direct trading signal
-2. **`sr_reversal_probability`** - Direct trading signal
-3. **`sr_nearest_level_distance_strength`** - Risk/reward assessment
-4. **`sr_support_resistance_strength_ratio`** - Market bias indicator
-5. **`sr_confluence_score`** - Confluence zones are high-probability areas
-6. **`sr_price_position_in_zone`** - Entry/exit timing
-7. **`sr_balance_delta`** - Trend change detection
+1. **`sr_nearest_level_distance_strength`** - Risk/reward assessment
+2. **`sr_support_resistance_strength_ratio`** - Market bias indicator
+3. **`sr_confluence_score`** - Confluence zones are high-probability areas
+4. **`sr_price_position_in_zone`** - Entry/exit timing
+5. **`sr_balance_delta`** - Trend change detection
+6. **`sr_trend_alignment`** - Trend confirmation (weighted by strength)
 
 ### **✅ Moderately Relevant:**
-8. **`sr_overall_sr_strength`** - Market structure assessment
-9. **`sr_level_density`** - Market complexity indicator
-10. **`sr_trend_alignment`** - Trend confirmation
-11. **`sr_nearest_level_strength_ratio`** - Local context
+7. **`sr_overall_sr_strength`** - Market structure assessment
+8. **`sr_level_density`** - Market complexity indicator
+9. **`sr_nearest_level_strength_ratio`** - Local context
 
 ### **✅ Context Features:**
-12. **`sr_support_proximity`** - Risk assessment
-13. **`sr_resistance_proximity`** - Risk assessment
-14. **`sr_nearest_support_strength`** - Level quality
-15. **`sr_nearest_resistance_strength`** - Level quality
-16. **`sr_sr_balance`** - Market structure
-17. **`sr_sr_zone_width`** - Volatility context
-18. **`sr_total_support_levels`** - Market complexity
-19. **`sr_total_resistance_levels`** - Market complexity
-20. **`sr_time_since_last_touch`** - Level freshness
+10. **`sr_support_proximity`** - Risk assessment
+11. **`sr_resistance_proximity`** - Risk assessment
+12. **`sr_nearest_support_strength`** - Level quality
+13. **`sr_nearest_resistance_strength`** - Level quality
+14. **`sr_sr_balance`** - Market structure
+15. **`sr_sr_zone_width`** - Volatility context
+16. **`sr_total_support_levels`** - Market complexity
+17. **`sr_total_resistance_levels`** - Market complexity
+18. **`sr_time_since_last_touch`** - Level freshness
 
 ## 🔧 **Implementation Benefits**
 
 ### **Trading-Focused Design:**
-- **Direct Signals**: Breakout/reversal probabilities for immediate trading decisions
+- **Raw Data**: Provides raw proximity/strength data for ML models to process
 - **Risk Assessment**: Distance-strength combinations for position sizing
 - **Market Bias**: Support/resistance ratios for directional bias
 - **Timing**: Price position in zones for entry/exit timing
+- **ML-Driven**: Lets ML models make breakout/reversal decisions based on raw features
 
 ### **ML-Ready Format:**
 - **Normalized Values**: All features scaled to 0-1 range
@@ -81,18 +78,18 @@
 
 ## 📈 **Usage Examples**
 
-### **Breakout Detection:**
+### **ML Model Training:**
 ```python
-# High breakout probability = strong signal
-if sr_breakout_probability > 0.8:
-    # Consider breakout trade
-```
-
-### **Reversal Detection:**
-```python
-# High reversal probability + strong level = reversal setup
-if sr_reversal_probability > 0.7 and sr_nearest_level_strength_ratio > 1.5:
-    # Consider reversal trade
+# ML models can learn breakout patterns from raw features
+features = [
+    sr_nearest_level_distance_strength,  # Risk/reward assessment
+    sr_support_resistance_strength_ratio,  # Market bias
+    sr_confluence_score,  # Confluence zones
+    sr_price_position_in_zone,  # Entry/exit timing
+    sr_balance_delta,  # Trend changes
+    sr_trend_alignment  # Trend confirmation
+]
+# Let ML models learn the relationships and make decisions
 ```
 
 ### **Risk Assessment:**
@@ -117,4 +114,4 @@ if sr_support_resistance_strength_ratio > 1.2:
 4. **ML Training**: Use in model training for trading signals
 5. **Live Trading**: Deploy for real-time trading decisions
 
-This refined feature set provides **20 highly relevant, trading-focused SR features** that avoid redundancy while maximizing ML trading effectiveness.
+This refined feature set provides **18 highly relevant, trading-focused SR features** that avoid redundancy while maximizing ML trading effectiveness. The features provide raw data for ML models to process, letting the models learn the complex relationships and make trading decisions.

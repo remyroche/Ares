@@ -371,7 +371,7 @@ class TrainingUtils:
             Dictionary of default parameters
         """
         default_params = {
-            'GRU': {
+            'TCN': {
                 'hidden_size': 64,
                 'num_layers': 2,
                 'dropout': 0.2,

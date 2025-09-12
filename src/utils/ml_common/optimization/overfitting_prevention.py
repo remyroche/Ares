@@ -47,7 +47,7 @@ class OverfittingPreventionConfig:
     
     # Model-specific settings
     model_specific_configs: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
-        'GRU': {
+        'TCN': {
             'dropout': 0.2,
             'recurrent_dropout': 0.1,
             'l2_regularization': 0.01,
@@ -147,7 +147,7 @@ class OverfittingPrevention:
         
         params = {}
         
-        if model_type == 'GRU':
+        if model_type == 'TCN':
             params.update({
                 'dropout': model_config.get('dropout', self.config.dropout_rate),
                 'recurrent_dropout': model_config.get('recurrent_dropout', 0.1),

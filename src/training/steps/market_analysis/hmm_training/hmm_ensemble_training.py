@@ -32,7 +32,7 @@ class HMMEnsembleTrainingRefactored(EnsembleTrainingStep):
             config = EnsembleTrainingConfig(
                 model_name="hmm_ensemble",
                 timeframe="5m",
-                base_models=["logistic_regression", "lightgbm", "gru"],
+                base_models=["wavenet", "logistic_regression", "hist_gradient_boosting", "xgboost_meta"],
                 meta_model="XGBClassifier",  # XGBoost as meta-learner
                 hpo_n_trials=100,
                 hpo_timeout_seconds=1800,
@@ -270,7 +270,7 @@ if __name__ == "__main__":
     config = EnsembleTrainingConfig(
         model_name="hmm_ensemble",
         timeframe="5m",
-        base_models=["logistic_regression", "lightgbm", "gru"],
+        base_models=["wavenet", "logistic_regression", "hist_gradient_boosting", "xgboost_meta"],
         meta_model="XGBClassifier",
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,

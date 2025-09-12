@@ -7,6 +7,7 @@ from src.utils.intensity_scaler import (
     get_intensity_from_environment, get_scaled_hpo_trials, 
     get_scaled_hpo_timeout, log_intensity_info, apply_intensity_scaling
 )
+from .regime_data_integration import RegimeDataIntegrator
 
 """HMM training components for model training.
 

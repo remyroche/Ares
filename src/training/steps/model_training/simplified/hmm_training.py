@@ -153,6 +153,11 @@ class HMMTrainingPipeline:
                 processed_data, hmm_model_results
             )
             
+            # Re-tag all regimes using the trained HMM model (superseding MARKET_ANALYSIS tags)
+            retagged_data = await self._retag_all_regimes(
+                processed_data, hmm_model_results, pipeline_state
+            )
+            
             # Save models and results
             model_paths = await self._save_hmm_models(
                 hmm_model_results, symbol, exchange, timeframe, data_dir
@@ -179,6 +184,8 @@ class HMMTrainingPipeline:
                 'evaluation_results': evaluation_results,
                 'validation_results': validation_results,
                 'hpo_results': hpo_results,
+                'retagged_data': retagged_data,
+                'updated_pipeline_state': retagged_data.get('updated_pipeline_state', pipeline_state),
                 'performance': {
                     'regime_accuracy': metrics.get('regime_accuracy', 0.0),
                     'prediction_accuracy': metrics.get('prediction_accuracy', 0.0),
@@ -186,7 +193,9 @@ class HMMTrainingPipeline:
                     'n_regimes': hmm_model_results['n_regimes'],
                     'training_duration': training_duration,
                     'hpo_trials': hpo_results.get('n_trials', 0),
-                    'best_hpo_score': hpo_results.get('best_score', 0.0)
+                    'best_hpo_score': hpo_results.get('best_score', 0.0),
+                    'regime_retagging_success': retagged_data.get('success', False),
+                    'regime_stability_rate': retagged_data.get('regime_transitions', {}).get('stability_rate', 0.0)
                 }
             }
             
@@ -351,6 +360,161 @@ class HMMTrainingPipeline:
         except Exception as e:
             self.logger.error(f"❌ Model validation failed: {e}")
             return {'error': str(e), 'is_valid': False}
+    
+    @log_important_calls
+    async def _retag_all_regimes(
+        self,
+        market_data: pd.DataFrame,
+        hmm_model_results: Dict[str, Any],
+        pipeline_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Re-tag all regimes using the trained HMM model, superseding MARKET_ANALYSIS tags."""
+        try:
+            self.logger.info("🔄 Re-tagging all regimes with trained HMM model...")
+            
+            # Prepare features for re-tagging
+            features = self._prepare_training_features(market_data)
+            
+            # Use the trained model to predict regime probabilities for all data
+            model = hmm_model_results['model']
+            scaler = hmm_model_results['scaler']
+            
+            # Scale features using the same scaler used in training
+            features_scaled = scaler.transform(features)
+            
+            # Get new regime predictions and probabilities
+            new_regime_predictions = model.predict(features_scaled)
+            new_regime_probabilities = model.predict_proba(features_scaled)
+            
+            # Calculate new confidence scores
+            new_confidence_scores = np.max(new_regime_probabilities, axis=1)
+            
+            # Create regime transition analysis
+            old_regime_labels = np.array(pipeline_state.get('regime_states', []))
+            regime_transitions = self._analyze_regime_transitions(
+                old_regime_labels, new_regime_predictions
+            )
+            
+            # Update pipeline state with new regime tags
+            updated_pipeline_state = pipeline_state.copy()
+            updated_pipeline_state.update({
+                'hmm_retagged_regimes': True,
+                'hmm_retagging_completed': True,
+                'regime_states': new_regime_predictions.tolist(),
+                'regime_probabilities': new_regime_probabilities.tolist(),
+                'regime_confidence': new_confidence_scores.tolist(),
+                'hmm_state_sequence': new_regime_predictions.tolist(),
+                'hmm_state_probs': new_regime_probabilities.tolist(),
+                'regime_transitions': regime_transitions,
+                'hmm_model_used_for_retagging': True,
+                'retagging_timestamp': datetime.now().isoformat()
+            })
+            
+            # Log regime transition summary
+            self._log_regime_transition_summary(regime_transitions)
+            
+            self.logger.info("✅ Regime re-tagging completed successfully")
+            
+            return {
+                'success': True,
+                'updated_pipeline_state': updated_pipeline_state,
+                'new_regime_predictions': new_regime_predictions,
+                'new_regime_probabilities': new_regime_probabilities,
+                'new_confidence_scores': new_confidence_scores,
+                'regime_transitions': regime_transitions
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error re-tagging regimes: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'updated_pipeline_state': pipeline_state
+            }
+    
+    def _analyze_regime_transitions(
+        self, 
+        old_regime_labels: np.ndarray, 
+        new_regime_predictions: np.ndarray
+    ) -> Dict[str, Any]:
+        """Analyze transitions between old and new regime tags."""
+        try:
+            # Align lengths
+            min_len = min(len(old_regime_labels), len(new_regime_predictions))
+            old_regimes = old_regime_labels[:min_len]
+            new_regimes = new_regime_predictions[:min_len]
+            
+            # Calculate transition matrix
+            unique_old = np.unique(old_regimes)
+            unique_new = np.unique(new_regimes)
+            
+            transition_matrix = np.zeros((len(unique_old), len(unique_new)))
+            for i, old_regime in enumerate(unique_old):
+                for j, new_regime in enumerate(unique_new):
+                    transition_matrix[i, j] = np.sum((old_regimes == old_regime) & (new_regimes == new_regime))
+            
+            # Calculate transition statistics
+            total_transitions = np.sum(transition_matrix)
+            stable_predictions = np.sum(old_regimes == new_regimes)
+            stability_rate = stable_predictions / len(old_regimes) if len(old_regimes) > 0 else 0.0
+            
+            # Find most common transitions
+            most_common_transitions = []
+            for i, old_regime in enumerate(unique_old):
+                for j, new_regime in enumerate(unique_new):
+                    count = int(transition_matrix[i, j])
+                    if count > 0:
+                        most_common_transitions.append({
+                            'from_regime': int(old_regime),
+                            'to_regime': int(new_regime),
+                            'count': count,
+                            'percentage': count / total_transitions * 100
+                        })
+            
+            # Sort by count
+            most_common_transitions.sort(key=lambda x: x['count'], reverse=True)
+            
+            return {
+                'transition_matrix': transition_matrix.tolist(),
+                'unique_old_regimes': unique_old.tolist(),
+                'unique_new_regimes': unique_new.tolist(),
+                'total_transitions': int(total_transitions),
+                'stable_predictions': int(stable_predictions),
+                'stability_rate': float(stability_rate),
+                'most_common_transitions': most_common_transitions[:10],  # Top 10
+                'regime_count_old': len(unique_old),
+                'regime_count_new': len(unique_new)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error analyzing regime transitions: {e}")
+            return {'error': str(e)}
+    
+    def _log_regime_transition_summary(self, regime_transitions: Dict[str, Any]) -> None:
+        """Log a summary of regime transitions."""
+        try:
+            if 'error' in regime_transitions:
+                self.logger.warning(f"⚠️ Could not analyze regime transitions: {regime_transitions['error']}")
+                return
+            
+            stability_rate = regime_transitions.get('stability_rate', 0.0)
+            old_count = regime_transitions.get('regime_count_old', 0)
+            new_count = regime_transitions.get('regime_count_new', 0)
+            
+            self.logger.info(f"📊 Regime Re-tagging Summary:")
+            self.logger.info(f"   - Stability Rate: {stability_rate:.2%}")
+            self.logger.info(f"   - Old Regimes: {old_count}")
+            self.logger.info(f"   - New Regimes: {new_count}")
+            
+            # Log most common transitions
+            most_common = regime_transitions.get('most_common_transitions', [])
+            if most_common:
+                self.logger.info(f"   - Most Common Transitions:")
+                for transition in most_common[:5]:  # Top 5
+                    self.logger.info(f"     {transition['from_regime']} → {transition['to_regime']}: {transition['count']} ({transition['percentage']:.1f}%)")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error logging regime transition summary: {e}")
     
     async def _train_regime_probability_model(
         self, 

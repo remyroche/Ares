@@ -77,38 +77,44 @@ class BacktestResult:
 
 @dataclass
 class BacktestConfig:
-    """Configuration for SR level backtesting with data-driven thresholds."""
-    # Touch validation parameters - will be calculated from data
+    """Configuration for SR level backtesting focused on parameter optimization."""
+    # Touch validation parameters - will be optimized from data
     touch_tolerance: float = None  # Will be calculated from price volatility
     min_bounce_strength: float = None  # Will be calculated from historical bounces
     max_hold_time: int = None  # Will be calculated from market characteristics
     
-    # Volume analysis - will be calculated from data
+    # Volume analysis parameters - will be optimized
     volume_threshold_multiplier: float = None  # Will be calculated from volume distribution
     volume_lookback_periods: int = 20  # Periods to calculate average volume
+    min_volume_for_confirmation: float = None  # Minimum volume to confirm SR level
     
-    # Time analysis
+    # SR Level Detection Parameters - will be optimized
+    min_touches_required: int = None  # Minimum touches to consider level significant
+    max_touches_for_analysis: int = 20  # Maximum touches to analyze
+    touch_proximity_tolerance: float = None  # How close touches must be to level
+    
+    # Time analysis parameters
     min_time_between_touches: int = 1  # Minimum hours between touches
     max_analysis_period: int = 720  # Maximum hours to analyze (30 days)
+    time_decay_factor: float = 0.95  # How much older touches are weighted less
     
-    # Quality scoring weights - will be optimized
+    # Quality scoring parameters - will be optimized
     success_rate_weight: float = 0.3
     bounce_strength_weight: float = 0.25
     volume_confirmation_weight: float = 0.2
     time_persistence_weight: float = 0.15
     touch_frequency_weight: float = 0.1
     
-    # Overfitting protection parameters - ADAPTIVE
-    min_samples_for_learning: int = 10  # Reduced minimum samples (was 100)
-    max_features_per_sample_ratio: float = 0.3  # Increased ratio for small samples (was 0.1)
-    cross_validation_folds: int = 3  # Reduced folds for small samples (was 5)
-    early_stopping_patience: int = 5  # Reduced patience for small samples (was 10)
+    # Parameter optimization settings
+    enable_parameter_optimization: bool = True  # Enable parameter optimization
+    min_samples_for_optimization: int = 10  # Minimum samples needed for optimization
+    parameter_optimization_method: str = 'grid_search'  # 'grid_search', 'bayesian', 'genetic'
     
-    # Adaptive learning parameters
-    enable_adaptive_learning: bool = True  # Enable adaptive learning for small samples
-    use_feature_selection: bool = True  # Use feature selection to reduce features
-    conservative_learning_threshold: int = 50  # Use conservative learning below this
-    minimal_learning_threshold: int = 20  # Use minimal learning below this
+    # Quality thresholds - will be calculated from data
+    excellent_quality_threshold: float = None  # Will be calculated from percentiles
+    good_quality_threshold: float = None
+    average_quality_threshold: float = None
+    poor_quality_threshold: float = None
     
     # M1 optimization parameters
     enable_m1_optimizations: bool = True
@@ -496,33 +502,30 @@ class SRBacktestingEngine:
         else:
             return self._calculate_performance_metrics(level, touch_results, data)
     
-    def learn_quality_rules(self, results: List[BacktestResult], 
-                           optimize_weights: bool = True,
-                           market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
-        """Learn quality rules from backtesting results with adaptive overfitting protection."""
+    def optimize_sr_parameters(self, results: List[BacktestResult], 
+                              market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Optimize SR level detection parameters based on backtesting results."""
         try:
-            self.logger.info(f"🧠 Learning quality rules from {len(results)} backtesting results with adaptive overfitting protection")
+            self.logger.info(f"🎯 Optimizing SR parameters from {len(results)} backtesting results")
             
             if not results:
-                self.logger.warning("No results provided for learning quality rules")
+                self.logger.warning("No results provided for parameter optimization")
                 return {}
             
-            # ADAPTIVE LEARNING: Determine learning strategy based on sample size
-            n_samples = len(results)
-            learning_strategy = self._determine_learning_strategy(n_samples)
+            # Check if we have enough samples for optimization
+            if len(results) < self.config.min_samples_for_optimization:
+                self.logger.warning(f"Insufficient samples for optimization: {len(results)} < {self.config.min_samples_for_optimization}")
+                return self._create_fallback_parameters(results)
             
-            self.logger.info(f"📊 Learning strategy: {learning_strategy} (samples: {n_samples})")
+            # Calculate data-driven thresholds first
+            if market_data is not None:
+                self.calculate_data_driven_thresholds(market_data)
             
-            # Apply adaptive learning strategy
-            if learning_strategy == 'minimal':
-                return self._minimal_learning(results, market_data)
-            elif learning_strategy == 'conservative':
-                return self._conservative_learning(results, market_data, optimize_weights)
-            elif learning_strategy == 'standard':
-                return self._standard_learning(results, market_data, optimize_weights)
+            # Optimize parameters
+            if self.config.enable_parameter_optimization:
+                return self._run_parameter_optimization(results, market_data)
             else:
-                self.logger.warning(f"Unknown learning strategy: {learning_strategy}")
-                return self._minimal_learning(results, market_data)
+                return self._create_data_driven_parameters(results, market_data)
             
             # Use continuous quality scoring instead of binary categories
             quality_scores = [r.quality_score for r in results]
@@ -1813,6 +1816,195 @@ class SRBacktestingEngine:
         
         # Final fallback
         return features.get('strength', 0.5)
+    
+    def _run_parameter_optimization(self, results: List[BacktestResult], 
+                                  market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Run parameter optimization using the optimization engine."""
+        try:
+            from .parameter_optimization_engine import get_parameter_optimization_engine, ParameterOptimizationConfig
+            
+            # Configure parameter optimization
+            opt_config = ParameterOptimizationConfig(
+                optimization_method=self.config.parameter_optimization_method,
+                min_samples_for_optimization=self.config.min_samples_for_optimization,
+                adaptive_optimization=True
+            )
+            
+            # Create optimization engine
+            optimizer = get_parameter_optimization_engine(opt_config)
+            
+            # Run optimization
+            optimization_result = optimizer.optimize_parameters(results, market_data)
+            
+            if optimization_result.optimization_success:
+                self.logger.info("✅ Parameter optimization completed successfully")
+                self.logger.info(f"Best optimization score: {optimization_result.best_score:.4f}")
+                
+                # Update config with optimized parameters
+                optimized_params = optimization_result.best_parameters
+                self._update_config_with_optimized_parameters(optimized_params)
+                
+                # Calculate quality thresholds
+                quality_thresholds = self._calculate_quality_thresholds_from_results(results)
+                
+                return {
+                    'optimization_success': True,
+                    'optimized_parameters': optimized_params,
+                    'optimization_score': optimization_result.best_score,
+                    'optimization_method': optimization_result.optimization_method,
+                    'quality_thresholds': quality_thresholds,
+                    'parameter_optimization_details': optimization_result.optimization_details
+                }
+            else:
+                self.logger.warning("⚠️ Parameter optimization failed, using data-driven parameters")
+                return self._create_data_driven_parameters(results, market_data)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Parameter optimization failed: {e}")
+            return self._create_data_driven_parameters(results, market_data)
+    
+    def _create_data_driven_parameters(self, results: List[BacktestResult], 
+                                     market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Create data-driven parameters without optimization."""
+        self.logger.info("📊 Creating data-driven parameters")
+        
+        # Use data-driven thresholds if available
+        if self.data_driven_thresholds:
+            params = {
+                'touch_tolerance': self.data_driven_thresholds['touch_tolerance'],
+                'min_bounce_strength': self.data_driven_thresholds['min_bounce_strength'],
+                'max_hold_time': self.data_driven_thresholds['max_hold_time'],
+                'volume_threshold_multiplier': self.data_driven_thresholds['volume_threshold_multiplier'],
+                'min_touches_required': self._calculate_optimal_min_touches(results),
+                'success_rate_weight': 0.3,
+                'bounce_strength_weight': 0.25,
+                'volume_confirmation_weight': 0.2,
+                'time_persistence_weight': 0.15,
+                'touch_frequency_weight': 0.1
+            }
+        else:
+            # Use conservative defaults
+            params = {
+                'touch_tolerance': 0.002,
+                'min_bounce_strength': 0.001,
+                'max_hold_time': 24,
+                'volume_threshold_multiplier': 1.5,
+                'min_touches_required': 3,
+                'success_rate_weight': 0.3,
+                'bounce_strength_weight': 0.25,
+                'volume_confirmation_weight': 0.2,
+                'time_persistence_weight': 0.15,
+                'touch_frequency_weight': 0.1
+            }
+        
+        # Calculate quality thresholds
+        quality_thresholds = self._calculate_quality_thresholds_from_results(results)
+        
+        return {
+            'optimization_success': False,
+            'optimized_parameters': params,
+            'optimization_score': 0.0,
+            'optimization_method': 'data_driven',
+            'quality_thresholds': quality_thresholds,
+            'parameter_optimization_details': {'method': 'data_driven_fallback'}
+        }
+    
+    def _create_fallback_parameters(self, results: List[BacktestResult]) -> Dict[str, Any]:
+        """Create fallback parameters for insufficient samples."""
+        self.logger.info("🛡️ Creating fallback parameters for insufficient samples")
+        
+        # Use very conservative defaults
+        params = {
+            'touch_tolerance': 0.005,  # More lenient
+            'min_bounce_strength': 0.0005,  # More lenient
+            'max_hold_time': 48,  # Longer hold time
+            'volume_threshold_multiplier': 1.2,  # Lower volume requirement
+            'min_touches_required': 2,  # Lower touch requirement
+            'success_rate_weight': 0.4,  # Focus on success rate
+            'bounce_strength_weight': 0.3,  # Focus on bounce strength
+            'volume_confirmation_weight': 0.1,  # Less focus on volume
+            'time_persistence_weight': 0.1,  # Less focus on time
+            'touch_frequency_weight': 0.1  # Less focus on frequency
+        }
+        
+        # Calculate quality thresholds
+        quality_thresholds = self._calculate_quality_thresholds_from_results(results)
+        
+        return {
+            'optimization_success': False,
+            'optimized_parameters': params,
+            'optimization_score': 0.0,
+            'optimization_method': 'fallback',
+            'quality_thresholds': quality_thresholds,
+            'parameter_optimization_details': {'method': 'insufficient_samples_fallback'}
+        }
+    
+    def _update_config_with_optimized_parameters(self, optimized_params: Dict[str, Any]) -> None:
+        """Update the config with optimized parameters."""
+        self.config.touch_tolerance = optimized_params['touch_tolerance']
+        self.config.min_bounce_strength = optimized_params['min_bounce_strength']
+        self.config.max_hold_time = optimized_params['max_hold_time']
+        self.config.volume_threshold_multiplier = optimized_params['volume_threshold_multiplier']
+        self.config.min_touches_required = optimized_params['min_touches_required']
+        self.config.success_rate_weight = optimized_params['success_rate_weight']
+        self.config.bounce_strength_weight = optimized_params['bounce_strength_weight']
+        self.config.volume_confirmation_weight = optimized_params['volume_confirmation_weight']
+        self.config.time_persistence_weight = optimized_params['time_persistence_weight']
+        self.config.touch_frequency_weight = optimized_params['touch_frequency_weight']
+        
+        self.logger.info("✅ Config updated with optimized parameters")
+    
+    def _calculate_optimal_min_touches(self, results: List[BacktestResult]) -> int:
+        """Calculate optimal minimum touches based on results."""
+        try:
+            # Analyze touch count distribution
+            touch_counts = [r.total_touches for r in results]
+            success_rates = [r.success_rate for r in results]
+            
+            # Find touch count that maximizes success rate
+            touch_success_data = {}
+            for touches, success_rate in zip(touch_counts, success_rates):
+                if touches not in touch_success_data:
+                    touch_success_data[touches] = []
+                touch_success_data[touches].append(success_rate)
+            
+            # Calculate average success rate for each touch count
+            avg_success_by_touches = {}
+            for touches, success_rates in touch_success_data.items():
+                if len(success_rates) >= 2:  # Need at least 2 samples
+                    avg_success_by_touches[touches] = np.mean(success_rates)
+            
+            if avg_success_by_touches:
+                # Find touch count with highest success rate
+                best_touches = max(avg_success_by_touches.items(), key=lambda x: x[1])[0]
+                return max(2, min(best_touches, 6))  # Clamp between 2 and 6
+            else:
+                return 3  # Default
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate optimal min touches: {e}")
+            return 3
+    
+    def _calculate_quality_thresholds_from_results(self, results: List[BacktestResult]) -> Dict[str, float]:
+        """Calculate quality thresholds from backtesting results."""
+        try:
+            quality_scores = [r.quality_score for r in results]
+            
+            return {
+                'excellent': np.percentile(quality_scores, 90),
+                'good': np.percentile(quality_scores, 75),
+                'average': np.percentile(quality_scores, 50),
+                'poor': np.percentile(quality_scores, 25)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate quality thresholds: {e}")
+            return {
+                'excellent': 0.8,
+                'good': 0.6,
+                'average': 0.4,
+                'poor': 0.2
+            }
     
     def _determine_learning_strategy(self, n_samples: int) -> str:
         """Determine learning strategy based on sample size."""

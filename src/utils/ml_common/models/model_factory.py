@@ -264,10 +264,16 @@ class EnhancedModelFactory:
                 model = self._create_random_forest_model(model_config)
             elif model_config.model_type in [ModelType.LIGHTGBM, ModelType.LIGHTGBM_CLASSIFIER]:
                 model = self._create_lightgbm_model(model_config)
+            elif model_config.model_type in [ModelType.HIST_GRADIENT_BOOSTING, ModelType.HIST_GRADIENT_BOOSTING_CLASSIFIER]:
+                model = self._create_hist_gradient_boosting_model(model_config)
             elif model_config.model_type in [ModelType.CATBOOST, ModelType.CATBOOST_CLASSIFIER]:
                 model = self._create_catboost_model(model_config)
             elif model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER]:
                 model = self._create_xgboost_model(model_config)
+            elif model_config.model_type == ModelType.XGBOOST_CUSTOM:
+                model = self._create_xgboost_custom_model(model_config)
+            elif model_config.model_type in [ModelType.EXTRA_TREES, ModelType.EXTRA_TREES_CLASSIFIER]:
+                model = self._create_extra_trees_model(model_config)
             elif model_config.model_type in [ModelType.TABNET, ModelType.TABNET_CLASSIFIER]:
                 model = self._create_tabnet_model(model_config)
             elif model_config.model_type == ModelType.TIME_SERIES_TRANSFORMER:
@@ -336,7 +342,7 @@ class EnhancedModelFactory:
             if not self.dependencies.get('catboost', False):
                 raise ValidationError("CatBoost not available")
         
-        if model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER]:
+        if model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER, ModelType.XGBOOST_CUSTOM]:
             if not self.dependencies.get('xgboost', False):
                 raise ValidationError("XGBoost not available")
         
@@ -844,6 +850,84 @@ class EnhancedModelFactory:
         params = {**default_params, **model_config.model_params}
         
         return HuberRegressor(**params)
+    
+    def _create_hist_gradient_boosting_model(self, model_config: ModelConfig) -> Any:
+        """Create HistGradientBoosting model."""
+        
+        from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
+        
+        # Default parameters
+        default_params = {
+            'max_iter': 100,
+            'max_leaf_nodes': 31,
+            'min_samples_leaf': 20,
+            'l2_regularization': 0.0,
+            'categorical_features': 'auto',
+            'random_state': 42
+        }
+        
+        # Merge with user parameters
+        params = {**default_params, **model_config.model_params}
+        
+        # Create model
+        if model_config.model_type == ModelType.HIST_GRADIENT_BOOSTING:
+            model = HistGradientBoostingRegressor(**params)
+        else:
+            model = HistGradientBoostingClassifier(**params)
+        
+        return model
+    
+    def _create_extra_trees_model(self, model_config: ModelConfig) -> Any:
+        """Create ExtraTrees model."""
+        
+        from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
+        
+        # Default parameters
+        default_params = {
+            'n_estimators': 100,
+            'max_depth': None,
+            'min_samples_split': 2,
+            'min_samples_leaf': 1,
+            'random_state': 42,
+            'n_jobs': -1
+        }
+        
+        # Merge with user parameters
+        params = {**default_params, **model_config.model_params}
+        
+        # Create model
+        if model_config.model_type == ModelType.EXTRA_TREES:
+            model = ExtraTreesRegressor(**params)
+        else:
+            model = ExtraTreesClassifier(**params)
+        
+        return model
+    
+    def _create_xgboost_custom_model(self, model_config: ModelConfig) -> Any:
+        """Create XGBoost with custom financial objectives."""
+        
+        import xgboost as xgb
+        
+        # Default parameters with financial focus
+        default_params = {
+            'n_estimators': 100,
+            'max_depth': 6,
+            'learning_rate': 0.1,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'random_state': 42,
+            'n_jobs': -1,
+            'objective': 'reg:squarederror',  # Can be customized for financial objectives
+            'eval_metric': 'rmse'
+        }
+        
+        # Merge with user parameters
+        params = {**default_params, **model_config.model_params}
+        
+        # Create model
+        model = xgb.XGBRegressor(**params)
+        
+        return model
     
     def _create_node_model(self, model_config: ModelConfig) -> Any:
         """Create Neural Oblivious Decision Ensembles (NODE) model with overfitting prevention."""

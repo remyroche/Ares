@@ -16,6 +16,7 @@ from src.utils.ml_common.config import HMMTrainingConfig
 from src.utils.ml_common.training import BaseTrainingStep
 from src.utils.ml_common.training.training_utils import TrainingUtils
 from src.utils.ml_common.data_processing.feature_preparation import FeaturePreparator
+from sklearn.preprocessing import StandardScaler
 
 logger = system_logger.getChild('HMMModelsTrainingRefactored')
 

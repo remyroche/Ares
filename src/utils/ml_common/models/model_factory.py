@@ -65,6 +65,7 @@ class ModelType(Enum):
     XGBOOST = "XGBRegressor"
     XGBOOST_CLASSIFIER = "XGBClassifier"
     XGBOOST_CUSTOM = "XGBoostCustom"
+    XGBOOST_META = "XGBoostMeta"
     
     # Neural network models
     TABNET = "TabNetRegressor"
@@ -272,6 +273,8 @@ class EnhancedModelFactory:
                 model = self._create_xgboost_model(model_config)
             elif model_config.model_type == ModelType.XGBOOST_CUSTOM:
                 model = self._create_xgboost_custom_model(model_config)
+            elif model_config.model_type == ModelType.XGBOOST_META:
+                model = self._create_xgboost_meta_model(model_config)
             elif model_config.model_type in [ModelType.EXTRA_TREES, ModelType.EXTRA_TREES_CLASSIFIER]:
                 model = self._create_extra_trees_model(model_config)
             elif model_config.model_type in [ModelType.TABNET, ModelType.TABNET_CLASSIFIER]:
@@ -342,7 +345,7 @@ class EnhancedModelFactory:
             if not self.dependencies.get('catboost', False):
                 raise ValidationError("CatBoost not available")
         
-        if model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER, ModelType.XGBOOST_CUSTOM]:
+        if model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER, ModelType.XGBOOST_CUSTOM, ModelType.XGBOOST_META]:
             if not self.dependencies.get('xgboost', False):
                 raise ValidationError("XGBoost not available")
         
@@ -926,6 +929,32 @@ class EnhancedModelFactory:
         
         # Create model
         model = xgb.XGBRegressor(**params)
+        
+        return model
+    
+    def _create_xgboost_meta_model(self, model_config: ModelConfig) -> Any:
+        """Create XGBoost meta-model for ensemble combination."""
+        
+        import xgboost as xgb
+        
+        # Default parameters for meta-model
+        default_params = {
+            'n_estimators': 100,
+            'max_depth': 6,
+            'learning_rate': 0.1,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'random_state': 42,
+            'n_jobs': -1,
+            'objective': 'multi:softprob',  # For multi-class probability output
+            'eval_metric': 'mlogloss'
+        }
+        
+        # Merge with user parameters
+        params = {**default_params, **model_config.model_params}
+        
+        # Create model
+        model = xgb.XGBClassifier(**params)
         
         return model
     

@@ -305,6 +305,109 @@ class QuantileRegression:
         return predictions
 
 
+class XGBoostMetaRegimePredictor:
+    """XGBoost meta-model that combines base model outputs for final regime prediction."""
+    
+    def __init__(self, n_estimators: int = 100, max_depth: int = 6, 
+                 learning_rate: float = 0.1, random_state: int = 42, n_jobs: int = -1):
+        """Initialize XGBoost meta-model."""
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.learning_rate = learning_rate
+        self.random_state = random_state
+        self.n_jobs = n_jobs
+        self.model = None
+        self.base_models = {}
+        self.is_fitted = False
+        
+    def fit(self, X: np.ndarray, y: np.ndarray, base_models: dict = None):
+        """Train XGBoost meta-model on base model outputs."""
+        import xgboost as xgb
+        
+        if base_models is None:
+            # If no base models provided, train on raw features
+            self.model = xgb.XGBClassifier(
+                n_estimators=self.n_estimators,
+                max_depth=self.max_depth,
+                learning_rate=self.learning_rate,
+                random_state=self.random_state,
+                n_jobs=self.n_jobs
+            )
+            self.model.fit(X, y)
+        else:
+            # Train base models first
+            self.base_models = base_models
+            base_predictions = []
+            
+            for name, model in self.base_models.items():
+                model.fit(X, y)
+                if hasattr(model, 'predict_proba'):
+                    pred_probs = model.predict_proba(X)
+                else:
+                    pred_probs = model.predict(X).reshape(-1, 1)
+                base_predictions.append(pred_probs)
+            
+            # Combine base model predictions
+            meta_features = np.concatenate(base_predictions, axis=1)
+            
+            # Train XGBoost meta-model
+            self.model = xgb.XGBClassifier(
+                n_estimators=self.n_estimators,
+                max_depth=self.max_depth,
+                learning_rate=self.learning_rate,
+                random_state=self.random_state,
+                n_jobs=self.n_jobs
+            )
+            self.model.fit(meta_features, y)
+        
+        self.is_fitted = True
+        return self
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Predict regime classes."""
+        if not self.is_fitted:
+            raise ValueError("Model not trained yet")
+        
+        if not self.base_models:
+            # Direct prediction on raw features
+            return self.model.predict(X)
+        else:
+            # Get base model predictions
+            base_predictions = []
+            for name, model in self.base_models.items():
+                if hasattr(model, 'predict_proba'):
+                    pred_probs = model.predict_proba(X)
+                else:
+                    pred_probs = model.predict(X).reshape(-1, 1)
+                base_predictions.append(pred_probs)
+            
+            # Combine and predict
+            meta_features = np.concatenate(base_predictions, axis=1)
+            return self.model.predict(meta_features)
+    
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        """Predict regime probabilities."""
+        if not self.is_fitted:
+            raise ValueError("Model not trained yet")
+        
+        if not self.base_models:
+            # Direct prediction on raw features
+            return self.model.predict_proba(X)
+        else:
+            # Get base model predictions
+            base_predictions = []
+            for name, model in self.base_models.items():
+                if hasattr(model, 'predict_proba'):
+                    pred_probs = model.predict_proba(X)
+                else:
+                    pred_probs = model.predict(X).reshape(-1, 1)
+                base_predictions.append(pred_probs)
+            
+            # Combine and predict
+            meta_features = np.concatenate(base_predictions, axis=1)
+            return self.model.predict_proba(meta_features)
+
+
 class HMMModelsTrainingRefactored(BaseTrainingStep):
     """HMM base models training for regime prediction using common dependencies."""
     
@@ -322,7 +425,7 @@ class HMMModelsTrainingRefactored(BaseTrainingStep):
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
-                model_types=["quantile_regression", "hist_gradient_boosting", "wavenet"],
+                model_types=["wavenet", "logistic_regression", "hist_gradient_boosting", "xgboost_meta"],
                 hpo_trials=100,
                 enable_multi_objective=True,
                 objectives=["accuracy", "f1_score", "regime_stability"],
@@ -357,45 +460,53 @@ class HMMModelsTrainingRefactored(BaseTrainingStep):
         self.logger.info("✅ HMM Models Training (Refactored) initialized")
     
     def get_base_models(self, is_classification: bool, n_regimes: int) -> Dict[str, Any]:
-        """Get specific base models: Quantile Regression + HistGradientBoosting + WaveNet."""
+        """Get specific base models: WaveNet + LogisticRegression + HistGradientBoosting + XGBoostMeta."""
         from sklearn.linear_model import LogisticRegression, Ridge
         from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
         import lightgbm as lgb
         
         if is_classification:
             models = {
-                'quantile_regression': QuantileRegression(
-                    quantiles=[0.05, 0.25, 0.5, 0.75, 0.95],
-                    alpha=0.1, solver='highs'
+                'wavenet': WaveNetRegimePredictor(
+                    sequence_length=self.config.sequence_length,
+                    n_regimes=n_regimes,
+                    dilations=[1, 2, 4, 8, 16, 32, 64],
+                    residual_channels=64,
+                    skip_channels=64
+                ),
+                'logistic_regression': LogisticRegression(
+                    C=1.0, max_iter=1000, random_state=42,
+                    class_weight='balanced', multi_class='ovr'
                 ),
                 'hist_gradient_boosting': HistGradientBoostingClassifier(
                     max_iter=100, max_leaf_nodes=31,
                     min_samples_leaf=20, random_state=42
                 ),
+                'xgboost_meta': XGBoostMetaRegimePredictor(
+                    n_estimators=100, max_depth=6, learning_rate=0.1,
+                    random_state=42, n_jobs=-1
+                )
+            }
+        else:
+            models = {
                 'wavenet': WaveNetRegimePredictor(
                     sequence_length=self.config.sequence_length,
                     n_regimes=n_regimes,
                     dilations=[1, 2, 4, 8, 16, 32, 64],
                     residual_channels=64,
                     skip_channels=64
-                )
-            }
-        else:
-            models = {
-                'quantile_regression': QuantileRegression(
-                    quantiles=[0.05, 0.25, 0.5, 0.75, 0.95],
-                    alpha=0.1, solver='highs'
+                ),
+                'logistic_regression': LogisticRegression(
+                    C=1.0, max_iter=1000, random_state=42,
+                    class_weight='balanced', multi_class='ovr'
                 ),
                 'hist_gradient_boosting': HistGradientBoostingRegressor(
                     max_iter=100, max_leaf_nodes=31,
                     min_samples_leaf=20, random_state=42
                 ),
-                'wavenet': WaveNetRegimePredictor(
-                    sequence_length=self.config.sequence_length,
-                    n_regimes=n_regimes,
-                    dilations=[1, 2, 4, 8, 16, 32, 64],
-                    residual_channels=64,
-                    skip_channels=64
+                'xgboost_meta': XGBoostMetaRegimePredictor(
+                    n_estimators=100, max_depth=6, learning_rate=0.1,
+                    random_state=42, n_jobs=-1
                 )
             }
         
@@ -596,7 +707,7 @@ if __name__ == "__main__":
         n_features=50,  # Reduced for demo
         sequence_length=20,
         n_regimes=3,
-        model_types=["quantile_regression", "hist_gradient_boosting", "wavenet"],
+        model_types=["wavenet", "logistic_regression", "hist_gradient_boosting", "xgboost_meta"],
         hpo_trials=50,  # Reduced for demo
         enable_multi_objective=True
     )

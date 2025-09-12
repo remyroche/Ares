@@ -60,6 +60,28 @@ class ParameterOptimizer:
     def __init__(self, logger=None):
         self.logger = logger or system_logger.getChild('ParameterOptimizer')
         self.optimization_history = []
+        
+        # Initialize hardware optimizations
+        self._initialize_hardware_optimizations()
+    
+    def _initialize_hardware_optimizations(self):
+        """Initialize hardware optimization components."""
+        self.hardware_optimizations = {
+            'cpu_optimizer': None,
+            'memory_optimizer': None,
+            'available': False
+        }
+        
+        try:
+            from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+            from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+            
+            self.hardware_optimizations['cpu_optimizer'] = get_m1_cpu_optimizer()
+            self.hardware_optimizations['memory_optimizer'] = get_m1_memory_optimizer()
+            self.hardware_optimizations['available'] = True
+            self.logger.info("✅ Hardware optimizations initialized for parameter optimization")
+        except ImportError:
+            self.logger.info("ℹ️ Hardware optimizations not available for parameter optimization")
     
     def optimize_hmm_states(self, features: np.ndarray, 
                           state_range: Tuple[int, int] = (2, 8), 
@@ -87,15 +109,68 @@ class ParameterOptimizer:
         best_n_states = state_range[0]
         all_results = []
         
+        # Use parallel processing if hardware optimizations are available
+        if self.hardware_optimizations['available']:
+            all_results = self._optimize_hmm_states_parallel(features, state_range, cv_folds, covariance_type)
+        else:
+            all_results = self._optimize_hmm_states_sequential(features, state_range, cv_folds, covariance_type)
+        
+        # Find best result
+        for result in all_results:
+            if result['score'] > best_score:
+                best_score = result['score']
+                best_n_states = result['n_states']
+    
+    def _optimize_hmm_states_parallel(self, features: np.ndarray, state_range: Tuple[int, int], 
+                                    cv_folds: int, covariance_type: str) -> List[Dict[str, Any]]:
+        """Optimize HMM states using parallel processing."""
+        self.logger.info("🚀 Using parallel processing for HMM state optimization...")
+        
+        cpu_optimizer = self.hardware_optimizations['cpu_optimizer']
+        memory_optimizer = self.hardware_optimizations['memory_optimizer']
+        
+        # Create optimized thread pool
+        with cpu_optimizer.create_optimized_thread_pool() as executor:
+            # Submit optimization tasks
+            futures = []
+            for n_states in range(state_range[0], state_range[1] + 1):
+                future = executor.submit(self._evaluate_hmm_states, features, n_states, cv_folds, covariance_type)
+                futures.append(future)
+            
+            # Collect results
+            all_results = []
+            for future in futures:
+                try:
+                    result = future.result(timeout=300)  # 5 minute timeout
+                    all_results.append(result)
+                except Exception as e:
+                    self.logger.warning(f"Optimization task failed: {e}")
+        
+        return all_results
+    
+    def _optimize_hmm_states_sequential(self, features: np.ndarray, state_range: Tuple[int, int], 
+                                      cv_folds: int, covariance_type: str) -> List[Dict[str, Any]]:
+        """Optimize HMM states using sequential processing."""
+        self.logger.info("🔄 Using sequential processing for HMM state optimization...")
+        
+        all_results = []
         for n_states in range(state_range[0], state_range[1] + 1):
-            try:
-                # Create HMM model
-                model = hmm.GaussianHMM(
-                    n_components=n_states,
-                    covariance_type=covariance_type,
-                    random_state=42,
-                    n_iter=100
-                )
+            result = self._evaluate_hmm_states(features, n_states, cv_folds, covariance_type)
+            all_results.append(result)
+        
+        return all_results
+    
+    def _evaluate_hmm_states(self, features: np.ndarray, n_states: int, cv_folds: int, 
+                           covariance_type: str) -> Dict[str, Any]:
+        """Evaluate HMM with specific number of states."""
+        try:
+            # Create HMM model
+            model = hmm.GaussianHMM(
+                n_components=n_states,
+                covariance_type=covariance_type,
+                random_state=42,
+                n_iter=100
+            )
                 
                 # Cross-validation scoring
                 scores = cross_val_score(

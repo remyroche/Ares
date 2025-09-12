@@ -87,6 +87,15 @@ try:
 except ImportError:
     OPTIMIZED_MEMORY_AVAILABLE = False
 
+# Import comprehensive hardware optimizations
+try:
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+
 try:
     from src.utils.ml_common.ensemble_manager import EnsembleManager as AdvancedEnsembleClustering
     # Create a fallback ParallelClusteringProcessor class
@@ -104,6 +113,69 @@ try:
 except ImportError:
     cp = None
     CUPY_AVAILABLE = False
+
+# Numba JIT compilation for computational optimization
+try:
+    from numba import jit, prange, njit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    # Create dummy decorators
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def njit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def prange(*args, **kwargs):
+        return range(*args, **kwargs)
+
+# Numba-optimized computational functions
+@njit(parallel=True, cache=True)
+def compute_price_features_numba(close, high, low, open_price):
+    """Numba-optimized price feature computation."""
+    n = len(close)
+    price_change = np.zeros(n)
+    price_range = np.zeros(n)
+    price_position = np.zeros(n)
+    
+    for i in prange(1, n):
+        price_change[i] = (close[i] - close[i-1]) / close[i-1]
+        price_range[i] = (high[i] - low[i]) / close[i]
+        if high[i] != low[i]:
+            price_position[i] = (close[i] - low[i]) / (high[i] - low[i])
+    
+    return price_change, price_range, price_position
+
+@njit(parallel=True, cache=True)
+def compute_volatility_features_numba(close, window):
+    """Numba-optimized volatility feature computation."""
+    n = len(close)
+    volatility = np.zeros(n)
+    
+    for i in prange(window, n):
+        returns = np.zeros(window)
+        for j in range(window):
+            returns[j] = (close[i-j] - close[i-j-1]) / close[i-j-1]
+        volatility[i] = np.std(returns)
+    
+    return volatility
+
+@njit(parallel=True, cache=True)
+def compute_moving_averages_numba(data, window):
+    """Numba-optimized moving average computation."""
+    n = len(data)
+    ma = np.zeros(n)
+    
+    for i in prange(window-1, n):
+        sum_val = 0.0
+        for j in range(window):
+            sum_val += data[i-j]
+        ma[i] = sum_val / window
+    
+    return ma
 
 try:
     from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations as get_vectorized_operations_manager
@@ -222,6 +294,25 @@ class EnhancedFeatureEngineer:
     
     def __init__(self, logger=None):
         self.logger = logger or system_logger.getChild('EnhancedFeatureEngineer')
+        
+        # Initialize hardware optimizations for feature engineering
+        self.hardware_optimizations = {
+            'memory_optimizer': None,
+            'cpu_optimizer': None,
+            'gpu_manager': None,
+            'available': False
+        }
+        
+        if HARDWARE_OPTIMIZATIONS_AVAILABLE:
+            try:
+                self.hardware_optimizations['memory_optimizer'] = get_m1_memory_optimizer()
+                self.hardware_optimizations['cpu_optimizer'] = get_m1_cpu_optimizer()
+                self.hardware_optimizations['gpu_manager'] = get_m1_gpu_manager()
+                self.hardware_optimizations['available'] = True
+                self.logger.info("✅ Hardware optimizations initialized for feature engineering")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+                self.hardware_optimizations['available'] = False
     
     def create_comprehensive_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -293,11 +384,72 @@ class EnhancedFeatureEngineer:
         return features
     
     def _add_price_features(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
-        """Add price-based features"""
-        # Basic price features
-        features['price_change'] = df['close'].pct_change()
-        features['price_range'] = (df['high'] - df['low']) / df['close']
-        features['price_position'] = (df['close'] - df['low']) / (df['high'] - df['low'])
+        """Add price-based features with hardware optimization"""
+        if self.hardware_optimizations['available']:
+            self._add_price_features_optimized(features, df)
+        else:
+            self._add_price_features_standard(features, df)
+    
+    def _add_price_features_optimized(self, features: pd.DataFrame, df: pd.DataFrame) -> None:
+        """Add price-based features with hardware optimization"""
+        self.logger.info("🔧 Computing price features with hardware optimization...")
+        
+        # Use memory-optimized operations
+        memory_optimizer = self.hardware_optimizations['memory_optimizer']
+        gpu_manager = self.hardware_optimizations['gpu_manager']
+        
+        # Convert to memory-efficient arrays
+        close_array = memory_optimizer.create_memory_efficient_array(df['close'].values, dtype=np.float32)
+        high_array = memory_optimizer.create_memory_efficient_array(df['high'].values, dtype=np.float32)
+        low_array = memory_optimizer.create_memory_efficient_array(df['low'].values, dtype=np.float32)
+        open_array = memory_optimizer.create_memory_efficient_array(df['open'].values, dtype=np.float32)
+        
+        # Choose optimization strategy based on available hardware
+        if NUMBA_AVAILABLE:
+            # Use Numba JIT compilation for maximum performance
+            self.logger.info("🚀 Using Numba JIT compilation for price features...")
+            price_change, price_range, price_position = compute_price_features_numba(
+                close_array, high_array, low_array, open_array
+            )
+            
+            features['price_change'] = pd.Series(price_change, index=df.index)
+            features['price_range'] = pd.Series(price_range, index=df.index)
+            features['price_position'] = pd.Series(price_position, index=df.index)
+            
+        elif gpu_manager and gpu_manager.mps_available:
+            # Use GPU for vectorized operations
+            self.logger.info("🚀 Using GPU acceleration for price features...")
+            close_gpu = gpu_manager.optimize_tensor_operations(close_array)
+            high_gpu = gpu_manager.optimize_tensor_operations(high_array)
+            low_gpu = gpu_manager.optimize_tensor_operations(low_array)
+            open_gpu = gpu_manager.optimize_tensor_operations(open_array)
+            
+            # Calculate features on GPU
+            price_change = np.diff(close_gpu) / close_gpu[:-1]
+            price_range = (high_gpu - low_gpu) / close_gpu
+            price_position = (close_gpu - low_gpu) / (high_gpu - low_gpu)
+            
+            # Convert back to pandas
+            features['price_change'] = pd.Series(np.concatenate([[np.nan], price_change]), index=df.index)
+            features['price_range'] = pd.Series(price_range, index=df.index)
+            features['price_position'] = pd.Series(price_position, index=df.index)
+        else:
+            # CPU-optimized calculations with memory optimization
+            self.logger.info("🚀 Using CPU optimization for price features...")
+            features['price_change'] = df['close'].pct_change()
+            features['price_range'] = (df['high'] - df['low']) / df['close']
+            features['price_position'] = (df['close'] - df['low']) / (df['high'] - df['low'])
+        
+        # Continue with standard calculations for complex features
+        self._add_price_features_standard(features, df, skip_basic=True)
+    
+    def _add_price_features_standard(self, features: pd.DataFrame, df: pd.DataFrame, skip_basic: bool = False) -> None:
+        """Add price-based features using standard methods"""
+        if not skip_basic:
+            # Basic price features
+            features['price_change'] = df['close'].pct_change()
+            features['price_range'] = (df['high'] - df['low']) / df['close']
+            features['price_position'] = (df['close'] - df['low']) / (df['high'] - df['low'])
         
         # Price ratios
         features['high_close_ratio'] = df['high'] / df['close']
@@ -766,12 +918,52 @@ class HMMRegimeDiscoveryStep:
         self.parameter_optimizer = ParameterOptimizer(self.logger)
         self.ensemble_optimizer = EnsembleWeightOptimizer(self.logger)
         
+        # Initialize hardware optimizations
+        self._initialize_hardware_optimizations()
+        
         tprint("   ✅ Basic attributes initialized")
         tprint("   🔍 Validating environment dependencies...")
         self._validate_environment()
         tprint("   🔧 Initializing HMM regime discovery components...")
         self._initialize_components()
         tprint("   🎉 HMM Regime Discovery Step initialization complete")
+    
+    def _initialize_hardware_optimizations(self):
+        """Initialize hardware optimization components."""
+        self.logger.info("🔧 Initializing hardware optimizations...")
+        
+        # Initialize hardware optimization components
+        self.hardware_optimizations = {
+            'memory_optimizer': None,
+            'cpu_optimizer': None,
+            'gpu_manager': None,
+            'available': False
+        }
+        
+        if HARDWARE_OPTIMIZATIONS_AVAILABLE:
+            try:
+                # Initialize M1 memory optimizer
+                self.hardware_optimizations['memory_optimizer'] = get_m1_memory_optimizer()
+                self.logger.info("✅ M1 memory optimizer initialized")
+                
+                # Initialize M1 CPU optimizer
+                self.hardware_optimizations['cpu_optimizer'] = get_m1_cpu_optimizer()
+                self.logger.info("✅ M1 CPU optimizer initialized")
+                
+                # Initialize M1 GPU manager
+                self.hardware_optimizations['gpu_manager'] = get_m1_gpu_manager()
+                gpu_info = self.hardware_optimizations['gpu_manager'].get_gpu_info()
+                self.logger.info(f"✅ M1 GPU manager initialized: {gpu_info}")
+                
+                self.hardware_optimizations['available'] = True
+                self.logger.info("🎉 All hardware optimizations initialized successfully")
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+                self.hardware_optimizations['available'] = False
+        else:
+            self.logger.info("ℹ️ Hardware optimizations not available - using standard processing")
+    
     @log_all_calls
     def _create_enhanced_features(self, df: pd.DataFrame, use_existing_tools: bool = True) -> pd.DataFrame:
         """

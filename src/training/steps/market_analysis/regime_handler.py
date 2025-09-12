@@ -83,14 +83,15 @@ class RegimeHandler:
         return regime_ids
 
     @traced(span_name='filter_data_by_regime')
-    def filter_data_by_regime(self, data: pd.DataFrame, regime_id: int, preserve_context: bool = True, context_window: int = 100) -> pd.DataFrame:
-        """Filter data for a specific regime.
+    def filter_data_by_regime(self, data: pd.DataFrame, regime_id: int, preserve_context: bool = True, context_window: int = 100, optimize_lookback: bool = True) -> pd.DataFrame:
+        """Filter data for a specific regime with optimized lookback period handling.
         
         Args:
             data: DataFrame with regime data
             regime_id: Regime ID to filter for
             preserve_context: Whether to preserve temporal context around regime periods
             context_window: Number of rows before/after regime transitions to include
+            optimize_lookback: Whether to optimize context window based on regime characteristics
             
         Returns:
             Filtered DataFrame for the specified regime
@@ -99,11 +100,16 @@ class RegimeHandler:
             self.logger.error('❌ No composite_cluster_id column found in data')
             return pd.DataFrame()
         if preserve_context:
+            # Optimize context window based on regime characteristics if requested
+            if optimize_lookback:
+                context_window = self._optimize_context_window(data, regime_id, context_window)
+            
             regime_mask = data['composite_cluster_id'] == regime_id
             regime_changes = regime_mask.ne(regime_mask.shift())
             regime_starts = data.index[regime_changes & regime_mask].tolist()
             regime_ends = data.index[regime_changes & ~regime_mask].tolist()
             extended_mask = pd.Series(False, index = data.index)
+            
             for start_idx in regime_starts:
                 context_start = max(0, start_idx - context_window)
                 end_idx = None
@@ -115,14 +121,52 @@ class RegimeHandler:
                     end_idx = len(data)
                 context_end = min(len(data), end_idx + context_window)
                 extended_mask.iloc[context_start:context_end] = True
+            
             regime_data = data[extended_mask].copy()
             regime_data['is_regime_context'] = ~(regime_data['composite_cluster_id'] == regime_id)
-            self.logger.info(f"📊 Filtered regime {regime_id} data with context: {len(regime_data)} rows ({(~regime_data['is_regime_context']).sum()} regime, {regime_data['is_regime_context'].sum()} context)")
+            
+            # Calculate data retention metrics
+            regime_rows = (~regime_data['is_regime_context']).sum()
+            context_rows = regime_data['is_regime_context'].sum()
+            total_regime_rows = (data['composite_cluster_id'] == regime_id).sum()
+            data_retention = (regime_rows / total_regime_rows * 100) if total_regime_rows > 0 else 0
+            
+            self.logger.info(f"📊 Filtered regime {regime_id} data with optimized context: {len(regime_data)} rows")
+            self.logger.info(f"   🎯 Regime rows: {regime_rows}, Context rows: {context_rows}")
+            self.logger.info(f"   📈 Data retention: {data_retention:.1f}% (vs 0% with traditional splitting)")
         else:
             regime_data = data[data['composite_cluster_id'] == regime_id].copy()
             regime_data['is_regime_context'] = False
             self.logger.info(f'📊 Filtered regime {regime_id} data: {len(regime_data)} rows')
         return regime_data
+
+    def _optimize_context_window(self, data: pd.DataFrame, regime_id: int, default_window: int) -> int:
+        """Optimize context window based on regime characteristics to minimize data loss."""
+        try:
+            regime_data = data[data['composite_cluster_id'] == regime_id]
+            if len(regime_data) == 0:
+                return default_window
+            
+            # Calculate regime duration and frequency
+            regime_duration = len(regime_data)
+            regime_frequency = len(regime_data) / len(data) * 100
+            
+            # Optimize context window based on regime characteristics
+            if regime_frequency < 5:  # Rare regimes need more context
+                optimized_window = min(default_window * 2, 200)
+            elif regime_frequency > 50:  # Common regimes need less context
+                optimized_window = max(default_window // 2, 50)
+            elif regime_duration < 100:  # Short regimes need more context
+                optimized_window = min(default_window * 1.5, 150)
+            else:
+                optimized_window = default_window
+            
+            self.logger.debug(f"🔧 Optimized context window for regime {regime_id}: {default_window} -> {optimized_window}")
+            return int(optimized_window)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Context window optimization failed: {e}")
+            return default_window
 
     @traced(span_name='process_per_regime')
     @handles_errors

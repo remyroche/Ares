@@ -112,6 +112,14 @@ from .sr_feature_extractor import (
     extract_sr_features
 )
 
+from .enhanced_sr_feature_extractor import (
+    EnhancedSRFeatureExtractor,
+    HistoricalSRAnalyzer,
+    HistoricalSRConfig,
+    get_enhanced_sr_feature_extractor,
+    extract_enhanced_sr_features
+)
+
 __all__ = [
     # Utility container
     'Step06UtilityContainer',
@@ -161,7 +169,14 @@ __all__ = [
     'SRFeatureExtractor',
     'SRFeatureConfig',
     'get_sr_feature_extractor',
-    'extract_sr_features'
+    'extract_sr_features',
+    
+    # Enhanced SR feature extraction with historical integration
+    'EnhancedSRFeatureExtractor',
+    'HistoricalSRAnalyzer',
+    'HistoricalSRConfig',
+    'get_enhanced_sr_feature_extractor',
+    'extract_enhanced_sr_features'
 ]
 
 __version__ = "1.0.0"

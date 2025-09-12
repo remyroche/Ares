@@ -1,17 +1,17 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Anomaly Detector Component
-from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 Detects various types of anomalies in market data.
 Extracted from raw_data_quality_checker.py
 """
-from src.utils.logger import system_logger
-import numpy as np
 
+from typing import Any, Optional, List
 import pandas as pd
 import logging
-import typing
+import numpy as np
+
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 class AnomalyDetector:
     """Detects anomalies in market data using multiple detection methods.
@@ -24,12 +24,10 @@ class AnomalyDetector:
     - Multi-dimensional anomaly detection
     """
     @log_important_calls
-
     def __init__(self, config: Optional[dict[str, Any]]=None) -> None:
         self.logger = system_logger.getChild('AnomalyDetector')
         self.config = config or self._get_default_config()
     @log_all_calls
-
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for anomaly detection."""
         return {'detection_methods': {'statistical': True, 'isolation_forest': False, 'local_outlier_factor': False, 'pattern_based': True, 'time_based': True}, 'statistical_params': {'zscore_threshold': 3.0, 'iqr_multiplier': 1.5, 'mad_threshold': 3.0, 'rolling_window': 20}, 'pattern_params': {'min_pattern_length': 3, 'similarity_threshold': 0.95}, 'volume_params': {'spike_threshold': 5.0, 'drop_threshold': 0.1, 'rolling_window': 20}}

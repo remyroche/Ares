@@ -1,19 +1,19 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Result Builder Component
-from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 Builder pattern for creating consistent validation results.
 Extracted from raw_data_quality_checker.py
 """
+
 from datetime import datetime
 from typing import Any, List, Optional
 import pandas as pd
-
-from src.utils.logger import system_logger
 import logging
 import numpy as np
 import time
+
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 class ValidationResultBuilder:
     """Builder for validation results using the builder pattern.
@@ -26,7 +26,6 @@ class ValidationResultBuilder:
     - Generating final results
     """
     @log_important_calls
-    
     def __init__(self, symbol: str, exchange: str, data_shape: tuple[int, int]):
         self.logger = system_logger.getChild("ValidationResultBuilder")
         self.result = {

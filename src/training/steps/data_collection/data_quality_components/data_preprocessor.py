@@ -1,21 +1,21 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Data Preprocessor Component
-from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 Handles all data preprocessing operations for market data.
 Extracted from raw_data_quality_checker.py
 """
+
 import asyncio
 import glob
 import os
 from datetime import datetime, timedelta
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, List
 import pandas as pd
-
-from src.utils.logger import system_logger
 import logging
 import numpy as np
+
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 class DataPreprocessor:
     """Handles all data preprocessing operations for market data.
@@ -27,12 +27,10 @@ class DataPreprocessor:
     - Gap filling and data continuity
     """
     @log_important_calls
-    
     def __init__(self, config: Optional[dict[str, Any]] = None):
         self.logger = system_logger.getChild("DataPreprocessor")
         self.config = config or self._get_default_config()
     @log_all_calls
-        
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for preprocessing."""
         return {

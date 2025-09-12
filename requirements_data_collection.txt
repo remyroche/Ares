@@ -1,0 +1,36 @@
+# Data Collection Components Requirements
+# Core dependencies for gap filling and data quality checking
+
+# Data processing
+pandas>=1.5.0
+numpy>=1.21.0
+
+# HTTP requests and async operations
+aiohttp>=3.8.0
+asyncio
+
+# Exchange API integration
+ccxt>=4.0.0
+
+# Data validation and quality
+scikit-learn>=1.0.0
+scipy>=1.9.0
+
+# Retry and error handling
+tenacity>=8.0.0
+
+# SSL and certificates
+certifi>=2022.0.0
+
+# File operations
+pyarrow>=10.0.0  # For parquet files
+
+# Logging and monitoring
+rich>=13.0.0
+
+# Optional: Enhanced data analysis
+matplotlib>=3.5.0
+seaborn>=0.12.0
+
+# Optional: Advanced statistics
+statsmodels>=0.13.0

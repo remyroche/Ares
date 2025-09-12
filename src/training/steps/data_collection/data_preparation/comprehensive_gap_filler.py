@@ -285,11 +285,55 @@ class ComprehensiveGapFiller:
         await self._ensure_session()
 
         try:
-            # Placeholder for real exchange client integration
-            # Return empty list to indicate no additional data from
-            # regular API in this stub
-            return []
-        except Exception:
+            # Use the enhanced Binance exchange client
+            from src.exchange.binance import BinanceExchange
+            
+            # Initialize Binance exchange
+            binance_config = {
+                'binance_exchange': {
+                    'use_testnet': False,  # Use live data for gap filling
+                    'timeout': 30,
+                    'max_retries': 3,
+                    'use_ccxt_fallback': True
+                }
+            }
+            
+            binance = BinanceExchange(binance_config)
+            
+            # Initialize connection
+            if not await binance.initialize():
+                self.logger.warning("Failed to initialize Binance exchange for aggtrades")
+                return []
+            
+            # Fetch aggregate trades data
+            aggtrades_data = await binance.get_aggregate_trades(
+                symbol=symbol,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms
+            )
+            
+            if aggtrades_data:
+                # Convert to standardized format
+                standardized_data = []
+                for trade in aggtrades_data:
+                    standardized_data.append({
+                        'agg_trade_id': trade.get('a'),
+                        'price': float(trade.get('p', 0)),
+                        'quantity': float(trade.get('q', 0)),
+                        'first_trade_id': trade.get('f'),
+                        'last_trade_id': trade.get('l'),
+                        'timestamp': trade.get('T'),
+                        'is_buyer_maker': trade.get('m', False)
+                    })
+                
+                self.logger.info(f"Downloaded {len(standardized_data)} aggtrades from regular API")
+                return standardized_data
+            else:
+                self.logger.warning("No aggtrades data received from regular API")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Error fetching aggtrades from regular API: {e}")
             return []
 
     async def _fetch_aggtrades_from_binance_vision(
@@ -406,9 +450,56 @@ class ComprehensiveGapFiller:
         await self._ensure_session()
 
         try:
-            # Placeholder for real exchange client integration
-            return []
-        except Exception:
+            # Use the enhanced Binance exchange client
+            from src.exchange.binance import BinanceExchange
+            
+            # Initialize Binance exchange
+            binance_config = {
+                'binance_exchange': {
+                    'use_testnet': False,  # Use live data for gap filling
+                    'timeout': 30,
+                    'max_retries': 3,
+                    'use_ccxt_fallback': True
+                }
+            }
+            
+            binance = BinanceExchange(binance_config)
+            
+            # Initialize connection
+            if not await binance.initialize():
+                self.logger.warning("Failed to initialize Binance exchange for futures")
+                return []
+            
+            # Convert dates to milliseconds
+            start_time_ms = int(gap_start.timestamp() * 1000)
+            end_time_ms = int(gap_end.timestamp() * 1000)
+            
+            # Fetch futures funding rate data
+            futures_data = await binance.futures_funding_rate(
+                symbol=symbol,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms
+            )
+            
+            if futures_data:
+                # Convert to standardized format
+                standardized_data = []
+                for rate in futures_data:
+                    standardized_data.append({
+                        'symbol': rate.get('symbol'),
+                        'fundingRate': float(rate.get('fundingRate', 0)),
+                        'fundingTime': rate.get('fundingTime'),
+                        'timestamp': rate.get('fundingTime')  # Use funding time as timestamp
+                    })
+                
+                self.logger.info(f"Downloaded {len(standardized_data)} futures funding rates from regular API")
+                return standardized_data
+            else:
+                self.logger.warning("No futures data received from regular API")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Error fetching futures from regular API: {e}")
             return []
 
     async def _fetch_futures_from_binance_vision(
@@ -503,9 +594,66 @@ class ComprehensiveGapFiller:
         await self._ensure_session()
 
         try:
-            # Placeholder for real exchange client integration
-            return []
-        except Exception:
+            # Use the enhanced Binance exchange client
+            from src.exchange.binance import BinanceExchange
+            
+            # Initialize Binance exchange
+            binance_config = {
+                'binance_exchange': {
+                    'use_testnet': False,  # Use live data for gap filling
+                    'timeout': 30,
+                    'max_retries': 3,
+                    'use_ccxt_fallback': True
+                }
+            }
+            
+            binance = BinanceExchange(binance_config)
+            
+            # Initialize connection
+            if not await binance.initialize():
+                self.logger.warning("Failed to initialize Binance exchange for klines")
+                return []
+            
+            # Calculate number of klines needed based on time range and interval
+            time_diff = gap_end - gap_start
+            if interval == "1m":
+                limit = min(int(time_diff.total_seconds() / 60), 1000)
+            elif interval == "5m":
+                limit = min(int(time_diff.total_seconds() / 300), 1000)
+            elif interval == "1h":
+                limit = min(int(time_diff.total_seconds() / 3600), 1000)
+            else:
+                limit = 1000
+            
+            # Fetch klines data
+            klines_data = await binance.get_klines(
+                symbol=symbol,
+                interval=interval,
+                limit=limit
+            )
+            
+            if klines_data:
+                # Convert to standardized format
+                standardized_data = []
+                for kline in klines_data:
+                    # Binance klines format: [timestamp, open, high, low, close, volume, ...]
+                    standardized_data.append({
+                        'timestamp': kline[0],
+                        'open': float(kline[1]),
+                        'high': float(kline[2]),
+                        'low': float(kline[3]),
+                        'close': float(kline[4]),
+                        'volume': float(kline[5])
+                    })
+                
+                self.logger.info(f"Downloaded {len(standardized_data)} klines from regular API")
+                return standardized_data
+            else:
+                self.logger.warning("No klines data received from regular API")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Error fetching klines from regular API: {e}")
             return []
 
     async def _fetch_klines_from_binance_vision(

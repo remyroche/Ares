@@ -6,8 +6,7 @@ from .quality_metrics_calculator import QualityMetricsCalculator
 from .data_integrity_checker import DataIntegrityChecker
 from .anomaly_detector import AnomalyDetector
 from .data_preprocessor import DataPreprocessor
-from .data_downloader import DataDownloader
-from ..config import QualityCheckConfig
+from .config_manager import QualityCheckConfig
 from .validation_strategies import (
     ValidationStrategy,
     StructureValidationStrategy,
@@ -50,7 +49,6 @@ __all__ = [
     "DataIntegrityChecker",
     "AnomalyDetector",
     "DataPreprocessor",
-    "DataDownloader",
     "QualityCheckConfig",
     
     # Validation strategies

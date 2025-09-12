@@ -99,9 +99,8 @@ class SRFeatureConfig:
     min_sr_quality_score: float = 0.3
     max_sr_levels_per_type: int = 10
     
-    # Fallback settings
-    use_fallback_sr_detection: bool = True
-    fallback_sr_levels: Optional[Dict[str, List[float]]] = None
+    # SR levels requirement
+    require_sr_levels: bool = True  # SR levels are required for proper feature extraction
 
 class SRFeatureExtractor:
     """
@@ -277,8 +276,9 @@ class SRFeatureExtractor:
         features = pd.DataFrame(index=data.index)
         
         if sr_levels is None:
-            # Use fallback SR detection
-            sr_levels = self._detect_fallback_sr_levels(data)
+            # Fast fail - SR levels are required
+            self.logger.error("❌ SR levels are required for advanced feature extraction")
+            raise ValueError("SR levels are required for advanced SR feature extraction")
         
         if sr_levels:
             support_levels = sr_levels.get('support_levels', [])
@@ -338,7 +338,9 @@ class SRFeatureExtractor:
         features = pd.DataFrame(index=data.index)
         
         if sr_levels is None:
-            sr_levels = self._detect_fallback_sr_levels(data)
+            # Fast fail - SR levels are required
+            self.logger.error("❌ SR levels are required for bounce signal extraction")
+            raise ValueError("SR levels are required for SR bounce signal extraction")
         
         if sr_levels:
             support_levels = sr_levels.get('support_levels', [])
@@ -661,44 +663,11 @@ class SRFeatureExtractor:
         return proximity
     
     def _detect_fallback_sr_levels(self, data: pd.DataFrame) -> Dict[str, List[float]]:
-        """Detect SR levels using fallback method when no levels provided."""
-        if not self.config.use_fallback_sr_detection:
-            return {}
-        
-        try:
-            # Simple fallback: use swing highs and lows
-            window = self.config.sr_detection_window
-            
-            # Find swing highs (local maxima)
-            swing_highs = data['high'].rolling(window, center=True).max()
-            swing_high_levels = data[data['high'] == swing_highs]['high'].dropna().unique()
-            
-            # Find swing lows (local minima)
-            swing_lows = data['low'].rolling(window, center=True).min()
-            swing_low_levels = data[data['low'] == swing_lows]['low'].dropna().unique()
-            
-            # Filter by minimum touches
-            filtered_support = []
-            filtered_resistance = []
-            
-            for level in swing_low_levels:
-                touches = self._count_touches(data, level, 'support')
-                if touches >= self.config.min_touches_required:
-                    filtered_support.append(float(level))
-            
-            for level in swing_high_levels:
-                touches = self._count_touches(data, level, 'resistance')
-                if touches >= self.config.min_touches_required:
-                    filtered_resistance.append(float(level))
-            
-            return {
-                'support_levels': filtered_support[:self.config.max_sr_levels_per_type],
-                'resistance_levels': filtered_resistance[:self.config.max_sr_levels_per_type]
-            }
-            
-        except Exception as e:
-            self.logger.warning(f"Fallback SR detection failed: {e}")
-            return {}
+        """Fast fail when no SR levels provided - no automatic detection."""
+        self.logger.error("❌ No SR levels provided and fallback detection is disabled")
+        self.logger.error("   SR levels are required for proper feature extraction")
+        self.logger.error("   Please provide SR levels or enable fallback detection in configuration")
+        raise ValueError("SR levels are required for feature extraction. No fallback detection available.")
     
     def _count_touches(self, data: pd.DataFrame, level: float, level_type: str) -> int:
         """Count number of times price touched a level."""

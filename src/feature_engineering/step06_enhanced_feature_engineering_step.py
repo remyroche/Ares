@@ -439,9 +439,20 @@ class EnhancedFeatureEngineeringStep(BaseStep):
         return regime_features
 
     def _create_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Create support/resistance features using enhanced SR feature extractor with historical integration."""
+        """Create support/resistance features with three-tier system: Enhanced → Basic → Fallback."""
+        
+        # Extract SR levels if available in pipeline state
+        sr_levels = None
+        if hasattr(self, 'pipeline_state') and 'sr_levels' in self.pipeline_state:
+            sr_levels = self.pipeline_state['sr_levels']
+        
+        # Get regime labels if available
+        regime_labels = None
+        if 'regime_label' in data.columns:
+            regime_labels = data['regime_label']
+        
+        # Tier 1: Try Enhanced SR Feature Extractor with Historical Integration
         try:
-            # Try enhanced SR feature extractor first
             from .enhanced_sr_feature_extractor import (
                 get_enhanced_sr_feature_extractor, SRFeatureConfig, HistoricalSRConfig
             )
@@ -477,66 +488,51 @@ class EnhancedFeatureEngineeringStep(BaseStep):
             # Get enhanced SR feature extractor
             sr_extractor = get_enhanced_sr_feature_extractor(sr_config, historical_config)
             
-            # Extract SR levels if available in pipeline state
-            sr_levels = None
-            if hasattr(self, 'pipeline_state') and 'sr_levels' in self.pipeline_state:
-                sr_levels = self.pipeline_state['sr_levels']
-            
-            # Get regime labels if available
-            regime_labels = None
-            if 'regime_label' in data.columns:
-                regime_labels = data['regime_label']
-            
             # Extract enhanced SR features with historical integration
             sr_features = sr_extractor.extract_historical_sr_features(data, sr_levels, regime_labels)
             
-            self.logger.info(f"✅ Extracted {sr_features.shape[1]} enhanced SR features with historical integration")
+            self.logger.info(f"✅ Tier 1: Extracted {sr_features.shape[1]} enhanced SR features with historical integration")
             return sr_features
             
         except ImportError as e:
-            self.logger.warning(f"Enhanced SR feature extractor not available, trying basic extractor: {e}")
-            # Fallback to basic SR feature extractor
-            try:
-                from .sr_feature_extractor import get_sr_feature_extractor, SRFeatureConfig
-                
-                sr_config = SRFeatureConfig(
-                    enable_basic_sr_features=True,
-                    enable_advanced_sr_features=True,
-                    enable_sr_bounce_signals=True,
-                    enable_sr_strength_calculation=True,
-                    enable_regime_aware_sr=True,
-                    use_pre_optimized_parameters=True,
-                    sr_detection_window=self.feature_config.get('sr_detection_window', 20),
-                    min_touches_required=self.feature_config.get('min_touches_required', 3),
-                    touch_tolerance=self.feature_config.get('touch_tolerance', 0.002),
-                    min_bounce_strength=self.feature_config.get('min_bounce_strength', 0.001),
-                    volume_threshold_multiplier=self.feature_config.get('volume_threshold_multiplier', 1.5)
-                )
-                
-                sr_extractor = get_sr_feature_extractor(sr_config)
-                
-                # Extract SR levels if available in pipeline state
-                sr_levels = None
-                if hasattr(self, 'pipeline_state') and 'sr_levels' in self.pipeline_state:
-                    sr_levels = self.pipeline_state['sr_levels']
-                
-                # Get regime labels if available
-                regime_labels = None
-                if 'regime_label' in data.columns:
-                    regime_labels = data['regime_label']
-                
-                # Extract basic SR features
-                sr_features = sr_extractor.extract_sr_features(data, sr_levels, regime_labels)
-                
-                self.logger.info(f"✅ Extracted {sr_features.shape[1]} basic SR features")
-                return sr_features
-                
-            except ImportError as e2:
-                self.logger.warning(f"Basic SR feature extractor not available, using fallback: {e2}")
-                return self._create_fallback_sr_features(data)
+            self.logger.warning(f"Tier 1 failed: Enhanced SR feature extractor not available: {e}")
         except Exception as e:
-            self.logger.error(f"SR feature extraction failed, using fallback: {e}")
-            return self._create_fallback_sr_features(data)
+            self.logger.warning(f"Tier 1 failed: Enhanced SR feature extraction error: {e}")
+        
+        # Tier 2: Try Basic SR Feature Extractor
+        try:
+            from .sr_feature_extractor import get_sr_feature_extractor, SRFeatureConfig
+            
+            sr_config = SRFeatureConfig(
+                enable_basic_sr_features=True,
+                enable_advanced_sr_features=True,
+                enable_sr_bounce_signals=True,
+                enable_sr_strength_calculation=True,
+                enable_regime_aware_sr=True,
+                use_pre_optimized_parameters=True,
+                sr_detection_window=self.feature_config.get('sr_detection_window', 20),
+                min_touches_required=self.feature_config.get('min_touches_required', 3),
+                touch_tolerance=self.feature_config.get('touch_tolerance', 0.002),
+                min_bounce_strength=self.feature_config.get('min_bounce_strength', 0.001),
+                volume_threshold_multiplier=self.feature_config.get('volume_threshold_multiplier', 1.5)
+            )
+            
+            sr_extractor = get_sr_feature_extractor(sr_config)
+            
+            # Extract basic SR features
+            sr_features = sr_extractor.extract_sr_features(data, sr_levels, regime_labels)
+            
+            self.logger.info(f"✅ Tier 2: Extracted {sr_features.shape[1]} basic SR features")
+            return sr_features
+            
+        except ImportError as e:
+            self.logger.warning(f"Tier 2 failed: Basic SR feature extractor not available: {e}")
+        except Exception as e:
+            self.logger.warning(f"Tier 2 failed: Basic SR feature extraction error: {e}")
+        
+        # Tier 3: Use Fallback SR Features
+        self.logger.warning("Tier 3: Using fallback SR features")
+        return self._create_fallback_sr_features(data)
     
     def _create_fallback_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create basic support/resistance features as fallback."""

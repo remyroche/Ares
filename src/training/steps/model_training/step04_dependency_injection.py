@@ -14,7 +14,6 @@ from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')
 
 @dataclass
 class UtilityConfig:
@@ -677,14 +676,3 @@ def get_m1_memory_optimizer():
 def get_m1_cpu_optimizer():
     """Get M1 CPU optimizer."""
     return get_step04_utilities().m1_cpu_optimizer
-
-if __name__ == '__main__':
-    # Test the dependency injection container
-    config = create_step04_config()
-    container = get_step04_container(config)
-    
-    with get_step04_utilities() as utils:
-        summary = container.get_utility_summary()
-        tprint("Step04 Utility Summary:")
-        for utility_type, info in summary.items():
-            tprint(f"  {utility_type}: {info}")

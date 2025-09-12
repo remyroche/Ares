@@ -18,7 +18,6 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.logger import system_logger
 from src.training.steps.data_collection.data_preparation.sr_strength_optimizer import SRLevelIdentifier
 import numpy as np
 import logging

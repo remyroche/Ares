@@ -6,7 +6,6 @@ instead of the original MARKET_ANALYSIS regime tags, ensuring consistency with
 real trading situations.
 """
 
-import asyncio
 import logging
 import numpy as np
 import pandas as pd

@@ -60,10 +60,6 @@ except ImportError:
     execute_tactician_models_training = None
     execute_tactician_ensemble_training = None
 
-# Legacy compatibility aliases
-HMMBasedTrainingStep = GeneralModelTrainer
-UnifiedRegimeIntelligenceStep = GeneralModelTrainer
-AnalystCreationStep = AnalystModelsTrainingStep
 AnalystEnhancementStep = AnalystEnsembleTrainingStep
 AnalystEnsembleCreationStep = AnalystEnsembleTrainingStep
 TacticianSpecialistTrainingStep = TacticianModelsTrainingStep

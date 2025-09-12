@@ -21,7 +21,6 @@ from pathlib import Path
 
 from src.utils.logger import system_logger
 from src.utils.ml_common.ensembles import StackingEnsembleManager, StackingEnsembleConfig
-from src.utils.ml_common.optimization import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 from src.utils.ml_common.optimization.overfitting_prevention import OverfittingPrevention, OverfittingPreventionConfig
 from src.utils.ml_common.post_training.model_persistence import ModelPersistence
 from src.utils.ml_common.post_training.model_evaluation import ModelEvaluator, EvaluationConfig

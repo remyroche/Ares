@@ -6,13 +6,14 @@ Backtesting Sub-Pipeline
 This module provides granular sub-pipeline functionality for backtesting,
 allowing execution of specific backtesting steps with different modes.
 
-Sub-pipelines:
-1. Walk Forward Validation - Walk-forward backtesting
-2. Monte Carlo Simulation - Monte Carlo backtesting
-3. A/B Testing - A/B testing for strategies
-4. Model Persistence - Save and load models
-5. Final Parameters Optimization - System-wide parameter optimization
-6. Comprehensive Reporting - All analysis functionality (performance, risk, trade, portfolio)
+BACKTESTING Stage (7 sub-pipelines):
+1. basic_backtesting_pre - Pre-optimization baseline backtesting
+2. final_parameters_optimization - System-wide parameter optimization
+3. basic_backtesting_post - Post-optimization comparison backtesting
+4. walk_forward_validation - Walk-forward backtesting
+5. monte_carlo_simulation - Monte Carlo backtesting
+6. ab_testing - A/B testing for strategies
+7. reporting - Comprehensive reporting
 """
 
 import asyncio
@@ -98,8 +99,7 @@ class BacktestingSubPipeline:
             'walk_forward_validation': self._walk_forward_validation_pipeline,
             'monte_carlo_simulation': self._monte_carlo_simulation_pipeline,
             'ab_testing': self._ab_testing_pipeline,
-            'model_persistence': self._model_persistence_pipeline,
-            'comprehensive_reporting': self._comprehensive_reporting_pipeline
+            'reporting': self._reporting_pipeline
         }
     
         # Initialize artifact and version managers
@@ -373,46 +373,6 @@ class BacktestingSubPipeline:
         
         return artifacts
     
-    async def _model_persistence_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Model persistence sub-pipeline."""
-        self.logger.info("💾 Executing model persistence pipeline")
-        
-        artifacts = {
-            'saved_models': [],
-            'persistence_metrics': {},
-            'model_metadata': {}
-        }
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual model persistence")
-            artifacts['saved_models'] = ['model.pkl']
-            return artifacts
-        
-        # Import and use model persistence
-        try:
-            from .consolidated_backtesting_step import ConsolidatedBacktestingStep
-            
-            backtester = ConsolidatedBacktestingStep()
-            persistence_result = await backtester.model_persistence(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                save_config=config.custom_params.get('save_config', {})
-            )
-            
-            artifacts['saved_models'] = persistence_result.get('models', [])
-            artifacts['persistence_metrics'] = persistence_result.get('metrics', {})
-            artifacts['model_metadata'] = persistence_result.get('metadata', {})
-            
-        except ImportError:
-            self.logger.warning("⚠️ Model persistence not available, using mock persistence")
-            artifacts['saved_models'] = ['model.pkl']
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("model_persistence", config, artifacts)
-        
-        return artifacts
     
     async def _final_parameters_optimization_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Final parameters optimization sub-pipeline."""
@@ -678,9 +638,9 @@ class BacktestingSubPipeline:
         self.logger.info("✅ Basic backtesting pipeline (post-optimization) completed")
         return artifacts
     
-    async def _comprehensive_reporting_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Comprehensive reporting sub-pipeline (includes all analysis functionality)."""
-        self.logger.info("📊 Executing comprehensive reporting pipeline")
+    async def _reporting_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Reporting sub-pipeline (includes all analysis functionality)."""
+        self.logger.info("📊 Executing reporting pipeline")
         
         artifacts = {
             'reports': [],
@@ -693,7 +653,7 @@ class BacktestingSubPipeline:
         }
         
         if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual comprehensive reporting")
+            self.logger.info("🔄 Blank mode: Skipping actual reporting")
             artifacts['reports'] = ['summary_report.pdf']
             artifacts['performance_metrics'] = {'sharpe_ratio': 1.2, 'max_drawdown': 0.05}
             artifacts['risk_metrics'] = {'var_95': 0.02, 'expected_shortfall': 0.03}
@@ -701,7 +661,7 @@ class BacktestingSubPipeline:
             artifacts['portfolio_metrics'] = {'total_return': 0.15, 'volatility': 0.12}
             return artifacts
         
-        # Import and use comprehensive reporting
+        # Import and use reporting
         try:
             from .reporting import ReportingStep, ReportingConfig
             
@@ -733,14 +693,14 @@ class BacktestingSubPipeline:
             artifacts['visualization_data'] = reporting_result.visualization_data
             
         except ImportError as e:
-            self.logger.warning(f"⚠️ Comprehensive reporting not available: {e}")
+            self.logger.warning(f"⚠️ Reporting not available: {e}")
             artifacts['reports'] = ['summary_report.pdf']
         except Exception as e:
-            self.logger.error(f"❌ Comprehensive reporting failed: {e}")
+            self.logger.error(f"❌ Reporting failed: {e}")
             artifacts['reports'] = ['summary_report.pdf']
         
         # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("comprehensive_reporting", config, artifacts)
+        self._log_sub_pipeline_completion("reporting", config, artifacts)
         
         return artifacts
     

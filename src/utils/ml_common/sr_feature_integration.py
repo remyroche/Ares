@@ -37,7 +37,8 @@ class SRFeatureIntegration:
     def extract_sr_proximity_features(
         self, 
         current_price: float, 
-        sr_levels: List[Dict[str, Any]]
+        sr_levels: List[Dict[str, Any]],
+        previous_balance: Optional[float] = None
     ) -> Dict[str, float]:
         """
         Extract SR proximity features.
@@ -45,6 +46,7 @@ class SRFeatureIntegration:
         Args:
             current_price: Current market price
             sr_levels: List of SR levels with price and type information
+            previous_balance: Previous SR balance for delta calculation
             
         Returns:
             Dictionary of proximity features
@@ -123,6 +125,28 @@ class SRFeatureIntegration:
             features['total_support_levels'] = float(len(support_levels))
             features['total_resistance_levels'] = float(len(resistance_levels))
             
+            # NEW: Distance × Strength to nearest SR level
+            nearest_distance = min(features['support_proximity'], features['resistance_proximity'])
+            nearest_strength = max(features['nearest_support_strength'], features['nearest_resistance_strength'])
+            features['nearest_level_distance_strength'] = nearest_distance * nearest_strength
+            
+            # NEW: SR balance delta (rate of change)
+            if previous_balance is not None:
+                features['sr_balance_delta'] = features['sr_balance'] - previous_balance
+            else:
+                features['sr_balance_delta'] = 0.0
+            
+            # NEW: Price position in SR zone
+            if features['sr_zone_width'] > 0:
+                zone_start = current_price - (features['support_proximity'] * current_price)
+                zone_end = current_price + (features['resistance_proximity'] * current_price)
+                if zone_end > zone_start:
+                    features['price_position_in_zone'] = (current_price - zone_start) / (zone_end - zone_start)
+                else:
+                    features['price_position_in_zone'] = 0.5
+            else:
+                features['price_position_in_zone'] = 0.5
+            
             return features
             
         except Exception as e:
@@ -136,18 +160,22 @@ class SRFeatureIntegration:
                 'sr_balance': 0.5,
                 'sr_zone_width': 1.0,
                 'total_support_levels': 0.0,
-                'total_resistance_levels': 0.0
+                'total_resistance_levels': 0.0,
+                'nearest_level_distance_strength': 0.0,
+                'sr_balance_delta': 0.0,
+                'price_position_in_zone': 0.5
             }
     
-    def extract_sr_strength_features(self, sr_levels: List[Dict[str, Any]]) -> Dict[str, float]:
+    def extract_sr_strength_features(self, sr_levels: List[Dict[str, Any]], current_price: float) -> Dict[str, float]:
         """
-        Extract SR strength features.
+        Extract trading-focused SR strength features.
         
         Args:
             sr_levels: List of SR levels with strength information
+            current_price: Current market price for context
             
         Returns:
-            Dictionary of strength features
+            Dictionary of trading-relevant strength features
         """
         try:
             features = {}
@@ -159,47 +187,35 @@ class SRFeatureIntegration:
             support_levels = [l for l in sr_levels if l.get('level_type', '').lower() == 'support']
             resistance_levels = [l for l in sr_levels if l.get('level_type', '').lower() == 'resistance']
             
-            # Calculate support strength metrics
-            if support_levels:
-                support_strengths = [l.get('strength', 0.5) for l in support_levels]
-                features['avg_support_strength'] = float(np.mean(support_strengths))
-                features['max_support_strength'] = float(np.max(support_strengths))
-                features['min_support_strength'] = float(np.min(support_strengths))
-            else:
-                features['avg_support_strength'] = 0.0
-                features['max_support_strength'] = 0.0
-                features['min_support_strength'] = 0.0
-            
-            # Calculate resistance strength metrics
-            if resistance_levels:
-                resistance_strengths = [l.get('strength', 0.5) for l in resistance_levels]
-                features['avg_resistance_strength'] = float(np.mean(resistance_strengths))
-                features['max_resistance_strength'] = float(np.max(resistance_strengths))
-                features['min_resistance_strength'] = float(np.min(resistance_strengths))
-            else:
-                features['avg_resistance_strength'] = 0.0
-                features['max_resistance_strength'] = 0.0
-                features['min_resistance_strength'] = 0.0
-            
-            # Overall strength metrics
+            # Overall strength (most important for trading)
             all_strengths = [l.get('strength', 0.5) for l in sr_levels]
             features['overall_sr_strength'] = float(np.mean(all_strengths))
-            features['strength_variance'] = float(np.var(all_strengths))
-            features['strength_std'] = float(np.std(all_strengths))
             
-            # Strongest and weakest level types
-            if all_strengths:
-                max_strength_idx = np.argmax(all_strengths)
-                min_strength_idx = np.argmin(all_strengths)
+            # Support vs Resistance strength ratio (market bias indicator)
+            if support_levels and resistance_levels:
+                support_strengths = [l.get('strength', 0.5) for l in support_levels]
+                resistance_strengths = [l.get('strength', 0.5) for l in resistance_levels]
+                avg_support_strength = np.mean(support_strengths)
+                avg_resistance_strength = np.mean(resistance_strengths)
                 
-                strongest_level = sr_levels[max_strength_idx]
-                weakest_level = sr_levels[min_strength_idx]
-                
-                features['strongest_level_type'] = 1.0 if strongest_level.get('level_type', '').lower() == 'support' else 0.0
-                features['weakest_level_type'] = 1.0 if weakest_level.get('level_type', '').lower() == 'support' else 0.0
+                # Ratio: >1 means stronger support (bullish bias), <1 means stronger resistance (bearish bias)
+                if avg_resistance_strength > 0:
+                    features['support_resistance_strength_ratio'] = float(avg_support_strength / avg_resistance_strength)
+                else:
+                    features['support_resistance_strength_ratio'] = 1.0
             else:
-                features['strongest_level_type'] = 0.5
-                features['weakest_level_type'] = 0.5
+                features['support_resistance_strength_ratio'] = 1.0
+            
+            # Nearest level strength ratio (local vs global strength)
+            nearest_level = self._find_nearest_level(sr_levels, current_price)
+            if nearest_level:
+                nearest_strength = nearest_level.get('strength', 0.5)
+                if features['overall_sr_strength'] > 0:
+                    features['nearest_level_strength_ratio'] = float(nearest_strength / features['overall_sr_strength'])
+                else:
+                    features['nearest_level_strength_ratio'] = 1.0
+            else:
+                features['nearest_level_strength_ratio'] = 1.0
             
             return features
             
@@ -207,20 +223,108 @@ class SRFeatureIntegration:
             self.logger.error(f"Error extracting SR strength features: {e}")
             return self._get_default_strength_features()
     
+    def _find_nearest_level(self, sr_levels: List[Dict[str, Any]], current_price: float) -> Optional[Dict[str, Any]]:
+        """Find the nearest SR level to current price."""
+        if not sr_levels:
+            return None
+        
+        nearest_level = None
+        min_distance = float('inf')
+        
+        for level in sr_levels:
+            level_price = level.get('price', 0)
+            distance = abs(current_price - level_price)
+            if distance < min_distance:
+                min_distance = distance
+                nearest_level = level
+        
+        return nearest_level
+    
+    def extract_sr_trading_features(self, sr_levels: List[Dict[str, Any]], current_price: float, market_data: pd.DataFrame) -> Dict[str, float]:
+        """
+        Extract additional trading-relevant SR features.
+        
+        Args:
+            sr_levels: List of SR levels
+            current_price: Current market price
+            market_data: Market data for context
+            
+        Returns:
+            Dictionary of trading features
+        """
+        try:
+            features = {}
+            
+            if not sr_levels or market_data.empty:
+                return self._get_default_trading_features()
+            
+            # SR level density (levels per price range)
+            price_range = current_price * 0.1  # 10% price range
+            levels_in_range = [l for l in sr_levels if abs(l.get('price', 0) - current_price) <= price_range]
+            features['sr_level_density'] = float(len(levels_in_range) / max(1, price_range / current_price))
+            
+            # Breakout probability (based on proximity and strength)
+            nearest_level = self._find_nearest_level(sr_levels, current_price)
+            if nearest_level:
+                distance = abs(current_price - nearest_level.get('price', 0)) / current_price
+                strength = nearest_level.get('strength', 0.5)
+                # Higher proximity + lower strength = higher breakout probability
+                features['sr_breakout_probability'] = float((1 - distance) * (1 - strength))
+            else:
+                features['sr_breakout_probability'] = 0.5
+            
+            # Reversal probability (opposite of breakout)
+            features['sr_reversal_probability'] = 1.0 - features['sr_breakout_probability']
+            
+            # Confluence score (levels clustering around current price)
+            confluence_range = current_price * 0.02  # 2% range
+            confluence_levels = [l for l in sr_levels if abs(l.get('price', 0) - current_price) <= confluence_range]
+            features['sr_confluence_score'] = float(len(confluence_levels) / max(1, len(sr_levels)))
+            
+            # Time since last touch (if available in market data)
+            if 'timestamp' in market_data.columns:
+                # Simplified: assume more recent data = fresher levels
+                features['sr_time_since_last_touch'] = 0.1  # Placeholder
+            else:
+                features['sr_time_since_last_touch'] = 0.5
+            
+            # Trend alignment (simplified: price direction vs SR level type)
+            if len(market_data) > 1:
+                recent_trend = (market_data['close'].iloc[-1] - market_data['close'].iloc[-2]) / market_data['close'].iloc[-2]
+                if recent_trend > 0:
+                    # Uptrend: check if approaching resistance
+                    resistances_above = [l for l in sr_levels if l.get('level_type', '').lower() == 'resistance' and l.get('price', 0) > current_price]
+                    features['sr_trend_alignment'] = float(len(resistances_above) / max(1, len(sr_levels)))
+                else:
+                    # Downtrend: check if approaching support
+                    supports_below = [l for l in sr_levels if l.get('level_type', '').lower() == 'support' and l.get('price', 0) < current_price]
+                    features['sr_trend_alignment'] = float(len(supports_below) / max(1, len(sr_levels)))
+            else:
+                features['sr_trend_alignment'] = 0.5
+            
+            return features
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting SR trading features: {e}")
+            return self._get_default_trading_features()
+    
+    def _get_default_trading_features(self) -> Dict[str, float]:
+        """Get default trading features when no data is available."""
+        return {
+            'sr_level_density': 0.0,
+            'sr_breakout_probability': 0.5,
+            'sr_reversal_probability': 0.5,
+            'sr_confluence_score': 0.0,
+            'sr_time_since_last_touch': 0.5,
+            'sr_trend_alignment': 0.5
+        }
+    
     def _get_default_strength_features(self) -> Dict[str, float]:
         """Get default strength features when no SR levels are available."""
         return {
-            'avg_support_strength': 0.0,
-            'max_support_strength': 0.0,
-            'min_support_strength': 0.0,
-            'avg_resistance_strength': 0.0,
-            'max_resistance_strength': 0.0,
-            'min_resistance_strength': 0.0,
             'overall_sr_strength': 0.0,
-            'strength_variance': 0.0,
-            'strength_std': 0.0,
-            'strongest_level_type': 0.5,
-            'weakest_level_type': 0.5
+            'support_resistance_strength_ratio': 1.0,
+            'nearest_level_strength_ratio': 1.0
         }
     
     def integrate_sr_features_into_pipeline(
@@ -252,10 +356,11 @@ class SRFeatureIntegration:
             
             # Extract SR-specific features
             proximity_features = self.extract_sr_proximity_features(current_price, sr_levels)
-            strength_features = self.extract_sr_strength_features(sr_levels)
+            strength_features = self.extract_sr_strength_features(sr_levels, current_price)
+            trading_features = self.extract_sr_trading_features(sr_levels, current_price, market_data)
             
             # Combine SR features
-            sr_features = {**proximity_features, **strength_features}
+            sr_features = {**proximity_features, **strength_features, **trading_features}
             
             # Add prefix to avoid naming conflicts
             prefixed_sr_features = {
@@ -281,14 +386,17 @@ class SRFeatureIntegration:
             'sr_support_proximity', 'sr_resistance_proximity',
             'sr_nearest_support_strength', 'sr_nearest_resistance_strength',
             'sr_sr_balance', 'sr_sr_zone_width',
-            'sr_total_support_levels', 'sr_total_resistance_levels'
+            'sr_total_support_levels', 'sr_total_resistance_levels',
+            'sr_nearest_level_distance_strength', 'sr_balance_delta', 'sr_price_position_in_zone'
         ]
         
         strength_features = [
-            'sr_avg_support_strength', 'sr_max_support_strength', 'sr_min_support_strength',
-            'sr_avg_resistance_strength', 'sr_max_resistance_strength', 'sr_min_resistance_strength',
-            'sr_overall_sr_strength', 'sr_strength_variance', 'sr_strength_std',
-            'sr_strongest_level_type', 'sr_weakest_level_type'
+            'sr_overall_sr_strength', 'sr_support_resistance_strength_ratio', 'sr_nearest_level_strength_ratio'
         ]
         
-        return proximity_features + strength_features
+        trading_features = [
+            'sr_level_density', 'sr_breakout_probability', 'sr_reversal_probability',
+            'sr_confluence_score', 'sr_time_since_last_touch', 'sr_trend_alignment'
+        ]
+        
+        return proximity_features + strength_features + trading_features

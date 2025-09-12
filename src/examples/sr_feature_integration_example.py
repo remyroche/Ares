@@ -148,7 +148,8 @@ async def example_individual_feature_extraction():
     # Extract proximity features
     proximity_features = sr_integration.extract_sr_proximity_features(
         current_price=current_price,
-        sr_levels=sr_levels
+        sr_levels=sr_levels,
+        previous_balance=None  # No previous data for this example
     )
     
     print("📍 Proximity Features:")
@@ -156,10 +157,17 @@ async def example_individual_feature_extraction():
         print(f"   {key}: {value:.4f}")
     
     # Extract strength features
-    strength_features = sr_integration.extract_sr_strength_features(sr_levels)
+    strength_features = sr_integration.extract_sr_strength_features(sr_levels, current_price)
+    
+    # Extract trading features
+    trading_features = sr_integration.extract_sr_trading_features(sr_levels, current_price, market_data)
     
     print("\n💪 Strength Features:")
     for key, value in strength_features.items():
+        print(f"   {key}: {value:.4f}")
+    
+    print("\n📈 Trading Features:")
+    for key, value in trading_features.items():
         print(f"   {key}: {value:.4f}")
 
 if __name__ == "__main__":

@@ -948,7 +948,8 @@ class DataCollectionSubPipeline:
         artifacts = {
             'quality_reports': [],
             'quality_metrics': {},
-            'quality_issues': []
+            'quality_issues': [],
+            'cleaning_results': {}
         }
         
         if config.mode == ExecutionMode.BLANK:
@@ -969,7 +970,48 @@ class DataCollectionSubPipeline:
                 if os.path.exists(file_path):
                     df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     if not df.empty:
-                        quality_score = self._calculate_quality_score(df, file_name)
+                        # Enhanced data cleaning integration
+                        try:
+                            from src.utils.data.quality.data_cleaning import DataCleaner
+                            
+                            # Determine data type from filename
+                            data_type = 'klines'  # Default
+                            if 'aggtrades' in file_name:
+                                data_type = 'aggtrades'
+                            elif 'futures' in file_name:
+                                data_type = 'futures'
+                            
+                            # Create data cleaner with appropriate data type
+                            cleaner = DataCleaner(data_type=data_type)
+                            
+                            # Apply enhanced data cleaning
+                            cleaned_df = cleaner.clean_dataframe(
+                                df, 
+                                remove_constant_features=True,
+                                symbol=config.symbol,
+                                exchange=config.exchange,
+                                timeframe=config.timeframe
+                            )
+                            
+                            if cleaned_df is not None and not cleaned_df.empty:
+                                artifacts['cleaning_results'][file_name] = {
+                                    'original_rows': len(df),
+                                    'cleaned_rows': len(cleaned_df),
+                                    'original_columns': len(df.columns),
+                                    'cleaned_columns': len(cleaned_df.columns),
+                                    'data_type': data_type
+                                }
+                                
+                                # Use cleaned data for quality assessment
+                                quality_score = self._calculate_quality_score(cleaned_df, file_name)
+                            else:
+                                self.logger.warning(f"⚠️ Data cleaning failed for {file_name}, using original data")
+                                quality_score = self._calculate_quality_score(df, file_name)
+                                
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Enhanced data cleaning not available for {file_name}: {e}")
+                            quality_score = self._calculate_quality_score(df, file_name)
+                        
                         quality_results.append(quality_score)
                         
                         if quality_score < 0.8:

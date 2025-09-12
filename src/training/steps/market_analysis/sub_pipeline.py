@@ -262,8 +262,7 @@ class MarketAnalysisSubPipeline:
                 'execution_time': total_time,
                 'stage_times': {
                     'detection': detection_result.execution_time,
-                    'clustering': clustering_result.execution_time,
-                    'ml_learning': ml_result.execution_time
+                    'clustering': clustering_result.execution_time
                 },
                 'stage': 'complete_sr_optimization'
             }

@@ -98,12 +98,12 @@ class BacktestConfig:
     max_analysis_period: int = 720  # Maximum hours to analyze (30 days)
     time_decay_factor: float = 0.95  # How much older touches are weighted less
     
-    # Quality scoring parameters - will be optimized
-    success_rate_weight: float = 0.3
-    bounce_strength_weight: float = 0.25
-    volume_confirmation_weight: float = 0.2
-    time_persistence_weight: float = 0.15
-    touch_frequency_weight: float = 0.1
+    # Quality scoring multipliers - will be optimized
+    success_rate_multiplier: float = 1.0
+    bounce_strength_multiplier: float = 1.0
+    volume_confirmation_multiplier: float = 1.0
+    time_persistence_multiplier: float = 1.0
+    touch_frequency_multiplier: float = 1.0
     
     # Parameter optimization settings
     enable_parameter_optimization: bool = True  # Enable parameter optimization
@@ -1110,15 +1110,30 @@ class SRBacktestingEngine:
                                        total_touches: int, penetration_metrics: Dict[str, float], 
                                        pattern_metrics: Dict[str, float]) -> float:
         """Calculate quality score using default weights."""
-        return (
-            self.config.success_rate_weight * success_rate +
-            self.config.bounce_strength_weight * min(avg_bounce_strength * 10, 1.0) +
-            self.config.volume_confirmation_weight * min(avg_volume / 1000000, 1.0) +
-            self.config.time_persistence_weight * time_persistence +
-            self.config.touch_frequency_weight * min(total_touches / 5.0, 1.0) +
-            0.1 * penetration_metrics['penetration_depth'] +  # 10% weight for penetration
-            0.1 * pattern_metrics['pattern_consistency']      # 10% weight for pattern consistency
+        # Calculate quality score using multipliers (more intuitive than weights)
+        quality_score = (
+            self.config.success_rate_multiplier * success_rate +
+            self.config.bounce_strength_multiplier * min(avg_bounce_strength * 10, 1.0) +
+            self.config.volume_confirmation_multiplier * min(avg_volume / 1000000, 1.0) +
+            self.config.time_persistence_multiplier * time_persistence +
+            self.config.touch_frequency_multiplier * min(total_touches / 5.0, 1.0) +
+            1.0 * penetration_metrics['penetration_depth']  # 1.0 multiplier for penetration
         )
+        
+        # Normalize by total multiplier sum to keep score in [0, 1] range
+        total_multiplier = (
+            self.config.success_rate_multiplier +
+            self.config.bounce_strength_multiplier +
+            self.config.volume_confirmation_multiplier +
+            self.config.time_persistence_multiplier +
+            self.config.touch_frequency_multiplier +
+            1.0  # penetration multiplier
+        )
+        
+        if total_multiplier > 0:
+            quality_score = quality_score / total_multiplier
+        
+        return quality_score
 
     def _get_default_metrics(self) -> Dict[str, float]:
         """Get default metrics for failed calculations."""
@@ -1685,11 +1700,11 @@ class SRBacktestingEngine:
         # This would use machine learning to optimize weights
         # For now, return the configured weights
         return {
-            'success_rate': self.config.success_rate_weight,
-            'bounce_strength': self.config.bounce_strength_weight,
-            'volume_confirmation': self.config.volume_confirmation_weight,
-            'time_persistence': self.config.time_persistence_weight,
-            'touch_frequency': self.config.touch_frequency_weight
+            'success_rate': self.config.success_rate_multiplier,
+            'bounce_strength': self.config.bounce_strength_multiplier,
+            'volume_confirmation': self.config.volume_confirmation_multiplier,
+            'time_persistence': self.config.time_persistence_multiplier,
+            'touch_frequency': self.config.touch_frequency_multiplier
         }
     
     def _calculate_performance_thresholds(self, high_quality: List[BacktestResult]) -> Dict[str, float]:
@@ -1876,11 +1891,11 @@ class SRBacktestingEngine:
                 'max_hold_time': self.data_driven_thresholds['max_hold_time'],
                 'volume_threshold_multiplier': self.data_driven_thresholds['volume_threshold_multiplier'],
                 'min_touches_required': self._calculate_optimal_min_touches(results),
-                'success_rate_weight': 0.3,
-                'bounce_strength_weight': 0.25,
-                'volume_confirmation_weight': 0.2,
-                'time_persistence_weight': 0.15,
-                'touch_frequency_weight': 0.1
+                'success_rate_multiplier': 1.0,
+                'bounce_strength_multiplier': 1.0,
+                'volume_confirmation_multiplier': 1.0,
+                'time_persistence_multiplier': 1.0,
+                'touch_frequency_multiplier': 1.0
             }
         else:
             # Use conservative defaults
@@ -1890,11 +1905,11 @@ class SRBacktestingEngine:
                 'max_hold_time': 24,
                 'volume_threshold_multiplier': 1.5,
                 'min_touches_required': 3,
-                'success_rate_weight': 0.3,
-                'bounce_strength_weight': 0.25,
-                'volume_confirmation_weight': 0.2,
-                'time_persistence_weight': 0.15,
-                'touch_frequency_weight': 0.1
+                'success_rate_multiplier': 1.0,
+                'bounce_strength_multiplier': 1.0,
+                'volume_confirmation_multiplier': 1.0,
+                'time_persistence_multiplier': 1.0,
+                'touch_frequency_multiplier': 1.0
             }
         
         # Calculate quality thresholds
@@ -1920,11 +1935,11 @@ class SRBacktestingEngine:
             'max_hold_time': 48,  # Longer hold time
             'volume_threshold_multiplier': 1.2,  # Lower volume requirement
             'min_touches_required': 2,  # Lower touch requirement
-            'success_rate_weight': 0.4,  # Focus on success rate
-            'bounce_strength_weight': 0.3,  # Focus on bounce strength
-            'volume_confirmation_weight': 0.1,  # Less focus on volume
-            'time_persistence_weight': 0.1,  # Less focus on time
-            'touch_frequency_weight': 0.1  # Less focus on frequency
+            'success_rate_multiplier': 1.5,  # Focus on success rate
+            'bounce_strength_multiplier': 1.3,  # Focus on bounce strength
+            'volume_confirmation_multiplier': 0.7,  # Less focus on volume
+            'time_persistence_multiplier': 0.7,  # Less focus on time
+            'touch_frequency_multiplier': 0.7  # Less focus on frequency
         }
         
         # Calculate quality thresholds
@@ -1946,11 +1961,11 @@ class SRBacktestingEngine:
         self.config.max_hold_time = optimized_params['max_hold_time']
         self.config.volume_threshold_multiplier = optimized_params['volume_threshold_multiplier']
         self.config.min_touches_required = optimized_params['min_touches_required']
-        self.config.success_rate_weight = optimized_params['success_rate_weight']
-        self.config.bounce_strength_weight = optimized_params['bounce_strength_weight']
-        self.config.volume_confirmation_weight = optimized_params['volume_confirmation_weight']
-        self.config.time_persistence_weight = optimized_params['time_persistence_weight']
-        self.config.touch_frequency_weight = optimized_params['touch_frequency_weight']
+        self.config.success_rate_multiplier = optimized_params['success_rate_multiplier']
+        self.config.bounce_strength_multiplier = optimized_params['bounce_strength_multiplier']
+        self.config.volume_confirmation_multiplier = optimized_params['volume_confirmation_multiplier']
+        self.config.time_persistence_multiplier = optimized_params['time_persistence_multiplier']
+        self.config.touch_frequency_multiplier = optimized_params['touch_frequency_multiplier']
         
         # Save optimized parameters
         self._save_optimized_parameters(optimized_params)
@@ -1982,11 +1997,11 @@ class SRBacktestingEngine:
                     'max_hold_time': self.config.max_hold_time,
                     'volume_threshold_multiplier': self.config.volume_threshold_multiplier,
                     'min_touches_required': self.config.min_touches_required,
-                    'success_rate_weight': self.config.success_rate_weight,
-                    'bounce_strength_weight': self.config.bounce_strength_weight,
-                    'volume_confirmation_weight': self.config.volume_confirmation_weight,
-                    'time_persistence_weight': self.config.time_persistence_weight,
-                    'touch_frequency_weight': self.config.touch_frequency_weight
+                    'success_rate_multiplier': self.config.success_rate_multiplier,
+                    'bounce_strength_multiplier': self.config.bounce_strength_multiplier,
+                    'volume_confirmation_multiplier': self.config.volume_confirmation_multiplier,
+                    'time_persistence_multiplier': self.config.time_persistence_multiplier,
+                    'touch_frequency_multiplier': self.config.touch_frequency_multiplier
                 }
             }
             

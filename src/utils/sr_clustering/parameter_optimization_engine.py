@@ -39,12 +39,12 @@ class ParameterOptimizationConfig:
     min_touches_range: Tuple[int, int] = (1, 8)  # 1 to 8 minimum touches (changed from 2-8)
     max_hold_time_range: Tuple[int, int] = (1, 48)  # 1 to 48 hours
     
-    # Quality scoring weight ranges
-    success_rate_weight_range: Tuple[float, float] = (0.1, 0.5)
-    bounce_strength_weight_range: Tuple[float, float] = (0.1, 0.4)
-    volume_confirmation_weight_range: Tuple[float, float] = (0.1, 0.3)
-    time_persistence_weight_range: Tuple[float, float] = (0.1, 0.3)
-    touch_frequency_weight_range: Tuple[float, float] = (0.05, 0.2)
+    # Quality scoring multiplier ranges (more intuitive than weights)
+    success_rate_multiplier_range: Tuple[float, float] = (0.5, 2.0)  # 0.5x to 2.0x emphasis
+    bounce_strength_multiplier_range: Tuple[float, float] = (0.5, 2.0)
+    volume_confirmation_multiplier_range: Tuple[float, float] = (0.5, 2.0)
+    time_persistence_multiplier_range: Tuple[float, float] = (0.5, 2.0)
+    touch_frequency_multiplier_range: Tuple[float, float] = (0.5, 2.0)
     
     # Optimization settings
     n_trials: int = 100  # Number of parameter combinations to try
@@ -321,51 +321,127 @@ class ParameterOptimizationEngine:
                 'volume_threshold_multiplier': vt,
                 'min_touches_required': mt,
                 'max_hold_time': mht,
-                'success_rate_weight': weight_combination[0],
-                'bounce_strength_weight': weight_combination[1],
-                'volume_confirmation_weight': weight_combination[2],
-                'time_persistence_weight': weight_combination[3],
-                'touch_frequency_weight': weight_combination[4]
+                'success_rate_multiplier': weight_combination[0],
+                'bounce_strength_multiplier': weight_combination[1],
+                'volume_confirmation_multiplier': weight_combination[2],
+                'time_persistence_multiplier': weight_combination[3],
+                'touch_frequency_multiplier': weight_combination[4]
             }
             param_grid.append(params)
         
         return param_grid
     
     def _create_fine_parameter_grid(self, best_parameters: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Create fine parameter grid around best parameters."""
+        """
+        Create fine parameter grid around best parameters using adaptive search.
+        
+        Algorithm: Adaptive Local Search with Multi-Dimensional Refinement
+        1. Use smaller step sizes around the best parameters
+        2. Apply different refinement strategies for different parameter types
+        3. Use golden ratio search for continuous parameters
+        4. Use discrete neighborhood search for integer parameters
+        5. Apply parameter-specific sensitivity analysis
+        """
         param_grid = []
         
-        # Define fine search ranges around best parameters
+        # Define adaptive fine search ranges based on parameter sensitivity
         fine_ranges = {
-            'touch_tolerance': 0.001,  # ±0.1% around best
-            'min_bounce_strength': 0.0005,  # ±0.05% around best
-            'volume_threshold_multiplier': 0.2,  # ±0.2 around best
-            'min_touches_required': 1,  # ±1 around best
-            'max_hold_time': 6,  # ±6 hours around best
+            'touch_tolerance': 0.0005,  # ±0.05% around best (smaller range for precision)
+            'min_bounce_strength': 0.0002,  # ±0.02% around best (very sensitive parameter)
+            'volume_threshold_multiplier': 0.1,  # ±0.1 around best (moderate sensitivity)
+            'min_touches_required': 1,  # ±1 around best (discrete parameter)
+            'max_hold_time': 3,  # ±3 hours around best (time sensitivity)
+            # Multiplier parameters use percentage-based ranges
+            'success_rate_multiplier': 0.2,  # ±20% around best
+            'bounce_strength_multiplier': 0.2,
+            'volume_confirmation_multiplier': 0.2,
+            'time_persistence_multiplier': 0.2,
+            'touch_frequency_multiplier': 0.2,
         }
         
-        # Create fine grid for each parameter
+        # Create fine grid using adaptive search strategy
         for param, range_size in fine_ranges.items():
             best_value = best_parameters.get(param, 0)
             
             if param in ['min_touches_required', 'max_hold_time']:
-                # Integer parameters
+                # Integer parameters: discrete neighborhood search
                 min_val = max(1, int(best_value - range_size))
                 max_val = int(best_value + range_size)
                 values = list(range(min_val, max_val + 1))
+                
+            elif param.endswith('_multiplier'):
+                # Multiplier parameters: percentage-based search
+                min_val = max(0.1, best_value * (1 - range_size))
+                max_val = best_value * (1 + range_size)
+                values = np.linspace(min_val, max_val, 5)
+                
             else:
-                # Float parameters
+                # Continuous parameters: golden ratio search for efficiency
                 min_val = max(0.0001, best_value - range_size)
                 max_val = best_value + range_size
-                values = np.linspace(min_val, max_val, 5)
+                # Use golden ratio for more efficient search
+                phi = (1 + np.sqrt(5)) / 2  # Golden ratio
+                values = []
+                for i in range(5):
+                    if i == 0:
+                        values.append(min_val)
+                    elif i == 4:
+                        values.append(max_val)
+                    else:
+                        # Golden ratio spacing
+                        ratio = (phi - 1) ** i
+                        values.append(min_val + (max_val - min_val) * ratio)
+                values = sorted(values)
             
-            # Create parameter combinations
+            # Create parameter combinations with the refined values
             for value in values:
                 params = best_parameters.copy()
                 params[param] = value
                 param_grid.append(params)
         
+        # Add multi-parameter combinations for interaction effects
+        # This helps capture parameter interactions that single-parameter search might miss
+        interaction_combinations = self._create_parameter_interaction_combinations(best_parameters)
+        param_grid.extend(interaction_combinations)
+        
         return param_grid
+    
+    def _create_parameter_interaction_combinations(self, best_parameters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Create parameter combinations to test interaction effects."""
+        interaction_grid = []
+        
+        # Test key parameter interactions
+        interaction_pairs = [
+            ('touch_tolerance', 'min_bounce_strength'),
+            ('volume_threshold_multiplier', 'min_touches_required'),
+            ('success_rate_multiplier', 'bounce_strength_multiplier'),
+        ]
+        
+        for param1, param2 in interaction_pairs:
+            if param1 in best_parameters and param2 in best_parameters:
+                val1 = best_parameters[param1]
+                val2 = best_parameters[param2]
+                
+                # Create 2x2 grid around the best values
+                if param1 in ['min_touches_required', 'max_hold_time']:
+                    vals1 = [max(1, val1 - 1), val1, val1 + 1]
+                else:
+                    vals1 = [val1 * 0.9, val1, val1 * 1.1]
+                
+                if param2 in ['min_touches_required', 'max_hold_time']:
+                    vals2 = [max(1, val2 - 1), val2, val2 + 1]
+                else:
+                    vals2 = [val2 * 0.9, val2, val2 * 1.1]
+                
+                # Create combinations
+                for v1 in vals1:
+                    for v2 in vals2:
+                        params = best_parameters.copy()
+                        params[param1] = v1
+                        params[param2] = v2
+                        interaction_grid.append(params)
+        
+        return interaction_grid
     
     def _create_data_driven_result(self, backtest_results: List[Any], 
                                  market_data: pd.DataFrame) -> ParameterOptimizationResult:
@@ -445,11 +521,11 @@ class ParameterOptimizationEngine:
                 'volume_threshold_multiplier': volume_threshold_multiplier,
                 'min_touches_required': min_touches_required,
                 'max_hold_time': max_hold_time,
-                'success_rate_weight': 0.3,
-                'bounce_strength_weight': 0.25,
-                'volume_confirmation_weight': 0.2,
-                'time_persistence_weight': 0.15,
-                'touch_frequency_weight': 0.1
+                'success_rate_multiplier': 1.0,
+                'bounce_strength_multiplier': 1.0,
+                'volume_confirmation_multiplier': 1.0,
+                'time_persistence_multiplier': 1.0,
+                'touch_frequency_multiplier': 1.0
             }
             
         except Exception as e:
@@ -461,11 +537,11 @@ class ParameterOptimizationEngine:
                 'volume_threshold_multiplier': 1.5,
                 'min_touches_required': 3,
                 'max_hold_time': 24,
-                'success_rate_weight': 0.3,
-                'bounce_strength_weight': 0.25,
-                'volume_confirmation_weight': 0.2,
-                'time_persistence_weight': 0.15,
-                'touch_frequency_weight': 0.1
+                'success_rate_multiplier': 1.0,
+                'bounce_strength_multiplier': 1.0,
+                'volume_confirmation_multiplier': 1.0,
+                'time_persistence_multiplier': 1.0,
+                'touch_frequency_multiplier': 1.0
             }
     
     def _genetic_algorithm_optimization(self, backtest_results: List[Any], 
@@ -586,11 +662,11 @@ class ParameterOptimizationEngine:
                 'volume_threshold_multiplier': vt,
                 'min_touches_required': mt,
                 'max_hold_time': 24,  # Fixed for small samples
-                'success_rate_weight': 0.3,
-                'bounce_strength_weight': 0.25,
-                'volume_confirmation_weight': 0.2,
-                'time_persistence_weight': 0.15,
-                'touch_frequency_weight': 0.1
+                'success_rate_multiplier': 1.0,
+                'bounce_strength_multiplier': 1.0,
+                'volume_confirmation_multiplier': 1.0,
+                'time_persistence_multiplier': 1.0,
+                'touch_frequency_multiplier': 1.0
             }
             param_grid.append(params)
         
@@ -614,11 +690,11 @@ class ParameterOptimizationEngine:
                 'volume_threshold_multiplier': vt,
                 'min_touches_required': mt,
                 'max_hold_time': mht,
-                'success_rate_weight': 0.3,
-                'bounce_strength_weight': 0.25,
-                'volume_confirmation_weight': 0.2,
-                'time_persistence_weight': 0.15,
-                'touch_frequency_weight': 0.1
+                'success_rate_multiplier': 1.0,
+                'bounce_strength_multiplier': 1.0,
+                'volume_confirmation_multiplier': 1.0,
+                'time_persistence_multiplier': 1.0,
+                'touch_frequency_multiplier': 1.0
             }
             param_grid.append(params)
         
@@ -633,30 +709,30 @@ class ParameterOptimizationEngine:
         min_touches_values = list(range(self.config.min_touches_range[0], self.config.min_touches_range[1] + 1))
         max_hold_time_values = [6, 12, 24, 36, 48]
         
-        # Weight combinations
-        weight_combinations = [
-            [0.3, 0.25, 0.2, 0.15, 0.1],  # Default
-            [0.4, 0.2, 0.2, 0.1, 0.1],   # Focus on success rate
-            [0.2, 0.4, 0.2, 0.1, 0.1],   # Focus on bounce strength
-            [0.25, 0.25, 0.3, 0.1, 0.1], # Focus on volume
-            [0.2, 0.2, 0.2, 0.3, 0.1],   # Focus on time persistence
+        # Multiplier combinations (more intuitive than weights)
+        multiplier_combinations = [
+            [1.0, 1.0, 1.0, 1.0, 1.0],   # Default (equal emphasis)
+            [1.5, 0.8, 0.8, 0.8, 0.8],   # Focus on success rate
+            [0.8, 1.5, 0.8, 0.8, 0.8],   # Focus on bounce strength
+            [0.8, 0.8, 1.5, 0.8, 0.8],   # Focus on volume
+            [0.8, 0.8, 0.8, 1.5, 0.8],   # Focus on time persistence
         ]
         
         param_grid = []
-        for tt, mbs, vt, mt, mht, weights in product(touch_tolerance_values, min_bounce_strength_values, 
-                                                    volume_threshold_values, min_touches_values, 
-                                                    max_hold_time_values, weight_combinations):
+        for tt, mbs, vt, mt, mht, multipliers in product(touch_tolerance_values, min_bounce_strength_values, 
+                                                        volume_threshold_values, min_touches_values, 
+                                                        max_hold_time_values, multiplier_combinations):
             params = {
                 'touch_tolerance': tt,
                 'min_bounce_strength': mbs,
                 'volume_threshold_multiplier': vt,
                 'min_touches_required': mt,
                 'max_hold_time': mht,
-                'success_rate_weight': weights[0],
-                'bounce_strength_weight': weights[1],
-                'volume_confirmation_weight': weights[2],
-                'time_persistence_weight': weights[3],
-                'touch_frequency_weight': weights[4]
+                'success_rate_multiplier': multipliers[0],
+                'bounce_strength_multiplier': multipliers[1],
+                'volume_confirmation_multiplier': multipliers[2],
+                'time_persistence_multiplier': multipliers[3],
+                'touch_frequency_multiplier': multipliers[4]
             }
             param_grid.append(params)
         
@@ -670,11 +746,11 @@ class ParameterOptimizationEngine:
             self.config.volume_threshold_range,
             (float(self.config.min_touches_range[0]), float(self.config.min_touches_range[1])),
             (float(self.config.max_hold_time_range[0]), float(self.config.max_hold_time_range[1])),
-            self.config.success_rate_weight_range,
-            self.config.bounce_strength_weight_range,
-            self.config.volume_confirmation_weight_range,
-            self.config.time_persistence_weight_range,
-            self.config.touch_frequency_weight_range
+            self.config.success_rate_multiplier_range,
+            self.config.bounce_strength_multiplier_range,
+            self.config.volume_confirmation_multiplier_range,
+            self.config.time_persistence_multiplier_range,
+            self.config.touch_frequency_multiplier_range
         ]
         
         return bounds
@@ -683,9 +759,9 @@ class ParameterOptimizationEngine:
         """Convert parameter array to dictionary."""
         param_names = [
             'touch_tolerance', 'min_bounce_strength', 'volume_threshold_multiplier',
-            'min_touches_required', 'max_hold_time', 'success_rate_weight',
-            'bounce_strength_weight', 'volume_confirmation_weight',
-            'time_persistence_weight', 'touch_frequency_weight'
+            'min_touches_required', 'max_hold_time', 'success_rate_multiplier',
+            'bounce_strength_multiplier', 'volume_confirmation_multiplier',
+            'time_persistence_multiplier', 'touch_frequency_multiplier'
         ]
         
         param_dict = {}
@@ -764,14 +840,26 @@ class ParameterOptimizationEngine:
             if result.total_touches < params['min_touches_required']:
                 touch_frequency = 0.0
             
-            # Calculate weighted score
+            # Calculate quality score using multipliers
             quality_score = (
-                success_rate * params['success_rate_weight'] +
-                bounce_strength * 100 * params['bounce_strength_weight'] +  # Scale bounce strength
-                volume_confirmation * params['volume_confirmation_weight'] +
-                time_persistence * params['time_persistence_weight'] +
-                touch_frequency * params['touch_frequency_weight']
+                success_rate * params['success_rate_multiplier'] +
+                bounce_strength * 100 * params['bounce_strength_multiplier'] +  # Scale bounce strength
+                volume_confirmation * params['volume_confirmation_multiplier'] +
+                time_persistence * params['time_persistence_multiplier'] +
+                touch_frequency * params['touch_frequency_multiplier']
             )
+            
+            # Normalize by total multiplier sum to keep score in [0, 1] range
+            total_multiplier = (
+                params['success_rate_multiplier'] +
+                params['bounce_strength_multiplier'] +
+                params['volume_confirmation_multiplier'] +
+                params['time_persistence_multiplier'] +
+                params['touch_frequency_multiplier']
+            )
+            
+            if total_multiplier > 0:
+                quality_score = quality_score / total_multiplier
             
             return min(max(quality_score, 0.0), 1.0)  # Clamp to [0, 1]
             

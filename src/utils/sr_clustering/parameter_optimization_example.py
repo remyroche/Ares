@@ -137,12 +137,12 @@ def test_parameter_optimization():
                 logger.info(f"  - Min touches required: {optimized_params.get('min_touches_required', 0)}")
                 logger.info(f"  - Max hold time: {optimized_params.get('max_hold_time', 0)} hours")
                 
-                logger.info("Quality scoring weights:")
-                logger.info(f"  - Success rate weight: {optimized_params.get('success_rate_weight', 0):.3f}")
-                logger.info(f"  - Bounce strength weight: {optimized_params.get('bounce_strength_weight', 0):.3f}")
-                logger.info(f"  - Volume confirmation weight: {optimized_params.get('volume_confirmation_weight', 0):.3f}")
-                logger.info(f"  - Time persistence weight: {optimized_params.get('time_persistence_weight', 0):.3f}")
-                logger.info(f"  - Touch frequency weight: {optimized_params.get('touch_frequency_weight', 0):.3f}")
+                logger.info("Quality scoring multipliers:")
+                logger.info(f"  - Success rate multiplier: {optimized_params.get('success_rate_multiplier', 0):.3f}")
+                logger.info(f"  - Bounce strength multiplier: {optimized_params.get('bounce_strength_multiplier', 0):.3f}")
+                logger.info(f"  - Volume confirmation multiplier: {optimized_params.get('volume_confirmation_multiplier', 0):.3f}")
+                logger.info(f"  - Time persistence multiplier: {optimized_params.get('time_persistence_multiplier', 0):.3f}")
+                logger.info(f"  - Touch frequency multiplier: {optimized_params.get('touch_frequency_multiplier', 0):.3f}")
             
             # Show quality thresholds
             quality_thresholds = optimization_result.get('quality_thresholds', {})

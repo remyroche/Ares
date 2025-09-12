@@ -30,13 +30,13 @@ logger = logging.getLogger(__name__)
 class ParameterOptimizationConfig:
     """Configuration for parameter optimization."""
     # Optimization method
-    optimization_method: str = 'grid_search'  # 'grid_search', 'bayesian', 'genetic', 'scipy'
+    optimization_method: str = 'adaptive_grid_search'  # 'grid_search', 'adaptive_grid_search', 'genetic', 'scipy'
     
     # Parameter ranges to optimize
     touch_tolerance_range: Tuple[float, float] = (0.001, 0.01)  # 0.1% to 1%
     min_bounce_strength_range: Tuple[float, float] = (0.0005, 0.005)  # 0.05% to 0.5%
     volume_threshold_range: Tuple[float, float] = (1.0, 3.0)  # 1x to 3x average volume
-    min_touches_range: Tuple[int, int] = (2, 8)  # 2 to 8 minimum touches
+    min_touches_range: Tuple[int, int] = (1, 8)  # 1 to 8 minimum touches (changed from 2-8)
     max_hold_time_range: Tuple[int, int] = (1, 48)  # 1 to 48 hours
     
     # Quality scoring weight ranges
@@ -115,17 +115,19 @@ class ParameterOptimizationEngine:
             # Run optimization based on method
             if self.config.optimization_method == 'grid_search':
                 return self._grid_search_optimization(backtest_results, market_data, strategy)
+            elif self.config.optimization_method == 'adaptive_grid_search':
+                return self._adaptive_grid_search_optimization(backtest_results, market_data, strategy)
             elif self.config.optimization_method == 'genetic':
                 return self._genetic_algorithm_optimization(backtest_results, market_data, strategy)
             elif self.config.optimization_method == 'scipy':
                 return self._scipy_optimization(backtest_results, market_data, strategy)
             else:
                 self.logger.error(f"Unknown optimization method: {self.config.optimization_method}")
-                return self._create_fallback_result(backtest_results)
+                raise ValueError(f"Unknown optimization method: {self.config.optimization_method}")
                 
         except Exception as e:
             self.logger.error(f"Parameter optimization failed: {e}")
-            return self._create_fallback_result(backtest_results)
+            raise RuntimeError(f"Parameter optimization failed: {e}")
     
     def _determine_optimization_strategy(self, n_samples: int) -> str:
         """Determine optimization strategy based on sample size."""
@@ -182,6 +184,289 @@ class ParameterOptimizationEngine:
             parameter_scores=parameter_scores,
             optimization_details={'strategy': strategy}
         )
+    
+    def _adaptive_grid_search_optimization(self, backtest_results: List[Any], 
+                                         market_data: pd.DataFrame, 
+                                         strategy: str) -> ParameterOptimizationResult:
+        """Adaptive grid search optimization with coarse-to-fine approach."""
+        self.logger.info("Starting adaptive grid search optimization")
+        
+        # Stage 1: Coarse grid search
+        self.logger.info("Stage 1: Coarse grid search")
+        coarse_result = self._coarse_grid_search(backtest_results, market_data, strategy)
+        
+        if not coarse_result.optimization_success:
+            self.logger.warning("Coarse grid search failed, using data-driven parameters")
+            return self._create_data_driven_result(backtest_results, market_data)
+        
+        # Stage 2: Fine grid search around best parameters
+        self.logger.info("Stage 2: Fine grid search around best parameters")
+        fine_result = self._fine_grid_search(backtest_results, market_data, coarse_result.best_parameters)
+        
+        if fine_result.optimization_success and fine_result.best_score > coarse_result.best_score:
+            self.logger.info(f"Fine grid search improved score: {coarse_result.best_score:.4f} -> {fine_result.best_score:.4f}")
+            return fine_result
+        else:
+            self.logger.info("Fine grid search did not improve results, using coarse results")
+            return coarse_result
+    
+    def _coarse_grid_search(self, backtest_results: List[Any], 
+                           market_data: pd.DataFrame, 
+                           strategy: str) -> ParameterOptimizationResult:
+        """Coarse grid search with fewer parameter combinations."""
+        self.logger.info("Running coarse grid search")
+        
+        # Use fewer parameter combinations for coarse search
+        if strategy == 'minimal':
+            param_grid = self._create_minimal_parameter_grid()
+        elif strategy == 'conservative':
+            param_grid = self._create_conservative_parameter_grid()
+        else:
+            # Create coarse grid for standard strategy
+            param_grid = self._create_coarse_parameter_grid()
+        
+        self.logger.info(f"Coarse parameter grid size: {len(param_grid)} combinations")
+        
+        # Evaluate each parameter combination
+        best_score = -np.inf
+        best_parameters = {}
+        parameter_scores = []
+        
+        for i, params in enumerate(param_grid):
+            try:
+                score = self._evaluate_parameters(params, backtest_results, market_data)
+                parameter_scores.append((params, score))
+                
+                if score > best_score:
+                    best_score = score
+                    best_parameters = params
+                
+                if i % 5 == 0:
+                    self.logger.info(f"Coarse search: evaluated {i+1}/{len(param_grid)} combinations")
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
+                continue
+        
+        return ParameterOptimizationResult(
+            best_parameters=best_parameters,
+            best_score=best_score,
+            optimization_method='coarse_grid_search',
+            n_trials=len(param_grid),
+            optimization_success=len(parameter_scores) > 0,
+            parameter_scores=parameter_scores,
+            optimization_details={'strategy': strategy, 'stage': 'coarse'}
+        )
+    
+    def _fine_grid_search(self, backtest_results: List[Any], 
+                         market_data: pd.DataFrame, 
+                         best_parameters: Dict[str, Any]) -> ParameterOptimizationResult:
+        """Fine grid search around the best parameters from coarse search."""
+        self.logger.info("Running fine grid search around best parameters")
+        
+        # Create fine grid around best parameters
+        param_grid = self._create_fine_parameter_grid(best_parameters)
+        
+        self.logger.info(f"Fine parameter grid size: {len(param_grid)} combinations")
+        
+        # Evaluate each parameter combination
+        best_score = -np.inf
+        best_parameters_fine = {}
+        parameter_scores = []
+        
+        for i, params in enumerate(param_grid):
+            try:
+                score = self._evaluate_parameters(params, backtest_results, market_data)
+                parameter_scores.append((params, score))
+                
+                if score > best_score:
+                    best_score = score
+                    best_parameters_fine = params
+                
+                if i % 10 == 0:
+                    self.logger.info(f"Fine search: evaluated {i+1}/{len(param_grid)} combinations")
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
+                continue
+        
+        return ParameterOptimizationResult(
+            best_parameters=best_parameters_fine,
+            best_score=best_score,
+            optimization_method='fine_grid_search',
+            n_trials=len(param_grid),
+            optimization_success=len(parameter_scores) > 0,
+            parameter_scores=parameter_scores,
+            optimization_details={'stage': 'fine', 'coarse_best_score': best_score}
+        )
+    
+    def _create_coarse_parameter_grid(self) -> List[Dict[str, Any]]:
+        """Create coarse parameter grid for initial search."""
+        # Use fewer parameter combinations for coarse search
+        touch_tolerance_values = np.linspace(*self.config.touch_tolerance_range, 3)
+        min_bounce_strength_values = np.linspace(*self.config.min_bounce_strength_range, 3)
+        volume_threshold_values = np.linspace(*self.config.volume_threshold_range, 3)
+        min_touches_values = [1, 3, 5, 7]  # Fewer touch values
+        max_hold_time_values = [6, 24, 48]  # Fewer time values
+        
+        # Use only default weight combination for coarse search
+        weight_combination = [0.3, 0.25, 0.2, 0.15, 0.1]  # Default weights
+        
+        param_grid = []
+        for tt, mbs, vt, mt, mht in product(touch_tolerance_values, min_bounce_strength_values, 
+                                           volume_threshold_values, min_touches_values, max_hold_time_values):
+            params = {
+                'touch_tolerance': tt,
+                'min_bounce_strength': mbs,
+                'volume_threshold_multiplier': vt,
+                'min_touches_required': mt,
+                'max_hold_time': mht,
+                'success_rate_weight': weight_combination[0],
+                'bounce_strength_weight': weight_combination[1],
+                'volume_confirmation_weight': weight_combination[2],
+                'time_persistence_weight': weight_combination[3],
+                'touch_frequency_weight': weight_combination[4]
+            }
+            param_grid.append(params)
+        
+        return param_grid
+    
+    def _create_fine_parameter_grid(self, best_parameters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Create fine parameter grid around best parameters."""
+        param_grid = []
+        
+        # Define fine search ranges around best parameters
+        fine_ranges = {
+            'touch_tolerance': 0.001,  # ±0.1% around best
+            'min_bounce_strength': 0.0005,  # ±0.05% around best
+            'volume_threshold_multiplier': 0.2,  # ±0.2 around best
+            'min_touches_required': 1,  # ±1 around best
+            'max_hold_time': 6,  # ±6 hours around best
+        }
+        
+        # Create fine grid for each parameter
+        for param, range_size in fine_ranges.items():
+            best_value = best_parameters.get(param, 0)
+            
+            if param in ['min_touches_required', 'max_hold_time']:
+                # Integer parameters
+                min_val = max(1, int(best_value - range_size))
+                max_val = int(best_value + range_size)
+                values = list(range(min_val, max_val + 1))
+            else:
+                # Float parameters
+                min_val = max(0.0001, best_value - range_size)
+                max_val = best_value + range_size
+                values = np.linspace(min_val, max_val, 5)
+            
+            # Create parameter combinations
+            for value in values:
+                params = best_parameters.copy()
+                params[param] = value
+                param_grid.append(params)
+        
+        return param_grid
+    
+    def _create_data_driven_result(self, backtest_results: List[Any], 
+                                 market_data: pd.DataFrame) -> ParameterOptimizationResult:
+        """Create data-driven parameters without optimization."""
+        self.logger.info("Creating data-driven parameters")
+        
+        # Calculate data-driven parameters
+        data_driven_params = self._calculate_data_driven_parameters(backtest_results, market_data)
+        
+        return ParameterOptimizationResult(
+            best_parameters=data_driven_params,
+            best_score=0.0,
+            optimization_method='data_driven',
+            n_trials=0,
+            optimization_success=True,
+            parameter_scores=[],
+            optimization_details={'method': 'data_driven_calculation'}
+        )
+    
+    def _calculate_data_driven_parameters(self, backtest_results: List[Any], 
+                                        market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate data-driven parameters from market data and backtest results."""
+        try:
+            # Calculate touch tolerance from price volatility
+            returns = market_data['close'].pct_change().dropna()
+            price_volatility = returns.rolling(20).std().mean()
+            touch_tolerance = max(0.001, min(0.01, price_volatility * 2))
+            
+            # Calculate min bounce strength from historical bounces
+            high_low_returns = (market_data['high'] - market_data['low']) / market_data['close']
+            min_bounce_strength = max(0.0005, high_low_returns.quantile(0.25))
+            
+            # Calculate volume threshold from volume distribution
+            if 'volume' in market_data.columns:
+                avg_volume = market_data['volume'].rolling(20).mean().mean()
+                volume_volatility = market_data['volume'].pct_change().rolling(20).std().mean()
+                volume_threshold_multiplier = 1.5 + volume_volatility
+            else:
+                volume_threshold_multiplier = 1.5
+            
+            # Calculate optimal min touches from backtest results
+            if backtest_results:
+                touch_counts = [r.total_touches for r in backtest_results]
+                success_rates = [r.success_rate for r in backtest_results]
+                
+                # Find touch count that maximizes success rate
+                touch_success_data = {}
+                for touches, success_rate in zip(touch_counts, success_rates):
+                    if touches not in touch_success_data:
+                        touch_success_data[touches] = []
+                    touch_success_data[touches].append(success_rate)
+                
+                avg_success_by_touches = {}
+                for touches, success_rates in touch_success_data.items():
+                    if len(success_rates) >= 2:
+                        avg_success_by_touches[touches] = np.mean(success_rates)
+                
+                if avg_success_by_touches:
+                    best_touches = max(avg_success_by_touches.items(), key=lambda x: x[1])[0]
+                    min_touches_required = max(1, min(best_touches, 6))
+                else:
+                    min_touches_required = 3
+            else:
+                min_touches_required = 3
+            
+            # Calculate max hold time from market characteristics
+            if 'timestamp' in market_data.columns:
+                time_diffs = market_data['timestamp'].diff().dt.total_seconds() / 3600
+                avg_time_diff = time_diffs.mean()
+                max_hold_time = max(1, min(48, int(avg_time_diff * 10)))
+            else:
+                max_hold_time = 24
+            
+            return {
+                'touch_tolerance': touch_tolerance,
+                'min_bounce_strength': min_bounce_strength,
+                'volume_threshold_multiplier': volume_threshold_multiplier,
+                'min_touches_required': min_touches_required,
+                'max_hold_time': max_hold_time,
+                'success_rate_weight': 0.3,
+                'bounce_strength_weight': 0.25,
+                'volume_confirmation_weight': 0.2,
+                'time_persistence_weight': 0.15,
+                'touch_frequency_weight': 0.1
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate data-driven parameters: {e}")
+            # Return conservative defaults
+            return {
+                'touch_tolerance': 0.002,
+                'min_bounce_strength': 0.001,
+                'volume_threshold_multiplier': 1.5,
+                'min_touches_required': 3,
+                'max_hold_time': 24,
+                'success_rate_weight': 0.3,
+                'bounce_strength_weight': 0.25,
+                'volume_confirmation_weight': 0.2,
+                'time_persistence_weight': 0.15,
+                'touch_frequency_weight': 0.1
+            }
     
     def _genetic_algorithm_optimization(self, backtest_results: List[Any], 
                                       market_data: pd.DataFrame, 
@@ -290,7 +575,7 @@ class ParameterOptimizationEngine:
         touch_tolerance_values = np.linspace(*self.config.touch_tolerance_range, 3)
         min_bounce_strength_values = np.linspace(*self.config.min_bounce_strength_range, 3)
         volume_threshold_values = np.linspace(*self.config.volume_threshold_range, 3)
-        min_touches_values = [2, 3, 4]
+        min_touches_values = [1, 2, 3, 4]
         
         param_grid = []
         for tt, mbs, vt, mt in product(touch_tolerance_values, min_bounce_strength_values, 
@@ -317,7 +602,7 @@ class ParameterOptimizationEngine:
         touch_tolerance_values = np.linspace(*self.config.touch_tolerance_range, 4)
         min_bounce_strength_values = np.linspace(*self.config.min_bounce_strength_range, 4)
         volume_threshold_values = np.linspace(*self.config.volume_threshold_range, 4)
-        min_touches_values = [2, 3, 4, 5]
+        min_touches_values = [1, 2, 3, 4, 5]
         max_hold_time_values = [12, 24, 36]
         
         param_grid = []
@@ -345,7 +630,7 @@ class ParameterOptimizationEngine:
         touch_tolerance_values = np.linspace(*self.config.touch_tolerance_range, self.config.grid_search_steps)
         min_bounce_strength_values = np.linspace(*self.config.min_bounce_strength_range, self.config.grid_search_steps)
         volume_threshold_values = np.linspace(*self.config.volume_threshold_range, self.config.grid_search_steps)
-        min_touches_values = list(range(*self.config.min_touches_range))
+        min_touches_values = list(range(self.config.min_touches_range[0], self.config.min_touches_range[1] + 1))
         max_hold_time_values = [6, 12, 24, 36, 48]
         
         # Weight combinations
@@ -494,30 +779,6 @@ class ParameterOptimizationEngine:
             self.logger.warning(f"Quality score calculation failed: {e}")
             return 0.0
     
-    def _create_fallback_result(self, backtest_results: List[Any]) -> ParameterOptimizationResult:
-        """Create fallback result when optimization fails."""
-        # Use default parameters
-        default_params = {
-            'touch_tolerance': 0.002,
-            'min_bounce_strength': 0.001,
-            'volume_threshold_multiplier': 1.5,
-            'min_touches_required': 3,
-            'max_hold_time': 24,
-            'success_rate_weight': 0.3,
-            'bounce_strength_weight': 0.25,
-            'volume_confirmation_weight': 0.2,
-            'time_persistence_weight': 0.15,
-            'touch_frequency_weight': 0.1
-        }
-        
-        return ParameterOptimizationResult(
-            best_parameters=default_params,
-            best_score=0.0,
-            optimization_method='fallback',
-            n_trials=0,
-            optimization_success=False,
-            optimization_details={'reason': 'insufficient_samples_or_optimization_failed'}
-        )
 
 def get_parameter_optimization_engine(config: Optional[ParameterOptimizationConfig] = None) -> ParameterOptimizationEngine:
     """Get a parameter optimization engine instance."""

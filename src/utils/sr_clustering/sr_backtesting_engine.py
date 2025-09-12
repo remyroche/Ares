@@ -1952,7 +1952,90 @@ class SRBacktestingEngine:
         self.config.time_persistence_weight = optimized_params['time_persistence_weight']
         self.config.touch_frequency_weight = optimized_params['touch_frequency_weight']
         
+        # Save optimized parameters
+        self._save_optimized_parameters(optimized_params)
+        
         self.logger.info("✅ Config updated with optimized parameters")
+    
+    def _save_optimized_parameters(self, optimized_params: Dict[str, Any]) -> None:
+        """Save optimized parameters to file."""
+        try:
+            import json
+            from pathlib import Path
+            
+            # Create parameters directory if it doesn't exist
+            params_dir = Path("optimized_parameters")
+            params_dir.mkdir(exist_ok=True)
+            
+            # Save parameters with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            params_file = params_dir / f"sr_optimized_parameters_{timestamp}.json"
+            
+            # Prepare parameters for saving
+            save_data = {
+                'timestamp': timestamp,
+                'optimized_parameters': optimized_params,
+                'config_summary': {
+                    'touch_tolerance': self.config.touch_tolerance,
+                    'min_bounce_strength': self.config.min_bounce_strength,
+                    'max_hold_time': self.config.max_hold_time,
+                    'volume_threshold_multiplier': self.config.volume_threshold_multiplier,
+                    'min_touches_required': self.config.min_touches_required,
+                    'success_rate_weight': self.config.success_rate_weight,
+                    'bounce_strength_weight': self.config.bounce_strength_weight,
+                    'volume_confirmation_weight': self.config.volume_confirmation_weight,
+                    'time_persistence_weight': self.config.time_persistence_weight,
+                    'touch_frequency_weight': self.config.touch_frequency_weight
+                }
+            }
+            
+            # Save to file
+            with open(params_file, 'w') as f:
+                json.dump(save_data, f, indent=2)
+            
+            self.logger.info(f"✅ Optimized parameters saved to: {params_file}")
+            
+            # Also save latest parameters (overwrite)
+            latest_file = params_dir / "sr_optimized_parameters_latest.json"
+            with open(latest_file, 'w') as f:
+                json.dump(save_data, f, indent=2)
+            
+            self.logger.info(f"✅ Latest optimized parameters saved to: {latest_file}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to save optimized parameters: {e}")
+    
+    def load_optimized_parameters(self, params_file: str = None) -> Dict[str, Any]:
+        """Load optimized parameters from file."""
+        try:
+            import json
+            from pathlib import Path
+            
+            if params_file is None:
+                # Load latest parameters
+                params_file = "optimized_parameters/sr_optimized_parameters_latest.json"
+            
+            params_path = Path(params_file)
+            if not params_path.exists():
+                self.logger.warning(f"Parameters file not found: {params_file}")
+                return {}
+            
+            with open(params_path, 'r') as f:
+                save_data = json.load(f)
+            
+            optimized_params = save_data.get('optimized_parameters', {})
+            
+            # Update config with loaded parameters
+            if optimized_params:
+                self._update_config_with_optimized_parameters(optimized_params)
+                self.logger.info(f"✅ Loaded optimized parameters from: {params_file}")
+            
+            return optimized_params
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to load optimized parameters: {e}")
+            return {}
     
     def _calculate_optimal_min_touches(self, results: List[BacktestResult]) -> int:
         """Calculate optimal minimum touches based on results."""

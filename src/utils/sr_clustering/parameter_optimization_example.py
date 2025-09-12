@@ -110,7 +110,7 @@ def test_parameter_optimization():
         # Configure parameter optimization
         config = BacktestConfig(
             enable_parameter_optimization=True,
-            parameter_optimization_method='grid_search',  # or 'genetic', 'scipy'
+            parameter_optimization_method='adaptive_grid_search',  # New adaptive method
             min_samples_for_optimization=10,
             # Data-driven threshold calculation will be enabled automatically
         )
@@ -152,6 +152,14 @@ def test_parameter_optimization():
                 logger.info(f"  - Good: {quality_thresholds.get('good', 0):.3f}")
                 logger.info(f"  - Average: {quality_thresholds.get('average', 0):.3f}")
                 logger.info(f"  - Poor: {quality_thresholds.get('poor', 0):.3f}")
+            
+            # Test parameter loading
+            logger.info("Testing parameter loading...")
+            loaded_params = engine.load_optimized_parameters()
+            if loaded_params:
+                logger.info("✅ Parameters loaded successfully from file")
+            else:
+                logger.info("⚠️ No parameters found to load")
             
         except Exception as e:
             logger.error(f"❌ Parameter optimization failed for {n_samples} samples: {e}")
@@ -293,6 +301,79 @@ def demonstrate_parameter_impact():
             logger.info(f"Average quality of filtered results: {avg_quality:.3f}")
             logger.info(f"Average success rate of filtered results: {avg_success_rate:.3f}")
 
+def test_pipeline_integration():
+    """Test the full pipeline integration with parameter optimization."""
+    logger.info(f"\n{'='*60}")
+    logger.info("Testing Full Pipeline Integration")
+    logger.info(f"{'='*60}")
+    
+    try:
+        # Import the sub-pipeline
+        from src.training.steps.market_analysis.sub_pipeline import get_market_analysis_sub_pipeline, SubPipelineConfig, ExecutionMode
+        
+        # Create configuration
+        config = SubPipelineConfig(
+            mode=ExecutionMode.LIGHT,  # Use light mode for testing
+            symbol="BTCUSDT",
+            exchange="binance",
+            timeframe="1h"
+        )
+        
+        # Create pipeline
+        pipeline = get_market_analysis_sub_pipeline(config)
+        
+        # Test the new pipeline order
+        logger.info("Testing new pipeline order:")
+        logger.info("1. SR Parameter Optimization (NEW - FIRST)")
+        logger.info("2. SR Detection (using optimized parameters)")
+        logger.info("3. SR Clustering (using optimized parameters)")
+        
+        # Execute parameter optimization pipeline
+        logger.info("\n🎯 Executing SR Parameter Optimization Pipeline...")
+        param_result = pipeline.execute_sub_pipeline('sr_parameter_optimization', config)
+        
+        if param_result.success:
+            logger.info("✅ SR Parameter Optimization completed successfully")
+            optimized_params = param_result.artifacts.get('optimized_parameters', {})
+            if optimized_params:
+                logger.info("Optimized parameters:")
+                for param, value in optimized_params.items():
+                    logger.info(f"  - {param}: {value}")
+        else:
+            logger.error(f"❌ SR Parameter Optimization failed: {param_result.error}")
+            return
+        
+        # Execute SR detection with optimized parameters
+        logger.info("\n🎯 Executing SR Detection with Optimized Parameters...")
+        detection_result = pipeline.execute_sub_pipeline('sr_detection', config)
+        
+        if detection_result.success:
+            logger.info("✅ SR Detection completed successfully")
+            sr_levels = detection_result.artifacts.get('sr_levels', [])
+            logger.info(f"Detected {len(sr_levels)} SR levels")
+        else:
+            logger.error(f"❌ SR Detection failed: {detection_result.error}")
+            return
+        
+        # Execute SR clustering with optimized parameters
+        logger.info("\n🚀 Executing SR Clustering with Optimized Parameters...")
+        clustering_result = pipeline.execute_sub_pipeline('sr_clustering', config)
+        
+        if clustering_result.success:
+            logger.info("✅ SR Clustering completed successfully")
+            clustered_levels = clustering_result.artifacts.get('clustered_levels', [])
+            logger.info(f"Created {len(clustered_levels)} SR clusters")
+        else:
+            logger.error(f"❌ SR Clustering failed: {clustering_result.error}")
+            return
+        
+        logger.info("\n✅ Full pipeline integration test completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"❌ Pipeline integration test failed: {e}")
+        import traceback
+        logger.error(f"Error details: {traceback.format_exc()}")
+
 if __name__ == "__main__":
     logger.info("Starting Parameter Optimization Tests")
     
@@ -307,5 +388,8 @@ if __name__ == "__main__":
     
     # Demonstrate parameter impact
     demonstrate_parameter_impact()
+    
+    # Test pipeline integration
+    test_pipeline_integration()
     
     logger.info("\n✅ All parameter optimization tests completed!")

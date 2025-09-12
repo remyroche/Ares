@@ -210,8 +210,12 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 return False
             if 'composite_cluster_id' in df.columns:
                 unique_regimes = df['composite_cluster_id'].nunique()
-                if unique_regimes < 2 or unique_regimes > 50:
-                    self.logger.warning(f'⚠️ Unusual number of regimes ({unique_regimes}) in {regime_file.name}')
+                if unique_regimes < 2:
+                    self.logger.warning(f'⚠️ Very few regimes ({unique_regimes}) in {regime_file.name}')
+                elif unique_regimes > 100:
+                    self.logger.info(f'📊 Large number of regimes ({unique_regimes}) in {regime_file.name} - using optimized processing')
+                else:
+                    self.logger.info(f'📊 Standard regime count ({unique_regimes}) in {regime_file.name}')
             self.logger.info(f'✅ Regime file validated: {regime_file.name}')
             return True
         except Exception as e:

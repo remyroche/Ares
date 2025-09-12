@@ -314,17 +314,32 @@ class SRMLLearningStep(BaseStep):
         start_time = time.time()
 
         try:
-            # Get clustered levels from previous stage or pipeline state
-            clustered_levels = pipeline_state.get('clustered_levels')
-            if clustered_levels is None:
-                raise ValueError("No clustered levels found in pipeline state")
+            # Validate required data exists
+            required_keys = ['dataframe', 'sr_levels']
+            missing_keys = [key for key in required_keys if key not in pipeline_state]
+            if missing_keys:
+                raise ValueError(f"Missing required pipeline state keys: {missing_keys}")
 
             # Get features data
             features_data = pipeline_state.get('dataframe')
-            if features_data is None:
-                raise ValueError("No features data found in pipeline state")
+            if features_data is None or features_data.empty:
+                raise ValueError("No features data found in pipeline state or dataframe is empty")
 
-            self.logger.info(f'📊 Clustered levels loaded: {len(clustered_levels.get("clusters", []))} clusters')
+            # Get SR levels from pipeline state
+            sr_levels = pipeline_state.get('sr_levels')
+            if sr_levels is None or len(sr_levels) == 0:
+                raise ValueError("No SR levels found in pipeline state")
+
+            # Get clustered levels from previous stage or pipeline state
+            clustered_levels = pipeline_state.get('clustered_levels')
+            if clustered_levels is None or len(clustered_levels) == 0:
+                self.logger.warning("No clustered levels found, using SR levels directly")
+                clustered_levels = sr_levels
+
+            # Validate data quality
+            self._validate_data_quality(features_data, sr_levels, clustered_levels)
+
+            self.logger.info(f'📊 Clustered levels loaded: {len(clustered_levels)} clusters')
             self.logger.info(f'📊 Features data loaded: {features_data.shape[0]:,} rows, {features_data.shape[1]} columns')
 
             # Train ML models
@@ -630,6 +645,82 @@ class SRMLLearningStep(BaseStep):
         except Exception as e:
             self.logger.warning(f'⚠️ Error calculating metrics: {e}')
             return {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1_score': 0.0}
+
+    def _validate_data_quality(self, data: pd.DataFrame, sr_levels: List[Any], clustered_levels: List[Any]) -> None:
+        """Validate data quality for ML training."""
+        self.logger.info('🔍 Validating data quality for ML training...')
+        
+        # Validate dataframe
+        if data is None or data.empty:
+            raise ValueError("Dataframe is None or empty")
+        
+        if data.shape[0] < 10:
+            raise ValueError(f"Insufficient data for ML training: {data.shape[0]} rows (minimum 10 required)")
+        
+        # Validate SR levels
+        if not sr_levels or len(sr_levels) == 0:
+            raise ValueError("No SR levels provided for ML training")
+        
+        # Validate clustered levels
+        if not clustered_levels or len(clustered_levels) == 0:
+            raise ValueError("No clustered levels provided for ML training")
+        
+        # Check for sufficient clusters
+        if len(clustered_levels) < 5:
+            self.logger.warning(f"Low number of clusters: {len(clustered_levels)} (recommended minimum 5)")
+        
+        # Validate cluster quality
+        valid_clusters = 0
+        for cluster in clustered_levels:
+            if self._is_high_quality_cluster(cluster):
+                valid_clusters += 1
+        
+        if valid_clusters < 3:
+            raise ValueError(f"Insufficient high-quality clusters: {valid_clusters} (minimum 3 required)")
+        
+        self.logger.info(f'✅ Data quality validation passed: {valid_clusters}/{len(clustered_levels)} high-quality clusters')
+
+    def _is_high_quality_cluster(self, cluster: Any) -> bool:
+        """Check if cluster meets quality standards for ML training."""
+        try:
+            if isinstance(cluster, dict):
+                levels = cluster.get('levels', [])
+                center_price = cluster.get('center_price', 0)
+                cluster_strength = cluster.get('cluster_strength', 0)
+            else:
+                levels = getattr(cluster, 'levels', [])
+                center_price = getattr(cluster, 'center_price', 0)
+                cluster_strength = getattr(cluster, 'cluster_strength', 0)
+            
+            # Check basic requirements
+            if not levels or len(levels) < 2:
+                return False
+            
+            if center_price <= 0:
+                return False
+            
+            if cluster_strength < 0 or cluster_strength > 1:
+                return False
+            
+            # Check level quality within cluster
+            valid_levels = 0
+            for level in levels:
+                if isinstance(level, dict):
+                    price = level.get('price', 0)
+                    strength = level.get('strength', 0)
+                else:
+                    price = getattr(level, 'price', 0)
+                    strength = getattr(level, 'strength', 0)
+                
+                if price > 0 and 0 <= strength <= 1:
+                    valid_levels += 1
+            
+            # At least 50% of levels should be valid
+            return valid_levels >= len(levels) * 0.5
+            
+        except Exception as e:
+            self.logger.warning(f"Error validating cluster quality: {e}")
+            return False
 
     def _find_best_model(self, model_results: Dict[str, Any]) -> str:
         """Find the best performing model based on F1 score."""

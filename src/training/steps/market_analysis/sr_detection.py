@@ -386,8 +386,8 @@ class SRDetectionStep(BaseStep):
             raise
 
     def _validate_price_data_quality(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Validate and clean price data for SR detection."""
-        self.logger.info('🔍 Starting price data quality validation...')
+        """Validate and clean price data for SR detection with comprehensive checks."""
+        self.logger.info('🔍 Starting comprehensive price data quality validation...')
         
         # Check for required OHLCV columns
         required_cols = ['open', 'high', 'low', 'close', 'volume']
@@ -397,32 +397,60 @@ class SRDetectionStep(BaseStep):
         
         # Create a copy to avoid modifying original data
         clean_data = data.copy()
+        initial_rows = len(clean_data)
         
         # Remove rows with NaN values in critical columns
-        initial_rows = len(clean_data)
         clean_data = clean_data.dropna(subset=required_cols)
-        removed_rows = initial_rows - len(clean_data)
+        removed_nan_rows = initial_rows - len(clean_data)
         
-        if removed_rows > 0:
-            self.logger.info(f'🧹 Removed {removed_rows} rows with NaN values in OHLCV columns')
+        if removed_nan_rows > 0:
+            self.logger.info(f'🧹 Removed {removed_nan_rows} rows with NaN values in OHLCV columns')
         
         # Validate price relationships (high >= low, etc.)
         invalid_high_low = clean_data['high'] < clean_data['low']
+        invalid_high_open = clean_data['high'] < clean_data['open']
+        invalid_high_close = clean_data['high'] < clean_data['close']
+        invalid_low_open = clean_data['low'] > clean_data['open']
+        invalid_low_close = clean_data['low'] > clean_data['close']
+        
+        # Check for non-positive prices
         invalid_open_close = (clean_data['open'] <= 0) | (clean_data['close'] <= 0)
+        invalid_high_low_positive = (clean_data['high'] <= 0) | (clean_data['low'] <= 0)
         invalid_volume = clean_data['volume'] < 0
         
-        invalid_rows = invalid_high_low | invalid_open_close | invalid_volume
+        # Check for extreme outliers (prices > 10x median)
+        extreme_outliers = pd.Series(False, index=clean_data.index)
+        for col in ['open', 'high', 'low', 'close']:
+            median_price = clean_data[col].median()
+            if median_price > 0:
+                extreme_outliers |= (clean_data[col] > median_price * 10)
+        
+        # Check for duplicate timestamps if timestamp column exists
+        duplicate_timestamps = pd.Series(False, index=clean_data.index)
+        if 'timestamp' in clean_data.columns:
+            duplicate_timestamps = clean_data['timestamp'].duplicated()
+        
+        # Combine all invalid conditions
+        invalid_rows = (
+            invalid_high_low | invalid_high_open | invalid_high_close |
+            invalid_low_open | invalid_low_close | invalid_open_close |
+            invalid_high_low_positive | invalid_volume | extreme_outliers |
+            duplicate_timestamps
+        )
+        
         if invalid_rows.any():
             invalid_count = invalid_rows.sum()
-            self.logger.warning(f'⚠️ Found {invalid_count} rows with invalid price relationships')
+            self.logger.warning(f'⚠️ Found {invalid_count} rows with invalid data:')
+            self.logger.warning(f'   • High < Low: {invalid_high_low.sum()}')
+            self.logger.warning(f'   • High < Open/Close: {(invalid_high_open | invalid_high_close).sum()}')
+            self.logger.warning(f'   • Low > Open/Close: {(invalid_low_open | invalid_low_close).sum()}')
+            self.logger.warning(f'   • Non-positive prices: {(invalid_open_close | invalid_high_low_positive).sum()}')
+            self.logger.warning(f'   • Negative volume: {invalid_volume.sum()}')
+            self.logger.warning(f'   • Extreme outliers: {extreme_outliers.sum()}')
+            if 'timestamp' in clean_data.columns:
+                self.logger.warning(f'   • Duplicate timestamps: {duplicate_timestamps.sum()}')
+            
             clean_data = clean_data[~invalid_rows]
-        
-        # Ensure positive prices
-        price_cols = ['open', 'high', 'low', 'close']
-        for col in price_cols:
-            if (clean_data[col] <= 0).any():
-                self.logger.warning(f'⚠️ Found non-positive values in {col} column')
-                clean_data = clean_data[clean_data[col] > 0]
         
         final_rows = len(clean_data)
         total_removed = initial_rows - final_rows
@@ -432,6 +460,10 @@ class SRDetectionStep(BaseStep):
             self.logger.info(f'📊 Final dataset: {final_rows:,} rows')
         else:
             self.logger.info('✅ Data validation completed: No rows removed')
+        
+        # Final validation - ensure we have enough data
+        if final_rows < 10:
+            raise ValueError(f"Insufficient data after validation: {final_rows} rows (minimum 10 required)")
         
         return clean_data
 

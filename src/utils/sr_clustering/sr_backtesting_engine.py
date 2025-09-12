@@ -204,22 +204,53 @@ class SRBacktestingEngine:
             return self._create_failed_result(level, str(e))
     
     def backtest_multiple_levels(self, levels: List[SRLevel], data: pd.DataFrame) -> List[BacktestResult]:
-        """Backtest multiple SR levels."""
-        results = []
-        
+        """Backtest multiple SR levels with validation and chunking."""
         self.logger.info(f"🚀 Starting backtesting for {len(levels)} SR levels")
         self.logger.info(f"Data shape: {data.shape}")
         
-        for i, level in enumerate(levels):
-            if i % 10 == 0:
-                self.logger.info(f"Backtesting level {i+1}/{len(levels)}: ${level.price:.2f} ({level.level_type})")
+        # Validate levels before backtesting
+        valid_levels = []
+        for level in levels:
+            if self._validate_sr_level(level):
+                valid_levels.append(level)
+            else:
+                self.logger.warning(f"Skipping invalid SR level: price={level.price}, strength={level.strength}")
+        
+        if not valid_levels:
+            self.logger.error("No valid SR levels found for backtesting")
+            return []
+        
+        self.logger.info(f"Validated {len(valid_levels)}/{len(levels)} levels for backtesting")
+        
+        results = []
+        chunk_size = getattr(self.config, 'chunk_size', 50)
+        
+        # Process levels in chunks to manage memory
+        for i in range(0, len(valid_levels), chunk_size):
+            chunk = valid_levels[i:i + chunk_size]
+            self.logger.info(f"Processing chunk {i//chunk_size + 1}/{(len(valid_levels) + chunk_size - 1)//chunk_size}")
             
-            result = self.backtest_sr_level(level, data)
-            results.append(result)
+            chunk_results = []
+            for j, level in enumerate(chunk):
+                if (i + j) % 10 == 0:
+                    self.logger.info(f"Backtesting level {i + j + 1}/{len(valid_levels)}: ${level.price:.2f} ({level.level_type})")
+                
+                result = self.backtest_sr_level(level, data)
+                chunk_results.append(result)
+                
+                # Log individual results for first few levels
+                if (i + j) < 3:
+                    self.logger.debug(f"Level ${level.price:.2f}: quality={result.quality_score:.3f}, success_rate={result.success_rate:.3f}, touches={result.total_touches}")
             
-            # Log individual results for first few levels
-            if i < 3:
-                self.logger.debug(f"Level ${level.price:.2f}: quality={result.quality_score:.3f}, success_rate={result.success_rate:.3f}, touches={result.total_touches}")
+            results.extend(chunk_results)
+            
+            # Memory cleanup after each chunk
+            if self.m1_memory_optimizer:
+                self.m1_memory_optimizer.optimize_memory()
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
         
         if results:
             quality_scores = [r.quality_score for r in results]
@@ -969,6 +1000,40 @@ class SRBacktestingEngine:
             'structure_break': 0.0
         }
     
+    def _validate_sr_level(self, level: SRLevel) -> bool:
+        """Validate SR level before backtesting."""
+        try:
+            # Check price validity
+            if not isinstance(level.price, (int, float)) or level.price <= 0:
+                self.logger.warning(f"Invalid price: {level.price}")
+                return False
+            
+            # Check strength validity
+            if not isinstance(level.strength, (int, float)) or level.strength < 0 or level.strength > 1:
+                self.logger.warning(f"Invalid strength: {level.strength}")
+                return False
+            
+            # Check touches validity
+            if not isinstance(level.touches, int) or level.touches < 1:
+                self.logger.warning(f"Invalid touches: {level.touches}")
+                return False
+            
+            # Check level type validity
+            if level.level_type not in ['support', 'resistance']:
+                self.logger.warning(f"Invalid level type: {level.level_type}")
+                return False
+            
+            # Check for reasonable price range (not too extreme)
+            if level.price > 1e6 or level.price < 1e-6:
+                self.logger.warning(f"Extreme price value: {level.price}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"Error validating SR level: {e}")
+            return False
+
     def _create_failed_result(self, level: SRLevel, reason: str) -> BacktestResult:
         """Create a failed backtest result."""
         return BacktestResult(

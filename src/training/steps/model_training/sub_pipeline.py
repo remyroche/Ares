@@ -317,10 +317,11 @@ class ModelTrainingSubPipeline:
         }
     
     # Sub-pipeline implementations
-    async def _analyst_models_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Analyst Models Training sub-pipeline - Per-regime individual model training."""
-        self.logger.info("👨‍💼 Executing analyst models training pipeline (per-regime individual models)")
-        
+    
+    async def _analyst_model_training_pipeline(self, config: SubPipelineConfig, hmm_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Analyst model training sub-pipeline."""
+        self.logger.info("📊 Executing analyst model training pipeline")
+       
         artifacts = {
             'analyst_models': [],
             'training_metrics': {},
@@ -335,7 +336,7 @@ class ModelTrainingSubPipeline:
             temporal_info = self._get_temporal_feature_info()
             artifacts['temporal_features_used'] = True
             artifacts['temporal_feature_info'] = temporal_info
-            self.logger.info(f"✅ Using {temporal_info['count']} temporal features in model training")
+            self.logger.info(f"✅ Using {temporal_info['count']} temporal features in analyst model training")
         
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual analyst models training")
@@ -346,7 +347,7 @@ class ModelTrainingSubPipeline:
         try:
             from .analyst_models_training import AnalystModelsTrainingStep
             
-            # Create enhanced configuration with temporal features
+            # Create enhanced configuration with temporal features and HMM data
             enhanced_config = config.custom_params.copy() if config.custom_params else {}
             if temporal_loaded:
                 enhanced_config['temporal_features_available'] = True
@@ -389,32 +390,27 @@ class ModelTrainingSubPipeline:
             'temporal_feature_info': {}
         }
         
-        # Load temporal features from MARKET_ANALYSIS stage
-        temporal_loaded = await self._load_temporal_features(config)
-        if temporal_loaded:
-            temporal_info = self._get_temporal_feature_info()
-            artifacts['temporal_features_used'] = True
-            artifacts['temporal_feature_info'] = temporal_info
-            self.logger.info(f"✅ Using {temporal_info['count']} temporal features in analyst model training")
-        
         if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual analyst model training")
-            artifacts['analyst_models'] = ['analyst_model.pkl']
+            self.logger.info("🔄 Blank mode: Skipping actual analyst ensemble training")
+            artifacts['analyst_ensembles'] = ['analyst_ensemble.pkl']
             return artifacts
         
-        # Import and use analyst model training
+        # Import and use analyst ensemble training
         try:
-            from .analyst_models_training import AnalystModelsTrainingStep as AnalystModelTrainer
+            from .analyst_ensemble_training import AnalystEnsembleTrainingStep as AnalystEnsembleTrainer
             
-            # Create enhanced configuration with temporal features
+            # Create enhanced configuration with analyst models and HMM data
             enhanced_config = config.custom_params.copy() if config.custom_params else {}
-            if temporal_loaded:
-                enhanced_config['temporal_features_available'] = True
-                enhanced_config['temporal_feature_columns'] = list(self.temporal_features.keys())
-                enhanced_config['temporal_feature_metadata'] = self.temporal_feature_metadata
+            if ensemble_data:
+                enhanced_config.update({
+                    'base_analyst_models': ensemble_data.get('analyst_models', []),
+                    'analyst_training_metrics': ensemble_data.get('analyst_training_metrics', {}),
+                    'hmm_data': ensemble_data.get('hmm_data', {})
+                })
+                self.logger.info("✅ Using pre-trained analyst models as base models for ensemble")
             
-            trainer = AnalystModelTrainer()
-            training_result = await trainer.train_analyst_model(
+            trainer = AnalystEnsembleTrainer()
+            training_result = await trainer.execute_analyst_ensemble_training(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
@@ -423,21 +419,28 @@ class ModelTrainingSubPipeline:
                 enhanced_config=enhanced_config
             )
             
-            artifacts['analyst_models'] = training_result.get('models', [])
-            artifacts['training_metrics'] = training_result.get('metrics', {})
-            artifacts['analyst_performance'] = training_result.get('performance', {})
+            artifacts['analyst_ensembles'] = training_result.get('models', [])
+            artifacts['ensemble_metrics'] = training_result.get('metrics', {})
+            artifacts['analyst_ensemble_performance'] = training_result.get('performance', {})
             
         except ImportError:
-            self.logger.warning("⚠️ Analyst model trainer not available, using mock training")
-            artifacts['analyst_models'] = ['analyst_model.pkl']
+            self.logger.warning("⚠️ Analyst ensemble trainer not available, using mock training")
+            artifacts['analyst_ensembles'] = ['analyst_ensemble.pkl']
         
         # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("analyst_model_training", config, artifacts)
+        self._log_sub_pipeline_completion("analyst_ensemble_training", config, artifacts)
         
         # Automatically trigger the next sub-pipeline: tactician_model_training
-        self.logger.info("🔄 Analyst model training completed, triggering next: tactician_model_training")
+        self.logger.info("🔄 Analyst ensemble training completed, triggering next: tactician_model_training")
         try:
-            next_artifacts = await self._tactician_model_training_pipeline(config)
+            # Pass all analyst data and HMM data to tactician training
+            tactician_data = {
+                'analyst_models': ensemble_data.get('analyst_models', []) if ensemble_data else [],
+                'analyst_ensembles': artifacts.get('analyst_ensembles', []),
+                'analyst_ensemble_metrics': artifacts.get('ensemble_metrics', {}),
+                'hmm_data': ensemble_data.get('hmm_data', {}) if ensemble_data else {}
+            }
+            next_artifacts = await self._tactician_model_training_pipeline(config, tactician_data)
             # Merge artifacts from next pipeline
             artifacts.update(next_artifacts)
             self.logger.info("✅ Tactician model training pipeline completed successfully")
@@ -446,7 +449,7 @@ class ModelTrainingSubPipeline:
         
         return artifacts
     
-    async def _tactician_model_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+    async def _tactician_model_training_pipeline(self, config: SubPipelineConfig, tactician_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Tactician model training sub-pipeline."""
         self.logger.info("⚔️ Executing tactician model training pipeline")
         
@@ -465,13 +468,25 @@ class ModelTrainingSubPipeline:
         try:
             from .tactician_models_training import TacticianModelsTrainingStep as TacticianModelTrainer
             
+            # Create enhanced configuration with all analyst data and HMM data
+            enhanced_config = config.custom_params.copy() if config.custom_params else {}
+            if tactician_data:
+                enhanced_config.update({
+                    'analyst_models': tactician_data.get('analyst_models', []),
+                    'analyst_ensembles': tactician_data.get('analyst_ensembles', []),
+                    'analyst_ensemble_metrics': tactician_data.get('analyst_ensemble_metrics', {}),
+                    'hmm_data': tactician_data.get('hmm_data', {})
+                })
+                self.logger.info("✅ Using all analyst model inputs and HMM data in tactician training")
+            
             trainer = TacticianModelTrainer()
             training_result = await trainer.train_tactician_model(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                force_rerun=config.force_rerun
+                force_rerun=config.force_rerun,
+                enhanced_config=enhanced_config
             )
             
             artifacts['tactician_models'] = training_result.get('models', [])
@@ -485,15 +500,82 @@ class ModelTrainingSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("tactician_model_training", config, artifacts)
         
-        # Automatically trigger the next sub-pipeline: hmm_training
-        self.logger.info("🔄 Tactician model training completed, triggering next: hmm_training")
+        # Automatically trigger the next sub-pipeline: tactician_ensemble_training
+        self.logger.info("🔄 Tactician model training completed, triggering next: tactician_ensemble_training")
         try:
-            next_artifacts = await self._hmm_training_pipeline(config)
+            # Pass all data to tactician ensemble training (meta learner gets all inputs)
+            ensemble_data = {
+                'tactician_models': artifacts.get('tactician_models', []),
+                'tactician_training_metrics': artifacts.get('training_metrics', {}),
+                'analyst_models': tactician_data.get('analyst_models', []) if tactician_data else [],
+                'analyst_ensembles': tactician_data.get('analyst_ensembles', []) if tactician_data else [],
+                'analyst_ensemble_metrics': tactician_data.get('analyst_ensemble_metrics', {}) if tactician_data else {},
+                'hmm_data': tactician_data.get('hmm_data', {}) if tactician_data else {}
+            }
+            next_artifacts = await self._tactician_ensemble_training_pipeline(config, ensemble_data)
             # Merge artifacts from next pipeline
             artifacts.update(next_artifacts)
-            self.logger.info("✅ HMM training pipeline completed successfully")
+            self.logger.info("✅ Tactician ensemble training pipeline completed successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to execute HMM training pipeline: {e}")
+            self.logger.error(f"❌ Failed to execute tactician ensemble training pipeline: {e}")
+        
+        return artifacts
+    
+    async def _tactician_ensemble_training_pipeline(self, config: SubPipelineConfig, ensemble_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Tactician ensemble training sub-pipeline."""
+        self.logger.info("⚔️🎯 Executing tactician ensemble training pipeline")
+        
+        artifacts = {
+            'tactician_ensembles': [],
+            'ensemble_metrics': {},
+            'tactician_ensemble_performance': {}
+        }
+        
+        if config.mode == ExecutionMode.BLANK:
+            self.logger.info("🔄 Blank mode: Skipping actual tactician ensemble training")
+            artifacts['tactician_ensembles'] = ['tactician_ensemble.pkl']
+            return artifacts
+        
+        # Import and use tactician ensemble training
+        try:
+            from .tactician_ensemble_training import TacticianEnsembleTrainingStep as TacticianEnsembleTrainer
+            
+            # Create enhanced configuration with all model inputs for meta learner
+            enhanced_config = config.custom_params.copy() if config.custom_params else {}
+            if ensemble_data:
+                enhanced_config.update({
+                    'base_tactician_models': ensemble_data.get('tactician_models', []),
+                    'tactician_training_metrics': ensemble_data.get('tactician_training_metrics', {}),
+                    'analyst_models': ensemble_data.get('analyst_models', []),
+                    'analyst_ensembles': ensemble_data.get('analyst_ensembles', []),
+                    'analyst_ensemble_metrics': ensemble_data.get('analyst_ensemble_metrics', {}),
+                    'hmm_data': ensemble_data.get('hmm_data', {})
+                })
+                self.logger.info("✅ Meta learner will use all inputs from all ML models (HMM, Analyst, Tactician)")
+            
+            trainer = TacticianEnsembleTrainer()
+            training_result = await trainer.execute_tactician_ensemble_training(
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe,
+                data_dir=config.data_dir,
+                force_rerun=config.force_rerun,
+                enhanced_config=enhanced_config
+            )
+            
+            artifacts['tactician_ensembles'] = training_result.get('models', [])
+            artifacts['ensemble_metrics'] = training_result.get('metrics', {})
+            artifacts['tactician_ensemble_performance'] = training_result.get('performance', {})
+            
+        except ImportError:
+            self.logger.warning("⚠️ Tactician ensemble trainer not available, using mock training")
+            artifacts['tactician_ensembles'] = ['tactician_ensemble.pkl']
+        
+        # Log completion with emojis and artifact paths
+        self._log_sub_pipeline_completion("tactician_ensemble_training", config, artifacts)
+        
+        # This is the final step in the pipeline
+        self.logger.info("🎉 All model training pipelines completed successfully!")
         
         return artifacts
     
@@ -571,15 +653,27 @@ class ModelTrainingSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("hmm_training", config, artifacts)
         
-        # Automatically trigger the next sub-pipeline: ensemble_training
-        self.logger.info("🔄 HMM training completed, triggering next: ensemble_training")
+        # Automatically trigger the next sub-pipeline: analyst_model_training
+        self.logger.info("🔄 HMM training completed, triggering next: analyst_model_training")
         try:
-            next_artifacts = await self._ensemble_training_pipeline(config)
+            # Pass HMM results to analyst model training
+            enhanced_config = config.custom_params.copy() if config.custom_params else {}
+            enhanced_config.update({
+                'hmm_regime_states': artifacts.get('updated_pipeline_state', {}).get('regime_states', []),
+                'hmm_regime_probabilities': artifacts.get('updated_pipeline_state', {}).get('regime_probabilities', []),
+                'hmm_regime_confidence': artifacts.get('updated_pipeline_state', {}).get('regime_confidence', []),
+                'hmm_state_sequence': artifacts.get('updated_pipeline_state', {}).get('hmm_state_sequence', []),
+                'hmm_state_probs': artifacts.get('updated_pipeline_state', {}).get('hmm_state_probs', []),
+                'regime_characteristics': artifacts.get('updated_pipeline_state', {}).get('regime_characteristics', {}),
+                'transition_matrix': artifacts.get('updated_pipeline_state', {}).get('transition_matrix', None)
+            })
+            
+            next_artifacts = await self._analyst_model_training_pipeline(config, enhanced_config)
             # Merge artifacts from next pipeline
             artifacts.update(next_artifacts)
-            self.logger.info("✅ Ensemble training pipeline completed successfully")
+            self.logger.info("✅ Analyst model training pipeline completed successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to execute ensemble training pipeline: {e}")
+            self.logger.error(f"❌ Failed to execute analyst model training pipeline: {e}")
         
         return artifacts
     

@@ -227,17 +227,6 @@ async def integrate_per_regime_processing(pipeline_config: Dict[str, Any], steps
         else:
             logger.error(f'❌ Could not load function for {step_name}')
     return step_functions
-if __name__ == '__main__':
-
-    async def test() -> None:
-        """Test the per-regime pipeline integration."""
-        config_template = per_regime_integrator.generate_per_regime_config_template()
-        tprint('📋 Per-Regime Configuration Template:')
-        import json
-        tprint(json.dumps(config_template, indent = 2))
-        verified = await per_regime_integrator.verify_regime_data_availability(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
-        tprint(f'\n✅ Regime data verified: {verified}')
-    asyncio.run(test())
 
 """Per-Regime Pipeline Integration Module.
 

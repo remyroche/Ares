@@ -59,7 +59,6 @@ from src.utils.version_manager import get_version_manager
 
 # Import enhanced training components
 from src.utils.ml_common.enhanced_model_trainer import EnhancedModelTrainer, EnhancedTrainingConfig
-from src.utils.ml_common.multi_timeframe_training import MultiTimeframeTrainer, MultiTimeframeTrainingConfig, TimeframeConfig
 
 logger = logging.getLogger(__name__)
 

@@ -32,7 +32,7 @@ This package contains all the components for model training:
 """
 # Import from simplified model training structure
 try:
-    from .simplified.general_model_training import GeneralModelTrainer
+    # from .simplified.general_model_training import GeneralModelTrainer  # Removed from pipeline
     SIMPLIFIED_TRAINING_AVAILABLE = True
 except ImportError:
     SIMPLIFIED_TRAINING_AVAILABLE = False
@@ -60,10 +60,6 @@ except ImportError:
     execute_tactician_models_training = None
     execute_tactician_ensemble_training = None
 
-# Legacy compatibility aliases
-HMMBasedTrainingStep = GeneralModelTrainer
-UnifiedRegimeIntelligenceStep = GeneralModelTrainer
-AnalystCreationStep = AnalystModelsTrainingStep
 AnalystEnhancementStep = AnalystEnsembleTrainingStep
 AnalystEnsembleCreationStep = AnalystEnsembleTrainingStep
 TacticianSpecialistTrainingStep = TacticianModelsTrainingStep

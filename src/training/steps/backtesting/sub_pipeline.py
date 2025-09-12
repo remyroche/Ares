@@ -6,17 +6,14 @@ Backtesting Sub-Pipeline
 This module provides granular sub-pipeline functionality for backtesting,
 allowing execution of specific backtesting steps with different modes.
 
-Sub-pipelines:
-1. Walk Forward Validation - Walk-forward backtesting
-2. Monte Carlo Simulation - Monte Carlo backtesting
-3. A/B Testing - A/B testing for strategies
-4. Model Persistence - Save and load models
-5. Final Parameters Optimization - System-wide parameter optimization
-6. Performance Analytics - Performance analysis and reporting
-7. Risk Analysis - Risk metrics and analysis
-8. Trade Analysis - Trade-level analysis
-9. Portfolio Analysis - Portfolio-level analysis
-10. Reporting - Comprehensive reporting
+BACKTESTING Stage (7 sub-pipelines):
+1. basic_backtesting_pre - Pre-optimization baseline backtesting
+2. final_parameters_optimization - System-wide parameter optimization
+3. basic_backtesting_post - Post-optimization comparison backtesting
+4. walk_forward_validation - Walk-forward backtesting
+5. monte_carlo_simulation - Monte Carlo backtesting
+6. ab_testing - A/B testing for strategies
+7. reporting - Comprehensive reporting
 """
 
 import asyncio
@@ -30,6 +27,9 @@ from dataclasses import dataclass, field
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+from src.utils.version_manager import get_version_manager
 
 logger = system_logger.getChild('BacktestingSubPipeline')
 
@@ -99,11 +99,6 @@ class BacktestingSubPipeline:
             'walk_forward_validation': self._walk_forward_validation_pipeline,
             'monte_carlo_simulation': self._monte_carlo_simulation_pipeline,
             'ab_testing': self._ab_testing_pipeline,
-            'model_persistence': self._model_persistence_pipeline,
-            'performance_analytics': self._performance_analytics_pipeline,
-            'risk_analysis': self._risk_analysis_pipeline,
-            'trade_analysis': self._trade_analysis_pipeline,
-            'portfolio_analysis': self._portfolio_analysis_pipeline,
             'reporting': self._reporting_pipeline
         }
     
@@ -378,46 +373,6 @@ class BacktestingSubPipeline:
         
         return artifacts
     
-    async def _model_persistence_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Model persistence sub-pipeline."""
-        self.logger.info("💾 Executing model persistence pipeline")
-        
-        artifacts = {
-            'saved_models': [],
-            'persistence_metrics': {},
-            'model_metadata': {}
-        }
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual model persistence")
-            artifacts['saved_models'] = ['model.pkl']
-            return artifacts
-        
-        # Import and use model persistence
-        try:
-            from .consolidated_backtesting_step import ConsolidatedBacktestingStep
-            
-            backtester = ConsolidatedBacktestingStep()
-            persistence_result = await backtester.model_persistence(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                save_config=config.custom_params.get('save_config', {})
-            )
-            
-            artifacts['saved_models'] = persistence_result.get('models', [])
-            artifacts['persistence_metrics'] = persistence_result.get('metrics', {})
-            artifacts['model_metadata'] = persistence_result.get('metadata', {})
-            
-        except ImportError:
-            self.logger.warning("⚠️ Model persistence not available, using mock persistence")
-            artifacts['saved_models'] = ['model.pkl']
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("model_persistence", config, artifacts)
-        
-        return artifacts
     
     async def _final_parameters_optimization_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Final parameters optimization sub-pipeline."""
@@ -683,203 +638,65 @@ class BacktestingSubPipeline:
         self.logger.info("✅ Basic backtesting pipeline (post-optimization) completed")
         return artifacts
     
-    async def _performance_analytics_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Performance analytics sub-pipeline."""
-        self.logger.info("📊 Executing performance analytics pipeline")
-        
-        artifacts = {
-            'performance_metrics': {},
-            'analytics_reports': [],
-            'performance_charts': []
-        }
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual performance analytics")
-            artifacts['performance_metrics'] = {'sharpe_ratio': 1.2, 'max_drawdown': 0.05}
-            return artifacts
-        
-        # Import and use performance analytics
-        try:
-            from .comprehensive_reporting import PerformanceAnalyticsPipeline
-            
-            analytics = PerformanceAnalyticsPipeline()
-            analytics_result = await analytics.analyze_performance(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
-            
-            artifacts['performance_metrics'] = analytics_result.get('metrics', {})
-            artifacts['analytics_reports'] = analytics_result.get('reports', [])
-            artifacts['performance_charts'] = analytics_result.get('charts', [])
-            
-        except ImportError:
-            self.logger.warning("⚠️ Performance analytics not available, using mock analytics")
-            artifacts['performance_metrics'] = {'sharpe_ratio': 1.2, 'max_drawdown': 0.05}
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("performance_analytics", config, artifacts)
-        
-        return artifacts
-    
-    async def _risk_analysis_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Risk analysis sub-pipeline."""
-        self.logger.info("⚠️ Executing risk analysis pipeline")
-        
-        artifacts = {
-            'risk_metrics': {},
-            'risk_reports': [],
-            'risk_alerts': []
-        }
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual risk analysis")
-            artifacts['risk_metrics'] = {'var_95': 0.02, 'expected_shortfall': 0.03}
-            return artifacts
-        
-        # Import and use risk analysis
-        try:
-            from .comprehensive_reporting import RiskAnalysisPipeline
-            
-            risk_analyzer = RiskAnalysisPipeline()
-            risk_result = await risk_analyzer.analyze_risk(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
-            
-            artifacts['risk_metrics'] = risk_result.get('metrics', {})
-            artifacts['risk_reports'] = risk_result.get('reports', [])
-            artifacts['risk_alerts'] = risk_result.get('alerts', [])
-            
-        except ImportError:
-            self.logger.warning("⚠️ Risk analysis not available, using mock risk analysis")
-            artifacts['risk_metrics'] = {'var_95': 0.02, 'expected_shortfall': 0.03}
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("risk_analysis", config, artifacts)
-        
-        return artifacts
-    
-    async def _trade_analysis_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Trade analysis sub-pipeline."""
-        self.logger.info("📈 Executing trade analysis pipeline")
-        
-        artifacts = {
-            'trade_metrics': {},
-            'trade_reports': [],
-            'trade_statistics': {}
-        }
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual trade analysis")
-            artifacts['trade_metrics'] = {'total_trades': 100, 'win_rate': 0.6}
-            return artifacts
-        
-        # Import and use trade analysis
-        try:
-            from .comprehensive_reporting import TradeAnalysisPipeline
-            
-            trade_analyzer = TradeAnalysisPipeline()
-            trade_result = await trade_analyzer.analyze_trades(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
-            
-            artifacts['trade_metrics'] = trade_result.get('metrics', {})
-            artifacts['trade_reports'] = trade_result.get('reports', [])
-            artifacts['trade_statistics'] = trade_result.get('statistics', {})
-            
-        except ImportError:
-            self.logger.warning("⚠️ Trade analysis not available, using mock trade analysis")
-            artifacts['trade_metrics'] = {'total_trades': 100, 'win_rate': 0.6}
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("trade_analysis", config, artifacts)
-        
-        return artifacts
-    
-    async def _portfolio_analysis_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Portfolio analysis sub-pipeline."""
-        self.logger.info("💼 Executing portfolio analysis pipeline")
-        
-        artifacts = {
-            'portfolio_metrics': {},
-            'portfolio_reports': [],
-            'allocation_analysis': {}
-        }
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual portfolio analysis")
-            artifacts['portfolio_metrics'] = {'total_return': 0.15, 'volatility': 0.12}
-            return artifacts
-        
-        # Import and use portfolio analysis
-        try:
-            from .comprehensive_reporting import PortfolioAnalysisPipeline
-            
-            portfolio_analyzer = PortfolioAnalysisPipeline()
-            portfolio_result = await portfolio_analyzer.analyze_portfolio(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
-            
-            artifacts['portfolio_metrics'] = portfolio_result.get('metrics', {})
-            artifacts['portfolio_reports'] = portfolio_result.get('reports', [])
-            artifacts['allocation_analysis'] = portfolio_result.get('allocation', {})
-            
-        except ImportError:
-            self.logger.warning("⚠️ Portfolio analysis not available, using mock portfolio analysis")
-            artifacts['portfolio_metrics'] = {'total_return': 0.15, 'volatility': 0.12}
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("portfolio_analysis", config, artifacts)
-        
-        return artifacts
-    
     async def _reporting_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Reporting sub-pipeline."""
-        self.logger.info("📋 Executing reporting pipeline")
+        """Reporting sub-pipeline (includes all analysis functionality)."""
+        self.logger.info("📊 Executing reporting pipeline")
         
         artifacts = {
             'reports': [],
-            'report_metrics': {},
-            'report_formats': []
+            'performance_metrics': {},
+            'risk_metrics': {},
+            'trade_statistics': {},
+            'portfolio_metrics': {},
+            'analysis_reports': [],
+            'visualization_data': {}
         }
         
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual reporting")
             artifacts['reports'] = ['summary_report.pdf']
+            artifacts['performance_metrics'] = {'sharpe_ratio': 1.2, 'max_drawdown': 0.05}
+            artifacts['risk_metrics'] = {'var_95': 0.02, 'expected_shortfall': 0.03}
+            artifacts['trade_statistics'] = {'total_trades': 100, 'win_rate': 0.6}
+            artifacts['portfolio_metrics'] = {'total_return': 0.15, 'volatility': 0.12}
             return artifacts
         
         # Import and use reporting
         try:
-            from .comprehensive_reporting import ComprehensiveReportingPipeline
-from src.utils.enhanced_artifact_manager import get_artifact_manager
-from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
-from src.utils.version_manager import get_version_manager
+            from .reporting import ReportingStep, ReportingConfig
             
-            reporter = ComprehensiveReportingPipeline()
-            reporting_result = await reporter.generate_reports(
-                data_dir=config.data_dir,
+            # Create reporting configuration
+            reporting_config = ReportingConfig(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
-                report_config=config.custom_params.get('report_config', {})
+                data_dir=config.data_dir,
+                **config.custom_params.get('reporting_config', {})
             )
             
-            artifacts['reports'] = reporting_result.get('reports', [])
-            artifacts['report_metrics'] = reporting_result.get('metrics', {})
-            artifacts['report_formats'] = reporting_result.get('formats', [])
+            # Initialize and execute reporting step
+            reporter = ReportingStep(reporting_config)
+            reporting_result = await reporter.execute()
             
-        except ImportError:
-            self.logger.warning("⚠️ Comprehensive reporting not available, using mock reporting")
+            # Extract artifacts from results
+            artifacts['reports'] = reporting_result.reports
+            artifacts['performance_metrics'] = reporting_result.performance_metrics
+            artifacts['risk_metrics'] = reporting_result.risk_metrics
+            artifacts['trade_statistics'] = reporting_result.trade_statistics
+            artifacts['portfolio_metrics'] = reporting_result.portfolio_metrics
+            artifacts['analysis_reports'] = [
+                reporting_result.performance_analysis,
+                reporting_result.risk_analysis,
+                reporting_result.trade_analysis,
+                reporting_result.portfolio_analysis
+            ]
+            artifacts['visualization_data'] = reporting_result.visualization_data
+            
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Reporting not available: {e}")
+            artifacts['reports'] = ['summary_report.pdf']
+        except Exception as e:
+            self.logger.error(f"❌ Reporting failed: {e}")
             artifacts['reports'] = ['summary_report.pdf']
         
         # Log completion with emojis and artifact paths

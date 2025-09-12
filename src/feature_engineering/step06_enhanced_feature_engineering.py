@@ -29,7 +29,12 @@ class MathValidationError(Exception):
 
 # Import validation and safety utilities
 # Import math validation functions from shared module
-from .math_validation import safe_divide, safe_log, safe_sqrt, validate_positive
+from .math_validation import (
+    safe_divide, safe_log, safe_sqrt, validate_positive,
+    validate_feature_quality, validate_features_dataframe,
+    validate_generated_features, validate_feature_pipeline,
+    FeatureValidationError
+)
 
 # Import utility integration
 from .step06_utility_container import (
@@ -588,6 +593,7 @@ class EnhancedFeatureEngineering:
         
         return indicators
 
+    @validate_generated_features
     @step06_function_validator(validation_level=ValidationLevel.COMPREHENSIVE)
     def create_sophisticated_interactions(self, features: pd.DataFrame, 
                                         current_idx: Optional[int] = None) -> pd.DataFrame:
@@ -939,6 +945,7 @@ class EnhancedFeatureEngineering:
             'utility_errors': 0
         }
 
+    @validate_generated_features
     @inject_utilities('common_ops', 'data_proc', 'math_val', 'm1_memory', 'm1_cpu')
     async def create_enhanced_features_with_utilities(self, market_data: pd.DataFrame,
                                                     common_ops, data_proc, math_val, m1_memory, m1_cpu) -> pd.DataFrame:

@@ -105,6 +105,17 @@ from .feature_generation_optimization import (
     optimize_feature_lookback
 )
 
+# Import feature validation utilities
+from .math_validation import (
+    validate_feature_quality,
+    validate_features_dataframe,
+    feature_validation_decorator,
+    validate_generated_features,
+    validate_feature_pipeline,
+    strict_feature_validation,
+    FeatureValidationError
+)
+
 from .sr_feature_extractor import (
     SRFeatureExtractor,
     SRFeatureConfig,
@@ -165,7 +176,16 @@ __all__ = [
     'get_feature_optimizer',
     'optimize_feature_lookback',
     
-    # SR feature extraction
+    # Feature validation utilities
+    'validate_feature_quality',
+    'validate_features_dataframe',
+    'feature_validation_decorator',
+    'validate_generated_features',
+    'validate_feature_pipeline',
+    'strict_feature_validation',
+    'FeatureValidationError'
+
+  # SR feature extraction
     'SRFeatureExtractor',
     'SRFeatureConfig',
     'get_sr_feature_extractor',

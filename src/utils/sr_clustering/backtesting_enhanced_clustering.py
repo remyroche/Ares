@@ -608,81 +608,67 @@ class BacktestingEnhancedClustering:
             self.logger.info("🧠 Updating quality rules from backtesting results")
             self.logger.info(f"Processing {len(backtest_results)} backtest results")
             
-            # Learn new rules with weight optimization
-            tprint("🔬 Learning new quality rules with weight optimization...")
-            self.logger.info("Learning new quality rules with weight optimization")
-            new_rules = self.backtesting_engine.learn_quality_rules(
+            # Optimize SR parameters
+            tprint("🎯 Optimizing SR parameters from backtesting results...")
+            self.logger.info("Optimizing SR parameters from backtesting results")
+            parameter_optimization_result = self.backtesting_engine.optimize_sr_parameters(
                 backtest_results, 
-                optimize_weights=True, 
                 market_data=market_data
             )
             
-            if new_rules:
-                tprint("✅ Successfully learned new quality rules!")
-                self.logger.info(f"✅ Successfully learned new quality rules")
+            if parameter_optimization_result:
+                tprint("✅ Successfully optimized SR parameters!")
+                self.logger.info(f"✅ Successfully optimized SR parameters")
                 
-                # Merge with existing rules (weighted average)
-                if self.learned_rules:
-                    tprint("🔄 Merging new rules with existing learned rules...")
-                    self.logger.info("Merging new rules with existing learned rules")
-                    self.learned_rules = self._merge_rules(self.learned_rules, new_rules)
-                    tprint("✅ Rules merged successfully")
+                # Store optimized parameters
+                if parameter_optimization_result.get('optimization_success', False):
+                    tprint("📝 Storing optimized parameters...")
+                    self.logger.info("Storing optimized parameters")
+                    self.optimized_parameters = parameter_optimization_result.get('optimized_parameters', {})
+                    self.quality_thresholds = parameter_optimization_result.get('quality_thresholds', {})
+                    tprint("✅ Parameters stored successfully")
                 else:
-                    tprint("📝 No existing rules found, using new rules as base")
-                    self.logger.info("No existing rules found, using new rules as base")
-                    self.learned_rules = new_rules
+                    tprint("⚠️ Parameter optimization failed, using fallback parameters")
+                    self.logger.warning("Parameter optimization failed, using fallback parameters")
+                    self.optimized_parameters = parameter_optimization_result.get('optimized_parameters', {})
+                    self.quality_thresholds = parameter_optimization_result.get('quality_thresholds', {})
                 
-                # Log optimization results
-                if new_rules.get('weight_optimization_enabled', False):
-                    optimized_weights = new_rules.get('optimized_weights', {})
-                    if optimized_weights:
-                        tprint("🎯 Weight optimization completed successfully!")
-                        tprint(f"📊 Optimized weights summary:")
-                        self.logger.info(f"🎯 Weight optimization completed successfully")
-                        self.logger.info(f"Optimized weights: {optimized_weights}")
-                        
-                        # Log top weights
-                        sorted_weights = sorted(optimized_weights.items(), key=lambda x: x[1], reverse=True)
-                        tprint("   Top 5 optimized weights:")
-                        self.logger.info("Top 5 optimized weights:")
-                        for i, (feature, weight) in enumerate(sorted_weights[:5], 1):
-                            tprint(f"   {i}. {feature}: {weight:.3f}")
-                            self.logger.info(f"  {feature}: {weight:.3f}")
-                    else:
-                        tprint("⚠️ Weight optimization attempted but no optimized weights available")
-                        self.logger.warning("⚠️ Weight optimization attempted but no optimized weights available")
+                # Log parameter optimization results
+                optimized_params = parameter_optimization_result.get('optimized_parameters', {})
+                if optimized_params:
+                    tprint("🎯 Parameter optimization completed successfully!")
+                    tprint(f"📊 Optimized parameters summary:")
+                    self.logger.info(f"🎯 Parameter optimization completed successfully")
+                    self.logger.info(f"Optimized parameters: {optimized_params}")
+                    
+                    # Log key parameters
+                    key_params = ['touch_tolerance', 'min_bounce_strength', 'volume_threshold_multiplier', 'min_touches_required']
+                    tprint("   Key optimized parameters:")
+                    self.logger.info("Key optimized parameters:")
+                    for param in key_params:
+                        if param in optimized_params:
+                            value = optimized_params[param]
+                            if isinstance(value, float):
+                                tprint(f"   - {param}: {value:.4f}")
+                                self.logger.info(f"  - {param}: {value:.4f}")
+                            else:
+                                tprint(f"   - {param}: {value}")
+                                self.logger.info(f"  - {param}: {value}")
                 
-                # Log quality predictors
-                quality_predictors = new_rules.get('quality_predictors', {})
-                if quality_predictors:
-                    tprint(f"📊 Quality predictors identified: {len(quality_predictors)} features")
-                    top_predictors = sorted(quality_predictors.items(), key=lambda x: abs(x[1].get('correlation', 0)), reverse=True)[:5]
-                    tprint("   Top 5 quality predictors:")
-                    self.logger.info(f"📊 Quality predictors identified: {len(quality_predictors)} features")
-                    self.logger.info("Top 5 quality predictors:")
-                    for i, (feature, info) in enumerate(top_predictors, 1):
-                        corr = info.get('correlation', 0)
-                        direction = "📈" if corr > 0 else "📉"
-                        tprint(f"   {i}. {direction} {feature}: correlation={corr:.3f}")
-                        self.logger.info(f"  {feature}: correlation={corr:.3f}")
+                # Log quality thresholds
+                quality_thresholds = parameter_optimization_result.get('quality_thresholds', {})
+                if quality_thresholds:
+                    tprint(f"📊 Quality thresholds calculated:")
+                    self.logger.info(f"📊 Quality thresholds calculated:")
+                    for threshold_name, threshold_value in quality_thresholds.items():
+                        tprint(f"   - {threshold_name}: {threshold_value:.3f}")
+                        self.logger.info(f"  - {threshold_name}: {threshold_value:.3f}")
                 
-                # Log model performance if available
-                strength_model = new_rules.get('strength_scoring_model', {})
-                if strength_model:
-                    model_type = strength_model.get('model_type', 'Unknown')
-                    r_squared = strength_model.get('r_squared', 0.0)
-                    cv_r_squared = strength_model.get('cv_r_squared_mean', 0.0)
-                    tprint(f"🤖 ML Model Performance:")
-                    tprint(f"   - Model type: {model_type}")
-                    tprint(f"   - R² score: {r_squared:.3f}")
-                    tprint(f"   - CV R² score: {cv_r_squared:.3f}")
-                    self.logger.info(f"🤖 ML Model Performance: {model_type}, R²={r_squared:.3f}, CV R²={cv_r_squared:.3f}")
-                
-                tprint("✅ Quality rules update completed successfully!")
-                self.logger.info(f"✅ Quality rules update completed successfully")
+                tprint("✅ Parameter optimization completed successfully!")
+                self.logger.info(f"✅ Parameter optimization completed successfully")
             else:
-                tprint("⚠️ No new quality rules learned from backtesting results")
-                self.logger.warning("⚠️ No new quality rules learned from backtesting results")
+                tprint("⚠️ Failed to optimize SR parameters")
+                self.logger.warning("Failed to optimize SR parameters")
             
         except Exception as e:
             tprint(f"❌ Failed to update quality rules: {e}")
@@ -1348,6 +1334,40 @@ class BacktestingEnhancedClustering:
             fallback_quality = level.get('strength', 0.5)
             self.logger.debug(f"Using fallback quality: {fallback_quality:.3f}")
             return fallback_quality
+    
+    def _log_parameter_optimization_summary(self, parameter_optimization_result: Dict[str, Any]) -> None:
+        """Log a summary of parameter optimization results."""
+        try:
+            self.logger.info("Logging parameter optimization summary")
+            
+            optimization_success = parameter_optimization_result.get('optimization_success', False)
+            optimization_method = parameter_optimization_result.get('optimization_method', 'unknown')
+            optimization_score = parameter_optimization_result.get('optimization_score', 0.0)
+            
+            self.logger.info(f"Parameter optimization summary:")
+            self.logger.info(f"  - Success: {optimization_success}")
+            self.logger.info(f"  - Method: {optimization_method}")
+            self.logger.info(f"  - Score: {optimization_score:.4f}")
+            
+            optimized_params = parameter_optimization_result.get('optimized_parameters', {})
+            if optimized_params:
+                self.logger.info(f"  - Parameters optimized: {len(optimized_params)}")
+                
+                # Log key parameters
+                key_params = ['touch_tolerance', 'min_bounce_strength', 'volume_threshold_multiplier', 'min_touches_required']
+                for param in key_params:
+                    if param in optimized_params:
+                        value = optimized_params[param]
+                        self.logger.info(f"    - {param}: {value}")
+            
+            quality_thresholds = parameter_optimization_result.get('quality_thresholds', {})
+            if quality_thresholds:
+                self.logger.info(f"  - Quality thresholds calculated: {len(quality_thresholds)}")
+                for threshold_name, threshold_value in quality_thresholds.items():
+                    self.logger.info(f"    - {threshold_name}: {threshold_value:.3f}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to log parameter optimization summary: {e}")
 
 def get_backtesting_enhanced_clustering(config: Optional[BacktestingEnhancedConfig] = None) -> BacktestingEnhancedClustering:
     """Get a backtesting-enhanced clustering instance."""

@@ -151,6 +151,7 @@ class MarketAnalysisSubPipeline:
         
         # Initialize sub-pipeline registry
         self.sub_pipelines = {
+            'sr_parameter_optimization': self._sr_parameter_optimization_pipeline,
             'sr_detection': self._sr_detection_pipeline,
             'sr_clustering': self._sr_clustering_pipeline,
             'hmm_clustering': self._hmm_clustering_pipeline,
@@ -209,11 +210,27 @@ class MarketAnalysisSubPipeline:
             self.config.exchange = training_input.get('exchange', 'binance')
             self.config.timeframe = training_input.get('timeframe', '1m')
             
-            # Execute the three SR stages in sequence
+            # Execute the SR optimization pipeline in the correct order
             results = {}
             
-            # Stage 1: SR Detection
-            self.logger.info('🎯 Executing Stage 1: SR Detection')
+            # Stage 1: SR Parameter Optimization (BEFORE detection and clustering)
+            self.logger.info('🎯 Executing Stage 1: SR Parameter Optimization')
+            param_optimization_result = await self.execute_sub_pipeline('sr_parameter_optimization', self.config)
+            if param_optimization_result.success:
+                results['optimized_parameters'] = param_optimization_result.artifacts.get('optimized_parameters', {})
+                results['quality_thresholds'] = param_optimization_result.artifacts.get('quality_thresholds', {})
+                results['parameter_optimization_metrics'] = param_optimization_result.artifacts.get('parameter_optimization_metrics', {})
+                self.logger.info(f"✅ SR Parameter Optimization completed")
+            else:
+                self.logger.error(f"❌ SR Parameter Optimization failed: {param_optimization_result.error}")
+                return {
+                    'success': False,
+                    'error': f"SR Parameter Optimization failed: {param_optimization_result.error}",
+                    'stage': 'sr_parameter_optimization'
+                }
+            
+            # Stage 2: SR Detection (using optimized parameters)
+            self.logger.info('🎯 Executing Stage 2: SR Detection with Optimized Parameters')
             detection_result = await self.execute_sub_pipeline('sr_detection', self.config)
             if detection_result.success:
                 results['sr_levels'] = detection_result.artifacts.get('sr_levels', [])
@@ -227,8 +244,8 @@ class MarketAnalysisSubPipeline:
                     'stage': 'sr_detection'
                 }
             
-            # Stage 2: SR Clustering
-            self.logger.info('🚀 Executing Stage 2: SR Clustering')
+            # Stage 3: SR Clustering (using optimized parameters)
+            self.logger.info('🚀 Executing Stage 3: SR Clustering with Optimized Parameters')
             clustering_result = await self.execute_sub_pipeline('sr_clustering', self.config)
             if clustering_result.success:
                 results['clustered_levels'] = clustering_result.artifacts.get('clustered_levels', [])
@@ -241,7 +258,6 @@ class MarketAnalysisSubPipeline:
                     'error': f"SR Clustering failed: {clustering_result.error}",
                     'stage': 'sr_clustering'
                 }
-            
             
             # Calculate total execution time
             total_time = (
@@ -620,58 +636,192 @@ class MarketAnalysisSubPipeline:
                 self.logger.info(f"✅ Loaded {len(df)} rows from {latest_file}, price range: {price_range}")
                 return df
 
-            # Final fallback: create realistic sample data based on actual ETH price history
-            self.logger.warning("⚠️ No klines data found, using realistic ETH price sample")
-            base_price = 1800  # Average ETH price from the data we saw
-            volatility = 0.03  # 3% daily volatility
-
-            sample_data = {
-                'timestamp': pd.date_range(start='2023-01-01', periods=1000, freq='1H'),
-                'open': [],
-                'high': [],
-                'low': [],
-                'close': [],
-                'volume': []
-            }
-
-            current_price = base_price
-            for i in range(1000):
-                # Generate realistic price movement
-                price_change = np.random.normal(0, volatility * current_price / 16)  # Hourly movement
-                open_price = current_price
-                close_price = current_price + price_change
-
-                # Generate high/low with realistic spread
-                high_spread = abs(np.random.normal(0, volatility * current_price * 0.5))
-                low_spread = abs(np.random.normal(0, volatility * current_price * 0.5))
-
-                high_price = max(open_price, close_price) + high_spread
-                low_price = min(open_price, close_price) - low_spread
-
-                # Keep prices within reasonable bounds
-                high_price = min(high_price, 3000)
-                low_price = max(low_price, 1000)
-
-                sample_data['open'].append(open_price)
-                sample_data['close'].append(close_price)
-                sample_data['high'].append(high_price)
-                sample_data['low'].append(low_price)
-                sample_data['volume'].append(np.random.uniform(1000, 10000))
-
-                current_price = close_price
-
-            df = pd.DataFrame(sample_data)
-            df['timestamp'] = df['timestamp'].astype(int) // 10**9  # Convert to unix timestamp
-
-            price_range = f"${df['low'].min():.2f} - ${df['high'].max():.2f}"
-            self.logger.info(f"✅ Created realistic fallback data: {len(df)} rows, price range: {price_range}")
-            return df
+            # Final fallback: try to download real data instead of using synthetic data
+            self.logger.warning("⚠️ No klines data found, attempting to download real data")
+            try:
+                from src.utils.data.real_data_loader import real_data_loader
+                import asyncio
+                
+                # Try to download real data
+                df = asyncio.run(real_data_loader.load_market_data(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    force_download=True
+                ))
+                
+                if df is not None and len(df) > 0:
+                    price_range = f"${df['low'].min():.2f} - ${df['high'].max():.2f}"
+                    self.logger.info(f"✅ Downloaded real data: {len(df)} rows, price range: {price_range}")
+                    return df
+                else:
+                    raise RuntimeError("Failed to download real data")
+                    
+            except Exception as download_error:
+                self.logger.error(f"❌ Failed to download real data: {download_error}")
+                raise RuntimeError(
+                    f"❌ No real market data available for {symbol}/{exchange}/{timeframe}. "
+                    "Please ensure data collection is properly configured and network connectivity is available. "
+                    "Synthetic data is not allowed in this system."
+                )
 
         except Exception as e:
             self.logger.error(f"❌ Error loading market data for SR detection: {e}")
             import traceback
             self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return None
+
+    async def _sr_parameter_optimization_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Execute SR parameter optimization pipeline."""
+        self.logger.info('🎯 Starting SR Parameter Optimization Pipeline')
+        
+        try:
+            # Import SR backtesting engine
+            from src.utils.sr_clustering.sr_backtesting_engine import SRBacktestingEngine, BacktestConfig
+            from src.utils.sr_clustering.parameter_optimization_engine import get_parameter_optimization_engine, ParameterOptimizationConfig
+            
+            # Get market data
+            data = await self._get_market_data(config)
+            if data is None or data.empty:
+                raise ValueError("No market data available for parameter optimization")
+            
+            # Configure parameter optimization with hardware optimizations
+            param_config = ParameterOptimizationConfig(
+                optimization_method='adaptive_grid_search',  # New adaptive method
+                min_samples_for_optimization=10,
+                adaptive_optimization=True,
+                objective_metric='composite',  # Use composite metric
+                
+                # Hardware optimization settings
+                enable_hardware_optimization=True,
+                enable_parallel_processing=True,
+                max_parallel_workers=None,  # Auto-detect
+                enable_gpu_acceleration=True,
+                memory_limit_gb=8.0,
+                chunk_size=1000
+            )
+            
+            # Create backtesting engine with hardware optimizations
+            backtest_config = BacktestConfig(
+                enable_parameter_optimization=True,
+                parameter_optimization_method='adaptive_grid_search',
+                min_samples_for_optimization=10,
+                
+                # Hardware optimization settings
+                enable_m1_optimizations=True,
+                enable_gpu_acceleration=True,
+                enable_memory_optimization=True,
+                memory_limit_gb=8.0,
+                chunk_size=1000,
+                
+                # Computation optimization settings
+                enable_parallel_processing=True,
+                enable_vectorized_operations=True,
+                enable_caching=True,
+                cache_size_mb=100,
+                enable_numba_acceleration=True
+            )
+            
+            engine = SRBacktestingEngine(backtest_config)
+            
+            # Create sample SR levels for optimization (using historical data)
+            sample_levels = self._create_sample_sr_levels(data)
+            
+            # Backtest sample levels to get results for optimization
+            backtest_results = []
+            for level in sample_levels:
+                try:
+                    result = engine.backtest_sr_level(level, data)
+                    backtest_results.append(result)
+                except Exception as e:
+                    self.logger.warning(f"Failed to backtest level {level.price}: {e}")
+                    continue
+            
+            if len(backtest_results) < param_config.min_samples_for_optimization:
+                self.logger.warning(f"Insufficient backtest results for optimization: {len(backtest_results)}")
+                # Use data-driven parameters instead
+                optimization_result = engine.optimize_sr_parameters(backtest_results, data)
+            else:
+                # Run parameter optimization
+                optimizer = get_parameter_optimization_engine(param_config)
+                optimization_result = optimizer.optimize_parameters(backtest_results, data)
+            
+            # Save optimized parameters
+            optimized_parameters = optimization_result.get('optimized_parameters', {})
+            quality_thresholds = optimization_result.get('quality_thresholds', {})
+            
+            # Store parameters for use in subsequent stages
+            self.optimized_parameters = optimized_parameters
+            self.quality_thresholds = quality_thresholds
+            
+            # Save parameters to artifacts
+            artifacts = {
+                'optimized_parameters': optimized_parameters,
+                'quality_thresholds': quality_thresholds,
+                'parameter_optimization_metrics': {
+                    'optimization_success': optimization_result.get('optimization_success', False),
+                    'optimization_method': optimization_result.get('optimization_method', 'unknown'),
+                    'optimization_score': optimization_result.get('optimization_score', 0.0),
+                    'n_trials': optimization_result.get('n_trials', 0),
+                    'samples_used': len(backtest_results)
+                }
+            }
+            
+            self.logger.info('✅ SR Parameter Optimization Pipeline completed successfully')
+            return {
+                'success': True,
+                'artifacts': artifacts,
+                'execution_time': 0.0  # Will be calculated by the framework
+            }
+            
+        except Exception as e:
+            self.logger.error(f'❌ SR Parameter Optimization Pipeline failed: {e}')
+            import traceback
+            self.logger.error(f'❌ Error details: {traceback.format_exc()}')
+            return {
+                'success': False,
+                'error': str(e),
+                'execution_time': 0.0
+            }
+    
+    def _create_sample_sr_levels(self, data: pd.DataFrame) -> List[Any]:
+        """Create sample SR levels from historical data for parameter optimization."""
+        from src.utils.sr_clustering.sr_backtesting_engine import SRLevel
+        
+        levels = []
+        try:
+            # Use price highs and lows as potential SR levels
+            high_prices = data['high'].nlargest(20).values
+            low_prices = data['low'].nsmallest(20).values
+            
+            # Create support levels (lows)
+            for price in low_prices:
+                level = SRLevel(
+                    price=float(price),
+                    level_type='support',
+                    strength=0.5 + np.random.random() * 0.5,
+                    detection_time=data.index[0],
+                    touches=2 + np.random.randint(0, 5)
+                )
+                levels.append(level)
+            
+            # Create resistance levels (highs)
+            for price in high_prices:
+                level = SRLevel(
+                    price=float(price),
+                    level_type='resistance',
+                    strength=0.5 + np.random.random() * 0.5,
+                    detection_time=data.index[0],
+                    touches=2 + np.random.randint(0, 5)
+                )
+                levels.append(level)
+            
+            self.logger.info(f"Created {len(levels)} sample SR levels for parameter optimization")
+            return levels
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to create sample SR levels: {e}")
+            return []
 
     async def _sr_detection_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """SR detection sub-pipeline using the new SRDetectionStep."""

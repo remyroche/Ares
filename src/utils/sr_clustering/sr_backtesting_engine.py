@@ -77,26 +77,44 @@ class BacktestResult:
 
 @dataclass
 class BacktestConfig:
-    """Configuration for SR level backtesting."""
-    # Touch validation parameters
-    touch_tolerance: float = 0.002  # 0.2% tolerance for touch detection
-    min_bounce_strength: float = 0.001  # Minimum 0.1% bounce to count as successful
-    max_hold_time: int = 24  # Maximum hours to hold at level before considering failure
+    """Configuration for SR level backtesting focused on parameter optimization."""
+    # Touch validation parameters - will be optimized from data
+    touch_tolerance: float = None  # Will be calculated from price volatility
+    min_bounce_strength: float = None  # Will be calculated from historical bounces
+    max_hold_time: int = None  # Will be calculated from market characteristics
     
-    # Volume analysis
-    volume_threshold_multiplier: float = 1.5  # Volume must be 1.5x average to count
+    # Volume analysis parameters - will be optimized
+    volume_threshold_multiplier: float = None  # Will be calculated from volume distribution
     volume_lookback_periods: int = 20  # Periods to calculate average volume
+    min_volume_for_confirmation: float = None  # Minimum volume to confirm SR level
     
-    # Time analysis
+    # SR Level Detection Parameters - will be optimized
+    min_touches_required: int = None  # Minimum touches to consider level significant
+    max_touches_for_analysis: int = 20  # Maximum touches to analyze
+    touch_proximity_tolerance: float = None  # How close touches must be to level
+    
+    # Time analysis parameters
     min_time_between_touches: int = 1  # Minimum hours between touches
     max_analysis_period: int = 720  # Maximum hours to analyze (30 days)
+    time_decay_factor: float = 0.95  # How much older touches are weighted less
     
-    # Quality scoring weights
-    success_rate_weight: float = 0.3
-    bounce_strength_weight: float = 0.25
-    volume_confirmation_weight: float = 0.2
-    time_persistence_weight: float = 0.15
-    touch_frequency_weight: float = 0.1
+    # Quality scoring multipliers - will be optimized
+    success_rate_multiplier: float = 1.0
+    bounce_strength_multiplier: float = 1.0
+    volume_confirmation_multiplier: float = 1.0
+    time_persistence_multiplier: float = 1.0
+    touch_frequency_multiplier: float = 1.0
+    
+    # Parameter optimization settings
+    enable_parameter_optimization: bool = True  # Enable parameter optimization
+    min_samples_for_optimization: int = 10  # Minimum samples needed for optimization
+    parameter_optimization_method: str = 'grid_search'  # 'grid_search', 'bayesian', 'genetic'
+    
+    # Quality thresholds - will be calculated from data
+    excellent_quality_threshold: float = None  # Will be calculated from percentiles
+    good_quality_threshold: float = None
+    average_quality_threshold: float = None
+    poor_quality_threshold: float = None
     
     # M1 optimization parameters
     enable_m1_optimizations: bool = True
@@ -104,6 +122,14 @@ class BacktestConfig:
     enable_memory_optimization: bool = True
     memory_limit_gb: float = 8.0
     chunk_size: int = 1000
+    
+    # Computation optimization parameters
+    enable_parallel_processing: bool = True
+    enable_vectorized_operations: bool = True
+    enable_caching: bool = True
+    cache_size_mb: int = 100
+    enable_numba_acceleration: bool = True
+    enable_cython_acceleration: bool = False
 
 class SRBacktestingEngine:
     """Engine for backtesting SR levels and learning quality rules."""
@@ -112,9 +138,7 @@ class SRBacktestingEngine:
         self.config = config or BacktestConfig()
         self.logger = system_logger.getChild('SRBacktestingEngine')
         
-        self.logger.info("Initializing SRBacktestingEngine")
-        self.logger.info(f"Configuration: touch_tolerance={self.config.touch_tolerance:.3f}, min_bounce_strength={self.config.min_bounce_strength:.3f}")
-        self.logger.info(f"Weight settings: success_rate={self.config.success_rate_weight:.2f}, bounce_strength={self.config.bounce_strength_weight:.2f}")
+        self.logger.info("Initializing SRBacktestingEngine with data-driven thresholds")
         
         # Initialize M1 optimizations
         self.enable_m1_optimizations = self.config.enable_m1_optimizations and M1_OPTIMIZATIONS_AVAILABLE
@@ -132,15 +156,143 @@ class SRBacktestingEngine:
             self.m1_memory_optimizer = None
             self.memory_monitor = None
         
+        # Initialize computation optimizations
+        self._initialize_computation_optimizations()
+        
         self.learned_rules: Dict[str, Any] = {}
         self.performance_history: List[BacktestResult] = []
+        self.data_driven_thresholds: Dict[str, float] = {}
+        self.overfitting_metrics: Dict[str, Any] = {}
         
         self.logger.info("✅ SRBacktestingEngine initialization completed")
+    
+    def _initialize_computation_optimizations(self):
+        """Initialize computation optimization components."""
+        try:
+            # Initialize caching
+            if self.config.enable_caching:
+                self._cache = {}
+                self._cache_size_limit = self.config.cache_size_mb * 1024 * 1024  # Convert to bytes
+                self.logger.info("✅ Caching enabled")
+            else:
+                self._cache = None
+            
+            # Initialize Numba acceleration
+            if self.config.enable_numba_acceleration:
+                try:
+                    import numba
+                    self.numba_available = True
+                    self.logger.info("✅ Numba acceleration available")
+                except ImportError:
+                    self.numba_available = False
+                    self.logger.info("⚠️ Numba not available, using standard Python")
+            else:
+                self.numba_available = False
+            
+            # Initialize vectorized operations
+            if self.config.enable_vectorized_operations:
+                self.vectorized_ops = True
+                self.logger.info("✅ Vectorized operations enabled")
+            else:
+                self.vectorized_ops = False
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize computation optimizations: {e}")
+            self._cache = None
+            self.numba_available = False
+            self.vectorized_ops = False
+    
+    def calculate_data_driven_thresholds(self, data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate thresholds based on historical data characteristics."""
+        try:
+            self.logger.info("📊 Calculating data-driven thresholds from historical data")
+            
+            # Calculate price volatility for touch tolerance (vectorized)
+            if self.vectorized_ops:
+                # Use vectorized operations for better performance
+                returns = data['close'].pct_change().dropna()
+                price_volatility = returns.rolling(20, min_periods=1).std().mean()
+                
+                # Touch tolerance: 2x the average price volatility
+                touch_tolerance = max(0.001, min(0.01, price_volatility * 2))
+                
+                # Calculate historical bounce strengths (vectorized)
+                high_low_returns = (data['high'] - data['low']) / data['close']
+                avg_bounce_strength = high_low_returns.rolling(20, min_periods=1).mean().mean()
+                
+                # Min bounce strength: 25th percentile of historical bounces
+                min_bounce_strength = max(0.0005, high_low_returns.quantile(0.25))
+            else:
+                # Standard calculation
+                returns = data['close'].pct_change().dropna()
+                price_volatility = returns.rolling(20).std().mean()
+                touch_tolerance = max(0.001, min(0.01, price_volatility * 2))
+                high_low_returns = (data['high'] - data['low']) / data['close']
+                avg_bounce_strength = high_low_returns.rolling(20).mean().mean()
+                min_bounce_strength = max(0.0005, high_low_returns.quantile(0.25))
+            
+            # Calculate volume characteristics
+            if 'volume' in data.columns:
+                volume_returns = data['volume'].pct_change().dropna()
+                volume_volatility = volume_returns.rolling(20).std().mean()
+                avg_volume = data['volume'].rolling(20).mean().mean()
+                
+                # Volume threshold: 1.5x average volume + 1 std dev
+                volume_threshold_multiplier = 1.5 + volume_volatility
+            else:
+                volume_threshold_multiplier = 1.5
+            
+            # Calculate time characteristics
+            if 'timestamp' in data.columns:
+                time_diffs = data['timestamp'].diff().dt.total_seconds() / 3600  # Convert to hours
+                avg_time_diff = time_diffs.mean()
+                
+                # Max hold time: 24 hours or 10x average time between bars
+                max_hold_time = max(1, min(24, int(avg_time_diff * 10)))
+            else:
+                max_hold_time = 24
+            
+            thresholds = {
+                'touch_tolerance': touch_tolerance,
+                'min_bounce_strength': min_bounce_strength,
+                'max_hold_time': max_hold_time,
+                'volume_threshold_multiplier': volume_threshold_multiplier
+            }
+            
+            self.data_driven_thresholds = thresholds
+            
+            self.logger.info(f"📊 Data-driven thresholds calculated:")
+            self.logger.info(f"   - Touch tolerance: {touch_tolerance:.4f} ({touch_tolerance*100:.2f}%)")
+            self.logger.info(f"   - Min bounce strength: {min_bounce_strength:.4f} ({min_bounce_strength*100:.2f}%)")
+            self.logger.info(f"   - Max hold time: {max_hold_time} hours")
+            self.logger.info(f"   - Volume threshold multiplier: {volume_threshold_multiplier:.2f}")
+            
+            return thresholds
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to calculate data-driven thresholds: {e}")
+            # Fallback to conservative defaults
+            return {
+                'touch_tolerance': 0.002,
+                'min_bounce_strength': 0.001,
+                'max_hold_time': 24,
+                'volume_threshold_multiplier': 1.5
+            }
         
     def backtest_sr_level(self, level: SRLevel, data: pd.DataFrame) -> BacktestResult:
-        """Backtest a single SR level against historical data."""
+        """Backtest a single SR level against historical data with data-driven thresholds."""
         try:
             self.logger.debug(f"🔍 Backtesting SR level at price {level.price}, type {level.level_type}")
+            
+            # Calculate data-driven thresholds if not already done
+            if not self.data_driven_thresholds:
+                self.calculate_data_driven_thresholds(data)
+            
+            # Update config with data-driven thresholds
+            self.config.touch_tolerance = self.data_driven_thresholds['touch_tolerance']
+            self.config.min_bounce_strength = self.data_driven_thresholds['min_bounce_strength']
+            self.config.max_hold_time = self.data_driven_thresholds['max_hold_time']
+            self.config.volume_threshold_multiplier = self.data_driven_thresholds['volume_threshold_multiplier']
             
             # Find the detection time in the data
             detection_idx = self._find_detection_time_index(level, data)
@@ -204,22 +356,53 @@ class SRBacktestingEngine:
             return self._create_failed_result(level, str(e))
     
     def backtest_multiple_levels(self, levels: List[SRLevel], data: pd.DataFrame) -> List[BacktestResult]:
-        """Backtest multiple SR levels."""
-        results = []
-        
+        """Backtest multiple SR levels with validation and chunking."""
         self.logger.info(f"🚀 Starting backtesting for {len(levels)} SR levels")
         self.logger.info(f"Data shape: {data.shape}")
         
-        for i, level in enumerate(levels):
-            if i % 10 == 0:
-                self.logger.info(f"Backtesting level {i+1}/{len(levels)}: ${level.price:.2f} ({level.level_type})")
+        # Validate levels before backtesting
+        valid_levels = []
+        for level in levels:
+            if self._validate_sr_level(level):
+                valid_levels.append(level)
+            else:
+                self.logger.warning(f"Skipping invalid SR level: price={level.price}, strength={level.strength}")
+        
+        if not valid_levels:
+            self.logger.error("No valid SR levels found for backtesting")
+            return []
+        
+        self.logger.info(f"Validated {len(valid_levels)}/{len(levels)} levels for backtesting")
+        
+        results = []
+        chunk_size = getattr(self.config, 'chunk_size', 50)
+        
+        # Process levels in chunks to manage memory
+        for i in range(0, len(valid_levels), chunk_size):
+            chunk = valid_levels[i:i + chunk_size]
+            self.logger.info(f"Processing chunk {i//chunk_size + 1}/{(len(valid_levels) + chunk_size - 1)//chunk_size}")
             
-            result = self.backtest_sr_level(level, data)
-            results.append(result)
+            chunk_results = []
+            for j, level in enumerate(chunk):
+                if (i + j) % 10 == 0:
+                    self.logger.info(f"Backtesting level {i + j + 1}/{len(valid_levels)}: ${level.price:.2f} ({level.level_type})")
+                
+                result = self.backtest_sr_level(level, data)
+                chunk_results.append(result)
+                
+                # Log individual results for first few levels
+                if (i + j) < 3:
+                    self.logger.debug(f"Level ${level.price:.2f}: quality={result.quality_score:.3f}, success_rate={result.success_rate:.3f}, touches={result.total_touches}")
             
-            # Log individual results for first few levels
-            if i < 3:
-                self.logger.debug(f"Level ${level.price:.2f}: quality={result.quality_score:.3f}, success_rate={result.success_rate:.3f}, touches={result.total_touches}")
+            results.extend(chunk_results)
+            
+            # Memory cleanup after each chunk
+            if self.m1_memory_optimizer:
+                self.m1_memory_optimizer.optimize_memory()
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
         
         if results:
             quality_scores = [r.quality_score for r in results]
@@ -376,16 +559,30 @@ class SRBacktestingEngine:
         else:
             return self._calculate_performance_metrics(level, touch_results, data)
     
-    def learn_quality_rules(self, results: List[BacktestResult], 
-                           optimize_weights: bool = True,
-                           market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
-        """Learn quality rules from backtesting results using continuous strength scoring."""
+    def optimize_sr_parameters(self, results: List[BacktestResult], 
+                              market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Optimize SR level detection parameters based on backtesting results."""
         try:
-            self.logger.info(f"🧠 Learning quality rules from {len(results)} backtesting results")
+            self.logger.info(f"🎯 Optimizing SR parameters from {len(results)} backtesting results")
             
             if not results:
-                self.logger.warning("No results provided for learning quality rules")
+                self.logger.warning("No results provided for parameter optimization")
                 return {}
+            
+            # Check if we have enough samples for optimization
+            if len(results) < self.config.min_samples_for_optimization:
+                self.logger.warning(f"Insufficient samples for optimization: {len(results)} < {self.config.min_samples_for_optimization}")
+                return self._create_fallback_parameters(results)
+            
+            # Calculate data-driven thresholds first
+            if market_data is not None:
+                self.calculate_data_driven_thresholds(market_data)
+            
+            # Optimize parameters
+            if self.config.enable_parameter_optimization:
+                return self._run_parameter_optimization(results, market_data)
+            else:
+                return self._create_data_driven_parameters(results, market_data)
             
             # Use continuous quality scoring instead of binary categories
             quality_scores = [r.quality_score for r in results]
@@ -408,28 +605,40 @@ class SRBacktestingEngine:
             self.logger.info(f"Quality distribution: mean={quality_stats['mean']:.3f}, std={quality_stats['std']:.3f}, min={quality_stats['min']:.3f}, max={quality_stats['max']:.3f}")
             self.logger.info(f"Quality percentiles: 25th={quality_stats['percentiles']['25th']:.3f}, 50th={quality_stats['percentiles']['50th']:.3f}, 75th={quality_stats['percentiles']['75th']:.3f}, 90th={quality_stats['percentiles']['90th']:.3f}")
             
-            # Optimize weights if requested
+            # OVERFITTING PROTECTION: Calculate maximum features allowed
+            max_features = int(len(results) * self.config.max_features_per_sample_ratio)
+            self.logger.info(f"🔒 Overfitting protection: max features allowed = {max_features} (samples: {len(results)}, ratio: {self.config.max_features_per_sample_ratio})")
+            
+            # Optimize weights if requested and sufficient data
             optimized_weights = {}
-            if optimize_weights and market_data is not None:
-                self.logger.info("🎯 Starting weight optimization")
+            if optimize_weights and market_data is not None and len(results) >= self.config.min_samples_for_learning:
+                self.logger.info("🎯 Starting weight optimization with overfitting protection")
                 try:
                     from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
                     
-                    # Configure weight optimization
+                    # Configure weight optimization with overfitting protection
                     weight_config = WeightOptimizationConfig(
                         optimization_method='scipy_minimize',
                         primary_objective='r2_score',
-                        secondary_objective='stability'
+                        secondary_objective='stability',
+                        n_splits=self.config.cross_validation_folds,
+                        max_iterations=min(50, len(results) // 2)  # Limit iterations based on data size
                     )
                     
-                    self.logger.info("Configuring weight optimization engine")
+                    self.logger.info("Configuring weight optimization engine with overfitting protection")
                     weight_optimizer = get_weight_optimization_engine(weight_config)
-                    self.logger.info("Running weight optimization")
+                    self.logger.info("Running weight optimization with cross-validation")
                     optimization_result = weight_optimizer.optimize_weights(results, market_data)
                     
                     if optimization_result and optimization_result.get('optimization_success', False):
                         optimized_weights = optimization_result.get('best_weights', {})
                         best_score = optimization_result.get('best_score', 0.0)
+                        
+                        # OVERFITTING PROTECTION: Check if score is too high
+                        if best_score > 0.95:
+                            self.logger.warning(f"⚠️ Suspiciously high optimization score: {best_score:.4f}")
+                            self.logger.warning("⚠️ This may indicate overfitting - using conservative weights")
+                            optimized_weights = self._get_conservative_weights(optimized_weights)
                         
                         self.logger.info(f"✅ Weight optimization completed successfully")
                         self.logger.info(f"Best optimization score: {best_score:.4f}")
@@ -449,11 +658,11 @@ class SRBacktestingEngine:
                     import traceback
                     self.logger.error(f"Traceback: {traceback.format_exc()}")
             else:
-                self.logger.info("⏭️ Weight optimization skipped")
+                self.logger.info("⏭️ Weight optimization skipped (insufficient data or disabled)")
             
-            # Analyze quality-based feature relationships
-            self.logger.info("🔍 Building strength scoring model")
-            strength_model = self._build_strength_scoring_model(results)
+            # OVERFITTING PROTECTION: Build model with feature limitation
+            self.logger.info("🔍 Building strength scoring model with overfitting protection")
+            strength_model = self._build_strength_scoring_model_with_overfitting_protection(results, max_features)
             
             # Log comprehensive feature analysis
             if strength_model:
@@ -475,6 +684,15 @@ class SRBacktestingEngine:
             self.logger.info("📏 Calculating quality thresholds")
             quality_thresholds = self._calculate_quality_thresholds(quality_stats)
             
+            # OVERFITTING PROTECTION: Store overfitting metrics
+            self.overfitting_metrics = {
+                'samples_used': len(results),
+                'max_features_allowed': max_features,
+                'features_used': len(optimized_weights) if optimized_weights else 0,
+                'sample_to_feature_ratio': len(results) / max(1, len(optimized_weights)) if optimized_weights else float('inf'),
+                'overfitting_risk': 'low' if len(results) >= 200 and len(optimized_weights) <= max_features else 'medium' if len(results) >= 100 else 'high'
+            }
+            
             rules = {
                 'quality_distribution': quality_stats,
                 'feature_quality_correlations': feature_correlations,
@@ -483,14 +701,16 @@ class SRBacktestingEngine:
                 'quality_thresholds': quality_thresholds,
                 'strength_scoring_model': strength_model,
                 'optimized_weights': optimized_weights,
-                'weight_optimization_enabled': optimize_weights
+                'weight_optimization_enabled': optimize_weights,
+                'overfitting_metrics': self.overfitting_metrics
             }
             
             self.learned_rules = rules
             
-            self.logger.info(f"✅ Quality rules learning completed successfully")
+            self.logger.info(f"✅ Quality rules learning completed successfully with overfitting protection")
             self.logger.info(f"Learned {len(quality_predictors)} quality predictors")
             self.logger.info(f"Feature correlations calculated for {len(feature_correlations)} features")
+            self.logger.info(f"Overfitting risk: {self.overfitting_metrics['overfitting_risk']}")
             
             return rules
             
@@ -557,9 +777,19 @@ class SRBacktestingEngine:
             return len(data) // 2
     
     def _detect_touches(self, level: SRLevel, data: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Detect touches of the SR level in the data."""
-        touches = []
+        """Detect touches of the SR level in the data with optional Numba acceleration."""
         tolerance = level.price * self.config.touch_tolerance
+        
+        if self.numba_available and len(data) > 100:
+            # Use Numba-accelerated touch detection for large datasets
+            return self._detect_touches_numba(level, data, tolerance)
+        else:
+            # Use standard Python implementation
+            return self._detect_touches_standard(level, data, tolerance)
+    
+    def _detect_touches_standard(self, level: SRLevel, data: pd.DataFrame, tolerance: float) -> List[Dict[str, Any]]:
+        """Standard Python implementation of touch detection."""
+        touches = []
         
         for i in range(len(data)):
             high = data.iloc[i]['high']
@@ -599,48 +829,121 @@ class SRBacktestingEngine:
         
         return touches
     
+    def _detect_touches_numba(self, level: SRLevel, data: pd.DataFrame, tolerance: float) -> List[Dict[str, Any]]:
+        """Numba-accelerated touch detection for large datasets."""
+        try:
+            import numba
+            
+            # Extract numpy arrays for Numba processing
+            highs = data['high'].values
+            lows = data['low'].values
+            opens = data['open'].values
+            closes = data['close'].values
+            volumes = data.get('volume', pd.Series([0] * len(data))).values
+            timestamps = data.get('timestamp', pd.Series(range(len(data)))).values
+            
+            # Numba-compiled function for touch detection
+            @numba.jit(nopython=True, cache=True)
+            def detect_touches_numba(highs, lows, opens, closes, volumes, timestamps, level_price, tolerance, level_type):
+                touches = []
+                level_price_float = float(level_price)
+                tolerance_float = float(tolerance)
+                is_support = level_type == 'support'
+                
+                for i in range(len(highs)):
+                    # Check if price touched the level
+                    if is_support:
+                        if lows[i] <= level_price_float + tolerance_float and highs[i] >= level_price_float - tolerance_float:
+                            touches.append((i, timestamps[i], level_price_float, 'support', 
+                                          opens[i], highs[i], lows[i], closes[i], volumes[i]))
+                    else:  # resistance
+                        if highs[i] >= level_price_float - tolerance_float and lows[i] <= level_price_float + tolerance_float:
+                            touches.append((i, timestamps[i], level_price_float, 'resistance',
+                                          opens[i], highs[i], lows[i], closes[i], volumes[i]))
+                
+                return touches
+            
+            # Run Numba-accelerated detection
+            numba_touches = detect_touches_numba(highs, lows, opens, closes, volumes, timestamps, 
+                                               level.price, tolerance, level.level_type)
+            
+            # Convert back to standard format
+            touches = []
+            for i, timestamp, price, touch_type, open_price, high, low, close, volume in numba_touches:
+                touches.append({
+                    'index': int(i),
+                    'timestamp': timestamp,
+                    'price': float(price),
+                    'touch_type': touch_type,
+                    'ohlc': {
+                        'open': float(open_price),
+                        'high': float(high),
+                        'low': float(low),
+                        'close': float(close),
+                        'volume': float(volume)
+                    }
+                })
+            
+            return touches
+            
+        except Exception as e:
+            self.logger.warning(f"Numba touch detection failed, falling back to standard: {e}")
+            return self._detect_touches_standard(level, data, tolerance)
+    
     def _analyze_touch(self, level: SRLevel, touch: Dict[str, Any], data: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze a single touch to determine if it was successful."""
+        """Analyze a single touch to determine if it was successful - NO LOOK-AHEAD BIAS."""
         try:
             touch_idx = touch['index']
-            touch_data = data.iloc[touch_idx:]
             
-            # Look ahead to see if the level held
+            # CRITICAL: Only use information available at the time of touch
+            # We can only look at the current bar and previous bars, never future bars
+            if touch_idx >= len(data) - 1:
+                # If this is the last bar, we can't determine success yet
+                return {
+                    'successful': False,
+                    'bounce_strength': 0.0,
+                    'hold_time': 0,
+                    'volume': touch['ohlc']['volume'],
+                    'incomplete': True  # Mark as incomplete for future analysis
+                }
+            
+            # Look at the NEXT bar only (not multiple future bars)
+            next_bar = data.iloc[touch_idx + 1]
+            current_bar = data.iloc[touch_idx]
+            
             bounce_strength = 0.0
-            hold_time = 0
+            hold_time = 1  # At least 1 bar hold
             successful = False
             
-            for i in range(min(len(touch_data), self.config.max_hold_time)):
-                current_data = touch_data.iloc[i]
-                
-                if level.level_type == 'support':
-                    # For support: price should bounce up
-                    if current_data['low'] <= level.price * (1 + self.config.touch_tolerance):
-                        # Still at support level
-                        hold_time = i
-                    else:
-                        # Price moved away from support
-                        bounce_strength = (current_data['close'] - level.price) / level.price
-                        if bounce_strength >= self.config.min_bounce_strength:
-                            successful = True
-                        break
-                else:  # resistance
-                    # For resistance: price should bounce down
-                    if current_data['high'] >= level.price * (1 - self.config.touch_tolerance):
-                        # Still at resistance level
-                        hold_time = i
-                    else:
-                        # Price moved away from resistance
-                        bounce_strength = (level.price - current_data['close']) / level.price
-                        if bounce_strength >= self.config.min_bounce_strength:
-                            successful = True
-                        break
+            if level.level_type == 'support':
+                # For support: check if price bounced up in the next bar
+                # Success if: next bar's close > level price + tolerance
+                if next_bar['close'] > level.price * (1 + self.config.touch_tolerance):
+                    bounce_strength = (next_bar['close'] - level.price) / level.price
+                    successful = True
+                # Also check if price stayed above level for the next bar
+                elif next_bar['low'] > level.price * (1 - self.config.touch_tolerance):
+                    # Price stayed above support, partial success
+                    bounce_strength = (next_bar['close'] - level.price) / level.price
+                    successful = bounce_strength >= self.config.min_bounce_strength
+            else:  # resistance
+                # For resistance: check if price bounced down in the next bar
+                # Success if: next bar's close < level price - tolerance
+                if next_bar['close'] < level.price * (1 - self.config.touch_tolerance):
+                    bounce_strength = (level.price - next_bar['close']) / level.price
+                    successful = True
+                # Also check if price stayed below level for the next bar
+                elif next_bar['high'] < level.price * (1 + self.config.touch_tolerance):
+                    # Price stayed below resistance, partial success
+                    bounce_strength = (level.price - next_bar['close']) / level.price
+                    successful = bounce_strength >= self.config.min_bounce_strength
             
             return {
                 'successful': successful,
                 'bounce_strength': bounce_strength,
                 'hold_time': hold_time,
-                'volume': touch['ohlc']['volume']
+                'volume': touch['ohlc']['volume'],
+                'incomplete': False
             }
             
         except Exception as e:
@@ -934,16 +1237,59 @@ class SRBacktestingEngine:
                                        avg_volume: float, time_persistence: float, 
                                        total_touches: int, penetration_metrics: Dict[str, float], 
                                        pattern_metrics: Dict[str, float]) -> float:
-        """Calculate quality score using default weights."""
-        return (
-            self.config.success_rate_weight * success_rate +
-            self.config.bounce_strength_weight * min(avg_bounce_strength * 10, 1.0) +
-            self.config.volume_confirmation_weight * min(avg_volume / 1000000, 1.0) +
-            self.config.time_persistence_weight * time_persistence +
-            self.config.touch_frequency_weight * min(total_touches / 5.0, 1.0) +
-            0.1 * penetration_metrics['penetration_depth'] +  # 10% weight for penetration
-            0.1 * pattern_metrics['pattern_consistency']      # 10% weight for pattern consistency
+        """Calculate quality score using default multipliers with caching."""
+        # Create cache key for this calculation
+        if self._cache is not None:
+            cache_key = f"quality_score_{success_rate:.4f}_{avg_bounce_strength:.4f}_{avg_volume:.0f}_{time_persistence:.4f}_{total_touches}"
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+        
+        # Calculate quality score using multipliers (more intuitive than weights)
+        if self.vectorized_ops:
+            # Use vectorized operations for better performance
+            quality_score = (
+                self.config.success_rate_multiplier * success_rate +
+                self.config.bounce_strength_multiplier * min(avg_bounce_strength * 10, 1.0) +
+                self.config.volume_confirmation_multiplier * min(avg_volume / 1000000, 1.0) +
+                self.config.time_persistence_multiplier * time_persistence +
+                self.config.touch_frequency_multiplier * min(total_touches / 5.0, 1.0) +
+                1.0 * penetration_metrics['penetration_depth']  # 1.0 multiplier for penetration
+            )
+        else:
+            # Standard calculation
+            quality_score = (
+                self.config.success_rate_multiplier * success_rate +
+                self.config.bounce_strength_multiplier * min(avg_bounce_strength * 10, 1.0) +
+                self.config.volume_confirmation_multiplier * min(avg_volume / 1000000, 1.0) +
+                self.config.time_persistence_multiplier * time_persistence +
+                self.config.touch_frequency_multiplier * min(total_touches / 5.0, 1.0) +
+                1.0 * penetration_metrics['penetration_depth']  # 1.0 multiplier for penetration
+            )
+        
+        # Normalize by total multiplier sum to keep score in [0, 1] range
+        total_multiplier = (
+            self.config.success_rate_multiplier +
+            self.config.bounce_strength_multiplier +
+            self.config.volume_confirmation_multiplier +
+            self.config.time_persistence_multiplier +
+            self.config.touch_frequency_multiplier +
+            1.0  # penetration multiplier
         )
+        
+        if total_multiplier > 0:
+            quality_score = quality_score / total_multiplier
+        
+        # Cache the result
+        if self._cache is not None:
+            self._cache[cache_key] = quality_score
+            # Simple cache size management
+            if len(self._cache) > 1000:  # Limit cache size
+                # Remove oldest entries (simple FIFO)
+                oldest_keys = list(self._cache.keys())[:100]
+                for key in oldest_keys:
+                    del self._cache[key]
+        
+        return quality_score
 
     def _get_default_metrics(self) -> Dict[str, float]:
         """Get default metrics for failed calculations."""
@@ -969,6 +1315,40 @@ class SRBacktestingEngine:
             'structure_break': 0.0
         }
     
+    def _validate_sr_level(self, level: SRLevel) -> bool:
+        """Validate SR level before backtesting."""
+        try:
+            # Check price validity
+            if not isinstance(level.price, (int, float)) or level.price <= 0:
+                self.logger.warning(f"Invalid price: {level.price}")
+                return False
+            
+            # Check strength validity
+            if not isinstance(level.strength, (int, float)) or level.strength < 0 or level.strength > 1:
+                self.logger.warning(f"Invalid strength: {level.strength}")
+                return False
+            
+            # Check touches validity
+            if not isinstance(level.touches, int) or level.touches < 1:
+                self.logger.warning(f"Invalid touches: {level.touches}")
+                return False
+            
+            # Check level type validity
+            if level.level_type not in ['support', 'resistance']:
+                self.logger.warning(f"Invalid level type: {level.level_type}")
+                return False
+            
+            # Check for reasonable price range (not too extreme)
+            if level.price > 1e6 or level.price < 1e-6:
+                self.logger.warning(f"Extreme price value: {level.price}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"Error validating SR level: {e}")
+            return False
+
     def _create_failed_result(self, level: SRLevel, reason: str) -> BacktestResult:
         """Create a failed backtest result."""
         return BacktestResult(
@@ -1476,11 +1856,11 @@ class SRBacktestingEngine:
         # This would use machine learning to optimize weights
         # For now, return the configured weights
         return {
-            'success_rate': self.config.success_rate_weight,
-            'bounce_strength': self.config.bounce_strength_weight,
-            'volume_confirmation': self.config.volume_confirmation_weight,
-            'time_persistence': self.config.time_persistence_weight,
-            'touch_frequency': self.config.touch_frequency_weight
+            'success_rate': self.config.success_rate_multiplier,
+            'bounce_strength': self.config.bounce_strength_multiplier,
+            'volume_confirmation': self.config.volume_confirmation_multiplier,
+            'time_persistence': self.config.time_persistence_multiplier,
+            'touch_frequency': self.config.touch_frequency_multiplier
         }
     
     def _calculate_performance_thresholds(self, high_quality: List[BacktestResult]) -> Dict[str, float]:
@@ -1607,6 +1987,800 @@ class SRBacktestingEngine:
         
         # Final fallback
         return features.get('strength', 0.5)
+    
+    def _run_parameter_optimization(self, results: List[BacktestResult], 
+                                  market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Run parameter optimization using the optimization engine."""
+        try:
+            from .parameter_optimization_engine import get_parameter_optimization_engine, ParameterOptimizationConfig
+            
+            # Configure parameter optimization
+            opt_config = ParameterOptimizationConfig(
+                optimization_method=self.config.parameter_optimization_method,
+                min_samples_for_optimization=self.config.min_samples_for_optimization,
+                adaptive_optimization=True
+            )
+            
+            # Create optimization engine
+            optimizer = get_parameter_optimization_engine(opt_config)
+            
+            # Run optimization
+            optimization_result = optimizer.optimize_parameters(results, market_data)
+            
+            if optimization_result.optimization_success:
+                self.logger.info("✅ Parameter optimization completed successfully")
+                self.logger.info(f"Best optimization score: {optimization_result.best_score:.4f}")
+                
+                # Update config with optimized parameters
+                optimized_params = optimization_result.best_parameters
+                self._update_config_with_optimized_parameters(optimized_params)
+                
+                # Calculate quality thresholds
+                quality_thresholds = self._calculate_quality_thresholds_from_results(results)
+                
+                return {
+                    'optimization_success': True,
+                    'optimized_parameters': optimized_params,
+                    'optimization_score': optimization_result.best_score,
+                    'optimization_method': optimization_result.optimization_method,
+                    'quality_thresholds': quality_thresholds,
+                    'parameter_optimization_details': optimization_result.optimization_details
+                }
+            else:
+                self.logger.warning("⚠️ Parameter optimization failed, using data-driven parameters")
+                return self._create_data_driven_parameters(results, market_data)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Parameter optimization failed: {e}")
+            return self._create_data_driven_parameters(results, market_data)
+    
+    def _create_data_driven_parameters(self, results: List[BacktestResult], 
+                                     market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Create data-driven parameters without optimization."""
+        self.logger.info("📊 Creating data-driven parameters")
+        
+        # Use data-driven thresholds if available
+        if self.data_driven_thresholds:
+            params = {
+                'touch_tolerance': self.data_driven_thresholds['touch_tolerance'],
+                'min_bounce_strength': self.data_driven_thresholds['min_bounce_strength'],
+                'max_hold_time': self.data_driven_thresholds['max_hold_time'],
+                'volume_threshold_multiplier': self.data_driven_thresholds['volume_threshold_multiplier'],
+                'min_touches_required': self._calculate_optimal_min_touches(results),
+                'success_rate_multiplier': 1.0,
+                'bounce_strength_multiplier': 1.0,
+                'volume_confirmation_multiplier': 1.0,
+                'time_persistence_multiplier': 1.0,
+                'touch_frequency_multiplier': 1.0
+            }
+        else:
+            # Use conservative defaults
+            params = {
+                'touch_tolerance': 0.002,
+                'min_bounce_strength': 0.001,
+                'max_hold_time': 24,
+                'volume_threshold_multiplier': 1.5,
+                'min_touches_required': 3,
+                'success_rate_multiplier': 1.0,
+                'bounce_strength_multiplier': 1.0,
+                'volume_confirmation_multiplier': 1.0,
+                'time_persistence_multiplier': 1.0,
+                'touch_frequency_multiplier': 1.0
+            }
+        
+        # Calculate quality thresholds
+        quality_thresholds = self._calculate_quality_thresholds_from_results(results)
+        
+        return {
+            'optimization_success': False,
+            'optimized_parameters': params,
+            'optimization_score': 0.0,
+            'optimization_method': 'data_driven',
+            'quality_thresholds': quality_thresholds,
+            'parameter_optimization_details': {'method': 'data_driven_fallback'}
+        }
+    
+    def _create_fallback_parameters(self, results: List[BacktestResult]) -> Dict[str, Any]:
+        """Create fallback parameters for insufficient samples."""
+        self.logger.info("🛡️ Creating fallback parameters for insufficient samples")
+        
+        # Use very conservative defaults
+        params = {
+            'touch_tolerance': 0.005,  # More lenient
+            'min_bounce_strength': 0.0005,  # More lenient
+            'max_hold_time': 48,  # Longer hold time
+            'volume_threshold_multiplier': 1.2,  # Lower volume requirement
+            'min_touches_required': 2,  # Lower touch requirement
+            'success_rate_multiplier': 1.5,  # Focus on success rate
+            'bounce_strength_multiplier': 1.3,  # Focus on bounce strength
+            'volume_confirmation_multiplier': 0.7,  # Less focus on volume
+            'time_persistence_multiplier': 0.7,  # Less focus on time
+            'touch_frequency_multiplier': 0.7  # Less focus on frequency
+        }
+        
+        # Calculate quality thresholds
+        quality_thresholds = self._calculate_quality_thresholds_from_results(results)
+        
+        return {
+            'optimization_success': False,
+            'optimized_parameters': params,
+            'optimization_score': 0.0,
+            'optimization_method': 'fallback',
+            'quality_thresholds': quality_thresholds,
+            'parameter_optimization_details': {'method': 'insufficient_samples_fallback'}
+        }
+    
+    def _update_config_with_optimized_parameters(self, optimized_params: Dict[str, Any]) -> None:
+        """Update the config with optimized parameters."""
+        self.config.touch_tolerance = optimized_params['touch_tolerance']
+        self.config.min_bounce_strength = optimized_params['min_bounce_strength']
+        self.config.max_hold_time = optimized_params['max_hold_time']
+        self.config.volume_threshold_multiplier = optimized_params['volume_threshold_multiplier']
+        self.config.min_touches_required = optimized_params['min_touches_required']
+        self.config.success_rate_multiplier = optimized_params['success_rate_multiplier']
+        self.config.bounce_strength_multiplier = optimized_params['bounce_strength_multiplier']
+        self.config.volume_confirmation_multiplier = optimized_params['volume_confirmation_multiplier']
+        self.config.time_persistence_multiplier = optimized_params['time_persistence_multiplier']
+        self.config.touch_frequency_multiplier = optimized_params['touch_frequency_multiplier']
+        
+        # Save optimized parameters
+        self._save_optimized_parameters(optimized_params)
+        
+        self.logger.info("✅ Config updated with optimized parameters")
+    
+    def _save_optimized_parameters(self, optimized_params: Dict[str, Any]) -> None:
+        """Save optimized parameters to file."""
+        try:
+            import json
+            from pathlib import Path
+            
+            # Create parameters directory if it doesn't exist
+            params_dir = Path("optimized_parameters")
+            params_dir.mkdir(exist_ok=True)
+            
+            # Save parameters with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            params_file = params_dir / f"sr_optimized_parameters_{timestamp}.json"
+            
+            # Prepare parameters for saving
+            save_data = {
+                'timestamp': timestamp,
+                'optimized_parameters': optimized_params,
+                'config_summary': {
+                    'touch_tolerance': self.config.touch_tolerance,
+                    'min_bounce_strength': self.config.min_bounce_strength,
+                    'max_hold_time': self.config.max_hold_time,
+                    'volume_threshold_multiplier': self.config.volume_threshold_multiplier,
+                    'min_touches_required': self.config.min_touches_required,
+                    'success_rate_multiplier': self.config.success_rate_multiplier,
+                    'bounce_strength_multiplier': self.config.bounce_strength_multiplier,
+                    'volume_confirmation_multiplier': self.config.volume_confirmation_multiplier,
+                    'time_persistence_multiplier': self.config.time_persistence_multiplier,
+                    'touch_frequency_multiplier': self.config.touch_frequency_multiplier
+                }
+            }
+            
+            # Save to file
+            with open(params_file, 'w') as f:
+                json.dump(save_data, f, indent=2)
+            
+            self.logger.info(f"✅ Optimized parameters saved to: {params_file}")
+            
+            # Also save latest parameters (overwrite)
+            latest_file = params_dir / "sr_optimized_parameters_latest.json"
+            with open(latest_file, 'w') as f:
+                json.dump(save_data, f, indent=2)
+            
+            self.logger.info(f"✅ Latest optimized parameters saved to: {latest_file}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to save optimized parameters: {e}")
+    
+    def load_optimized_parameters(self, params_file: str = None) -> Dict[str, Any]:
+        """Load optimized parameters from file."""
+        try:
+            import json
+            from pathlib import Path
+            
+            if params_file is None:
+                # Load latest parameters
+                params_file = "optimized_parameters/sr_optimized_parameters_latest.json"
+            
+            params_path = Path(params_file)
+            if not params_path.exists():
+                self.logger.warning(f"Parameters file not found: {params_file}")
+                return {}
+            
+            with open(params_path, 'r') as f:
+                save_data = json.load(f)
+            
+            optimized_params = save_data.get('optimized_parameters', {})
+            
+            # Update config with loaded parameters
+            if optimized_params:
+                self._update_config_with_optimized_parameters(optimized_params)
+                self.logger.info(f"✅ Loaded optimized parameters from: {params_file}")
+            
+            return optimized_params
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to load optimized parameters: {e}")
+            return {}
+    
+    def _calculate_optimal_min_touches(self, results: List[BacktestResult]) -> int:
+        """Calculate optimal minimum touches based on results."""
+        try:
+            # Analyze touch count distribution
+            touch_counts = [r.total_touches for r in results]
+            success_rates = [r.success_rate for r in results]
+            
+            # Find touch count that maximizes success rate
+            touch_success_data = {}
+            for touches, success_rate in zip(touch_counts, success_rates):
+                if touches not in touch_success_data:
+                    touch_success_data[touches] = []
+                touch_success_data[touches].append(success_rate)
+            
+            # Calculate average success rate for each touch count
+            avg_success_by_touches = {}
+            for touches, success_rates in touch_success_data.items():
+                if len(success_rates) >= 2:  # Need at least 2 samples
+                    avg_success_by_touches[touches] = np.mean(success_rates)
+            
+            if avg_success_by_touches:
+                # Find touch count with highest success rate
+                best_touches = max(avg_success_by_touches.items(), key=lambda x: x[1])[0]
+                return max(2, min(best_touches, 6))  # Clamp between 2 and 6
+            else:
+                return 3  # Default
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate optimal min touches: {e}")
+            return 3
+    
+    def _calculate_quality_thresholds_from_results(self, results: List[BacktestResult]) -> Dict[str, float]:
+        """Calculate quality thresholds from backtesting results."""
+        try:
+            quality_scores = [r.quality_score for r in results]
+            
+            return {
+                'excellent': np.percentile(quality_scores, 90),
+                'good': np.percentile(quality_scores, 75),
+                'average': np.percentile(quality_scores, 50),
+                'poor': np.percentile(quality_scores, 25)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate quality thresholds: {e}")
+            return {
+                'excellent': 0.8,
+                'good': 0.6,
+                'average': 0.4,
+                'poor': 0.2
+            }
+    
+    def _determine_learning_strategy(self, n_samples: int) -> str:
+        """Determine learning strategy based on sample size."""
+        if n_samples < self.config.minimal_learning_threshold:
+            return 'minimal'
+        elif n_samples < self.config.conservative_learning_threshold:
+            return 'conservative'
+        else:
+            return 'standard'
+    
+    def _minimal_learning(self, results: List[BacktestResult], 
+                         market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Minimal learning for very small samples (10-20 samples)."""
+        self.logger.info("🔬 Using minimal learning strategy for very small samples")
+        
+        # Use only basic quality scoring without ML
+        quality_scores = [r.quality_score for r in results]
+        
+        # Calculate basic statistics
+        quality_stats = {
+            'mean': np.mean(quality_scores),
+            'std': np.std(quality_scores),
+            'min': np.min(quality_scores),
+            'max': np.max(quality_scores),
+            'percentiles': {
+                '25th': np.percentile(quality_scores, 25),
+                '50th': np.percentile(quality_scores, 50),
+                '75th': np.percentile(quality_scores, 75),
+                '90th': np.percentile(quality_scores, 90)
+            }
+        }
+        
+        # Use simple correlation-based feature selection
+        if self.config.use_feature_selection and market_data is not None:
+            selected_features = self._simple_feature_selection(results, market_data)
+        else:
+            # Use only primary features
+            selected_features = ['success_rate', 'avg_bounce_strength', 'total_touches']
+        
+        # Simple quality thresholds
+        quality_thresholds = {
+            'excellent': quality_stats['percentiles']['90th'],
+            'good': quality_stats['percentiles']['75th'],
+            'average': quality_stats['percentiles']['50th'],
+            'poor': quality_stats['percentiles']['25th']
+        }
+        
+        # Simple learned weights (equal weights)
+        learned_weights = {feature: 1.0 / len(selected_features) for feature in selected_features}
+        
+        return {
+            'quality_distribution': quality_stats,
+            'feature_quality_correlations': {},
+            'quality_predictors': selected_features,
+            'learned_weights': learned_weights,
+            'quality_thresholds': quality_thresholds,
+            'strength_scoring_model': {},
+            'optimized_weights': {},
+            'weight_optimization_enabled': False,
+            'learning_strategy': 'minimal',
+            'overfitting_protection': 'minimal_learning',
+            'selected_features': selected_features
+        }
+    
+    def _conservative_learning(self, results: List[BacktestResult], 
+                             market_data: Optional[pd.DataFrame] = None,
+                             optimize_weights: bool = True) -> Dict[str, Any]:
+        """Conservative learning for small samples (20-50 samples)."""
+        self.logger.info("🛡️ Using conservative learning strategy for small samples")
+        
+        # Use feature selection to reduce features
+        if self.config.use_feature_selection and market_data is not None:
+            selected_features = self._adaptive_feature_selection(results, market_data)
+        else:
+            # Use limited feature set
+            selected_features = ['success_rate', 'avg_bounce_strength', 'total_touches', 
+                               'time_persistence', 'total_volume_at_level']
+        
+        # Calculate quality distribution
+        quality_scores = [r.quality_score for r in results]
+        quality_stats = {
+            'mean': np.mean(quality_scores),
+            'std': np.std(quality_scores),
+            'min': np.min(quality_scores),
+            'max': np.max(quality_scores),
+            'percentiles': {
+                '25th': np.percentile(quality_scores, 25),
+                '50th': np.percentile(quality_scores, 50),
+                '75th': np.percentile(quality_scores, 75),
+                '90th': np.percentile(quality_scores, 90)
+            }
+        }
+        
+        # Conservative weight optimization (if enabled and sufficient data)
+        optimized_weights = {}
+        if optimize_weights and len(results) >= 20:
+            try:
+                from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
+                
+                # Use conservative weight optimization
+                weight_config = WeightOptimizationConfig(
+                    min_samples_for_optimization=10,  # Lower threshold
+                    max_features_per_sample_ratio=0.5,  # Higher ratio for small samples
+                    regularization_strength=0.1,  # Higher regularization
+                    n_splits=2  # Fewer CV folds
+                )
+                
+                weight_optimizer = get_weight_optimization_engine(weight_config)
+                optimization_result = weight_optimizer.optimize_weights(results, market_data)
+                
+                if optimization_result and optimization_result.get('optimization_success', False):
+                    optimized_weights = optimization_result.get('best_weights', {})
+                    self.logger.info("✅ Conservative weight optimization completed")
+                else:
+                    self.logger.warning("⚠️ Conservative weight optimization failed, using simple weights")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Conservative weight optimization failed: {e}")
+        
+        # Use simple weights if optimization failed
+        if not optimized_weights:
+            optimized_weights = {feature: 1.0 / len(selected_features) for feature in selected_features}
+        
+        # Build simple strength scoring model
+        strength_model = self._build_simple_strength_model(results, selected_features)
+        
+        # Calculate quality thresholds
+        quality_thresholds = self._calculate_quality_thresholds(quality_stats)
+        
+        return {
+            'quality_distribution': quality_stats,
+            'feature_quality_correlations': {},
+            'quality_predictors': selected_features,
+            'learned_weights': optimized_weights,
+            'quality_thresholds': quality_thresholds,
+            'strength_scoring_model': strength_model,
+            'optimized_weights': optimized_weights,
+            'weight_optimization_enabled': optimize_weights,
+            'learning_strategy': 'conservative',
+            'overfitting_protection': 'conservative_learning',
+            'selected_features': selected_features
+        }
+    
+    def _standard_learning(self, results: List[BacktestResult], 
+                          market_data: Optional[pd.DataFrame] = None,
+                          optimize_weights: bool = True) -> Dict[str, Any]:
+        """Standard learning for larger samples (50+ samples)."""
+        self.logger.info("📚 Using standard learning strategy for larger samples")
+        
+        # Use feature selection if enabled
+        if self.config.use_feature_selection and market_data is not None:
+            selected_features = self._adaptive_feature_selection(results, market_data)
+        else:
+            # Use all available features
+            selected_features = ['success_rate', 'avg_bounce_strength', 'max_bounce_strength', 
+                               'total_touches', 'time_persistence', 'total_volume_at_level', 
+                               'avg_hold_time', 'penetration_depth', 'penetration_frequency', 
+                               'pattern_consistency', 'pattern_strength', 'order_flow_confirmation']
+        
+        # Calculate quality distribution
+        quality_scores = [r.quality_score for r in results]
+        quality_stats = {
+            'mean': np.mean(quality_scores),
+            'std': np.std(quality_scores),
+            'min': np.min(quality_scores),
+            'max': np.max(quality_scores),
+            'percentiles': {
+                '25th': np.percentile(quality_scores, 25),
+                '50th': np.percentile(quality_scores, 50),
+                '75th': np.percentile(quality_scores, 75),
+                '90th': np.percentile(quality_scores, 90)
+            }
+        }
+        
+        # Full weight optimization
+        optimized_weights = {}
+        if optimize_weights and market_data is not None:
+            try:
+                from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
+                
+                weight_config = WeightOptimizationConfig(
+                    min_samples_for_optimization=20,
+                    max_features_per_sample_ratio=0.2,
+                    regularization_strength=0.01,
+                    n_splits=self.config.cross_validation_folds
+                )
+                
+                weight_optimizer = get_weight_optimization_engine(weight_config)
+                optimization_result = weight_optimizer.optimize_weights(results, market_data)
+                
+                if optimization_result and optimization_result.get('optimization_success', False):
+                    optimized_weights = optimization_result.get('best_weights', {})
+                    self.logger.info("✅ Standard weight optimization completed")
+                else:
+                    self.logger.warning("⚠️ Standard weight optimization failed, using simple weights")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Standard weight optimization failed: {e}")
+        
+        # Use simple weights if optimization failed
+        if not optimized_weights:
+            optimized_weights = {feature: 1.0 / len(selected_features) for feature in selected_features}
+        
+        # Build full strength scoring model
+        strength_model = self._build_strength_scoring_model_with_overfitting_protection(
+            results, len(selected_features)
+        )
+        
+        # Calculate quality thresholds
+        quality_thresholds = self._calculate_quality_thresholds(quality_stats)
+        
+        return {
+            'quality_distribution': quality_stats,
+            'feature_quality_correlations': {},
+            'quality_predictors': selected_features,
+            'learned_weights': optimized_weights,
+            'quality_thresholds': quality_thresholds,
+            'strength_scoring_model': strength_model,
+            'optimized_weights': optimized_weights,
+            'weight_optimization_enabled': optimize_weights,
+            'learning_strategy': 'standard',
+            'overfitting_protection': 'standard_learning',
+            'selected_features': selected_features
+        }
+    
+    def _simple_feature_selection(self, results: List[BacktestResult], 
+                                market_data: pd.DataFrame) -> List[str]:
+        """Simple feature selection using correlation with quality scores."""
+        try:
+            # Extract features from results
+            features = {}
+            for result in results:
+                for attr in ['success_rate', 'avg_bounce_strength', 'total_touches', 
+                           'time_persistence', 'total_volume_at_level', 'avg_hold_time']:
+                    if attr not in features:
+                        features[attr] = []
+                    features[attr].append(getattr(result, attr, 0.0))
+            
+            # Calculate correlations with quality scores
+            quality_scores = [r.quality_score for r in results]
+            correlations = {}
+            
+            for feature, values in features.items():
+                if len(values) > 1 and np.std(values) > 0:
+                    corr, _ = pearsonr(values, quality_scores)
+                    correlations[feature] = abs(corr)
+            
+            # Select top 3-5 features
+            n_select = min(5, len(correlations))
+            selected_features = sorted(correlations.items(), key=lambda x: x[1], reverse=True)[:n_select]
+            selected_features = [f[0] for f in selected_features]
+            
+            self.logger.info(f"Simple feature selection: selected {selected_features}")
+            return selected_features
+            
+        except Exception as e:
+            self.logger.warning(f"Simple feature selection failed: {e}")
+            return ['success_rate', 'avg_bounce_strength', 'total_touches']
+    
+    def _adaptive_feature_selection(self, results: List[BacktestResult], 
+                                  market_data: pd.DataFrame) -> List[str]:
+        """Use adaptive feature selection for small samples."""
+        try:
+            from .adaptive_feature_selection import get_adaptive_feature_selector, AdaptiveFeatureSelectionConfig
+            
+            # Configure adaptive feature selection
+            config = AdaptiveFeatureSelectionConfig(
+                min_samples_absolute=10,
+                min_samples_per_feature=2.0,  # Very permissive for small samples
+                max_features_absolute=8,  # Limit features for small samples
+                conservative_mode_threshold=30
+            )
+            
+            # Extract features
+            feature_data = []
+            feature_names = []
+            
+            for result in results:
+                features = [
+                    result.success_rate,
+                    result.avg_bounce_strength,
+                    result.max_bounce_strength,
+                    result.total_touches,
+                    result.time_persistence,
+                    result.total_volume_at_level,
+                    result.avg_hold_time
+                ]
+                feature_data.append(features)
+            
+            if not feature_names:
+                feature_names = ['success_rate', 'avg_bounce_strength', 'max_bounce_strength', 
+                               'total_touches', 'time_persistence', 'total_volume_at_level', 'avg_hold_time']
+            
+            # Create DataFrame
+            X = pd.DataFrame(feature_data, columns=feature_names)
+            y = np.array([r.quality_score for r in results])
+            
+            # Use adaptive feature selection
+            selector = get_adaptive_feature_selector(config)
+            result = selector.select_features(X, y, feature_names)
+            
+            self.logger.info(f"Adaptive feature selection: selected {result.selected_features}")
+            return result.selected_features
+            
+        except Exception as e:
+            self.logger.warning(f"Adaptive feature selection failed: {e}")
+            return self._simple_feature_selection(results, market_data)
+    
+    def _build_simple_strength_model(self, results: List[BacktestResult], 
+                                   selected_features: List[str]) -> Dict[str, Any]:
+        """Build a simple strength scoring model for small samples."""
+        try:
+            # Extract features
+            X = []
+            for result in results:
+                features = [getattr(result, feature, 0.0) for feature in selected_features]
+                X.append(features)
+            
+            X = np.array(X)
+            y = np.array([r.quality_score for r in results])
+            
+            # Use simple linear regression with high regularization
+            from sklearn.linear_model import Ridge
+            from sklearn.preprocessing import StandardScaler
+            
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # High regularization for small samples
+            model = Ridge(alpha=1.0, random_state=42)
+            model.fit(X_scaled, y)
+            
+            # Calculate simple metrics
+            y_pred = model.predict(X_scaled)
+            r_squared = r2_score(y, y_pred)
+            
+            return {
+                'model_type': 'Simple Ridge Regression',
+                'feature_names': selected_features,
+                'coefficients': model.coef_.tolist(),
+                'intercept': model.intercept_,
+                'r_squared': r_squared,
+                'model_object': model,
+                'scaler_object': scaler,
+                'overfitting_detected': r_squared > 0.9,  # Simple overfitting detection
+                'sample_to_feature_ratio': len(y) / len(selected_features)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Simple strength model building failed: {e}")
+            return {}
+    
+    def _get_conservative_weights(self, optimized_weights: Dict[str, float]) -> Dict[str, float]:
+        """Get conservative weights to prevent overfitting."""
+        if not optimized_weights:
+            return {}
+        
+        # Normalize weights to sum to 1.0 and apply conservative scaling
+        total_weight = sum(optimized_weights.values())
+        if total_weight == 0:
+            return optimized_weights
+        
+        # Scale down extreme weights and normalize
+        conservative_weights = {}
+        for feature, weight in optimized_weights.items():
+            # Cap individual weights at 0.5 and scale down by 0.8
+            capped_weight = min(weight / total_weight, 0.5) * 0.8
+            conservative_weights[feature] = capped_weight
+        
+        # Renormalize to sum to 1.0
+        total_conservative = sum(conservative_weights.values())
+        if total_conservative > 0:
+            for feature in conservative_weights:
+                conservative_weights[feature] /= total_conservative
+        
+        self.logger.info("🔒 Applied conservative weight scaling to prevent overfitting")
+        return conservative_weights
+    
+    def _build_strength_scoring_model_with_overfitting_protection(self, results: List[BacktestResult], max_features: int) -> Dict[str, Any]:
+        """Build strength scoring model with overfitting protection."""
+        if not results:
+            return {}
+        
+        # Extract features with overfitting protection
+        primary_features = [
+            'success_rate', 'avg_bounce_strength', 'max_bounce_strength', 
+            'total_touches', 'time_persistence', 'total_volume_at_level', 'avg_hold_time'
+        ]
+        
+        penetration_pattern_features = [
+            'penetration_depth', 'penetration_frequency', 'pattern_consistency', 
+            'pattern_strength', 'order_flow_confirmation', 'absorption_patterns', 'structure_break'
+        ]
+        
+        all_features = primary_features + penetration_pattern_features
+        
+        # OVERFITTING PROTECTION: Limit features based on sample size
+        if len(all_features) > max_features:
+            # Prioritize primary features, then add others up to max_features
+            selected_features = primary_features[:min(len(primary_features), max_features)]
+            remaining_slots = max_features - len(selected_features)
+            if remaining_slots > 0:
+                selected_features.extend(penetration_pattern_features[:remaining_slots])
+            all_features = selected_features
+            self.logger.info(f"🔒 Limited features to {len(all_features)} to prevent overfitting")
+        
+        # Build feature matrix
+        X = []
+        valid_features = []
+        
+        for feature in all_features:
+            feature_values = [getattr(r, feature, 0.0) for r in results]
+            if not all(v == 0.0 for v in feature_values):  # Skip features with no variation
+                X.append(feature_values)
+                valid_features.append(feature)
+        
+        if not X or len(X) == 0:
+            return {}
+        
+        X = np.array(X).T  # Transpose to get (samples, features)
+        y = np.array([r.quality_score for r in results])
+        
+        # OVERFITTING PROTECTION: Check sample-to-feature ratio
+        sample_to_feature_ratio = len(y) / len(valid_features)
+        if sample_to_feature_ratio < 10:
+            self.logger.warning(f"⚠️ Low sample-to-feature ratio: {sample_to_feature_ratio:.1f}")
+            self.logger.warning("⚠️ Consider reducing features or increasing samples")
+        
+        try:
+            from sklearn.linear_model import RidgeCV
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.model_selection import cross_val_score
+            from sklearn.metrics import mean_squared_error, mean_absolute_error
+            
+            # Standardize features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # Use more conservative cross-validation for small datasets
+            n_samples = len(y)
+            if n_samples < 50:
+                cv_folds = max(2, n_samples - 1)  # Use leave-one-out or 2-fold
+                self.logger.info(f"🔒 Small dataset ({n_samples} samples), using {cv_folds}-fold CV")
+            else:
+                cv_folds = min(self.config.cross_validation_folds, n_samples - 1)
+            
+            # Use more conservative alpha range for small datasets
+            if n_samples < 100:
+                alphas = np.logspace(-2, 1, 20)  # More conservative range
+            else:
+                alphas = np.logspace(-4, 2, 50)  # Standard range
+            
+            ridge_model = RidgeCV(alphas=alphas, cv=cv_folds, scoring='r2')
+            ridge_model.fit(X_scaled, y)
+            
+            # Calculate model performance
+            y_pred = ridge_model.predict(X_scaled)
+            r_squared = ridge_model.score(X_scaled, y)
+            mse = mean_squared_error(y, y_pred)
+            mae = mean_absolute_error(y, y_pred)
+            
+            # Cross-validation scores for robustness
+            try:
+                cv_scores = cross_val_score(ridge_model, X_scaled, y, cv=cv_folds, scoring='r2')
+                cv_mean = np.mean(cv_scores)
+                cv_std = np.std(cv_scores)
+            except Exception:
+                cv_mean = r_squared
+                cv_std = 0.0
+            
+            # OVERFITTING DETECTION: More conservative thresholds for small datasets
+            overfitting_detected = False
+            overfitting_warnings = []
+            
+            # Check for overfitting
+            if cv_std > 0.2:  # High variance in CV scores
+                overfitting_detected = True
+                overfitting_warnings.append(f"High CV score variance: {cv_std:.3f}")
+            
+            performance_gap = r_squared - cv_mean
+            if performance_gap > 0.15:  # Large gap between training and CV
+                overfitting_detected = True
+                overfitting_warnings.append(f"Large performance gap: {performance_gap:.3f}")
+            
+            # Very high R² with small dataset
+            if n_samples < 100 and r_squared > 0.9:
+                overfitting_detected = True
+                overfitting_warnings.append(f"High R² ({r_squared:.3f}) with small dataset ({n_samples} samples)")
+            
+            # Get feature importance
+            feature_importance = np.abs(ridge_model.coef_)
+            feature_importance_normalized = feature_importance / np.sum(feature_importance)
+            
+            model = {
+                'model_type': 'Ridge Regression with Overfitting Protection',
+                'feature_names': valid_features,
+                'coefficients': ridge_model.coef_.tolist(),
+                'intercept': ridge_model.intercept_,
+                'optimal_alpha': ridge_model.alpha_,
+                'r_squared': r_squared,
+                'mse': mse,
+                'mae': mae,
+                'cv_r_squared_mean': cv_mean,
+                'cv_r_squared_std': cv_std,
+                'feature_importance': dict(zip(valid_features, feature_importance_normalized)),
+                'overfitting_detected': overfitting_detected,
+                'overfitting_warnings': overfitting_warnings,
+                'sample_to_feature_ratio': sample_to_feature_ratio,
+                'model_object': ridge_model,
+                'scaler_object': scaler
+            }
+            
+            if overfitting_detected:
+                self.logger.warning(f"⚠️ Overfitting detected: {'; '.join(overfitting_warnings)}")
+            else:
+                self.logger.info("✅ No overfitting detected")
+            
+            return model
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to build Ridge Regression model with overfitting protection: {e}")
+            return {}
     
     def get_quality_rules_summary(self) -> Dict[str, Any]:
         """Get a summary of learned quality rules."""

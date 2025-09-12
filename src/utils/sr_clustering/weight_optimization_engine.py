@@ -45,7 +45,7 @@ except ImportError:
 
 @dataclass
 class WeightOptimizationConfig:
-    """Configuration for weight optimization."""
+    """Configuration for weight optimization with overfitting protection."""
     # Optimization parameters
     optimization_method: str = 'scipy_minimize'  # 'scipy_minimize', 'grid_search', 'genetic_algorithm'
     max_iterations: int = 100
@@ -59,6 +59,18 @@ class WeightOptimizationConfig:
     min_weight: float = 0.0
     max_weight: float = 1.0
     weight_sum_constraint: bool = True  # Whether weights should sum to 1.0
+    
+    # Overfitting protection parameters - ADAPTIVE
+    min_samples_for_optimization: int = 10  # Reduced minimum samples (was 50)
+    max_features_per_sample_ratio: float = 0.5  # Increased ratio for small samples (was 0.1)
+    early_stopping_patience: int = 5  # Reduced patience for small samples (was 10)
+    regularization_strength: float = 0.1  # Higher regularization for small samples (was 0.01)
+    stability_penalty: float = 0.2  # Higher stability penalty for small samples (was 0.1)
+    
+    # Adaptive optimization parameters
+    enable_adaptive_optimization: bool = True  # Enable adaptive optimization
+    small_sample_mode_threshold: int = 30  # Use small sample mode below this
+    minimal_optimization_threshold: int = 15  # Use minimal optimization below this
     
     # M1 optimization parameters
     enable_m1_optimizations: bool = True
@@ -123,14 +135,31 @@ class WeightOptimizationEngine:
         
     def optimize_weights(self, backtest_results: List[BacktestResult], 
                         market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Optimize quality score parameter weights using backtesting."""
+        """Optimize quality score parameter weights using backtesting with overfitting protection."""
         try:
-            self.logger.info(f"🚀 Starting weight optimization for {len(backtest_results)} backtest results")
+            self.logger.info(f"🚀 Starting weight optimization for {len(backtest_results)} backtest results with overfitting protection")
             self.logger.info(f"Market data shape: {market_data.shape}")
             
+            # ADAPTIVE OPTIMIZATION: Determine optimization strategy based on sample size
+            n_samples = len(backtest_results)
+            optimization_strategy = self._determine_optimization_strategy(n_samples)
+            
+            self.logger.info(f"🎯 Optimization strategy: {optimization_strategy} (samples: {n_samples})")
+            
+            # Apply adaptive optimization strategy
+            if optimization_strategy == 'minimal':
+                return self._minimal_optimization(backtest_results, market_data)
+            elif optimization_strategy == 'small_sample':
+                return self._small_sample_optimization(backtest_results, market_data)
+            elif optimization_strategy == 'standard':
+                return self._standard_optimization(backtest_results, market_data)
+            else:
+                self.logger.warning(f"Unknown optimization strategy: {optimization_strategy}")
+                return self._minimal_optimization(backtest_results, market_data)
+            
             # Prepare data for optimization
-            self.logger.info("🔧 Preparing optimization data")
-            optimization_data = self._prepare_optimization_data(backtest_results, market_data)
+            self.logger.info("🔧 Preparing optimization data with overfitting protection")
+            optimization_data = self._prepare_optimization_data_with_overfitting_protection(backtest_results, market_data)
             
             if not optimization_data:
                 self.logger.warning("⚠️ No valid data for optimization")
@@ -138,14 +167,23 @@ class WeightOptimizationEngine:
             
             self.logger.info(f"Optimization data prepared: {len(optimization_data)} samples")
             
+            # OVERFITTING PROTECTION: Check feature-to-sample ratio
+            n_samples = len(backtest_results)
+            n_features = len(optimization_data.get('feature_names', []))
+            feature_to_sample_ratio = n_features / n_samples
+            
+            if feature_to_sample_ratio > self.config.max_features_per_sample_ratio:
+                self.logger.warning(f"⚠️ High feature-to-sample ratio: {feature_to_sample_ratio:.3f} > {self.config.max_features_per_sample_ratio}")
+                self.logger.warning("⚠️ This may lead to overfitting - consider reducing features")
+            
             # Run optimization based on method
-            self.logger.info(f"🎯 Running optimization using {self.config.optimization_method}")
+            self.logger.info(f"🎯 Running optimization using {self.config.optimization_method} with overfitting protection")
             if self.config.optimization_method == 'scipy_minimize':
-                result = self._optimize_with_scipy(optimization_data)
+                result = self._optimize_with_scipy_with_overfitting_protection(optimization_data)
             elif self.config.optimization_method == 'grid_search':
-                result = self._optimize_with_grid_search(optimization_data)
+                result = self._optimize_with_grid_search_with_overfitting_protection(optimization_data)
             elif self.config.optimization_method == 'genetic_algorithm':
-                result = self._optimize_with_genetic_algorithm(optimization_data)
+                result = self._optimize_with_genetic_algorithm_with_overfitting_protection(optimization_data)
             else:
                 self.logger.error(f"❌ Unknown optimization method: {self.config.optimization_method}")
                 raise ValueError(f"Unknown optimization method: {self.config.optimization_method}")
@@ -155,7 +193,7 @@ class WeightOptimizationEngine:
             self.best_score = result['best_score']
             self.optimization_history.append(result)
             
-            self.logger.info(f"✅ Weight optimization completed successfully")
+            self.logger.info(f"✅ Weight optimization completed successfully with overfitting protection")
             self.logger.info(f"Best score: {self.best_score:.4f}")
             self.logger.info(f"Best weights: {self.best_weights}")
             
@@ -817,6 +855,423 @@ class WeightOptimizationEngine:
         except Exception as e:
             self.logger.error(f"Weight validation failed: {e}")
             return {'validation_score': 0.0, 'status': f'Validation failed: {e}'}
+
+    def _prepare_optimization_data_with_overfitting_protection(self, backtest_results: List[BacktestResult], 
+                                                             market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Prepare optimization data with overfitting protection."""
+        try:
+            if not backtest_results:
+                self.logger.warning("No backtest results provided for optimization data preparation")
+                return {}
+            
+            self.logger.info(f"Preparing optimization data from {len(backtest_results)} backtest results with overfitting protection")
+            
+            # OVERFITTING PROTECTION: Limit features based on sample size
+            max_features = int(len(backtest_results) * self.config.max_features_per_sample_ratio)
+            
+            # Extract features and target
+            all_features = (self.config.primary_features + 
+                          self.config.penetration_features + 
+                          self.config.pattern_features)
+            
+            # OVERFITTING PROTECTION: Select most important features if we have too many
+            if len(all_features) > max_features:
+                # Prioritize primary features, then add others up to max_features
+                selected_features = self.config.primary_features[:min(len(self.config.primary_features), max_features)]
+                remaining_slots = max_features - len(selected_features)
+                if remaining_slots > 0:
+                    selected_features.extend(self.config.penetration_features[:remaining_slots])
+                if remaining_slots > len(self.config.penetration_features):
+                    remaining_slots -= len(self.config.penetration_features)
+                    selected_features.extend(self.config.pattern_features[:remaining_slots])
+                all_features = selected_features
+                self.logger.info(f"🔒 Limited features to {len(all_features)} to prevent overfitting")
+            
+            self.logger.info(f"Feature groups: primary={len(self.config.primary_features)}, penetration={len(self.config.penetration_features)}, pattern={len(self.config.pattern_features)}")
+            self.logger.info(f"Total features after overfitting protection: {len(all_features)}")
+            
+            # Build feature matrix
+            self.logger.info("Building feature matrix with overfitting protection")
+            feature_data = {}
+            for feature in all_features:
+                feature_values = []
+                for result in backtest_results:
+                    value = getattr(result, feature, 0.0)
+                    feature_values.append(value)
+                feature_data[feature] = np.array(feature_values)
+                
+                # Log feature statistics
+                feature_array = feature_data[feature]
+                self.logger.debug(f"Feature {feature}: mean={np.mean(feature_array):.3f}, std={np.std(feature_array):.3f}, min={np.min(feature_array):.3f}, max={np.max(feature_array):.3f}")
+            
+            # Target variable (actual quality scores from backtesting)
+            target_scores = np.array([result.quality_score for result in backtest_results])
+            self.logger.info(f"Target scores: mean={np.mean(target_scores):.3f}, std={np.std(target_scores):.3f}, min={np.min(target_scores):.3f}, max={np.max(target_scores):.3f}")
+            
+            # Market context features (if available)
+            self.logger.info("Extracting market context with overfitting protection")
+            market_context = self._extract_market_context(backtest_results, market_data)
+            
+            optimization_data = {
+                'feature_data': feature_data,
+                'target_scores': target_scores,
+                'market_context': market_context,
+                'backtest_results': backtest_results,
+                'feature_names': all_features,
+                'max_features_allowed': max_features,
+                'overfitting_protection_applied': True
+            }
+            
+            self.logger.info(f"✅ Optimization data prepared successfully with overfitting protection: {len(feature_data)} features, {len(target_scores)} targets")
+            
+            return optimization_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to prepare optimization data with overfitting protection: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return {}
+    
+    def _optimize_with_scipy_with_overfitting_protection(self, optimization_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimize weights using scipy minimize with overfitting protection."""
+        try:
+            self.logger.info("🎯 Starting scipy optimization with overfitting protection")
+            
+            feature_data = optimization_data['feature_data']
+            target_scores = optimization_data['target_scores']
+            feature_names = optimization_data['feature_names']
+            
+            # Initial weights (equal weights)
+            n_features = len(feature_names)
+            initial_weights = np.ones(n_features) / n_features
+            
+            self.logger.info(f"Optimization setup: {n_features} features, {len(target_scores)} targets")
+            self.logger.info(f"Initial weights: {dict(zip(feature_names, initial_weights))}")
+            
+            # Define objective function with regularization
+            def objective(weights):
+                score = self._evaluate_weights_with_overfitting_protection(weights, feature_data, target_scores, feature_names)
+                return -score  # Minimize negative score
+            
+            # Define constraints
+            constraints = []
+            if self.config.weight_sum_constraint:
+                constraints.append({
+                    'type': 'eq',
+                    'fun': lambda w: np.sum(w) - 1.0
+                })
+                self.logger.info("Weight sum constraint enabled (weights must sum to 1.0)")
+            
+            # Define bounds
+            bounds = [(self.config.min_weight, self.config.max_weight) for _ in range(n_features)]
+            self.logger.info(f"Weight bounds: [{self.config.min_weight}, {self.config.max_weight}]")
+            
+            # Optimize with early stopping
+            self.logger.info(f"Running SLSQP optimization with max_iter={self.config.max_iterations}, ftol={self.config.convergence_tolerance}")
+            result = minimize(
+                objective,
+                initial_weights,
+                method='SLSQP',
+                bounds=bounds,
+                constraints=constraints,
+                options={'maxiter': self.config.max_iterations, 'ftol': self.config.convergence_tolerance}
+            )
+            
+            if result.success:
+                best_weights = dict(zip(feature_names, result.x))
+                best_score = -result.fun
+                
+                # OVERFITTING PROTECTION: Check if score is too high
+                if best_score > 0.95:
+                    self.logger.warning(f"⚠️ Suspiciously high optimization score: {best_score:.4f}")
+                    self.logger.warning("⚠️ This may indicate overfitting - applying conservative scaling")
+                    best_weights = self._apply_conservative_weight_scaling(best_weights)
+                    best_score = self._evaluate_weights_with_overfitting_protection(
+                        list(best_weights.values()), feature_data, target_scores, feature_names
+                    )
+                
+                self.logger.info(f"✅ Scipy optimization completed successfully with overfitting protection")
+                self.logger.info(f"Best score: {best_score:.4f}")
+                self.logger.info(f"Iterations: {result.nit}")
+                self.logger.info(f"Convergence message: {result.message}")
+                
+                # Log top weights
+                sorted_weights = sorted(best_weights.items(), key=lambda x: x[1], reverse=True)
+                self.logger.info("Top 5 optimized weights:")
+                for feature, weight in sorted_weights[:5]:
+                    self.logger.info(f"  {feature}: {weight:.3f}")
+                
+                return {
+                    'method': 'scipy_minimize_with_overfitting_protection',
+                    'best_weights': best_weights,
+                    'best_score': best_score,
+                    'optimization_success': True,
+                    'iterations': result.nit,
+                    'convergence_message': result.message,
+                    'overfitting_protection_applied': True
+                }
+            else:
+                self.logger.warning(f"⚠️ Scipy optimization failed: {result.message}")
+                return self._get_default_weights(feature_names)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Scipy optimization with overfitting protection failed: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return self._get_default_weights(optimization_data['feature_names'])
+    
+    def _evaluate_weights_with_overfitting_protection(self, weights: np.ndarray, feature_data: Dict[str, np.ndarray], 
+                                                    target_scores: np.ndarray, feature_names: List[str]) -> float:
+        """Evaluate weights with overfitting protection including regularization."""
+        try:
+            self.logger.debug(f"Evaluating weights with overfitting protection: {dict(zip(feature_names, weights))}")
+            
+            # Build weighted quality scores
+            weighted_scores = np.zeros(len(target_scores))
+            
+            for i, feature in enumerate(feature_names):
+                if feature in feature_data:
+                    weighted_scores += weights[i] * feature_data[feature]
+            
+            # Normalize to 0-1 range
+            weighted_scores = np.clip(weighted_scores, 0.0, 1.0)
+            
+            self.logger.debug(f"Weighted scores: mean={np.mean(weighted_scores):.3f}, std={np.std(weighted_scores):.3f}")
+            
+            # Calculate performance metric
+            if self.config.primary_objective == 'r2_score':
+                score = r2_score(target_scores, weighted_scores)
+                self.logger.debug(f"R² score: {score:.4f}")
+            elif self.config.primary_objective == 'mse':
+                score = -mean_squared_error(target_scores, weighted_scores)  # Negative because we want to minimize MSE
+                self.logger.debug(f"MSE score: {score:.4f}")
+            elif self.config.primary_objective == 'correlation':
+                correlation = np.corrcoef(target_scores, weighted_scores)[0, 1]
+                score = correlation if not np.isnan(correlation) else 0.0
+                self.logger.debug(f"Correlation score: {score:.4f}")
+            else:
+                score = r2_score(target_scores, weighted_scores)  # Default to R²
+                self.logger.debug(f"Default R² score: {score:.4f}")
+            
+            # OVERFITTING PROTECTION: Add regularization penalty
+            l2_penalty = self.config.regularization_strength * np.sum(weights ** 2)
+            score -= l2_penalty
+            self.logger.debug(f"L2 regularization penalty: {l2_penalty:.4f}")
+            
+            # Add stability penalty if requested
+            if self.config.secondary_objective == 'stability':
+                # Penalize extreme weights
+                weight_penalty = -np.sum(np.abs(weights - np.mean(weights))) * self.config.stability_penalty
+                score += weight_penalty
+                self.logger.debug(f"Stability penalty: {weight_penalty:.4f}")
+            
+            final_score = score
+            self.logger.debug(f"Final score with overfitting protection: {final_score:.4f}")
+            
+            return final_score
+            
+        except Exception as e:
+            self.logger.warning(f"Weight evaluation with overfitting protection failed: {e}")
+            return 0.0
+    
+    def _apply_conservative_weight_scaling(self, weights: Dict[str, float]) -> Dict[str, float]:
+        """Apply conservative scaling to weights to prevent overfitting."""
+        if not weights:
+            return weights
+        
+        # Normalize weights to sum to 1.0 and apply conservative scaling
+        total_weight = sum(weights.values())
+        if total_weight == 0:
+            return weights
+        
+        # Scale down extreme weights and normalize
+        conservative_weights = {}
+        for feature, weight in weights.items():
+            # Cap individual weights at 0.5 and scale down by 0.8
+            capped_weight = min(weight / total_weight, 0.5) * 0.8
+            conservative_weights[feature] = capped_weight
+        
+        # Renormalize to sum to 1.0
+        total_conservative = sum(conservative_weights.values())
+        if total_conservative > 0:
+            for feature in conservative_weights:
+                conservative_weights[feature] /= total_conservative
+        
+        self.logger.info("🔒 Applied conservative weight scaling to prevent overfitting")
+        return conservative_weights
+    
+    def _determine_optimization_strategy(self, n_samples: int) -> str:
+        """Determine optimization strategy based on sample size."""
+        if n_samples < self.config.minimal_optimization_threshold:
+            return 'minimal'
+        elif n_samples < self.config.small_sample_mode_threshold:
+            return 'small_sample'
+        else:
+            return 'standard'
+    
+    def _minimal_optimization(self, backtest_results: List[BacktestResult], 
+                            market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Minimal optimization for very small samples (10-15 samples)."""
+        self.logger.info("🔬 Using minimal optimization for very small samples")
+        
+        # Use only primary features with equal weights
+        primary_features = ['success_rate', 'avg_bounce_strength', 'total_touches']
+        
+        # Calculate simple correlations
+        correlations = {}
+        for feature in primary_features:
+            values = [getattr(result, feature, 0.0) for result in backtest_results]
+            quality_scores = [result.quality_score for result in backtest_results]
+            
+            if len(values) > 1 and np.std(values) > 0:
+                corr, _ = pearsonr(values, quality_scores)
+                correlations[feature] = abs(corr)
+        
+        # Use correlation-based weights (normalized)
+        if correlations:
+            total_corr = sum(correlations.values())
+            best_weights = {feature: corr / total_corr for feature, corr in correlations.items()}
+        else:
+            # Equal weights as fallback
+            best_weights = {feature: 1.0 / len(primary_features) for feature in primary_features}
+        
+        # Calculate simple score
+        best_score = self._calculate_simple_score(backtest_results, best_weights)
+        
+        return {
+            'method': 'minimal_optimization',
+            'best_weights': best_weights,
+            'best_score': best_score,
+            'optimization_success': True,
+            'iterations': 0,
+            'convergence_message': 'Minimal optimization completed',
+            'overfitting_protection_applied': True,
+            'strategy': 'minimal'
+        }
+    
+    def _small_sample_optimization(self, backtest_results: List[BacktestResult], 
+                                 market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Small sample optimization (15-30 samples)."""
+        self.logger.info("🛡️ Using small sample optimization")
+        
+        # Use limited feature set
+        limited_features = ['success_rate', 'avg_bounce_strength', 'total_touches', 
+                          'time_persistence', 'total_volume_at_level']
+        
+        # Prepare data with limited features
+        optimization_data = self._prepare_limited_optimization_data(backtest_results, market_data, limited_features)
+        
+        if not optimization_data:
+            return self._minimal_optimization(backtest_results, market_data)
+        
+        # Use simple grid search with high regularization
+        best_weights = {}
+        best_score = 0.0
+        
+        # Simple grid search over weight combinations
+        weight_combinations = [
+            [0.4, 0.3, 0.2, 0.1, 0.0],  # Focus on success_rate and bounce_strength
+            [0.3, 0.4, 0.2, 0.1, 0.0],  # Focus on bounce_strength
+            [0.2, 0.2, 0.2, 0.2, 0.2],  # Equal weights
+            [0.5, 0.3, 0.1, 0.1, 0.0],  # Heavy focus on success_rate
+            [0.3, 0.3, 0.2, 0.1, 0.1],  # Balanced approach
+        ]
+        
+        for weights in weight_combinations:
+            weight_dict = dict(zip(limited_features, weights))
+            score = self._calculate_simple_score(backtest_results, weight_dict)
+            
+            if score > best_score:
+                best_score = score
+                best_weights = weight_dict
+        
+        return {
+            'method': 'small_sample_optimization',
+            'best_weights': best_weights,
+            'best_score': best_score,
+            'optimization_success': True,
+            'iterations': len(weight_combinations),
+            'convergence_message': 'Small sample optimization completed',
+            'overfitting_protection_applied': True,
+            'strategy': 'small_sample'
+        }
+    
+    def _standard_optimization(self, backtest_results: List[BacktestResult], 
+                             market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Standard optimization for larger samples (30+ samples)."""
+        self.logger.info("📚 Using standard optimization for larger samples")
+        
+        # Use full optimization with overfitting protection
+        optimization_data = self._prepare_optimization_data_with_overfitting_protection(backtest_results, market_data)
+        
+        if not optimization_data:
+            return self._minimal_optimization(backtest_results, market_data)
+        
+        # Use scipy optimization with overfitting protection
+        return self._optimize_with_scipy_with_overfitting_protection(optimization_data)
+    
+    def _prepare_limited_optimization_data(self, backtest_results: List[BacktestResult], 
+                                         market_data: pd.DataFrame, 
+                                         limited_features: List[str]) -> Dict[str, Any]:
+        """Prepare optimization data with limited features."""
+        try:
+            if not backtest_results:
+                return {}
+            
+            self.logger.info(f"Preparing limited optimization data with {len(limited_features)} features")
+            
+            # Build feature matrix with limited features
+            feature_data = {}
+            for feature in limited_features:
+                feature_values = []
+                for result in backtest_results:
+                    value = getattr(result, feature, 0.0)
+                    feature_values.append(value)
+                feature_data[feature] = np.array(feature_values)
+            
+            # Target variable
+            target_scores = np.array([result.quality_score for result in backtest_results])
+            
+            return {
+                'feature_data': feature_data,
+                'target_scores': target_scores,
+                'feature_names': limited_features,
+                'overfitting_protection_applied': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to prepare limited optimization data: {e}")
+            return {}
+    
+    def _calculate_simple_score(self, backtest_results: List[BacktestResult], 
+                              weights: Dict[str, float]) -> float:
+        """Calculate a simple score for weight evaluation."""
+        try:
+            # Calculate weighted quality scores
+            weighted_scores = []
+            for result in backtest_results:
+                weighted_score = 0.0
+                total_weight = 0.0
+                
+                for feature, weight in weights.items():
+                    value = getattr(result, feature, 0.0)
+                    weighted_score += weight * value
+                    total_weight += weight
+                
+                if total_weight > 0:
+                    weighted_score = weighted_score / total_weight
+                
+                weighted_scores.append(weighted_score)
+            
+            # Calculate correlation with actual quality scores
+            actual_scores = [result.quality_score for result in backtest_results]
+            correlation, _ = pearsonr(weighted_scores, actual_scores)
+            
+            return correlation if not np.isnan(correlation) else 0.0
+            
+        except Exception as e:
+            self.logger.warning(f"Simple score calculation failed: {e}")
+            return 0.0
 
 def get_weight_optimization_engine(config: Optional[WeightOptimizationConfig] = None) -> WeightOptimizationEngine:
     """Get a weight optimization engine instance."""

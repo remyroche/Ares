@@ -531,43 +531,310 @@ class MultiTimeframeTrainer:
             self.logger.exception(f"💥 Error preparing enhanced features: {e}")
             return training_data
     
-    @handles_errors(default_return=None, context='Advanced feature selection')
+    @handles_errors(default_return=None, context='Advanced feature generation and selection')
     async def _perform_advanced_feature_selection(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> Optional[pd.DataFrame]:
-        """Perform advanced feature selection using unified methods."""
+        """Perform advanced feature generation and selection using unified methods adapted for multi-timeframe training."""
         try:
+            # Step 1: Generate cross-timeframe features using feature selection criteria
+            enhanced_data = await self._generate_features_with_selection_criteria(data, tf_config)
+            
+            # Step 2: Apply feature selection to the enhanced dataset
             if tf_config.feature_selection_method == "unified" and self.unified_feature_selector:
                 # Use unified feature selection with regime awareness
                 selection_result = await self.unified_feature_selector.select_features(
-                    data, 
+                    enhanced_data, 
                     method="unified",
                     max_features=tf_config.max_features,
                     threshold=tf_config.feature_selection_threshold
                 )
                 
                 if selection_result and hasattr(selection_result, 'selected_features'):
-                    selected_data = data[selection_result.selected_features]
-                    self.logger.info(f"🎯 Unified feature selection: {len(selection_result.selected_features)} features selected")
+                    selected_data = enhanced_data[selection_result.selected_features]
+                    self.logger.info(f"🎯 Unified feature generation + selection: {len(selection_result.selected_features)} features selected from {len(enhanced_data.columns)} generated")
                     return selected_data
             
             elif tf_config.feature_selection_method == "optimized" and self.optimized_feature_methods:
                 # Use optimized feature selection methods
                 selected_features = await self.optimized_feature_methods.select_features(
-                    data,
+                    enhanced_data,
                     max_features=tf_config.max_features,
                     threshold=tf_config.feature_selection_threshold
                 )
                 
                 if selected_features:
-                    selected_data = data[selected_features]
-                    self.logger.info(f"🔧 Optimized feature selection: {len(selected_features)} features selected")
+                    selected_data = enhanced_data[selected_features]
+                    self.logger.info(f"🔧 Optimized feature generation + selection: {len(selected_features)} features selected from {len(enhanced_data.columns)} generated")
                     return selected_data
             
             # Fallback to basic feature selection
-            return self._basic_feature_selection(data, tf_config)
+            return self._basic_feature_selection(enhanced_data, tf_config)
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Advanced feature selection failed: {e}")
+            self.logger.warning(f"⚠️ Advanced feature generation + selection failed: {e}")
             return self._basic_feature_selection(data, tf_config)
+    
+    @handles_errors(default_return=data, context='Feature generation with selection criteria')
+    async def _generate_features_with_selection_criteria(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> pd.DataFrame:
+        """Generate features using feature selection criteria adapted for feature generation."""
+        try:
+            self.logger.info(f"🔧 Generating features with selection criteria for {tf_config.timeframe}")
+            
+            # Start with base data
+            enhanced_data = data.copy()
+            
+            # 1. Generate cross-timeframe features using financial criteria
+            cross_timeframe_features = await self._generate_cross_timeframe_features_with_criteria(
+                data, tf_config
+            )
+            
+            if cross_timeframe_features is not None and not cross_timeframe_features.empty:
+                enhanced_data = pd.concat([enhanced_data, cross_timeframe_features], axis=1)
+                self.logger.info(f"📊 Added {len(cross_timeframe_features.columns)} cross-timeframe features")
+            
+            # 2. Generate regime-aware features using financial metrics criteria
+            regime_features = await self._generate_regime_aware_features_with_criteria(
+                enhanced_data, tf_config
+            )
+            
+            if regime_features is not None and not regime_features.empty:
+                enhanced_data = pd.concat([enhanced_data, regime_features], axis=1)
+                self.logger.info(f"🎯 Added {len(regime_features.columns)} regime-aware features")
+            
+            # 3. Generate risk-adjusted features using risk assessment criteria
+            risk_features = await self._generate_risk_adjusted_features_with_criteria(
+                enhanced_data, tf_config
+            )
+            
+            if risk_features is not None and not risk_features.empty:
+                enhanced_data = pd.concat([enhanced_data, risk_features], axis=1)
+                self.logger.info(f"⚠️ Added {len(risk_features.columns)} risk-adjusted features")
+            
+            # 4. Generate momentum and volatility features using mRMR criteria
+            momentum_volatility_features = await self._generate_momentum_volatility_features_with_criteria(
+                enhanced_data, tf_config
+            )
+            
+            if momentum_volatility_features is not None and not momentum_volatility_features.empty:
+                enhanced_data = pd.concat([enhanced_data, momentum_volatility_features], axis=1)
+                self.logger.info(f"📈 Added {len(momentum_volatility_features.columns)} momentum/volatility features")
+            
+            self.logger.info(f"✅ Feature generation completed: {len(data.columns)} → {len(enhanced_data.columns)} features")
+            return enhanced_data
+            
+        except Exception as e:
+            self.logger.exception(f"💥 Error generating features with selection criteria: {e}")
+            return data
+    
+    @handles_errors(default_return=None, context='Cross-timeframe feature generation with criteria')
+    async def _generate_cross_timeframe_features_with_criteria(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> Optional[pd.DataFrame]:
+        """Generate cross-timeframe features using financial metrics criteria."""
+        try:
+            # Use financial metrics criteria to guide cross-timeframe feature generation
+            cross_features = {}
+            
+            # 1. Price momentum across timeframes (using Sharpe ratio criteria)
+            if 'close' in data.columns:
+                # Generate momentum features with risk-adjusted criteria
+                for lookback in [5, 10, 20]:
+                    momentum = data['close'].pct_change(lookback)
+                    volatility = data['close'].pct_change().rolling(lookback).std()
+                    
+                    # Risk-adjusted momentum (Sharpe-like ratio)
+                    risk_adjusted_momentum = momentum / (volatility + 1e-8)
+                    cross_features[f'{tf_config.timeframe}_momentum_{lookback}_risk_adj'] = risk_adjusted_momentum
+                    
+                    # Information ratio (momentum vs volatility)
+                    info_ratio = momentum / (volatility + 1e-8)
+                    cross_features[f'{tf_config.timeframe}_info_ratio_{lookback}'] = info_ratio
+            
+            # 2. Volume-price relationship across timeframes (using correlation criteria)
+            if 'volume' in data.columns and 'close' in data.columns:
+                # Volume-weighted price features
+                vwap = (data['close'] * data['volume']).rolling(20).sum() / data['volume'].rolling(20).sum()
+                cross_features[f'{tf_config.timeframe}_vwap_20'] = vwap
+                
+                # Volume-price correlation
+                volume_price_corr = data['close'].rolling(20).corr(data['volume'])
+                cross_features[f'{tf_config.timeframe}_volume_price_corr_20'] = volume_price_corr
+            
+            # 3. Volatility clustering features (using VaR criteria)
+            if 'close' in data.columns:
+                returns = data['close'].pct_change()
+                
+                # GARCH-like volatility features
+                volatility_5 = returns.rolling(5).std()
+                volatility_20 = returns.rolling(20).std()
+                cross_features[f'{tf_config.timeframe}_vol_ratio_5_20'] = volatility_5 / (volatility_20 + 1e-8)
+                
+                # VaR-based features
+                var_95 = returns.rolling(20).quantile(0.05)
+                var_99 = returns.rolling(20).quantile(0.01)
+                cross_features[f'{tf_config.timeframe}_var_95_20'] = var_95
+                cross_features[f'{tf_config.timeframe}_var_99_20'] = var_99
+            
+            if cross_features:
+                return pd.DataFrame(cross_features, index=data.index)
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Cross-timeframe feature generation failed: {e}")
+            return None
+    
+    @handles_errors(default_return=None, context='Regime-aware feature generation with criteria')
+    async def _generate_regime_aware_features_with_criteria(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> Optional[pd.DataFrame]:
+        """Generate regime-aware features using regime balance criteria."""
+        try:
+            regime_features = {}
+            
+            # 1. Regime transition features (using regime balance criteria)
+            if 'hmm_cluster' in data.columns:
+                # Regime transition indicators
+                regime_changes = (data['hmm_cluster'] != data['hmm_cluster'].shift(1)).astype(int)
+                regime_features[f'{tf_config.timeframe}_regime_transition'] = regime_changes
+                
+                # Regime duration features
+                regime_duration = data.groupby((data['hmm_cluster'] != data['hmm_cluster'].shift(1)).cumsum()).cumcount() + 1
+                regime_features[f'{tf_config.timeframe}_regime_duration'] = regime_duration
+                
+                # Regime stability (inverse of transition frequency)
+                regime_stability = 1 / (regime_changes.rolling(50).sum() + 1)
+                regime_features[f'{tf_config.timeframe}_regime_stability'] = regime_stability
+            
+            # 2. Regime-specific volatility features (using regime balance criteria)
+            if 'close' in data.columns and 'hmm_cluster' in data.columns:
+                returns = data['close'].pct_change()
+                
+                # Regime-specific volatility
+                for regime in data['hmm_cluster'].unique():
+                    if pd.notna(regime):
+                        regime_mask = data['hmm_cluster'] == regime
+                        regime_vol = returns.where(regime_mask).rolling(20).std()
+                        regime_features[f'{tf_config.timeframe}_regime_{regime}_vol'] = regime_vol
+            
+            # 3. Regime momentum features (using momentum criteria)
+            if 'close' in data.columns and 'hmm_cluster' in data.columns:
+                for regime in data['hmm_cluster'].unique():
+                    if pd.notna(regime):
+                        regime_mask = data['hmm_cluster'] == regime
+                        regime_momentum = data['close'].pct_change(10).where(regime_mask)
+                        regime_features[f'{tf_config.timeframe}_regime_{regime}_momentum'] = regime_momentum
+            
+            if regime_features:
+                return pd.DataFrame(regime_features, index=data.index)
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Regime-aware feature generation failed: {e}")
+            return None
+    
+    @handles_errors(default_return=None, context='Risk-adjusted feature generation with criteria')
+    async def _generate_risk_adjusted_features_with_criteria(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> Optional[pd.DataFrame]:
+        """Generate risk-adjusted features using risk assessment criteria."""
+        try:
+            risk_features = {}
+            
+            if 'close' in data.columns:
+                returns = data['close'].pct_change()
+                
+                # 1. Risk-adjusted return features (using Sharpe ratio criteria)
+                for lookback in [10, 20, 50]:
+                    mean_return = returns.rolling(lookback).mean()
+                    volatility = returns.rolling(lookback).std()
+                    
+                    # Sharpe ratio
+                    sharpe_ratio = mean_return / (volatility + 1e-8)
+                    risk_features[f'{tf_config.timeframe}_sharpe_{lookback}'] = sharpe_ratio
+                    
+                    # Sortino ratio (downside deviation)
+                    downside_returns = returns.where(returns < 0, 0)
+                    downside_vol = downside_returns.rolling(lookback).std()
+                    sortino_ratio = mean_return / (downside_vol + 1e-8)
+                    risk_features[f'{tf_config.timeframe}_sortino_{lookback}'] = sortino_ratio
+                
+                # 2. Tail risk features (using VaR and ES criteria)
+                for confidence in [0.05, 0.01]:
+                    var = returns.rolling(20).quantile(confidence)
+                    risk_features[f'{tf_config.timeframe}_var_{int(confidence*100)}'] = var
+                    
+                    # Expected Shortfall (Conditional VaR)
+                    es = returns.where(returns <= var).rolling(20).mean()
+                    risk_features[f'{tf_config.timeframe}_es_{int(confidence*100)}'] = es
+                
+                # 3. Maximum drawdown features
+                cumulative_returns = (1 + returns).cumprod()
+                rolling_max = cumulative_returns.rolling(50).max()
+                drawdown = (cumulative_returns - rolling_max) / rolling_max
+                risk_features[f'{tf_config.timeframe}_drawdown'] = drawdown
+                risk_features[f'{tf_config.timeframe}_max_drawdown'] = drawdown.rolling(50).min()
+            
+            if risk_features:
+                return pd.DataFrame(risk_features, index=data.index)
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Risk-adjusted feature generation failed: {e}")
+            return None
+    
+    @handles_errors(default_return=None, context='Momentum and volatility feature generation with criteria')
+    async def _generate_momentum_volatility_features_with_criteria(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> Optional[pd.DataFrame]:
+        """Generate momentum and volatility features using mRMR criteria."""
+        try:
+            momentum_vol_features = {}
+            
+            if 'close' in data.columns:
+                returns = data['close'].pct_change()
+                
+                # 1. Momentum features (using mRMR criteria for relevance and redundancy)
+                for lookback in [5, 10, 20, 50]:
+                    # Price momentum
+                    momentum = data['close'].pct_change(lookback)
+                    momentum_vol_features[f'{tf_config.timeframe}_momentum_{lookback}'] = momentum
+                    
+                    # Momentum acceleration (second derivative)
+                    momentum_acc = momentum.diff()
+                    momentum_vol_features[f'{tf_config.timeframe}_momentum_acc_{lookback}'] = momentum_acc
+                    
+                    # RSI-like momentum
+                    gains = returns.where(returns > 0, 0)
+                    losses = -returns.where(returns < 0, 0)
+                    avg_gain = gains.rolling(lookback).mean()
+                    avg_loss = losses.rolling(lookback).mean()
+                    rs = avg_gain / (avg_loss + 1e-8)
+                    rsi = 100 - (100 / (1 + rs))
+                    momentum_vol_features[f'{tf_config.timeframe}_rsi_{lookback}'] = rsi
+                
+                # 2. Volatility features (using mRMR criteria)
+                for lookback in [10, 20, 50]:
+                    # Standard volatility
+                    volatility = returns.rolling(lookback).std()
+                    momentum_vol_features[f'{tf_config.timeframe}_volatility_{lookback}'] = volatility
+                    
+                    # Volatility of volatility
+                    vol_of_vol = volatility.rolling(10).std()
+                    momentum_vol_features[f'{tf_config.timeframe}_vol_of_vol_{lookback}'] = vol_of_vol
+                    
+                    # Parkinson volatility (using high-low if available)
+                    if 'high' in data.columns and 'low' in data.columns:
+                        parkinson_vol = np.sqrt(0.25 * np.log(data['high'] / data['low']) ** 2).rolling(lookback).mean()
+                        momentum_vol_features[f'{tf_config.timeframe}_parkinson_vol_{lookback}'] = parkinson_vol
+                
+                # 3. Cross-momentum features (using mRMR for redundancy reduction)
+                if 'volume' in data.columns:
+                    # Volume momentum
+                    volume_momentum = data['volume'].pct_change(10)
+                    momentum_vol_features[f'{tf_config.timeframe}_volume_momentum'] = volume_momentum
+                    
+                    # Price-volume momentum correlation
+                    price_vol_corr = data['close'].pct_change(5).rolling(20).corr(data['volume'].pct_change(5))
+                    momentum_vol_features[f'{tf_config.timeframe}_price_vol_corr'] = price_vol_corr
+            
+            if momentum_vol_features:
+                return pd.DataFrame(momentum_vol_features, index=data.index)
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Momentum/volatility feature generation failed: {e}")
+            return None
     
     def _basic_feature_selection(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> pd.DataFrame:
         """Basic feature selection fallback."""

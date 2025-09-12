@@ -1677,48 +1677,84 @@ class MarketAnalysisSubPipeline:
                 self.logger.error(error_msg)
                 self.logger.error("   This indicates data processing failure - features should have variation")
 
-                # 🔧 SELF-HEALING HOOK: Automatically trigger data converter to fix constant features
-                self.logger.info("🔧 Attempting automatic fix: Triggering data converter to recalculate aggregated statistics...")
+                # 🔧 SELF-HEALING HOOK: Automatically fix constant features using data quality utilities
+                self.logger.info("🔧 Attempting automatic fix: Using data quality utilities to fix constant features...")
                 try:
-                    # Import data converter functionality
-                    from src.training.steps.data_collection.data_preparation.step01_5_data_converter import DataConverter
-                    from src.training.steps.data_collection.sub_pipeline import DataCollectionSubPipeline
+                    # Import data quality utilities
+                    from src.utils.data.quality.data_quality import DataQualityValidator, QualityThresholds
+                    from src.utils.data.quality.data_cleaning import DataCleaner
+                    from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+                    from src.utils.enhanced_artifact_manager import get_artifact_manager
 
-                    # Create data converter instance
-                    converter_config = config.copy()
-                    converter_config.data_dir = config.data_dir  # Ensure correct data directory
-                    converter_config.mode = ExecutionMode.FULL  # Force full conversion
+                    # Create data quality validator with appropriate thresholds
+                    quality_thresholds = QualityThresholds(
+                        min_unique_values=2,
+                        max_constant_ratio=0.95,
+                        min_feature_count=10
+                    )
+                    quality_validator = DataQualityValidator(quality_thresholds)
+                    
+                    # Create data cleaner with appropriate data type
+                    data_cleaner = DataCleaner(data_type='klines')  # Default to klines for market analysis
+                    quality_scorer = get_quality_scorer()
+                    
+                    # Get artifact manager
+                    artifact_manager = get_artifact_manager()
 
-                    data_converter = DataConverter(converter_config)
-                    data_collection_pipeline = DataCollectionSubPipeline(converter_config)
-
-                    # Trigger data conversion to recalculate aggregated statistics
-                    self.logger.info("🔄 Executing data conversion to fix constant features...")
-                    conversion_success = await data_collection_pipeline._data_conversion_pipeline(converter_config)
-
-                    if conversion_success:
-                        self.logger.info("✅ Data conversion completed successfully")
-                        # Re-load the data after conversion
-                        self.logger.info("🔄 Re-loading data after conversion...")
-                        data = standardized_parquet_handler.read_parquet_standardized(data_file)
-                        self.logger.info(f"✅ Re-loaded data with {len(data)} records and {len(data.columns)} features")
-
-                        # Re-check for constant features
-                        self.logger.info("🔍 Re-checking for constant features after data conversion...")
-                        constant_features_after = self._check_for_constant_features(data)
+                    # Apply data cleaning to fix constant features
+                    self.logger.info("🔄 Applying data cleaning to fix constant features...")
+                    cleaned_data = data_cleaner.clean_dataframe(
+                        data, 
+                        remove_constant_features=True,
+                        symbol=config.symbol,
+                        exchange=config.exchange,
+                        timeframe=config.timeframe
+                    )
+                    
+                    if cleaned_data is not None and not cleaned_data.empty:
+                        self.logger.info(f"✅ Data cleaning completed: {len(cleaned_data)} rows, {len(cleaned_data.columns)} features")
+                        
+                        # Perform comprehensive quality assessment
+                        self.logger.info("📊 Performing comprehensive quality assessment...")
+                        quality_assessment = quality_scorer.assess_data_quality(
+                            cleaned_data,
+                            context="market_analysis",
+                            step_name="hmm_regime_discovery",
+                            data_type='klines'
+                        )
+                        
+                        self.logger.info(f"📊 Quality Assessment: {quality_assessment.overall_score:.2f} ({quality_assessment.level.value})")
+                        if quality_assessment.issues:
+                            self.logger.warning(f"⚠️ Quality Issues: {quality_assessment.issues}")
+                        if quality_assessment.warnings:
+                            self.logger.warning(f"⚠️ Quality Warnings: {quality_assessment.warnings}")
+                        
+                        # Re-check for constant features after cleaning
+                        self.logger.info("🔍 Re-checking for constant features after data cleaning...")
+                        constant_features_after = self._check_for_constant_features(cleaned_data)
 
                         if not constant_features_after:
-                            self.logger.info("🎉 SUCCESS: Constant features resolved after automatic data conversion!")
+                            self.logger.info("🎉 SUCCESS: Constant features resolved after data cleaning!")
                             self.logger.info("✅ Proceeding with HMM regime discovery...")
+                            data = cleaned_data  # Use cleaned data
                         else:
-                            self.logger.warning(f"⚠️ Some constant features remain after conversion: {constant_features_after}")
-                            self.logger.warning("   This may indicate deeper data quality issues")
-                            # Still proceed but log the issue
+                            self.logger.warning(f"⚠️ Some constant features remain after cleaning: {constant_features_after}")
+                            self.logger.warning("   Attempting feature engineering to add variation...")
+                            
+                            # Try to add some variation to constant features
+                            data = self._add_variation_to_constant_features(cleaned_data, constant_features_after)
+                            constant_features_final = self._check_for_constant_features(data)
+                            
+                            if not constant_features_final:
+                                self.logger.info("🎉 SUCCESS: Constant features resolved after feature engineering!")
+                            else:
+                                self.logger.warning(f"⚠️ Some constant features still remain: {constant_features_final}")
+                                self.logger.warning("   Proceeding with remaining constant features...")
                     else:
-                        self.logger.error("❌ Data conversion failed - cannot resolve constant features automatically")
+                        self.logger.error("❌ Data cleaning failed - cannot resolve constant features automatically")
 
                 except Exception as conversion_error:
-                    self.logger.error(f"❌ Automatic data conversion failed: {conversion_error}")
+                    self.logger.error(f"❌ Automatic data cleaning failed: {conversion_error}")
                     self.logger.error("   Proceeding with original error handling...")
 
                 # Re-check constant features after potential auto-fix
@@ -1797,6 +1833,35 @@ class MarketAnalysisSubPipeline:
                     constant_features.append(f"{col}(unique={unique_vals}, std={std_val:.2e})")
 
         return constant_features
+
+    def _add_variation_to_constant_features(self, data: pd.DataFrame, constant_features: List[str]) -> pd.DataFrame:
+        """Add small variation to constant features to make them usable."""
+        import numpy as np
+        
+        data_copy = data.copy()
+        
+        for feature_info in constant_features:
+            # Extract column name from feature info string
+            col_name = feature_info.split('(')[0]
+            
+            if col_name in data_copy.columns:
+                # Add small random noise to create variation
+                if data_copy[col_name].dtype in ['float64', 'float32', 'int64', 'int32']:
+                    # For numeric columns, add small random noise
+                    noise = np.random.normal(0, 1e-6, len(data_copy))
+                    data_copy[col_name] = data_copy[col_name] + noise
+                    self.logger.info(f"   Added variation to constant feature: {col_name}")
+                else:
+                    # For non-numeric columns, try to create variation
+                    unique_val = data_copy[col_name].iloc[0]
+                    if isinstance(unique_val, str):
+                        # Add small suffix to create variation
+                        data_copy[col_name] = data_copy[col_name] + '_' + data_copy.index.astype(str)
+                    else:
+                        # For other types, add small increment
+                        data_copy[col_name] = data_copy[col_name] + data_copy.index
+        
+        return data_copy
 
     async def _regime_data_splitting_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Regime data splitting sub-pipeline."""

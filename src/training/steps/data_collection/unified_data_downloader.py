@@ -63,6 +63,15 @@ class UnifiedDataDownloader:
         # Initialize exchange instances cache
         self._exchange_instances = {}
         
+        # Initialize enhanced Binance API
+        try:
+            from src.exchange.binance_enhanced import BinanceExchangeEnhanced
+            self.binance_class = BinanceExchangeEnhanced
+            self.logger.info("✅ Enhanced Binance API available")
+        except ImportError:
+            self.binance_class = None
+            self.logger.warning("⚠️ Enhanced Binance API not available")
+        
     @handles_errors(context="download_klines")
     @log_all_calls
     async def download_klines(
@@ -304,13 +313,30 @@ class UnifiedDataDownloader:
     
     @handles_errors(context="get_exchange_instance")
     async def _get_exchange_instance(self, exchange: str):
-        """Get or create exchange instance."""
+        """Get or create exchange instance using enhanced API."""
         if exchange.upper() not in self._exchange_instances:
             try:
                 # Create exchange instance based on exchange name
                 if exchange.lower() == 'binance':
-                    from src.exchange.binance import BinanceExchange
-                    exchange_instance = BinanceExchange({})
+                    if self.binance_class:
+                        # Use enhanced Binance API
+                        config = {
+                            'binance_exchange': {
+                                'use_testnet': True,  # Use testnet for safety
+                                'timeout': 30,
+                                'max_retries': 3,
+                                'rate_limit_enabled': True,
+                                'rate_limit_requests': 1000,
+                                'rate_limit_window': 60
+                            }
+                        }
+                        exchange_instance = self.binance_class(config)
+                        self.logger.info("✅ Using enhanced Binance API")
+                    else:
+                        # Fallback to original API
+                        from src.exchange.binance import BinanceExchange
+                        exchange_instance = BinanceExchange({})
+                        self.logger.warning("⚠️ Using fallback Binance API")
                 else:
                     raise ValueError(f"Unsupported exchange: {exchange}")
 

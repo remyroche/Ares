@@ -31,7 +31,7 @@ from src.utils.common_utilities import validate_dataframe_columns, safe_datafram
 from src.utils.validation import validate_data_quality
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-# Import the unified downloader
+# Import the unified downloader and gap collection hook
 from .unified_data_downloader import UnifiedDataDownloader
 
 logger = system_logger.getChild("UnifiedGapFiller")
@@ -48,11 +48,20 @@ class UnifiedGapFiller:
         # Initialize unified downloader for gap filling
         self.downloader = UnifiedDataDownloader(data_cache_path)
         
-        # Gap detection thresholds
+        # Initialize gap collection hook for automatic data re-collection
+        try:
+            from src.utils.data.quality.gap_collection_hook import get_gap_collection_hook
+            self.gap_collection_hook = get_gap_collection_hook()
+            self.logger.info("✅ Gap collection hook initialized")
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Gap collection hook not available: {e}")
+            self.gap_collection_hook = None
+        
+        # Gap detection thresholds (in seconds) - updated to match new requirements
         self.gap_thresholds = {
-            'aggtrades': 0.5,  # 0.5 seconds for aggtrades
-            'klines': 1.1,     # 1.1 minutes for klines (1m + buffer)
-            'futures': 9.0     # 9 hours for futures (8h funding + buffer)
+            'aggtrades': 0.5,   # 0.5 seconds for aggtrades - triggers re-download
+            'klines': 120,      # 2 minutes for klines - triggers re-download  
+            'futures': 32400    # 9 hours for futures - triggers re-download
         }
         
         # Gap filling statistics
@@ -257,6 +266,23 @@ class UnifiedGapFiller:
             # Fill gaps if requested
             fill_results = {}
             if auto_fill:
+                # Check if gaps exceed thresholds and trigger collection hook
+                large_gaps = [gap for gap in gaps if gap.get('gap_size', 0) >= self.gap_thresholds.get(data_type, 300)]
+                
+                if large_gaps and self.gap_collection_hook:
+                    self.logger.info(f"🔄 Large gaps detected ({len(large_gaps)}), triggering collection hook...")
+                    for gap in large_gaps:
+                        try:
+                            collection_result = self.gap_collection_hook.trigger_data_collection(
+                                gap, data_type, symbol, exchange
+                            )
+                            if collection_result.get('triggered', False):
+                                self.logger.info(f"✅ Collection hook triggered for gap: {gap}")
+                            else:
+                                self.logger.warning(f"⚠️ Collection hook not triggered: {collection_result.get('reason', 'Unknown')}")
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed to trigger collection hook: {e}")
+                
                 fill_results = await self.fill_gaps(symbol, exchange, data_type, gaps)
             else:
                 fill_results = {

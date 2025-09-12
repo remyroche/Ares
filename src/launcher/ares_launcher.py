@@ -242,9 +242,10 @@ class AresLauncher:
                 'next_stage': 'model_training',
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
                 'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata', 'cross_timeframe_features'],
-                'sub_pipelines': ['sr_detection', 'sr_clustering', 'sr_ml_learning', 'hmm_clustering',
+                'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
                                 'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-                                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis']
+                                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis',
+                                'sr_feature_integration']
             },
             'model_training': {
                 'next_stage': 'backtesting',
@@ -858,7 +859,6 @@ class AresLauncher:
             # Market Analysis (10 sub-pipelines)
             'sr_detection': "Detect Support/Resistance levels",
             'sr_clustering': "Generate SR clusters",
-            'sr_ml_learning': "ML-based learning for SR clusters",
             'hmm_clustering': "HMM-based regime clustering",
             'hmm_regime_discovery': "Discover market regimes",
             'regime_data_splitting': "Split data by regimes",
@@ -866,6 +866,7 @@ class AresLauncher:
             'feature_lookback_optimization': "Optimize feature lookback periods",
             'fractional_differentiation': "Apply fractional differentiation",
             'cross_timeframe_analysis': "Cross timeframe interaction features",
+            'sr_feature_integration': "Integrate SR-specific features into feature set",
             
             # Model Training (10 sub-pipelines)
             'general_model_training': "Train general ML models",
@@ -910,14 +911,14 @@ class AresLauncher:
             
             # Market Analysis dependencies
             'sr_clustering': ['sr_detection'],
-            'sr_ml_learning': ['sr_clustering'],
-            'hmm_clustering': ['sr_ml_learning'],
+            'hmm_clustering': ['sr_clustering'],
             'hmm_regime_discovery': ['hmm_clustering'],
             'regime_data_splitting': ['hmm_regime_discovery'],
             'triple_barrier_labeling': ['regime_data_splitting'],
             'feature_lookback_optimization': ['triple_barrier_labeling'],
             'fractional_differentiation': ['feature_lookback_optimization'],
             'cross_timeframe_analysis': ['fractional_differentiation'],
+            'sr_feature_integration': ['cross_timeframe_analysis'],
             
             # Model Training dependencies
             'analyst_model_training': ['general_model_training'],
@@ -963,7 +964,6 @@ class AresLauncher:
             # Market Analysis outputs
             'sr_detection': ['sr_levels.json'],
             'sr_clustering': ['sr_clusters.json'],
-            'sr_ml_learning': ['sr_ml_model.pkl'],
             'hmm_clustering': ['hmm_clusters.json'],
             'hmm_regime_discovery': ['regime_assignments.parquet'],
             'regime_data_splitting': ['regime_splits.parquet'],
@@ -971,6 +971,7 @@ class AresLauncher:
             'feature_lookback_optimization': ['optimized_features.parquet'],
             'fractional_differentiation': ['fractional_features.parquet'],
             'cross_timeframe_analysis': ['cross_tf_features.parquet'],
+            'sr_feature_integration': ['sr_features.json'],
             
             # Model Training outputs
             'general_model_training': ['general_model.pkl'],

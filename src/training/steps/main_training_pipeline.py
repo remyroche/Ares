@@ -129,9 +129,10 @@ class MainPipelineConfig:
             'data_integration', 'data_export'
         ],
         PipelineStage.MARKET_ANALYSIS: [
-            'sr_detection', 'sr_clustering', 'sr_ml_learning', 'hmm_clustering',
+            'sr_detection', 'sr_clustering', 'hmm_clustering',
             'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-            'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis'
+            'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis',
+            'sr_feature_integration'
         ],
         PipelineStage.MODEL_TRAINING: [
             'general_model_training', 'analyst_model_training', 'tactician_model_training',
@@ -510,7 +511,7 @@ class MainTrainingPipeline:
 
         # For MARKET_ANALYSIS, always use sequential execution with automatic progression
         # Start with the first sub-pipeline and let it trigger the next ones
-        self.logger.info("🚀 Starting automatic sequential execution: sr_detection -> sr_clustering -> sr_ml_learning -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> fractional_differentiation -> cross_timeframe_analysis")
+        self.logger.info("🚀 Starting automatic sequential execution: sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> fractional_differentiation -> cross_timeframe_analysis -> sr_feature_integration")
 
         results = []
         if sub_pipeline_names:
@@ -718,9 +719,10 @@ def get_full_pipeline_config(
                 'feature_engineering', 'data_quality_check', 'data_storage', 'data_monitoring'
             ],
             PipelineStage.MARKET_ANALYSIS: [
-                'sr_detection', 'sr_clustering', 'sr_ml_learning', 'hmm_clustering',
+                'sr_detection', 'sr_clustering', 'hmm_clustering',
                 'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis'
+                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis',
+                'sr_feature_integration'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'general_model_training', 'analyst_model_training', 'tactician_model_training',

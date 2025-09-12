@@ -1603,14 +1603,9 @@ class HMMRegimeDiscoveryStep:
             self.logger.info('STEP 2: Data Loading and Preparation')
             self.logger.info('=' * 60)
             data_loading_start = time.time()
-            # Check for SR levels from step 02_5
-            sr_levels = pipeline_state.get('sr_levels')
-            if sr_levels:
-                self.logger.info('✅ Found SR levels from step 02_5 - using enhanced regime detection')
-                data_loaded = await self._load_and_prepare_data_with_sr(training_input, sr_levels)
-            else:
-                self.logger.info('⚠️ No SR levels found - using standard regime detection')
-                data_loaded = await self._load_and_prepare_data(training_input)
+            # Load data for HMM regime discovery
+            self.logger.info('📊 Loading data for HMM regime discovery')
+            data_loaded = await self._load_and_prepare_data(training_input)
             data_loading_elapsed = time.time() - data_loading_start
             self.logger.info(f'⏱️ Data Loading and Preparation completed in {data_loading_elapsed:.2f} seconds')
             if not data_loaded.get('success', False):
@@ -1674,20 +1669,8 @@ class HMMRegimeDiscoveryStep:
                 self._log_regime_discovery_results(regime_results)
                 await self._log_step3_artifacts_to_mlflow(regime_results, training_input)
                 self.logger.info('=' * 60)
-                self.logger.info('STEP 5: SR Context Analysis')
+                self.logger.info('STEP 5: Regime Analysis Complete')
                 self.logger.info('=' * 60)
-                sr_start = time.time()
-                # Safely extract current price
-                if 'close' in data_loaded['data'].columns and not data_loaded['data'].empty:
-                    current_price = float(data_loaded['data']['close'].iloc[-1])
-                else:
-                    self.logger.warning('⚠️ Close column not available or data is empty, skipping SR analysis')
-                    current_price = None
-                sr_context = await self._get_sr_context_for_regime_analysis(data_loaded['data'], current_price)
-                enhanced_regime_results = await self._enhance_regime_analysis_with_sr(regime_results, sr_context, data_loaded['data'])
-                pipeline_state.update(enhanced_regime_results)
-                sr_elapsed = time.time() - sr_start
-                self.logger.info(f'⏱️ SR Context Analysis completed in {sr_elapsed:.2f} seconds')
             else:
                 self.logger.error('❌ HMM regime discovery failed')
                 if regime_results and isinstance(regime_results, dict):
@@ -1993,7 +1976,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error loading and preparing data: {e}')
             return {'success': False, 'error': str(e)}
 
-    async def _load_and_prepare_data_with_sr(self, training_input: dict[str, Any], sr_levels: dict[str, Any]) -> dict[str, Any]:
+    async def _load_and_prepare_data_with_sr_removed(self, training_input: dict[str, Any], sr_levels: dict[str, Any]) -> dict[str, Any]:
         """Load and prepare data for HMM regime discovery using SR levels from step 02_5."""
         try:
             symbol = training_input.get('symbol', get_default_symbol())
@@ -2854,7 +2837,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f'❌ Error preparing HMM features: {e}')
             raise
 
-    async def _prepare_hmm_features_with_sr(self, df: pd.DataFrame, sr_levels: dict[str, Any]) -> pd.DataFrame:
+    async def _prepare_hmm_features_with_sr_removed(self, df: pd.DataFrame, sr_levels: dict[str, Any]) -> pd.DataFrame:
         """Prepare comprehensive features for HMM regime discovery enhanced with SR levels."""
         try:
             self.logger.info('🔧 Starting SR-enhanced feature preparation for HMM...')
@@ -2905,7 +2888,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning('⚠️ Falling back to standard HMM features')
             return await self._prepare_hmm_features(df)
 
-    def _calculate_distance_to_levels(self, prices: pd.Series, levels: list) -> pd.Series:
+    def _calculate_distance_to_levels_removed(self, prices: pd.Series, levels: list) -> pd.Series:
         """Calculate normalized distance to nearest SR level.
 
         Accepts levels in multiple formats:
@@ -2971,7 +2954,7 @@ class HMMRegimeDiscoveryStep:
         distances_arr = np.where(np.isfinite(distances_arr), distances_arr, 1.0)
         return pd.Series(distances_arr, index = prices.index)
 
-    def _calculate_sr_bounce_signal(self, df: pd.DataFrame, levels: list, level_type: str) -> pd.Series:
+    def _calculate_sr_bounce_signal_removed(self, df: pd.DataFrame, levels: list, level_type: str) -> pd.Series:
         """Calculate SR bounce signals based on price action near levels."""
         if not levels:
             return pd.Series([0.0] * len(df), index=df.index)
@@ -3935,7 +3918,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f'⚠️ Error calculating transition matrix: {e}')
             return np.array([])
 
-    async def _get_sr_context_for_regime_analysis(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
+    async def _get_sr_context_for_regime_analysis_removed(self, market_data: pd.DataFrame, current_price: float) -> dict[str, Any]:
         """Get SR context for regime analysis."""
         try:
             if not hasattr(self, 'sr_predictor') or self.sr_predictor is None:
@@ -3948,7 +3931,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.error(f'Error getting SR context for regime analysis: {e}')
             return {}
 
-    async def _enhance_regime_analysis_with_sr(self, regime_results: dict[str, Any], sr_context: dict[str, Any], market_data: pd.DataFrame) -> dict[str, Any]:
+    async def _enhance_regime_analysis_with_sr_removed(self, regime_results: dict[str, Any], sr_context: dict[str, Any], market_data: pd.DataFrame) -> dict[str, Any]:
         """Enhance regime analysis with SR context."""
         try:
             enhanced_results = regime_results.copy()
@@ -3963,7 +3946,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.error(f'Error enhancing regime analysis with SR: {e}')
             return regime_results
 
-    async def _create_sr_regime_features(self, regime_states: list[int], sr_context: dict[str, Any], market_data: pd.DataFrame) -> dict[str, Any]:
+    async def _create_sr_regime_features_removed(self, regime_states: list[int], sr_context: dict[str, Any], market_data: pd.DataFrame) -> dict[str, Any]:
         """Create SR-aware regime features."""
         try:
             features = {}

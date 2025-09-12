@@ -1547,6 +1547,7 @@ class MarketAnalysisSubPipeline:
                     # Import data quality utilities
                     from src.utils.data.quality.data_quality import DataQualityValidator, QualityThresholds
                     from src.utils.data.quality.data_cleaning import DataCleaner
+                    from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
                     from src.utils.enhanced_artifact_manager import get_artifact_manager
 
                     # Create data quality validator with appropriate thresholds
@@ -1559,6 +1560,7 @@ class MarketAnalysisSubPipeline:
                     
                     # Create data cleaner with appropriate data type
                     data_cleaner = DataCleaner(data_type='klines')  # Default to klines for market analysis
+                    quality_scorer = get_quality_scorer()
                     
                     # Get artifact manager
                     artifact_manager = get_artifact_manager()
@@ -1575,6 +1577,21 @@ class MarketAnalysisSubPipeline:
                     
                     if cleaned_data is not None and not cleaned_data.empty:
                         self.logger.info(f"✅ Data cleaning completed: {len(cleaned_data)} rows, {len(cleaned_data.columns)} features")
+                        
+                        # Perform comprehensive quality assessment
+                        self.logger.info("📊 Performing comprehensive quality assessment...")
+                        quality_assessment = quality_scorer.assess_data_quality(
+                            cleaned_data,
+                            context="market_analysis",
+                            step_name="hmm_regime_discovery",
+                            data_type='klines'
+                        )
+                        
+                        self.logger.info(f"📊 Quality Assessment: {quality_assessment.overall_score:.2f} ({quality_assessment.level.value})")
+                        if quality_assessment.issues:
+                            self.logger.warning(f"⚠️ Quality Issues: {quality_assessment.issues}")
+                        if quality_assessment.warnings:
+                            self.logger.warning(f"⚠️ Quality Warnings: {quality_assessment.warnings}")
                         
                         # Re-check for constant features after cleaning
                         self.logger.info("🔍 Re-checking for constant features after data cleaning...")

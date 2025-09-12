@@ -54,7 +54,23 @@ class EnhancedStepValidator:
         """Initialize the enhanced step validator."""
         self.config = config or {}
         self.logger = get_logger(__name__)
-        self.data_quality_framework = DataQualityFramework()
+        
+        # Initialize comprehensive data quality tools
+        try:
+            from src.utils.data.quality.data_quality import DataQualityFramework
+            from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+            from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+            
+            self.data_quality_framework = DataQualityFramework()
+            self.quality_scorer = get_quality_scorer()
+            self.advanced_quality_metrics = AdvancedQualityMetrics()
+            
+            self.logger.info('✅ Enhanced step validator initialized with comprehensive data quality tools')
+        except ImportError as e:
+            self.logger.warning(f'⚠️ Comprehensive data quality tools not available: {e}')
+            self.data_quality_framework = None
+            self.quality_scorer = None
+            self.advanced_quality_metrics = None
         
         # Validation schemas for each step
         self.step_schemas = {
@@ -363,8 +379,36 @@ class EnhancedStepValidator:
                 quality_result['errors'].append(f"Missing required columns: {missing_columns}")
                 quality_result['valid'] = False
             
-            # Data quality validation
-            quality_thresholds = schema.get('data_quality_thresholds', {})
+            # Use comprehensive data quality validation
+            if self.data_quality_framework:
+                try:
+                    # Perform comprehensive quality assessment
+                    quality_assessment = self.quality_scorer.assess_data_quality(
+                        df,
+                        context="market_analysis",
+                        step_name=step_name,
+                        data_type="klines"
+                    )
+                    
+                    # Check quality level
+                    if quality_assessment.level.value in ['poor', 'critical']:
+                        quality_result['errors'].extend(quality_assessment.issues)
+                        quality_result['valid'] = False
+                    elif quality_assessment.warnings:
+                        quality_result['warnings'].extend(quality_assessment.warnings)
+                    
+                    # Add quality metrics to result
+                    quality_result['quality_score'] = quality_assessment.overall_score
+                    quality_result['quality_level'] = quality_assessment.level.value
+                    quality_result['component_scores'] = quality_assessment.component_scores
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Comprehensive quality assessment failed: {e}")
+                    # Fallback to basic validation
+                    quality_thresholds = schema.get('data_quality_thresholds', {})
+            else:
+                # Fallback to basic validation
+                quality_thresholds = schema.get('data_quality_thresholds', {})
             
             # Check NaN ratio
             max_nan_ratio = quality_thresholds.get('max_nan_ratio', 0.1)

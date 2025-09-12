@@ -109,7 +109,6 @@ class SubPipelineConfig:
     max_workers: int = 4
     validation_enabled: bool = True
     monitoring_enabled: bool = True
-    enable_fractional_differentiation: bool = True
     custom_params: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
@@ -162,7 +161,6 @@ class MarketAnalysisSubPipeline:
             'regime_data_splitting': self._regime_data_splitting_pipeline,
             'triple_barrier_labeling': self._triple_barrier_labeling_pipeline,
             'feature_lookback_optimization': self._feature_lookback_optimization_pipeline,
-            'fractional_differentiation': self._fractional_differentiation_pipeline,
             'cross_timeframe_analysis': self._cross_timeframe_analysis_pipeline,
             'temporal_feature_integration': self._temporal_feature_integration_pipeline,
             'sr_feature_integration': self._sr_feature_integration_pipeline
@@ -529,7 +527,6 @@ class MarketAnalysisSubPipeline:
             'regime_data_splitting',
             'triple_barrier_labeling',
             'feature_lookback_optimization',
-            'fractional_differentiation',
             'cross_timeframe_analysis',
             'temporal_feature_integration',
             'sr_feature_integration'
@@ -2026,15 +2023,15 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("feature_lookback_optimization", config, artifacts)
 
-        # Automatically trigger the next sub-pipeline: fractional_differentiation
-        self.logger.info("🔄 Feature lookback optimization completed, triggering next: fractional_differentiation")
+        # Automatically trigger the next sub-pipeline: cross_timeframe_analysis
+        self.logger.info("🔄 Feature lookback optimization completed, triggering next: cross_timeframe_analysis")
         try:
-            next_artifacts = await self._fractional_differentiation_pipeline(config)
+            next_artifacts = await self._cross_timeframe_analysis_pipeline(config)
             # Merge artifacts from next pipeline
             artifacts.update(next_artifacts)
-            self.logger.info("✅ Fractional differentiation pipeline completed successfully")
+            self.logger.info("✅ Cross timeframe analysis pipeline completed successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to execute fractional differentiation pipeline: {e}")
+            self.logger.error(f"❌ Failed to execute cross timeframe analysis pipeline: {e}")
 
         return artifacts
 
@@ -2328,84 +2325,6 @@ class MarketAnalysisSubPipeline:
             self.logger.warning(f"⚠️ Feature optimization failed for {feature_name}: {e}")
             return periods[len(periods) // 2]
 
-    async def _fractional_differentiation_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Fractional differentiation sub-pipeline."""
-        self.logger.info("🔢 Executing fractional differentiation pipeline")
-        
-        artifacts = {
-            'differentiated_data': [],
-            'differentiation_params': {},
-            'stationarity_metrics': {}
-        }
-        
-        # Check if fractional differentiation is disabled
-        if not config.enable_fractional_differentiation:
-            self.logger.info("⏭️ Fractional differentiation disabled in config, skipping execution")
-            artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
-            # Still proceed to next pipeline
-            self._log_sub_pipeline_completion("fractional_differentiation", config, artifacts)
-            
-            # Automatically trigger the next sub-pipeline: cross_timeframe_analysis
-            self.logger.info("🔄 Fractional differentiation skipped, triggering next: cross_timeframe_analysis")
-            try:
-                next_artifacts = await self._cross_timeframe_analysis_pipeline(config)
-                artifacts.update(next_artifacts)
-                self.logger.info("✅ Cross timeframe analysis pipeline completed successfully")
-            except Exception as e:
-                self.logger.error(f"❌ Failed to execute cross timeframe analysis pipeline: {e}")
-            
-            return artifacts
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual fractional differentiation")
-            artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
-            return artifacts
-        
-        # Import and use fractional differentiation
-        try:
-            from src.feature_engineering.fractional_differentiation_pipeline import FractionalDifferentiationPipeline, FractionalDiffConfig
-            
-            frac_diff_config = FractionalDiffConfig(
-                d_min=0.0,
-                d_max=1.0,
-                d_step=0.1,
-                threshold=0.01,
-                enable_data_quality_validation=True
-            )
-            frac_diff_pipeline = FractionalDifferentiationPipeline(frac_diff_config)
-            
-            # Execute fractional differentiation
-            frac_diff_result = await frac_diff_pipeline.apply_fractional_differentiation(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
-            
-            artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
-            artifacts['differentiation_params'] = frac_diff_result.differentiation_params
-            artifacts['stationarity_metrics'] = frac_diff_result.stationarity_metrics
-            artifacts['memory_metrics'] = frac_diff_result.memory_metrics
-            artifacts['optimal_d'] = frac_diff_result.optimal_d
-            
-        except ImportError:
-            self.logger.warning("⚠️ Fractional differentiation pipeline not available, using mock")
-            artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("fractional_differentiation", config, artifacts)
-
-        # Automatically trigger the next sub-pipeline: cross_timeframe_analysis
-        self.logger.info("🔄 Fractional differentiation completed, triggering next: cross_timeframe_analysis")
-        try:
-            next_artifacts = await self._cross_timeframe_analysis_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ Cross timeframe analysis pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute cross timeframe analysis pipeline: {e}")
-
-        return artifacts
     
     async def _cross_timeframe_analysis_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Cross timeframe analysis sub-pipeline."""

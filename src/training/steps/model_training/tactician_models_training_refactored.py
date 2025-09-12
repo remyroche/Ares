@@ -64,7 +64,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         feature_names: Optional[List[str]] = None,
         hmm_states: Optional[np.ndarray] = None,
         analyst_signals: Optional[np.ndarray] = None,
-        analyst_model_outputs: Optional[np.ndarray] = None
+        analyst_model_outputs: Optional[np.ndarray] = None,
+        hmm_regime_features: Optional[np.ndarray] = None,
+        all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None
     ) -> Dict[str, Any]:
         """
         Execute Tactician models training step.
@@ -77,6 +79,8 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             hmm_states: HMM cluster/regime states
             analyst_signals: Binary signals from Analyst (green light indicators)
             analyst_model_outputs: Analyst model predictions used as features
+            hmm_regime_features: HMM regime features (probabilities, characteristics)
+            all_analyst_models_outputs: All individual analyst ML model outputs
             
         Returns:
             Dictionary containing training results and metadata
@@ -94,20 +98,46 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             if hmm_states is not None:
                 hmm_states = hmm_states[green_light_mask]
         
-        # Add analyst model outputs as features if provided
+        # Combine all features: base features + HMM regime features + all analyst model outputs
+        additional_features = []
+        additional_feature_names = []
+        
+        # Add HMM regime features if provided
+        if hmm_regime_features is not None:
+            if analyst_signals is not None:
+                hmm_regime_features = hmm_regime_features[green_light_mask]
+            additional_features.append(hmm_regime_features)
+            additional_feature_names.extend([f"hmm_regime_{i}" for i in range(hmm_regime_features.shape[1])])
+            self.logger.info(f"📊 Added {hmm_regime_features.shape[1]} HMM regime features")
+        
+        # Add all individual analyst model outputs if provided
+        if all_analyst_models_outputs is not None:
+            for model_name, model_outputs in all_analyst_models_outputs.items():
+                if analyst_signals is not None:
+                    model_outputs = model_outputs[green_light_mask]
+                additional_features.append(model_outputs)
+                additional_feature_names.extend([f"analyst_{model_name}_{i}" for i in range(model_outputs.shape[1])])
+            self.logger.info(f"📊 Added outputs from {len(all_analyst_models_outputs)} analyst models")
+        
+        # Add legacy analyst model outputs for backward compatibility
         if analyst_model_outputs is not None:
             if analyst_signals is not None:
                 analyst_model_outputs = analyst_model_outputs[green_light_mask]
-            
-            # Concatenate analyst outputs as additional features
-            X = np.column_stack([X, analyst_model_outputs])
+            additional_features.append(analyst_model_outputs)
+            additional_feature_names.extend([f"analyst_legacy_{i}" for i in range(analyst_model_outputs.shape[1])])
+            self.logger.info(f"📊 Added {analyst_model_outputs.shape[1]} legacy analyst outputs")
+        
+        # Concatenate all additional features
+        if additional_features:
+            X = np.column_stack([X] + additional_features)
             
             # Update feature names
             if feature_names is not None:
-                analyst_feature_names = [f"analyst_output_{i}" for i in range(analyst_model_outputs.shape[1])]
-                feature_names = feature_names + analyst_feature_names
+                feature_names = feature_names + additional_feature_names
             else:
                 feature_names = [f"feature_{i}" for i in range(X.shape[1])]
+            
+            self.logger.info(f"📊 Total features: {X.shape[1]} (base + HMM + all analyst models)")
         
         # Use the parent class execute method with additional tactician-specific logic
         results = super().execute(
@@ -217,11 +247,13 @@ def execute_tactician_models_training_refactored(
     feature_names: Optional[List[str]] = None,
     hmm_states: Optional[np.ndarray] = None,
     analyst_signals: Optional[np.ndarray] = None,
-    analyst_model_outputs: Optional[np.ndarray] = None
+    analyst_model_outputs: Optional[np.ndarray] = None,
+    hmm_regime_features: Optional[np.ndarray] = None,
+    all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None
 ) -> Dict[str, Any]:
     """Execute Tactician models training step (refactored)."""
     step = create_tactician_models_training_step_refactored(config)
-    return step.execute(X, y, regime_labels, feature_names, hmm_states, analyst_signals, analyst_model_outputs)
+    return step.execute(X, y, regime_labels, feature_names, hmm_states, analyst_signals, analyst_model_outputs, hmm_regime_features, all_analyst_models_outputs)
 
 
 # Example usage and comparison

@@ -12,13 +12,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import logging
 
 from src.utils.logger import system_logger
-from src.utils.ml_common.config import PerRegimeTrainingConfig
-from src.utils.ml_common.training import PerRegimeTrainingStep
+from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
+from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
 
 logger = system_logger.getChild('AnalystEnsembleTraining')
 
 
-class AnalystEnsembleTrainingStep(PerRegimeTrainingStep):
+class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     """
     Analyst Ensemble Training Step with per-regime ensemble training, HPO, saving, and metrics.
     
@@ -26,7 +26,7 @@ class AnalystEnsembleTrainingStep(PerRegimeTrainingStep):
     to create robust ensemble predictions for trade decisions.
     """
     
-    def __init__(self, config: Optional[PerRegimeTrainingConfig] = None):
+    def __init__(self, config: Optional[EnsembleTrainingConfig] = None):
         """
         Initialize Analyst ensemble training step.
         
@@ -35,7 +35,7 @@ class AnalystEnsembleTrainingStep(PerRegimeTrainingStep):
         """
         # Set default configuration for analyst ensemble models
         if config is None:
-            config = PerRegimeTrainingConfig(
+            config = EnsembleTrainingConfig(
                 model_name="analyst_ensemble_models",
                 timeframe="5m",
                 model_types=["VotingRegressor", "StackingRegressor", "BaggingRegressor", "AdaBoostRegressor"],
@@ -193,7 +193,7 @@ class AnalystEnsembleTrainingStep(PerRegimeTrainingStep):
 
 # Convenience functions for backward compatibility
 def create_analyst_ensemble_training_step(
-    config: Optional[PerRegimeTrainingConfig] = None
+    config: Optional[EnsembleTrainingConfig] = None
 ) -> AnalystEnsembleTrainingStep:
     """Create Analyst ensemble training step."""
     return AnalystEnsembleTrainingStep(config)
@@ -203,7 +203,7 @@ def execute_analyst_ensemble_training(
     X: np.ndarray,
     y: np.ndarray,
     regime_labels: np.ndarray,
-    config: Optional[PerRegimeTrainingConfig] = None,
+    config: Optional[EnsembleTrainingConfig] = None,
     feature_names: Optional[List[str]] = None,
     hmm_states: Optional[np.ndarray] = None,
     base_analyst_models: Optional[Dict[str, Any]] = None,
@@ -221,7 +221,7 @@ if __name__ == "__main__":
     print("=" * 50)
     
     # Create configuration
-    config = PerRegimeTrainingConfig(
+    config = EnsembleTrainingConfig(
         model_name="analyst_ensemble_models",
         timeframe="5m",
         model_types=["VotingRegressor", "StackingRegressor", "BaggingRegressor", "AdaBoostRegressor"],

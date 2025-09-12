@@ -12,13 +12,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import logging
 
 from src.utils.logger import system_logger
-from src.utils.ml_common.config import PerRegimeTrainingConfig
-from src.utils.ml_common.training import PerRegimeTrainingStep
+from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
+from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
 
 logger = system_logger.getChild('TacticianEnsembleTraining')
 
 
-class TacticianEnsembleTrainingStep(PerRegimeTrainingStep):
+class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     """
     Tactician Ensemble Training Step with all-regime ensemble training, HPO, saving, and metrics.
     
@@ -26,7 +26,7 @@ class TacticianEnsembleTrainingStep(PerRegimeTrainingStep):
     with all previous model inputs (HMM, Analyst) to create the final meta-learner for timing decisions.
     """
     
-    def __init__(self, config: Optional[PerRegimeTrainingConfig] = None):
+    def __init__(self, config: Optional[EnsembleTrainingConfig] = None):
         """
         Initialize Tactician ensemble training step.
         
@@ -35,7 +35,7 @@ class TacticianEnsembleTrainingStep(PerRegimeTrainingStep):
         """
         # Set default configuration for tactician ensemble models
         if config is None:
-            config = PerRegimeTrainingConfig(
+            config = EnsembleTrainingConfig(
                 model_name="tactician_ensemble_models",
                 timeframe="1m",
                 model_types=["VotingRegressor", "StackingRegressor", "BaggingRegressor", "AdaBoostRegressor"],
@@ -303,7 +303,7 @@ class TacticianEnsembleTrainingStep(PerRegimeTrainingStep):
 
 # Convenience functions for backward compatibility
 def create_tactician_ensemble_training_step(
-    config: Optional[PerRegimeTrainingConfig] = None
+    config: Optional[EnsembleTrainingConfig] = None
 ) -> TacticianEnsembleTrainingStep:
     """Create Tactician ensemble training step."""
     return TacticianEnsembleTrainingStep(config)
@@ -313,7 +313,7 @@ def execute_tactician_ensemble_training(
     X: np.ndarray,
     y: np.ndarray,
     regime_labels: np.ndarray,
-    config: Optional[PerRegimeTrainingConfig] = None,
+    config: Optional[EnsembleTrainingConfig] = None,
     feature_names: Optional[List[str]] = None,
     hmm_states: Optional[np.ndarray] = None,
     base_tactician_models: Optional[Dict[str, Any]] = None,
@@ -339,7 +339,7 @@ if __name__ == "__main__":
     print("=" * 60)
     
     # Create configuration
-    config = PerRegimeTrainingConfig(
+    config = EnsembleTrainingConfig(
         model_name="tactician_ensemble_models",
         timeframe="1m",
         model_types=["VotingRegressor", "StackingRegressor", "BaggingRegressor", "AdaBoostRegressor"],

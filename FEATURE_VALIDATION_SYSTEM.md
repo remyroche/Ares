@@ -89,6 +89,12 @@ def create_my_features(data: pd.DataFrame) -> pd.DataFrame:
     return result
 
 # When called, this will automatically validate the output and issue warnings
+# Example output:
+# WARNING: Function create_my_features generated 2 feature quality issues:
+#   Feature 'new_feature': 1 issue
+#     - Feature 'new_feature' contains 5 infinite values
+#   Feature 'constant_feature': 1 issue
+#     - Feature 'constant_feature' is constant (all values = 1.0)
 enhanced_data = create_my_features(market_data)
 ```
 
@@ -246,6 +252,7 @@ def process_with_validation(data):
 6. **Performance Friendly**: Validation can be disabled in production if needed
 7. **Sensitive Detection**: 1% zero threshold catches more problematic features
 8. **Warm-up Period Handling**: Excludes first 50 rows to avoid false warnings during initialization
+9. **Feature-Specific Reporting**: Every warning clearly identifies which specific feature has issues
 
 ## Migration Guide
 
@@ -305,5 +312,6 @@ The system is designed to be:
 - **Reliable**: Thoroughly tested and validated
 - **Sensitive**: 1% zero threshold catches subtle issues
 - **Smart**: Excludes warm-up periods to avoid false warnings
+- **Clear**: Every warning identifies the specific feature name
 
 This implementation addresses the original requirement to "immediately generate a warning if we generate features that have infinite values, are constant, generate NaN or are 0" while providing a foundation for more advanced feature quality management. The recent updates make the system even more practical for production use.

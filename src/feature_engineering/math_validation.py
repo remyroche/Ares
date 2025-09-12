@@ -190,10 +190,16 @@ def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series],
             if warn_on_issues:
                 warnings.warn(issue_msg, UserWarning)
         
-        # Log summary
+        # Log summary with feature name
         logger.debug(f"Feature validation for '{feature_name}': "
                     f"{validation_report['valid_values']}/{validation_report['total_values']} valid, "
                     f"{len(validation_report['issues'])} issues")
+        
+        # Log each issue with feature name for better visibility
+        if validation_report['issues']:
+            logger.warning(f"Feature '{feature_name}' validation issues:")
+            for issue in validation_report['issues']:
+                logger.warning(f"  - {issue}")
         
     except Exception as e:
         error_msg = f"Error validating feature '{feature_name}': {str(e)}"
@@ -289,14 +295,24 @@ def feature_validation_decorator(warn_on_issues: bool = True,
                     exclude_first_rows=exclude_first_rows
                 )
                 
-                # Log summary of validation results
+                # Log summary of validation results with feature details
                 total_issues = sum(len(report['issues']) for report in output_validation.values())
                 total_critical = sum(len(report['critical_issues']) for report in output_validation.values())
                 
                 if total_critical > 0:
-                    logger.error(f"Function {func.__name__} generated {total_critical} critical feature issues")
+                    logger.error(f"Function {func.__name__} generated {total_critical} critical feature issues:")
+                    for feature_name, report in output_validation.items():
+                        if report['critical_issues']:
+                            logger.error(f"  Feature '{feature_name}': {len(report['critical_issues'])} critical issues")
+                            for issue in report['critical_issues']:
+                                logger.error(f"    - {issue}")
                 elif total_issues > 0:
-                    logger.warning(f"Function {func.__name__} generated {total_issues} feature quality issues")
+                    logger.warning(f"Function {func.__name__} generated {total_issues} feature quality issues:")
+                    for feature_name, report in output_validation.items():
+                        if report['issues']:
+                            logger.warning(f"  Feature '{feature_name}': {len(report['issues'])} issues")
+                            for issue in report['issues']:
+                                logger.warning(f"    - {issue}")
                 else:
                     logger.debug(f"Function {func.__name__} generated features passed validation")
             

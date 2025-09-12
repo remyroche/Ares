@@ -1,4 +1,4 @@
-from ...core.decorators import handles_errors
+from ...core.decorators import handles_errors, traced
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
@@ -10,10 +10,21 @@ Designed to work with existing HMM regime system without redundant regime tuning
 
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 import pandas as pd
 
 from src.utils.logger import get_logger
+from src.utils.hardware.m1_optimizations import M1MemoryOptimizer
+from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
+from src.utils.vectorized_processing_core import VectorizedProcessingCore
+from src.utils.monitoring_utils import PerformanceMonitor
+from src.utils.error_handler import ErrorHandler
+from src.utils.feature_selection.step08_advanced_feature_selection_per_regime import (
+    PerRegimeAdvancedFeatureSelectionStep
+)
+from src.utils.feature_selection.step08_unified_final import (
+    Step08UnifiedFinal
+)
 from .quality_validation_decorator import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
@@ -22,10 +33,10 @@ from .quality_validation_decorator import (
 )
 
 # Import fractional components
-from src.training.steps.step06_labeling_components.fractional_triple_barrier_labeling import (
+from src.feature_engineering.step06_labeling_components.fractional_triple_barrier_labeling import (
     FractionalTripleBarrierLabeling
 )
-from .training.steps.fractional_differentiation import FractionalFeatureGenerator
+from .fractional_differentiation import FractionalFeatureGenerator
 import numpy as np
 import datetime
 import logging
@@ -222,24 +233,122 @@ class CombinedFractionalSystem:
         """
         self.config = config or {}
         
-        # Initialize components
-        self.fractional_labeler = FractionalTripleBarrierLabeling(
-            fractional_config = self.config.get('labeling', {})
-        )
+        # Initialize components with error handling
+        try:
+            self.fractional_labeler = FractionalTripleBarrierLabeling(
+                fractional_config = self.config.get('labeling', {})
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize fractional labeler: {e}")
+            self.fractional_labeler = None
         
-        self.fractional_feature_generator = FractionalFeatureGenerator(
-            config = self.config.get('differentiation', {})
-        )
+        try:
+            # Enhanced configuration with hardware optimizations
+            differentiation_config = self.config.get('differentiation', {})
+            enhanced_config = {
+                **differentiation_config,
+                # Hardware optimization settings
+                'memory_limit_gb': self.config.get('memory_limit_gb', 8.0),
+                'enable_gc_tuning': self.config.get('enable_gc_tuning', True),
+                'enable_memory_leak_detection': self.config.get('enable_memory_leak_detection', True),
+                'max_workers': self.config.get('max_workers', 4),
+                'chunk_size': self.config.get('chunk_size', 1000),
+                'use_process_pool': self.config.get('use_process_pool', True),
+                'memory_limit_mb': self.config.get('memory_limit_mb', 2048),
+                'enable_gpu_acceleration': self.config.get('enable_gpu_acceleration', False),
+                'enable_detailed_monitoring': self.config.get('enable_detailed_monitoring', True),
+                'enable_graceful_degradation': self.config.get('enable_graceful_degradation', True)
+            }
+            
+            self.fractional_feature_generator = FractionalFeatureGenerator(config=enhanced_config)
+        except Exception as e:
+            self.logger.error(f"Failed to initialize fractional feature generator: {e}")
+            raise
         
-        self.hmm_integration = HMMFractionalIntegration(
-            config = self.config.get('hmm_integration', {})
-        )
+        try:
+            self.hmm_integration = HMMFractionalIntegration(
+                config = self.config.get('hmm_integration', {})
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize HMM integration: {e}")
+            self.hmm_integration = None
         
         # Performance tracking
         self.performance_history = []
         self.logger = get_logger("CombinedFractionalSystem")
         
+        # Initialize hardware optimizations
+        self._initialize_hardware_optimizations()
+        
         self.logger.info("✅ Combined Fractional System initialized successfully")
+    
+    def _initialize_hardware_optimizations(self):
+        """Initialize hardware optimization utilities."""
+        try:
+            # Initialize M1 memory optimizer
+            self.memory_optimizer = M1MemoryOptimizer(
+                memory_limit_gb=self.config.get('memory_limit_gb', 8.0),
+                enable_gc_tuning=self.config.get('enable_gc_tuning', True),
+                enable_memory_leak_detection=self.config.get('enable_memory_leak_detection', True)
+            )
+            
+            # Initialize parallel processing optimizer
+            self.parallel_optimizer = MacM1ParallelOptimizer(
+                max_workers=self.config.get('max_workers', 4),
+                chunk_size=self.config.get('chunk_size', 1000),
+                use_process_pool=self.config.get('use_process_pool', True),
+                memory_limit_mb=self.config.get('memory_limit_mb', 2048)
+            )
+            
+            # Initialize vectorized processing core
+            self.vectorized_core = VectorizedProcessingCore(
+                enable_gpu_acceleration=self.config.get('enable_gpu_acceleration', False),
+                memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
+            )
+            
+            # Initialize performance monitor
+            self.performance_monitor = PerformanceMonitor(
+                enable_detailed_monitoring=self.config.get('enable_detailed_monitoring', True)
+            )
+            
+            # Initialize error handler
+            self.error_handler = ErrorHandler(
+                enable_graceful_degradation=self.config.get('enable_graceful_degradation', True)
+            )
+            
+            # Initialize Step08 advanced feature selection
+            step08_config = self._create_step08_config()
+            self.step08_selector = PerRegimeAdvancedFeatureSelectionStep(step08_config)
+            
+            # Initialize unified final selector
+            self.unified_selector = Step08UnifiedFinal()
+            
+            self.logger.info("✅ Hardware optimizations initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize some hardware optimizations: {e}")
+            # Fallback to basic functionality
+            self.memory_optimizer = None
+            self.parallel_optimizer = None
+            self.vectorized_core = None
+            self.performance_monitor = None
+            self.error_handler = None
+            self.step08_selector = None
+            self.unified_selector = None
+    
+    def _create_step08_config(self) -> Dict[str, Any]:
+        """Create configuration for Step08 advanced feature selection."""
+        return {
+            'per_regime_feature_selection': True,
+            'adaptive_feature_selection_per_regime': True,
+            'use_m1_optimizations': True,
+            'enable_gpu_acceleration': self.config.get('enable_gpu_acceleration', False),
+            'memory_limit_gb': self.config.get('memory_limit_gb', 8.0),
+            'max_workers': self.config.get('max_workers', 4),
+            'feature_selection_method': 'mutual_info',
+            'redundancy_threshold': 0.85,
+            'interpretability_weight': 0.3
+        }
     
     @handles_errors("Combined fractional system processing")
     @validate_market_data_quality
@@ -266,17 +375,33 @@ class CombinedFractionalSystem:
             
             # 1. Generate fractional differentiation features (Step 6)
             self.logger.info("📊 Generating fractional differentiation features...")
-            features = self.fractional_feature_generator.generate_features(price_data, volume_data)
+            features = self.fractional_feature_generator.generate_features_with_volume(price_data, volume_data)
             
             # 2. Apply fractional labeling
-            self.logger.info("🏷️ Applying fractional labeling...")
-            labels = self.fractional_labeler.apply_fractional_triple_barrier_labeling(
-                price_data, regime_labels = hmm_regime
-            )
+            if self.fractional_labeler is not None:
+                self.logger.info("🏷️ Applying fractional labeling...")
+                try:
+                    labels = self.fractional_labeler.apply_fractional_triple_barrier_labeling(
+                        price_data, regime_labels = hmm_regime
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Fractional labeling failed: {e}")
+                    labels = pd.DataFrame()  # Empty labels as fallback
+            else:
+                self.logger.warning("Fractional labeler not available, skipping labeling")
+                labels = pd.DataFrame()  # Empty labels as fallback
             
             # 3. Enhance features with HMM regime information
-            self.logger.info("🔧 Enhancing features with HMM regime information...")
-            enhanced_features = self.hmm_integration.enhance_features(features, hmm_regime)
+            if self.hmm_integration is not None:
+                self.logger.info("🔧 Enhancing features with HMM regime information...")
+                try:
+                    enhanced_features = self.hmm_integration.enhance_features(features, hmm_regime)
+                except Exception as e:
+                    self.logger.warning(f"HMM integration failed: {e}")
+                    enhanced_features = features  # Use original features as fallback
+            else:
+                self.logger.warning("HMM integration not available, using original features")
+                enhanced_features = features
             
             # 4. Calculate performance metrics
             performance_metrics = self._calculate_performance_metrics(
@@ -525,7 +650,18 @@ def get_combined_fractional_config(
             'threshold': 1e-5,
             'optimize_order': True,
             'enable_parallel_processing': True,
-            'max_parallel_workers': 4
+            'max_parallel_workers': 4,
+            # Hardware optimization settings
+            'memory_limit_gb': 8.0,
+            'enable_gc_tuning': True,
+            'enable_memory_leak_detection': True,
+            'max_workers': 4,
+            'chunk_size': 1000,
+            'use_process_pool': True,
+            'memory_limit_mb': 2048,
+            'enable_gpu_acceleration': False,
+            'enable_detailed_monitoring': True,
+            'enable_graceful_degradation': True
         },
         'hmm_integration': hmm_integration_config or {
             'feature_enhancement': True,

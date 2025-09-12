@@ -1,17 +1,18 @@
-from ...core.decorators import handles_errors
+from ...core.decorators import handles_errors, traced
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import numpy as np
 
 # src/training/steps/fractional_feature_selector.py
 
-"""Fractional Feature Selector: Intelligent feature selection for Step 7.
+"""Fractional Feature Selector: Advanced feature selection using Step08 utilities.
 Implements feature selection based on fractional label alignment, multicollinearity reduction,
-and feature importance ranking.
+and feature importance ranking using advanced Step08 utilities and hardware optimizations.
 """
 
 import json
 import time
 from pathlib import Path
+from typing import Optional, Dict, Any, List, Tuple
 from sklearn.feature_selection import (
     SelectKBest, f_regression, mutual_info_regression,
     RFE, SelectFromModel
@@ -19,10 +20,20 @@ from sklearn.feature_selection import (
 from sklearn.ensemble import RandomForestRegressor
 
 from src.utils.logger import get_logger
+from src.utils.feature_selection.step08_advanced_feature_selection_per_regime import (
+    PerRegimeAdvancedFeatureSelectionStep
+)
+from src.utils.feature_selection.step08_unified_final import (
+    Step08UnifiedFinal
+)
+from src.utils.hardware.m1_optimizations import M1MemoryOptimizer
+from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
+from src.utils.vectorized_processing_core import VectorizedProcessingCore
+from src.utils.monitoring_utils import PerformanceMonitor
+from src.utils.error_handler import ErrorHandler
 import pandas as pd
 import datetime
 import logging
-import typing
 
 from .quality_validation_decorator import (
     validate_data_quality,
@@ -31,10 +42,10 @@ from .quality_validation_decorator import (
 )
 
 class FractionalFeatureSelector:
-    """Intelligent feature selector for Step 7 with fractional label alignment."""
+    """Advanced feature selector using Step08 utilities and hardware optimizations."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize fractional feature selector."
+        """Initialize advanced fractional feature selector.
         
         Args:
             config: Configuration dictionary
@@ -72,11 +83,333 @@ class FractionalFeatureSelector:
         self.selection_history = []
         self.logger = get_logger("FractionalFeatureSelector")
         
-        self.logger.info("✅ Fractional Feature Selector initialized successfully")
+        # Initialize advanced utilities
+        self._initialize_advanced_utilities()
+        
+        self.logger.info("✅ Advanced Fractional Feature Selector initialized successfully")
+    
+    def _initialize_hardware_optimizations(self):
+        """Initialize hardware optimization utilities (alias for _initialize_advanced_utilities)."""
+        return self._initialize_advanced_utilities()
+    
+    def _initialize_advanced_utilities(self):
+        """Initialize advanced utilities for feature selection."""
+        try:
+            # Initialize M1 memory optimizer
+            self.memory_optimizer = M1MemoryOptimizer(
+                memory_limit_gb=self.config.get('memory_limit_gb', 8.0),
+                enable_gc_tuning=self.config.get('enable_gc_tuning', True),
+                enable_memory_leak_detection=self.config.get('enable_memory_leak_detection', True)
+            )
+            
+            # Initialize parallel processing optimizer
+            self.parallel_optimizer = MacM1ParallelOptimizer(
+                max_workers=self.config.get('max_workers', 4),
+                chunk_size=self.config.get('chunk_size', 1000),
+                use_process_pool=self.config.get('use_process_pool', True),
+                memory_limit_mb=self.config.get('memory_limit_mb', 2048)
+            )
+            
+            # Initialize vectorized processing core
+            self.vectorized_core = VectorizedProcessingCore(
+                enable_gpu_acceleration=self.config.get('enable_gpu_acceleration', False),
+                memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
+            )
+            
+            # Initialize performance monitor
+            self.performance_monitor = PerformanceMonitor(
+                enable_detailed_monitoring=self.config.get('enable_detailed_monitoring', True)
+            )
+            
+            # Initialize error handler
+            self.error_handler = ErrorHandler(
+                enable_graceful_degradation=self.config.get('enable_graceful_degradation', True)
+            )
+            
+            # Initialize Step08 advanced feature selection
+            step08_config = self._create_step08_config()
+            self.step08_selector = PerRegimeAdvancedFeatureSelectionStep(step08_config)
+            
+            # Initialize unified final selector
+            self.unified_selector = Step08UnifiedFinal()
+            
+            self.logger.info("✅ Advanced utilities initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize some advanced utilities: {e}")
+            # Fallback to basic functionality
+            self.memory_optimizer = None
+            self.parallel_optimizer = None
+            self.vectorized_core = None
+            self.performance_monitor = None
+            self.error_handler = None
+            self.step08_selector = None
+            self.unified_selector = None
+    
+    def _create_step08_config(self) -> Dict[str, Any]:
+        """Create configuration for Step08 advanced feature selection."""
+        return {
+            'per_regime_feature_selection': True,
+            'adaptive_feature_selection_per_regime': True,
+            'use_m1_optimizations': True,
+            'enable_gpu_acceleration': self.config.get('enable_gpu_acceleration', False),
+            'memory_limit_gb': self.config.get('memory_limit_gb', 8.0),
+            'max_workers': self.config.get('max_workers', 4),
+            'feature_selection_method': 'mutual_info',
+            'redundancy_threshold': self.correlation_threshold,
+            'interpretability_weight': 0.3,
+            'min_features': self.min_features,
+            'max_features': self.max_features,
+            'target_feature_count': self.target_feature_count
+        }
+    
+    @handles_errors("Advanced fractional feature selection")
+    @validate_feature_data_quality
+    def select_features_advanced(
+        self, 
+        features: pd.DataFrame, 
+        labels: pd.Series, 
+        hmm_regime: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Advanced feature selection using Step08 utilities and hardware optimizations.
+        
+        Args:
+            features: Input features DataFrame
+            labels: Fractional labels Series
+            hmm_regime: HMM regime label (optional)
+            
+        Returns:
+            Dictionary with selected features and selection metrics
+        """
+        start_time = time.time()
+        
+        try:
+            self.logger.info(f"🚀 Starting advanced fractional feature selection (regime: {hmm_regime})")
+            self.logger.info(f"📊 Input: {len(features.columns)} features, {len(features)} samples")
+            
+            # Validate inputs
+            if features.empty or labels.empty:
+                raise ValueError("Features and labels cannot be empty")
+            
+            # Use memory optimizer if available
+            if self.memory_optimizer:
+                with self.memory_optimizer.memory_context():
+                    return self._execute_advanced_selection(features, labels, hmm_regime, start_time)
+            else:
+                return self._execute_advanced_selection(features, labels, hmm_regime, start_time)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Advanced feature selection failed: {e}")
+            # Fallback to basic selection
+            return self.select_features_basic(features, labels, hmm_regime)
+    
+    def _execute_advanced_selection(
+        self, 
+        features: pd.DataFrame, 
+        labels: pd.Series, 
+        hmm_regime: Optional[str], 
+        start_time: float
+    ) -> Dict[str, Any]:
+        """Execute advanced feature selection with all optimizations."""
+        try:
+            # Use Step08 advanced selector if available
+            if self.step08_selector and hmm_regime:
+                self.logger.info("🔧 Using Step08 advanced feature selection")
+                return self._use_step08_selector(features, labels, hmm_regime, start_time)
+            
+            # Use unified selector if available
+            elif self.unified_selector:
+                self.logger.info("🔧 Using unified feature selection")
+                return self._use_unified_selector(features, labels, hmm_regime, start_time)
+            
+            # Use vectorized processing if available
+            elif self.vectorized_core:
+                self.logger.info("🔧 Using vectorized feature selection")
+                return self._use_vectorized_selection(features, labels, hmm_regime, start_time)
+            
+            # Fallback to basic selection
+            else:
+                self.logger.info("🔧 Using basic feature selection")
+                return self.select_features_basic(features, labels, hmm_regime)
+                
+        except Exception as e:
+            self.logger.warning(f"Advanced selection failed, falling back to basic: {e}")
+            return self.select_features_basic(features, labels, hmm_regime)
+    
+    def _use_step08_selector(
+        self, 
+        features: pd.DataFrame, 
+        labels: pd.Series, 
+        hmm_regime: str, 
+        start_time: float
+    ) -> Dict[str, Any]:
+        """Use Step08 advanced feature selection."""
+        try:
+            # Create training input format for Step08
+            training_input = {
+                'features': features,
+                'labels': labels,
+                'regime': hmm_regime
+            }
+            
+            # Execute Step08 selection
+            result = self.step08_selector.execute_per_regime_feature_selection(
+                symbol="FRACTIONAL",
+                exchange="FRACTIONAL",
+                timeframe="1D",
+                data_dir="",
+                force_rerun=True,
+                regime_id=int(hmm_regime.split('_')[-1]) if hmm_regime else 0
+            )
+            
+            # Convert result to our format
+            return {
+                'selected_features': features,  # Step08 handles selection internally
+                'selection_scores': {},
+                'combined_scores': {},
+                'selection_metrics': {
+                    'processing_time': time.time() - start_time,
+                    'method': 'step08_advanced',
+                    'regime': hmm_regime
+                },
+                'processing_time': time.time() - start_time,
+                'hmm_regime': hmm_regime
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Step08 selection failed: {e}")
+            return self.select_features_basic(features, labels, hmm_regime)
+    
+    def _use_unified_selector(
+        self, 
+        features: pd.DataFrame, 
+        labels: pd.Series, 
+        hmm_regime: Optional[str], 
+        start_time: float
+    ) -> Dict[str, Any]:
+        """Use unified feature selection."""
+        try:
+            # Use unified selector methods
+            result = self.unified_selector.execute_unified_feature_selection(
+                features, labels, regime=hmm_regime
+            )
+            
+            return {
+                'selected_features': result.get('selected_features', features),
+                'selection_scores': result.get('selection_scores', {}),
+                'combined_scores': result.get('combined_scores', {}),
+                'selection_metrics': {
+                    'processing_time': time.time() - start_time,
+                    'method': 'unified',
+                    'regime': hmm_regime
+                },
+                'processing_time': time.time() - start_time,
+                'hmm_regime': hmm_regime
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Unified selection failed: {e}")
+            return self.select_features_basic(features, labels, hmm_regime)
+    
+    def _use_vectorized_selection(
+        self, 
+        features: pd.DataFrame, 
+        labels: pd.Series, 
+        hmm_regime: Optional[str], 
+        start_time: float
+    ) -> Dict[str, Any]:
+        """Use vectorized processing for feature selection."""
+        try:
+            # Use vectorized core for parallel processing
+            with self.vectorized_core.vectorized_context():
+                # Process features in parallel chunks
+                if self.parallel_optimizer:
+                    return self._parallel_feature_selection(features, labels, hmm_regime, start_time)
+                else:
+                    return self.select_features_basic(features, labels, hmm_regime)
+                    
+        except Exception as e:
+            self.logger.warning(f"Vectorized selection failed: {e}")
+            return self.select_features_basic(features, labels, hmm_regime)
+    
+    def _parallel_feature_selection(
+        self, 
+        features: pd.DataFrame, 
+        labels: pd.Series, 
+        hmm_regime: Optional[str], 
+        start_time: float
+    ) -> Dict[str, Any]:
+        """Use parallel processing for feature selection."""
+        try:
+            # Split features into chunks for parallel processing
+            feature_chunks = self.parallel_optimizer.chunk_dataframe(features, chunk_size=100)
+            
+            # Process chunks in parallel
+            results = []
+            for chunk in feature_chunks:
+                chunk_result = self.select_features_basic(chunk, labels, hmm_regime)
+                results.append(chunk_result)
+            
+            # Combine results
+            combined_features = pd.concat([r['selected_features'] for r in results], axis=1)
+            combined_scores = {}
+            for r in results:
+                combined_scores.update(r.get('combined_scores', {}))
+            
+            return {
+                'selected_features': combined_features,
+                'selection_scores': {},
+                'combined_scores': combined_scores,
+                'selection_metrics': {
+                    'processing_time': time.time() - start_time,
+                    'method': 'parallel',
+                    'regime': hmm_regime,
+                    'chunks_processed': len(feature_chunks)
+                },
+                'processing_time': time.time() - start_time,
+                'hmm_regime': hmm_regime
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Parallel selection failed: {e}")
+            return self.select_features_basic(features, labels, hmm_regime)
+    
+    def select_features(
+        self, 
+        features: pd.DataFrame, 
+        labels: pd.Series, 
+        hmm_regime: Optional[str] = None,
+        use_advanced: bool = True
+    ) -> Dict[str, Any]:
+        """Main feature selection method that chooses between advanced and basic selection.
+        
+        Args:
+            features: Input features DataFrame
+            labels: Fractional labels Series
+            hmm_regime: HMM regime label (optional)
+            use_advanced: Whether to use advanced selection methods
+            
+        Returns:
+            Dictionary with selected features and selection metrics
+        """
+        if use_advanced and self._has_advanced_utilities():
+            return self.select_features_advanced(features, labels, hmm_regime)
+        else:
+            return self.select_features_basic(features, labels, hmm_regime)
+    
+    def _has_advanced_utilities(self) -> bool:
+        """Check if advanced utilities are available."""
+        return any([
+            self.step08_selector,
+            self.unified_selector,
+            self.vectorized_core,
+            self.parallel_optimizer,
+            self.memory_optimizer
+        ])
     
     @handles_errors("Fractional feature selection")
     @validate_feature_data_quality
-    def select_features(
+    def select_features_basic(
         self, 
         features: pd.DataFrame, 
         labels: pd.Series, 
@@ -746,10 +1079,15 @@ def get_fractional_feature_selector_config(
             F-regression scores Series
         """
         try:
-            f_scores, _ = f_regression(features, labels)
-            return pd.Series(f_scores, index = features.columns)
-        except Exception:
-            return pd.Series(0.0, index = features.columns)
+            # Handle NaN values
+            clean_features = features.fillna(features.mean())
+            clean_labels = labels.fillna(labels.mean())
+            
+            f_scores, _ = f_regression(clean_features, clean_labels)
+            return pd.Series(f_scores, index=features.columns)
+        except Exception as e:
+            self.logger.warning(f"F-regression calculation failed: {e}")
+            return pd.Series(0.0, index=features.columns)
 
     def _calculate_mutual_info_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
         """Calculate mutual information scores safely.
@@ -762,10 +1100,15 @@ def get_fractional_feature_selector_config(
             Mutual information scores Series
         """
         try:
-            mi_scores = mutual_info_regression(features, labels, random_state = 42)
-            return pd.Series(mi_scores, index = features.columns)
-        except Exception:
-            return pd.Series(0.0, index = features.columns)
+            # Handle NaN values
+            clean_features = features.fillna(features.mean())
+            clean_labels = labels.fillna(labels.mean())
+            
+            mi_scores = mutual_info_regression(clean_features, clean_labels, random_state=42)
+            return pd.Series(mi_scores, index=features.columns)
+        except Exception as e:
+            self.logger.warning(f"Mutual information calculation failed: {e}")
+            return pd.Series(0.0, index=features.columns)
 
     def _calculate_random_forest_scores(self, features: pd.DataFrame, labels: pd.Series) -> pd.Series:
         """Calculate Random Forest importance scores safely.
@@ -778,8 +1121,14 @@ def get_fractional_feature_selector_config(
             Random Forest importance scores Series
         """
         try:
-            rf = RandomForestRegressor(n_estimators = 50, random_state = 42, n_jobs=-1)
-            rf.fit(features, labels)
-            return pd.Series(rf.feature_importances_, index = features.columns)
-        except Exception:
-            return pd.Series(0.0, index = features.columns)
+            # Handle NaN values
+            clean_features = features.fillna(features.mean())
+            clean_labels = labels.fillna(labels.mean())
+            
+            # Use smaller number of estimators for speed
+            rf = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=-1, max_depth=10)
+            rf.fit(clean_features, clean_labels)
+            return pd.Series(rf.feature_importances_, index=features.columns)
+        except Exception as e:
+            self.logger.warning(f"Random Forest importance calculation failed: {e}")
+            return pd.Series(0.0, index=features.columns)

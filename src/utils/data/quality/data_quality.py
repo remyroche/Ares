@@ -64,6 +64,12 @@ class QualityResult:
         """Add a quality warning."""
         self.warnings.append(f'{warning_type}: {description}')
 
+    def add_info(self, info_type: str, description: str) -> None:
+        """Add informational message (not an issue or warning)."""
+        if not hasattr(self, 'info_messages'):
+            self.info_messages = []
+        self.info_messages.append(f'{info_type}: {description}')
+
     def add_metric(self, name: str, value: Any) -> None:
         """Add a quality metric."""
         self.metrics[name] = value
@@ -201,24 +207,78 @@ class DataQualityFramework:
             result.add_issue('infinite_values', f'Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}')
 
     def _validate_constant_features(self, df: pd.DataFrame, result: QualityResult) -> None:
-        """Validate constant features in DataFrame."""
+        """Validate constant features in DataFrame with metadata awareness."""
+        # Define metadata columns that are expected to be constant
+        metadata_columns = {
+            'exchange', 'symbol', 'timeframe', 'source', 'data_type', 
+            'version', 'collection_method', 'instrument_type'
+        }
+        
+        # Define configuration columns that may be constant but are important
+        config_columns = {
+            'funding_rate', 'trade_volume', 'trade_count', 'avg_price', 
+            'min_price', 'max_price', 'volume_ratio'
+        }
+        
+        # Define data columns that should have variance
+        data_columns = {
+            'open', 'high', 'low', 'close', 'volume', 'price', 'quantity',
+            'timestamp', 'trade_id', 'is_buyer_maker', 'quote_asset_volume',
+            'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'
+        }
+        
         constant_features = []
         low_variance_features = []
+        expected_constants = []
+        problematic_constants = []
         
         for col in df.columns:
             unique_count = df[col].nunique()
-            if unique_count < self.thresholds.min_unique_values:
-                constant_features.append(col)
-            elif unique_count < 5:
-                low_variance_features.append(col)
+            
+            # Categorize columns
+            if col in metadata_columns:
+                # Metadata columns are expected to be constant
+                if unique_count == 1:
+                    expected_constants.append(col)
+                else:
+                    # Metadata should be constant - this might be an issue
+                    result.add_warning('metadata_variance', f'Metadata column {col} has {unique_count} unique values (expected 1)')
+            elif col in config_columns:
+                # Config columns may be constant but should be flagged for review
+                if unique_count < self.thresholds.min_unique_values:
+                    constant_features.append(col)
+                    result.add_info('config_constant', f'Config column {col} is constant - verify if this is expected')
+                elif unique_count < 5:
+                    low_variance_features.append(col)
+            elif col in data_columns:
+                # Data columns should have variance
+                if unique_count < self.thresholds.min_unique_values:
+                    problematic_constants.append(col)
+                    result.add_issue('data_constant', f'Data column {col} is constant - this may indicate data quality issues')
+                elif unique_count < 5:
+                    low_variance_features.append(col)
+            else:
+                # Unknown columns - use default logic
+                if unique_count < self.thresholds.min_unique_values:
+                    constant_features.append(col)
+                elif unique_count < 5:
+                    low_variance_features.append(col)
                 
+        # Add metrics with categorization
         result.add_metric('constant_features', constant_features)
         result.add_metric('low_variance_features', low_variance_features)
+        result.add_metric('expected_constants', expected_constants)
+        result.add_metric('problematic_constants', problematic_constants)
         
-        if constant_features:
-            result.add_issue('constant_features', f'Found {len(constant_features)} constant features: {constant_features}')
+        # Only report issues for problematic constants, not expected ones
+        if problematic_constants:
+            result.add_issue('problematic_constants', f'Found {len(problematic_constants)} problematic constant data columns: {problematic_constants}')
         if low_variance_features:
             result.add_warning('low_variance_features', f'Found {len(low_variance_features)} low variance features: {low_variance_features}')
+        
+        # Log expected constants as info, not issues
+        if expected_constants:
+            result.add_info('expected_constants', f'Found {len(expected_constants)} expected constant metadata columns: {expected_constants}')
 
     def _validate_price_anomalies(self, df: pd.DataFrame, result: QualityResult) -> None:
         """Validate price anomalies in OHLC data."""

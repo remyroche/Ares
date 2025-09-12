@@ -19,6 +19,10 @@ import gc
 import psutil
 from pathlib import Path
 
+# Enhanced Model Trainer - Automatic post-training integration
+from src.utils.ml_common.enhanced_model_trainer import EnhancedModelTrainer, EnhancedTrainingConfig
+from src.utils.ml_common.multi_timeframe_training import MultiTimeframeTrainer, MultiTimeframeTrainingConfig, TimeframeConfig
+
 # Import ensemble manager and general training
 from src.utils.ml_common.ensemble_manager import EnsembleManager, EnsembleConfig, EnsembleType
 from .general_model_training import GeneralModelTrainer, ModelTrainingConfig, ModelType, TaskType
@@ -364,7 +368,7 @@ class AnalystModelTrainer:
         data: pd.DataFrame,
         **kwargs
     ) -> AnalystTrainingResults:
-        """Internal Analyst model training logic with ML commons integration."""
+        """Internal Analyst model training logic using EnhancedModelTrainer for automatic post-training integration."""
         
         results = AnalystTrainingResults(
             analyst_name=self.config.analyst_name,
@@ -375,485 +379,240 @@ class AnalystModelTrainer:
             optimization_used=self._get_optimization_used()
         )
         
-        # Train individual models with enhanced ML commons integration
+        # Prepare multi-timeframe data if available
+        multi_timeframe_data = self._prepare_multi_timeframe_data(data)
+        
+        # Train individual models with EnhancedModelTrainer
         individual_results = {}
         model_performance = {}
         
         for model_type in self.config.model_types:
-            self.logger.info(f"🔄 Training {model_type.value} with ML commons...")
+            self.logger.info(f"🔄 Training {model_type.value} with EnhancedModelTrainer...")
             
             try:
-                # Perform analyst-specific HPO if enabled
-                analyst_hpo_params = {}
-                if self.config.enable_hyperparameter_optimization:
-                    analyst_hpo_params = await self._optimize_analyst_hyperparameters(data, model_type)
+                # Prepare data for this model type
+                model_data = self._prepare_model_data(data, model_type)
                 
-        # Create training config for this model type
-        training_config = self._create_training_config(model_type)
-        
-        # Apply analyst-specific HPO parameters if available
-        if analyst_hpo_params:
-            training_config.model_params.update(analyst_hpo_params)
-            self.logger.info(f"🔧 Applied analyst-specific HPO parameters for {model_type.value}")
-        
-        # Pass launch mode to GeneralModelTrainer
-        training_config.launch_mode = self.config.launch_mode
-        training_config.hpo_strategy = self.config.hpo_strategy
+                # Create EnhancedTrainingConfig for analyst models
+                enhanced_config = EnhancedTrainingConfig(
+                    model_types=[model_type.value],
+                    enable_hyperparameter_optimization=self.config.enable_hyperparameter_optimization,
+                    hpo_trials=self.config.hpo_trials,
+                    hpo_timeout=self.config.hpo_timeout,
+                    enable_multi_timeframe_training=self.config.enable_multi_timeframe_training,
+                    timeframes=self.config.timeframes,
+                    timeframe_weights=self.config.timeframe_weights,
+                    enable_pre_hpo_evaluation=True,
+                    enable_post_hpo_evaluation=True,
+                    evaluation_metrics=['accuracy', 'f1_score', 'r2_score', 'precision', 'recall', 'sharpe_ratio'],
+                    enable_cross_validation=True,
+                    cv_folds=self.config.cross_validation_folds,
+                    enable_holdout_validation=True,
+                    holdout_ratio=self.config.validation_split,
+                    enable_model_persistence=True,
+                    enable_versioning=True,
+                    max_versions=10,
+                    min_accuracy_threshold=0.5,
+                    min_f1_threshold=0.5,
+                    min_r2_threshold=0.0,
+                    min_sharpe_threshold=0.0,
+                    save_training_results=True,
+                    generate_training_report=True,
+                    training_report_path=f"{self.config.output_dir}/analyst_training_report_{model_type.value}.json"
+                )
                 
-                # Train model with enhanced ML commons integration
-                trainer = GeneralModelTrainer(training_config)
-                model_result = await trainer.train_model(data, **kwargs)
+                # Initialize EnhancedModelTrainer
+                enhanced_trainer = EnhancedModelTrainer(enhanced_config)
                 
-                # Store results
-                individual_results[model_type.value] = model_result
-                model_performance[model_type.value] = model_result.validation_metrics
+                # Prepare data for training
+                X, y = self._prepare_features_target(model_data, model_type)
+                X_train, X_test, y_train, y_test = self._split_data(X, y)
                 
-                # Add to ensemble if enabled
-                if self.ensemble_manager and model_result.trained_model is not None:
-                    await self.ensemble_manager.add_model(
-                        model_name=model_type.value,
-                        model=model_result.trained_model,
-                        performance_metrics=model_result.validation_metrics
-                    )
+                # Convert to numpy arrays
+                X_train_array = X_train.values if isinstance(X_train, pd.DataFrame) else X_train
+                X_test_array = X_test.values if isinstance(X_test, pd.DataFrame) else X_test
+                y_train_array = y_train.values if isinstance(y_train, pd.Series) else y_train
+                y_test_array = y_test.values if isinstance(y_test, pd.Series) else y_test
                 
-                self.logger.info(f"✅ {model_type.value} training completed")
+                # Train model with automatic post-training integration
+                training_result = await enhanced_trainer.train_model(
+                    X_train=X_train_array,
+                    y_train=y_train_array,
+                    X_test=X_test_array,
+                    y_test=y_test_array,
+                    model_name=f"{self.config.analyst_name}_{model_type.value}",
+                    model_type=model_type.value,
+                    multi_timeframe_data=multi_timeframe_data
+                )
+                
+                # Convert result to analyst format
+                individual_results[model_type.value] = self._convert_enhanced_result_to_analyst_result(training_result, model_type)
+                
+                # Track performance
+                if training_result.post_hpo_metrics and training_result.post_hpo_metrics.post_hpo_metrics:
+                    model_performance[model_type.value] = training_result.post_hpo_metrics.post_hpo_metrics.get('accuracy', 0.0)
+                else:
+                    model_performance[model_type.value] = 0.0
+                
+                self.logger.info(f"✅ {model_type.value} training completed with EnhancedModelTrainer")
                 
             except Exception as e:
-                self.logger.error(f"❌ Failed to train {model_type.value}: {e}")
-                continue
+                self.logger.error(f"❌ Error training {model_type.value}: {e}")
+                individual_results[model_type.value] = None
+                model_performance[model_type.value] = 0.0
         
-        # Train ensemble if enabled with ML commons
-        ensemble_performance = {}
-        if self.ensemble_manager and len(self.ensemble_manager.models) > 0:
-            self.logger.info("🔄 Training ensemble with ML commons...")
-            
-            try:
-                # Prepare data for ensemble training with enhanced preprocessing
-                X, y = self._prepare_ensemble_data_enhanced(data)
-                
-                # Create ensemble using ML commons
-                ensemble_result = await self.ensemble_manager.create_ensemble(X, y)
-                ensemble_performance = ensemble_result.ensemble_performance
-                
-                results.ensemble_manager = self.ensemble_manager
-                self.logger.info("✅ Enhanced ensemble training completed")
-                
-            except Exception as e:
-                self.logger.error(f"❌ Failed to train ensemble: {e}")
-        
-        # Train regime-specific models (analyst models are inherently regime-specific)
-        regime_specific_results = await self._train_regime_specific_models_enhanced(data, **kwargs)
-        
-        # Calculate overall performance
-        overall_performance = self._calculate_overall_performance(model_performance, ensemble_performance)
-        
-        # Update results
-        results.individual_models = individual_results
+        # Store individual results
+        results.individual_results = individual_results
         results.model_performance = model_performance
-        results.ensemble_performance = ensemble_performance
-        results.regime_specific_results = regime_specific_results
-        results.overall_performance = overall_performance
+        results.overall_performance = safe_mean(list(model_performance.values())) if model_performance else 0.0
+        
+        # Train ensemble if enabled and we have successful individual models
+        if self.config.enable_ensemble_training and any(result is not None for result in individual_results.values()):
+            self.logger.info("🧠 Training ensemble with EnhancedModelTrainer...")
+            ensemble_result = await self._train_ensemble_with_enhanced_trainer(individual_results, data)
+            results.ensemble_result = ensemble_result
+            results.ensemble_manager = ensemble_result.ensemble_manager if ensemble_result else None
         
         return results
     
-    def _create_training_config(self, model_type: AnalystModelType) -> ModelTrainingConfig:
-        """Create training configuration for specific model type."""
-        
-        # Determine task type based on model type
-        if model_type in [AnalystModelType.REGIME_CLASSIFIER, AnalystModelType.SIGNAL_PREDICTOR, AnalystModelType.META_LABELER]:
-            task_type = TaskType.CLASSIFICATION
-        else:
-            task_type = TaskType.REGRESSION
-        
-        # Determine model type
-        if model_type == AnalystModelType.REGIME_CLASSIFIER:
-            ml_model_type = ModelType.RANDOM_FOREST
-        elif model_type == AnalystModelType.SIGNAL_PREDICTOR:
-            ml_model_type = ModelType.XGBOOST
-        elif model_type == AnalystModelType.CONFIDENCE_ESTIMATOR:
-            ml_model_type = ModelType.LIGHTGBM
-        else:
-            ml_model_type = ModelType.RANDOM_FOREST
-        
-        # Get target column
-        target_column = self.config.target_columns.get(model_type.value, 'target')
-        
-        return ModelTrainingConfig(
-            model_name=f"{self.config.analyst_name}_{model_type.value}",
-            task_type=task_type,
-            model_type=ml_model_type,
-            output_dir=f"{self.config.output_dir}/{model_type.value}",
-            feature_columns=self.config.feature_columns,
-            target_column=target_column,
-            validation_split=self.config.validation_split,
-            test_split=self.config.test_split,
-            enable_hyperparameter_optimization=self.config.enable_hyperparameter_optimization,
-            hpo_trials=self.config.hpo_trials,
-            hpo_timeout=self.config.hpo_timeout,
-            hpo_sampler=self.config.hpo_sampler,
-            hpo_pruner=self.config.hpo_pruner,
-            enable_early_stopping=self.config.enable_early_stopping,
-            early_stopping_patience=self.config.early_stopping_patience,
-            enable_gpu_acceleration=self.config.enable_gpu_acceleration,
-            enable_memory_optimization=self.config.enable_memory_optimization,
-            enable_parallel_processing=self.config.enable_parallel_processing,
-            memory_limit_gb=self.config.memory_limit_gb,
-            max_workers=self.config.max_workers,
-            cross_validation_folds=self.config.cross_validation_folds
-        )
-    
-    def _prepare_ensemble_data_enhanced(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
-        """Prepare data for ensemble training with enhanced preprocessing."""
-        
-        # Use regime classifier as primary target for ensemble
-        target_column = self.config.target_columns.get('regime_classifier', 'regime_label')
-        
-        if target_column not in data.columns:
-            # Fallback to first available target
-            available_targets = [col for col in self.config.target_columns.values() if col in data.columns]
-            if available_targets:
-                target_column = available_targets[0]
-            else:
-                raise ValidationError("No valid target column found for ensemble training")
-        
-        X = data[self.config.feature_columns].copy()
-        y = data[target_column].copy()
-        
-        # Enhanced missing value handling using ML commons
-        X = self.data_quality.enhanced_automated_data_cleaning(X)
-        y = y.fillna(y.mode()[0] if len(y.mode()) > 0 else 0)
-        
-        return X, y
-    
-    async def _train_regime_specific_models_enhanced(
-        self, 
-        data: pd.DataFrame,
-        **kwargs
-    ) -> Dict[str, Dict[str, Any]]:
-        """Train regime-specific models with ML commons integration."""
-        
-        regime_results = {}
-        
-        # Get unique regimes
-        regime_col = self.config.regime_columns[0] if self.config.regime_columns else 'hmm_cluster'
-        
-        if regime_col not in data.columns:
-            self.logger.warning(f"⚠️ Regime column {regime_col} not found, skipping regime-specific training")
-            return regime_results
-        
-        # Use ML commons regime processor for enhanced regime analysis
+    def _prepare_multi_timeframe_data(self, data: pd.DataFrame) -> Optional[Dict[str, pd.DataFrame]]:
+        """Prepare multi-timeframe data for EnhancedModelTrainer."""
         try:
-            regime_analysis = await self.regime_processor.analyze_regime_transitions(data, regime_col)
-            self.logger.info(f"📊 Regime analysis completed: {regime_analysis}")
+            if not self.config.enable_multi_timeframe_training:
+                return None
+            
+            multi_timeframe_data = {}
+            for timeframe in self.config.timeframes:
+                # For now, use the same data for all timeframes
+                # In a real implementation, you'd have different data for each timeframe
+                multi_timeframe_data[timeframe] = data.copy()
+            
+            return multi_timeframe_data
+            
         except Exception as e:
-            self.logger.warning(f"⚠️ Regime analysis failed: {e}")
-        
-        unique_regimes = data[regime_col].unique()
-        self.logger.info(f"🔄 Training regime-specific models for {len(unique_regimes)} regimes with ML commons")
-        
-        for regime in unique_regimes:
-            if pd.isna(regime):
-                continue
-            
-            self.logger.info(f"🔄 Training models for regime {regime} with ML commons...")
-            
-            try:
-                # Filter data for this regime
-                regime_data = data[data[regime_col] == regime].copy()
-                
-                if len(regime_data) < 50:  # Minimum samples for training
-                    self.logger.warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data)} samples")
-                    continue
-                
-                # Train models for this regime with enhanced ML commons
-                regime_model_results = {}
-                
-                for model_type in self.config.model_types:
-                    try:
-                        # Create training config for this regime
-                        training_config = self._create_training_config(model_type)
-                        training_config.model_name = f"{self.config.analyst_name}_{model_type.value}_regime_{regime}"
-                        training_config.output_dir = f"{self.config.output_dir}/regime_{regime}/{model_type.value}"
-                        
-                        # Train model with enhanced ML commons integration
-                        trainer = GeneralModelTrainer(training_config)
-                        model_result = await trainer.train_model(regime_data, **kwargs)
-                        
-                        regime_model_results[model_type.value] = model_result
-                        
-                    except Exception as e:
-                        self.logger.error(f"❌ Failed to train {model_type.value} for regime {regime}: {e}")
-                        continue
-                
-                regime_results[f"regime_{regime}"] = regime_model_results
-                self.logger.info(f"✅ Regime {regime} training completed with ML commons")
-                
-            except Exception as e:
-                self.logger.error(f"❌ Failed to train regime-specific models for regime {regime}: {e}")
-                continue
-        
-        return regime_results
+            self.logger.warning(f"⚠️ Failed to prepare multi-timeframe data: {e}")
+            return None
     
-    def _calculate_overall_performance(
-        self, 
-        model_performance: Dict[str, Dict[str, float]], 
-        ensemble_performance: Dict[str, float]
-    ) -> Dict[str, float]:
-        """Calculate overall performance metrics."""
-        
-        overall_metrics = {}
-        
-        # Aggregate individual model performance
-        if model_performance:
-            # Calculate average performance across models
-            all_scores = []
-            for model_name, metrics in model_performance.items():
-                if 'accuracy' in metrics:
-                    all_scores.append(metrics['accuracy'])
-                elif 'r2_score' in metrics:
-                    all_scores.append(metrics['r2_score'])
-                elif 'f1_score' in metrics:
-                    all_scores.append(metrics['f1_score'])
-            
-            if all_scores:
-                overall_metrics['average_model_performance'] = np.mean(all_scores)
-                overall_metrics['best_model_performance'] = np.max(all_scores)
-                overall_metrics['model_count'] = len(model_performance)
-        
-        # Add ensemble performance
-        if ensemble_performance:
-            for metric, value in ensemble_performance.items():
-                overall_metrics[f'ensemble_{metric}'] = value
-        
-        return overall_metrics
-    
-    def _get_optimization_used(self) -> List[str]:
-        """Get list of optimizations used."""
-        optimizations = []
-        
-        if self.config.enable_gpu_acceleration and self.m1_gpu:
-            optimizations.append("m1_gpu_acceleration")
-        
-        if self.config.enable_memory_optimization and self.m1_memory:
-            optimizations.append("m1_memory_optimization")
-        
-        if self.config.enable_parallel_processing and self.m1_cpu:
-            optimizations.append("m1_parallel_processing")
-        
-        optimizations.append("ml_commons_integration")
-        
-        return optimizations
-    
-    async def _optimize_analyst_hyperparameters(
-        self, 
-        data: pd.DataFrame, 
-        model_type: AnalystModelType
-    ) -> Dict[str, Any]:
-        """Perform analyst-specific hyperparameter optimization."""
-        
-        self.logger.info(f"🔬 Starting analyst-specific HPO for {model_type.value}...")
-        
+    def _prepare_model_data(self, data: pd.DataFrame, model_type: ModelType) -> pd.DataFrame:
+        """Prepare data for a specific model type."""
         try:
-            # Get analyst-specific search space
-            search_space = self._get_analyst_search_space(model_type)
+            # Apply analyst-specific preprocessing
+            model_data = data.copy()
             
-            # Prepare data for this model type
-            target_column = self.config.target_columns.get(model_type.value, 'target')
+            # Add regime-specific features if available
+            if self.config.regime_columns:
+                for regime_col in self.config.regime_columns:
+                    if regime_col in model_data.columns:
+                        # Create regime-specific features
+                        model_data[f'{regime_col}_encoded'] = pd.Categorical(model_data[regime_col]).codes
+            
+            return model_data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to prepare model data for {model_type.value}: {e}")
+            return data
+    
+    def _prepare_features_target(self, data: pd.DataFrame, model_type: ModelType) -> Tuple[pd.DataFrame, pd.Series]:
+        """Prepare features and target for a specific model type."""
+        try:
+            # Select features
             X = data[self.config.feature_columns].copy()
-            y = data[target_column].copy()
+            
+            # Select target for this model type
+            target_col = self.config.target_columns.get(model_type.value)
+            if target_col and target_col in data.columns:
+                y = data[target_col].copy()
+            else:
+                # Fallback to first available target
+                available_targets = [col for col in self.config.target_columns.values() if col in data.columns]
+                if available_targets:
+                    y = data[available_targets[0]].copy()
+                else:
+                    raise ValueError(f"No valid target column found for {model_type.value}")
             
             # Handle missing values
             X = X.fillna(X.mean())
             y = y.fillna(y.mode()[0] if len(y.mode()) > 0 else 0)
             
-            # Split data
-            from sklearn.model_selection import train_test_split
-            X_train, X_val, y_train, y_val = train_test_split(
-                X, y, test_size=self.config.validation_split, random_state=42
-            )
-            
-            # Use ML commons HPO optimizer with analyst-specific configuration
-            best_params = await self.hpo_optimizer.optimize(
-                model_type=self._get_analyst_model_type(model_type).value,
-                X_train=X_train,
-                y_train=y_train,
-                X_val=X_val,
-                y_val=y_val,
-                n_trials=self.config.hpo_trials,
-                timeout=self.config.hpo_timeout,
-                task_type=self._get_analyst_task_type(model_type).value,
-                sampler=self.config.hpo_sampler,
-                pruner=self.config.hpo_pruner,
-                search_space=search_space
-            )
-            
-            self.logger.info(f"✅ Analyst HPO completed for {model_type.value}")
-            self.logger.info(f"📊 Best parameters: {best_params}")
-            
-            return best_params
+            return X, y
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Analyst HPO failed for {model_type.value}: {e}")
-            return {}
-    
-    def _get_analyst_search_space(self, model_type: AnalystModelType) -> Dict[str, Any]:
-        """Get analyst-specific hyperparameter search space."""
-        
-        if model_type == AnalystModelType.REGIME_CLASSIFIER:
-            # Regime classifier needs robust parameters
-            return {
-                'n_estimators': {'type': 'int', 'low': 100, 'high': 800, 'step': 20},
-                'max_depth': {'type': 'int', 'low': 5, 'high': 25},
-                'min_samples_split': {'type': 'int', 'low': 5, 'high': 50},
-                'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 20},
-                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 0.7, 0.8, 0.9]},
-                'bootstrap': {'type': 'categorical', 'choices': [True, False]},
-                'class_weight': {'type': 'categorical', 'choices': [None, 'balanced', 'balanced_subsample']}
-            }
-        
-        elif model_type == AnalystModelType.SIGNAL_PREDICTOR:
-            # Signal predictor needs fast and accurate parameters
-            return {
-                'n_estimators': {'type': 'int', 'low': 50, 'high': 500, 'step': 10},
-                'max_depth': {'type': 'int', 'low': 3, 'high': 15},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-                'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
-                'colsample_bytree': {'type': 'float', 'low': 0.7, 'high': 1.0},
-                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 5.0, 'log': True},
-                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 5.0, 'log': True}
-            }
-        
-        elif model_type == AnalystModelType.CONFIDENCE_ESTIMATOR:
-            # Confidence estimator needs calibrated parameters
-            return {
-                'n_estimators': {'type': 'int', 'low': 50, 'high': 400, 'step': 10},
-                'max_depth': {'type': 'int', 'low': 3, 'high': 12},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.15, 'log': True},
-                'subsample': {'type': 'float', 'low': 0.8, 'high': 1.0},
-                'colsample_bytree': {'type': 'float', 'low': 0.8, 'high': 1.0},
-                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 2.0, 'log': True},
-                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 2.0, 'log': True},
-                'min_child_samples': {'type': 'int', 'low': 10, 'high': 100}
-            }
-        
-        elif model_type == AnalystModelType.RISK_ASSESSOR:
-            # Risk assessor needs conservative parameters
-            return {
-                'n_estimators': {'type': 'int', 'low': 100, 'high': 600, 'step': 20},
-                'max_depth': {'type': 'int', 'low': 4, 'high': 20},
-                'min_samples_split': {'type': 'int', 'low': 10, 'high': 100},
-                'min_samples_leaf': {'type': 'int', 'low': 5, 'high': 50},
-                'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2', 0.6, 0.7, 0.8]},
-                'bootstrap': {'type': 'categorical', 'choices': [True, False]},
-                'max_samples': {'type': 'float', 'low': 0.7, 'high': 1.0}
-            }
-        
-        elif model_type == AnalystModelType.META_LABELER:
-            # Meta labeler needs balanced parameters
-            return {
-                'n_estimators': {'type': 'int', 'low': 75, 'high': 500, 'step': 15},
-                'max_depth': {'type': 'int', 'low': 4, 'high': 18},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2, 'log': True},
-                'subsample': {'type': 'float', 'low': 0.7, 'high': 1.0},
-                'colsample_bytree': {'type': 'float', 'low': 0.7, 'high': 1.0},
-                'reg_alpha': {'type': 'float', 'low': 0.0, 'high': 3.0, 'log': True},
-                'reg_lambda': {'type': 'float', 'low': 0.0, 'high': 3.0, 'log': True}
-            }
-        
-        else:
-            # Default search space
-            return {}
-    
-    def _get_analyst_model_type(self, analyst_model_type: AnalystModelType) -> ModelType:
-        """Get the underlying ML model type for analyst model type."""
-        
-        if analyst_model_type == AnalystModelType.REGIME_CLASSIFIER:
-            return ModelType.RANDOM_FOREST
-        elif analyst_model_type == AnalystModelType.SIGNAL_PREDICTOR:
-            return ModelType.XGBOOST
-        elif analyst_model_type == AnalystModelType.CONFIDENCE_ESTIMATOR:
-            return ModelType.LIGHTGBM
-        elif analyst_model_type == AnalystModelType.RISK_ASSESSOR:
-            return ModelType.RANDOM_FOREST
-        elif analyst_model_type == AnalystModelType.META_LABELER:
-            return ModelType.XGBOOST
-        else:
-            return ModelType.RANDOM_FOREST
-    
-    def _get_analyst_task_type(self, analyst_model_type: AnalystModelType) -> TaskType:
-        """Get the task type for analyst model type."""
-        
-        if analyst_model_type in [AnalystModelType.REGIME_CLASSIFIER, AnalystModelType.SIGNAL_PREDICTOR, AnalystModelType.META_LABELER]:
-            return TaskType.CLASSIFICATION
-        else:
-            return TaskType.REGRESSION
-    
-    async def predict(
-        self, 
-        data: pd.DataFrame, 
-        use_ensemble: bool = True
-    ) -> Dict[str, Any]:
-        """Make predictions using trained models."""
-        
-        predictions = {}
-        
-        # Individual model predictions
-        for model_name, model_result in self.individual_models.items():
-            if model_result.trained_model is not None:
-                try:
-                    X = data[self.config.feature_columns]
-                    if hasattr(model_result.trained_model, 'predict_proba'):
-                        pred_proba = model_result.trained_model.predict_proba(X)
-                        predictions[f"{model_name}_probabilities"] = pred_proba
-                        predictions[f"{model_name}_predictions"] = np.argmax(pred_proba, axis=1)
-                    else:
-                        predictions[f"{model_name}_predictions"] = model_result.trained_model.predict(X)
-                except Exception as e:
-                    self.logger.error(f"Error making predictions with {model_name}: {e}")
-        
-        # Ensemble predictions
-        if use_ensemble and self.ensemble_manager and self.ensemble_manager.ensemble_model is not None:
-            try:
-                X = data[self.config.feature_columns]
-                ensemble_pred, ensemble_proba = await self.ensemble_manager.predict(X)
-                predictions['ensemble_predictions'] = ensemble_pred
-                if ensemble_proba is not None:
-                    predictions['ensemble_probabilities'] = ensemble_proba
-            except Exception as e:
-                self.logger.error(f"Error making ensemble predictions: {e}")
-        
-        return predictions
-    
-    async def save_analyst_models(self, results: AnalystTrainingResults) -> None:
-        """Save all trained Analyst models using ML commons registry."""
-        
-        try:
-            # Save individual models using ML commons registry
-            for model_name, model_result in results.individual_models.items():
-                if model_result.trained_model is not None:
-                    model_path = f"{self.config.output_dir}/{model_name}_model.pkl"
-                    await self.model_registry.save_model(
-                        model=model_result.trained_model,
-                        model_name=model_name,
-                        file_path=model_path,
-                        metadata={
-                            'analyst_name': self.config.analyst_name,
-                            'model_type': model_name,
-                            'training_time': datetime.now().isoformat()
-                        }
-                    )
-            
-            # Save ensemble if available
-            if results.ensemble_manager:
-                ensemble_path = f"{self.config.output_dir}/ensemble.pkl"
-                await results.ensemble_manager.save_ensemble(ensemble_path)
-            
-            # Save results metadata
-            results_path = f"{self.config.output_dir}/training_results.json"
-            await safe_json_dump(results_path, results.__dict__)
-            
-            self.logger.info(f"💾 All Analyst models saved to {self.config.output_dir} using ML commons registry")
-            
-        except Exception as e:
-            self.logger.error(f"Error saving Analyst models: {e}")
+            self.logger.error(f"❌ Failed to prepare features/target for {model_type.value}: {e}")
             raise
+    
+    def _split_data(self, X: pd.DataFrame, y: pd.Series) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+        """Split data into train/test sets."""
+        try:
+            from sklearn.model_selection import train_test_split
+            
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, 
+                test_size=self.config.test_split,
+                random_state=42,
+                stratify=y if len(y.unique()) < 10 else None
+            )
+            
+            return X_train, X_test, y_train, y_test
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to split data: {e}")
+            raise
+    
+    def _convert_enhanced_result_to_analyst_result(self, training_result, model_type: ModelType) -> Optional[Any]:
+        """Convert EnhancedModelTrainer result to analyst-specific format."""
+        try:
+            if not training_result.success:
+                return None
+            
+            # Create a simplified result object for analyst models
+            result = type('AnalystModelResult', (), {
+                'model_type': model_type.value,
+                'trained_model': training_result.best_model,
+                'best_params': training_result.best_params,
+                'training_metrics': training_result.post_hpo_metrics.post_hpo_metrics if training_result.post_hpo_metrics else {},
+                'validation_metrics': training_result.validation_result.validation_metrics if training_result.validation_result else {},
+                'pre_hpo_metrics': training_result.pre_hpo_metrics.post_hpo_metrics if training_result.pre_hpo_metrics else {},
+                'post_hpo_metrics': training_result.post_hpo_metrics.post_hpo_metrics if training_result.post_hpo_metrics else {},
+                'improvement_achieved': training_result.improvement_achieved,
+                'hpo_trials_completed': training_result.hpo_trials_completed,
+                'persistence_result': training_result.persistence_result,
+                'training_time': training_result.training_time
+            })()
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to convert enhanced result for {model_type.value}: {e}")
+            return None
+    
+    async def _train_ensemble_with_enhanced_trainer(self, individual_results: Dict[str, Any], data: pd.DataFrame) -> Optional[Any]:
+        """Train ensemble using EnhancedModelTrainer."""
+        try:
+            # Create ensemble config
+            ensemble_config = EnsembleConfig(
+                ensemble_type=EnsembleType.VOTING,
+                model_types=list(individual_results.keys()),
+                enable_hyperparameter_optimization=True,
+                voting_strategy='soft'
+            )
+            
+            # Initialize ensemble manager
+            ensemble_manager = EnsembleManager(ensemble_config)
+            
+            # Add trained models to ensemble
+            for model_type, result in individual_results.items():
+                if result and result.trained_model:
+                    ensemble_manager.add_model(result.trained_model, model_type)
+            
+            # Train ensemble
+            ensemble_result = await ensemble_manager.train_ensemble(data)
+            
+            return type('EnsembleResult', (), {
+                'ensemble_manager': ensemble_manager,
+                'ensemble_result': ensemble_result,
+                'training_successful': ensemble_result is not None
+            })()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to train ensemble: {e}")
+            return None

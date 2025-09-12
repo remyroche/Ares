@@ -20,6 +20,10 @@ import psutil
 import optuna
 from pathlib import Path
 
+# Enhanced Model Trainer - Automatic post-training integration
+from src.utils.ml_common.enhanced_model_trainer import EnhancedModelTrainer, EnhancedTrainingConfig
+from src.utils.ml_common.multi_timeframe_training import MultiTimeframeTrainer, MultiTimeframeTrainingConfig, TimeframeConfig
+
 # Import general training components
 from .general_model_training import GeneralModelTrainer, ModelTrainingConfig, ModelType, TaskType
 
@@ -384,7 +388,7 @@ class TacticianModelTrainer:
         data: pd.DataFrame,
         **kwargs
     ) -> TacticianTrainingResults:
-        """Internal Tactician model training logic with ML commons integration."""
+        """Internal Tactician model training logic using EnhancedModelTrainer for automatic post-training integration."""
         
         results = TacticianTrainingResults(
             tactician_name=self.config.tactician_name,
@@ -399,78 +403,238 @@ class TacticianModelTrainer:
         # Prepare tactical features with enhanced preprocessing
         tactical_data = await self._prepare_tactical_features_enhanced(data)
         
-        # Train individual models with advanced HPO and ML commons
+        # Prepare multi-timeframe data if available
+        multi_timeframe_data = self._prepare_multi_timeframe_data(tactical_data)
+        
+        # Train individual models with EnhancedModelTrainer
         individual_results = {}
         model_performance = {}
         hpo_results = {}
         
         for model_type in self.config.model_types:
-            self.logger.info(f"🔄 Training {model_type.value} with enhanced ML commons...")
+            self.logger.info(f"🔄 Training {model_type.value} with EnhancedModelTrainer...")
             
             try:
-                # Create training config for this model type
-                training_config = self._create_tactical_training_config(model_type)
+                # Prepare data for this model type
+                model_data = self._prepare_model_data(tactical_data, model_type)
                 
-                # Pass launch mode to GeneralModelTrainer
-                training_config.launch_mode = self.config.launch_mode
-                training_config.hpo_strategy = self.config.hpo_strategy
+                # Create EnhancedTrainingConfig for tactician models
+                enhanced_config = EnhancedTrainingConfig(
+                    model_types=[model_type.value],
+                    enable_hyperparameter_optimization=self.config.enable_hyperparameter_optimization,
+                    hpo_trials=self.config.hpo_trials,
+                    hpo_timeout=self.config.hpo_timeout,
+                    enable_multi_timeframe_training=self.config.enable_multi_timeframe_training,
+                    timeframes=self.config.timeframes,
+                    timeframe_weights=self.config.timeframe_weights,
+                    enable_pre_hpo_evaluation=True,
+                    enable_post_hpo_evaluation=True,
+                    evaluation_metrics=['accuracy', 'f1_score', 'r2_score', 'precision', 'recall', 'sharpe_ratio'],
+                    enable_cross_validation=True,
+                    cv_folds=self.config.cross_validation_folds,
+                    enable_holdout_validation=True,
+                    holdout_ratio=self.config.validation_split,
+                    enable_model_persistence=True,
+                    enable_versioning=True,
+                    max_versions=10,
+                    min_accuracy_threshold=0.5,
+                    min_f1_threshold=0.5,
+                    min_r2_threshold=0.0,
+                    min_sharpe_threshold=0.0,
+                    save_training_results=True,
+                    generate_training_report=True,
+                    training_report_path=f"{self.config.output_dir}/tactician_training_report_{model_type.value}.json"
+                )
                 
-                # Perform advanced HPO using ML commons if enabled
-                if self.config.enable_advanced_hpo:
-                    hpo_result = await self._advanced_hyperparameter_optimization_enhanced(
-                        tactical_data, model_type, training_config
-                    )
-                    hpo_results[model_type.value] = hpo_result
-                    training_config.model_params = hpo_result['best_params']
+                # Initialize EnhancedModelTrainer
+                enhanced_trainer = EnhancedModelTrainer(enhanced_config)
                 
-                # Train model with enhanced ML commons integration
-                trainer = GeneralModelTrainer(training_config)
-                model_result = await trainer.train_model(tactical_data, **kwargs)
+                # Prepare data for training
+                X, y = self._prepare_features_target(model_data, model_type)
+                X_train, X_test, y_train, y_test = self._split_data(X, y)
                 
-                # Store results
-                individual_results[model_type.value] = model_result
-                model_performance[model_type.value] = model_result.validation_metrics
+                # Convert to numpy arrays
+                X_train_array = X_train.values if isinstance(X_train, pd.DataFrame) else X_train
+                X_test_array = X_test.values if isinstance(X_test, pd.DataFrame) else X_test
+                y_train_array = y_train.values if isinstance(y_train, pd.Series) else y_train
+                y_test_array = y_test.values if isinstance(y_test, pd.Series) else y_test
                 
-                self.logger.info(f"✅ {model_type.value} training completed with ML commons")
+                # Train model with automatic post-training integration
+                training_result = await enhanced_trainer.train_model(
+                    X_train=X_train_array,
+                    y_train=y_train_array,
+                    X_test=X_test_array,
+                    y_test=y_test_array,
+                    model_name=f"{self.config.tactician_name}_{model_type.value}",
+                    model_type=model_type.value,
+                    multi_timeframe_data=multi_timeframe_data
+                )
+                
+                # Convert result to tactician format
+                individual_results[model_type.value] = self._convert_enhanced_result_to_tactician_result(training_result, model_type)
+                
+                # Track performance
+                if training_result.post_hpo_metrics and training_result.post_hpo_metrics.post_hpo_metrics:
+                    model_performance[model_type.value] = training_result.post_hpo_metrics.post_hpo_metrics.get('accuracy', 0.0)
+                else:
+                    model_performance[model_type.value] = 0.0
+                
+                # Track HPO results
+                hpo_results[model_type.value] = {
+                    'trials_completed': training_result.hpo_trials_completed,
+                    'best_params': training_result.best_params,
+                    'improvement_achieved': training_result.improvement_achieved
+                }
+                
+                self.logger.info(f"✅ {model_type.value} training completed with EnhancedModelTrainer")
                 
             except Exception as e:
-                self.logger.error(f"❌ Failed to train {model_type.value}: {e}")
-                continue
+                self.logger.error(f"❌ Error training {model_type.value}: {e}")
+                individual_results[model_type.value] = None
+                model_performance[model_type.value] = 0.0
+                hpo_results[model_type.value] = None
         
-        # Perform multi-objective optimization if enabled
-        multi_objective_results = {}
-        if self.config.enable_multi_objective_optimization:
-            multi_objective_results = await self._multi_objective_optimization_enhanced(tactical_data)
-        
-        # Perform walk-forward validation if enabled
-        walk_forward_results = []
-        if self.config.enable_walk_forward_validation:
-            walk_forward_results = await self._walk_forward_validation_enhanced(tactical_data)
-        
-        # Generate tactical insights
-        tactical_insights = await self._generate_tactical_insights_enhanced(
-            individual_results, model_performance, tactical_data
-        )
-        
-        # Calculate tactical performance metrics
-        tactical_metrics = self._calculate_tactical_metrics(model_performance, tactical_data)
-        
-        # Calculate overall performance
-        overall_performance = self._calculate_overall_performance(
-            model_performance, tactical_metrics, walk_forward_results
-        )
-        
-        # Update results
-        results.individual_models = individual_results
+        # Store individual results
+        results.individual_results = individual_results
         results.model_performance = model_performance
         results.hpo_results = hpo_results
-        results.multi_objective_results = multi_objective_results
-        results.walk_forward_results = walk_forward_results
+        results.overall_performance = safe_mean(list(model_performance.values())) if model_performance else 0.0
+        
+        # Generate tactical insights
+        tactical_insights = await self._generate_tactical_insights(individual_results, model_performance, tactical_data)
         results.tactical_insights = tactical_insights
-        results.tactical_metrics = tactical_metrics
-        results.overall_performance = overall_performance
         
         return results
+    
+    def _prepare_multi_timeframe_data(self, data: pd.DataFrame) -> Optional[Dict[str, pd.DataFrame]]:
+        """Prepare multi-timeframe data for EnhancedModelTrainer."""
+        try:
+            if not self.config.enable_multi_timeframe_training:
+                return None
+            
+            multi_timeframe_data = {}
+            for timeframe in self.config.timeframes:
+                multi_timeframe_data[timeframe] = data.copy()
+            
+            return multi_timeframe_data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to prepare multi-timeframe data: {e}")
+            return None
+    
+    def _prepare_model_data(self, data: pd.DataFrame, model_type: TacticianModelType) -> pd.DataFrame:
+        """Prepare data for a specific model type."""
+        try:
+            model_data = data.copy()
+            
+            # Add tactical features if available
+            if hasattr(self.config, 'tactical_features') and self.config.tactical_features:
+                for feature in self.config.tactical_features:
+                    if feature in model_data.columns:
+                        model_data[f'{feature}_sma'] = model_data[feature].rolling(5).mean()
+                        model_data[f'{feature}_ema'] = model_data[feature].ewm(span=5).mean()
+            
+            return model_data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to prepare model data for {model_type.value}: {e}")
+            return data
+    
+    def _prepare_features_target(self, data: pd.DataFrame, model_type: TacticianModelType) -> Tuple[pd.DataFrame, pd.Series]:
+        """Prepare features and target for a specific model type."""
+        try:
+            X = data[self.config.feature_columns].copy()
+            
+            target_col = self.config.target_columns.get(model_type.value)
+            if target_col and target_col in data.columns:
+                y = data[target_col].copy()
+            else:
+                available_targets = [col for col in self.config.target_columns.values() if col in data.columns]
+                if available_targets:
+                    y = data[available_targets[0]].copy()
+                else:
+                    raise ValueError(f"No valid target column found for {model_type.value}")
+            
+            X = X.fillna(X.mean())
+            y = y.fillna(y.mode()[0] if len(y.mode()) > 0 else 0)
+            
+            return X, y
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to prepare features/target for {model_type.value}: {e}")
+            raise
+    
+    def _split_data(self, X: pd.DataFrame, y: pd.Series) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+        """Split data into train/test sets."""
+        try:
+            from sklearn.model_selection import train_test_split
+            
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=self.config.test_split, random_state=42,
+                stratify=y if len(y.unique()) < 10 else None
+            )
+            
+            return X_train, X_test, y_train, y_test
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to split data: {e}")
+            raise
+    
+    def _convert_enhanced_result_to_tactician_result(self, training_result, model_type: TacticianModelType) -> Optional[Any]:
+        """Convert EnhancedModelTrainer result to tactician-specific format."""
+        try:
+            if not training_result.success:
+                return None
+            
+            result = type('TacticianModelResult', (), {
+                'model_type': model_type.value,
+                'trained_model': training_result.best_model,
+                'best_params': training_result.best_params,
+                'training_metrics': training_result.post_hpo_metrics.post_hpo_metrics if training_result.post_hpo_metrics else {},
+                'validation_metrics': training_result.validation_result.validation_metrics if training_result.validation_result else {},
+                'pre_hpo_metrics': training_result.pre_hpo_metrics.post_hpo_metrics if training_result.pre_hpo_metrics else {},
+                'post_hpo_metrics': training_result.post_hpo_metrics.post_hpo_metrics if training_result.post_hpo_metrics else {},
+                'improvement_achieved': training_result.improvement_achieved,
+                'hpo_trials_completed': training_result.hpo_trials_completed,
+                'persistence_result': training_result.persistence_result,
+                'training_time': training_result.training_time
+            })()
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to convert enhanced result for {model_type.value}: {e}")
+            return None
+    
+    async def _generate_tactical_insights(self, individual_results: Dict[str, Any], model_performance: Dict[str, float], data: pd.DataFrame) -> Dict[str, Any]:
+        """Generate tactical insights from training results."""
+        try:
+            insights = {
+                'timestamp': get_current_datetime(),
+                'tactician_name': self.config.tactician_name,
+                'primary_strategy': self.config.primary_strategy,
+                'model_performance_summary': model_performance,
+                'best_performing_model': max(model_performance.items(), key=lambda x: x[1]) if model_performance else None,
+                'overall_performance': safe_mean(list(model_performance.values())) if model_performance else 0.0,
+                'training_recommendations': []
+            }
+            
+            if insights['overall_performance'] > 0.8:
+                insights['training_recommendations'].append("Excellent performance achieved - models ready for deployment")
+            elif insights['overall_performance'] > 0.6:
+                insights['training_recommendations'].append("Good performance - consider fine-tuning for better results")
+            else:
+                insights['training_recommendations'].append("Performance below threshold - review feature engineering and data quality")
+            
+            for model_type, result in individual_results.items():
+                if result and result.improvement_achieved:
+                    insights['training_recommendations'].append(f"{model_type} showed improvement after HPO")
+            
+            return insights
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to generate tactical insights: {e}")
+            return {'error': str(e)}
     
     async def _prepare_tactical_features_enhanced(self, data: pd.DataFrame) -> pd.DataFrame:
         """Prepare tactical features for training with enhanced ML commons preprocessing."""

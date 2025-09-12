@@ -251,6 +251,40 @@ class M1MemoryOptimizer:
         """Get current memory usage statistics (alias for get_memory_stats)."""
         return self.get_memory_stats()
 
+    def load_dataframe(self, file_path: str, **kwargs) -> pd.DataFrame:
+        """Load a DataFrame from file with M1 memory optimization.
+        
+        Args:
+            file_path: Path to the data file
+            **kwargs: Additional arguments passed to pandas read function
+            
+        Returns:
+            Optimized DataFrame
+        """
+        try:
+            # Determine file type and load accordingly
+            if file_path.endswith('.parquet'):
+                df = pd.read_parquet(file_path, **kwargs)
+            elif file_path.endswith('.csv'):
+                df = pd.read_csv(file_path, **kwargs)
+            elif file_path.endswith('.json'):
+                df = pd.read_json(file_path, **kwargs)
+            elif file_path.endswith('.pickle') or file_path.endswith('.pkl'):
+                df = pd.read_pickle(file_path, **kwargs)
+            else:
+                # Try to infer from file extension
+                df = pd.read_csv(file_path, **kwargs)
+            
+            # Apply memory optimization
+            optimized_df = self.optimize_dataframe_memory(df)
+            
+            self.logger.info(f"📊 Loaded DataFrame from {file_path}: {optimized_df.shape}")
+            return optimized_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load DataFrame from {file_path}: {e}")
+            raise
+
     def optimize_dataframe(self, df):
         """Alias for optimize_dataframe_memory for compatibility."""
         return self.optimize_dataframe_memory(df)

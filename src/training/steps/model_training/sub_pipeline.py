@@ -425,7 +425,7 @@ class ModelTrainingSubPipeline:
         
         # Import and use HMM training
         try:
-            from .hmm_training_components import HMMTrainingPipeline
+            from .simplified.hmm_training import HMMTrainingPipeline
             
             hmm_trainer = HMMTrainingPipeline()
             hmm_result = await hmm_trainer.train_hmm_models(
@@ -475,7 +475,7 @@ class ModelTrainingSubPipeline:
         
         # Import and use ensemble training
         try:
-            from .multi_timeframe_hmm_ensemble import EnsembleTrainingPipeline
+            from .simplified.ensemble_training import EnsembleTrainingPipeline
             
             ensemble_trainer = EnsembleTrainingPipeline()
             ensemble_result = await ensemble_trainer.train_ensemble_models(

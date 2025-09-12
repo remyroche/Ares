@@ -5,7 +5,7 @@ Extracted from raw_data_quality_checker.py
 """
 
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any, Optional, List
 import pandas as pd
 import logging
 import numpy as np

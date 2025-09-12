@@ -1,16 +1,17 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Data Utilities Component
-from src.utils.logger import system_logger
+
 Common utility functions for data processing and analysis.
 Extracted from raw_data_quality_checker.py
 """
-from datetime import datetime, timedelta
-from typing import Any, Optional
-import pandas as pd
 
-from src.utils.logger import system_logger
+from datetime import datetime, timedelta
+from typing import Any, Optional, List
+import pandas as pd
 import logging
 import numpy as np
+
+from src.utils.logger import system_logger
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 def determine_timeframe_from_data(data: pd.DataFrame) -> str:
     """Determine the timeframe from the data intervals.

@@ -1,19 +1,19 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Error Handler Component
-from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 Centralized error handling system for data quality checks.
 Extracted from raw_data_quality_checker.py
 """
-from datetime import datetime
-from typing import Any, Optional
-import traceback
 
-from src.utils.logger import system_logger
+from datetime import datetime
+from typing import Any, Optional, List
+import traceback
 import logging
 import numpy as np
 import time
+
+from src.utils.logger import system_logger
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 class QualityCheckError(Exception):
     """Base exception for quality check errors."""
@@ -45,14 +45,12 @@ class ErrorHandler:
     - Error reporting and metrics
     """
     @log_important_calls
-    
     def __init__(self, config: Optional[dict[str, Any]] = None):
         self.logger = system_logger.getChild("ErrorHandler")
         self.config = config or self._get_default_config()
         self.error_counts = {}
         self.error_history = []
     @log_all_calls
-        
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration for error handling."""
         return {

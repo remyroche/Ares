@@ -161,7 +161,6 @@ class MarketAnalysisSubPipeline:
             'regime_data_splitting': self._regime_data_splitting_pipeline,
             'triple_barrier_labeling': self._triple_barrier_labeling_pipeline,
             'feature_lookback_optimization': self._feature_lookback_optimization_pipeline,
-            'fractional_differentiation': self._fractional_differentiation_pipeline,
             'cross_timeframe_analysis': self._cross_timeframe_analysis_pipeline,
             'temporal_feature_integration': self._temporal_feature_integration_pipeline,
             'sr_feature_integration': self._sr_feature_integration_pipeline
@@ -528,7 +527,6 @@ class MarketAnalysisSubPipeline:
             'regime_data_splitting',
             'triple_barrier_labeling',
             'feature_lookback_optimization',
-            'fractional_differentiation',
             'cross_timeframe_analysis',
             'temporal_feature_integration',
             'sr_feature_integration'
@@ -1320,17 +1318,30 @@ class MarketAnalysisSubPipeline:
             from src.utils.hmm_composite_manager import HMMCompositeManager
             hmm_manager = HMMCompositeManager()
 
-            # Prepare data in the format expected by hmm_clustering
-            hmm_data = data.copy()
-            # Add regime column if not present
-            if 'regime' not in hmm_data.columns:
-                # Generate regime assignments based on the detection result
-                import numpy as np
-                n_samples = len(hmm_data)
-                n_regimes = len(regime_result.regime_qualities) if hasattr(regime_result, 'regime_qualities') else 3
-                hmm_data['regime'] = np.random.choice(range(n_regimes), size=n_samples)
+            # Use the full regime result with probabilistic predictions
+            hmm_data = regime_result.copy()
+            
+            # Log probabilistic regime tagging information
+            regime_prob_cols = [col for col in hmm_data.columns if col.startswith('regime_') and col.endswith('_probability')]
+            regime_percent_cols = [col for col in hmm_data.columns if col.startswith('regime_') and col.endswith('_percentage')]
+            
+            if regime_prob_cols:
+                self.logger.info(f"✅ Probabilistic regime tagging implemented with {len(regime_prob_cols)} regime probabilities")
+                self.logger.info(f"   Probability columns: {regime_prob_cols}")
+            
+            if regime_percent_cols:
+                self.logger.info(f"✅ Regime percentages available: {regime_percent_cols}")
+            
+            # Log regime probability statistics
+            if 'regime_probability_entropy' in hmm_data.columns:
+                avg_entropy = hmm_data['regime_probability_entropy'].mean()
+                self.logger.info(f"📊 Average regime probability entropy: {avg_entropy:.3f} (lower = more confident)")
+            
+            if 'regime_confidence' in hmm_data.columns:
+                avg_confidence = hmm_data['regime_confidence'].mean()
+                self.logger.info(f"📊 Average regime confidence: {avg_confidence:.3f} (higher = more confident)")
 
-            # Save the HMM composite data
+            # Save the HMM composite data with full probabilistic regime tagging
             save_path = hmm_manager.get_composite_cluster_file_path(
                 exchange=config.exchange,
                 symbol=config.symbol,
@@ -1341,14 +1352,27 @@ class MarketAnalysisSubPipeline:
             # Ensure directory exists
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
 
-            # Save the data
+            # Save the data with probabilistic regime tagging
             standardized_parquet_handler.write_parquet(hmm_data, save_path)
 
-            self.logger.info(f"✅ HMM composite data saved to: {save_path}")
+            self.logger.info(f"✅ HMM composite data with probabilistic regime tagging saved to: {save_path}")
 
+            # Extract regime statistics from the result
+            n_regimes = len([col for col in hmm_data.columns if col.startswith('regime_') and col.endswith('_probability')])
+            regime_counts = hmm_data['regime'].value_counts().to_dict() if 'regime' in hmm_data.columns else {}
+            
             artifacts['regime_models'] = ['regime_model.pkl']
-            artifacts['regime_statistics'] = regime_result.regime_qualities
-            artifacts['regime_transitions'] = {'transition_matrix': regime_result.transition_matrix.tolist()}
+            artifacts['regime_statistics'] = {
+                'n_regimes': n_regimes,
+                'regime_counts': regime_counts,
+                'probabilistic_tagging': True,
+                'regime_probability_columns': regime_prob_cols,
+                'regime_percentage_columns': regime_percent_cols
+            }
+            artifacts['regime_transitions'] = {
+                'probabilistic_data_saved': True,
+                'data_path': save_path
+            }
 
         except Exception as e:
             self.logger.error(f"❌ HMM regime discovery failed: {e}")
@@ -1797,82 +1821,82 @@ class MarketAnalysisSubPipeline:
                         # Add enhanced optimization metrics
                         artifacts['enhanced_optimization_summary'] = enhanced_results['optimization_summary']
                             
-                        elif FALLBACK_GENERATORS_AVAILABLE:
-                            self.logger.info("🔄 Using fallback optimization system")
+                    elif not ENHANCED_OPTIMIZATION_AVAILABLE and FALLBACK_GENERATORS_AVAILABLE:
+                        self.logger.info("🔄 Using fallback optimization system")
+                        
+                        # Fallback to original optimization logic
+                        if optimization_config:
+                            # Use configuration system
+                            enabled_features = optimization_config.get_enabled_features()
+                            optimization_configs = []
                             
-                            # Fallback to original optimization logic
-                            if optimization_config:
-                                # Use configuration system
-                                enabled_features = optimization_config.get_enabled_features()
-                                optimization_configs = []
+                            for feature_config in enabled_features:
+                                # Map feature name to generator
+                                generator_map = {
+                                    'rsi': FeatureGenerators.rsi_generator,
+                                    'sma': FeatureGenerators.sma_generator,
+                                    'ema': FeatureGenerators.ema_generator,
+                                    'bollinger_bands': FeatureGenerators.bollinger_bands_generator,
+                                    'macd': FeatureGenerators.macd_generator,
+                                    'volatility': FeatureGenerators.volatility_generator
+                                }
                                 
-                                for feature_config in enabled_features:
-                                    # Map feature name to generator
-                                    generator_map = {
-                                        'rsi': FeatureGenerators.rsi_generator,
-                                        'sma': FeatureGenerators.sma_generator,
-                                        'ema': FeatureGenerators.ema_generator,
-                                        'bollinger_bands': FeatureGenerators.bollinger_bands_generator,
-                                        'macd': FeatureGenerators.macd_generator,
-                                        'volatility': FeatureGenerators.volatility_generator
-                                    }
-                                    
-                                    if feature_config.name in generator_map:
-                                        optimization_configs.append({
-                                            'name': feature_config.name,
-                                            'periods': feature_config.periods,
-                                            'method': feature_config.method.value,
-                                            'generator': generator_map[feature_config.name],
-                                            'weight': feature_config.weight
-                                        })
-                                
-                                self.logger.info(f"📋 Using configured features: {[c['name'] for c in optimization_configs]}")
-                            else:
-                                # Fallback to default configurations
-                                optimization_configs = [
-                                    {
-                                        'name': 'rsi',
-                                        'periods': [7, 14, 21, 28],
-                                        'method': 'signal_strength',
-                                        'generator': FeatureGenerators.rsi_generator,
-                                        'weight': 1.0
-                                    },
-                                    {
-                                        'name': 'sma',
-                                        'periods': [10, 20, 30, 50],
-                                        'method': 'noise_reduction',
-                                        'generator': FeatureGenerators.sma_generator,
-                                        'weight': 1.0
-                                    },
-                                    {
-                                        'name': 'ema',
-                                        'periods': [8, 12, 20, 26],
-                                        'method': 'trend_following',
-                                        'generator': FeatureGenerators.ema_generator,
-                                        'weight': 1.0
-                                    },
-                                    {
-                                        'name': 'bollinger_bands',
-                                        'periods': [15, 20, 25, 30],
-                                        'method': 'information_content',
-                                        'generator': FeatureGenerators.bollinger_bands_generator,
-                                        'weight': 0.8
-                                    },
-                                    {
-                                        'name': 'macd',
-                                        'periods': [7, 9, 12, 15],
-                                        'method': 'signal_strength',
-                                        'generator': FeatureGenerators.macd_generator,
-                                        'weight': 0.9
-                                    },
-                                    {
-                                        'name': 'volatility',
-                                        'periods': [10, 15, 20, 25],
-                                        'method': 'regime_adaptation',
-                                        'generator': FeatureGenerators.volatility_generator,
-                                        'weight': 0.7
-                                    }
-                                ]
+                                if feature_config.name in generator_map:
+                                    optimization_configs.append({
+                                        'name': feature_config.name,
+                                        'periods': feature_config.periods,
+                                        'method': feature_config.method.value,
+                                        'generator': generator_map[feature_config.name],
+                                        'weight': feature_config.weight
+                                    })
+                            
+                            self.logger.info(f"📋 Using configured features: {[c['name'] for c in optimization_configs]}")
+                        else:
+                            # Fallback to default configurations
+                            optimization_configs = [
+                                {
+                                    'name': 'rsi',
+                                    'periods': [7, 14, 21, 28],
+                                    'method': 'signal_strength',
+                                    'generator': FeatureGenerators.rsi_generator,
+                                    'weight': 1.0
+                                },
+                                {
+                                    'name': 'sma',
+                                    'periods': [10, 20, 30, 50],
+                                    'method': 'noise_reduction',
+                                    'generator': FeatureGenerators.sma_generator,
+                                    'weight': 1.0
+                                },
+                                {
+                                    'name': 'ema',
+                                    'periods': [8, 12, 20, 26],
+                                    'method': 'trend_following',
+                                    'generator': FeatureGenerators.ema_generator,
+                                    'weight': 1.0
+                                },
+                                {
+                                    'name': 'bollinger_bands',
+                                    'periods': [15, 20, 25, 30],
+                                    'method': 'information_content',
+                                    'generator': FeatureGenerators.bollinger_bands_generator,
+                                    'weight': 0.8
+                                },
+                                {
+                                    'name': 'macd',
+                                    'periods': [7, 9, 12, 15],
+                                    'method': 'signal_strength',
+                                    'generator': FeatureGenerators.macd_generator,
+                                    'weight': 0.9
+                                },
+                                {
+                                    'name': 'volatility',
+                                    'periods': [10, 15, 20, 25],
+                                    'method': 'regime_adaptation',
+                                    'generator': FeatureGenerators.volatility_generator,
+                                    'weight': 0.7
+                                }
+                            ]
                         
                         # Optimize each indicator
                         for config in optimization_configs:
@@ -1889,8 +1913,8 @@ class MarketAnalysisSubPipeline:
                                 # Use default period
                                 optimal_lookbacks[config['name']] = config['periods'][len(config['periods']) // 2]
                         
-                    except ImportError as e:
-                        self.logger.warning(f"⚠️ Feature generators not available: {e}, using fallback optimization")
+                    else:
+                        self.logger.warning("⚠️ No optimization system available, using fallback optimization")
                         
                         # Fallback to simple optimization
                         rsi_periods = [7, 14, 21, 28]
@@ -2025,15 +2049,15 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("feature_lookback_optimization", config, artifacts)
 
-        # Automatically trigger the next sub-pipeline: fractional_differentiation
-        self.logger.info("🔄 Feature lookback optimization completed, triggering next: fractional_differentiation")
+        # Automatically trigger the next sub-pipeline: cross_timeframe_analysis
+        self.logger.info("🔄 Feature lookback optimization completed, triggering next: cross_timeframe_analysis")
         try:
-            next_artifacts = await self._fractional_differentiation_pipeline(config)
+            next_artifacts = await self._cross_timeframe_analysis_pipeline(config)
             # Merge artifacts from next pipeline
             artifacts.update(next_artifacts)
-            self.logger.info("✅ Fractional differentiation pipeline completed successfully")
+            self.logger.info("✅ Cross timeframe analysis pipeline completed successfully")
         except Exception as e:
-            self.logger.error(f"❌ Failed to execute fractional differentiation pipeline: {e}")
+            self.logger.error(f"❌ Failed to execute cross timeframe analysis pipeline: {e}")
 
         return artifacts
 
@@ -2327,66 +2351,6 @@ class MarketAnalysisSubPipeline:
             self.logger.warning(f"⚠️ Feature optimization failed for {feature_name}: {e}")
             return periods[len(periods) // 2]
 
-    async def _fractional_differentiation_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Fractional differentiation sub-pipeline."""
-        self.logger.info("🔢 Executing fractional differentiation pipeline")
-        
-        artifacts = {
-            'differentiated_data': [],
-            'differentiation_params': {},
-            'stationarity_metrics': {}
-        }
-        
-        if config.mode == ExecutionMode.BLANK:
-            self.logger.info("🔄 Blank mode: Skipping actual fractional differentiation")
-            artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
-            return artifacts
-        
-        # Import and use fractional differentiation
-        try:
-            from src.feature_engineering.fractional_differentiation_pipeline import FractionalDifferentiationPipeline, FractionalDiffConfig
-            
-            frac_diff_config = FractionalDiffConfig(
-                d_min=0.0,
-                d_max=1.0,
-                d_step=0.1,
-                threshold=0.01,
-                enable_data_quality_validation=True
-            )
-            frac_diff_pipeline = FractionalDifferentiationPipeline(frac_diff_config)
-            
-            # Execute fractional differentiation
-            frac_diff_result = await frac_diff_pipeline.apply_fractional_differentiation(
-                data_dir=config.data_dir,
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe
-            )
-            
-            artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
-            artifacts['differentiation_params'] = frac_diff_result.differentiation_params
-            artifacts['stationarity_metrics'] = frac_diff_result.stationarity_metrics
-            artifacts['memory_metrics'] = frac_diff_result.memory_metrics
-            artifacts['optimal_d'] = frac_diff_result.optimal_d
-            
-        except ImportError:
-            self.logger.warning("⚠️ Fractional differentiation pipeline not available, using mock")
-            artifacts['differentiated_data'] = ['fractional_diff_data.parquet']
-        
-        # Log completion with emojis and artifact paths
-        self._log_sub_pipeline_completion("fractional_differentiation", config, artifacts)
-
-        # Automatically trigger the next sub-pipeline: cross_timeframe_analysis
-        self.logger.info("🔄 Fractional differentiation completed, triggering next: cross_timeframe_analysis")
-        try:
-            next_artifacts = await self._cross_timeframe_analysis_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ Cross timeframe analysis pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute cross timeframe analysis pipeline: {e}")
-
-        return artifacts
     
     async def _cross_timeframe_analysis_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Cross timeframe analysis sub-pipeline."""

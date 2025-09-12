@@ -482,14 +482,42 @@ class EnhancedHMMRegimeDetector:
         try:
             if processed_length == original_length:
                 probabilities = model.predict_proba(numeric_data)
+                # Store the maximum probability for the predicted regime
                 result['regime_probability'] = np.max(probabilities, axis=1)
+                
+                # Store full probability distribution for each regime
+                for regime_idx in range(probabilities.shape[1]):
+                    result[f'regime_{regime_idx}_probability'] = probabilities[:, regime_idx]
+                
+                # Store regime probabilities as percentages
+                for regime_idx in range(probabilities.shape[1]):
+                    result[f'regime_{regime_idx}_percentage'] = probabilities[:, regime_idx] * 100
+                
+                # Store regime probability statistics
+                result['regime_probability_entropy'] = -np.sum(probabilities * np.log(probabilities + 1e-10), axis=1)
+                result['regime_confidence'] = np.max(probabilities, axis=1) - np.mean(probabilities, axis=1)
+                
+                self.logger.info(f"✅ Added probabilistic regime predictions for {probabilities.shape[1]} regimes")
+                
             else:
                 # For mismatched lengths, use default probabilities
+                n_regimes = config.n_components
                 result['regime_probability'] = 0.5
+                for regime_idx in range(n_regimes):
+                    result[f'regime_{regime_idx}_probability'] = 0.5
+                    result[f'regime_{regime_idx}_percentage'] = 50.0
+                result['regime_probability_entropy'] = 0.0
+                result['regime_confidence'] = 0.0
                 self.logger.warning("⚠️ Using default regime probabilities due to length mismatch")
         except Exception as e:
             self.logger.warning(f"⚠️ Could not compute regime probabilities: {e}")
-            result['regime_probability'] = 0.5  # Default probability
+            n_regimes = config.n_components
+            result['regime_probability'] = 0.5
+            for regime_idx in range(n_regimes):
+                result[f'regime_{regime_idx}_probability'] = 0.5
+                result[f'regime_{regime_idx}_percentage'] = 50.0
+            result['regime_probability_entropy'] = 0.0
+            result['regime_confidence'] = 0.0
 
         result['detection_method'] = 'hmm_gaussian'
 
@@ -749,12 +777,30 @@ class EnhancedHMMRegimeDetector:
         model.fit(engineered_data)
         regime_labels = model.predict(engineered_data)
         
+        # Get probabilistic predictions
+        probabilities = model.predict_proba(engineered_data)
+        
         # Create result DataFrame
         result = data.copy()
         result['regime'] = regime_labels
-        result['regime_probability'] = model.predict_proba(engineered_data).max(axis=1)
+        result['regime_probability'] = np.max(probabilities, axis=1)
+        
+        # Store full probability distribution for each regime
+        for regime_idx in range(probabilities.shape[1]):
+            result[f'regime_{regime_idx}_probability'] = probabilities[:, regime_idx]
+        
+        # Store regime probabilities as percentages
+        for regime_idx in range(probabilities.shape[1]):
+            result[f'regime_{regime_idx}_percentage'] = probabilities[:, regime_idx] * 100
+        
+        # Store regime probability statistics
+        result['regime_probability_entropy'] = -np.sum(probabilities * np.log(probabilities + 1e-10), axis=1)
+        result['regime_confidence'] = np.max(probabilities, axis=1) - np.mean(probabilities, axis=1)
+        
         result['detection_method'] = 'hmm_multivariate'
         result['model_score'] = model.score(engineered_data)
+        
+        self.logger.info(f"✅ Added probabilistic regime predictions for {probabilities.shape[1]} regimes (multivariate)")
         
         return result
 
@@ -792,6 +838,22 @@ class EnhancedHMMRegimeDetector:
         result = data.copy()
         result['regime'] = ensemble_result['regime']
         result['regime_probability'] = ensemble_result['probability']
+        
+        # Add probabilistic regime predictions from ensemble
+        if 'regime_probabilities' in ensemble_result:
+            probabilities = ensemble_result['regime_probabilities']
+            # Store full probability distribution for each regime
+            for regime_idx in range(probabilities.shape[1]):
+                result[f'regime_{regime_idx}_probability'] = probabilities[:, regime_idx]
+            
+            # Store regime probabilities as percentages
+            for regime_idx in range(probabilities.shape[1]):
+                result[f'regime_{regime_idx}_percentage'] = probabilities[:, regime_idx] * 100
+            
+            # Store regime probability statistics
+            result['regime_probability_entropy'] = -np.sum(probabilities * np.log(probabilities + 1e-10), axis=1)
+            result['regime_confidence'] = np.max(probabilities, axis=1) - np.mean(probabilities, axis=1)
+        
         result['detection_method'] = 'ensemble_hmm'
         result['ensemble_consensus'] = ensemble_result['consensus']
         
@@ -849,6 +911,17 @@ class EnhancedHMMRegimeDetector:
         result = data.copy()
         result['regime'] = regimes[:len(data)]
         result['regime_probability'] = probabilities[:len(data)]
+        
+        # Add probabilistic regime predictions for streaming (using placeholder values)
+        n_regimes = config.n_components
+        for regime_idx in range(n_regimes):
+            # Use uniform distribution as placeholder for streaming
+            result[f'regime_{regime_idx}_probability'] = 1.0 / n_regimes
+            result[f'regime_{regime_idx}_percentage'] = 100.0 / n_regimes
+        
+        result['regime_probability_entropy'] = np.log(n_regimes)  # Maximum entropy for uniform distribution
+        result['regime_confidence'] = 0.0  # Low confidence for streaming predictions
+        
         result['detection_method'] = 'streaming_hmm'
         result['streaming_stability'] = self.streaming_state['stability_score']
         
@@ -1030,9 +1103,21 @@ class EnhancedHMMRegimeDetector:
             # Get regime predictions from all models
             regime_predictions = [model['regime'].values for model in models]
             
+            # Get regime probabilities from all models
+            regime_probabilities_list = []
+            for model in models:
+                # Extract regime probability columns
+                prob_cols = [col for col in model.columns if col.startswith('regime_') and col.endswith('_probability')]
+                if prob_cols:
+                    # Sort by regime index to ensure consistent order
+                    prob_cols.sort(key=lambda x: int(x.split('_')[1]))
+                    probs = model[prob_cols].values
+                    regime_probabilities_list.append(probs)
+            
             # Calculate consensus regime
             consensus_regimes = []
             consensus_probabilities = []
+            ensemble_probabilities = None
             
             for i in range(len(regime_predictions[0])):
                 # Get regime votes for this time point
@@ -1046,11 +1131,21 @@ class EnhancedHMMRegimeDetector:
                 consensus_regimes.append(consensus_regime)
                 consensus_probabilities.append(consensus_probability)
             
-            return {
+            # Calculate ensemble probabilities if available
+            if regime_probabilities_list:
+                # Average probabilities across all models
+                ensemble_probabilities = np.mean(regime_probabilities_list, axis=0)
+            
+            result = {
                 'regime': consensus_regimes,
                 'probability': consensus_probabilities,
                 'consensus': np.mean(consensus_probabilities)
             }
+            
+            if ensemble_probabilities is not None:
+                result['regime_probabilities'] = ensemble_probabilities
+            
+            return result
             
         except Exception as e:
             self.logger.error(f"❌ Failed to combine ensemble results: {e}")

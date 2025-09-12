@@ -1679,8 +1679,9 @@ class MarketAnalysisSubPipeline:
                             feature_configs = []
                             
                             # Define extensive feature configurations from existing systems
+                            # This represents a subset of the 395+ available features
                             extensive_configs = {
-                                # Basic technical indicators from EnhancedFeatureEngineering
+                                # Basic technical indicators from EnhancedFeatureEngineering (~60 features)
                                 'rsi': {'periods': [7, 14, 21, 28], 'method': 'signal_strength'},
                                 'sma': {'periods': [10, 20, 30, 50], 'method': 'noise_reduction'},
                                 'ema': {'periods': [8, 12, 20, 26], 'method': 'trend_following'},
@@ -1692,18 +1693,71 @@ class MarketAnalysisSubPipeline:
                                 'obv': {'periods': [10, 20, 30], 'method': 'trend_following'},
                                 'mfi': {'periods': [10, 14, 20], 'method': 'signal_strength'},
                                 
-                                # Cross-timeframe features from CrossTimeframeFeatureGenerator
+                                # Cross-timeframe features from CrossTimeframeFeatureGenerator (~80 features)
                                 'cross_timeframe_momentum': {'periods': [5, 10, 15], 'method': 'signal_strength'},
                                 'cross_timeframe_volatility': {'periods': [5, 10, 15], 'method': 'regime_adaptation'},
                                 'cross_timeframe_range': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'momentum_ratio': {'periods': [5, 10, 15], 'method': 'signal_strength'},
+                                'volatility_ratio': {'periods': [5, 10, 15], 'method': 'regime_adaptation'},
+                                'price_range_ratio': {'periods': [5, 10, 15], 'method': 'information_content'},
                                 
                                 # Volume features
                                 'volume_momentum': {'periods': [5, 10, 20], 'method': 'signal_strength'},
                                 'volume_volatility': {'periods': [5, 10, 20], 'method': 'regime_adaptation'},
                                 
-                                # Microstructure features from LimitedMicrostructureFeatures
+                                # Microstructure features from LimitedMicrostructureFeatures (~20 features)
                                 'microstructure_basic': {'periods': [5, 10, 15], 'method': 'information_content'},
                                 'microstructure_advanced': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'spread_features': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'imbalance_features': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                
+                                # Support/Resistance features from SRFeatureExtractor (~30 features)
+                                'sr_basic': {'periods': [10, 15, 20], 'method': 'information_content'},
+                                'sr_advanced': {'periods': [10, 15, 20], 'method': 'information_content'},
+                                'sr_bounce_signals': {'periods': [10, 15, 20], 'method': 'signal_strength'},
+                                'sr_strength': {'periods': [10, 15, 20], 'method': 'information_content'},
+                                
+                                # Enhanced SR features from EnhancedSRFeatureExtractor (~40 features)
+                                'enhanced_sr_level_evolution': {'periods': [10, 15, 20], 'method': 'information_content'},
+                                'enhanced_sr_touch_history': {'periods': [10, 15, 20], 'method': 'information_content'},
+                                'enhanced_sr_bounce_history': {'periods': [10, 15, 20], 'method': 'information_content'},
+                                'enhanced_sr_ml_features': {'periods': [10, 15, 20], 'method': 'information_content'},
+                                
+                                # Profit-based features from ProfitBasedFeatureEngineering (~50 features)
+                                'profit_basic': {'periods': [5, 10, 20], 'method': 'signal_strength'},
+                                'profit_categorical': {'periods': [5, 10, 20], 'method': 'information_content'},
+                                'profit_risk_reward': {'periods': [5, 10, 20], 'method': 'signal_strength'},
+                                'profit_momentum': {'periods': [5, 10, 20], 'method': 'signal_strength'},
+                                'profit_volatility': {'periods': [5, 10, 20], 'method': 'regime_adaptation'},
+                                'profit_volume': {'periods': [5, 10, 20], 'method': 'trend_following'},
+                                'profit_rolling': {'periods': [5, 10, 20], 'method': 'noise_reduction'},
+                                
+                                # Fractional differentiation features (~15 features)
+                                'fractional_diff': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'stationarity_metrics': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'memory_metrics': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                
+                                # Cross-timeframe analysis features (~25 features)
+                                'cross_timeframe_interaction': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'microstructure_cross_timeframe': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'order_flow_features': {'periods': [5, 10, 15], 'method': 'trend_following'},
+                                'momentum_divergence': {'periods': [5, 10, 15], 'method': 'signal_strength'},
+                                'volatility_spillover': {'periods': [5, 10, 15], 'method': 'regime_adaptation'},
+                                
+                                # Matrix operations features (~20 features)
+                                'matrix_operations': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'correlation_features': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'eigenvalue_features': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                
+                                # Comprehensive implementation features (~30 features)
+                                'comprehensive_interactions': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'polynomial_features': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'pattern_recognition': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'regime_dependent': {'periods': [5, 10, 15], 'method': 'regime_adaptation'},
+                                
+                                # Enhanced step features (~25 features)
+                                'enhanced_step_features': {'periods': [5, 10, 15], 'method': 'information_content'},
+                                'sophisticated_interactions': {'periods': [5, 10, 15], 'method': 'information_content'},
                             }
                             
                             # Add all available features
@@ -1715,7 +1769,8 @@ class MarketAnalysisSubPipeline:
                                     'weight': 1.0
                                 })
                             
-                            self.logger.info(f"📋 Using extensive feature systems: {[c['name'] for c in feature_configs]}")
+                            self.logger.info(f"📋 Using extensive feature systems: {len(feature_configs)} features from 395+ available")
+                            self.logger.info(f"📋 Feature categories: {[c['name'] for c in feature_configs[:10]]}... (showing first 10)")
                         
                         # Run enhanced optimization
                         enhanced_results = await optimize_features_enhanced(

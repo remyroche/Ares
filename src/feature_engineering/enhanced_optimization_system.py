@@ -120,8 +120,9 @@ class EnhancedOptimizationSystem:
         """Get feature generator from extensive feature generation systems."""
         try:
             # Map feature names to appropriate generators from existing systems
+            # This represents a subset of the 395+ available features
             feature_mappings = {
-                # Basic technical indicators from EnhancedFeatureEngineering
+                # Basic technical indicators from EnhancedFeatureEngineering (~60 features)
                 'rsi': lambda data, period: self._generate_rsi_feature(data, period),
                 'sma': lambda data, period: self._generate_sma_feature(data, period),
                 'ema': lambda data, period: self._generate_ema_feature(data, period),
@@ -133,18 +134,71 @@ class EnhancedOptimizationSystem:
                 'obv': lambda data, period: self._generate_obv_feature(data, period),
                 'mfi': lambda data, period: self._generate_mfi_feature(data, period),
                 
-                # Cross-timeframe features
+                # Cross-timeframe features from CrossTimeframeFeatureGenerator (~80 features)
                 'cross_timeframe_momentum': lambda data, period: self._generate_cross_timeframe_momentum(data, period),
                 'cross_timeframe_volatility': lambda data, period: self._generate_cross_timeframe_volatility(data, period),
                 'cross_timeframe_range': lambda data, period: self._generate_cross_timeframe_range(data, period),
+                'momentum_ratio': lambda data, period: self._generate_momentum_ratio_feature(data, period),
+                'volatility_ratio': lambda data, period: self._generate_volatility_ratio_feature(data, period),
+                'price_range_ratio': lambda data, period: self._generate_price_range_ratio_feature(data, period),
                 
                 # Volume features
                 'volume_momentum': lambda data, period: self._generate_volume_momentum(data, period),
                 'volume_volatility': lambda data, period: self._generate_volume_volatility(data, period),
                 
-                # Microstructure features
+                # Microstructure features from LimitedMicrostructureFeatures (~20 features)
                 'microstructure_basic': lambda data, period: self._generate_microstructure_basic(data, period),
                 'microstructure_advanced': lambda data, period: self._generate_microstructure_advanced(data, period),
+                'spread_features': lambda data, period: self._generate_spread_features(data, period),
+                'imbalance_features': lambda data, period: self._generate_imbalance_features(data, period),
+                
+                # Support/Resistance features from SRFeatureExtractor (~30 features)
+                'sr_basic': lambda data, period: self._generate_sr_basic_features(data, period),
+                'sr_advanced': lambda data, period: self._generate_sr_advanced_features(data, period),
+                'sr_bounce_signals': lambda data, period: self._generate_sr_bounce_signals(data, period),
+                'sr_strength': lambda data, period: self._generate_sr_strength_features(data, period),
+                
+                # Enhanced SR features from EnhancedSRFeatureExtractor (~40 features)
+                'enhanced_sr_level_evolution': lambda data, period: self._generate_enhanced_sr_level_evolution(data, period),
+                'enhanced_sr_touch_history': lambda data, period: self._generate_enhanced_sr_touch_history(data, period),
+                'enhanced_sr_bounce_history': lambda data, period: self._generate_enhanced_sr_bounce_history(data, period),
+                'enhanced_sr_ml_features': lambda data, period: self._generate_enhanced_sr_ml_features(data, period),
+                
+                # Profit-based features from ProfitBasedFeatureEngineering (~50 features)
+                'profit_basic': lambda data, period: self._generate_profit_basic_features(data, period),
+                'profit_categorical': lambda data, period: self._generate_profit_categorical_features(data, period),
+                'profit_risk_reward': lambda data, period: self._generate_profit_risk_reward_features(data, period),
+                'profit_momentum': lambda data, period: self._generate_profit_momentum_features(data, period),
+                'profit_volatility': lambda data, period: self._generate_profit_volatility_features(data, period),
+                'profit_volume': lambda data, period: self._generate_profit_volume_features(data, period),
+                'profit_rolling': lambda data, period: self._generate_profit_rolling_features(data, period),
+                
+                # Fractional differentiation features (~15 features)
+                'fractional_diff': lambda data, period: self._generate_fractional_diff_features(data, period),
+                'stationarity_metrics': lambda data, period: self._generate_stationarity_metrics(data, period),
+                'memory_metrics': lambda data, period: self._generate_memory_metrics(data, period),
+                
+                # Cross-timeframe analysis features (~25 features)
+                'cross_timeframe_interaction': lambda data, period: self._generate_cross_timeframe_interaction_features(data, period),
+                'microstructure_cross_timeframe': lambda data, period: self._generate_microstructure_cross_timeframe_features(data, period),
+                'order_flow_features': lambda data, period: self._generate_order_flow_features(data, period),
+                'momentum_divergence': lambda data, period: self._generate_momentum_divergence_features(data, period),
+                'volatility_spillover': lambda data, period: self._generate_volatility_spillover_features(data, period),
+                
+                # Matrix operations features (~20 features)
+                'matrix_operations': lambda data, period: self._generate_matrix_operation_features(data, period),
+                'correlation_features': lambda data, period: self._generate_correlation_features(data, period),
+                'eigenvalue_features': lambda data, period: self._generate_eigenvalue_features(data, period),
+                
+                # Comprehensive implementation features (~30 features)
+                'comprehensive_interactions': lambda data, period: self._generate_comprehensive_interaction_features(data, period),
+                'polynomial_features': lambda data, period: self._generate_polynomial_features(data, period),
+                'pattern_recognition': lambda data, period: self._generate_pattern_recognition_features(data, period),
+                'regime_dependent': lambda data, period: self._generate_regime_dependent_features(data, period),
+                
+                # Enhanced step features (~25 features)
+                'enhanced_step_features': lambda data, period: self._generate_enhanced_step_features(data, period),
+                'sophisticated_interactions': lambda data, period: self._generate_sophisticated_interaction_features(data, period),
             }
             
             return feature_mappings.get(feature_name.lower())

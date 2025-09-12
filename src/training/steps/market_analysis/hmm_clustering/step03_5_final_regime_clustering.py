@@ -990,6 +990,87 @@ try:
 except ImportError:
     OPTIMIZED_VECTORIZED_AVAILABLE = False
 
+# Numba JIT compilation for computational optimization
+try:
+    from numba import jit, prange, njit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    # Create dummy decorators
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def njit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def prange(*args, **kwargs):
+        return range(*args, **kwargs)
+
+# Numba-optimized computational functions for regime analysis
+@njit(parallel=True, cache=True)
+def compute_regime_statistics_numba(regime_assignments, prices):
+    """Numba-optimized regime statistics computation."""
+    n_regimes = len(np.unique(regime_assignments))
+    n_points = len(regime_assignments)
+    
+    regime_means = np.zeros(n_regimes)
+    regime_stds = np.zeros(n_regimes)
+    regime_counts = np.zeros(n_regimes)
+    
+    for regime in prange(n_regimes):
+        regime_mask = regime_assignments == regime
+        regime_prices = prices[regime_mask]
+        
+        if len(regime_prices) > 0:
+            regime_means[regime] = np.mean(regime_prices)
+            regime_stds[regime] = np.std(regime_prices)
+            regime_counts[regime] = len(regime_prices)
+    
+    return regime_means, regime_stds, regime_counts
+
+@njit(parallel=True, cache=True)
+def compute_transition_matrix_numba(regime_assignments, n_regimes):
+    """Numba-optimized transition matrix computation."""
+    n_points = len(regime_assignments)
+    transition_counts = np.zeros((n_regimes, n_regimes))
+    
+    for i in prange(1, n_points):
+        from_regime = regime_assignments[i-1]
+        to_regime = regime_assignments[i]
+        transition_counts[from_regime, to_regime] += 1
+    
+    # Normalize to probabilities
+    transition_matrix = np.zeros((n_regimes, n_regimes))
+    for i in prange(n_regimes):
+        row_sum = np.sum(transition_counts[i, :])
+        if row_sum > 0:
+            transition_matrix[i, :] = transition_counts[i, :] / row_sum
+    
+    return transition_matrix
+
+@njit(parallel=True, cache=True)
+def compute_regime_durations_numba(regime_assignments):
+    """Numba-optimized regime duration computation."""
+    n_points = len(regime_assignments)
+    durations = []
+    current_regime = regime_assignments[0]
+    current_duration = 1
+    
+    for i in prange(1, n_points):
+        if regime_assignments[i] == current_regime:
+            current_duration += 1
+        else:
+            durations.append(current_duration)
+            current_regime = regime_assignments[i]
+            current_duration = 1
+    
+    # Add the last duration
+    durations.append(current_duration)
+    
+    return np.array(durations)
+
 try:
     # Pipeline orchestrator functionality consolidated into hmm_composite_manager
     OPTIMIZED_ORCHESTRATOR_AVAILABLE = True
@@ -1064,6 +1145,9 @@ class FinalRegimeClusteringStep:
 
         # Initialize enhanced optimization components
         self._initialize_enhanced_optimizations()
+        
+        # Initialize Numba optimizations
+        self._initialize_numba_optimizations()
 
         # Initialize legacy components for backward compatibility
         self._initialize_components()
@@ -1189,12 +1273,128 @@ class FinalRegimeClusteringStep:
 
         # Determine optimization strategy
         self._determine_optimization_strategy()
+        
+        # Initialize Numba optimizations
+        self._initialize_numba_optimizations()
 
         # Initialize enhanced reporting system
         # Enhanced reporting system removed - using financial metrics logger instead
         self.enhanced_reporter = None
 
         self.logger.info("🎯 Enhanced optimization components initialization completed")
+
+    def _initialize_numba_optimizations(self):
+        """Initialize Numba JIT compilation optimizations."""
+        self.logger.info("🚀 Initializing Numba JIT compilation optimizations...")
+        
+        self.numba_optimizations = {
+            'available': NUMBA_AVAILABLE,
+            'enabled': False
+        }
+        
+        if NUMBA_AVAILABLE:
+            try:
+                # Test Numba compilation with a simple function
+                @njit
+                def test_numba():
+                    return np.sum(np.arange(1000))
+                
+                # Warm up Numba compilation
+                test_result = test_numba()
+                self.logger.info(f"✅ Numba JIT compilation test successful: {test_result}")
+                
+                self.numba_optimizations['enabled'] = True
+                self.logger.info("🎉 Numba optimizations enabled for regime analysis")
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Numba optimization initialization failed: {e}")
+                self.numba_optimizations['enabled'] = False
+        else:
+            self.logger.info("ℹ️ Numba not available - using standard computation methods")
+
+    def compute_regime_analysis_optimized(self, regime_assignments: np.ndarray, prices: np.ndarray) -> dict:
+        """Compute regime analysis using Numba optimizations if available."""
+        if self.numba_optimizations['enabled']:
+            self.logger.info("🚀 Computing regime analysis with Numba optimizations...")
+            
+            # Use Numba-optimized functions
+            regime_means, regime_stds, regime_counts = compute_regime_statistics_numba(
+                regime_assignments, prices
+            )
+            
+            n_regimes = len(np.unique(regime_assignments))
+            transition_matrix = compute_transition_matrix_numba(regime_assignments, n_regimes)
+            regime_durations = compute_regime_durations_numba(regime_assignments)
+            
+            return {
+                'regime_means': regime_means,
+                'regime_stds': regime_stds,
+                'regime_counts': regime_counts,
+                'transition_matrix': transition_matrix,
+                'regime_durations': regime_durations,
+                'optimization_method': 'numba'
+            }
+        else:
+            self.logger.info("🔄 Computing regime analysis with standard methods...")
+            return self._compute_regime_analysis_standard(regime_assignments, prices)
+    
+    def _compute_regime_analysis_standard(self, regime_assignments: np.ndarray, prices: np.ndarray) -> dict:
+        """Compute regime analysis using standard methods."""
+        n_regimes = len(np.unique(regime_assignments))
+        
+        regime_means = np.zeros(n_regimes)
+        regime_stds = np.zeros(n_regimes)
+        regime_counts = np.zeros(n_regimes)
+        
+        for regime in range(n_regimes):
+            regime_mask = regime_assignments == regime
+            regime_prices = prices[regime_mask]
+            
+            if len(regime_prices) > 0:
+                regime_means[regime] = np.mean(regime_prices)
+                regime_stds[regime] = np.std(regime_prices)
+                regime_counts[regime] = len(regime_prices)
+        
+        # Compute transition matrix
+        n_points = len(regime_assignments)
+        transition_counts = np.zeros((n_regimes, n_regimes))
+        
+        for i in range(1, n_points):
+            from_regime = regime_assignments[i-1]
+            to_regime = regime_assignments[i]
+            transition_counts[from_regime, to_regime] += 1
+        
+        # Normalize to probabilities
+        transition_matrix = np.zeros((n_regimes, n_regimes))
+        for i in range(n_regimes):
+            row_sum = np.sum(transition_counts[i, :])
+            if row_sum > 0:
+                transition_matrix[i, :] = transition_counts[i, :] / row_sum
+        
+        # Compute regime durations
+        durations = []
+        current_regime = regime_assignments[0]
+        current_duration = 1
+        
+        for i in range(1, n_points):
+            if regime_assignments[i] == current_regime:
+                current_duration += 1
+            else:
+                durations.append(current_duration)
+                current_regime = regime_assignments[i]
+                current_duration = 1
+        
+        durations.append(current_duration)
+        regime_durations = np.array(durations)
+        
+        return {
+            'regime_means': regime_means,
+            'regime_stds': regime_stds,
+            'regime_counts': regime_counts,
+            'transition_matrix': transition_matrix,
+            'regime_durations': regime_durations,
+            'optimization_method': 'standard'
+        }
 
     def _determine_optimization_strategy(self) -> None:
         """Determine the optimal strategy based on workload and system capabilities."""

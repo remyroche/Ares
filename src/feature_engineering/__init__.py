@@ -116,6 +116,21 @@ from .math_validation import (
     FeatureValidationError
 )
 
+from .sr_feature_extractor import (
+    SRFeatureExtractor,
+    SRFeatureConfig,
+    get_sr_feature_extractor,
+    extract_sr_features
+)
+
+from .enhanced_sr_feature_extractor import (
+    EnhancedSRFeatureExtractor,
+    HistoricalSRAnalyzer,
+    HistoricalSRConfig,
+    get_enhanced_sr_feature_extractor,
+    extract_enhanced_sr_features
+)
+
 __all__ = [
     # Utility container
     'Step06UtilityContainer',
@@ -169,6 +184,19 @@ __all__ = [
     'validate_feature_pipeline',
     'strict_feature_validation',
     'FeatureValidationError'
+
+  # SR feature extraction
+    'SRFeatureExtractor',
+    'SRFeatureConfig',
+    'get_sr_feature_extractor',
+    'extract_sr_features',
+    
+    # Enhanced SR feature extraction with historical integration
+    'EnhancedSRFeatureExtractor',
+    'HistoricalSRAnalyzer',
+    'HistoricalSRConfig',
+    'get_enhanced_sr_feature_extractor',
+    'extract_enhanced_sr_features'
 ]
 
 __version__ = "1.0.0"

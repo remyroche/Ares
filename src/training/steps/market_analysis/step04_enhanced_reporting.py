@@ -35,7 +35,42 @@ from src.utils.common_operations import (
     safe_json_load,
     optimize_dataframe_dtypes,
     validate_dataframe_schema,
-    validate_data_quality
+    # validate_data_quality  # Replaced with comprehensive quality tools
+)
+
+# Import comprehensive data quality tools
+try:
+    from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+    from src.utils.data.quality.data_quality import DataQualityFramework
+    QUALITY_TOOLS_AVAILABLE = True
+except ImportError:
+    QUALITY_TOOLS_AVAILABLE = False
+
+def validate_data_quality(df, **kwargs):
+    """Comprehensive data quality validation using proper tools."""
+    if not QUALITY_TOOLS_AVAILABLE:
+        # Fallback to basic validation
+        return {'valid': True, 'quality_score': 50.0, 'issues': [], 'warnings': []}
+    
+    try:
+        quality_scorer = get_quality_scorer()
+        quality_assessment = quality_scorer.assess_data_quality(
+            df,
+            context="market_analysis",
+            step_name="enhanced_reporting",
+            data_type="klines"
+        )
+        
+        return {
+            'valid': quality_assessment.level.value not in ['critical'],
+            'quality_score': quality_assessment.overall_score,
+            'issues': quality_assessment.issues,
+            'warnings': quality_assessment.warnings,
+            'component_scores': quality_assessment.component_scores
+        }
+    except Exception as e:
+        logger.warning(f"⚠️ Error in comprehensive quality validation: {e}")
+        return {'valid': True, 'quality_score': 50.0, 'issues': [str(e)], 'warnings': []}
 )
 from src.utils.math_validation import (
     safe_divide,

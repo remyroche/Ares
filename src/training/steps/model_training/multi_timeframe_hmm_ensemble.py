@@ -86,11 +86,11 @@ class MultiTimeframeHMMEnsemble:
         symbol: str,
         exchange: str,
         regime_name: str | None = None,
+    ) -> None:
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
-    ) -> None:
         self.config = config
         self.symbol = symbol
         self.exchange = exchange

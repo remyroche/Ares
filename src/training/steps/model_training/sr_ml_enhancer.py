@@ -42,8 +42,8 @@ try:
         classify_ml_error,
         create_smart_fast_fail_handler,
     )
-import logging
-import time
+    import logging
+    import time
 
     ML_AVAILABLE = True
 except ImportError:

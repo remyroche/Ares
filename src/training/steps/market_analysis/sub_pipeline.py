@@ -636,52 +636,34 @@ class MarketAnalysisSubPipeline:
                 self.logger.info(f"✅ Loaded {len(df)} rows from {latest_file}, price range: {price_range}")
                 return df
 
-            # Final fallback: create realistic sample data based on actual ETH price history
-            self.logger.warning("⚠️ No klines data found, using realistic ETH price sample")
-            base_price = 1800  # Average ETH price from the data we saw
-            volatility = 0.03  # 3% daily volatility
-
-            sample_data = {
-                'timestamp': pd.date_range(start='2023-01-01', periods=1000, freq='1H'),
-                'open': [],
-                'high': [],
-                'low': [],
-                'close': [],
-                'volume': []
-            }
-
-            current_price = base_price
-            for i in range(1000):
-                # Generate realistic price movement
-                price_change = np.random.normal(0, volatility * current_price / 16)  # Hourly movement
-                open_price = current_price
-                close_price = current_price + price_change
-
-                # Generate high/low with realistic spread
-                high_spread = abs(np.random.normal(0, volatility * current_price * 0.5))
-                low_spread = abs(np.random.normal(0, volatility * current_price * 0.5))
-
-                high_price = max(open_price, close_price) + high_spread
-                low_price = min(open_price, close_price) - low_spread
-
-                # Keep prices within reasonable bounds
-                high_price = min(high_price, 3000)
-                low_price = max(low_price, 1000)
-
-                sample_data['open'].append(open_price)
-                sample_data['close'].append(close_price)
-                sample_data['high'].append(high_price)
-                sample_data['low'].append(low_price)
-                sample_data['volume'].append(np.random.uniform(1000, 10000))
-
-                current_price = close_price
-
-            df = pd.DataFrame(sample_data)
-            df['timestamp'] = df['timestamp'].astype(int) // 10**9  # Convert to unix timestamp
-
-            price_range = f"${df['low'].min():.2f} - ${df['high'].max():.2f}"
-            self.logger.info(f"✅ Created realistic fallback data: {len(df)} rows, price range: {price_range}")
-            return df
+            # Final fallback: try to download real data instead of using synthetic data
+            self.logger.warning("⚠️ No klines data found, attempting to download real data")
+            try:
+                from src.utils.data.real_data_loader import real_data_loader
+                import asyncio
+                
+                # Try to download real data
+                df = asyncio.run(real_data_loader.load_market_data(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    force_download=True
+                ))
+                
+                if df is not None and len(df) > 0:
+                    price_range = f"${df['low'].min():.2f} - ${df['high'].max():.2f}"
+                    self.logger.info(f"✅ Downloaded real data: {len(df)} rows, price range: {price_range}")
+                    return df
+                else:
+                    raise RuntimeError("Failed to download real data")
+                    
+            except Exception as download_error:
+                self.logger.error(f"❌ Failed to download real data: {download_error}")
+                raise RuntimeError(
+                    f"❌ No real market data available for {symbol}/{exchange}/{timeframe}. "
+                    "Please ensure data collection is properly configured and network connectivity is available. "
+                    "Synthetic data is not allowed in this system."
+                )
 
         except Exception as e:
             self.logger.error(f"❌ Error loading market data for SR detection: {e}")

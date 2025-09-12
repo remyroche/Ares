@@ -449,7 +449,7 @@ class ModelTrainingSubPipeline:
         
         return artifacts
     
-    async def _tactician_model_training_pipeline(self, config: SubPipelineConfig, tactician_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def _tactician_models_training_pipeline(self, config: SubPipelineConfig, tactician_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Tactician model training sub-pipeline."""
         self.logger.info("⚔️ Executing tactician model training pipeline")
         
@@ -466,7 +466,7 @@ class ModelTrainingSubPipeline:
         
         # Import and use tactician model training
         try:
-            from .tactician_models_training import TacticianModelsTrainingStep as TacticianModelTrainer
+            from .tactician_models_training_refactored import TacticianModelsTrainingStepRefactored as TacticianModelTrainer
             
             # Create enhanced configuration with all analyst data and HMM data
             enhanced_config = config.custom_params.copy() if config.custom_params else {}
@@ -480,13 +480,14 @@ class ModelTrainingSubPipeline:
                 self.logger.info("✅ Using all analyst model inputs and HMM data in tactician training")
             
             trainer = TacticianModelTrainer()
-            training_result = await trainer.train_tactician_model(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                force_rerun=config.force_rerun,
-                enhanced_config=enhanced_config
+            training_result = await trainer.execute(
+                training_input={
+                    'symbol': config.symbol,
+                    'exchange': config.exchange,
+                    'timeframe': config.timeframe,
+                    'data_dir': config.data_dir
+                },
+                pipeline_state=enhanced_config
             )
             
             artifacts['tactician_models'] = training_result.get('models', [])

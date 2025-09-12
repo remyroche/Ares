@@ -257,7 +257,6 @@ from typing import Any, Optional
 from contextlib import nullcontext
 
 # Centralized utilities
-from src.utils.seed_utils import seed_everything
 from src.utils.artifact_manager import ArtifactManager
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
@@ -1095,7 +1094,10 @@ class FinalRegimeClusteringStep:
         
         # Reproducibility
         seed = int(self.config.get('random_state', Step03_5Defaults.default_random_state))
-        seed_everything(seed, deterministic=Step03_5Defaults.seed_deterministic)
+        import random
+        random.seed(seed)
+        import numpy as np
+        np.random.seed(seed)
         
         # Centralized artifact manager
         self.artifacts = ArtifactManager(self.config)

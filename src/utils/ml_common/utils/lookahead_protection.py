@@ -34,7 +34,7 @@ import warnings
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
 from ..common_utilities import safe_dataframe_operation
-from ..datetime_utils import get_current_datetime, format_datetime  # type: ignore
+from datetime import datetime
 
 # Enhanced imports for new functionality
 try:
@@ -125,7 +125,7 @@ class LookaheadProtection:
         self.current_timestamp = timestamp
         if self.base_detector:
             self.base_detector.set_current_timestamp(timestamp)
-        self.logger.info(f"🔒 Current timestamp set to: {format_datetime(timestamp)}")
+        self.logger.info(f"🔒 Current timestamp set to: {timestamp.isoformat()}")
 
     def detect_data_leakage(self, features_df: pd.DataFrame,
                           target_df: pd.DataFrame,

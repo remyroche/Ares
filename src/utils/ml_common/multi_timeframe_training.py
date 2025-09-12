@@ -573,60 +573,78 @@ class MultiTimeframeTrainer:
             self.logger.warning(f"⚠️ Advanced feature generation + selection failed: {e}")
             return self._basic_feature_selection(data, tf_config)
     
-    @handles_errors(default_return=data, context='Feature generation with selection criteria')
+    @handles_errors(default_return=data, context='Feature generation with enhanced multi-criteria approach')
     async def _generate_features_with_selection_criteria(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> pd.DataFrame:
-        """Generate features using feature selection criteria adapted for feature generation."""
+        """Generate features using enhanced multi-criteria approach: MI, correlation, enhanced mRMR, enhanced LASSO, profit rate/total PnL, win rate."""
         try:
-            self.logger.info(f"🔧 Generating features with selection criteria for {tf_config.timeframe}")
+            self.logger.info(f"🔧 Generating features with enhanced multi-criteria approach for {tf_config.timeframe}")
             
             # Start with base data
             enhanced_data = data.copy()
             
-            # 1. Generate cross-timeframe features using financial criteria
-            cross_timeframe_features = await self._generate_cross_timeframe_features_with_criteria(
+            # 1. Generate features using Mutual Information (MI) criteria
+            mi_features = await self._generate_features_with_mi_criteria(
                 data, tf_config
             )
             
-            if cross_timeframe_features is not None and not cross_timeframe_features.empty:
-                enhanced_data = pd.concat([enhanced_data, cross_timeframe_features], axis=1)
-                self.logger.info(f"📊 Added {len(cross_timeframe_features.columns)} cross-timeframe features")
+            if mi_features is not None and not mi_features.empty:
+                enhanced_data = pd.concat([enhanced_data, mi_features], axis=1)
+                self.logger.info(f"📊 Added {len(mi_features.columns)} MI-based features")
             
-            # 2. Generate regime-aware features using financial metrics criteria
-            regime_features = await self._generate_regime_aware_features_with_criteria(
+            # 2. Generate features using correlation criteria
+            correlation_features = await self._generate_features_with_correlation_criteria(
                 enhanced_data, tf_config
             )
             
-            if regime_features is not None and not regime_features.empty:
-                enhanced_data = pd.concat([enhanced_data, regime_features], axis=1)
-                self.logger.info(f"🎯 Added {len(regime_features.columns)} regime-aware features")
+            if correlation_features is not None and not correlation_features.empty:
+                enhanced_data = pd.concat([enhanced_data, correlation_features], axis=1)
+                self.logger.info(f"🔗 Added {len(correlation_features.columns)} correlation-based features")
             
-            # 3. Generate risk-adjusted features using risk assessment criteria
-            risk_features = await self._generate_risk_adjusted_features_with_criteria(
+            # 3. Generate features using enhanced mRMR criteria
+            mrmr_features = await self._generate_features_with_enhanced_mrmr_criteria(
                 enhanced_data, tf_config
             )
             
-            if risk_features is not None and not risk_features.empty:
-                enhanced_data = pd.concat([enhanced_data, risk_features], axis=1)
-                self.logger.info(f"⚠️ Added {len(risk_features.columns)} risk-adjusted features")
+            if mrmr_features is not None and not mrmr_features.empty:
+                enhanced_data = pd.concat([enhanced_data, mrmr_features], axis=1)
+                self.logger.info(f"🎯 Added {len(mrmr_features.columns)} enhanced mRMR-based features")
             
-            # 4. Generate momentum and volatility features using mRMR criteria
-            momentum_volatility_features = await self._generate_momentum_volatility_features_with_criteria(
+            # 4. Generate features using enhanced LASSO criteria
+            lasso_features = await self._generate_features_with_enhanced_lasso_criteria(
                 enhanced_data, tf_config
             )
             
-            if momentum_volatility_features is not None and not momentum_volatility_features.empty:
-                enhanced_data = pd.concat([enhanced_data, momentum_volatility_features], axis=1)
-                self.logger.info(f"📈 Added {len(momentum_volatility_features.columns)} momentum/volatility features")
+            if lasso_features is not None and not lasso_features.empty:
+                enhanced_data = pd.concat([enhanced_data, lasso_features], axis=1)
+                self.logger.info(f"📈 Added {len(lasso_features.columns)} enhanced LASSO-based features")
             
-            self.logger.info(f"✅ Feature generation completed: {len(data.columns)} → {len(enhanced_data.columns)} features")
+            # 5. Generate features using profit rate/total PnL criteria
+            profit_features = await self._generate_features_with_profit_criteria(
+                enhanced_data, tf_config
+            )
+            
+            if profit_features is not None and not profit_features.empty:
+                enhanced_data = pd.concat([enhanced_data, profit_features], axis=1)
+                self.logger.info(f"💰 Added {len(profit_features.columns)} profit/PnL-based features")
+            
+            # 6. Generate features using win rate criteria
+            winrate_features = await self._generate_features_with_winrate_criteria(
+                enhanced_data, tf_config
+            )
+            
+            if winrate_features is not None and not winrate_features.empty:
+                enhanced_data = pd.concat([enhanced_data, winrate_features], axis=1)
+                self.logger.info(f"🏆 Added {len(winrate_features.columns)} win rate-based features")
+            
+            self.logger.info(f"✅ Enhanced multi-criteria feature generation completed: {len(data.columns)} → {len(enhanced_data.columns)} features")
             return enhanced_data
             
         except Exception as e:
-            self.logger.exception(f"💥 Error generating features with selection criteria: {e}")
+            self.logger.exception(f"💥 Error generating features with enhanced multi-criteria approach: {e}")
             return data
     
-    @handles_errors(default_return=None, context='Cross-timeframe feature generation with criteria')
-    async def _generate_cross_timeframe_features_with_criteria(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> Optional[pd.DataFrame]:
+    @handles_errors(default_return=None, context='MI-based feature generation')
+    async def _generate_features_with_mi_criteria(self, data: pd.DataFrame, tf_config: TimeframeConfig) -> Optional[pd.DataFrame]:
         """Generate cross-timeframe features using financial metrics criteria."""
         try:
             # Use financial metrics criteria to guide cross-timeframe feature generation

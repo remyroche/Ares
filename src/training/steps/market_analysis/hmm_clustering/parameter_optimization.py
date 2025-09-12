@@ -1,0 +1,466 @@
+#!/usr/bin/env python3
+"""
+Parameter Optimization for HMM Regime Discovery
+
+This module implements dynamic parameter search for HMM clustering:
+- HMM State Count Optimization
+- Covariance Type Optimization  
+- Comprehensive Parameter Grid Search
+
+Author: AI Assistant
+Date: 2024-01-XX
+Version: 1.0.0
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Tuple, Any, Optional
+from dataclasses import dataclass
+import time
+import logging
+from pathlib import Path
+import json
+
+# HMM imports
+try:
+    from hmmlearn import hmm
+    HMMLEARN_AVAILABLE = True
+except ImportError:
+    HMMLEARN_AVAILABLE = False
+
+# Sklearn imports
+try:
+    from sklearn.model_selection import cross_val_score, ParameterGrid
+    from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+
+# Optuna imports for advanced optimization
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+
+from src.utils.logger import system_logger
+
+@dataclass
+class OptimizationResult:
+    """Result of parameter optimization"""
+    best_params: Dict[str, Any]
+    best_score: float
+    all_results: List[Dict[str, Any]]
+    optimization_time: float
+    method: str
+
+class ParameterOptimizer:
+    """Dynamic parameter optimization for HMM clustering"""
+    
+    def __init__(self, logger=None):
+        self.logger = logger or system_logger.getChild('ParameterOptimizer')
+        self.optimization_history = []
+    
+    def optimize_hmm_states(self, features: np.ndarray, 
+                          state_range: Tuple[int, int] = (2, 8), 
+                          cv_folds: int = 5,
+                          covariance_type: str = 'full') -> OptimizationResult:
+        """
+        Dynamically find optimal number of HMM states using cross-validation
+        
+        Args:
+            features: Input features for HMM training
+            state_range: Range of states to test (min, max)
+            cv_folds: Number of cross-validation folds
+            covariance_type: Covariance type to use
+            
+        Returns:
+            OptimizationResult with best parameters and scores
+        """
+        if not HMMLEARN_AVAILABLE:
+            raise ImportError("hmmlearn not available")
+        
+        start_time = time.time()
+        self.logger.info(f"🔍 Optimizing HMM states in range {state_range}")
+        
+        best_score = -np.inf
+        best_n_states = state_range[0]
+        all_results = []
+        
+        for n_states in range(state_range[0], state_range[1] + 1):
+            try:
+                # Create HMM model
+                model = hmm.GaussianHMM(
+                    n_components=n_states,
+                    covariance_type=covariance_type,
+                    random_state=42,
+                    n_iter=100
+                )
+                
+                # Cross-validation scoring
+                scores = cross_val_score(
+                    model, features, 
+                    cv=cv_folds, 
+                    scoring='neg_log_likelihood'
+                )
+                
+                mean_score = scores.mean()
+                std_score = scores.std()
+                
+                result = {
+                    'n_components': n_states,
+                    'covariance_type': covariance_type,
+                    'mean_score': mean_score,
+                    'std_score': std_score,
+                    'scores': scores.tolist()
+                }
+                all_results.append(result)
+                
+                self.logger.info(f"   States {n_states}: {mean_score:.4f} ± {std_score:.4f}")
+                
+                # Update best if better
+                if mean_score > best_score:
+                    best_score = mean_score
+                    best_n_states = n_states
+                    
+            except Exception as e:
+                self.logger.warning(f"Error with {n_states} states: {e}")
+                continue
+        
+        optimization_time = time.time() - start_time
+        
+        best_params = {
+            'n_components': best_n_states,
+            'covariance_type': covariance_type
+        }
+        
+        result = OptimizationResult(
+            best_params=best_params,
+            best_score=best_score,
+            all_results=all_results,
+            optimization_time=optimization_time,
+            method='hmm_states_optimization'
+        )
+        
+        self.optimization_history.append(result)
+        self.logger.info(f"✅ Best HMM states: {best_n_states} (score: {best_score:.4f})")
+        
+        return result
+    
+    def optimize_covariance_type(self, features: np.ndarray, 
+                               n_states: int,
+                               covariance_types: List[str] = ['full', 'tied', 'diag', 'spherical']) -> OptimizationResult:
+        """
+        Find optimal covariance type for given number of states
+        
+        Args:
+            features: Input features for HMM training
+            n_states: Number of HMM states
+            covariance_types: List of covariance types to test
+            
+        Returns:
+            OptimizationResult with best parameters and scores
+        """
+        if not HMMLEARN_AVAILABLE:
+            raise ImportError("hmmlearn not available")
+        
+        start_time = time.time()
+        self.logger.info(f"🔍 Optimizing covariance type for {n_states} states")
+        
+        best_score = -np.inf
+        best_cov_type = covariance_types[0]
+        all_results = []
+        
+        for cov_type in covariance_types:
+            try:
+                model = hmm.GaussianHMM(
+                    n_components=n_states,
+                    covariance_type=cov_type,
+                    random_state=42,
+                    n_iter=100
+                )
+                
+                # Fit and score
+                model.fit(features)
+                score = model.score(features)
+                
+                result = {
+                    'n_components': n_states,
+                    'covariance_type': cov_type,
+                    'score': score
+                }
+                all_results.append(result)
+                
+                self.logger.info(f"   {cov_type}: {score:.4f}")
+                
+                if score > best_score:
+                    best_score = score
+                    best_cov_type = cov_type
+                    
+            except Exception as e:
+                self.logger.warning(f"Error with {cov_type}: {e}")
+                continue
+        
+        optimization_time = time.time() - start_time
+        
+        best_params = {
+            'n_components': n_states,
+            'covariance_type': best_cov_type
+        }
+        
+        result = OptimizationResult(
+            best_params=best_params,
+            best_score=best_score,
+            all_results=all_results,
+            optimization_time=optimization_time,
+            method='covariance_type_optimization'
+        )
+        
+        self.optimization_history.append(result)
+        self.logger.info(f"✅ Best covariance type: {best_cov_type} (score: {best_score:.4f})")
+        
+        return result
+    
+    def comprehensive_parameter_optimization(self, features: np.ndarray, 
+                                           param_grid: Optional[Dict[str, List]] = None,
+                                           use_optuna: bool = False,
+                                           n_trials: int = 100) -> OptimizationResult:
+        """
+        Comprehensive parameter optimization using grid search or Optuna
+        
+        Args:
+            features: Input features for HMM training
+            param_grid: Parameter grid for grid search
+            use_optuna: Whether to use Optuna for optimization
+            n_trials: Number of trials for Optuna optimization
+            
+        Returns:
+            OptimizationResult with best parameters and scores
+        """
+        if not HMMLEARN_AVAILABLE:
+            raise ImportError("hmmlearn not available")
+        
+        if use_optuna and OPTUNA_AVAILABLE:
+            return self._optuna_optimization(features, n_trials)
+        else:
+            return self._grid_search_optimization(features, param_grid)
+    
+    def _grid_search_optimization(self, features: np.ndarray, 
+                                 param_grid: Optional[Dict[str, List]] = None) -> OptimizationResult:
+        """Grid search optimization"""
+        if param_grid is None:
+            param_grid = {
+                'n_components': [2, 3, 4, 5, 6, 7, 8],
+                'covariance_type': ['full', 'tied', 'diag', 'spherical'],
+                'n_iter': [50, 100, 200],
+                'tol': [1e-6, 1e-4, 1e-2]
+            }
+        
+        start_time = time.time()
+        self.logger.info("🔍 Starting comprehensive grid search optimization")
+        
+        best_score = -np.inf
+        best_params = {}
+        all_results = []
+        
+        # Generate all parameter combinations
+        param_combinations = list(ParameterGrid(param_grid))
+        total_combinations = len(param_combinations)
+        
+        self.logger.info(f"   Testing {total_combinations} parameter combinations")
+        
+        for i, params in enumerate(param_combinations):
+            try:
+                # Create model with current parameters
+                model = hmm.GaussianHMM(
+                    n_components=params['n_components'],
+                    covariance_type=params['covariance_type'],
+                    n_iter=params['n_iter'],
+                    tol=params['tol'],
+                    random_state=42
+                )
+                
+                # Cross-validation
+                scores = cross_val_score(model, features, cv=3, scoring='neg_log_likelihood')
+                mean_score = scores.mean()
+                
+                result = {
+                    'params': params.copy(),
+                    'mean_score': mean_score,
+                    'std_score': scores.std(),
+                    'scores': scores.tolist()
+                }
+                all_results.append(result)
+                
+                if (i + 1) % 10 == 0:
+                    self.logger.info(f"   Progress: {i+1}/{total_combinations} combinations tested")
+                
+                # Update best
+                if mean_score > best_score:
+                    best_score = mean_score
+                    best_params = params.copy()
+                    
+            except Exception as e:
+                self.logger.warning(f"Error with params {params}: {e}")
+                continue
+        
+        optimization_time = time.time() - start_time
+        
+        result = OptimizationResult(
+            best_params=best_params,
+            best_score=best_score,
+            all_results=all_results,
+            optimization_time=optimization_time,
+            method='grid_search_optimization'
+        )
+        
+        self.optimization_history.append(result)
+        self.logger.info(f"✅ Best parameters: {best_params} (score: {best_score:.4f})")
+        
+        return result
+    
+    def _optuna_optimization(self, features: np.ndarray, n_trials: int) -> OptimizationResult:
+        """Optuna-based optimization"""
+        if not OPTUNA_AVAILABLE:
+            raise ImportError("Optuna not available")
+        
+        start_time = time.time()
+        self.logger.info(f"🔍 Starting Optuna optimization with {n_trials} trials")
+        
+        def objective(trial):
+            # Suggest parameters
+            n_components = trial.suggest_int('n_components', 2, 8)
+            covariance_type = trial.suggest_categorical('covariance_type', ['full', 'tied', 'diag', 'spherical'])
+            n_iter = trial.suggest_int('n_iter', 50, 200)
+            tol = trial.suggest_float('tol', 1e-6, 1e-2, log=True)
+            
+            try:
+                # Create and fit model
+                model = hmm.GaussianHMM(
+                    n_components=n_components,
+                    covariance_type=covariance_type,
+                    n_iter=n_iter,
+                    tol=tol,
+                    random_state=42
+                )
+                
+                # Cross-validation
+                scores = cross_val_score(model, features, cv=3, scoring='neg_log_likelihood')
+                return scores.mean()
+                
+            except Exception:
+                return -np.inf
+        
+        # Create study
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=n_trials)
+        
+        optimization_time = time.time() - start_time
+        
+        best_params = study.best_params
+        best_score = study.best_value
+        
+        # Convert trials to results format
+        all_results = []
+        for trial in study.trials:
+            if trial.value is not None:
+                all_results.append({
+                    'params': trial.params,
+                    'score': trial.value,
+                    'state': trial.state.name
+                })
+        
+        result = OptimizationResult(
+            best_params=best_params,
+            best_score=best_score,
+            all_results=all_results,
+            optimization_time=optimization_time,
+            method='optuna_optimization'
+        )
+        
+        self.optimization_history.append(result)
+        self.logger.info(f"✅ Best parameters: {best_params} (score: {best_score:.4f})")
+        
+        return result
+    
+    def get_optimization_summary(self) -> Dict[str, Any]:
+        """Get summary of all optimization runs"""
+        if not self.optimization_history:
+            return {"message": "No optimization runs recorded"}
+        
+        summary = {
+            "total_runs": len(self.optimization_history),
+            "methods_used": list(set(r.method for r in self.optimization_history)),
+            "best_overall_score": max(r.best_score for r in self.optimization_history),
+            "total_optimization_time": sum(r.optimization_time for r in self.optimization_history),
+            "runs": []
+        }
+        
+        for i, result in enumerate(self.optimization_history):
+            summary["runs"].append({
+                "run_id": i,
+                "method": result.method,
+                "best_params": result.best_params,
+                "best_score": result.best_score,
+                "optimization_time": result.optimization_time
+            })
+        
+        return summary
+    
+    def save_optimization_results(self, filepath: str) -> None:
+        """Save optimization results to file"""
+        results = {
+            "optimization_history": [
+                {
+                    "best_params": r.best_params,
+                    "best_score": r.best_score,
+                    "optimization_time": r.optimization_time,
+                    "method": r.method,
+                    "all_results": r.all_results
+                }
+                for r in self.optimization_history
+            ],
+            "summary": self.get_optimization_summary()
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        self.logger.info(f"💾 Optimization results saved to {filepath}")
+
+# Example usage and testing
+def test_parameter_optimization():
+    """Test the parameter optimization functionality"""
+    # Generate sample data
+    np.random.seed(42)
+    n_samples, n_features = 1000, 10
+    features = np.random.randn(n_samples, n_features)
+    
+    # Add some structure to make it more realistic
+    features[:n_samples//3] += 2  # First third has different mean
+    features[n_samples//3:2*n_samples//3] -= 1  # Second third has different mean
+    
+    optimizer = ParameterOptimizer()
+    
+    # Test HMM state optimization
+    print("Testing HMM state optimization...")
+    result1 = optimizer.optimize_hmm_states(features, state_range=(2, 6))
+    print(f"Best states: {result1.best_params['n_components']}")
+    
+    # Test covariance type optimization
+    print("\nTesting covariance type optimization...")
+    result2 = optimizer.optimize_covariance_type(features, n_states=4)
+    print(f"Best covariance type: {result2.best_params['covariance_type']}")
+    
+    # Test comprehensive optimization
+    print("\nTesting comprehensive optimization...")
+    result3 = optimizer.comprehensive_parameter_optimization(features, use_optuna=False)
+    print(f"Best parameters: {result3.best_params}")
+    
+    # Print summary
+    print("\nOptimization Summary:")
+    summary = optimizer.get_optimization_summary()
+    print(json.dumps(summary, indent=2))
+
+if __name__ == "__main__":
+    test_parameter_optimization()

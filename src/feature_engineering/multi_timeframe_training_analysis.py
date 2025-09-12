@@ -42,6 +42,24 @@ class ModelPerformance:
     inference_time: float
     model_complexity: int
     feature_importance: Dict[str, float]
+    # Multi-output specific metrics
+    multi_output_accuracy: Optional[float] = None
+    per_output_metrics: Optional[Dict[str, Dict[str, float]]] = None
+    overall_mse: Optional[float] = None
+    overall_mae: Optional[float] = None
+    overall_r2: Optional[float] = None
+    confidence_calibration: Optional[Dict[str, float]] = None
+
+@dataclass
+class MultiOutputAnalysis:
+    """Multi-output analysis results."""
+    output_names: List[str]
+    per_output_performance: Dict[str, Dict[str, float]]
+    overall_performance: Dict[str, float]
+    output_correlations: Dict[str, Dict[str, float]]
+    stacking_ensemble_performance: Dict[str, float]
+    confidence_calibration: Dict[str, float]
+    feature_importance_per_output: Dict[str, Dict[str, float]]
 
 class MultiTimeframeTrainingAnalyzer:
     """
@@ -51,6 +69,7 @@ class MultiTimeframeTrainingAnalyzer:
     def __init__(self):
         self.logger = logger.getChild('MultiTimeframeTrainingAnalyzer')
         self.results = {}
+        self.multi_output_results = {}
     
     def define_training_approaches(self) -> List[TrainingApproach]:
         """Define different training approaches to compare."""
@@ -106,6 +125,279 @@ class MultiTimeframeTrainingAnalyzer:
         ]
         
         return approaches
+    
+    def analyze_multi_output_performance(
+        self, 
+        y_true: np.ndarray, 
+        y_pred: np.ndarray, 
+        output_names: List[str],
+        approach: str,
+        timeframe: str
+    ) -> MultiOutputAnalysis:
+        """
+        Analyze multi-output model performance.
+        
+        Args:
+            y_true: True labels (n_samples, n_outputs)
+            y_pred: Predicted values (n_samples, n_outputs)
+            output_names: List of output names
+            approach: Training approach name
+            timeframe: Timeframe name
+            
+        Returns:
+            MultiOutputAnalysis object
+        """
+        self.logger.info(f"🔄 Analyzing multi-output performance for {approach} ({timeframe})")
+        
+        try:
+            n_outputs = y_true.shape[1]
+            per_output_performance = {}
+            overall_metrics = {}
+            
+            # Calculate metrics for each output
+            for i, output_name in enumerate(output_names):
+                y_true_output = y_true[:, i]
+                y_pred_output = y_pred[:, i]
+                
+                # Basic regression metrics
+                mse = np.mean((y_true_output - y_pred_output) ** 2)
+                mae = np.mean(np.abs(y_true_output - y_pred_output))
+                r2 = 1 - (np.sum((y_true_output - y_pred_output) ** 2) / 
+                         np.sum((y_true_output - np.mean(y_true_output)) ** 2))
+                
+                # Classification metrics (if applicable)
+                if len(np.unique(y_true_output)) <= 10:  # Likely classification
+                    accuracy = np.mean(y_true_output == y_pred_output)
+                    precision = self._calculate_precision(y_true_output, y_pred_output)
+                    recall = self._calculate_recall(y_true_output, y_pred_output)
+                    f1 = self._calculate_f1_score(y_true_output, y_pred_output)
+                else:
+                    accuracy = r2  # Use R² as accuracy for regression
+                    precision = None
+                    recall = None
+                    f1 = None
+                
+                per_output_performance[output_name] = {
+                    'mse': float(mse),
+                    'mae': float(mae),
+                    'r2': float(r2),
+                    'accuracy': float(accuracy),
+                    'precision': precision,
+                    'recall': recall,
+                    'f1_score': f1
+                }
+                
+                # Add to overall metrics
+                overall_metrics[f'{output_name}_mse'] = float(mse)
+                overall_metrics[f'{output_name}_mae'] = float(mae)
+                overall_metrics[f'{output_name}_r2'] = float(r2)
+                overall_metrics[f'{output_name}_accuracy'] = float(accuracy)
+            
+            # Calculate overall performance
+            overall_metrics['overall_mse'] = float(np.mean([m['mse'] for m in per_output_performance.values()]))
+            overall_metrics['overall_mae'] = float(np.mean([m['mae'] for m in per_output_performance.values()]))
+            overall_metrics['overall_r2'] = float(np.mean([m['r2'] for m in per_output_performance.values()]))
+            overall_metrics['overall_accuracy'] = float(np.mean([m['accuracy'] for m in per_output_performance.values()]))
+            
+            # Calculate output correlations
+            output_correlations = self._calculate_output_correlations(y_pred, output_names)
+            
+            # Calculate stacking ensemble performance
+            stacking_performance = self._calculate_stacking_ensemble_performance(y_true, y_pred, output_names)
+            
+            # Calculate confidence calibration (placeholder)
+            confidence_calibration = self._calculate_confidence_calibration(y_true, y_pred, output_names)
+            
+            # Calculate feature importance per output (placeholder)
+            feature_importance_per_output = self._calculate_feature_importance_per_output(y_true, y_pred, output_names)
+            
+            analysis = MultiOutputAnalysis(
+                output_names=output_names,
+                per_output_performance=per_output_performance,
+                overall_performance=overall_metrics,
+                output_correlations=output_correlations,
+                stacking_ensemble_performance=stacking_performance,
+                confidence_calibration=confidence_calibration,
+                feature_importance_per_output=feature_importance_per_output
+            )
+            
+            self.multi_output_results[f"{approach}_{timeframe}"] = analysis
+            self.logger.info(f"✅ Multi-output analysis completed for {approach} ({timeframe})")
+            
+            return analysis
+            
+        except Exception as e:
+            self.logger.error(f"❌ Multi-output analysis failed: {e}")
+            raise
+    
+    def _calculate_precision(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Calculate precision for classification."""
+        try:
+            from sklearn.metrics import precision_score
+            return float(precision_score(y_true, y_pred, average='weighted', zero_division=0))
+        except:
+            return 0.0
+    
+    def _calculate_recall(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Calculate recall for classification."""
+        try:
+            from sklearn.metrics import recall_score
+            return float(recall_score(y_true, y_pred, average='weighted', zero_division=0))
+        except:
+            return 0.0
+    
+    def _calculate_f1_score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Calculate F1 score for classification."""
+        try:
+            from sklearn.metrics import f1_score
+            return float(f1_score(y_true, y_pred, average='weighted', zero_division=0))
+        except:
+            return 0.0
+    
+    def _calculate_output_correlations(
+        self, 
+        y_pred: np.ndarray, 
+        output_names: List[str]
+    ) -> Dict[str, Dict[str, float]]:
+        """Calculate correlations between outputs."""
+        correlations = {}
+        
+        for i, output1 in enumerate(output_names):
+            correlations[output1] = {}
+            for j, output2 in enumerate(output_names):
+                if i != j:
+                    corr = np.corrcoef(y_pred[:, i], y_pred[:, j])[0, 1]
+                    correlations[output1][output2] = float(corr) if not np.isnan(corr) else 0.0
+        
+        return correlations
+    
+    def _calculate_stacking_ensemble_performance(
+        self, 
+        y_true: np.ndarray, 
+        y_pred: np.ndarray, 
+        output_names: List[str]
+    ) -> Dict[str, float]:
+        """Calculate stacking ensemble specific performance metrics."""
+        try:
+            # Calculate ensemble diversity
+            diversity_metrics = {}
+            
+            # Calculate prediction variance across outputs
+            pred_variance = np.var(y_pred, axis=1)
+            diversity_metrics['prediction_variance'] = float(np.mean(pred_variance))
+            
+            # Calculate output stability
+            output_stability = []
+            for i in range(len(output_names)):
+                output_std = np.std(y_pred[:, i])
+                output_stability.append(output_std)
+            diversity_metrics['output_stability'] = float(np.mean(output_stability))
+            
+            # Calculate ensemble agreement
+            ensemble_agreement = 1 - np.mean(pred_variance) / np.var(y_pred)
+            diversity_metrics['ensemble_agreement'] = float(ensemble_agreement)
+            
+            return diversity_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate stacking ensemble performance: {e}")
+            return {}
+    
+    def _calculate_confidence_calibration(
+        self, 
+        y_true: np.ndarray, 
+        y_pred: np.ndarray, 
+        output_names: List[str]
+    ) -> Dict[str, float]:
+        """Calculate confidence calibration metrics."""
+        try:
+            calibration_metrics = {}
+            
+            # Calculate Brier score for each output
+            for i, output_name in enumerate(output_names):
+                y_true_output = y_true[:, i]
+                y_pred_output = y_pred[:, i]
+                
+                # Simple Brier score calculation
+                brier_score = np.mean((y_true_output - y_pred_output) ** 2)
+                calibration_metrics[f'{output_name}_brier_score'] = float(brier_score)
+            
+            # Calculate overall calibration
+            overall_brier = np.mean([(y_true - y_pred) ** 2])
+            calibration_metrics['overall_brier_score'] = float(overall_brier)
+            
+            return calibration_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to calculate confidence calibration: {e}")
+            return {}
+    
+    def _calculate_feature_importance_per_output(
+        self, 
+        y_true: np.ndarray, 
+        y_pred: np.ndarray, 
+        output_names: List[str]
+    ) -> Dict[str, Dict[str, float]]:
+        """Calculate feature importance per output (placeholder)."""
+        # This would require access to the actual model and features
+        # For now, return empty dictionaries
+        feature_importance = {}
+        for output_name in output_names:
+            feature_importance[output_name] = {}
+        
+        return feature_importance
+    
+    def compare_multi_output_approaches(self) -> Dict[str, Any]:
+        """Compare different multi-output training approaches."""
+        self.logger.info("🔄 Comparing multi-output training approaches")
+        
+        if not self.multi_output_results:
+            self.logger.warning("⚠️ No multi-output results available for comparison")
+            return {}
+        
+        comparison = {
+            'approaches': list(self.multi_output_results.keys()),
+            'overall_performance': {},
+            'per_output_performance': {},
+            'stacking_ensemble_performance': {},
+            'recommendations': []
+        }
+        
+        # Compare overall performance
+        for approach, analysis in self.multi_output_results.items():
+            comparison['overall_performance'][approach] = analysis.overall_performance
+            comparison['per_output_performance'][approach] = analysis.per_output_performance
+            comparison['stacking_ensemble_performance'][approach] = analysis.stacking_ensemble_performance
+        
+        # Generate recommendations
+        comparison['recommendations'] = self._generate_multi_output_recommendations()
+        
+        return comparison
+    
+    def _generate_multi_output_recommendations(self) -> List[str]:
+        """Generate recommendations for multi-output training."""
+        recommendations = []
+        
+        if not self.multi_output_results:
+            return recommendations
+        
+        # Analyze overall performance
+        best_overall = max(self.multi_output_results.items(), 
+                          key=lambda x: x[1].overall_performance.get('overall_r2', 0))
+        recommendations.append(f"Best overall performance: {best_overall[0]} (R²: {best_overall[1].overall_performance.get('overall_r2', 0):.3f})")
+        
+        # Analyze per-output performance
+        for approach, analysis in self.multi_output_results.items():
+            for output_name, metrics in analysis.per_output_performance.items():
+                if metrics['r2'] > 0.7:
+                    recommendations.append(f"Strong performance for {output_name} in {approach}: R² = {metrics['r2']:.3f}")
+        
+        # Analyze stacking ensemble performance
+        best_ensemble = max(self.multi_output_results.items(),
+                           key=lambda x: x[1].stacking_ensemble_performance.get('ensemble_agreement', 0))
+        recommendations.append(f"Best ensemble agreement: {best_ensemble[0]} (agreement: {best_ensemble[1].stacking_ensemble_performance.get('ensemble_agreement', 0):.3f})")
+        
+        return recommendations
     
     def analyze_feature_utilization(
         self,

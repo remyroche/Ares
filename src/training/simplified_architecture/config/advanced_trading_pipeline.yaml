@@ -11,26 +11,103 @@ global_settings:
     api_secret_env: BINANCE_API_SECRET
     testnet: false
   model:
-    type: ensemble
+    type: multi_output_stacking_ensemble
+    ensemble_type: stacking
     models:
-      - type: lightgbm
-        weight: 0.4
-        hyperparameters:
-          n_estimators: 2000
-          learning_rate: 0.05
-          max_depth: 8
-      - type: xgboost
-        weight: 0.3
-        hyperparameters:
-          n_estimators: 2000
-          learning_rate: 0.05
-          max_depth: 8
-      - type: neural_network
-        weight: 0.3
-        hyperparameters:
-          hidden_layers: [256, 128, 64]
-          dropout: 0.2
-          learning_rate: 0.001
+      # Analyst models (5m timeframe)
+      analyst:
+        type: multi_output_stacking
+        base_models:
+          - type: time_series_transformer
+            weight: 0.3
+            hyperparameters:
+              d_model: 64
+              n_heads: 8
+              n_layers: 4
+              dropout: 0.1
+              max_length: 100
+          - type: catboost
+            weight: 0.25
+            hyperparameters:
+              n_estimators: 2000
+              learning_rate: 0.05
+              max_depth: 8
+              subsample: 0.8
+              colsample_bytree: 0.8
+          - type: lightgbm
+            weight: 0.25
+            hyperparameters:
+              n_estimators: 2000
+              learning_rate: 0.05
+              max_depth: 8
+              subsample: 0.8
+              colsample_bytree: 0.8
+          - type: random_forest
+            weight: 0.2
+            hyperparameters:
+              n_estimators: 500
+              max_depth: 10
+              min_samples_split: 5
+              min_samples_leaf: 2
+        meta_learner:
+          type: ridge
+          hyperparameters:
+            alpha: 1.0
+            fit_intercept: true
+        outputs:
+          - signal_strength
+          - confidence
+          - risk_score
+          - regime_label
+        timeframe: 5m
+        role: "analyst"
+      
+      # Tactician models (1m timeframe)
+      tactician:
+        type: multi_output_stacking
+        base_models:
+          - type: tabnet
+            weight: 0.3
+            hyperparameters:
+              n_d: 64
+              n_a: 64
+              n_steps: 5
+              gamma: 1.5
+              lambda_sparse: 1e-3
+          - type: catboost
+            weight: 0.25
+            hyperparameters:
+              n_estimators: 1500
+              learning_rate: 0.05
+              max_depth: 6
+              subsample: 0.8
+              colsample_bytree: 0.8
+          - type: lightgbm
+            weight: 0.25
+            hyperparameters:
+              n_estimators: 1500
+              learning_rate: 0.05
+              max_depth: 6
+              subsample: 0.8
+              colsample_bytree: 0.8
+          - type: ridge
+            weight: 0.2
+            hyperparameters:
+              alpha: 1.0
+              fit_intercept: true
+        meta_learner:
+          type: ridge
+          hyperparameters:
+            alpha: 0.5
+            fit_intercept: true
+        outputs:
+          - entry_timing
+          - position_size
+          - stop_loss
+          - take_profit
+        timeframe: 1m
+        role: "tactician"
+        depends_on: "analyst"
   logging:
     level: INFO
     format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -191,8 +268,8 @@ steps:
       description: "Select optimal feature subset using multi-objective optimization"
       tags: ["feature_selection", "optimization", "multi_objective"]
 
-  - name: ensemble_training
-    class_name: EnsembleTrainingStep
+  - name: analyst_stacking_training
+    class_name: AnalystStackingTrainer
     enabled: true
     timeout_seconds: 3600
     retry_count: 1
@@ -200,8 +277,22 @@ steps:
     fail_fast: true
     priority: 2
     parameters:
-      ensemble_method: stacking
+      ensemble_method: multi_output_stacking
       base_models:
+        - type: time_series_transformer
+          hyperparameters:
+            d_model: 64
+            n_heads: 8
+            n_layers: 4
+            dropout: 0.1
+            max_length: 100
+        - type: catboost
+          hyperparameters:
+            n_estimators: 2000
+            learning_rate: 0.05
+            max_depth: 8
+            subsample: 0.8
+            colsample_bytree: 0.8
         - type: lightgbm
           hyperparameters:
             n_estimators: 2000
@@ -209,30 +300,22 @@ steps:
             max_depth: 8
             subsample: 0.8
             colsample_bytree: 0.8
-            reg_alpha: 0.1
-            reg_lambda: 0.1
-        - type: xgboost
+        - type: random_forest
           hyperparameters:
-            n_estimators: 2000
-            learning_rate: 0.05
-            max_depth: 8
-            subsample: 0.8
-            colsample_bytree: 0.8
-            reg_alpha: 0.1
-            reg_lambda: 0.1
-        - type: neural_network
-          hyperparameters:
-            hidden_layers: [256, 128, 64]
-            dropout: 0.2
-            learning_rate: 0.001
-            batch_size: 256
-            epochs: 100
-            early_stopping: true
+            n_estimators: 500
+            max_depth: 10
+            min_samples_split: 5
+            min_samples_leaf: 2
       meta_learner:
-        type: logistic_regression
+        type: ridge
         hyperparameters:
-          C: 1.0
-          max_iter: 1000
+          alpha: 1.0
+          fit_intercept: true
+      outputs:
+        - signal_strength
+        - confidence
+        - risk_score
+        - regime_label
       cross_validation:
         method: time_series_split
         n_splits: 5
@@ -241,16 +324,95 @@ steps:
         enabled: true
         patience: 20
         min_delta: 0.001
+      confidence_calibration:
+        enabled: true
+        method: platt_scaling
+        calibration_split: 0.2
     dependencies: [feature_selection]
     validation_rules:
       - type: ensemble_quality
         min_base_accuracy: 0.6
         min_ensemble_improvement: 0.02
+        min_multi_output_accuracy: 0.5
     resource_limits:
       max_memory_mb: 12288
     metadata:
-      description: "Train ensemble model with LightGBM, XGBoost, and Neural Network"
-      tags: ["ensemble", "training", "stacking", "lightgbm", "xgboost", "neural_network"]
+      description: "Train Analyst multi-output stacking ensemble (5m timeframe)"
+      tags: ["analyst", "ensemble", "training", "stacking", "multi_output", "5m"]
+
+  - name: tactician_stacking_training
+    class_name: TacticianStackingTrainer
+    enabled: true
+    timeout_seconds: 3600
+    retry_count: 1
+    retry_delay_seconds: 120
+    fail_fast: true
+    priority: 2
+    parameters:
+      ensemble_method: multi_output_stacking
+      base_models:
+        - type: tabnet
+          hyperparameters:
+            n_d: 64
+            n_a: 64
+            n_steps: 5
+            gamma: 1.5
+            lambda_sparse: 1e-3
+        - type: catboost
+          hyperparameters:
+            n_estimators: 1500
+            learning_rate: 0.05
+            max_depth: 6
+            subsample: 0.8
+            colsample_bytree: 0.8
+        - type: lightgbm
+          hyperparameters:
+            n_estimators: 1500
+            learning_rate: 0.05
+            max_depth: 6
+            subsample: 0.8
+            colsample_bytree: 0.8
+        - type: ridge
+          hyperparameters:
+            alpha: 1.0
+            fit_intercept: true
+      meta_learner:
+        type: ridge
+        hyperparameters:
+          alpha: 0.5
+          fit_intercept: true
+      outputs:
+        - entry_timing
+        - position_size
+        - stop_loss
+        - take_profit
+      cross_validation:
+        method: time_series_split
+        n_splits: 5
+        test_size: 0.2
+      early_stopping:
+        enabled: true
+        patience: 20
+        min_delta: 0.001
+      confidence_calibration:
+        enabled: true
+        method: platt_scaling
+        calibration_split: 0.2
+      analyst_dependency:
+        enabled: true
+        require_green_light: true
+        include_analyst_outputs: true
+    dependencies: [analyst_stacking_training]
+    validation_rules:
+      - type: ensemble_quality
+        min_base_accuracy: 0.6
+        min_ensemble_improvement: 0.02
+        min_multi_output_accuracy: 0.5
+    resource_limits:
+      max_memory_mb: 12288
+    metadata:
+      description: "Train Tactician multi-output stacking ensemble (1m timeframe)"
+      tags: ["tactician", "ensemble", "training", "stacking", "multi_output", "1m"]
 
   - name: model_validation
     class_name: ModelValidationStep
@@ -372,10 +534,13 @@ steps:
 metadata:
   author: "Advanced Trading Team"
   created_at: "2024-01-01T00:00:00Z"
-  tags: ["advanced", "trading", "ensemble", "hmm", "regime", "optimization"]
+  tags: ["advanced", "trading", "ensemble", "hmm", "regime", "optimization", "multi_output", "stacking", "analyst", "tactician"]
   documentation: "https://docs.example.com/pipelines/advanced_trading"
   performance_targets:
     accuracy: 0.65
     sharpe_ratio: 1.5
     max_drawdown: 0.15
     execution_time: 3600
+    multi_output_accuracy: 0.6
+    analyst_accuracy: 0.7
+    tactician_accuracy: 0.65

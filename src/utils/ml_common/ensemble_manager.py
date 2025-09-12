@@ -57,6 +57,7 @@ class EnsembleType(Enum):
     BOOSTING = "boosting"
     WEIGHTED_AVERAGE = "weighted_average"
     DYNAMIC_WEIGHTING = "dynamic_weighting"
+    MULTI_OUTPUT_STACKING = "multi_output_stacking"
 
 
 class VotingStrategy(Enum):
@@ -363,6 +364,8 @@ class EnsembleManager:
             ensemble_model = await self._create_blending_ensemble(selected_models, X_train, y_train, X_val, y_val)
         elif self.config.ensemble_type == EnsembleType.WEIGHTED_AVERAGE:
             ensemble_model = await self._create_weighted_average_ensemble(selected_models)
+        elif self.config.ensemble_type == EnsembleType.MULTI_OUTPUT_STACKING:
+            ensemble_model = await self._create_multi_output_stacking_ensemble(selected_models, X_train, y_train)
         else:
             self.logger.error(f"❌ Unsupported ensemble type: {self.config.ensemble_type}")
             raise ValueError(f"Unsupported ensemble type: {self.config.ensemble_type}")
@@ -718,6 +721,52 @@ class EnsembleManager:
         self.logger.info(f"⚖️ Weight range: {weights.min():.4f} - {weights.max():.4f}")
         
         return ensemble
+    
+    async def _create_multi_output_stacking_ensemble(self, models: Dict[str, ModelMetadata], X_train: pd.DataFrame, y_train: pd.Series) -> Any:
+        """Create multi-output stacking ensemble."""
+        
+        self.logger.debug("🔄 Creating multi-output stacking ensemble...")
+        start_time = time.time()
+        
+        try:
+            # Import multi-output stacking components
+            from .multi_output_models import MultiOutputStackingModel, MultiOutputConfig
+            from .stacking_ensemble_manager import StackingEnsembleManager, StackingEnsembleConfig
+            
+            # Determine output configuration based on target shape
+            if len(y_train.shape) == 2 and y_train.shape[1] > 1:
+                n_outputs = y_train.shape[1]
+                output_names = [f"output_{i+1}" for i in range(n_outputs)]
+            else:
+                n_outputs = 1
+                output_names = ["output_1"]
+            
+            # Create multi-output configuration
+            multi_output_config = MultiOutputConfig(
+                model_name=f"{self.config.ensemble_name}_multi_output",
+                n_outputs=n_outputs,
+                output_names=output_names,
+                base_models={name: meta.model_object for name, meta in models.items()},
+                enable_gpu_acceleration=self.config.enable_gpu_acceleration,
+                enable_memory_optimization=self.config.enable_memory_optimization,
+                enable_parallel_processing=self.config.enable_parallel_processing,
+                memory_limit_gb=self.config.memory_limit_gb
+            )
+            
+            # Create multi-output stacking model
+            ensemble = MultiOutputStackingModel(multi_output_config)
+            
+            creation_time = time.time() - start_time
+            self.logger.info(f"✅ Created multi-output stacking ensemble with {n_outputs} outputs in {creation_time:.3f}s")
+            self.logger.info(f"🎯 Ensemble type: MultiOutputStackingModel")
+            self.logger.info(f"📊 Outputs: {output_names}")
+            
+            return ensemble
+            
+        except Exception as e:
+            creation_time = time.time() - start_time
+            self.logger.error(f"❌ Failed to create multi-output stacking ensemble after {creation_time:.3f}s: {e}")
+            raise
     
     async def _evaluate_ensemble(self, ensemble_model: Any, X_val: Optional[pd.DataFrame], y_val: Optional[pd.Series]) -> Dict[str, float]:
         """Evaluate ensemble performance."""

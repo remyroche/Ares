@@ -113,7 +113,9 @@ class EnhancedModelTrainer:
                                 X_test: np.ndarray, y_test: np.ndarray,
                                 feature_names: Optional[List[str]] = None,
                                 enable_class_weights: bool = False,
-                                class_weight_config: str = 'balanced') -> Dict[str, Any]:
+                                class_weight_config: str = 'balanced',
+                                is_multi_output: bool = False,
+                                output_names: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Train and comprehensively evaluate a model with automatic confidence metrics.
         
@@ -127,6 +129,8 @@ class EnhancedModelTrainer:
             feature_names: List of feature names
             enable_class_weights: Whether to use class weights
             class_weight_config: Class weight configuration
+            is_multi_output: Whether this is a multi-output model
+            output_names: List of output names for multi-output models
             
         Returns:
             Comprehensive training and evaluation results
@@ -136,6 +140,9 @@ class EnhancedModelTrainer:
         _LOGGER.info(f'📊 Data shapes - Train: {X_train.shape}, Test: {X_test.shape}')
         _LOGGER.info(f'📊 Target shapes - Train: {y_train.shape}, Test: {y_test.shape}')
         _LOGGER.info(f'📊 Features: {len(feature_names) if feature_names else "Unknown"}')
+        if is_multi_output:
+            _LOGGER.info(f'📊 Multi-output: {len(output_names) if output_names else "Unknown"} outputs')
+            _LOGGER.info(f'📊 Output names: {output_names}')
         
         try:
             # Apply class weights if enabled
@@ -232,9 +239,16 @@ class EnhancedModelTrainer:
             
             # Comprehensive evaluation using ModelEvaluator
             _LOGGER.debug('📊 Performing comprehensive evaluation...')
-            evaluation_results = self.evaluator.comprehensive_evaluation(
-                y_test, y_pred, y_pred_proba, task_type='classification'
-            )
+            if is_multi_output:
+                # Multi-output evaluation
+                evaluation_results = self._evaluate_multi_output_model(
+                    y_test, y_pred, y_pred_proba, output_names
+                )
+            else:
+                # Single-output evaluation
+                evaluation_results = self.evaluator.comprehensive_evaluation(
+                    y_test, y_pred, y_pred_proba, task_type='classification'
+                )
             
             # Post-training HPO if enabled and model performance is good
             post_training_hpo_results = {}
@@ -542,6 +556,65 @@ class EnhancedModelTrainer:
         except Exception as e:
             self.logger.warning(f'Failed to log training results for {model_name}: {e}')
     
+    def _evaluate_multi_output_model(self, y_true: np.ndarray, y_pred: np.ndarray, 
+                                   y_pred_proba: Optional[np.ndarray], 
+                                   output_names: Optional[List[str]]) -> Dict[str, Any]:
+        """Evaluate multi-output model performance."""
+        
+        try:
+            if len(y_true.shape) != 2 or len(y_pred.shape) != 2:
+                _LOGGER.warning("⚠️ Multi-output evaluation requires 2D arrays")
+                return {'error': 'Invalid input shape for multi-output evaluation'}
+            
+            n_outputs = y_true.shape[1]
+            if output_names is None:
+                output_names = [f"output_{i+1}" for i in range(n_outputs)]
+            
+            # Calculate metrics for each output
+            per_output_metrics = {}
+            overall_metrics = {}
+            
+            for i in range(n_outputs):
+                y_true_output = y_true[:, i]
+                y_pred_output = y_pred[:, i]
+                y_pred_proba_output = y_pred_proba[:, i] if y_pred_proba is not None else None
+                
+                # Calculate basic metrics for this output
+                mse = np.mean((y_true_output - y_pred_output) ** 2)
+                mae = np.mean(np.abs(y_true_output - y_pred_output))
+                r2 = 1 - (np.sum((y_true_output - y_pred_output) ** 2) / 
+                         np.sum((y_true_output - np.mean(y_true_output)) ** 2))
+                
+                per_output_metrics[output_names[i]] = {
+                    'mse': float(mse),
+                    'mae': float(mae),
+                    'r2': float(r2)
+                }
+                
+                # Add to overall metrics
+                overall_metrics[f'{output_names[i]}_mse'] = float(mse)
+                overall_metrics[f'{output_names[i]}_mae'] = float(mae)
+                overall_metrics[f'{output_names[i]}_r2'] = float(r2)
+            
+            # Calculate overall metrics
+            overall_metrics['overall_mse'] = float(np.mean([m['mse'] for m in per_output_metrics.values()]))
+            overall_metrics['overall_mae'] = float(np.mean([m['mae'] for m in per_output_metrics.values()]))
+            overall_metrics['overall_r2'] = float(np.mean([m['r2'] for m in per_output_metrics.values()]))
+            
+            _LOGGER.info(f"📊 Multi-output evaluation - Overall MSE: {overall_metrics['overall_mse']:.4f}, "
+                        f"MAE: {overall_metrics['overall_mae']:.4f}, R²: {overall_metrics['overall_r2']:.4f}")
+            
+            return {
+                'per_output_metrics': per_output_metrics,
+                'overall_metrics': overall_metrics,
+                'n_outputs': n_outputs,
+                'output_names': output_names
+            }
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Multi-output evaluation failed: {e}")
+            return {'error': str(e)}
+    
     def compare_models(self, model_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Compare multiple trained models and rank them.
@@ -619,7 +692,9 @@ def train_model_with_confidence_metrics(model: Any, model_name: str,
                                       X_train: np.ndarray, y_train: np.ndarray,
                                       X_test: np.ndarray, y_test: np.ndarray,
                                       feature_names: Optional[List[str]] = None,
-                                      config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                                      config: Optional[Dict[str, Any]] = None,
+                                      is_multi_output: bool = False,
+                                      output_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Convenience function to train a model with automatic confidence metrics.
     
@@ -632,11 +707,14 @@ def train_model_with_confidence_metrics(model: Any, model_name: str,
         y_test: Test labels
         feature_names: List of feature names
         config: Configuration dictionary
+        is_multi_output: Whether this is a multi-output model
+        output_names: List of output names for multi-output models
         
     Returns:
         Comprehensive training and evaluation results
     """
     trainer = EnhancedModelTrainer(config)
     return trainer.train_and_evaluate_model(
-        model, model_name, X_train, y_train, X_test, y_test, feature_names
+        model, model_name, X_train, y_train, X_test, y_test, feature_names,
+        is_multi_output=is_multi_output, output_names=output_names
     )

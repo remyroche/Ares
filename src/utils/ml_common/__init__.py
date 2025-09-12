@@ -236,3 +236,70 @@ __all__.extend([
     'InterpretabilityMethod',
     'ExplanationType',
 ])
+
+# Multi-output stacking ensemble support
+try:
+    from .model_factory import EnhancedModelFactory, ModelType, ModelConfig, create_analyst_models, create_tactician_models, create_model_factory
+    __all__.extend([
+        'EnhancedModelFactory',
+        'ModelType',
+        'ModelConfig',
+        'create_analyst_models',
+        'create_tactician_models',
+        'create_model_factory',
+    ])
+    tprint("✅ Multi-output model factory components loaded successfully")
+except ImportError as e:
+    tprint(f"⚠️ Multi-output model factory components not available: {e}")
+
+try:
+    from .multi_output_models import (
+        MultiOutputConfig, MultiOutputModel, MultiOutputStackingModel, MultiOutputResult,
+        prepare_multi_output_targets, create_analyst_outputs, create_tactician_outputs,
+        create_multi_output_stacking_model
+    )
+    __all__.extend([
+        'MultiOutputConfig',
+        'MultiOutputModel',
+        'MultiOutputStackingModel',
+        'MultiOutputResult',
+        'prepare_multi_output_targets',
+        'create_analyst_outputs',
+        'create_tactician_outputs',
+        'create_multi_output_stacking_model',
+    ])
+    tprint("✅ Multi-output models components loaded successfully")
+except ImportError as e:
+    tprint(f"⚠️ Multi-output models components not available: {e}")
+
+try:
+    from .stacking_ensemble_manager import (
+        StackingEnsembleManager, StackingEnsembleConfig, StackingEnsembleResult,
+        create_analyst_ensemble, create_tactician_ensemble
+    )
+    __all__.extend([
+        'StackingEnsembleManager',
+        'StackingEnsembleConfig',
+        'StackingEnsembleResult',
+        'create_analyst_ensemble',
+        'create_tactician_ensemble',
+    ])
+    tprint("✅ Stacking ensemble manager components loaded successfully")
+except ImportError as e:
+    tprint(f"⚠️ Stacking ensemble manager components not available: {e}")
+
+try:
+    from .stacking_confidence_calibration import (
+        StackingConfidenceCalibrator, StackingCalibrationConfig, StackingCalibrationResult,
+        create_analyst_calibrator, create_tactician_calibrator
+    )
+    __all__.extend([
+        'StackingConfidenceCalibrator',
+        'StackingCalibrationConfig',
+        'StackingCalibrationResult',
+        'create_analyst_calibrator',
+        'create_tactician_calibrator',
+    ])
+    tprint("✅ Stacking confidence calibration components loaded successfully")
+except ImportError as e:
+    tprint(f"⚠️ Stacking confidence calibration components not available: {e}")

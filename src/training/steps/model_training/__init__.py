@@ -35,12 +35,28 @@ try:
     from .simplified.general_model_training import GeneralModelTrainer
     from .simplified.analyst_model_training import AnalystModelTrainer
     from .simplified.tactician_model_training import TacticianModelTrainer
+    from .simplified.stacking_model_training import StackingModelTrainer, create_analyst_stacking_trainer, create_tactician_stacking_trainer, create_stacking_trainer
     SIMPLIFIED_TRAINING_AVAILABLE = True
 except ImportError:
     SIMPLIFIED_TRAINING_AVAILABLE = False
     GeneralModelTrainer = None
     AnalystModelTrainer = None
     TacticianModelTrainer = None
+    StackingModelTrainer = None
+    create_analyst_stacking_trainer = None
+    create_tactician_stacking_trainer = None
+    create_stacking_trainer = None
+
+# Import stacking ensemble training
+try:
+    from .stacking_ensemble_training import AnalystStackingTrainer, TacticianStackingTrainer, create_analyst_trainer, create_tactician_trainer
+    STACKING_ENSEMBLE_AVAILABLE = True
+except ImportError:
+    STACKING_ENSEMBLE_AVAILABLE = False
+    AnalystStackingTrainer = None
+    TacticianStackingTrainer = None
+    create_analyst_trainer = None
+    create_tactician_trainer = None
 
 # Legacy compatibility aliases
 HMMBasedTrainingStep = GeneralModelTrainer
@@ -902,6 +918,9 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
 __all__ = [
     # Simplified training components
     'GeneralModelTrainer', 'AnalystModelTrainer', 'TacticianModelTrainer',
+    # Stacking ensemble training components
+    'StackingModelTrainer', 'create_analyst_stacking_trainer', 'create_tactician_stacking_trainer', 'create_stacking_trainer',
+    'AnalystStackingTrainer', 'TacticianStackingTrainer', 'create_analyst_trainer', 'create_tactician_trainer',
     # Legacy compatibility aliases
     'HMMBasedTrainingStep', 'UnifiedRegimeIntelligenceStep', 'AnalystCreationStep', 
     'AnalystEnhancementStep', 'AnalystEnsembleCreationStep', 'TacticianSpecialistTrainingStep',

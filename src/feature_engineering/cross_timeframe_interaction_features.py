@@ -81,25 +81,48 @@ class CrossTimeframeFeatureGenerator:
         self.config = config or CrossTimeframeConfig()
         self.logger = logger or logging.getLogger(__name__)
         
-        # Initialize the comprehensive cross timeframe analysis pipeline
+        # Initialize the optimized cross timeframe analysis pipeline
         self.cross_timeframe_pipeline = None
         try:
-            from .cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig as PipelineConfig
+            from .optimized_cross_timeframe_analysis_integration import (
+                OptimizedCrossTimeframeAnalysisPipeline,
+                create_optimized_config
+            )
             
-            # Configure for high leverage trading with short timeframes
-            pipeline_config = PipelineConfig(
+            # Configure for high leverage trading with optimizations
+            pipeline_config = create_optimized_config(
                 timeframes=['1m', '5m', '15m', '30m'],  # Short timeframes for high leverage
-                base_timeframe='1m',
-                interaction_features=['correlation', 'momentum', 'volatility', 'volume'],
+                enable_m1_optimizations=True,
+                enable_gpu_acceleration=True,
+                enable_advanced_feature_selection=True,
+                memory_limit_gb=8.0,
+                max_workers=4,
+                interaction_features=['correlation', 'momentum', 'volatility', 'volume', 'microstructure'],
                 correlation_threshold=0.7,
                 min_observations=50,  # Reduced for short timeframes
                 enable_data_quality_validation=True
             )
-            self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline(pipeline_config)
-            self.logger.info("✅ Cross Timeframe Analysis Pipeline integrated")
+            self.cross_timeframe_pipeline = OptimizedCrossTimeframeAnalysisPipeline(pipeline_config)
+            self.logger.info("✅ Optimized Cross Timeframe Analysis Pipeline integrated")
         except ImportError as e:
-            self.logger.warning(f"⚠️ Cross Timeframe Analysis Pipeline not available: {e}")
-            self.cross_timeframe_pipeline = None
+            self.logger.warning(f"⚠️ Optimized Cross Timeframe Analysis Pipeline not available: {e}")
+            # Fallback to original pipeline
+            try:
+                from .cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline, CrossTimeframeConfig as PipelineConfig
+                
+                pipeline_config = PipelineConfig(
+                    timeframes=['1m', '5m', '15m', '30m'],
+                    base_timeframe='1m',
+                    interaction_features=['correlation', 'momentum', 'volatility', 'volume'],
+                    correlation_threshold=0.7,
+                    min_observations=50,
+                    enable_data_quality_validation=True
+                )
+                self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline(pipeline_config)
+                self.logger.info("✅ Fallback Cross Timeframe Analysis Pipeline integrated")
+            except ImportError as e2:
+                self.logger.warning(f"⚠️ Fallback Cross Timeframe Analysis Pipeline not available: {e2}")
+                self.cross_timeframe_pipeline = None
 
     def generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, pd.Series]:
         """Generate cross-timeframe features with reduced complexity.

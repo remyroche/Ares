@@ -423,7 +423,7 @@ class ModelTrainingSubPipeline:
         
         # Import and use analyst model training
         try:
-            from .simplified.analyst_model_training import AnalystModelTrainer
+            from .analyst_models_training import AnalystModelsTrainingStep as AnalystModelTrainer
             
             # Create enhanced configuration with temporal features
             enhanced_config = config.custom_params.copy() if config.custom_params else {}
@@ -482,7 +482,7 @@ class ModelTrainingSubPipeline:
         
         # Import and use tactician model training
         try:
-            from .simplified.tactician_model_training import TacticianModelTrainer
+            from .tactician_models_training import TacticianModelsTrainingStep as TacticianModelTrainer
             
             trainer = TacticianModelTrainer()
             training_result = await trainer.train_tactician_model(

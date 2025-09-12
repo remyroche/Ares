@@ -33,38 +33,40 @@ This package contains all the components for model training:
 # Import from simplified model training structure
 try:
     from .simplified.general_model_training import GeneralModelTrainer
-    from .simplified.analyst_model_training import AnalystModelTrainer
-    from .simplified.tactician_model_training import TacticianModelTrainer
-    from .simplified.stacking_model_training import StackingModelTrainer, create_analyst_stacking_trainer, create_tactician_stacking_trainer, create_stacking_trainer
     SIMPLIFIED_TRAINING_AVAILABLE = True
 except ImportError:
     SIMPLIFIED_TRAINING_AVAILABLE = False
     GeneralModelTrainer = None
-    AnalystModelTrainer = None
-    TacticianModelTrainer = None
-    StackingModelTrainer = None
-    create_analyst_stacking_trainer = None
-    create_tactician_stacking_trainer = None
-    create_stacking_trainer = None
 
-# Import stacking ensemble training
+# Import new comprehensive training steps
 try:
-    from .stacking_ensemble_training import AnalystStackingTrainer, TacticianStackingTrainer, create_analyst_trainer, create_tactician_trainer
-    STACKING_ENSEMBLE_AVAILABLE = True
+    from .analyst_models_training import AnalystModelsTrainingStep, create_analyst_models_training_step, execute_analyst_models_training
+    from .analyst_ensemble_training import AnalystEnsembleTrainingStep, create_analyst_ensemble_training_step, execute_analyst_ensemble_training
+    from .tactician_models_training import TacticianModelsTrainingStep, create_tactician_models_training_step, execute_tactician_models_training
+    from .tactician_ensemble_training import TacticianEnsembleTrainingStep, create_tactician_ensemble_training_step, execute_tactician_ensemble_training
+    COMPREHENSIVE_TRAINING_AVAILABLE = True
 except ImportError:
-    STACKING_ENSEMBLE_AVAILABLE = False
-    AnalystStackingTrainer = None
-    TacticianStackingTrainer = None
-    create_analyst_trainer = None
-    create_tactician_trainer = None
+    COMPREHENSIVE_TRAINING_AVAILABLE = False
+    AnalystModelsTrainingStep = None
+    AnalystEnsembleTrainingStep = None
+    TacticianModelsTrainingStep = None
+    TacticianEnsembleTrainingStep = None
+    create_analyst_models_training_step = None
+    create_analyst_ensemble_training_step = None
+    create_tactician_models_training_step = None
+    create_tactician_ensemble_training_step = None
+    execute_analyst_models_training = None
+    execute_analyst_ensemble_training = None
+    execute_tactician_models_training = None
+    execute_tactician_ensemble_training = None
 
 # Legacy compatibility aliases
 HMMBasedTrainingStep = GeneralModelTrainer
 UnifiedRegimeIntelligenceStep = GeneralModelTrainer
-AnalystCreationStep = AnalystModelTrainer
-AnalystEnhancementStep = AnalystModelTrainer
-AnalystEnsembleCreationStep = AnalystModelTrainer
-TacticianSpecialistTrainingStep = TacticianModelTrainer
+AnalystCreationStep = AnalystModelsTrainingStep
+AnalystEnhancementStep = AnalystEnsembleTrainingStep
+AnalystEnsembleCreationStep = AnalystEnsembleTrainingStep
+TacticianSpecialistTrainingStep = TacticianModelsTrainingStep
 from pathlib import Path
 
 async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any, data_dir: Any, **config) -> Any:
@@ -917,10 +919,11 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         return False
 __all__ = [
     # Simplified training components
-    'GeneralModelTrainer', 'AnalystModelTrainer', 'TacticianModelTrainer',
+    'GeneralModelTrainer',
     # Stacking ensemble training components
-    'StackingModelTrainer', 'create_analyst_stacking_trainer', 'create_tactician_stacking_trainer', 'create_stacking_trainer',
-    'AnalystStackingTrainer', 'TacticianStackingTrainer', 'create_analyst_trainer', 'create_tactician_trainer',
+    'AnalystModelsTrainingStep', 'AnalystEnsembleTrainingStep', 'TacticianModelsTrainingStep', 'TacticianEnsembleTrainingStep',
+    'create_analyst_models_training_step', 'create_analyst_ensemble_training_step', 'create_tactician_models_training_step', 'create_tactician_ensemble_training_step',
+    'execute_analyst_models_training', 'execute_analyst_ensemble_training', 'execute_tactician_models_training', 'execute_tactician_ensemble_training',
     # Legacy compatibility aliases
     'HMMBasedTrainingStep', 'UnifiedRegimeIntelligenceStep', 'AnalystCreationStep', 
     'AnalystEnhancementStep', 'AnalystEnsembleCreationStep', 'TacticianSpecialistTrainingStep',

@@ -117,12 +117,44 @@ class SRMLEnhancer:
         self.version_manager = get_version_manager()
     @sr_error_handler(exceptions=(SROptimizationError, SRDataError), default_return = None, context='ML model training', max_retries = 2)
     async def train_models(self, market_data: pd.DataFrame, sr_levels: List[Dict[str, Any]], historical_performance: Optional[Dict[str, Any]]=None) -> bool:
-        """Train all ML models."""
+        """Train all ML models with small dataset management."""
         try:
             if not self.ml_enabled or not ML_AVAILABLE:
                 self.logger.info('ML training skipped - ML not available or disabled')
                 return False
+            
             self.logger.info('🤖 Starting ML model training...')
+            
+            # Check if we need small dataset management
+            if len(sr_levels) < 50:  # Small dataset threshold
+                self.logger.info(f'🔧 Small dataset detected ({len(sr_levels)} samples) - applying enhanced techniques')
+                
+                # Import and use small dataset management
+                try:
+                    from src.utils.ml_common.small_dataset_integration import integrate_small_dataset_management_with_sr_enhancer
+                    small_dataset_manager = integrate_small_dataset_management_with_sr_enhancer()
+                    
+                    # Apply small dataset techniques
+                    enhanced_results = small_dataset_manager.enhance_sr_ml_training(
+                        market_data, sr_levels, historical_performance
+                    )
+                    
+                    self.logger.info(f'✅ Small dataset enhancement completed: {enhanced_results["enhanced_dataset_size"]} samples')
+                    self.logger.info(f'🔧 Techniques applied: {", ".join(enhanced_results["small_dataset_techniques_applied"])}')
+                    
+                    # Store enhanced results for later use
+                    self.enhanced_training_results = enhanced_results
+                    
+                    return True
+                    
+                except ImportError as e:
+                    self.logger.warning(f'⚠️ Small dataset management not available: {e}')
+                    self.logger.info('📊 Continuing with standard training...')
+                except Exception as e:
+                    self.logger.error(f'❌ Small dataset management failed: {e}')
+                    self.logger.info('📊 Continuing with standard training...')
+            
+            # Standard training for larger datasets or fallback
             training_data = await self._prepare_training_data(market_data, sr_levels, historical_performance)
             if not training_data:
                 self.logger.warning('No training data available')
@@ -856,8 +888,41 @@ class SRMLEnhancer:
             return np.array([])
 
     async def predict_sr_quality(self, market_data: pd.DataFrame, sr_levels: List[Dict[str, Any]]) -> List[SRQualityPrediction]:
-        """Predict quality of S/R levels using ML."""
+        """Predict quality of S/R levels using ML with enhanced small dataset management."""
         try:
+            # Check if we have enhanced training results from small dataset management
+            if hasattr(self, 'enhanced_training_results') and self.enhanced_training_results:
+                self.logger.info('🔮 Using enhanced models for SR quality prediction')
+                
+                try:
+                    from src.utils.ml_common.small_dataset_integration import integrate_small_dataset_management_with_sr_enhancer
+                    small_dataset_manager = integrate_small_dataset_management_with_sr_enhancer()
+                    
+                    # Use enhanced models for prediction
+                    enhanced_predictions = small_dataset_manager.predict_with_enhanced_models(
+                        market_data, sr_levels, model_type='ensemble'
+                    )
+                    
+                    # Convert to SRQualityPrediction format
+                    predictions = []
+                    for pred in enhanced_predictions:
+                        prediction = SRQualityPrediction(
+                            level_id=pred['level_id'],
+                            quality_score=pred['quality_score'],
+                            confidence=pred['confidence'],
+                            features_used=await self._get_feature_names(),
+                            prediction_reason=f'Enhanced {pred["prediction_method"]} with {pred["confidence"]:.2%} confidence'
+                        )
+                        predictions.append(prediction)
+                    
+                    self.logger.info(f'✅ Enhanced prediction completed: {len(predictions)} predictions')
+                    return predictions
+                    
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Enhanced prediction failed: {e}')
+                    self.logger.info('📊 Falling back to standard prediction...')
+            
+            # Standard prediction fallback
             if not self.ml_enabled or not self.sr_quality_model:
                 return await self._fallback_quality_prediction(sr_levels)
             predictions = []

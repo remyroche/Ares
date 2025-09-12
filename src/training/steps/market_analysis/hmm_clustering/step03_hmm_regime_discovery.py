@@ -635,6 +635,91 @@ class HMMRegimeDiscoveryStep:
         return selected_features
     
     @log_all_calls
+    def _analyze_feature_importance(self, features: pd.DataFrame, regime_labels: np.ndarray = None) -> Dict[str, Any]:
+        """
+        Analyze feature importance using multiple methods
+        
+        Args:
+            features: Input features
+            regime_labels: Regime labels if available
+            
+        Returns:
+            Dictionary with feature importance analysis
+        """
+        self.logger.info("🔍 Analyzing feature importance...")
+        
+        importance_analysis = {
+            'feature_count': len(features.columns),
+            'feature_categories': {},
+            'importance_scores': {},
+            'top_features': {},
+            'recommendations': {}
+        }
+        
+        # Categorize features
+        feature_categories = {
+            'price_features': [col for col in features.columns if 'price' in col or 'ma_' in col or 'ema_' in col],
+            'volume_features': [col for col in features.columns if 'volume' in col],
+            'volatility_features': [col for col in features.columns if 'volatility' in col],
+            'technical_indicators': [col for col in features.columns if any(ind in col for ind in ['rsi', 'macd', 'bb_', 'atr', 'adx'])],
+            'momentum_features': [col for col in features.columns if 'momentum' in col],
+            'sr_features': [col for col in features.columns if any(sr in col for sr in ['support', 'resistance', 'pivot', 'swing'])],
+            'statistical_features': [col for col in features.columns if any(stat in col for stat in ['skewness', 'kurtosis', 'quantile', 'autocorr'])],
+            'time_features': [col for col in features.columns if any(time in col for time in ['hour', 'day', 'month', 'sin', 'cos'])],
+            'interaction_features': [col for col in features.columns if 'interaction' in col]
+        }
+        
+        importance_analysis['feature_categories'] = {
+            category: len(feature_list) for category, feature_list in feature_categories.items()
+        }
+        
+        # Calculate variance-based importance
+        feature_variances = features.var().sort_values(ascending=False)
+        importance_analysis['importance_scores']['variance'] = feature_variances.to_dict()
+        importance_analysis['top_features']['variance'] = feature_variances.head(20).index.tolist()
+        
+        # Calculate correlation-based importance
+        feature_correlations = features.corr().abs().mean().sort_values(ascending=False)
+        importance_analysis['importance_scores']['correlation'] = feature_correlations.to_dict()
+        importance_analysis['top_features']['correlation'] = feature_correlations.head(20).index.tolist()
+        
+        # If regime labels are available, calculate mutual information
+        if regime_labels is not None:
+            try:
+                from sklearn.feature_selection import mutual_info_classif
+                mi_scores = mutual_info_classif(features, regime_labels, random_state=42)
+                mi_importance = pd.Series(mi_scores, index=features.columns).sort_values(ascending=False)
+                importance_analysis['importance_scores']['mutual_information'] = mi_importance.to_dict()
+                importance_analysis['top_features']['mutual_information'] = mi_importance.head(20).index.tolist()
+            except Exception as e:
+                self.logger.warning(f"Mutual information calculation failed: {e}")
+        
+        # Generate recommendations
+        recommendations = []
+        
+        # High variance features
+        high_variance_features = feature_variances.head(10).index.tolist()
+        recommendations.append(f"High variance features (most informative): {high_variance_features[:5]}")
+        
+        # Low variance features (potentially redundant)
+        low_variance_features = feature_variances.tail(10).index.tolist()
+        recommendations.append(f"Low variance features (potentially redundant): {low_variance_features[:5]}")
+        
+        # Category analysis
+        for category, feature_list in feature_categories.items():
+            if feature_list:
+                category_variances = feature_variances[feature_list]
+                if len(category_variances) > 0:
+                    best_in_category = category_variances.idxmax()
+                    recommendations.append(f"Best {category}: {best_in_category} (variance: {category_variances.max():.4f})")
+        
+        importance_analysis['recommendations'] = recommendations
+        
+        self.logger.info(f"✅ Feature importance analysis completed: {len(features.columns)} features analyzed")
+        
+        return importance_analysis
+    
+    @log_all_calls
     def _optimize_hmm_parameters(self, features: pd.DataFrame, use_optimization: bool = True) -> Dict[str, Any]:
         """
         Optimize HMM parameters using dynamic parameter search
@@ -718,6 +803,221 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Ensemble weight optimization failed: {e}")
             # Fallback to default weights
             return {'hmm': 0.4, 'kmeans': 0.3, 'dbscan': 0.3}
+    
+    @log_all_calls
+    def _analyze_hmm_regimes(self, features: pd.DataFrame, hmm_predictions: np.ndarray, 
+                           price_data: pd.DataFrame = None) -> Dict[str, Any]:
+        """
+        Analyze HMM regimes to determine their relevance and characteristics
+        
+        Args:
+            features: Input features used for HMM training
+            hmm_predictions: HMM state predictions
+            price_data: Original price data for regime interpretation
+            
+        Returns:
+            Dictionary with regime analysis
+        """
+        self.logger.info("🔍 Analyzing HMM regimes...")
+        
+        regime_analysis = {
+            'n_regimes': len(np.unique(hmm_predictions)),
+            'regime_distribution': {},
+            'regime_characteristics': {},
+            'regime_transitions': {},
+            'regime_interpretation': {},
+            'regime_quality_metrics': {},
+            'recommendations': []
+        }
+        
+        # Analyze regime distribution
+        unique_states, state_counts = np.unique(hmm_predictions, return_counts=True)
+        regime_analysis['regime_distribution'] = {
+            f'regime_{state}': {
+                'count': int(count),
+                'percentage': float(count / len(hmm_predictions) * 100),
+                'state_id': int(state)
+            }
+            for state, count in zip(unique_states, state_counts)
+        }
+        
+        # Analyze regime characteristics
+        for state in unique_states:
+            state_mask = hmm_predictions == state
+            state_features = features[state_mask]
+            
+            regime_characteristics = {
+                'sample_count': int(np.sum(state_mask)),
+                'feature_means': {},
+                'feature_stds': {},
+                'dominant_features': []
+            }
+            
+            # Calculate feature statistics for this regime
+            for feature in features.columns:
+                feature_values = state_features[feature]
+                regime_characteristics['feature_means'][feature] = float(feature_values.mean())
+                regime_characteristics['feature_stds'][feature] = float(feature_values.std())
+            
+            # Identify dominant features (highest absolute means)
+            feature_means_abs = {k: abs(v) for k, v in regime_characteristics['feature_means'].items()}
+            dominant_features = sorted(feature_means_abs.items(), key=lambda x: x[1], reverse=True)[:10]
+            regime_characteristics['dominant_features'] = [feat[0] for feat in dominant_features]
+            
+            regime_analysis['regime_characteristics'][f'regime_{state}'] = regime_characteristics
+        
+        # Analyze regime transitions
+        transitions = []
+        for i in range(1, len(hmm_predictions)):
+            if hmm_predictions[i] != hmm_predictions[i-1]:
+                transitions.append((hmm_predictions[i-1], hmm_predictions[i]))
+        
+        transition_counts = {}
+        for transition in transitions:
+            transition_key = f"{transition[0]}->{transition[1]}"
+            transition_counts[transition_key] = transition_counts.get(transition_key, 0) + 1
+        
+        regime_analysis['regime_transitions'] = transition_counts
+        
+        # Interpret regimes based on feature characteristics
+        regime_interpretations = {}
+        for state in unique_states:
+            regime_key = f'regime_{state}'
+            characteristics = regime_analysis['regime_characteristics'][regime_key]
+            
+            # Analyze key features to interpret regime
+            interpretation = self._interpret_regime_type(characteristics, state)
+            regime_interpretations[regime_key] = interpretation
+        
+        regime_analysis['regime_interpretation'] = regime_interpretations
+        
+        # Calculate regime quality metrics
+        quality_metrics = self._calculate_regime_quality_metrics(features, hmm_predictions)
+        regime_analysis['regime_quality_metrics'] = quality_metrics
+        
+        # Generate recommendations
+        recommendations = self._generate_regime_recommendations(regime_analysis)
+        regime_analysis['recommendations'] = recommendations
+        
+        self.logger.info(f"✅ Regime analysis completed: {len(unique_states)} regimes analyzed")
+        
+        return regime_analysis
+    
+    def _interpret_regime_type(self, characteristics: Dict[str, Any], state: int) -> Dict[str, Any]:
+        """Interpret regime type based on feature characteristics"""
+        interpretation = {
+            'regime_type': 'unknown',
+            'confidence': 0.0,
+            'key_indicators': [],
+            'description': ''
+        }
+        
+        feature_means = characteristics['feature_means']
+        
+        # Analyze volatility
+        volatility_features = [k for k in feature_means.keys() if 'volatility' in k]
+        avg_volatility = np.mean([feature_means[k] for k in volatility_features if k in feature_means])
+        
+        # Analyze momentum
+        momentum_features = [k for k in feature_means.keys() if 'momentum' in k]
+        avg_momentum = np.mean([feature_means[k] for k in momentum_features if k in feature_means])
+        
+        # Analyze volume
+        volume_features = [k for k in feature_means.keys() if 'volume' in k]
+        avg_volume = np.mean([feature_means[k] for k in volume_features if k in feature_means])
+        
+        # Classify regime based on characteristics
+        if avg_volatility > 0.02:  # High volatility threshold
+            if avg_momentum > 0.01:
+                interpretation['regime_type'] = 'bull_trend'
+                interpretation['description'] = 'Strong upward trend with high volatility'
+                interpretation['confidence'] = 0.8
+            elif avg_momentum < -0.01:
+                interpretation['regime_type'] = 'bear_trend'
+                interpretation['description'] = 'Strong downward trend with high volatility'
+                interpretation['confidence'] = 0.8
+            else:
+                interpretation['regime_type'] = 'high_volatility'
+                interpretation['description'] = 'High volatility without clear trend'
+                interpretation['confidence'] = 0.6
+        else:  # Low volatility
+            if abs(avg_momentum) < 0.005:
+                interpretation['regime_type'] = 'consolidation'
+                interpretation['description'] = 'Low volatility consolidation phase'
+                interpretation['confidence'] = 0.7
+            elif avg_momentum > 0.005:
+                interpretation['regime_type'] = 'gentle_bull'
+                interpretation['description'] = 'Gentle upward trend with low volatility'
+                interpretation['confidence'] = 0.6
+            else:
+                interpretation['regime_type'] = 'gentle_bear'
+                interpretation['description'] = 'Gentle downward trend with low volatility'
+                interpretation['confidence'] = 0.6
+        
+        # Add key indicators
+        interpretation['key_indicators'] = [
+            f"Volatility: {avg_volatility:.4f}",
+            f"Momentum: {avg_momentum:.4f}",
+            f"Volume: {avg_volume:.4f}"
+        ]
+        
+        return interpretation
+    
+    def _calculate_regime_quality_metrics(self, features: pd.DataFrame, predictions: np.ndarray) -> Dict[str, float]:
+        """Calculate quality metrics for regime detection"""
+        try:
+            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+            
+            quality_metrics = {
+                'silhouette_score': silhouette_score(features, predictions),
+                'calinski_harabasz_score': calinski_harabasz_score(features, predictions),
+                'davies_bouldin_score': davies_bouldin_score(features, predictions)
+            }
+        except Exception as e:
+            self.logger.warning(f"Quality metrics calculation failed: {e}")
+            quality_metrics = {
+                'silhouette_score': 0.0,
+                'calinski_harabasz_score': 0.0,
+                'davies_bouldin_score': 0.0
+            }
+        
+        return quality_metrics
+    
+    def _generate_regime_recommendations(self, regime_analysis: Dict[str, Any]) -> List[str]:
+        """Generate recommendations based on regime analysis"""
+        recommendations = []
+        
+        n_regimes = regime_analysis['n_regimes']
+        quality_metrics = regime_analysis['regime_quality_metrics']
+        
+        # Regime count recommendations
+        if n_regimes < 3:
+            recommendations.append("Consider increasing number of regimes - current count may be too low for market complexity")
+        elif n_regimes > 6:
+            recommendations.append("Consider reducing number of regimes - current count may be too high and cause overfitting")
+        else:
+            recommendations.append(f"Regime count ({n_regimes}) appears appropriate for market complexity")
+        
+        # Quality recommendations
+        silhouette_score = quality_metrics.get('silhouette_score', 0)
+        if silhouette_score > 0.5:
+            recommendations.append("Excellent regime separation - regimes are well-defined")
+        elif silhouette_score > 0.3:
+            recommendations.append("Good regime separation - regimes are reasonably well-defined")
+        else:
+            recommendations.append("Poor regime separation - consider feature engineering or parameter tuning")
+        
+        # Distribution recommendations
+        regime_dist = regime_analysis['regime_distribution']
+        min_percentage = min([regime['percentage'] for regime in regime_dist.values()])
+        max_percentage = max([regime['percentage'] for regime in regime_dist.values()])
+        
+        if max_percentage > 70:
+            recommendations.append("One regime dominates - consider adjusting parameters to better balance regimes")
+        elif min_percentage < 5:
+            recommendations.append("Some regimes are very rare - consider if they represent meaningful market states")
+        
+        return recommendations
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""

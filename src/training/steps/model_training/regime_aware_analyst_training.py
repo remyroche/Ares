@@ -531,35 +531,54 @@ class RegimeAwareAnalystTrainer:
         return output_performance
     
     def _get_model_params(self, model_type: str) -> Dict[str, Any]:
-        """Get default parameters for model type."""
+        """Get default parameters for model type with overfitting prevention."""
         
         default_params = {
             'GRU': {
                 'hidden_size': 64,
                 'num_layers': 2,
-                'dropout': 0.1
+                'dropout': 0.2,           # Increased dropout
+                'recurrent_dropout': 0.1,  # Recurrent dropout
+                'l2_regularization': 0.01, # L2 regularization
+                'early_stopping_patience': 15
             },
             'CATBOOSTREGRESSOR': {
                 'n_estimators': 1000,
-                'learning_rate': 0.1,
+                'learning_rate': 0.05,    # Reduced learning rate
                 'depth': 6,
+                'l2_leaf_reg': 3.0,       # L2 regularization
+                'bagging_temperature': 1.0,
+                'subsample': 0.8,         # Bagging
+                'colsample_bylevel': 0.8, # Feature sampling
+                'early_stopping_rounds': 50,
                 'random_seed': 42,
                 'verbose': False
             },
             'LGBMREGRESSOR': {
                 'n_estimators': 1000,
-                'learning_rate': 0.1,
+                'learning_rate': 0.05,    # Reduced learning rate
                 'max_depth': 6,
+                'reg_alpha': 0.1,         # L1 regularization
+                'reg_lambda': 0.1,        # L2 regularization
+                'subsample': 0.8,         # Bagging
+                'colsample_bytree': 0.8,  # Feature sampling
+                'min_child_samples': 20,  # Prevent overfitting
+                'early_stopping_rounds': 50,
                 'random_state': 42,
                 'verbosity': -1
             },
             'RANDOMFORESTREGRESSOR': {
                 'n_estimators': 500,
                 'max_depth': 10,
+                'min_samples_split': 5,   # Prevent overfitting
+                'min_samples_leaf': 2,    # Prevent overfitting
+                'max_features': 'sqrt',   # Feature sampling
+                'bootstrap': True,        # Bagging
                 'random_state': 42
             },
             'RIDGE': {
                 'alpha': 1.0,
+                'solver': 'auto',
                 'random_state': 42
             }
         }

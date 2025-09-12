@@ -453,7 +453,7 @@ class HybridTacticianTrainer:
         return performance
     
     def _get_model_params(self, model_type: str) -> Dict[str, Any]:
-        """Get default parameters for model type."""
+        """Get default parameters for model type with overfitting prevention."""
         
         default_params = {
             'NODE': {
@@ -461,24 +461,38 @@ class HybridTacticianTrainer:
                 'n_a': 64,
                 'n_steps': 5,
                 'gamma': 1.5,
-                'lambda_sparse': 1e-3
+                'lambda_sparse': 1e-3,    # Sparsity regularization
+                'dropout': 0.1,           # Dropout for overfitting prevention
+                'l2_regularization': 0.01 # L2 regularization
             },
             'CATBOOSTREGRESSOR': {
                 'n_estimators': 1000,
-                'learning_rate': 0.1,
+                'learning_rate': 0.05,    # Reduced learning rate
                 'depth': 6,
+                'l2_leaf_reg': 3.0,       # L2 regularization
+                'bagging_temperature': 1.0,
+                'subsample': 0.8,         # Bagging
+                'colsample_bylevel': 0.8, # Feature sampling
+                'early_stopping_rounds': 50,
                 'random_seed': 42,
                 'verbose': False
             },
             'LGBMREGRESSOR': {
                 'n_estimators': 1000,
-                'learning_rate': 0.1,
+                'learning_rate': 0.05,    # Reduced learning rate
                 'max_depth': 6,
+                'reg_alpha': 0.1,         # L1 regularization
+                'reg_lambda': 0.1,        # L2 regularization
+                'subsample': 0.8,         # Bagging
+                'colsample_bytree': 0.8,  # Feature sampling
+                'min_child_samples': 20,  # Prevent overfitting
+                'early_stopping_rounds': 50,
                 'random_state': 42,
                 'verbosity': -1
             },
             'RIDGE': {
                 'alpha': 1.0,
+                'solver': 'auto',
                 'random_state': 42
             }
         }

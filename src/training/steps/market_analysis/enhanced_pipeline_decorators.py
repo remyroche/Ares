@@ -2,6 +2,7 @@
 from src.utils.tprint import tprint
 
 import pandas as pd
+from datetime import datetime
 from src.core.decorators import (
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
     handles_errors,
@@ -26,10 +27,6 @@ import time
 from pathlib import Path
 
 # Utility imports
-from src.utils.datetime_utils import (
-    get_current_datetime,
-    format_datetime,
-)
 from src.utils.file_utils import (
     ensure_directory,
     safe_json_dump,
@@ -548,7 +545,7 @@ class DataAccessProtectionDecorator:
         audit_info = {
             'function': function_name,
             'paths': paths,
-            'timestamp': format_datetime(get_current_datetime()),
+            'timestamp': datetime.now().isoformat(),
             'correlation_id': get_correlation_id(),
         }
         

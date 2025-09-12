@@ -100,22 +100,7 @@ try:
 except ImportError:
     SERIALIZATION_AVAILABLE = False
 
-try:
-    from .config_utils import (
-        EnvironmentConfig,
-        FileConfig,
-        ConfigManager,
-        get_env_var,
-        get_env_bool,
-        get_env_int,
-        get_env_float,
-        get_env_list,
-        load_config_file,
-        global_config
-    )
-    CONFIG_AVAILABLE = True
-except ImportError:
-    CONFIG_AVAILABLE = False
+CONFIG_AVAILABLE = False
 
 try:
     from .performance_utils import (

@@ -105,6 +105,13 @@ from .feature_generation_optimization import (
     optimize_feature_lookback
 )
 
+from .sr_feature_extractor import (
+    SRFeatureExtractor,
+    SRFeatureConfig,
+    get_sr_feature_extractor,
+    extract_sr_features
+)
+
 __all__ = [
     # Utility container
     'Step06UtilityContainer',
@@ -148,7 +155,13 @@ __all__ = [
     'FeatureOptimizationResult',
     'OptimizationMethod',
     'get_feature_optimizer',
-    'optimize_feature_lookback'
+    'optimize_feature_lookback',
+    
+    # SR feature extraction
+    'SRFeatureExtractor',
+    'SRFeatureConfig',
+    'get_sr_feature_extractor',
+    'extract_sr_features'
 ]
 
 __version__ = "1.0.0"

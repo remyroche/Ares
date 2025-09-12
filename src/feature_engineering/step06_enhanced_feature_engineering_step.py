@@ -94,6 +94,19 @@ class EnhancedFeatureEngineeringStep(BaseStep):
                 'ADX': [7, 14, 25],
                 'OBV': [10, 20, 50],
                 'MFI': [7, 14, 30]
+            },
+            # SR-specific configuration
+            'sr_detection_window': 20,
+            'min_touches_required': 3,
+            'touch_tolerance': 0.002,
+            'min_bounce_strength': 0.001,
+            'volume_threshold_multiplier': 1.5,
+            'use_pre_optimized_sr_parameters': True,
+            'sr_optimization_config': {
+                'optimization_method': 'adaptive_grid_search',
+                'enable_hardware_optimization': True,
+                'enable_parallel_processing': True,
+                'max_parallel_workers': None
             }
         })
         
@@ -255,6 +268,9 @@ class EnhancedFeatureEngineeringStep(BaseStep):
             self.logger.info(f'   Pipeline state keys: {list(pipeline_state.keys())}')
         
         try:
+            # Store pipeline state for SR feature extraction
+            self.pipeline_state = pipeline_state
+            
             # Step 1: Get and validate data
             data_dict = self._get_data_to_process(pipeline_state)
             self.logger.info(f'📊 Processing {len(data_dict)} data splits')
@@ -423,7 +439,54 @@ class EnhancedFeatureEngineeringStep(BaseStep):
         return regime_features
 
     def _create_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Create support/resistance features."""
+        """Create support/resistance features using comprehensive SR feature extractor."""
+        try:
+            # Import SR feature extractor
+            from .sr_feature_extractor import get_sr_feature_extractor, SRFeatureConfig
+            
+            # Create SR feature configuration
+            sr_config = SRFeatureConfig(
+                enable_basic_sr_features=True,
+                enable_advanced_sr_features=True,
+                enable_sr_bounce_signals=True,
+                enable_sr_strength_calculation=True,
+                enable_regime_aware_sr=True,
+                use_pre_optimized_parameters=True,
+                sr_detection_window=self.feature_config.get('sr_detection_window', 20),
+                min_touches_required=self.feature_config.get('min_touches_required', 3),
+                touch_tolerance=self.feature_config.get('touch_tolerance', 0.002),
+                min_bounce_strength=self.feature_config.get('min_bounce_strength', 0.001),
+                volume_threshold_multiplier=self.feature_config.get('volume_threshold_multiplier', 1.5)
+            )
+            
+            # Get SR feature extractor
+            sr_extractor = get_sr_feature_extractor(sr_config)
+            
+            # Extract SR levels if available in pipeline state
+            sr_levels = None
+            if hasattr(self, 'pipeline_state') and 'sr_levels' in self.pipeline_state:
+                sr_levels = self.pipeline_state['sr_levels']
+            
+            # Get regime labels if available
+            regime_labels = None
+            if 'regime_label' in data.columns:
+                regime_labels = data['regime_label']
+            
+            # Extract comprehensive SR features
+            sr_features = sr_extractor.extract_sr_features(data, sr_levels, regime_labels)
+            
+            self.logger.info(f"✅ Extracted {sr_features.shape[1]} comprehensive SR features")
+            return sr_features
+            
+        except ImportError as e:
+            self.logger.warning(f"SR feature extractor not available, using fallback: {e}")
+            return self._create_fallback_sr_features(data)
+        except Exception as e:
+            self.logger.error(f"SR feature extraction failed, using fallback: {e}")
+            return self._create_fallback_sr_features(data)
+    
+    def _create_fallback_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Create basic support/resistance features as fallback."""
         sr_features = pd.DataFrame(index=data.index)
         
         # Price position features

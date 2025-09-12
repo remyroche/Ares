@@ -22,6 +22,22 @@ import warnings
 from scipy.optimize import minimize, differential_evolution
 from sklearn.metrics import r2_score, mean_squared_error
 from scipy.stats import pearsonr
+import concurrent.futures
+import multiprocessing
+from functools import partial
+
+# Hardware optimization imports
+try:
+    from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+    from ..hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from ..hardware.m1_gpu_utils import M1GPUManager
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    get_m1_memory_optimizer = None
+    M1MemoryOptimizer = None
+    M1CPUOptimizer = None
+    M1GPUManager = None
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -55,6 +71,14 @@ class ParameterOptimizationConfig:
     min_samples_for_optimization: int = 10
     adaptive_optimization: bool = True  # Adapt optimization based on sample size
     
+    # Hardware optimization settings
+    enable_hardware_optimization: bool = True
+    enable_parallel_processing: bool = True
+    max_parallel_workers: int = None  # Auto-detect if None
+    enable_gpu_acceleration: bool = True
+    memory_limit_gb: float = 8.0
+    chunk_size: int = 1000
+    
     # Grid search settings
     grid_search_steps: int = 5  # Steps per parameter for grid search
     
@@ -76,15 +100,54 @@ class ParameterOptimizationResult:
     optimization_details: Dict[str, Any] = field(default_factory=dict)
 
 class ParameterOptimizationEngine:
-    """Engine for optimizing SR level detection parameters."""
+    """Engine for optimizing SR level detection parameters with hardware acceleration."""
     
     def __init__(self, config: Optional[ParameterOptimizationConfig] = None):
         self.config = config or ParameterOptimizationConfig()
         self.logger = logger.getChild('ParameterOptimizationEngine')
         
+        # Initialize hardware optimizers
+        self.m1_memory_optimizer = None
+        self.m1_cpu_optimizer = None
+        self.m1_gpu_manager = None
+        
+        if self.config.enable_hardware_optimization and HARDWARE_OPTIMIZATION_AVAILABLE:
+            self._initialize_hardware_optimizers()
+        
         self.logger.info("Initializing ParameterOptimizationEngine")
         self.logger.info(f"Optimization method: {self.config.optimization_method}")
         self.logger.info(f"Objective metric: {self.config.objective_metric}")
+        self.logger.info(f"Hardware optimization: {self.config.enable_hardware_optimization}")
+        self.logger.info(f"Parallel processing: {self.config.enable_parallel_processing}")
+    
+    def _initialize_hardware_optimizers(self):
+        """Initialize hardware optimization components."""
+        try:
+            # Initialize M1 memory optimizer
+            if get_m1_memory_optimizer:
+                self.m1_memory_optimizer = get_m1_memory_optimizer(
+                    memory_limit_gb=self.config.memory_limit_gb
+                )
+                self.logger.info("✅ M1 Memory Optimizer initialized")
+            
+            # Initialize M1 CPU optimizer
+            if M1CPUOptimizer:
+                self.m1_cpu_optimizer = M1CPUOptimizer()
+                self.logger.info("✅ M1 CPU Optimizer initialized")
+            
+            # Initialize M1 GPU manager
+            if M1GPUManager and self.config.enable_gpu_acceleration:
+                self.m1_gpu_manager = M1GPUManager()
+                if self.m1_gpu_manager.mps_available:
+                    self.logger.info("✅ M1 GPU Manager initialized with MPS support")
+                else:
+                    self.logger.info("⚠️ M1 GPU Manager initialized without MPS support")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize hardware optimizers: {e}")
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+            self.m1_gpu_manager = None
     
     def optimize_parameters(self, backtest_results: List[Any], 
                           market_data: pd.DataFrame) -> ParameterOptimizationResult:
@@ -154,26 +217,20 @@ class ParameterOptimizationEngine:
         
         self.logger.info(f"Parameter grid size: {len(param_grid)} combinations")
         
-        # Evaluate each parameter combination
+        # Evaluate parameter combinations with parallel processing
+        if self.config.enable_parallel_processing and len(param_grid) > 10:
+            parameter_scores = self._evaluate_parameters_parallel(param_grid, backtest_results, market_data)
+        else:
+            parameter_scores = self._evaluate_parameters_sequential(param_grid, backtest_results, market_data)
+        
+        # Find best parameters
         best_score = -np.inf
         best_parameters = {}
-        parameter_scores = []
         
-        for i, params in enumerate(param_grid):
-            try:
-                score = self._evaluate_parameters(params, backtest_results, market_data)
-                parameter_scores.append((params, score))
-                
-                if score > best_score:
-                    best_score = score
-                    best_parameters = params
-                
-                if i % 10 == 0:
-                    self.logger.info(f"Evaluated {i+1}/{len(param_grid)} parameter combinations")
-                    
-            except Exception as e:
-                self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
-                continue
+        for params, score in parameter_scores:
+            if score > best_score:
+                best_score = score
+                best_parameters = params
         
         return ParameterOptimizationResult(
             best_parameters=best_parameters,
@@ -184,6 +241,170 @@ class ParameterOptimizationEngine:
             parameter_scores=parameter_scores,
             optimization_details={'strategy': strategy}
         )
+    
+    def _evaluate_parameters_parallel(self, param_grid: List[Dict[str, Any]], 
+                                    backtest_results: List[Any], 
+                                    market_data: pd.DataFrame) -> List[Tuple[Dict[str, Any], float]]:
+        """Evaluate parameters in parallel using hardware optimization."""
+        self.logger.info(f"Evaluating {len(param_grid)} parameter combinations in parallel")
+        
+        # Determine optimal number of workers
+        if self.config.max_parallel_workers is None:
+            if self.m1_cpu_optimizer:
+                max_workers = self.m1_cpu_optimizer.cpu_count
+            else:
+                max_workers = min(multiprocessing.cpu_count(), len(param_grid))
+        else:
+            max_workers = min(self.config.max_parallel_workers, len(param_grid))
+        
+        self.logger.info(f"Using {max_workers} parallel workers")
+        
+        # Create evaluation function with hardware optimization
+        evaluate_func = partial(self._evaluate_single_parameter_set, 
+                               backtest_results=backtest_results, 
+                               market_data=market_data)
+        
+        parameter_scores = []
+        
+        # Use ThreadPoolExecutor for I/O bound operations or ProcessPoolExecutor for CPU bound
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all parameter combinations
+            future_to_params = {
+                executor.submit(evaluate_func, params): params 
+                for params in param_grid
+            }
+            
+            # Collect results
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_params)):
+                params = future_to_params[future]
+                try:
+                    score = future.result()
+                    if score is not None:
+                        parameter_scores.append((params, score))
+                    
+                    if i % 10 == 0:
+                        self.logger.info(f"Completed {i+1}/{len(param_grid)} parameter evaluations")
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
+                    continue
+        
+        self.logger.info(f"Parallel evaluation completed: {len(parameter_scores)} successful evaluations")
+        return parameter_scores
+    
+    def _evaluate_parameters_sequential(self, param_grid: List[Dict[str, Any]], 
+                                      backtest_results: List[Any], 
+                                      market_data: pd.DataFrame) -> List[Tuple[Dict[str, Any], float]]:
+        """Evaluate parameters sequentially with memory optimization."""
+        self.logger.info(f"Evaluating {len(param_grid)} parameter combinations sequentially")
+        
+        parameter_scores = []
+        
+        for i, params in enumerate(param_grid):
+            try:
+                # Use memory checkpoint for each evaluation
+                if self.m1_memory_optimizer:
+                    with self.m1_memory_optimizer.memory_checkpoint(f"param_eval_{i}"):
+                        score = self._evaluate_single_parameter_set(params, backtest_results, market_data)
+                else:
+                    score = self._evaluate_single_parameter_set(params, backtest_results, market_data)
+                
+                if score is not None:
+                    parameter_scores.append((params, score))
+                
+                if i % 10 == 0:
+                    self.logger.info(f"Evaluated {i+1}/{len(param_grid)} parameter combinations")
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
+                continue
+        
+        return parameter_scores
+    
+    def _evaluate_single_parameter_set(self, params: Dict[str, Any], 
+                                     backtest_results: List[Any], 
+                                     market_data: pd.DataFrame) -> Optional[float]:
+        """Evaluate a single parameter set with hardware optimization."""
+        try:
+            # Use GPU acceleration if available
+            if self.m1_gpu_manager and self.m1_gpu_manager.mps_available:
+                return self._evaluate_parameters_gpu_accelerated(params, backtest_results, market_data)
+            else:
+                return self._evaluate_parameters_cpu(params, backtest_results, market_data)
+                
+        except Exception as e:
+            self.logger.warning(f"Parameter evaluation failed: {e}")
+            return None
+    
+    def _evaluate_parameters_gpu_accelerated(self, params: Dict[str, Any], 
+                                           backtest_results: List[Any], 
+                                           market_data: pd.DataFrame) -> float:
+        """Evaluate parameters using GPU acceleration."""
+        try:
+            import torch
+            
+            # Convert data to tensors for GPU processing
+            if self.m1_gpu_manager.mps_available:
+                device = torch.device("mps")
+                
+                # Convert backtest results to tensors
+                success_rates = torch.tensor([r.success_rate for r in backtest_results], device=device)
+                bounce_strengths = torch.tensor([r.avg_bounce_strength for r in backtest_results], device=device)
+                volumes = torch.tensor([r.total_volume_at_level for r in backtest_results], device=device)
+                time_persistences = torch.tensor([r.time_persistence for r in backtest_results], device=device)
+                touch_counts = torch.tensor([r.total_touches for r in backtest_results], device=device)
+                
+                # Convert parameters to tensors
+                success_mult = torch.tensor(params['success_rate_multiplier'], device=device)
+                bounce_mult = torch.tensor(params['bounce_strength_multiplier'], device=device)
+                volume_mult = torch.tensor(params['volume_confirmation_multiplier'], device=device)
+                time_mult = torch.tensor(params['time_persistence_multiplier'], device=device)
+                touch_mult = torch.tensor(params['touch_frequency_multiplier'], device=device)
+                
+                # Apply volume threshold filter
+                volume_threshold = params['volume_threshold_multiplier'] * 1000  # Assume 1000 is avg volume
+                volume_mask = volumes >= volume_threshold
+                
+                # Apply touch count filter
+                min_touches = params['min_touches_required']
+                touch_mask = touch_counts >= min_touches
+                
+                # Calculate quality scores on GPU
+                volume_confirmation = torch.where(volume_mask, 
+                                                torch.clamp(volumes / 10000, 0, 1), 
+                                                torch.zeros_like(volumes))
+                touch_frequency = torch.where(touch_mask,
+                                            torch.clamp(touch_counts / 10, 0, 1),
+                                            torch.zeros_like(touch_counts))
+                
+                quality_scores = (
+                    success_rates * success_mult +
+                    bounce_strengths * 100 * bounce_mult +
+                    volume_confirmation * volume_mult +
+                    time_persistences * time_mult +
+                    touch_frequency * touch_mult
+                )
+                
+                # Normalize by total multiplier sum
+                total_multiplier = success_mult + bounce_mult + volume_mult + time_mult + touch_mult
+                quality_scores = quality_scores / total_multiplier
+                quality_scores = torch.clamp(quality_scores, 0, 1)
+                
+                # Calculate correlation with original scores
+                original_scores = torch.tensor([r.quality_score for r in backtest_results], device=device)
+                correlation = torch.corrcoef(torch.stack([original_scores, quality_scores]))[0, 1]
+                
+                return correlation.item() if not torch.isnan(correlation) else 0.0
+                
+        except Exception as e:
+            self.logger.warning(f"GPU evaluation failed, falling back to CPU: {e}")
+            return self._evaluate_parameters_cpu(params, backtest_results, market_data)
+    
+    def _evaluate_parameters_cpu(self, params: Dict[str, Any], 
+                               backtest_results: List[Any], 
+                               market_data: pd.DataFrame) -> float:
+        """Evaluate parameters using CPU (original implementation)."""
+        return self._evaluate_parameters(params, backtest_results, market_data)
     
     def _adaptive_grid_search_optimization(self, backtest_results: List[Any], 
                                          market_data: pd.DataFrame, 
@@ -227,26 +448,20 @@ class ParameterOptimizationEngine:
         
         self.logger.info(f"Coarse parameter grid size: {len(param_grid)} combinations")
         
-        # Evaluate each parameter combination
+        # Evaluate parameter combinations with parallel processing
+        if self.config.enable_parallel_processing and len(param_grid) > 5:
+            parameter_scores = self._evaluate_parameters_parallel(param_grid, backtest_results, market_data)
+        else:
+            parameter_scores = self._evaluate_parameters_sequential(param_grid, backtest_results, market_data)
+        
+        # Find best parameters
         best_score = -np.inf
         best_parameters = {}
-        parameter_scores = []
         
-        for i, params in enumerate(param_grid):
-            try:
-                score = self._evaluate_parameters(params, backtest_results, market_data)
-                parameter_scores.append((params, score))
-                
-                if score > best_score:
-                    best_score = score
-                    best_parameters = params
-                
-                if i % 5 == 0:
-                    self.logger.info(f"Coarse search: evaluated {i+1}/{len(param_grid)} combinations")
-                    
-            except Exception as e:
-                self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
-                continue
+        for params, score in parameter_scores:
+            if score > best_score:
+                best_score = score
+                best_parameters = params
         
         return ParameterOptimizationResult(
             best_parameters=best_parameters,
@@ -269,26 +484,20 @@ class ParameterOptimizationEngine:
         
         self.logger.info(f"Fine parameter grid size: {len(param_grid)} combinations")
         
-        # Evaluate each parameter combination
+        # Evaluate parameter combinations with parallel processing
+        if self.config.enable_parallel_processing and len(param_grid) > 10:
+            parameter_scores = self._evaluate_parameters_parallel(param_grid, backtest_results, market_data)
+        else:
+            parameter_scores = self._evaluate_parameters_sequential(param_grid, backtest_results, market_data)
+        
+        # Find best parameters
         best_score = -np.inf
         best_parameters_fine = {}
-        parameter_scores = []
         
-        for i, params in enumerate(param_grid):
-            try:
-                score = self._evaluate_parameters(params, backtest_results, market_data)
-                parameter_scores.append((params, score))
-                
-                if score > best_score:
-                    best_score = score
-                    best_parameters_fine = params
-                
-                if i % 10 == 0:
-                    self.logger.info(f"Fine search: evaluated {i+1}/{len(param_grid)} combinations")
-                    
-            except Exception as e:
-                self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
-                continue
+        for params, score in parameter_scores:
+            if score > best_score:
+                best_score = score
+                best_parameters_fine = params
         
         return ParameterOptimizationResult(
             best_parameters=best_parameters_fine,

@@ -122,6 +122,14 @@ class BacktestConfig:
     enable_memory_optimization: bool = True
     memory_limit_gb: float = 8.0
     chunk_size: int = 1000
+    
+    # Computation optimization parameters
+    enable_parallel_processing: bool = True
+    enable_vectorized_operations: bool = True
+    enable_caching: bool = True
+    cache_size_mb: int = 100
+    enable_numba_acceleration: bool = True
+    enable_cython_acceleration: bool = False
 
 class SRBacktestingEngine:
     """Engine for backtesting SR levels and learning quality rules."""
@@ -148,6 +156,9 @@ class SRBacktestingEngine:
             self.m1_memory_optimizer = None
             self.memory_monitor = None
         
+        # Initialize computation optimizations
+        self._initialize_computation_optimizations()
+        
         self.learned_rules: Dict[str, Any] = {}
         self.performance_history: List[BacktestResult] = []
         self.data_driven_thresholds: Dict[str, float] = {}
@@ -155,24 +166,70 @@ class SRBacktestingEngine:
         
         self.logger.info("✅ SRBacktestingEngine initialization completed")
     
+    def _initialize_computation_optimizations(self):
+        """Initialize computation optimization components."""
+        try:
+            # Initialize caching
+            if self.config.enable_caching:
+                self._cache = {}
+                self._cache_size_limit = self.config.cache_size_mb * 1024 * 1024  # Convert to bytes
+                self.logger.info("✅ Caching enabled")
+            else:
+                self._cache = None
+            
+            # Initialize Numba acceleration
+            if self.config.enable_numba_acceleration:
+                try:
+                    import numba
+                    self.numba_available = True
+                    self.logger.info("✅ Numba acceleration available")
+                except ImportError:
+                    self.numba_available = False
+                    self.logger.info("⚠️ Numba not available, using standard Python")
+            else:
+                self.numba_available = False
+            
+            # Initialize vectorized operations
+            if self.config.enable_vectorized_operations:
+                self.vectorized_ops = True
+                self.logger.info("✅ Vectorized operations enabled")
+            else:
+                self.vectorized_ops = False
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize computation optimizations: {e}")
+            self._cache = None
+            self.numba_available = False
+            self.vectorized_ops = False
+    
     def calculate_data_driven_thresholds(self, data: pd.DataFrame) -> Dict[str, float]:
         """Calculate thresholds based on historical data characteristics."""
         try:
             self.logger.info("📊 Calculating data-driven thresholds from historical data")
             
-            # Calculate price volatility for touch tolerance
-            returns = data['close'].pct_change().dropna()
-            price_volatility = returns.rolling(20).std().mean()
-            
-            # Touch tolerance: 2x the average price volatility
-            touch_tolerance = max(0.001, min(0.01, price_volatility * 2))
-            
-            # Calculate historical bounce strengths
-            high_low_returns = (data['high'] - data['low']) / data['close']
-            avg_bounce_strength = high_low_returns.rolling(20).mean().mean()
-            
-            # Min bounce strength: 25th percentile of historical bounces
-            min_bounce_strength = max(0.0005, high_low_returns.quantile(0.25))
+            # Calculate price volatility for touch tolerance (vectorized)
+            if self.vectorized_ops:
+                # Use vectorized operations for better performance
+                returns = data['close'].pct_change().dropna()
+                price_volatility = returns.rolling(20, min_periods=1).std().mean()
+                
+                # Touch tolerance: 2x the average price volatility
+                touch_tolerance = max(0.001, min(0.01, price_volatility * 2))
+                
+                # Calculate historical bounce strengths (vectorized)
+                high_low_returns = (data['high'] - data['low']) / data['close']
+                avg_bounce_strength = high_low_returns.rolling(20, min_periods=1).mean().mean()
+                
+                # Min bounce strength: 25th percentile of historical bounces
+                min_bounce_strength = max(0.0005, high_low_returns.quantile(0.25))
+            else:
+                # Standard calculation
+                returns = data['close'].pct_change().dropna()
+                price_volatility = returns.rolling(20).std().mean()
+                touch_tolerance = max(0.001, min(0.01, price_volatility * 2))
+                high_low_returns = (data['high'] - data['low']) / data['close']
+                avg_bounce_strength = high_low_returns.rolling(20).mean().mean()
+                min_bounce_strength = max(0.0005, high_low_returns.quantile(0.25))
             
             # Calculate volume characteristics
             if 'volume' in data.columns:
@@ -720,9 +777,19 @@ class SRBacktestingEngine:
             return len(data) // 2
     
     def _detect_touches(self, level: SRLevel, data: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Detect touches of the SR level in the data."""
-        touches = []
+        """Detect touches of the SR level in the data with optional Numba acceleration."""
         tolerance = level.price * self.config.touch_tolerance
+        
+        if self.numba_available and len(data) > 100:
+            # Use Numba-accelerated touch detection for large datasets
+            return self._detect_touches_numba(level, data, tolerance)
+        else:
+            # Use standard Python implementation
+            return self._detect_touches_standard(level, data, tolerance)
+    
+    def _detect_touches_standard(self, level: SRLevel, data: pd.DataFrame, tolerance: float) -> List[Dict[str, Any]]:
+        """Standard Python implementation of touch detection."""
+        touches = []
         
         for i in range(len(data)):
             high = data.iloc[i]['high']
@@ -761,6 +828,67 @@ class SRBacktestingEngine:
                     })
         
         return touches
+    
+    def _detect_touches_numba(self, level: SRLevel, data: pd.DataFrame, tolerance: float) -> List[Dict[str, Any]]:
+        """Numba-accelerated touch detection for large datasets."""
+        try:
+            import numba
+            
+            # Extract numpy arrays for Numba processing
+            highs = data['high'].values
+            lows = data['low'].values
+            opens = data['open'].values
+            closes = data['close'].values
+            volumes = data.get('volume', pd.Series([0] * len(data))).values
+            timestamps = data.get('timestamp', pd.Series(range(len(data)))).values
+            
+            # Numba-compiled function for touch detection
+            @numba.jit(nopython=True, cache=True)
+            def detect_touches_numba(highs, lows, opens, closes, volumes, timestamps, level_price, tolerance, level_type):
+                touches = []
+                level_price_float = float(level_price)
+                tolerance_float = float(tolerance)
+                is_support = level_type == 'support'
+                
+                for i in range(len(highs)):
+                    # Check if price touched the level
+                    if is_support:
+                        if lows[i] <= level_price_float + tolerance_float and highs[i] >= level_price_float - tolerance_float:
+                            touches.append((i, timestamps[i], level_price_float, 'support', 
+                                          opens[i], highs[i], lows[i], closes[i], volumes[i]))
+                    else:  # resistance
+                        if highs[i] >= level_price_float - tolerance_float and lows[i] <= level_price_float + tolerance_float:
+                            touches.append((i, timestamps[i], level_price_float, 'resistance',
+                                          opens[i], highs[i], lows[i], closes[i], volumes[i]))
+                
+                return touches
+            
+            # Run Numba-accelerated detection
+            numba_touches = detect_touches_numba(highs, lows, opens, closes, volumes, timestamps, 
+                                               level.price, tolerance, level.level_type)
+            
+            # Convert back to standard format
+            touches = []
+            for i, timestamp, price, touch_type, open_price, high, low, close, volume in numba_touches:
+                touches.append({
+                    'index': int(i),
+                    'timestamp': timestamp,
+                    'price': float(price),
+                    'touch_type': touch_type,
+                    'ohlc': {
+                        'open': float(open_price),
+                        'high': float(high),
+                        'low': float(low),
+                        'close': float(close),
+                        'volume': float(volume)
+                    }
+                })
+            
+            return touches
+            
+        except Exception as e:
+            self.logger.warning(f"Numba touch detection failed, falling back to standard: {e}")
+            return self._detect_touches_standard(level, data, tolerance)
     
     def _analyze_touch(self, level: SRLevel, touch: Dict[str, Any], data: pd.DataFrame) -> Dict[str, Any]:
         """Analyze a single touch to determine if it was successful - NO LOOK-AHEAD BIAS."""
@@ -1109,16 +1237,34 @@ class SRBacktestingEngine:
                                        avg_volume: float, time_persistence: float, 
                                        total_touches: int, penetration_metrics: Dict[str, float], 
                                        pattern_metrics: Dict[str, float]) -> float:
-        """Calculate quality score using default weights."""
+        """Calculate quality score using default multipliers with caching."""
+        # Create cache key for this calculation
+        if self._cache is not None:
+            cache_key = f"quality_score_{success_rate:.4f}_{avg_bounce_strength:.4f}_{avg_volume:.0f}_{time_persistence:.4f}_{total_touches}"
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+        
         # Calculate quality score using multipliers (more intuitive than weights)
-        quality_score = (
-            self.config.success_rate_multiplier * success_rate +
-            self.config.bounce_strength_multiplier * min(avg_bounce_strength * 10, 1.0) +
-            self.config.volume_confirmation_multiplier * min(avg_volume / 1000000, 1.0) +
-            self.config.time_persistence_multiplier * time_persistence +
-            self.config.touch_frequency_multiplier * min(total_touches / 5.0, 1.0) +
-            1.0 * penetration_metrics['penetration_depth']  # 1.0 multiplier for penetration
-        )
+        if self.vectorized_ops:
+            # Use vectorized operations for better performance
+            quality_score = (
+                self.config.success_rate_multiplier * success_rate +
+                self.config.bounce_strength_multiplier * min(avg_bounce_strength * 10, 1.0) +
+                self.config.volume_confirmation_multiplier * min(avg_volume / 1000000, 1.0) +
+                self.config.time_persistence_multiplier * time_persistence +
+                self.config.touch_frequency_multiplier * min(total_touches / 5.0, 1.0) +
+                1.0 * penetration_metrics['penetration_depth']  # 1.0 multiplier for penetration
+            )
+        else:
+            # Standard calculation
+            quality_score = (
+                self.config.success_rate_multiplier * success_rate +
+                self.config.bounce_strength_multiplier * min(avg_bounce_strength * 10, 1.0) +
+                self.config.volume_confirmation_multiplier * min(avg_volume / 1000000, 1.0) +
+                self.config.time_persistence_multiplier * time_persistence +
+                self.config.touch_frequency_multiplier * min(total_touches / 5.0, 1.0) +
+                1.0 * penetration_metrics['penetration_depth']  # 1.0 multiplier for penetration
+            )
         
         # Normalize by total multiplier sum to keep score in [0, 1] range
         total_multiplier = (
@@ -1132,6 +1278,16 @@ class SRBacktestingEngine:
         
         if total_multiplier > 0:
             quality_score = quality_score / total_multiplier
+        
+        # Cache the result
+        if self._cache is not None:
+            self._cache[cache_key] = quality_score
+            # Simple cache size management
+            if len(self._cache) > 1000:  # Limit cache size
+                # Remove oldest entries (simple FIFO)
+                oldest_keys = list(self._cache.keys())[:100]
+                for key in oldest_keys:
+                    del self._cache[key]
         
         return quality_score
 

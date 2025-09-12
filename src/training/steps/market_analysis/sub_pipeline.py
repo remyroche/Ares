@@ -705,19 +705,41 @@ class MarketAnalysisSubPipeline:
             if data is None or data.empty:
                 raise ValueError("No market data available for parameter optimization")
             
-            # Configure parameter optimization
+            # Configure parameter optimization with hardware optimizations
             param_config = ParameterOptimizationConfig(
                 optimization_method='adaptive_grid_search',  # New adaptive method
                 min_samples_for_optimization=10,
                 adaptive_optimization=True,
-                objective_metric='composite'  # Use composite metric
+                objective_metric='composite',  # Use composite metric
+                
+                # Hardware optimization settings
+                enable_hardware_optimization=True,
+                enable_parallel_processing=True,
+                max_parallel_workers=None,  # Auto-detect
+                enable_gpu_acceleration=True,
+                memory_limit_gb=8.0,
+                chunk_size=1000
             )
             
-            # Create backtesting engine
+            # Create backtesting engine with hardware optimizations
             backtest_config = BacktestConfig(
                 enable_parameter_optimization=True,
                 parameter_optimization_method='adaptive_grid_search',
-                min_samples_for_optimization=10
+                min_samples_for_optimization=10,
+                
+                # Hardware optimization settings
+                enable_m1_optimizations=True,
+                enable_gpu_acceleration=True,
+                enable_memory_optimization=True,
+                memory_limit_gb=8.0,
+                chunk_size=1000,
+                
+                # Computation optimization settings
+                enable_parallel_processing=True,
+                enable_vectorized_operations=True,
+                enable_caching=True,
+                cache_size_mb=100,
+                enable_numba_acceleration=True
             )
             
             engine = SRBacktestingEngine(backtest_config)

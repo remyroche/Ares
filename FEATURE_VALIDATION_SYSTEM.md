@@ -163,7 +163,7 @@ Each validation returns a comprehensive report:
     'issues': [
         "Feature 'my_feature' contains 10 infinite values",
         "Feature 'my_feature' contains 40 NaN values",
-        "Feature 'my_feature' has 2.1% zero values"  # NEW: 1% threshold
+        "Feature 'my_feature' has 2.1% zero values"  # NEW: triggers at 1%+ threshold
     ],
     'critical_issues': [
         "Feature 'my_feature' contains 10 infinite values",
@@ -195,7 +195,7 @@ Each validation returns a comprehensive report:
 
 - **New threshold**: 1% (was 50%)
 - **Rationale**: More sensitive detection of problematic features
-- **Example**: A feature with 2% zeros will now trigger a warning
+- **Example**: A feature with 1%+ zeros will now trigger a warning
 
 ## Best Practices
 
@@ -290,7 +290,7 @@ Potential future improvements to the validation system:
 
 ### Impact of Changes
 
-- **More Sensitive**: Features with just 2% zeros now trigger warnings
+- **More Sensitive**: Features with just 1%+ zeros now trigger warnings (was 50%+)
 - **Fewer False Positives**: Warm-up periods don't cause validation failures
 - **Better Production Ready**: Handles real-world data initialization patterns
 

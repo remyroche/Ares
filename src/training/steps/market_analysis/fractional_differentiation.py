@@ -2,48 +2,108 @@ from ...core.decorators import handles_errors, traced
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
-"""Fractional Differentiation for enhanced feature engineering.
+"""Fractional Differentiation for enhanced feature engineering with hardware optimizations.
 Implements fractional-order differentiation to preserve memory and maintain
-stationarity while avoiding over-differencing.
+stationarity while avoiding over-differencing, with M1 hardware optimizations.
 """
 from typing import Any, Optional, Dict, List, Tuple
 from statsmodels.tsa.stattools import adfuller
 from src.utils.logger import get_logger
+from src.utils.hardware.m1_optimizations import M1MemoryOptimizer
+from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
+from src.utils.vectorized_processing_core import VectorizedProcessingCore
+from src.utils.monitoring_utils import PerformanceMonitor
+from src.utils.error_handler import ErrorHandler
 import numpy as np
 import pandas as pd
 import logging
 
 class FractionalDifferentiation:
-    """Fractional differentiation for enhanced feature engineering.
+    """Advanced fractional differentiation with hardware optimizations.
 
     Replaces integer-order differentiation with fractional-order differentiation
     to preserve memory and maintain stationarity while avoiding over-differencing.
+    Includes M1 hardware optimizations, parallel processing, and vectorized operations.
 
     Key benefits:
     - Preserves long-term memory better than integer differentiation
     - Maintains stationarity without over-differencing
     - Captures persistent trends more effectively
     - Reduces feature multicollinearity
+    - M1 hardware optimizations for maximum performance
+    - Parallel processing for large datasets
+    - Vectorized operations for speed
     """
     @log_important_calls
 
-    def __init__(self, d: float = 0.5, threshold: float = 1e-05, window: int = 100, optimize_order: bool = True) -> None:
-        """Initialize fractional differentiation.
+    def __init__(self, d: float = 0.5, threshold: float = 1e-05, window: int = 100, optimize_order: bool = True, 
+                 config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize advanced fractional differentiation.
 
         Args:
             d: Fractional order (0 < d < 1)
             threshold: Minimum value threshold for stationarity
             window: Memory window for computation
             optimize_order: Whether to automatically optimize fractional order
+            config: Configuration dictionary for hardware optimizations
         """
         self.d = d
         self.threshold = threshold
         self.window = window
         self.optimize_order = optimize_order
+        self.config = config or {}
         self.weights = self._get_fractional_weights(window)
         self.logger = get_logger('FractionalDifferentiation')
+        
+        # Initialize hardware optimizations
+        self._initialize_hardware_optimizations()
+    
+    def _initialize_hardware_optimizations(self):
+        """Initialize hardware optimization utilities."""
+        try:
+            # Initialize M1 memory optimizer
+            self.memory_optimizer = M1MemoryOptimizer(
+                memory_limit_gb=self.config.get('memory_limit_gb', 8.0),
+                enable_gc_tuning=self.config.get('enable_gc_tuning', True),
+                enable_memory_leak_detection=self.config.get('enable_memory_leak_detection', True)
+            )
+            
+            # Initialize parallel processing optimizer
+            self.parallel_optimizer = MacM1ParallelOptimizer(
+                max_workers=self.config.get('max_workers', 4),
+                chunk_size=self.config.get('chunk_size', 1000),
+                use_process_pool=self.config.get('use_process_pool', True),
+                memory_limit_mb=self.config.get('memory_limit_mb', 2048)
+            )
+            
+            # Initialize vectorized processing core
+            self.vectorized_core = VectorizedProcessingCore(
+                enable_gpu_acceleration=self.config.get('enable_gpu_acceleration', False),
+                memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
+            )
+            
+            # Initialize performance monitor
+            self.performance_monitor = PerformanceMonitor(
+                enable_detailed_monitoring=self.config.get('enable_detailed_monitoring', True)
+            )
+            
+            # Initialize error handler
+            self.error_handler = ErrorHandler(
+                enable_graceful_degradation=self.config.get('enable_graceful_degradation', True)
+            )
+            
+            self.logger.info("✅ Hardware optimizations initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize some hardware optimizations: {e}")
+            # Fallback to basic functionality
+            self.memory_optimizer = None
+            self.parallel_optimizer = None
+            self.vectorized_core = None
+            self.performance_monitor = None
+            self.error_handler = None
+    
     @log_all_calls
-
     def _get_fractional_weights(self, window: int) -> np.ndarray:
         """Generate fractional differentiation weights using binomial expansion.
 
@@ -188,14 +248,15 @@ class FractionalDifferentiation:
 
     @handles_errors(fallback=(pd.DataFrame(), {}))
     @traced(span_name='FractionalDifferentiation.batch_fractional_diff')
-    def batch_fractional_diff(self, data: pd.DataFrame, columns: Optional[List[str]] = None, exclude_columns: Optional[List[str]] = None) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    def batch_fractional_diff(self, data: pd.DataFrame, columns: Optional[List[str]] = None, exclude_columns: Optional[List[str]] = None, use_parallel: bool = True) -> Tuple[pd.DataFrame, Dict[str, float]]:
         """
-        Apply fractional differentiation to multiple columns.
+        Apply fractional differentiation to multiple columns with parallel processing.
 
         Args:
             data: Input DataFrame
             columns: Columns to differentiate (if None, use all numeric columns)
             exclude_columns: Columns to exclude from differentiation
+            use_parallel: Whether to use parallel processing
 
         Returns:
             Tuple of (DataFrame with additional fractional differentiation features, optimization results)
@@ -219,38 +280,119 @@ class FractionalDifferentiation:
                 self.logger.warning('No valid columns found for fractional differentiation')
                 return data.copy(), {}
             
-            result_data = data.copy()
-            optimization_results = {}
-            successful_columns = 0
-            
-            self.logger.info(f'Processing {len(columns)} columns for fractional differentiation')
-            
-            for col in columns:
-                try:
-                    if data[col].isnull().all():
-                        self.logger.warning(f'Column {col} is all NaN, skipping')
-                        continue
-                    
-                    diff_series, optimal_d = self.apply_with_optimization(data[col])
-                    
-                    # Only add if we got a valid result
-                    if not diff_series.empty and not diff_series.isnull().all():
-                        result_data[f'{col}_frac_diff_{optimal_d:.3f}'] = diff_series
-                        optimization_results[col] = optimal_d
-                        successful_columns += 1
-                    else:
-                        self.logger.warning(f'Invalid result for column {col}, skipping')
-                        
-                except Exception as e:
-                    self.logger.error(f'Failed to apply fractional diff to {col}: {e}')
-                    continue
-            
-            self.logger.info(f'Successfully applied fractional differentiation to {successful_columns}/{len(columns)} columns')
-            return result_data, optimization_results
+            # Use parallel processing if available and requested
+            if use_parallel and self.parallel_optimizer and len(columns) > 4:
+                return self._batch_fractional_diff_parallel(data, columns)
+            else:
+                return self._batch_fractional_diff_sequential(data, columns)
             
         except Exception as e:
             self.logger.error(f'Error in batch fractional differentiation: {e}')
             return data.copy(), {}
+    
+    def _batch_fractional_diff_parallel(self, data: pd.DataFrame, columns: List[str]) -> Tuple[pd.DataFrame, Dict[str, float]]:
+        """Apply fractional differentiation using parallel processing."""
+        try:
+            self.logger.info(f'Using parallel processing for {len(columns)} columns')
+            
+            # Use memory optimizer if available
+            if self.memory_optimizer:
+                with self.memory_optimizer.memory_context():
+                    return self._execute_parallel_batch(data, columns)
+            else:
+                return self._execute_parallel_batch(data, columns)
+                
+        except Exception as e:
+            self.logger.warning(f'Parallel processing failed, falling back to sequential: {e}')
+            return self._batch_fractional_diff_sequential(data, columns)
+    
+    def _execute_parallel_batch(self, data: pd.DataFrame, columns: List[str]) -> Tuple[pd.DataFrame, Dict[str, float]]:
+        """Execute parallel batch processing."""
+        try:
+            # Split columns into chunks for parallel processing
+            column_chunks = [columns[i:i+self.parallel_optimizer.chunk_size] for i in range(0, len(columns), self.parallel_optimizer.chunk_size)]
+            
+            # Process chunks in parallel
+            results = []
+            for chunk in column_chunks:
+                chunk_result = self._process_column_chunk(data, chunk)
+                results.append(chunk_result)
+            
+            # Combine results
+            result_data = data.copy()
+            optimization_results = {}
+            
+            for chunk_data, chunk_optimization in results:
+                for col_name, col_data in chunk_data.items():
+                    if col_name not in data.columns:  # Skip original columns
+                        result_data[col_name] = col_data
+                optimization_results.update(chunk_optimization)
+            
+            successful_columns = len(optimization_results)
+            self.logger.info(f'Successfully applied parallel fractional differentiation to {successful_columns}/{len(columns)} columns')
+            
+            return result_data, optimization_results
+            
+        except Exception as e:
+            self.logger.error(f'Error in parallel batch execution: {e}')
+            return self._batch_fractional_diff_sequential(data, columns)
+    
+    def _process_column_chunk(self, data: pd.DataFrame, columns: List[str]) -> Tuple[Dict[str, pd.Series], Dict[str, float]]:
+        """Process a chunk of columns."""
+        chunk_data = {}
+        chunk_optimization = {}
+        
+        for col in columns:
+            try:
+                if data[col].isnull().all():
+                    self.logger.warning(f'Column {col} is all NaN, skipping')
+                    continue
+                
+                diff_series, optimal_d = self.apply_with_optimization(data[col])
+                
+                # Only add if we got a valid result
+                if not diff_series.empty and not diff_series.isnull().all():
+                    chunk_data[f'{col}_frac_diff_{optimal_d:.3f}'] = diff_series
+                    chunk_optimization[col] = optimal_d
+                else:
+                    self.logger.warning(f'Invalid result for column {col}, skipping')
+                    
+            except Exception as e:
+                self.logger.error(f'Failed to apply fractional diff to {col}: {e}')
+                continue
+        
+        return chunk_data, chunk_optimization
+    
+    def _batch_fractional_diff_sequential(self, data: pd.DataFrame, columns: List[str]) -> Tuple[pd.DataFrame, Dict[str, float]]:
+        """Apply fractional differentiation using sequential processing."""
+        result_data = data.copy()
+        optimization_results = {}
+        successful_columns = 0
+        
+        self.logger.info(f'Processing {len(columns)} columns sequentially for fractional differentiation')
+        
+        for col in columns:
+            try:
+                if data[col].isnull().all():
+                    self.logger.warning(f'Column {col} is all NaN, skipping')
+                    continue
+                
+                diff_series, optimal_d = self.apply_with_optimization(data[col])
+                
+                # Only add if we got a valid result
+                if not diff_series.empty and not diff_series.isnull().all():
+                    result_data[f'{col}_frac_diff_{optimal_d:.3f}'] = diff_series
+                    optimization_results[col] = optimal_d
+                    successful_columns += 1
+                else:
+                    self.logger.warning(f'Invalid result for column {col}, skipping')
+                    
+            except Exception as e:
+                self.logger.error(f'Failed to apply fractional diff to {col}: {e}')
+                continue
+        
+        self.logger.info(f'Successfully applied sequential fractional differentiation to {successful_columns}/{len(columns)} columns')
+        return result_data, optimization_results
 
 class FractionalFeatureGenerator:
     """High-level interface for generating fractional differentiation features."""
@@ -262,8 +404,34 @@ class FractionalFeatureGenerator:
         Args:
             config: Configuration dictionary
         """
-        self.config = config or {'enable_fractional_diff': True, 'default_d': 0.5, 'optimize_order': True, 'window': 100, 'threshold': 1e-05, 'price_columns': ['close', 'high', 'low', 'open'], 'volume_columns': ['volume'], 'exclude_columns': ['timestamp', 'datetime', 'date']}
-        self.fractional_diff = FractionalDifferentiation(d = self.config['default_d'], threshold = self.config['threshold'], window = self.config['window'], optimize_order = self.config['optimize_order'])
+        self.config = config or {
+            'enable_fractional_diff': True, 
+            'default_d': 0.5, 
+            'optimize_order': True, 
+            'window': 100, 
+            'threshold': 1e-05, 
+            'price_columns': ['close', 'high', 'low', 'open'], 
+            'volume_columns': ['volume'], 
+            'exclude_columns': ['timestamp', 'datetime', 'date'],
+            # Hardware optimization settings
+            'memory_limit_gb': 8.0,
+            'enable_gc_tuning': True,
+            'enable_memory_leak_detection': True,
+            'max_workers': 4,
+            'chunk_size': 1000,
+            'use_process_pool': True,
+            'memory_limit_mb': 2048,
+            'enable_gpu_acceleration': False,
+            'enable_detailed_monitoring': True,
+            'enable_graceful_degradation': True
+        }
+        self.fractional_diff = FractionalDifferentiation(
+            d=self.config['default_d'], 
+            threshold=self.config['threshold'], 
+            window=self.config['window'], 
+            optimize_order=self.config['optimize_order'],
+            config=self.config
+        )
         self.logger = get_logger('FractionalFeatureGenerator')
 
     @handles_errors(fallback=pd.DataFrame())

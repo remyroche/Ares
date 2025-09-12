@@ -232,9 +232,24 @@ class CombinedFractionalSystem:
             self.fractional_labeler = None
         
         try:
-            self.fractional_feature_generator = FractionalFeatureGenerator(
-                config = self.config.get('differentiation', {})
-            )
+            # Enhanced configuration with hardware optimizations
+            differentiation_config = self.config.get('differentiation', {})
+            enhanced_config = {
+                **differentiation_config,
+                # Hardware optimization settings
+                'memory_limit_gb': self.config.get('memory_limit_gb', 8.0),
+                'enable_gc_tuning': self.config.get('enable_gc_tuning', True),
+                'enable_memory_leak_detection': self.config.get('enable_memory_leak_detection', True),
+                'max_workers': self.config.get('max_workers', 4),
+                'chunk_size': self.config.get('chunk_size', 1000),
+                'use_process_pool': self.config.get('use_process_pool', True),
+                'memory_limit_mb': self.config.get('memory_limit_mb', 2048),
+                'enable_gpu_acceleration': self.config.get('enable_gpu_acceleration', False),
+                'enable_detailed_monitoring': self.config.get('enable_detailed_monitoring', True),
+                'enable_graceful_degradation': self.config.get('enable_graceful_degradation', True)
+            }
+            
+            self.fractional_feature_generator = FractionalFeatureGenerator(config=enhanced_config)
         except Exception as e:
             self.logger.error(f"Failed to initialize fractional feature generator: {e}")
             raise
@@ -553,7 +568,18 @@ def get_combined_fractional_config(
             'threshold': 1e-5,
             'optimize_order': True,
             'enable_parallel_processing': True,
-            'max_parallel_workers': 4
+            'max_parallel_workers': 4,
+            # Hardware optimization settings
+            'memory_limit_gb': 8.0,
+            'enable_gc_tuning': True,
+            'enable_memory_leak_detection': True,
+            'max_workers': 4,
+            'chunk_size': 1000,
+            'use_process_pool': True,
+            'memory_limit_mb': 2048,
+            'enable_gpu_acceleration': False,
+            'enable_detailed_monitoring': True,
+            'enable_graceful_degradation': True
         },
         'hmm_integration': hmm_integration_config or {
             'feature_enhancement': True,

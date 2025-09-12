@@ -502,10 +502,9 @@ class ReportingStep:
             else:
                 self.logger.warning(f"⚠️ No results found for {step_name}")
         
-        # Generate mock results if none found
+        # Fast fail if no results found
         if not backtesting_results:
-            self.logger.warning("⚠️ No backtesting results found, generating mock data")
-            backtesting_results = self._generate_mock_backtesting_results()
+            raise ValidationError("No backtesting results found. Please ensure backtesting steps have been executed first.")
         
         return backtesting_results
     
@@ -525,9 +524,8 @@ class ReportingStep:
                 self.logger.info(f"📁 Loading equity curve: {file_path}")
                 return standardized_parquet_handler.read_parquet_standardized(file_path)
         
-        # Generate mock equity curve if not found
-        self.logger.warning("⚠️ No equity curve found, generating mock data")
-        return self._generate_mock_equity_curve()
+        # Fast fail if no equity curve found
+        raise ValidationError("No equity curve data found. Please ensure backtesting steps have been executed first.")
     
     async def _load_trade_data(self) -> pd.DataFrame:
         """Load trade data."""
@@ -545,9 +543,8 @@ class ReportingStep:
                 self.logger.info(f"📁 Loading trade data: {file_path}")
                 return standardized_parquet_handler.read_parquet_standardized(file_path)
         
-        # Generate mock trade data if not found
-        self.logger.warning("⚠️ No trade data found, generating mock data")
-        return self._generate_mock_trade_data()
+        # Fast fail if no trade data found
+        raise ValidationError("No trade data found. Please ensure backtesting steps have been executed first.")
     
     async def _load_market_data(self) -> pd.DataFrame:
         """Load market data."""
@@ -560,7 +557,7 @@ class ReportingStep:
             self.logger.info(f"📁 Loading consolidated data: {consolidated_file}")
             return standardized_parquet_handler.read_parquet_standardized(consolidated_file)
         else:
-            self.logger.warning("⚠️ No market data found, using empty DataFrame")
+            self.logger.warning("⚠️ No market data found, some analysis features may be limited")
             return pd.DataFrame()
     
     def _validate_data(self, equity_curve: pd.DataFrame, trade_data: pd.DataFrame, market_data: pd.DataFrame) -> None:
@@ -582,67 +579,6 @@ class ReportingStep:
         
         self.logger.info("✅ Data validation completed successfully")
     
-    def _generate_mock_backtesting_results(self) -> Dict[str, Any]:
-        """Generate mock backtesting results for testing."""
-        mock_results = {}
-        
-        # Mock basic backtesting results
-        mock_results["basic_backtesting_pre"] = {
-            "symbol": self.config.symbol,
-            "exchange": self.config.exchange,
-            "timeframe": self.config.timeframe,
-            "total_return": 0.15,
-            "sharpe_ratio": 1.2,
-            "max_drawdown": -0.08,
-            "win_rate": 0.55,
-            "total_trades": 150,
-            "execution_time": 45.2
-        }
-        
-        return mock_results
-    
-    def _generate_mock_equity_curve(self) -> pd.DataFrame:
-        """Generate mock equity curve for testing."""
-        # Generate 252 trading days of data
-        dates = pd.date_range(start='2023-01-01', periods=252, freq='D')
-        
-        # Generate mock equity curve with some volatility
-        np.random.seed(42)
-        returns = np.random.normal(0.0008, 0.02, 252)  # ~20% annual volatility, 20% annual return
-        equity_values = 100000 * np.cumprod(1 + returns)
-        
-        equity_curve = pd.DataFrame({
-            'timestamp': dates,
-            'equity': equity_values,
-            'return': returns,
-            'cumulative_return': (equity_values / 100000) - 1
-        })
-        
-        equity_curve.set_index('timestamp', inplace=True)
-        return equity_curve
-    
-    def _generate_mock_trade_data(self) -> pd.DataFrame:
-        """Generate mock trade data for testing."""
-        # Generate 100 mock trades
-        np.random.seed(42)
-        n_trades = 100
-        
-        # Generate trade data
-        trade_data = pd.DataFrame({
-            'timestamp': pd.date_range(start='2023-01-01', periods=n_trades, freq='H'),
-            'side': np.random.choice(['BUY', 'SELL'], n_trades),
-            'size': np.random.uniform(0.1, 10.0, n_trades),
-            'price': np.random.uniform(1000, 2000, n_trades),
-            'fee': np.random.uniform(0.001, 0.01, n_trades),
-            'pnl': np.random.normal(0, 50, n_trades),
-            'duration_minutes': np.random.uniform(1, 1440, n_trades)
-        })
-        
-        # Add some realistic patterns
-        trade_data['pnl'] = trade_data['pnl'] * (1 + 0.1 * np.sin(np.arange(n_trades) * 0.1))
-        trade_data['size'] = trade_data['size'] * (1 + 0.2 * np.cos(np.arange(n_trades) * 0.05))
-        
-        return trade_data
     
     # Core Analysis Methods (merged from performance_analytics, risk_analysis, trade_analysis)
     

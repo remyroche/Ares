@@ -88,6 +88,10 @@ class FractionalFeatureSelector:
         
         self.logger.info("✅ Advanced Fractional Feature Selector initialized successfully")
     
+    def _initialize_hardware_optimizations(self):
+        """Initialize hardware optimization utilities (alias for _initialize_advanced_utilities)."""
+        return self._initialize_advanced_utilities()
+    
     def _initialize_advanced_utilities(self):
         """Initialize advanced utilities for feature selection."""
         try:

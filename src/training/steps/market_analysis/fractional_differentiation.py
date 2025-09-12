@@ -14,6 +14,12 @@ from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
 from src.utils.vectorized_processing_core import VectorizedProcessingCore
 from src.utils.monitoring_utils import PerformanceMonitor
 from src.utils.error_handler import ErrorHandler
+from src.utils.feature_selection.step08_advanced_feature_selection_per_regime import (
+    PerRegimeAdvancedFeatureSelectionStep
+)
+from src.utils.feature_selection.step08_unified_final import (
+    Step08UnifiedFinal
+)
 import numpy as np
 import pandas as pd
 import logging
@@ -92,6 +98,13 @@ class FractionalDifferentiation:
                 enable_graceful_degradation=self.config.get('enable_graceful_degradation', True)
             )
             
+            # Initialize Step08 advanced feature selection
+            step08_config = self._create_step08_config()
+            self.step08_selector = PerRegimeAdvancedFeatureSelectionStep(step08_config)
+            
+            # Initialize unified final selector
+            self.unified_selector = Step08UnifiedFinal()
+            
             self.logger.info("✅ Hardware optimizations initialized successfully")
             
         except Exception as e:
@@ -102,6 +115,22 @@ class FractionalDifferentiation:
             self.vectorized_core = None
             self.performance_monitor = None
             self.error_handler = None
+            self.step08_selector = None
+            self.unified_selector = None
+    
+    def _create_step08_config(self) -> Dict[str, Any]:
+        """Create configuration for Step08 advanced feature selection."""
+        return {
+            'per_regime_feature_selection': True,
+            'adaptive_feature_selection_per_regime': True,
+            'use_m1_optimizations': True,
+            'enable_gpu_acceleration': self.config.get('enable_gpu_acceleration', False),
+            'memory_limit_gb': self.config.get('memory_limit_gb', 8.0),
+            'max_workers': self.config.get('max_workers', 4),
+            'feature_selection_method': 'mutual_info',
+            'redundancy_threshold': 0.85,
+            'interpretability_weight': 0.3
+        }
     
     @log_all_calls
     def _get_fractional_weights(self, window: int) -> np.ndarray:

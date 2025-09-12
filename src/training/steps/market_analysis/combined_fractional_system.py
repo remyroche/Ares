@@ -14,6 +14,17 @@ from typing import Optional, Dict, Any, List, Tuple
 import pandas as pd
 
 from src.utils.logger import get_logger
+from src.utils.hardware.m1_optimizations import M1MemoryOptimizer
+from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
+from src.utils.vectorized_processing_core import VectorizedProcessingCore
+from src.utils.monitoring_utils import PerformanceMonitor
+from src.utils.error_handler import ErrorHandler
+from src.utils.feature_selection.step08_advanced_feature_selection_per_regime import (
+    PerRegimeAdvancedFeatureSelectionStep
+)
+from src.utils.feature_selection.step08_unified_final import (
+    Step08UnifiedFinal
+)
 from .quality_validation_decorator import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
@@ -266,7 +277,78 @@ class CombinedFractionalSystem:
         self.performance_history = []
         self.logger = get_logger("CombinedFractionalSystem")
         
+        # Initialize hardware optimizations
+        self._initialize_hardware_optimizations()
+        
         self.logger.info("✅ Combined Fractional System initialized successfully")
+    
+    def _initialize_hardware_optimizations(self):
+        """Initialize hardware optimization utilities."""
+        try:
+            # Initialize M1 memory optimizer
+            self.memory_optimizer = M1MemoryOptimizer(
+                memory_limit_gb=self.config.get('memory_limit_gb', 8.0),
+                enable_gc_tuning=self.config.get('enable_gc_tuning', True),
+                enable_memory_leak_detection=self.config.get('enable_memory_leak_detection', True)
+            )
+            
+            # Initialize parallel processing optimizer
+            self.parallel_optimizer = MacM1ParallelOptimizer(
+                max_workers=self.config.get('max_workers', 4),
+                chunk_size=self.config.get('chunk_size', 1000),
+                use_process_pool=self.config.get('use_process_pool', True),
+                memory_limit_mb=self.config.get('memory_limit_mb', 2048)
+            )
+            
+            # Initialize vectorized processing core
+            self.vectorized_core = VectorizedProcessingCore(
+                enable_gpu_acceleration=self.config.get('enable_gpu_acceleration', False),
+                memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
+            )
+            
+            # Initialize performance monitor
+            self.performance_monitor = PerformanceMonitor(
+                enable_detailed_monitoring=self.config.get('enable_detailed_monitoring', True)
+            )
+            
+            # Initialize error handler
+            self.error_handler = ErrorHandler(
+                enable_graceful_degradation=self.config.get('enable_graceful_degradation', True)
+            )
+            
+            # Initialize Step08 advanced feature selection
+            step08_config = self._create_step08_config()
+            self.step08_selector = PerRegimeAdvancedFeatureSelectionStep(step08_config)
+            
+            # Initialize unified final selector
+            self.unified_selector = Step08UnifiedFinal()
+            
+            self.logger.info("✅ Hardware optimizations initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize some hardware optimizations: {e}")
+            # Fallback to basic functionality
+            self.memory_optimizer = None
+            self.parallel_optimizer = None
+            self.vectorized_core = None
+            self.performance_monitor = None
+            self.error_handler = None
+            self.step08_selector = None
+            self.unified_selector = None
+    
+    def _create_step08_config(self) -> Dict[str, Any]:
+        """Create configuration for Step08 advanced feature selection."""
+        return {
+            'per_regime_feature_selection': True,
+            'adaptive_feature_selection_per_regime': True,
+            'use_m1_optimizations': True,
+            'enable_gpu_acceleration': self.config.get('enable_gpu_acceleration', False),
+            'memory_limit_gb': self.config.get('memory_limit_gb', 8.0),
+            'max_workers': self.config.get('max_workers', 4),
+            'feature_selection_method': 'mutual_info',
+            'redundancy_threshold': 0.85,
+            'interpretability_weight': 0.3
+        }
     
     @handles_errors("Combined fractional system processing")
     @validate_market_data_quality

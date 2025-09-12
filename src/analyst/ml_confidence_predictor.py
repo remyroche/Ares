@@ -541,7 +541,7 @@ class MLConfidencePredictor:
     async def _initialize_model_training_capabilities(self) -> None:
         """Initialize model training capabilities."""
         try:
-            self.training_config = self.config.get('model_training', {'enable_continuous_training': True, 'enable_adaptive_training': True, 'enable_incremental_training': True, 'training_interval_hours': 24, 'min_samples_for_retraining': 1000, 'performance_degradation_threshold': 0.1, 'enable_model_calibration': True, 'enable_ensemble_training': True, 'enable_regime_specific_training': True, 'enable_multi_timeframe_training': True, 'enable_dual_model_training': True, 'enable_confidence_calibration': True})
+            self.training_config = self.config.get('model_training', {'enable_continuous_training': True, 'enable_adaptive_training': True, 'enable_incremental_training': True, 'training_interval_hours': 24, 'min_samples_for_retraining': 1000, 'performance_degradation_threshold': 0.1, 'enable_model_calibration': True, 'enable_ensemble_training': True, 'enable_multi_timeframe_training': True, 'enable_dual_model_training': True, 'enable_confidence_calibration': True})
             self.last_training_time = None
             self.training_history = []
             self.model_performance_history = []
@@ -1429,7 +1429,7 @@ class MLConfidencePredictor:
                 return {'success': False, 'error': 'Enhanced training manager not available'}
             if not force_training and (not self._should_trigger_training()):
                 return {'success': False, 'reason': 'Training conditions not met', 'last_training': self.last_training_time, 'performance_degradation': self._calculate_performance_degradation()}
-            training_input = {'symbol': 'ETHUSDT', 'exchange': 'binance', 'timeframes': self.analyst_timeframes + self.tactician_timeframes, 'training_data': training_data, 'training_type': training_type, 'model_types': {'analyst': ['tcn', 'tabnet', 'transformer'], 'tactician': ['lstm', 'gru', 'transformer']}, 'enable_ensemble_training': self.training_config.get('enable_ensemble_training', True), 'enable_regime_specific_training': self.training_config.get('enable_regime_specific_training', True), 'enable_multi_timeframe_training': self.training_config.get('enable_multi_timeframe_training', True), 'enable_dual_model_training': self.training_config.get('enable_dual_model_training', True), 'enable_confidence_calibration': self.training_config.get('enable_confidence_calibration', True)}
+            training_input = {'symbol': 'ETHUSDT', 'exchange': 'binance', 'timeframes': self.analyst_timeframes + self.tactician_timeframes, 'training_data': training_data, 'training_type': training_type, 'model_types': {'analyst': ['tcn', 'tabnet', 'transformer'], 'tactician': ['lstm', 'gru', 'transformer']}, 'enable_ensemble_training': self.training_config.get('enable_ensemble_training', True), 'enable_multi_timeframe_training': self.training_config.get('enable_multi_timeframe_training', True), 'enable_dual_model_training': self.training_config.get('enable_dual_model_training', True), 'enable_confidence_calibration': self.training_config.get('enable_confidence_calibration', True)}
             training_success = await self.enhanced_training_manager.execute_enhanced_training(training_input)
             if training_success:
                 self.last_training_time = datetime.now()

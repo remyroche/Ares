@@ -22,6 +22,10 @@ from pathlib import Path
 # Import general training components
 from .general_model_training import GeneralModelTrainer, ModelTrainingConfig, ModelType, TaskType
 
+# Import enhanced training components
+from src.utils.ml_common.enhanced_model_trainer import EnhancedModelTrainer, EnhancedTrainingConfig
+from src.utils.ml_common.multi_timeframe_training import MultiTimeframeTrainer, MultiTimeframeTrainingConfig, TimeframeConfig
+
 # M1 Optimization imports
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer

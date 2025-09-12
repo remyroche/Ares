@@ -96,8 +96,7 @@ class AnalystTrainingConfig:
     ensemble_type: EnsembleType = EnsembleType.STACKING
     max_ensemble_models: int = 5
     
-    # Regime-specific configuration
-    enable_regime_specific_training: bool = True
+    # Regime-specific configuration (analyst models are inherently regime-specific)
     regime_columns: List[str] = field(default_factory=lambda: ['hmm_cluster', 'regime_id'])
     
     # Feature configuration
@@ -337,11 +336,10 @@ class AnalystModelTrainer:
             if target_col not in data.columns:
                 self.logger.warning(f"⚠️ Missing target column for {model_type}: {target_col}")
         
-        # Check regime columns if regime-specific training is enabled
-        if self.config.enable_regime_specific_training:
-            missing_regime_cols = [col for col in self.config.regime_columns if col not in data.columns]
-            if missing_regime_cols:
-                self.logger.warning(f"⚠️ Missing regime columns: {missing_regime_cols}")
+        # Check regime columns (analyst models are inherently regime-specific)
+        missing_regime_cols = [col for col in self.config.regime_columns if col not in data.columns]
+        if missing_regime_cols:
+            self.logger.warning(f"⚠️ Missing regime columns: {missing_regime_cols}")
         
         # Check for sufficient data
         if len(data) < 100:
@@ -443,10 +441,8 @@ class AnalystModelTrainer:
             except Exception as e:
                 self.logger.error(f"❌ Failed to train ensemble: {e}")
         
-        # Train regime-specific models if enabled with ML commons
-        regime_specific_results = {}
-        if self.config.enable_regime_specific_training:
-            regime_specific_results = await self._train_regime_specific_models_enhanced(data, **kwargs)
+        # Train regime-specific models (analyst models are inherently regime-specific)
+        regime_specific_results = await self._train_regime_specific_models_enhanced(data, **kwargs)
         
         # Calculate overall performance
         overall_performance = self._calculate_overall_performance(model_performance, ensemble_performance)

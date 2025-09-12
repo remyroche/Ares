@@ -60,12 +60,12 @@ class PerRegimeTrainingConfig(BaseTrainingConfig):
     
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
-        "GRU", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor"
+        "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor"
     ])
     
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
-        'GRU': {
+        'TCN': {
             'hidden_size': {'type': 'int', 'low': 32, 'high': 128},
             'num_layers': {'type': 'int', 'low': 1, 'high': 4},
             'dropout': {'type': 'float', 'low': 0.1, 'high': 0.5},
@@ -99,7 +99,7 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
     
     # Ensemble configuration
     base_models: List[str] = field(default_factory=lambda: [
-        "GRU", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor"
+        "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor"
     ])
     meta_model: str = "Ridge"
     
@@ -166,7 +166,7 @@ class HMMTrainingConfig(BaseTrainingConfig):
     
     # Model types
     model_types: List[str] = field(default_factory=lambda: [
-        "logistic_regression", "lightgbm", "gru"
+        "logistic_regression", "lightgbm", "tcn"
     ])
     
     # HPO configuration

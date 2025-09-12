@@ -67,8 +67,7 @@ class ModelType(Enum):
     NODE = "NODE"  # Neural Oblivious Decision Ensembles
     NODE_CLASSIFIER = "NODEClassifier"
     TIME_SERIES_TRANSFORMER = "TimeSeriesTransformer"
-    GRU = "GRU"  # Gated Recurrent Unit
-    TCN = "TCN"
+    TCN = "TCN"  # Temporal Convolutional Network
     LSTM = "LSTM"
     
     # Linear models
@@ -264,8 +263,6 @@ class EnhancedModelFactory:
                 model = self._create_tcn_model(model_config)
             elif model_config.model_type == ModelType.LSTM:
                 model = self._create_lstm_model(model_config)
-            elif model_config.model_type == ModelType.GRU:
-                model = self._create_gru_model(model_config)
             elif model_config.model_type in [ModelType.NODE, ModelType.NODE_CLASSIFIER]:
                 model = self._create_node_model(model_config)
             elif model_config.model_type in [ModelType.RIDGE, ModelType.RIDGE_CLASSIFIER]:
@@ -549,34 +546,40 @@ class EnhancedModelFactory:
         
         return LSTM(**model_config.model_params)
     
-    def _create_gru_model(self, model_config: ModelConfig) -> Any:
-        """Create GRU model with overfitting prevention."""
+    def _create_tcn_model(self, model_config: ModelConfig) -> Any:
+        """Create TCN model with overfitting prevention."""
         
         # Default parameters with overfitting prevention
         default_params = {
-            'hidden_size': 64,
-            'num_layers': 2,
+            'num_filters': 64,
+            'kernel_size': 3,
+            'dilations': [1, 2, 4, 8, 16, 32],
             'dropout': 0.2,           # Dropout for overfitting prevention
-            'recurrent_dropout': 0.1,  # Recurrent dropout
             'l2_regularization': 0.01, # L2 regularization
             'early_stopping_patience': 15,
             'batch_size': 32,
-            'epochs': 100
+            'epochs': 100,
+            'use_skip_connections': True,
+            'use_batch_norm': True
         }
         
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
         
         # This is a placeholder implementation
-        # In practice, you would implement a custom GRU class with proper overfitting prevention
-        class GRU:
+        # In practice, you would implement a custom TCN class with proper overfitting prevention
+        class TCN:
             def __init__(self, **kwargs):
                 self.params = kwargs
                 self.is_fitted = False
                 self.dropout = kwargs.get('dropout', 0.2)
-                self.recurrent_dropout = kwargs.get('recurrent_dropout', 0.1)
                 self.l2_regularization = kwargs.get('l2_regularization', 0.01)
                 self.early_stopping_patience = kwargs.get('early_stopping_patience', 15)
+                self.num_filters = kwargs.get('num_filters', 64)
+                self.kernel_size = kwargs.get('kernel_size', 3)
+                self.dilations = kwargs.get('dilations', [1, 2, 4, 8, 16, 32])
+                self.use_skip_connections = kwargs.get('use_skip_connections', True)
+                self.use_batch_norm = kwargs.get('use_batch_norm', True)
             
             def fit(self, X, y):
                 # Placeholder implementation with overfitting prevention
@@ -589,7 +592,7 @@ class EnhancedModelFactory:
                 # Placeholder implementation
                 return np.zeros(len(X))
         
-        return GRU(**params)
+        return TCN(**params)
     
     def _create_node_model(self, model_config: ModelConfig) -> Any:
         """Create Neural Oblivious Decision Ensembles (NODE) model with overfitting prevention."""
@@ -734,7 +737,7 @@ def create_analyst_models() -> Dict[str, Any]:
     
     # Analyst fixed models
     analyst_models = {
-        "gru": ModelType.GRU,  # Replaced Transformer with GRU
+        "tcn": ModelType.TCN,  # Temporal Convolutional Network
         "catboost": ModelType.CATBOOST,
         "lightgbm": ModelType.LIGHTGBM,
         "ensemble_rf": ModelType.RANDOM_FOREST

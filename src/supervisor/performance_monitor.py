@@ -705,42 +705,42 @@ class PerformanceMonitor:
                     "tcn": 1.1,
                     "transformer": 1.0,
                     "lstm": 0.9,
-                    "gru": 0.9,
+                    "tcn": 0.9,
                     "tabnet": 1.0,
                 },
                 "BEAR": {
                     "tcn": 0.9,
                     "transformer": 1.1,
                     "lstm": 1.0,
-                    "gru": 1.0,
+                    "tcn": 1.0,
                     "tabnet": 0.9,
                 },
                 "SIDEWAYS": {
                     "tcn": 1.0,
                     "transformer": 1.0,
                     "lstm": 1.1,
-                    "gru": 1.0,
+                    "tcn": 1.0,
                     "tabnet": 1.0,
                 },
                 "SR": {
                     "tcn": 1.2,
                     "transformer": 1.0,
                     "lstm": 0.8,
-                    "gru": 0.8,
+                    "tcn": 0.8,
                     "tabnet": 1.1,
                 },
                 "CANDLE": {
                     "tcn": 0.9,
                     "transformer": 1.2,
                     "lstm": 1.0,
-                    "gru": 1.0,
+                    "tcn": 1.0,
                     "tabnet": 0.9,
                 },
             }
 
             # Extract model type from name (e.g., "tcn", "transformer", etc.)
             model_type = None
-            for model_type_name in ["tcn", "transformer", "lstm", "gru", "tabnet"]:
+            for model_type_name in ["tcn", "transformer", "lstm", "tcn", "tabnet"]:
                 if model_type_name in model_name.lower():
                     model_type = model_type_name
                     break

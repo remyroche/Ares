@@ -1327,7 +1327,7 @@ class MarketAnalysisSubPipeline:
         try:
             # This would typically load from the saved base models
             # For now, return mock data
-            return {'logistic_regression': None, 'lightgbm': None, 'gru': None}
+            return {'logistic_regression': None, 'lightgbm': None, 'tcn': None}
             
         except Exception as e:
             self.logger.error(f"❌ Error loading base models: {e}")

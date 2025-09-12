@@ -110,7 +110,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         from sklearn.linear_model import LinearRegression
         
         mock_models = {
-            'gru_model': RandomForestRegressor(n_estimators=10, random_state=42),
+            'tcn_model': RandomForestRegressor(n_estimators=10, random_state=42),
             'catboost_model': RandomForestRegressor(n_estimators=10, random_state=43),
             'lightgbm_model': RandomForestRegressor(n_estimators=10, random_state=44),
             'rf_model': RandomForestRegressor(n_estimators=10, random_state=45)

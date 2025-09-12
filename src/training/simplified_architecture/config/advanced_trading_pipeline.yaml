@@ -278,7 +278,7 @@ steps:
     priority: 2
     parameters:
       model_types:
-        - "GRU"
+        - "TCN"
         - "CatBoostRegressor"
         - "LGBMRegressor"
         - "RandomForestRegressor"
@@ -324,7 +324,7 @@ steps:
     priority: 2
     parameters:
       base_models:
-        - "GRU"
+        - "TCN"
         - "CatBoostRegressor"
         - "LGBMRegressor"
         - "RandomForestRegressor"

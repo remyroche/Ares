@@ -20,12 +20,12 @@ from src.utils.ml_common.data_processing.feature_preparation import FeaturePrepa
 logger = system_logger.getChild('HMMModelsTrainingRefactored')
 
 
-class GRURegimePredictor:
-    """GRU-based regime predictor (more computationally friendly than LSTM)."""
+class TCNRegimePredictor:
+    """TCN-based regime predictor (more efficient than GRU with parallel processing)."""
     
     def __init__(self, sequence_length: int = 20, n_regimes: int = 3, 
                  hidden_units: int = 50, dropout_rate: float = 0.2):
-        """Initialize GRU regime predictor."""
+        """Initialize TCN regime predictor."""
         self.sequence_length = sequence_length
         self.n_regimes = n_regimes
         self.hidden_units = hidden_units
@@ -34,7 +34,7 @@ class GRURegimePredictor:
         self.scaler = StandardScaler()
         
     def _create_sequences(self, X: np.ndarray, y: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
-        """Create sequences for GRU training."""
+        """Create sequences for TCN training."""
         X_seq, y_seq = [], []
         
         for i in range(self.sequence_length, len(X)):
@@ -48,24 +48,32 @@ class GRURegimePredictor:
         return X_seq, y_seq
     
     def fit(self, X: np.ndarray, y: np.ndarray):
-        """Train GRU model."""
+        """Train TCN model."""
         # Scale features
         X_scaled = self.scaler.fit_transform(X)
         
         # Create sequences
         X_seq, y_seq = self._create_sequences(X_scaled, y)
         
-        # Build GRU model
+        # Build TCN model
         from tensorflow.keras.models import Sequential
-        from tensorflow.keras.layers import GRU, Dense, Dropout
+        from tensorflow.keras.layers import Dense, Dropout, Conv1D, BatchNormalization, GlobalMaxPooling1D
         from tensorflow.keras.optimizers import Adam
         from tensorflow.keras.callbacks import EarlyStopping
         
         self.model = Sequential([
-            GRU(self.hidden_units, return_sequences=True, input_shape=(self.sequence_length, X.shape[1])),
+            Conv1D(filters=self.hidden_units, kernel_size=3, activation='relu', 
+                   input_shape=(self.sequence_length, X.shape[1]), padding='causal'),
+            BatchNormalization(),
             Dropout(self.dropout_rate),
-            GRU(self.hidden_units // 2, return_sequences=False),
+            Conv1D(filters=self.hidden_units // 2, kernel_size=3, activation='relu', 
+                   padding='causal', dilation_rate=2),
+            BatchNormalization(),
             Dropout(self.dropout_rate),
+            Conv1D(filters=self.hidden_units // 4, kernel_size=3, activation='relu', 
+                   padding='causal', dilation_rate=4),
+            BatchNormalization(),
+            GlobalMaxPooling1D(),
             Dense(32, activation='relu'),
             Dropout(self.dropout_rate),
             Dense(self.n_regimes, activation='softmax')
@@ -151,7 +159,7 @@ class HMMModelsTrainingRefactored(BaseTrainingStep):
                 n_features=100,
                 sequence_length=20,
                 n_regimes=3,
-                model_types=["logistic_regression", "lightgbm", "gru"],
+                model_types=["logistic_regression", "lightgbm", "tcn"],
                 hpo_trials=100,
                 enable_multi_objective=True,
                 objectives=["accuracy", "f1_score", "regime_stability"],
@@ -186,7 +194,7 @@ class HMMModelsTrainingRefactored(BaseTrainingStep):
         self.logger.info("✅ HMM Models Training (Refactored) initialized")
     
     def get_base_models(self, is_classification: bool, n_regimes: int) -> Dict[str, Any]:
-        """Get specific base models: Logistic Regression + LightGBM + GRU."""
+        """Get specific base models: Logistic Regression + LightGBM + TCN."""
         from sklearn.linear_model import LogisticRegression, Ridge
         import lightgbm as lgb
         
@@ -201,7 +209,7 @@ class HMMModelsTrainingRefactored(BaseTrainingStep):
                     feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=5,
                     random_state=42, n_jobs=-1, class_weight='balanced'
                 ),
-                'gru': GRURegimePredictor(
+                'tcn': TCNRegimePredictor(
                     sequence_length=self.config.sequence_length,
                     n_regimes=n_regimes,
                     hidden_units=50,
@@ -216,7 +224,7 @@ class HMMModelsTrainingRefactored(BaseTrainingStep):
                     feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=5,
                     random_state=42, n_jobs=-1
                 ),
-                'gru': GRURegimePredictor(
+                'tcn': TCNRegimePredictor(
                     sequence_length=self.config.sequence_length,
                     n_regimes=n_regimes,
                     hidden_units=50,
@@ -317,8 +325,8 @@ class HMMModelsTrainingRefactored(BaseTrainingStep):
                 self.logger.info(f"🔄 Training base model: {name}")
                 
                 # Train model
-                if name == 'gru':
-                    # GRU has special training logic
+                if name == 'tcn':
+                    # TCN has special training logic
                     model.fit(X_selected.values, y)
                 else:
                     model.fit(X_selected.values, y)
@@ -421,7 +429,7 @@ if __name__ == "__main__":
         n_features=50,  # Reduced for demo
         sequence_length=20,
         n_regimes=3,
-        model_types=["logistic_regression", "lightgbm", "gru"],
+        model_types=["logistic_regression", "lightgbm", "tcn"],
         hpo_trials=50,  # Reduced for demo
         enable_multi_objective=True
     )

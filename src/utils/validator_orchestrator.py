@@ -274,13 +274,9 @@ class ValidatorOrchestrator:
             'step06_feature_engineering': 'step06_feature_engineering_validator',
             'step08_regime_data_splitting': 'step08_regime_data_splitting_validator',
             # Simplified model training steps
-            'general_model_training': 'general_model_training_validator',
             'analyst_model_training': 'analyst_model_training_validator',
             'tactician_model_training': 'tactician_model_training_validator',
             # Legacy step names for backward compatibility
-            'step09_5_multi_timeframe_hmm_ensemble': 'general_model_training_validator',
-            'step09_5_hmm_lm_generalist_training': 'general_model_training_validator',
-            'step10_unified_regime_intelligence': 'general_model_training_validator',
             'step11_analyst_creation': 'analyst_model_training_validator',
             'step12_analyst_enhancement': 'analyst_model_training_validator',
             'step13_analyst_ensemble_creation': 'analyst_model_training_validator',

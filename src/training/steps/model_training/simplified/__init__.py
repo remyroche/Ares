@@ -11,14 +11,15 @@ the complex steps 9-17 with three focused modules:
 All modules utilize M1 optimizations and modern ML practices.
 """
 
-from .general_model_training import (
-    GeneralModelTrainer,
-    ModelTrainingConfig,
-    ModelTrainingResults,
-    ModelType,
-    TaskType,
-    ModelFactory
-)
+# General model training has been removed from the pipeline
+# from .general_model_training import (
+#     GeneralModelTrainer,
+#     ModelTrainingConfig,
+#     ModelTrainingResults,
+#     ModelType,
+#     TaskType,
+#     ModelFactory
+# )
 
 # Note: analyst_model_training.py and tactician_model_training.py have been removed
 # Use the new comprehensive training steps instead:
@@ -28,13 +29,13 @@ from .general_model_training import (
 # - tactician_ensemble_training.py
 
 __all__ = [
-    # General Model Training
-    'GeneralModelTrainer',
-    'ModelTrainingConfig',
-    'ModelTrainingResults',
-    'ModelType',
-    'TaskType',
-    'ModelFactory'
+    # General model training has been removed from the pipeline
+    # 'GeneralModelTrainer',
+    # 'ModelTrainingConfig',
+    # 'ModelTrainingResults',
+    # 'ModelType',
+    # 'TaskType',
+    # 'ModelFactory'
 ]
 
 __version__ = "1.0.0"

@@ -564,18 +564,34 @@ class PerRegimePipelineOrchestrator:
         self.continuity_validator = RegimeContinuityValidator(self.config)
         self.pipeline_integrator = PerRegimePipelineIntegrator(self.config)
         
-        # Define pipeline steps
+        # Define pipeline steps based on current training pipeline structure
+        # These correspond to the sub-pipelines in model_training/sub_pipeline.py
         self.pipeline_steps = [
-            'step04_regime_data_splitting', 'step05_labeling', 'step06_feature_engineering', 
-            'step07_enhanced_matrix_operations', 'step08_advanced_feature_selection', 
-            'step10_unified_regime_intelligence', 'step11_analyst_creation', 
-            'step12_analyst_enhancement', 'step13_analyst_ensemble_creation', 
-            'step14_tactician_labeling', 'step15_tactician_specialist_training', 
-            'step16_confidence_calibration', 'step17_final_parameters_optimization', 
-            'step18_walk_forward_validation', 'step19_monte_carlo_validation', 
-            'step20_ab_testing', 'step21_saving'
+            'general_model_training',      # General ML models
+            'analyst_model_training',      # Analyst-specific models  
+            'tactician_model_training',    # Tactician-specific models
+            'hmm_training',               # HMM-based model training (includes regime re-tagging)
+            'ensemble_training',          # Ensemble model training
+            'multi_timeframe_training'    # Multi-timeframe model training
         ]
-        self.per_regime_steps = [step for step in self.pipeline_steps if step != 'step04_regime_data_splitting']
+        
+        # Steps that require per-regime processing (after HMM re-tagging)
+        self.per_regime_steps = [
+            'analyst_model_training',      # Uses HMM-retagged regimes
+            'tactician_model_training',    # Uses HMM-retagged regimes
+            'ensemble_training',          # Uses HMM-retagged regimes
+            'multi_timeframe_training'    # Uses HMM-retagged regimes
+        ]
+        
+        # Steps that use original MARKET_ANALYSIS regimes
+        self.market_analysis_regime_steps = [
+            'general_model_training'      # Uses original MARKET_ANALYSIS regimes
+        ]
+        
+        # Steps that handle regime re-tagging
+        self.regime_retagging_steps = [
+            'hmm_training'               # Re-tags regimes from MARKET_ANALYSIS to HMM
+        ]
     @log_all_calls
 
     def _load_per_regime_config(self) -> None:
@@ -654,14 +670,24 @@ class PerRegimePipelineOrchestrator:
             for step_name in steps_to_run:
                 self.logger.info(f'🔄 Executing step: {step_name}')
                 try:
-                    # Determine if step should use per-regime processing
-                    use_per_regime = self.pipeline_integrator.should_use_per_regime(step_name)
-                    
-                    if use_per_regime:
+                    # Determine step execution type based on regime requirements
+                    if step_name in self.regime_retagging_steps:
+                        # Steps that handle regime re-tagging (HMM training)
+                        step_success = await self._execute_regime_retagging_step(
+                            step_name, symbol, exchange, timeframe, data_dir, force_rerun
+                        )
+                    elif step_name in self.per_regime_steps:
+                        # Steps that use HMM-retagged regimes
                         step_success = await self._execute_per_regime_step(
                             step_name, symbol, exchange, timeframe, data_dir, force_rerun
                         )
+                    elif step_name in self.market_analysis_regime_steps:
+                        # Steps that use original MARKET_ANALYSIS regimes
+                        step_success = await self._execute_market_analysis_regime_step(
+                            step_name, symbol, exchange, timeframe, data_dir, force_rerun
+                        )
                     else:
+                        # Standard steps (fallback)
                         step_success = await self._execute_standard_step(
                             step_name, symbol, exchange, timeframe, data_dir, force_rerun
                         )
@@ -691,11 +717,31 @@ class PerRegimePipelineOrchestrator:
                             self.logger.error(f'🛑 Stopping pipeline due to critical step failure: {step_name}')
                             break
                     
-                    # Validate continuity after each per-regime step
-                    if use_per_regime and self.config.get('regime_continuity_validation', {}).get('validate_after_each_step', True):
-                        validation_result = await self.continuity_validator.validate_step_continuity(
-                            step_name, symbol, exchange, timeframe, data_dir
-                        )
+                    # Validate continuity after each step based on regime type
+                    should_validate = self.config.get('regime_continuity_validation', {}).get('validate_after_each_step', True)
+                    
+                    if should_validate:
+                        # Determine validation type based on step
+                        if step_name in self.regime_retagging_steps:
+                            # Special validation for regime re-tagging steps
+                            validation_result = await self._validate_regime_retagging_continuity(
+                                step_name, symbol, exchange, timeframe, data_dir
+                            )
+                        elif step_name in self.per_regime_steps:
+                            # Validation for HMM-retagged regime steps
+                            validation_result = await self.continuity_validator.validate_step_continuity(
+                                step_name, symbol, exchange, timeframe, data_dir
+                            )
+                        elif step_name in self.market_analysis_regime_steps:
+                            # Validation for MARKET_ANALYSIS regime steps
+                            validation_result = await self._validate_market_analysis_regime_continuity(
+                                step_name, symbol, exchange, timeframe, data_dir
+                            )
+                        else:
+                            # Standard validation
+                            validation_result = await self.continuity_validator.validate_step_continuity(
+                                step_name, symbol, exchange, timeframe, data_dir
+                            )
                         
                         if not validation_result.get('is_valid', True):
                             self.logger.warning(f'⚠️ Continuity validation failed for {step_name}: {validation_result.get("issues", [])}')
@@ -763,7 +809,7 @@ class PerRegimePipelineOrchestrator:
         data_dir: str, 
         force_rerun: bool
     ) -> bool:
-        """Execute a step with per-regime processing.
+        """Execute a step with per-regime processing (using HMM-retagged regimes).
         
         Args:
             step_name: Name of the step
@@ -777,40 +823,156 @@ class PerRegimePipelineOrchestrator:
             True if successful
         """
         try:
-            self.logger.info(f'🔄 Executing per-regime step: {step_name}')
+            self.logger.info(f'🔄 Executing per-regime step (HMM-retagged): {step_name}')
             
-            # Get step function from pipeline integrator
-            step_function = await self.pipeline_integrator.get_step_function(step_name)
-            if step_function is None:
-                self.logger.error(f'❌ No step function found for {step_name}')
-                return False
+            # Execute using the actual sub-pipeline structure
+            from .sub_pipeline import ModelTrainingSubPipeline, SubPipelineConfig
             
-            # Prepare step configuration
-            step_config = self.pipeline_integrator.update_step_config_for_regime(
-                step_name, self.config
-            )
-            
-            # Execute the step function
-            result = await step_function(
+            # Create sub-pipeline configuration
+            sub_config = SubPipelineConfig(
+                mode=self.config.get('mode', 'full'),
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
                 data_dir=data_dir,
                 force_rerun=force_rerun,
-                config=step_config
+                custom_params=self.config
             )
             
-            # Handle different result types
-            if isinstance(result, bool):
-                return result
-            elif isinstance(result, dict):
-                return result.get('success', False)
+            # Execute the specific sub-pipeline
+            sub_pipeline = ModelTrainingSubPipeline(sub_config)
+            result = await sub_pipeline.execute_sub_pipeline(step_name, sub_config)
+            
+            # Check if step completed successfully
+            if result.status.value == 'completed':
+                self.logger.info(f'✅ Per-regime step {step_name} completed using HMM-retagged regimes')
+                return True
             else:
-                self.logger.warning(f'⚠️ Unexpected result type for {step_name}: {type(result)}')
+                self.logger.error(f'❌ Per-regime step {step_name} failed: {result.error_message}')
                 return False
                 
         except Exception as e:
             self.logger.exception(f'❌ Error executing per-regime step {step_name}: {e}')
+            return False
+
+    @log_all_calls
+    async def _execute_regime_retagging_step(
+        self, 
+        step_name: str, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        data_dir: str, 
+        force_rerun: bool
+    ) -> bool:
+        """Execute a step that handles regime re-tagging (HMM training).
+        
+        Args:
+            step_name: Name of the step
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            data_dir: Data directory
+            force_rerun: Force rerun flag
+            
+        Returns:
+            True if successful
+        """
+        try:
+            self.logger.info(f'🔄 Executing regime re-tagging step: {step_name}')
+            
+            if step_name == 'hmm_training':
+                # Execute HMM training which includes regime re-tagging
+                from .sub_pipeline import ModelTrainingSubPipeline, SubPipelineConfig
+                
+                # Create sub-pipeline configuration
+                sub_config = SubPipelineConfig(
+                    mode=self.config.get('mode', 'full'),
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    data_dir=data_dir,
+                    force_rerun=force_rerun,
+                    custom_params=self.config
+                )
+                
+                # Execute HMM training sub-pipeline
+                sub_pipeline = ModelTrainingSubPipeline(sub_config)
+                result = await sub_pipeline.execute_sub_pipeline('hmm_training', sub_config)
+                
+                # Check if HMM training completed successfully
+                if result.status.value == 'completed':
+                    self.logger.info('✅ HMM training completed - regimes have been re-tagged')
+                    return True
+                else:
+                    self.logger.error(f'❌ HMM training failed: {result.error_message}')
+                    return False
+            else:
+                self.logger.error(f'❌ Unknown regime re-tagging step: {step_name}')
+                return False
+                
+        except Exception as e:
+            self.logger.exception(f'❌ Error executing regime re-tagging step {step_name}: {e}')
+            return False
+
+    @log_all_calls
+    async def _execute_market_analysis_regime_step(
+        self, 
+        step_name: str, 
+        symbol: str, 
+        exchange: str, 
+        timeframe: str, 
+        data_dir: str, 
+        force_rerun: bool
+    ) -> bool:
+        """Execute a step that uses original MARKET_ANALYSIS regimes.
+        
+        Args:
+            step_name: Name of the step
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            data_dir: Data directory
+            force_rerun: Force rerun flag
+            
+        Returns:
+            True if successful
+        """
+        try:
+            self.logger.info(f'🔄 Executing MARKET_ANALYSIS regime step: {step_name}')
+            
+            if step_name == 'general_model_training':
+                # Execute general model training using original MARKET_ANALYSIS regimes
+                from .sub_pipeline import ModelTrainingSubPipeline, SubPipelineConfig
+                
+                # Create sub-pipeline configuration
+                sub_config = SubPipelineConfig(
+                    mode=self.config.get('mode', 'full'),
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    data_dir=data_dir,
+                    force_rerun=force_rerun,
+                    custom_params=self.config
+                )
+                
+                # Execute general model training sub-pipeline
+                sub_pipeline = ModelTrainingSubPipeline(sub_config)
+                result = await sub_pipeline.execute_sub_pipeline('general_model_training', sub_config)
+                
+                # Check if general model training completed successfully
+                if result.status.value == 'completed':
+                    self.logger.info('✅ General model training completed using MARKET_ANALYSIS regimes')
+                    return True
+                else:
+                    self.logger.error(f'❌ General model training failed: {result.error_message}')
+                    return False
+            else:
+                self.logger.error(f'❌ Unknown MARKET_ANALYSIS regime step: {step_name}')
+                return False
+                
+        except Exception as e:
+            self.logger.exception(f'❌ Error executing MARKET_ANALYSIS regime step {step_name}: {e}')
             return False
 
     @log_all_calls

@@ -1318,17 +1318,30 @@ class MarketAnalysisSubPipeline:
             from src.utils.hmm_composite_manager import HMMCompositeManager
             hmm_manager = HMMCompositeManager()
 
-            # Prepare data in the format expected by hmm_clustering
-            hmm_data = data.copy()
-            # Add regime column if not present
-            if 'regime' not in hmm_data.columns:
-                # Generate regime assignments based on the detection result
-                import numpy as np
-                n_samples = len(hmm_data)
-                n_regimes = len(regime_result.regime_qualities) if hasattr(regime_result, 'regime_qualities') else 3
-                hmm_data['regime'] = np.random.choice(range(n_regimes), size=n_samples)
+            # Use the full regime result with probabilistic predictions
+            hmm_data = regime_result.copy()
+            
+            # Log probabilistic regime tagging information
+            regime_prob_cols = [col for col in hmm_data.columns if col.startswith('regime_') and col.endswith('_probability')]
+            regime_percent_cols = [col for col in hmm_data.columns if col.startswith('regime_') and col.endswith('_percentage')]
+            
+            if regime_prob_cols:
+                self.logger.info(f"✅ Probabilistic regime tagging implemented with {len(regime_prob_cols)} regime probabilities")
+                self.logger.info(f"   Probability columns: {regime_prob_cols}")
+            
+            if regime_percent_cols:
+                self.logger.info(f"✅ Regime percentages available: {regime_percent_cols}")
+            
+            # Log regime probability statistics
+            if 'regime_probability_entropy' in hmm_data.columns:
+                avg_entropy = hmm_data['regime_probability_entropy'].mean()
+                self.logger.info(f"📊 Average regime probability entropy: {avg_entropy:.3f} (lower = more confident)")
+            
+            if 'regime_confidence' in hmm_data.columns:
+                avg_confidence = hmm_data['regime_confidence'].mean()
+                self.logger.info(f"📊 Average regime confidence: {avg_confidence:.3f} (higher = more confident)")
 
-            # Save the HMM composite data
+            # Save the HMM composite data with full probabilistic regime tagging
             save_path = hmm_manager.get_composite_cluster_file_path(
                 exchange=config.exchange,
                 symbol=config.symbol,
@@ -1339,14 +1352,27 @@ class MarketAnalysisSubPipeline:
             # Ensure directory exists
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
 
-            # Save the data
+            # Save the data with probabilistic regime tagging
             standardized_parquet_handler.write_parquet(hmm_data, save_path)
 
-            self.logger.info(f"✅ HMM composite data saved to: {save_path}")
+            self.logger.info(f"✅ HMM composite data with probabilistic regime tagging saved to: {save_path}")
 
+            # Extract regime statistics from the result
+            n_regimes = len([col for col in hmm_data.columns if col.startswith('regime_') and col.endswith('_probability')])
+            regime_counts = hmm_data['regime'].value_counts().to_dict() if 'regime' in hmm_data.columns else {}
+            
             artifacts['regime_models'] = ['regime_model.pkl']
-            artifacts['regime_statistics'] = regime_result.regime_qualities
-            artifacts['regime_transitions'] = {'transition_matrix': regime_result.transition_matrix.tolist()}
+            artifacts['regime_statistics'] = {
+                'n_regimes': n_regimes,
+                'regime_counts': regime_counts,
+                'probabilistic_tagging': True,
+                'regime_probability_columns': regime_prob_cols,
+                'regime_percentage_columns': regime_percent_cols
+            }
+            artifacts['regime_transitions'] = {
+                'probabilistic_data_saved': True,
+                'data_path': save_path
+            }
 
         except Exception as e:
             self.logger.error(f"❌ HMM regime discovery failed: {e}")

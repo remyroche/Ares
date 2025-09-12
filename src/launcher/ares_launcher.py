@@ -242,7 +242,7 @@ class AresLauncher:
                 'next_stage': 'model_training',
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
                 'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata', 'cross_timeframe_features'],
-                'sub_pipelines': ['sr_detection', 'sr_clustering', 'sr_ml_learning', 'hmm_clustering',
+                'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
                                 'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
                                 'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis']
             },
@@ -858,7 +858,6 @@ class AresLauncher:
             # Market Analysis (10 sub-pipelines)
             'sr_detection': "Detect Support/Resistance levels",
             'sr_clustering': "Generate SR clusters",
-            'sr_ml_learning': "ML-based learning for SR clusters",
             'hmm_clustering': "HMM-based regime clustering",
             'hmm_regime_discovery': "Discover market regimes",
             'regime_data_splitting': "Split data by regimes",
@@ -910,8 +909,7 @@ class AresLauncher:
             
             # Market Analysis dependencies
             'sr_clustering': ['sr_detection'],
-            'sr_ml_learning': ['sr_clustering'],
-            'hmm_clustering': ['sr_ml_learning'],
+            'hmm_clustering': ['sr_clustering'],
             'hmm_regime_discovery': ['hmm_clustering'],
             'regime_data_splitting': ['hmm_regime_discovery'],
             'triple_barrier_labeling': ['regime_data_splitting'],
@@ -963,7 +961,6 @@ class AresLauncher:
             # Market Analysis outputs
             'sr_detection': ['sr_levels.json'],
             'sr_clustering': ['sr_clusters.json'],
-            'sr_ml_learning': ['sr_ml_model.pkl'],
             'hmm_clustering': ['hmm_clusters.json'],
             'hmm_regime_discovery': ['regime_assignments.parquet'],
             'regime_data_splitting': ['regime_splits.parquet'],

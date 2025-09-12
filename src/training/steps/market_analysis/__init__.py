@@ -2,7 +2,6 @@
 
 from .sr_detection import SRDetectionStep
 from .sr_clustering import SRClusteringStep
-from .sr_ml_learning import SRMLLearningStep
 from .sub_pipeline import MarketAnalysisSubPipeline
 
 # Backward compatibility alias
@@ -11,7 +10,6 @@ SROptimizationStep = MarketAnalysisSubPipeline
 __all__ = [
     'SRDetectionStep', 
     'SRClusteringStep',
-    'SRMLLearningStep',
     'MarketAnalysisSubPipeline',
     'SROptimizationStep'  # Backward compatibility alias
 ]

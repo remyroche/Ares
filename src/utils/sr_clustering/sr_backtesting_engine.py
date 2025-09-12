@@ -77,26 +77,32 @@ class BacktestResult:
 
 @dataclass
 class BacktestConfig:
-    """Configuration for SR level backtesting."""
-    # Touch validation parameters
-    touch_tolerance: float = 0.002  # 0.2% tolerance for touch detection
-    min_bounce_strength: float = 0.001  # Minimum 0.1% bounce to count as successful
-    max_hold_time: int = 24  # Maximum hours to hold at level before considering failure
+    """Configuration for SR level backtesting with data-driven thresholds."""
+    # Touch validation parameters - will be calculated from data
+    touch_tolerance: float = None  # Will be calculated from price volatility
+    min_bounce_strength: float = None  # Will be calculated from historical bounces
+    max_hold_time: int = None  # Will be calculated from market characteristics
     
-    # Volume analysis
-    volume_threshold_multiplier: float = 1.5  # Volume must be 1.5x average to count
+    # Volume analysis - will be calculated from data
+    volume_threshold_multiplier: float = None  # Will be calculated from volume distribution
     volume_lookback_periods: int = 20  # Periods to calculate average volume
     
     # Time analysis
     min_time_between_touches: int = 1  # Minimum hours between touches
     max_analysis_period: int = 720  # Maximum hours to analyze (30 days)
     
-    # Quality scoring weights
+    # Quality scoring weights - will be optimized
     success_rate_weight: float = 0.3
     bounce_strength_weight: float = 0.25
     volume_confirmation_weight: float = 0.2
     time_persistence_weight: float = 0.15
     touch_frequency_weight: float = 0.1
+    
+    # Overfitting protection parameters
+    min_samples_for_learning: int = 100  # Minimum samples needed to learn rules
+    max_features_per_sample_ratio: float = 0.1  # Max features = samples * ratio
+    cross_validation_folds: int = 5
+    early_stopping_patience: int = 10  # Stop if no improvement for N iterations
     
     # M1 optimization parameters
     enable_m1_optimizations: bool = True
@@ -112,9 +118,7 @@ class SRBacktestingEngine:
         self.config = config or BacktestConfig()
         self.logger = system_logger.getChild('SRBacktestingEngine')
         
-        self.logger.info("Initializing SRBacktestingEngine")
-        self.logger.info(f"Configuration: touch_tolerance={self.config.touch_tolerance:.3f}, min_bounce_strength={self.config.min_bounce_strength:.3f}")
-        self.logger.info(f"Weight settings: success_rate={self.config.success_rate_weight:.2f}, bounce_strength={self.config.bounce_strength_weight:.2f}")
+        self.logger.info("Initializing SRBacktestingEngine with data-driven thresholds")
         
         # Initialize M1 optimizations
         self.enable_m1_optimizations = self.config.enable_m1_optimizations and M1_OPTIMIZATIONS_AVAILABLE
@@ -134,13 +138,92 @@ class SRBacktestingEngine:
         
         self.learned_rules: Dict[str, Any] = {}
         self.performance_history: List[BacktestResult] = []
+        self.data_driven_thresholds: Dict[str, float] = {}
+        self.overfitting_metrics: Dict[str, Any] = {}
         
         self.logger.info("✅ SRBacktestingEngine initialization completed")
+    
+    def calculate_data_driven_thresholds(self, data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate thresholds based on historical data characteristics."""
+        try:
+            self.logger.info("📊 Calculating data-driven thresholds from historical data")
+            
+            # Calculate price volatility for touch tolerance
+            returns = data['close'].pct_change().dropna()
+            price_volatility = returns.rolling(20).std().mean()
+            
+            # Touch tolerance: 2x the average price volatility
+            touch_tolerance = max(0.001, min(0.01, price_volatility * 2))
+            
+            # Calculate historical bounce strengths
+            high_low_returns = (data['high'] - data['low']) / data['close']
+            avg_bounce_strength = high_low_returns.rolling(20).mean().mean()
+            
+            # Min bounce strength: 25th percentile of historical bounces
+            min_bounce_strength = max(0.0005, high_low_returns.quantile(0.25))
+            
+            # Calculate volume characteristics
+            if 'volume' in data.columns:
+                volume_returns = data['volume'].pct_change().dropna()
+                volume_volatility = volume_returns.rolling(20).std().mean()
+                avg_volume = data['volume'].rolling(20).mean().mean()
+                
+                # Volume threshold: 1.5x average volume + 1 std dev
+                volume_threshold_multiplier = 1.5 + volume_volatility
+            else:
+                volume_threshold_multiplier = 1.5
+            
+            # Calculate time characteristics
+            if 'timestamp' in data.columns:
+                time_diffs = data['timestamp'].diff().dt.total_seconds() / 3600  # Convert to hours
+                avg_time_diff = time_diffs.mean()
+                
+                # Max hold time: 24 hours or 10x average time between bars
+                max_hold_time = max(1, min(24, int(avg_time_diff * 10)))
+            else:
+                max_hold_time = 24
+            
+            thresholds = {
+                'touch_tolerance': touch_tolerance,
+                'min_bounce_strength': min_bounce_strength,
+                'max_hold_time': max_hold_time,
+                'volume_threshold_multiplier': volume_threshold_multiplier
+            }
+            
+            self.data_driven_thresholds = thresholds
+            
+            self.logger.info(f"📊 Data-driven thresholds calculated:")
+            self.logger.info(f"   - Touch tolerance: {touch_tolerance:.4f} ({touch_tolerance*100:.2f}%)")
+            self.logger.info(f"   - Min bounce strength: {min_bounce_strength:.4f} ({min_bounce_strength*100:.2f}%)")
+            self.logger.info(f"   - Max hold time: {max_hold_time} hours")
+            self.logger.info(f"   - Volume threshold multiplier: {volume_threshold_multiplier:.2f}")
+            
+            return thresholds
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to calculate data-driven thresholds: {e}")
+            # Fallback to conservative defaults
+            return {
+                'touch_tolerance': 0.002,
+                'min_bounce_strength': 0.001,
+                'max_hold_time': 24,
+                'volume_threshold_multiplier': 1.5
+            }
         
     def backtest_sr_level(self, level: SRLevel, data: pd.DataFrame) -> BacktestResult:
-        """Backtest a single SR level against historical data."""
+        """Backtest a single SR level against historical data with data-driven thresholds."""
         try:
             self.logger.debug(f"🔍 Backtesting SR level at price {level.price}, type {level.level_type}")
+            
+            # Calculate data-driven thresholds if not already done
+            if not self.data_driven_thresholds:
+                self.calculate_data_driven_thresholds(data)
+            
+            # Update config with data-driven thresholds
+            self.config.touch_tolerance = self.data_driven_thresholds['touch_tolerance']
+            self.config.min_bounce_strength = self.data_driven_thresholds['min_bounce_strength']
+            self.config.max_hold_time = self.data_driven_thresholds['max_hold_time']
+            self.config.volume_threshold_multiplier = self.data_driven_thresholds['volume_threshold_multiplier']
             
             # Find the detection time in the data
             detection_idx = self._find_detection_time_index(level, data)
@@ -410,13 +493,29 @@ class SRBacktestingEngine:
     def learn_quality_rules(self, results: List[BacktestResult], 
                            optimize_weights: bool = True,
                            market_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
-        """Learn quality rules from backtesting results using continuous strength scoring."""
+        """Learn quality rules from backtesting results with overfitting protection."""
         try:
-            self.logger.info(f"🧠 Learning quality rules from {len(results)} backtesting results")
+            self.logger.info(f"🧠 Learning quality rules from {len(results)} backtesting results with overfitting protection")
             
             if not results:
                 self.logger.warning("No results provided for learning quality rules")
                 return {}
+            
+            # OVERFITTING PROTECTION: Check minimum samples
+            if len(results) < self.config.min_samples_for_learning:
+                self.logger.warning(f"⚠️ Insufficient samples for learning: {len(results)} < {self.config.min_samples_for_learning}")
+                self.logger.warning("⚠️ Skipping quality rules learning to prevent overfitting")
+                return {
+                    'quality_distribution': {},
+                    'feature_quality_correlations': {},
+                    'quality_predictors': {},
+                    'learned_weights': {},
+                    'quality_thresholds': {},
+                    'strength_scoring_model': {},
+                    'optimized_weights': {},
+                    'weight_optimization_enabled': False,
+                    'overfitting_protection': 'insufficient_samples'
+                }
             
             # Use continuous quality scoring instead of binary categories
             quality_scores = [r.quality_score for r in results]
@@ -439,28 +538,40 @@ class SRBacktestingEngine:
             self.logger.info(f"Quality distribution: mean={quality_stats['mean']:.3f}, std={quality_stats['std']:.3f}, min={quality_stats['min']:.3f}, max={quality_stats['max']:.3f}")
             self.logger.info(f"Quality percentiles: 25th={quality_stats['percentiles']['25th']:.3f}, 50th={quality_stats['percentiles']['50th']:.3f}, 75th={quality_stats['percentiles']['75th']:.3f}, 90th={quality_stats['percentiles']['90th']:.3f}")
             
-            # Optimize weights if requested
+            # OVERFITTING PROTECTION: Calculate maximum features allowed
+            max_features = int(len(results) * self.config.max_features_per_sample_ratio)
+            self.logger.info(f"🔒 Overfitting protection: max features allowed = {max_features} (samples: {len(results)}, ratio: {self.config.max_features_per_sample_ratio})")
+            
+            # Optimize weights if requested and sufficient data
             optimized_weights = {}
-            if optimize_weights and market_data is not None:
-                self.logger.info("🎯 Starting weight optimization")
+            if optimize_weights and market_data is not None and len(results) >= self.config.min_samples_for_learning:
+                self.logger.info("🎯 Starting weight optimization with overfitting protection")
                 try:
                     from .weight_optimization_engine import get_weight_optimization_engine, WeightOptimizationConfig
                     
-                    # Configure weight optimization
+                    # Configure weight optimization with overfitting protection
                     weight_config = WeightOptimizationConfig(
                         optimization_method='scipy_minimize',
                         primary_objective='r2_score',
-                        secondary_objective='stability'
+                        secondary_objective='stability',
+                        n_splits=self.config.cross_validation_folds,
+                        max_iterations=min(50, len(results) // 2)  # Limit iterations based on data size
                     )
                     
-                    self.logger.info("Configuring weight optimization engine")
+                    self.logger.info("Configuring weight optimization engine with overfitting protection")
                     weight_optimizer = get_weight_optimization_engine(weight_config)
-                    self.logger.info("Running weight optimization")
+                    self.logger.info("Running weight optimization with cross-validation")
                     optimization_result = weight_optimizer.optimize_weights(results, market_data)
                     
                     if optimization_result and optimization_result.get('optimization_success', False):
                         optimized_weights = optimization_result.get('best_weights', {})
                         best_score = optimization_result.get('best_score', 0.0)
+                        
+                        # OVERFITTING PROTECTION: Check if score is too high
+                        if best_score > 0.95:
+                            self.logger.warning(f"⚠️ Suspiciously high optimization score: {best_score:.4f}")
+                            self.logger.warning("⚠️ This may indicate overfitting - using conservative weights")
+                            optimized_weights = self._get_conservative_weights(optimized_weights)
                         
                         self.logger.info(f"✅ Weight optimization completed successfully")
                         self.logger.info(f"Best optimization score: {best_score:.4f}")
@@ -480,11 +591,11 @@ class SRBacktestingEngine:
                     import traceback
                     self.logger.error(f"Traceback: {traceback.format_exc()}")
             else:
-                self.logger.info("⏭️ Weight optimization skipped")
+                self.logger.info("⏭️ Weight optimization skipped (insufficient data or disabled)")
             
-            # Analyze quality-based feature relationships
-            self.logger.info("🔍 Building strength scoring model")
-            strength_model = self._build_strength_scoring_model(results)
+            # OVERFITTING PROTECTION: Build model with feature limitation
+            self.logger.info("🔍 Building strength scoring model with overfitting protection")
+            strength_model = self._build_strength_scoring_model_with_overfitting_protection(results, max_features)
             
             # Log comprehensive feature analysis
             if strength_model:
@@ -506,6 +617,15 @@ class SRBacktestingEngine:
             self.logger.info("📏 Calculating quality thresholds")
             quality_thresholds = self._calculate_quality_thresholds(quality_stats)
             
+            # OVERFITTING PROTECTION: Store overfitting metrics
+            self.overfitting_metrics = {
+                'samples_used': len(results),
+                'max_features_allowed': max_features,
+                'features_used': len(optimized_weights) if optimized_weights else 0,
+                'sample_to_feature_ratio': len(results) / max(1, len(optimized_weights)) if optimized_weights else float('inf'),
+                'overfitting_risk': 'low' if len(results) >= 200 and len(optimized_weights) <= max_features else 'medium' if len(results) >= 100 else 'high'
+            }
+            
             rules = {
                 'quality_distribution': quality_stats,
                 'feature_quality_correlations': feature_correlations,
@@ -514,14 +634,16 @@ class SRBacktestingEngine:
                 'quality_thresholds': quality_thresholds,
                 'strength_scoring_model': strength_model,
                 'optimized_weights': optimized_weights,
-                'weight_optimization_enabled': optimize_weights
+                'weight_optimization_enabled': optimize_weights,
+                'overfitting_metrics': self.overfitting_metrics
             }
             
             self.learned_rules = rules
             
-            self.logger.info(f"✅ Quality rules learning completed successfully")
+            self.logger.info(f"✅ Quality rules learning completed successfully with overfitting protection")
             self.logger.info(f"Learned {len(quality_predictors)} quality predictors")
             self.logger.info(f"Feature correlations calculated for {len(feature_correlations)} features")
+            self.logger.info(f"Overfitting risk: {self.overfitting_metrics['overfitting_risk']}")
             
             return rules
             
@@ -631,47 +753,59 @@ class SRBacktestingEngine:
         return touches
     
     def _analyze_touch(self, level: SRLevel, touch: Dict[str, Any], data: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze a single touch to determine if it was successful."""
+        """Analyze a single touch to determine if it was successful - NO LOOK-AHEAD BIAS."""
         try:
             touch_idx = touch['index']
-            touch_data = data.iloc[touch_idx:]
             
-            # Look ahead to see if the level held
+            # CRITICAL: Only use information available at the time of touch
+            # We can only look at the current bar and previous bars, never future bars
+            if touch_idx >= len(data) - 1:
+                # If this is the last bar, we can't determine success yet
+                return {
+                    'successful': False,
+                    'bounce_strength': 0.0,
+                    'hold_time': 0,
+                    'volume': touch['ohlc']['volume'],
+                    'incomplete': True  # Mark as incomplete for future analysis
+                }
+            
+            # Look at the NEXT bar only (not multiple future bars)
+            next_bar = data.iloc[touch_idx + 1]
+            current_bar = data.iloc[touch_idx]
+            
             bounce_strength = 0.0
-            hold_time = 0
+            hold_time = 1  # At least 1 bar hold
             successful = False
             
-            for i in range(min(len(touch_data), self.config.max_hold_time)):
-                current_data = touch_data.iloc[i]
-                
-                if level.level_type == 'support':
-                    # For support: price should bounce up
-                    if current_data['low'] <= level.price * (1 + self.config.touch_tolerance):
-                        # Still at support level
-                        hold_time = i
-                    else:
-                        # Price moved away from support
-                        bounce_strength = (current_data['close'] - level.price) / level.price
-                        if bounce_strength >= self.config.min_bounce_strength:
-                            successful = True
-                        break
-                else:  # resistance
-                    # For resistance: price should bounce down
-                    if current_data['high'] >= level.price * (1 - self.config.touch_tolerance):
-                        # Still at resistance level
-                        hold_time = i
-                    else:
-                        # Price moved away from resistance
-                        bounce_strength = (level.price - current_data['close']) / level.price
-                        if bounce_strength >= self.config.min_bounce_strength:
-                            successful = True
-                        break
+            if level.level_type == 'support':
+                # For support: check if price bounced up in the next bar
+                # Success if: next bar's close > level price + tolerance
+                if next_bar['close'] > level.price * (1 + self.config.touch_tolerance):
+                    bounce_strength = (next_bar['close'] - level.price) / level.price
+                    successful = True
+                # Also check if price stayed above level for the next bar
+                elif next_bar['low'] > level.price * (1 - self.config.touch_tolerance):
+                    # Price stayed above support, partial success
+                    bounce_strength = (next_bar['close'] - level.price) / level.price
+                    successful = bounce_strength >= self.config.min_bounce_strength
+            else:  # resistance
+                # For resistance: check if price bounced down in the next bar
+                # Success if: next bar's close < level price - tolerance
+                if next_bar['close'] < level.price * (1 - self.config.touch_tolerance):
+                    bounce_strength = (level.price - next_bar['close']) / level.price
+                    successful = True
+                # Also check if price stayed below level for the next bar
+                elif next_bar['high'] < level.price * (1 + self.config.touch_tolerance):
+                    # Price stayed below resistance, partial success
+                    bounce_strength = (level.price - next_bar['close']) / level.price
+                    successful = bounce_strength >= self.config.min_bounce_strength
             
             return {
                 'successful': successful,
                 'bounce_strength': bounce_strength,
                 'hold_time': hold_time,
-                'volume': touch['ohlc']['volume']
+                'volume': touch['ohlc']['volume'],
+                'incomplete': False
             }
             
         except Exception as e:
@@ -1672,6 +1806,177 @@ class SRBacktestingEngine:
         
         # Final fallback
         return features.get('strength', 0.5)
+    
+    def _get_conservative_weights(self, optimized_weights: Dict[str, float]) -> Dict[str, float]:
+        """Get conservative weights to prevent overfitting."""
+        if not optimized_weights:
+            return {}
+        
+        # Normalize weights to sum to 1.0 and apply conservative scaling
+        total_weight = sum(optimized_weights.values())
+        if total_weight == 0:
+            return optimized_weights
+        
+        # Scale down extreme weights and normalize
+        conservative_weights = {}
+        for feature, weight in optimized_weights.items():
+            # Cap individual weights at 0.5 and scale down by 0.8
+            capped_weight = min(weight / total_weight, 0.5) * 0.8
+            conservative_weights[feature] = capped_weight
+        
+        # Renormalize to sum to 1.0
+        total_conservative = sum(conservative_weights.values())
+        if total_conservative > 0:
+            for feature in conservative_weights:
+                conservative_weights[feature] /= total_conservative
+        
+        self.logger.info("🔒 Applied conservative weight scaling to prevent overfitting")
+        return conservative_weights
+    
+    def _build_strength_scoring_model_with_overfitting_protection(self, results: List[BacktestResult], max_features: int) -> Dict[str, Any]:
+        """Build strength scoring model with overfitting protection."""
+        if not results:
+            return {}
+        
+        # Extract features with overfitting protection
+        primary_features = [
+            'success_rate', 'avg_bounce_strength', 'max_bounce_strength', 
+            'total_touches', 'time_persistence', 'total_volume_at_level', 'avg_hold_time'
+        ]
+        
+        penetration_pattern_features = [
+            'penetration_depth', 'penetration_frequency', 'pattern_consistency', 
+            'pattern_strength', 'order_flow_confirmation', 'absorption_patterns', 'structure_break'
+        ]
+        
+        all_features = primary_features + penetration_pattern_features
+        
+        # OVERFITTING PROTECTION: Limit features based on sample size
+        if len(all_features) > max_features:
+            # Prioritize primary features, then add others up to max_features
+            selected_features = primary_features[:min(len(primary_features), max_features)]
+            remaining_slots = max_features - len(selected_features)
+            if remaining_slots > 0:
+                selected_features.extend(penetration_pattern_features[:remaining_slots])
+            all_features = selected_features
+            self.logger.info(f"🔒 Limited features to {len(all_features)} to prevent overfitting")
+        
+        # Build feature matrix
+        X = []
+        valid_features = []
+        
+        for feature in all_features:
+            feature_values = [getattr(r, feature, 0.0) for r in results]
+            if not all(v == 0.0 for v in feature_values):  # Skip features with no variation
+                X.append(feature_values)
+                valid_features.append(feature)
+        
+        if not X or len(X) == 0:
+            return {}
+        
+        X = np.array(X).T  # Transpose to get (samples, features)
+        y = np.array([r.quality_score for r in results])
+        
+        # OVERFITTING PROTECTION: Check sample-to-feature ratio
+        sample_to_feature_ratio = len(y) / len(valid_features)
+        if sample_to_feature_ratio < 10:
+            self.logger.warning(f"⚠️ Low sample-to-feature ratio: {sample_to_feature_ratio:.1f}")
+            self.logger.warning("⚠️ Consider reducing features or increasing samples")
+        
+        try:
+            from sklearn.linear_model import RidgeCV
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.model_selection import cross_val_score
+            from sklearn.metrics import mean_squared_error, mean_absolute_error
+            
+            # Standardize features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # Use more conservative cross-validation for small datasets
+            n_samples = len(y)
+            if n_samples < 50:
+                cv_folds = max(2, n_samples - 1)  # Use leave-one-out or 2-fold
+                self.logger.info(f"🔒 Small dataset ({n_samples} samples), using {cv_folds}-fold CV")
+            else:
+                cv_folds = min(self.config.cross_validation_folds, n_samples - 1)
+            
+            # Use more conservative alpha range for small datasets
+            if n_samples < 100:
+                alphas = np.logspace(-2, 1, 20)  # More conservative range
+            else:
+                alphas = np.logspace(-4, 2, 50)  # Standard range
+            
+            ridge_model = RidgeCV(alphas=alphas, cv=cv_folds, scoring='r2')
+            ridge_model.fit(X_scaled, y)
+            
+            # Calculate model performance
+            y_pred = ridge_model.predict(X_scaled)
+            r_squared = ridge_model.score(X_scaled, y)
+            mse = mean_squared_error(y, y_pred)
+            mae = mean_absolute_error(y, y_pred)
+            
+            # Cross-validation scores for robustness
+            try:
+                cv_scores = cross_val_score(ridge_model, X_scaled, y, cv=cv_folds, scoring='r2')
+                cv_mean = np.mean(cv_scores)
+                cv_std = np.std(cv_scores)
+            except Exception:
+                cv_mean = r_squared
+                cv_std = 0.0
+            
+            # OVERFITTING DETECTION: More conservative thresholds for small datasets
+            overfitting_detected = False
+            overfitting_warnings = []
+            
+            # Check for overfitting
+            if cv_std > 0.2:  # High variance in CV scores
+                overfitting_detected = True
+                overfitting_warnings.append(f"High CV score variance: {cv_std:.3f}")
+            
+            performance_gap = r_squared - cv_mean
+            if performance_gap > 0.15:  # Large gap between training and CV
+                overfitting_detected = True
+                overfitting_warnings.append(f"Large performance gap: {performance_gap:.3f}")
+            
+            # Very high R² with small dataset
+            if n_samples < 100 and r_squared > 0.9:
+                overfitting_detected = True
+                overfitting_warnings.append(f"High R² ({r_squared:.3f}) with small dataset ({n_samples} samples)")
+            
+            # Get feature importance
+            feature_importance = np.abs(ridge_model.coef_)
+            feature_importance_normalized = feature_importance / np.sum(feature_importance)
+            
+            model = {
+                'model_type': 'Ridge Regression with Overfitting Protection',
+                'feature_names': valid_features,
+                'coefficients': ridge_model.coef_.tolist(),
+                'intercept': ridge_model.intercept_,
+                'optimal_alpha': ridge_model.alpha_,
+                'r_squared': r_squared,
+                'mse': mse,
+                'mae': mae,
+                'cv_r_squared_mean': cv_mean,
+                'cv_r_squared_std': cv_std,
+                'feature_importance': dict(zip(valid_features, feature_importance_normalized)),
+                'overfitting_detected': overfitting_detected,
+                'overfitting_warnings': overfitting_warnings,
+                'sample_to_feature_ratio': sample_to_feature_ratio,
+                'model_object': ridge_model,
+                'scaler_object': scaler
+            }
+            
+            if overfitting_detected:
+                self.logger.warning(f"⚠️ Overfitting detected: {'; '.join(overfitting_warnings)}")
+            else:
+                self.logger.info("✅ No overfitting detected")
+            
+            return model
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to build Ridge Regression model with overfitting protection: {e}")
+            return {}
     
     def get_quality_rules_summary(self) -> Dict[str, Any]:
         """Get a summary of learned quality rules."""

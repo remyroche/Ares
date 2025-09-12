@@ -52,20 +52,7 @@ from .enhanced_market_analysis_with_triple_barrier import (
     quick_triple_barrier_analysis
 )
 
-# Import hardware-optimized triple barrier labeling module
-try:
-    from .hardware_optimized_triple_barrier_labeling import (
-        HardwareOptimizedTripleBarrierLabeling,
-        HardwareOptimizedConfig,
-        apply_hardware_optimized_triple_barrier_labeling,
-        apply_hardware_optimized_regime_aware_triple_barrier_labeling,
-        get_hardware_optimization_info
-    )
-    HARDWARE_OPTIMIZED_AVAILABLE = True
-except ImportError as e:
-    HARDWARE_OPTIMIZED_AVAILABLE = False
-    import logging
-    logging.warning(f"Hardware-optimized triple barrier labeling not available: {e}")
+# Hardware optimizations are now integrated into the main triple_barrier_labeling module
 
 # Version information
 __version__ = "1.0.0"
@@ -78,8 +65,7 @@ COMPONENTS = [
     "triple_barrier_labeling",
     "regime_aware_triple_barrier_optimizer", 
     "triple_barrier_validator",
-    "enhanced_market_analysis_with_triple_barrier",
-    "hardware_optimized_triple_barrier_labeling"
+    "enhanced_market_analysis_with_triple_barrier"
 ]
 
 # Convenience function to get module information
@@ -96,7 +82,7 @@ def get_module_info():
             "Triple barrier labeling with regime awareness",
             "HMM regime detection and clustering",
             "Performance optimization with Numba acceleration",
-            "Hardware-specific optimizations for M1/M2/M3 Macs",
+            "Integrated hardware optimizations for M1/M2/M3 Macs",
             "Advanced memory management and optimization",
             "GPU acceleration support (MPS)",
             "Comprehensive validation framework",
@@ -196,12 +182,6 @@ __all__ = [
     "run_enhanced_market_analysis_with_triple_barrier",
     "quick_triple_barrier_analysis",
     
-    # Hardware-optimized components (if available)
-    "HardwareOptimizedTripleBarrierLabeling",
-    "HardwareOptimizedConfig",
-    "apply_hardware_optimized_triple_barrier_labeling",
-    "apply_hardware_optimized_regime_aware_triple_barrier_labeling",
-    "get_hardware_optimization_info",
     
     # Utility functions
     "get_module_info",

@@ -1242,10 +1242,9 @@ class EnhancedHMMRegimeDetector:
                 # Calculate time differences
                 time_diffs = timestamps.diff().dt.total_seconds()
 
-                # Determine expected interval based on data characteristics
+                # Determine expected interval and data-type specific thresholds
                 expected_interval = self._determine_expected_interval(data, timestamps)
-                gap_threshold = expected_interval * 2  # Consider gaps 2x the expected interval as significant
-                download_threshold = expected_interval * 3  # Attempt download for gaps 3x the expected interval
+                gap_threshold, download_threshold = self._get_data_type_specific_thresholds(expected_interval)
 
                 self.logger.info(f"📊 Expected data interval: {expected_interval:.1f}s")
                 self.logger.info(f"📊 Gap detection threshold: {gap_threshold:.1f}s")
@@ -1334,6 +1333,69 @@ class EnhancedHMMRegimeDetector:
         except Exception as e:
             self.logger.warning(f"⚠️ Error determining expected interval: {e}, assuming 60s")
             return 60.0
+
+    def _get_data_type_specific_thresholds(self, expected_interval: float) -> Tuple[float, float]:
+        """Get data-type specific gap detection and download thresholds."""
+        try:
+            # Define thresholds based on data type
+            if expected_interval <= 2:
+                # Aggtrades data (1-2 second intervals)
+                data_type = "aggtrades"
+                gap_threshold = 0.5  # 0.5 seconds for aggtrades
+                download_threshold = 1.0  # 1 second for download attempts
+            elif expected_interval <= 90:
+                # Klines data (1 minute intervals)
+                data_type = "klines_1m"
+                gap_threshold = 60.0  # 1 minute for klines
+                download_threshold = 120.0  # 2 minutes for download attempts
+            elif expected_interval <= 600:
+                # Klines data (5 minute intervals)
+                data_type = "klines_5m"
+                gap_threshold = 300.0  # 5 minutes for klines
+                download_threshold = 600.0  # 10 minutes for download attempts
+            elif expected_interval <= 1800:
+                # Klines data (15-30 minute intervals)
+                data_type = "klines_15m_30m"
+                gap_threshold = 900.0  # 15 minutes for klines
+                download_threshold = 1800.0  # 30 minutes for download attempts
+            elif expected_interval <= 3600:
+                # Klines data (1 hour intervals)
+                data_type = "klines_1h"
+                gap_threshold = 1800.0  # 30 minutes for klines
+                download_threshold = 3600.0  # 1 hour for download attempts
+            elif expected_interval <= 14400:
+                # Klines data (4 hour intervals)
+                data_type = "klines_4h"
+                gap_threshold = 7200.0  # 2 hours for klines
+                download_threshold = 14400.0  # 4 hours for download attempts
+            elif expected_interval <= 28800:
+                # Futures data (8 hour intervals)
+                data_type = "futures_8h"
+                gap_threshold = 32400.0  # 9 hours for futures
+                download_threshold = 43200.0  # 12 hours for download attempts
+            elif expected_interval <= 86400:
+                # Daily data
+                data_type = "daily"
+                gap_threshold = 43200.0  # 12 hours for daily data
+                download_threshold = 86400.0  # 24 hours for download attempts
+            else:
+                # Weekly/monthly data
+                data_type = "weekly_monthly"
+                gap_threshold = expected_interval * 2  # 2x interval
+                download_threshold = expected_interval * 3  # 3x interval
+            
+            self.logger.info(f"📊 Data type: {data_type}")
+            self.logger.info(f"📊 Gap threshold: {gap_threshold:.1f}s ({gap_threshold/60:.1f}min)")
+            self.logger.info(f"📊 Download threshold: {download_threshold:.1f}s ({download_threshold/60:.1f}min)")
+            
+            return gap_threshold, download_threshold
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error setting data-type specific thresholds: {e}")
+            # Fallback to generic thresholds
+            gap_threshold = expected_interval * 2
+            download_threshold = expected_interval * 3
+            return gap_threshold, download_threshold
 
     def _download_missing_data(self, gap_start: pd.Timestamp, gap_end: pd.Timestamp) -> pd.DataFrame | None:
         """Download missing data for large gaps using existing data collection pipeline."""

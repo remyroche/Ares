@@ -45,6 +45,62 @@ class QualityThresholds:
     min_feature_count: int = 40
 
 @dataclass
+class UnifiedMemoryConfig:
+    """Unified memory management configuration across all components."""
+    # Memory thresholds (percentage of available memory)
+    threshold_percentage: float = 0.8  # 80% of available memory
+    threshold_absolute_gb: float = 4.0  # 4GB absolute limit
+    
+    # Cleanup and garbage collection
+    cleanup_frequency: int = 100  # operations
+    gc_frequency: int = 50  # operations
+    
+    # Component-specific overrides
+    component_overrides: Dict[str, Dict[str, float]] = field(default_factory=lambda: {
+        'DataStreamingManager': {'threshold_percentage': 0.8},
+        'M1MemoryOptimizer': {'threshold_absolute_gb': 4.0},
+        'FeatureSelection': {'threshold_percentage': 0.75},
+        'HMMRegimeDetection': {'threshold_percentage': 0.85}
+    })
+    
+    def get_effective_threshold(self, component_name: str = None, available_memory_gb: float = None) -> float:
+        """Get the effective memory threshold for a component."""
+        if available_memory_gb is None:
+            import psutil
+            available_memory_gb = psutil.virtual_memory().available / (1024**3)
+        
+        # Get component-specific overrides
+        if component_name and component_name in self.component_overrides:
+            overrides = self.component_overrides[component_name]
+            threshold_percentage = overrides.get('threshold_percentage', self.threshold_percentage)
+            threshold_absolute_gb = overrides.get('threshold_absolute_gb', self.threshold_absolute_gb)
+        else:
+            threshold_percentage = self.threshold_percentage
+            threshold_absolute_gb = self.threshold_absolute_gb
+        
+        # Return the more restrictive threshold
+        percentage_limit = available_memory_gb * threshold_percentage
+        return min(percentage_limit, threshold_absolute_gb)
+    
+    def should_cleanup(self, component_name: str, operation_count: int) -> bool:
+        """Check if cleanup should be performed based on operation count."""
+        if component_name in self.component_overrides:
+            cleanup_freq = self.component_overrides[component_name].get('cleanup_frequency', self.cleanup_frequency)
+        else:
+            cleanup_freq = self.cleanup_frequency
+        
+        return operation_count % cleanup_freq == 0
+    
+    def should_gc(self, component_name: str, operation_count: int) -> bool:
+        """Check if garbage collection should be performed."""
+        if component_name in self.component_overrides:
+            gc_freq = self.component_overrides[component_name].get('gc_frequency', self.gc_frequency)
+        else:
+            gc_freq = self.gc_frequency
+        
+        return operation_count % gc_freq == 0
+
+@dataclass
 class QualityResult:
     """Result of data quality validation."""
     passed: bool = True
@@ -645,5 +701,183 @@ def check_dataframe_health(df: pd.DataFrame) -> Dict[str, Any]:
         
     return health_status
 
+class UnifiedMemoryManager:
+    """Unified memory management across all components."""
+    
+    def __init__(self, config: UnifiedMemoryConfig = None):
+        self.config = config or UnifiedMemoryConfig()
+        self.logger = logging.getLogger(f"{__name__}.UnifiedMemoryManager")
+        self.operation_counts = {}  # Track operations per component
+        
+    def get_memory_threshold(self, component_name: str) -> float:
+        """Get memory threshold for a specific component."""
+        try:
+            import psutil
+            available_memory_gb = psutil.virtual_memory().available / (1024**3)
+            threshold = self.config.get_effective_threshold(component_name, available_memory_gb)
+            
+            self.logger.debug(f"Memory threshold for {component_name}: {threshold:.2f}GB (available: {available_memory_gb:.2f}GB)")
+            return threshold
+        except ImportError:
+            self.logger.warning("psutil not available, using default threshold")
+            return self.config.threshold_absolute_gb
+    
+    def check_memory_usage(self, component_name: str) -> Dict[str, Any]:
+        """Check current memory usage and return status."""
+        try:
+            import psutil
+            memory = psutil.virtual_memory()
+            threshold = self.get_memory_threshold(component_name)
+            
+            usage_gb = (memory.total - memory.available) / (1024**3)
+            usage_percentage = memory.percent / 100
+            
+            status = {
+                'component': component_name,
+                'usage_gb': usage_gb,
+                'usage_percentage': usage_percentage,
+                'threshold_gb': threshold,
+                'threshold_percentage': self.config.threshold_percentage,
+                'available_gb': memory.available / (1024**3),
+                'total_gb': memory.total / (1024**3),
+                'near_limit': usage_gb > threshold * 0.9,  # 90% of threshold
+                'over_limit': usage_gb > threshold
+            }
+            
+            if status['over_limit']:
+                self.logger.warning(f"⚠️ {component_name} memory usage ({usage_gb:.2f}GB) exceeds threshold ({threshold:.2f}GB)")
+            elif status['near_limit']:
+                self.logger.info(f"ℹ️ {component_name} memory usage ({usage_gb:.2f}GB) approaching threshold ({threshold:.2f}GB)")
+            
+            return status
+            
+        except ImportError:
+            self.logger.warning("psutil not available for memory monitoring")
+            return {'component': component_name, 'error': 'psutil not available'}
+    
+    def should_cleanup(self, component_name: str) -> bool:
+        """Check if component should perform cleanup."""
+        if component_name not in self.operation_counts:
+            self.operation_counts[component_name] = 0
+        
+        self.operation_counts[component_name] += 1
+        return self.config.should_cleanup(component_name, self.operation_counts[component_name])
+    
+    def should_gc(self, component_name: str) -> bool:
+        """Check if component should perform garbage collection."""
+        if component_name not in self.operation_counts:
+            self.operation_counts[component_name] = 0
+        
+        return self.config.should_gc(component_name, self.operation_counts[component_name])
+    
+    def perform_cleanup(self, component_name: str, cleanup_func: callable = None) -> bool:
+        """Perform cleanup if needed."""
+        if self.should_cleanup(component_name):
+            self.logger.info(f"🧹 Performing cleanup for {component_name}")
+            if cleanup_func:
+                try:
+                    cleanup_func()
+                    return True
+                except Exception as e:
+                    self.logger.error(f"❌ Cleanup failed for {component_name}: {e}")
+                    return False
+            else:
+                # Default cleanup: garbage collection
+                import gc
+                gc.collect()
+                return True
+        return False
+    
+    def get_memory_status_summary(self) -> Dict[str, Any]:
+        """Get memory status summary for all tracked components."""
+        summary = {
+            'timestamp': datetime.now(),
+            'components': {},
+            'overall_status': 'healthy'
+        }
+        
+        for component_name in self.operation_counts.keys():
+            status = self.check_memory_usage(component_name)
+            summary['components'][component_name] = status
+            
+            if status.get('over_limit', False):
+                summary['overall_status'] = 'critical'
+            elif status.get('near_limit', False) and summary['overall_status'] == 'healthy':
+                summary['overall_status'] = 'warning'
+        
+        return summary
+
+class SimpleSchemaValidator:
+    """Simple schema usage validation without complexity."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(f"{__name__}.SimpleSchemaValidator")
+        self.field_usage = {}  # Track field usage: {schema_name: {field_name: [operations]}}
+        
+    def track_field_usage(self, schema_name: str, field_name: str, operation: str):
+        """Track how a field is used."""
+        if schema_name not in self.field_usage:
+            self.field_usage[schema_name] = {}
+        if field_name not in self.field_usage[schema_name]:
+            self.field_usage[schema_name][field_name] = []
+        self.field_usage[schema_name][field_name].append(operation)
+        
+    def validate_schema_usage(self, schema_name: str, schema_definition: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate schema usage with simple checks."""
+        usage = self.field_usage.get(schema_name, {})
+        required_fields = schema_definition.get('required_columns', [])
+        optional_fields = schema_definition.get('optional_columns', [])
+        all_schema_fields = set(required_fields + optional_fields)
+        
+        # Find unused required fields
+        unused_required = [field for field in required_fields if field not in usage]
+        
+        # Find used fields not in schema
+        used_fields = set(usage.keys())
+        missing_from_schema = used_fields - all_schema_fields
+        
+        # Calculate usage coverage
+        coverage = len(usage) / len(required_fields) if required_fields else 1.0
+        
+        result = {
+            'schema_name': schema_name,
+            'unused_required_fields': unused_required,
+            'missing_from_schema': list(missing_from_schema),
+            'usage_coverage': coverage,
+            'total_required_fields': len(required_fields),
+            'used_fields': len(usage),
+            'recommendations': []
+        }
+        
+        # Generate simple recommendations
+        if unused_required:
+            result['recommendations'].append(f"Consider removing unused required fields: {unused_required}")
+        if missing_from_schema:
+            result['recommendations'].append(f"Add missing fields to schema: {list(missing_from_schema)}")
+        if coverage < 0.8:
+            result['recommendations'].append(f"Low field usage coverage ({coverage:.1%}), review schema design")
+        
+        return result
+    
+    def get_usage_summary(self) -> Dict[str, Any]:
+        """Get summary of all schema usage."""
+        summary = {
+            'timestamp': datetime.now(),
+            'schemas': {},
+            'total_schemas': len(self.field_usage),
+            'total_fields_tracked': sum(len(fields) for fields in self.field_usage.values())
+        }
+        
+        for schema_name, fields in self.field_usage.items():
+            summary['schemas'][schema_name] = {
+                'fields_used': len(fields),
+                'total_operations': sum(len(ops) for ops in fields.values()),
+                'most_used_fields': sorted(fields.items(), key=lambda x: len(x[1]), reverse=True)[:5]
+            }
+        
+        return summary
+
 # Create global instance for backwards compatibility
 data_quality_framework = DataQualityFramework()
+unified_memory_manager = UnifiedMemoryManager()
+schema_validator = SimpleSchemaValidator()

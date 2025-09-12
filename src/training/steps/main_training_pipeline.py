@@ -131,7 +131,8 @@ class MainPipelineConfig:
         PipelineStage.MARKET_ANALYSIS: [
             'sr_detection', 'sr_clustering', 'hmm_clustering',
             'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-            'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis'
+            'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis',
+            'sr_feature_integration'
         ],
         PipelineStage.MODEL_TRAINING: [
             'general_model_training', 'analyst_model_training', 'tactician_model_training',
@@ -510,7 +511,7 @@ class MainTrainingPipeline:
 
         # For MARKET_ANALYSIS, always use sequential execution with automatic progression
         # Start with the first sub-pipeline and let it trigger the next ones
-        self.logger.info("🚀 Starting automatic sequential execution: sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> fractional_differentiation -> cross_timeframe_analysis")
+        self.logger.info("🚀 Starting automatic sequential execution: sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> fractional_differentiation -> cross_timeframe_analysis -> sr_feature_integration")
 
         results = []
         if sub_pipeline_names:
@@ -720,7 +721,8 @@ def get_full_pipeline_config(
             PipelineStage.MARKET_ANALYSIS: [
                 'sr_detection', 'sr_clustering', 'hmm_clustering',
                 'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis'
+                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis',
+                'sr_feature_integration'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'general_model_training', 'analyst_model_training', 'tactician_model_training',

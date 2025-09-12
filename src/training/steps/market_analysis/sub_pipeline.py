@@ -159,7 +159,8 @@ class MarketAnalysisSubPipeline:
             'triple_barrier_labeling': self._triple_barrier_labeling_pipeline,
             'feature_lookback_optimization': self._feature_lookback_optimization_pipeline,
             'fractional_differentiation': self._fractional_differentiation_pipeline,
-            'cross_timeframe_analysis': self._cross_timeframe_analysis_pipeline
+            'cross_timeframe_analysis': self._cross_timeframe_analysis_pipeline,
+            'sr_feature_integration': self._sr_feature_integration_pipeline
         }
     
     def _convert_old_config(self, config: Dict[str, Any]) -> SubPipelineConfig:
@@ -509,7 +510,8 @@ class MarketAnalysisSubPipeline:
             'triple_barrier_labeling',
             'feature_lookback_optimization',
             'fractional_differentiation',
-            'cross_timeframe_analysis'
+            'cross_timeframe_analysis',
+            'sr_feature_integration'
         ]
         
         try:
@@ -1667,6 +1669,68 @@ class MarketAnalysisSubPipeline:
         # This is the final pipeline in the MARKET_ANALYSIS stage sequence
         self.logger.info("🎉 MARKET_ANALYSIS stage completed successfully - all 10 sub-pipelines executed")
 
+        return artifacts
+    
+    async def _sr_feature_integration_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """SR feature integration sub-pipeline."""
+        self.logger.info("🔧 Executing SR feature integration pipeline")
+        
+        artifacts = {
+            'sr_features_added': 0,
+            'integration_metrics': {},
+            'sr_feature_names': []
+        }
+        
+        try:
+            # Import SR feature integration step
+            from .step06_sr_feature_integration import SRFeatureIntegrationStep
+            
+            # Initialize SR feature integration step
+            sr_config = {
+                'sr_features': {
+                    'enabled': True,
+                    'proximity_threshold': 0.05,
+                    'strength_weights': {
+                        'touch_count': 0.4,
+                        'volume_confirmation': 0.3,
+                        'time_decay': 0.2,
+                        'confluence': 0.1
+                    }
+                }
+            }
+            
+            sr_integration_step = SRFeatureIntegrationStep(sr_config)
+            
+            # Get current pipeline state (this would come from the main pipeline)
+            # For now, we'll use a mock pipeline state
+            pipeline_state = {
+                'features': {},  # This would contain existing features
+                'sr_levels': [],  # This would contain SR levels from previous steps
+                'market_data': None  # This would contain market data
+            }
+            
+            # Execute SR feature integration
+            training_input = {'training_mode': config.mode.value}
+            result = await sr_integration_step.execute(training_input, pipeline_state)
+            
+            if result.get('success', False):
+                artifacts['sr_features_added'] = result.get('sr_features_added', 0)
+                artifacts['integration_metrics'] = {
+                    'original_feature_count': result.get('original_feature_count', 0),
+                    'enhanced_feature_count': result.get('enhanced_feature_count', 0),
+                    'integration_time': result.get('execution_time', 0)
+                }
+                artifacts['sr_feature_names'] = result.get('sr_feature_names', [])
+                
+                self.logger.info(f"✅ SR feature integration completed: {artifacts['sr_features_added']} features added")
+            else:
+                self.logger.error(f"❌ SR feature integration failed: {result.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ SR feature integration pipeline error: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+        
         return artifacts
     
     def _cluster_sr_levels(self, levels: List[Any]) -> List[Dict[str, Any]]:

@@ -136,20 +136,59 @@ class DataSchema:
 class DataCleaner:
     """Unified data cleaning with missing value handling and outlier detection."""
 
-    def __init__(self, max_forward_fill_gap: int = 5, download_threshold: int = 5, raise_errors: bool = True, log_details: bool = True) -> None:
-        """Initialize data cleaner."""
+    def __init__(self, max_forward_fill_gap: int = 5, download_threshold: int = 5, raise_errors: bool = True, log_details: bool = True, data_type: str = 'klines') -> None:
+        """Initialize data cleaner with data-type specific gap thresholds.
+        
+        Args:
+            max_forward_fill_gap: Maximum gap size for forward fill (seconds)
+            download_threshold: Threshold for triggering data download (seconds)
+            raise_errors: Whether to raise errors on critical issues
+            log_details: Whether to log detailed information
+            data_type: Type of data ('klines', 'aggtrades', 'futures') for gap thresholds
+        """
         self.logger = system_logger.getChild('DataCleaner')
         self.max_forward_fill_gap = max_forward_fill_gap
         self.download_threshold = download_threshold
         self.raise_errors = raise_errors
         self.log_details = log_details
+        self.data_type = data_type
         
-        self.gap_thresholds = {
-            GapType.SMALL: max_forward_fill_gap,
-            GapType.MEDIUM: 60,
-            GapType.LARGE: 300,
-            GapType.CRITICAL: float('inf')
+        # Data-type specific gap thresholds (in seconds)
+        # Large gaps trigger re-downloading of missing data
+        self.data_type_gap_thresholds = {
+            'aggtrades': {
+                GapType.SMALL: 1,      # 1 second
+                GapType.MEDIUM: 5,     # 5 seconds  
+                GapType.LARGE: 0.5,    # 0.5 seconds - triggers re-download
+                GapType.CRITICAL: 10   # 10 seconds
+            },
+            'klines': {
+                GapType.SMALL: 60,     # 1 minute
+                GapType.MEDIUM: 300,   # 5 minutes
+                GapType.LARGE: 120,    # 2 minutes - triggers re-download
+                GapType.CRITICAL: 1800 # 30 minutes
+            },
+            'futures': {
+                GapType.SMALL: 3600,   # 1 hour
+                GapType.MEDIUM: 14400, # 4 hours
+                GapType.LARGE: 32400,  # 9 hours - triggers re-download
+                GapType.CRITICAL: 86400 # 24 hours
+            }
         }
+        
+        # Use data-type specific thresholds or fallback to generic
+        if data_type in self.data_type_gap_thresholds:
+            self.gap_thresholds = self.data_type_gap_thresholds[data_type]
+            self.logger.info(f"Using {data_type}-specific gap thresholds: {self.gap_thresholds}")
+        else:
+            # Fallback to generic thresholds
+            self.gap_thresholds = {
+                GapType.SMALL: max_forward_fill_gap,
+                GapType.MEDIUM: 60,
+                GapType.LARGE: 300,
+                GapType.CRITICAL: float('inf')
+            }
+            self.logger.warning(f"Unknown data type '{data_type}', using generic gap thresholds")
         
         self.fill_strategies = {
             GapType.SMALL: 'forward_fill',
@@ -807,6 +846,145 @@ class DataCleaner:
                 for o in self.outlier_history[-10:]
             ]
         }
+
+    def clean_dataframe(self, data: pd.DataFrame, remove_constant_features: bool = False, 
+                       remove_duplicates: bool = True, handle_missing_values: bool = True,
+                       timestamp_column: str = 'timestamp', symbol: str = None, 
+                       exchange: str = None, timeframe: str = None) -> Optional[pd.DataFrame]:
+        """Clean dataframe with comprehensive data quality improvements.
+        
+        Args:
+            data: DataFrame to clean
+            remove_constant_features: Whether to remove constant features
+            remove_duplicates: Whether to remove duplicate rows
+            handle_missing_values: Whether to handle missing values
+            timestamp_column: Name of timestamp column
+            symbol: Trading symbol for data collection hooks
+            exchange: Exchange name for data collection hooks
+            timeframe: Timeframe for data collection hooks
+            
+        Returns:
+            Cleaned DataFrame or None if cleaning failed
+        """
+        if data is None or data.empty:
+            self.logger.warning("⚠️ Input data is None or empty, returning None")
+            return None
+            
+        self.logger.info(f"🧹 Starting data cleaning for {len(data)} rows, {len(data.columns)} columns")
+        self.logger.info(f"   Data type: {self.data_type}")
+        self.logger.info(f"   Gap thresholds: {self.gap_thresholds}")
+        
+        cleaned_data = data.copy()
+        original_columns = set(cleaned_data.columns)
+        removed_columns = []
+        
+        try:
+            # 1. Remove constant features with adequate warnings
+            if remove_constant_features:
+                self.logger.info("🔍 Checking for constant features...")
+                constant_features = self._identify_constant_features(cleaned_data)
+                
+                if constant_features:
+                    self.logger.warning(f"⚠️ CONSTANT FEATURES DETECTED: {len(constant_features)} features with no variation")
+                    self.logger.warning(f"   Constant features: {constant_features}")
+                    self.logger.warning("   ⚠️ WARNING: Removing constant features may impact model performance")
+                    self.logger.warning("   ⚠️ WARNING: Consider investigating data source for proper feature calculation")
+                    self.logger.warning("   ⚠️ WARNING: This may indicate data processing pipeline issues")
+                    
+                    # Remove constant features
+                    cleaned_data = cleaned_data.drop(columns=constant_features)
+                    removed_columns.extend(constant_features)
+                    self.logger.info(f"✅ Removed {len(constant_features)} constant features")
+                else:
+                    self.logger.info("✅ No constant features detected")
+            
+            # 2. Remove duplicates
+            if remove_duplicates:
+                initial_rows = len(cleaned_data)
+                if timestamp_column in cleaned_data.columns:
+                    cleaned_data = cleaned_data.drop_duplicates(subset=[timestamp_column])
+                else:
+                    cleaned_data = cleaned_data.drop_duplicates()
+                duplicates_removed = initial_rows - len(cleaned_data)
+                if duplicates_removed > 0:
+                    self.logger.info(f"✅ Removed {duplicates_removed} duplicate rows")
+            
+            # 3. Handle missing values with gap detection
+            if handle_missing_values and timestamp_column in cleaned_data.columns:
+                self.logger.info("🔍 Handling missing values and detecting gaps...")
+                cleaned_data = self.handle_missing_values_intelligently(
+                    cleaned_data, timestamp_column, symbol, exchange, timeframe
+                )
+                
+                # Log gap detection results
+                gap_report = self.get_gap_report(cleaned_data, timestamp_column)
+                if gap_report['total_gaps'] > 0:
+                    self.logger.warning(f"⚠️ GAP DETECTION: Found {gap_report['total_gaps']} gaps in data")
+                    self.logger.warning(f"   Large gaps (triggering re-download): {gap_report.get('large_gaps', 0)}")
+                    self.logger.warning(f"   Critical gaps: {gap_report.get('critical_gaps', 0)}")
+                    
+                    # Hook with data collection for large gaps
+                    if gap_report.get('large_gaps', 0) > 0 or gap_report.get('critical_gaps', 0) > 0:
+                        self.logger.warning("🔄 LARGE GAPS DETECTED - Consider triggering data re-collection")
+                        self.logger.warning("   Hook with data collection pipeline for missing data")
+                        
+                        # Trigger gap collection hook if parameters are available
+                        if symbol and exchange:
+                            try:
+                                from src.utils.data.quality.gap_collection_hook import trigger_gap_collection
+                                
+                                # Create gap info for collection hook
+                                gap_info = {
+                                    'gap_size': gap_report.get('max_gap_seconds', 0),
+                                    'gap_type': 'large' if gap_report.get('large_gaps', 0) > 0 else 'critical',
+                                    'total_gaps': gap_report.get('total_gaps', 0)
+                                }
+                                
+                                collection_result = trigger_gap_collection(
+                                    gap_info, self.data_type, symbol, exchange, timeframe
+                                )
+                                
+                                if collection_result.get('triggered', False):
+                                    self.logger.info("✅ Data collection hook triggered successfully")
+                                else:
+                                    self.logger.warning(f"⚠️ Data collection hook not triggered: {collection_result.get('reason', 'Unknown')}")
+                                    
+                            except Exception as e:
+                                self.logger.warning(f"⚠️ Failed to trigger gap collection hook: {e}")
+                        else:
+                            self.logger.warning("⚠️ Missing symbol/exchange parameters - cannot trigger data collection hook")
+            
+            # 4. Final validation
+            final_columns = set(cleaned_data.columns)
+            removed_columns.extend(original_columns - final_columns)
+            
+            if removed_columns:
+                self.logger.warning(f"⚠️ SUMMARY: Removed {len(removed_columns)} columns during cleaning")
+                self.logger.warning(f"   Removed columns: {removed_columns}")
+            
+            self.logger.info(f"✅ Data cleaning completed: {len(cleaned_data)} rows, {len(cleaned_data.columns)} columns")
+            return cleaned_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Data cleaning failed: {e}")
+            if self.raise_errors:
+                raise
+            return None
+
+    def _identify_constant_features(self, data: pd.DataFrame) -> List[str]:
+        """Identify constant features in the data."""
+        constant_features = []
+        
+        for col in data.columns:
+            if data[col].nunique() <= 1:
+                constant_features.append(col)
+            elif data[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                # Check for very low variance (effectively constant)
+                std_val = data[col].std()
+                if not pd.isna(std_val) and std_val < 1e-10:
+                    constant_features.append(col)
+        
+        return constant_features
 
 # Convenience functions for backwards compatibility
 def handle_missing_values_intelligently(

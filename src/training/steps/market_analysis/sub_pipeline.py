@@ -1557,15 +1557,21 @@ class MarketAnalysisSubPipeline:
                     )
                     quality_validator = DataQualityValidator(quality_thresholds)
                     
-                    # Create data cleaner
-                    data_cleaner = DataCleaner()
+                    # Create data cleaner with appropriate data type
+                    data_cleaner = DataCleaner(data_type='klines')  # Default to klines for market analysis
                     
                     # Get artifact manager
                     artifact_manager = get_artifact_manager()
 
                     # Apply data cleaning to fix constant features
                     self.logger.info("🔄 Applying data cleaning to fix constant features...")
-                    cleaned_data = data_cleaner.clean_dataframe(data, remove_constant_features=True)
+                    cleaned_data = data_cleaner.clean_dataframe(
+                        data, 
+                        remove_constant_features=True,
+                        symbol=config.symbol,
+                        exchange=config.exchange,
+                        timeframe=config.timeframe
+                    )
                     
                     if cleaned_data is not None and not cleaned_data.empty:
                         self.logger.info(f"✅ Data cleaning completed: {len(cleaned_data)} rows, {len(cleaned_data.columns)} features")

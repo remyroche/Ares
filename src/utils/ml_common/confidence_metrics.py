@@ -27,13 +27,17 @@ except Exception as e:
 logger = _LOGGER
 
 
-def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) -> Dict[str, Any]:
+def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray, 
+                                is_multi_output: bool = False,
+                                output_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Calculate comprehensive prediction confidence and calibration metrics.
     
     Args:
         y_true: True labels
         y_pred_proba: Prediction probabilities (shape: n_samples, n_classes)
+        is_multi_output: Whether this is a multi-output model
+        output_names: List of output names for multi-output models
         
     Returns:
         Dictionary containing confidence and calibration metrics
@@ -68,7 +72,10 @@ def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) -
         
         # Calculate calibration metrics
         _LOGGER.debug("🔄 Calculating calibration metrics...")
-        calibration_metrics = calculate_calibration_metrics(y_true, y_pred_proba)
+        if is_multi_output:
+            calibration_metrics = calculate_multi_output_calibration_metrics(y_true, y_pred_proba, output_names)
+        else:
+            calibration_metrics = calculate_calibration_metrics(y_true, y_pred_proba)
         confidence_metrics.update(calibration_metrics)
         
         # Calculate prediction distribution statistics
@@ -87,6 +94,76 @@ def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) -
         _LOGGER.error(f"Input shapes - y_true: {y_true.shape if hasattr(y_true, 'shape') else 'unknown'}, "
                      f"y_pred_proba: {y_pred_proba.shape if hasattr(y_pred_proba, 'shape') else 'unknown'}")
         return {'error': f'Confidence metrics calculation failed: {e}'}
+
+
+def calculate_multi_output_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray, 
+                                             output_names: Optional[List[str]] = None) -> Dict[str, Any]:
+    """
+    Calculate calibration metrics for multi-output models.
+    
+    Args:
+        y_true: True labels (shape: n_samples, n_outputs)
+        y_pred_proba: Prediction probabilities (shape: n_samples, n_outputs)
+        output_names: List of output names
+        
+    Returns:
+        Dictionary containing multi-output calibration metrics
+    """
+    _LOGGER.debug("🔄 Starting multi-output calibration metrics calculation...")
+    
+    try:
+        if len(y_true.shape) != 2 or len(y_pred_proba.shape) != 2:
+            _LOGGER.error("❌ Multi-output calibration requires 2D arrays")
+            return {'error': 'Invalid input shape for multi-output calibration'}
+        
+        n_outputs = y_true.shape[1]
+        if output_names is None:
+            output_names = [f"output_{i+1}" for i in range(n_outputs)]
+        
+        # Calculate calibration metrics for each output
+        per_output_calibration = {}
+        overall_metrics = {}
+        
+        for i in range(n_outputs):
+            y_true_output = y_true[:, i]
+            y_pred_proba_output = y_pred_proba[:, i]
+            
+            # Calculate calibration metrics for this output
+            output_calibration = calculate_calibration_metrics(
+                y_true_output.reshape(-1, 1), 
+                y_pred_proba_output.reshape(-1, 1)
+            )
+            
+            per_output_calibration[output_names[i]] = output_calibration
+            
+            # Add to overall metrics
+            if 'brier_score' in output_calibration:
+                overall_metrics[f'{output_names[i]}_brier_score'] = output_calibration['brier_score']
+            if 'expected_calibration_error' in output_calibration:
+                overall_metrics[f'{output_names[i]}_ece'] = output_calibration['expected_calibration_error']
+        
+        # Calculate overall calibration metrics
+        brier_scores = [cal['brier_score'] for cal in per_output_calibration.values() 
+                       if 'brier_score' in cal and cal['brier_score'] is not None]
+        ece_scores = [cal['expected_calibration_error'] for cal in per_output_calibration.values() 
+                     if 'expected_calibration_error' in cal and cal['expected_calibration_error'] is not None]
+        
+        overall_metrics['overall_brier_score'] = float(np.mean(brier_scores)) if brier_scores else None
+        overall_metrics['overall_ece'] = float(np.mean(ece_scores)) if ece_scores else None
+        
+        _LOGGER.info(f"📈 Multi-output calibration - Overall Brier: {overall_metrics['overall_brier_score']:.4f}, "
+                    f"ECE: {overall_metrics['overall_ece']:.4f}")
+        
+        return {
+            'per_output_calibration': per_output_calibration,
+            'overall_metrics': overall_metrics,
+            'n_outputs': n_outputs,
+            'output_names': output_names
+        }
+        
+    except Exception as e:
+        _LOGGER.error(f"❌ Multi-output calibration metrics calculation failed: {e}")
+        return {'error': str(e)}
 
 
 def calculate_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) -> Dict[str, Any]:

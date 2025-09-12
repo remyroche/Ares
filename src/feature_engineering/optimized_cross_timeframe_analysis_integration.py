@@ -45,6 +45,260 @@ class OptimizedCrossTimeframeAnalysisPipeline:
         
         self.logger.info("✅ Optimized Cross Timeframe Analysis Pipeline initialized")
     
+    def _generate_multi_output_targets(
+        self, 
+        data: pd.DataFrame, 
+        config: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, pd.Series]:
+        """
+        Generate multi-output targets for stacking ensemble models.
+        
+        Args:
+            data: Input data DataFrame
+            config: Multi-output configuration
+            
+        Returns:
+            Dictionary of target series
+        """
+        if config is None:
+            config = {
+                'analyst': {
+                    'signal_strength': {'method': 'price_momentum', 'lookback': 20},
+                    'confidence': {'method': 'volatility_based', 'lookback': 50},
+                    'risk_score': {'method': 'drawdown_based', 'lookback': 100},
+                    'regime_label': {'method': 'hmm_based', 'n_regimes': 3}
+                },
+                'tactician': {
+                    'entry_timing': {'method': 'momentum_based', 'lookback': 10},
+                    'position_size': {'method': 'kelly_criterion', 'lookback': 50},
+                    'stop_loss': {'method': 'atr_based', 'lookback': 20},
+                    'take_profit': {'method': 'risk_reward_ratio', 'lookback': 20}
+                }
+            }
+        
+        targets = {}
+        
+        # Generate analyst targets
+        if 'analyst' in config:
+            analyst_targets = self._create_analyst_outputs(data, config['analyst'])
+            targets.update(analyst_targets)
+        
+        # Generate tactician targets
+        if 'tactician' in config:
+            tactician_targets = self._create_tactician_outputs(data, config['tactician'])
+            targets.update(tactician_targets)
+        
+        return targets
+    
+    def _create_analyst_outputs(
+        self, 
+        data: pd.DataFrame, 
+        config: Dict[str, Any]
+    ) -> Dict[str, pd.Series]:
+        """Create Analyst multi-output targets."""
+        outputs = {}
+        
+        # Signal strength
+        if 'signal_strength' in config:
+            method = config['signal_strength']['method']
+            lookback = config['signal_strength']['lookback']
+            
+            if method == 'price_momentum':
+                returns = data['close'].pct_change()
+                outputs['signal_strength'] = returns.rolling(lookback).mean()
+            elif method == 'rsi_based':
+                rsi = self._calculate_rsi(data['close'], lookback)
+                outputs['signal_strength'] = (rsi - 50) / 50
+            else:
+                outputs['signal_strength'] = pd.Series(0, index=data.index)
+        
+        # Confidence
+        if 'confidence' in config:
+            method = config['confidence']['method']
+            lookback = config['confidence']['lookback']
+            
+            if method == 'volatility_based':
+                returns = data['close'].pct_change()
+                volatility = returns.rolling(lookback).std()
+                # Higher volatility = lower confidence
+                outputs['confidence'] = 1 / (1 + volatility)
+            elif method == 'volume_based':
+                volume_ma = data['volume'].rolling(lookback).mean()
+                current_volume = data['volume']
+                outputs['confidence'] = current_volume / volume_ma
+            else:
+                outputs['confidence'] = pd.Series(0.5, index=data.index)
+        
+        # Risk score
+        if 'risk_score' in config:
+            method = config['risk_score']['method']
+            lookback = config['risk_score']['lookback']
+            
+            if method == 'drawdown_based':
+                returns = data['close'].pct_change()
+                cumulative_returns = (1 + returns).cumprod()
+                rolling_max = cumulative_returns.rolling(lookback).max()
+                drawdown = (cumulative_returns - rolling_max) / rolling_max
+                outputs['risk_score'] = -drawdown.rolling(lookback).min()
+            elif method == 'var_based':
+                returns = data['close'].pct_change()
+                var = returns.rolling(lookback).quantile(0.05)
+                outputs['risk_score'] = -var
+            else:
+                outputs['risk_score'] = pd.Series(0, index=data.index)
+        
+        # Regime label
+        if 'regime_label' in config:
+            method = config['regime_label']['method']
+            n_regimes = config['regime_label'].get('n_regimes', 3)
+            
+            if method == 'hmm_based':
+                outputs['regime_label'] = self._generate_regime_labels(data, n_regimes)
+            elif method == 'volatility_based':
+                returns = data['close'].pct_change()
+                volatility = returns.rolling(20).std()
+                # Simple 3-regime classification
+                low_threshold = volatility.quantile(0.33)
+                high_threshold = volatility.quantile(0.67)
+                outputs['regime_label'] = pd.cut(volatility, 
+                    bins=[0, low_threshold, high_threshold, float('inf')], 
+                    labels=[0, 1, 2])
+            else:
+                outputs['regime_label'] = pd.Series(0, index=data.index)
+        
+        return outputs
+    
+    def _create_tactician_outputs(
+        self, 
+        data: pd.DataFrame, 
+        config: Dict[str, Any]
+    ) -> Dict[str, pd.Series]:
+        """Create Tactician multi-output targets."""
+        outputs = {}
+        
+        # Entry timing
+        if 'entry_timing' in config:
+            method = config['entry_timing']['method']
+            lookback = config['entry_timing']['lookback']
+            
+            if method == 'momentum_based':
+                returns = data['close'].pct_change()
+                momentum = returns.rolling(lookback).mean()
+                # Normalize to [-1, 1]
+                outputs['entry_timing'] = np.tanh(momentum * 10)
+            elif method == 'rsi_based':
+                rsi = self._calculate_rsi(data['close'], lookback)
+                # Convert RSI to entry timing signal
+                outputs['entry_timing'] = (rsi - 50) / 50
+            else:
+                outputs['entry_timing'] = pd.Series(0, index=data.index)
+        
+        # Position size
+        if 'position_size' in config:
+            method = config['position_size']['method']
+            lookback = config['position_size']['lookback']
+            
+            if method == 'kelly_criterion':
+                returns = data['close'].pct_change()
+                win_rate = (returns > 0).rolling(lookback).mean()
+                avg_win = returns[returns > 0].rolling(lookback).mean()
+                avg_loss = returns[returns < 0].rolling(lookback).mean()
+                kelly = win_rate - (1 - win_rate) * abs(avg_loss) / abs(avg_win)
+                outputs['position_size'] = np.clip(kelly, 0, 0.25)  # Cap at 25%
+            elif method == 'volatility_based':
+                returns = data['close'].pct_change()
+                volatility = returns.rolling(lookback).std()
+                # Inverse relationship: higher volatility = smaller position
+                outputs['position_size'] = 1 / (1 + volatility * 10)
+            else:
+                outputs['position_size'] = pd.Series(0.1, index=data.index)
+        
+        # Stop loss
+        if 'stop_loss' in config:
+            method = config['stop_loss']['method']
+            lookback = config['stop_loss']['lookback']
+            
+            if method == 'atr_based':
+                atr = self._calculate_atr(data, lookback)
+                atr_multiplier = config['stop_loss'].get('atr_multiplier', 2.0)
+                outputs['stop_loss'] = atr * atr_multiplier
+            elif method == 'percentage_based':
+                percentage = config['stop_loss'].get('percentage', 0.02)
+                outputs['stop_loss'] = data['close'] * percentage
+            else:
+                outputs['stop_loss'] = data['close'] * 0.02
+        
+        # Take profit
+        if 'take_profit' in config:
+            method = config['take_profit']['method']
+            lookback = config['take_profit']['lookback']
+            
+            if method == 'risk_reward_ratio':
+                risk_reward_ratio = config['take_profit'].get('risk_reward_ratio', 2.0)
+                # Use stop_loss as base for take profit
+                if 'stop_loss' in outputs:
+                    outputs['take_profit'] = outputs['stop_loss'] * risk_reward_ratio
+                else:
+                    outputs['take_profit'] = data['close'] * 0.04
+            elif method == 'atr_based':
+                atr = self._calculate_atr(data, lookback)
+                atr_multiplier = config['take_profit'].get('atr_multiplier', 3.0)
+                outputs['take_profit'] = atr * atr_multiplier
+            else:
+                outputs['take_profit'] = data['close'] * 0.04
+        
+        return outputs
+    
+    def _generate_regime_labels(
+        self, 
+        data: pd.DataFrame, 
+        n_regimes: int = 3
+    ) -> pd.Series:
+        """Generate regime labels using HMM or simple clustering."""
+        try:
+            # Simple 3-regime classification based on volatility and trend
+            returns = data['close'].pct_change()
+            volatility = returns.rolling(20).std()
+            trend = returns.rolling(20).mean()
+            
+            # Combine volatility and trend for regime classification
+            combined_score = volatility * 0.7 + abs(trend) * 0.3
+            
+            # Create regime labels
+            regime_labels = pd.cut(combined_score, 
+                bins=n_regimes, 
+                labels=range(n_regimes))
+            
+            return regime_labels.fillna(0).astype(int)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to generate regime labels: {e}")
+            return pd.Series(0, index=data.index)
+    
+    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI indicator."""
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    
+    def _calculate_atr(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate Average True Range."""
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = true_range.rolling(period).mean()
+        
+        return atr
+    
     def _integrate_methods(self):
         """Integrate method classes into the main analyzer."""
         # Data loading and validation methods
@@ -82,13 +336,21 @@ class OptimizedCrossTimeframeAnalysisPipeline:
         self.analyzer._calculate_feature_importance_optimized = self.advanced._calculate_feature_importance_optimized
         self.analyzer._calculate_financial_risk_metrics = self.advanced._calculate_financial_risk_metrics
         self.analyzer._generate_quality_report = self.advanced._generate_quality_report
+        
+        # Multi-output target generation methods
+        self.analyzer._generate_multi_output_targets = self._generate_multi_output_targets
+        self.analyzer._create_analyst_outputs = self._create_analyst_outputs
+        self.analyzer._create_tactician_outputs = self._create_tactician_outputs
+        self.analyzer._generate_regime_labels = self._generate_regime_labels
     
     async def analyze_cross_timeframes(
         self,
         data_dir: str,
         symbol: str,
         exchange: str,
-        timeframes: Optional[List[str]] = None
+        timeframes: Optional[List[str]] = None,
+        enable_multi_output: bool = False,
+        multi_output_config: Optional[Dict[str, Any]] = None
     ) -> OptimizedCrossTimeframeResult:
         """
         Perform optimized cross timeframe analysis.

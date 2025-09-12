@@ -20,20 +20,12 @@ from .general_model_training import (
     ModelFactory
 )
 
-from .analyst_model_training import (
-    AnalystModelTrainer,
-    AnalystTrainingConfig,
-    AnalystTrainingResults,
-    AnalystModelType
-)
-
-from .tactician_model_training import (
-    TacticianModelTrainer,
-    TacticianTrainingConfig,
-    TacticianTrainingResults,
-    TacticianModelType,
-    TacticalStrategy
-)
+# Note: analyst_model_training.py and tactician_model_training.py have been removed
+# Use the new comprehensive training steps instead:
+# - analyst_models_training.py
+# - analyst_ensemble_training.py  
+# - tactician_models_training.py
+# - tactician_ensemble_training.py
 
 __all__ = [
     # General Model Training
@@ -42,20 +34,7 @@ __all__ = [
     'ModelTrainingResults',
     'ModelType',
     'TaskType',
-    'ModelFactory',
-    
-    # Analyst Model Training
-    'AnalystModelTrainer',
-    'AnalystTrainingConfig',
-    'AnalystTrainingResults',
-    'AnalystModelType',
-    
-    # Tactician Model Training
-    'TacticianModelTrainer',
-    'TacticianTrainingConfig',
-    'TacticianTrainingResults',
-    'TacticianModelType',
-    'TacticalStrategy'
+    'ModelFactory'
 ]
 
 __version__ = "1.0.0"

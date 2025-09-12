@@ -262,7 +262,7 @@ class ModelTrainingSubPipelineUpdated:
         
         # Import and execute analyst model training
         try:
-            from .analyst_models_training import AnalystModelTrainingStep
+            from .analyst_models_training_refactored import AnalystModelsTrainingStepRefactored as AnalystModelTrainingStep
             trainer = AnalystModelTrainingStep()
             result = await trainer.execute(
                 training_input={

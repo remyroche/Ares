@@ -9,7 +9,19 @@ Components:
 - hmm_ensemble_training: Meta-model, HPO, saving, metrics
 """
 
-from .hmm_models_training import HMMModelsTraining
-from .hmm_ensemble_training import HMMEnsembleTraining
+from .hmm_models_training_refactored import (
+    HMMModelsTrainingRefactored as HMMModelsTraining,
+    create_hmm_models_training_refactored as create_hmm_models_training,
+    execute_hmm_models_training_refactored as execute_hmm_models_training
+)
+from .hmm_ensemble_training import (
+    HMMEnsembleTrainingRefactored as HMMEnsembleTraining,
+    create_hmm_ensemble_training_refactored as create_hmm_ensemble_training,
+    execute_hmm_ensemble_training_refactored as execute_hmm_ensemble_training
+)
 
-__all__ = ['HMMModelsTraining', 'HMMEnsembleTraining']
+__all__ = [
+    'HMMModelsTraining', 'HMMEnsembleTraining',
+    'create_hmm_models_training', 'create_hmm_ensemble_training',
+    'execute_hmm_models_training', 'execute_hmm_ensemble_training'
+]

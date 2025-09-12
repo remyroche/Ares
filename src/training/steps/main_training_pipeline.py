@@ -135,8 +135,8 @@ class MainPipelineConfig:
             'sr_feature_integration'
         ],
         PipelineStage.MODEL_TRAINING: [
-            'general_model_training', 'analyst_model_training', 'tactician_model_training',
-            'hmm_training', 'ensemble_training', 'multi_timeframe_training'
+            'hmm_training', 'general_model_training', 'analyst_model_training', 'tactician_model_training',
+            'ensemble_training', 'multi_timeframe_training'
         ],
         PipelineStage.BACKTESTING: [
             'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
@@ -724,8 +724,8 @@ def get_full_pipeline_config(
                 'sr_feature_integration'
             ],
             PipelineStage.MODEL_TRAINING: [
-                'general_model_training', 'analyst_model_training', 'tactician_model_training',
-                'hmm_training', 'ensemble_training', 'multi_timeframe_training'
+                'hmm_training', 'general_model_training', 'analyst_model_training', 'tactician_model_training',
+                'ensemble_training', 'multi_timeframe_training'
             ],
             PipelineStage.BACKTESTING: [
                 'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',

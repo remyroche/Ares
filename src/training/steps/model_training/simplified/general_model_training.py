@@ -50,6 +50,7 @@ from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     MathValidationError, TimeoutError
 )
+from ..regime_data_utils import get_regime_data, validate_regime_data
 
 # Additional imports for artifact management
 from src.utils.enhanced_artifact_manager import get_artifact_manager

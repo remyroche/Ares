@@ -181,7 +181,6 @@ class ValidatedStepFactory:
             'analyst_model_training': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
             'tactician_model_training': ('src.training.steps.model_training.simplified.tactician_model_training', 'TacticianModelTrainer'),
             # Legacy step names for backward compatibility
-            'step09_hmm_based_training': ('src.training.steps.model_training.simplified.general_model_training', 'GeneralModelTrainer'),
             'step10_unified_regime_intelligence': ('src.training.steps.model_training.simplified.general_model_training', 'GeneralModelTrainer'),
             'step11_analyst_creation': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),
             'step12_analyst_enhancement': ('src.training.steps.model_training.simplified.analyst_model_training', 'AnalystModelTrainer'),

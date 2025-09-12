@@ -404,7 +404,7 @@ class ParameterOptimizer:
         
         def objective(trial):
             # Suggest parameters
-            n_components = trial.suggest_int('n_components', 2, 8)
+            n_components = trial.suggest_int('n_components', 2, 40)
             covariance_type = trial.suggest_categorical('covariance_type', ['full', 'tied', 'diag', 'spherical'])
             n_iter = trial.suggest_int('n_iter', 50, 200)
             tol = trial.suggest_float('tol', 1e-6, 1e-2, log=True)

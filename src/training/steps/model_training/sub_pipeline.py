@@ -534,18 +534,54 @@ class ModelTrainingSubPipeline:
         # Import and use HMM training
         try:
             from .simplified.hmm_training import HMMTrainingPipeline
+            from .hmm_regime_integration_step import HMMRegimeIntegrationStep
             
+            # Initialize HMM training pipeline
             hmm_trainer = HMMTrainingPipeline()
+            
+            # Create a mock pipeline state for HMM training
+            pipeline_state = {
+                'hmm_regime_discovery_completed': True,
+                'step03_hmm_regime_discovery_completed': True,
+                'regime_states': [],  # Will be populated by HMM training
+                'regime_probabilities': [],
+                'regime_confidence': [],
+                'hmm_state_sequence': [],
+                'hmm_state_probs': [],
+                'regime_characteristics': {},
+                'transition_matrix': None
+            }
+            
+            # Execute HMM training
             hmm_result = await hmm_trainer.train_hmm_models(
-                data_dir=config.data_dir,
                 symbol=config.symbol,
                 exchange=config.exchange,
-                timeframe=config.timeframe
+                timeframe=config.timeframe,
+                data_dir=config.data_dir,
+                pipeline_state=pipeline_state,
+                force_rerun=config.force_rerun
+            )
+            
+            # Update pipeline state with HMM results
+            updated_pipeline_state = hmm_result.get('updated_pipeline_state', pipeline_state)
+            updated_pipeline_state['hmm_training_completed'] = True
+            
+            # Execute HMM regime integration step
+            regime_integrator = HMMRegimeIntegrationStep()
+            integration_result = await regime_integrator.execute(
+                training_input={
+                    'symbol': config.symbol,
+                    'exchange': config.exchange,
+                    'timeframe': config.timeframe
+                },
+                pipeline_state=updated_pipeline_state
             )
             
             artifacts['hmm_models'] = hmm_result.get('models', [])
             artifacts['hmm_metrics'] = hmm_result.get('metrics', {})
             artifacts['regime_models'] = hmm_result.get('regime_models', {})
+            artifacts['hmm_regime_integration'] = integration_result
+            artifacts['updated_pipeline_state'] = integration_result
             
         except ImportError:
             self.logger.warning("⚠️ HMM training pipeline not available, using mock training")

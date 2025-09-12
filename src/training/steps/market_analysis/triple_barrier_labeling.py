@@ -28,6 +28,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import contextlib
 
+# Hardware optimization imports
+try:
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, create_m1_optimized_thread_pool, run_cpu_intensive_task
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, optimize_dataframe_for_m1, create_m1_optimized_array
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, optimize_dataframe_memory
+    from src.utils.hardware.m1_optimizations import get_m1_memory_optimizer as get_advanced_m1_optimizer
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Hardware optimizations not available: {e}")
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+
 # Try to import Numba for performance acceleration
 try:
     import numba
@@ -189,11 +200,48 @@ class MarketAnalysisTripleBarrierLabeling:
         self.config = config or TripleBarrierConfig()
         self.logger = get_logger('MarketAnalysisTripleBarrierLabeling')
         
+        # Initialize hardware optimizers
+        self._setup_hardware_optimizations()
+        
         # Validate configuration
         self._validate_configuration()
         
         # Log initialization
         self._log_initialization()
+        
+    def _setup_hardware_optimizations(self):
+        """Setup hardware-specific optimizations."""
+        if not HARDWARE_OPTIMIZATIONS_AVAILABLE:
+            self.logger.warning('⚠️ Hardware optimizations not available')
+            return
+            
+        try:
+            # Initialize M1 CPU optimizer
+            self.cpu_optimizer = get_m1_cpu_optimizer()
+            self.cpu_optimizer.optimize_numpy_operations()
+            
+            # Initialize M1 GPU manager
+            self.gpu_manager = get_m1_gpu_manager()
+            
+            # Initialize M1 memory optimizer
+            self.memory_optimizer = get_m1_memory_optimizer(8.0)  # 8GB limit
+            
+            # Initialize advanced M1 memory optimizer
+            self.advanced_memory_optimizer = get_advanced_m1_optimizer(
+                memory_limit_gb=8.0,
+                enable_gc_tuning=True,
+                enable_memory_leak_detection=True,
+                enable_swap_management=True
+            )
+            
+            self.logger.info('✅ Hardware optimizations initialized successfully')
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Hardware optimization setup failed: {e}')
+            self.cpu_optimizer = None
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.advanced_memory_optimizer = None
         
     def _validate_configuration(self):
         """Validate configuration parameters."""
@@ -242,6 +290,7 @@ class MarketAnalysisTripleBarrierLabeling:
         self.logger.info(f'   → Binary classification: {self.config.binary_classification}')
         self.logger.info(f'   → Regime aware: {self.config.regime_aware}')
         self.logger.info(f'   → Numba acceleration: {NUMBA_AVAILABLE}')
+        self.logger.info(f'   → Hardware optimizations: {HARDWARE_OPTIMIZATIONS_AVAILABLE}')
         self.logger.info(f'   → Validation framework: {VALIDATION_AVAILABLE}')
 
     @step06_function_validator(function_type='labeling', validation_level=ValidationLevel.COMPREHENSIVE)
@@ -268,6 +317,9 @@ class MarketAnalysisTripleBarrierLabeling:
         if validated_data is None:
             return pd.DataFrame()
         
+        # Apply hardware optimizations
+        validated_data = self._optimize_data_for_hardware(validated_data)
+        
         # Apply regime-aware labeling if enabled
         if self.config.regime_aware and self.config.regime_column in validated_data.columns:
             self.logger.info('🎯 Applying regime-aware triple barrier labeling')
@@ -283,6 +335,32 @@ class MarketAnalysisTripleBarrierLabeling:
         self._log_labeling_results(final_data)
         
         return final_data
+    
+    def _optimize_data_for_hardware(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply hardware-specific optimizations to data."""
+        if not HARDWARE_OPTIMIZATIONS_AVAILABLE:
+            return data
+        
+        try:
+            # Optimize DataFrame memory usage
+            if self.memory_optimizer:
+                data = self.memory_optimizer.optimize_dataframe_memory(data)
+            
+            # Optimize for M1 GPU
+            if self.gpu_manager:
+                data = optimize_dataframe_for_m1(data)
+            
+            # Convert to optimized arrays
+            for col in ['open', 'high', 'low', 'close']:
+                if col in data.columns:
+                    data[col] = create_m1_optimized_array(data[col].values)
+            
+            self.logger.debug('✅ Data optimized for hardware')
+            
+        except Exception as e:
+            self.logger.warning(f'⚠️ Hardware optimization failed: {e}')
+        
+        return data
     
     def _validate_and_prepare_data(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Validate input data and prepare for processing."""
@@ -652,6 +730,7 @@ class MarketAnalysisTripleBarrierLabeling:
             },
             'performance_optimization': {
                 'numba_available': NUMBA_AVAILABLE,
+                'hardware_optimizations_available': HARDWARE_OPTIMIZATIONS_AVAILABLE,
                 'vectorized_implementation': True,
                 'regime_aware_implementation': self.config.regime_aware
             },
@@ -692,6 +771,9 @@ class MarketAnalysisTripleBarrierLabeling:
         if not stats['performance_optimization']['numba_available']:
             recommendations.append('Install numba for significant performance improvements')
         
+        if not stats['performance_optimization']['hardware_optimizations_available']:
+            recommendations.append('Enable hardware optimizations for better performance')
+        
         # Validation recommendations
         if not stats['validation_status']['validation_framework_available']:
             recommendations.append('Enable validation framework for better error tracking and reporting')
@@ -703,6 +785,7 @@ class MarketAnalysisTripleBarrierLabeling:
         return {
             'implementation_type': 'market_analysis_triple_barrier',
             'numba_acceleration': NUMBA_AVAILABLE,
+            'hardware_optimizations': HARDWARE_OPTIMIZATIONS_AVAILABLE,
             'binary_classification_optimized': self.config.binary_classification,
             'regime_aware_enabled': self.config.regime_aware,
             'profit_tracking_enabled': True,
@@ -815,6 +898,7 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> Dict[str, float]:
         'data_size': len(data),
         'labeled_samples': len(labeled_data),
         'numba_available': NUMBA_AVAILABLE,
+        'hardware_optimizations_available': HARDWARE_OPTIMIZATIONS_AVAILABLE,
         'validation_available': VALIDATION_AVAILABLE
     }
 

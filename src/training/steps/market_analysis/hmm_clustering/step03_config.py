@@ -29,7 +29,7 @@ class BayesianOptimizationConfig:
 @dataclass
 class HMMConfig:
     """Configuration for HMM clustering."""
-    n_components_range: List[int] = field(default_factory = lambda: [2, 8])
+    n_components_range: List[int] = field(default_factory = lambda: [2, 40])
     covariance_types: List[str] = field(default_factory = lambda: ["full", "tied", "diag", "spherical"])
     n_iter_range: List[int] = field(default_factory = lambda: [50, 200])
     tol_range: List[float] = field(default_factory = lambda: [1e-6, 1e-2])
@@ -273,7 +273,7 @@ DEFAULT_CONFIG = Step03Config()
 PRESETS = {
     'fast': Step03Config(
         bayesian_optimization = BayesianOptimizationConfig(n_trials = 20, timeout_minutes = 5),
-        hmm = HMMConfig(n_components_range=[2, 4], max_samples = 2000),
+        hmm = HMMConfig(n_components_range=[2, 8], max_samples = 2000),
         ensemble = EnsembleConfig(kmeans_n_clusters_range=[5, 15]),
         ml_transition = MLTransitionConfig(initial_features = 10, max_features = 50),
         memory = MemoryConfig(chunk_size = 5000)
@@ -281,7 +281,7 @@ PRESETS = {
     
     'thorough': Step03Config(
         bayesian_optimization = BayesianOptimizationConfig(n_trials = 200, timeout_minutes = 60),
-        hmm = HMMConfig(n_components_range=[2, 10], max_samples = 10000),
+        hmm = HMMConfig(n_components_range=[2, 40], max_samples = 10000),
         ensemble = EnsembleConfig(kmeans_n_clusters_range=[10, 50]),
         ml_transition = MLTransitionConfig(initial_features = 30, max_features = 150),
         memory = MemoryConfig(chunk_size = 20000)
@@ -289,7 +289,7 @@ PRESETS = {
     
     'production': Step03Config(
         bayesian_optimization = BayesianOptimizationConfig(n_trials = 100, timeout_minutes = 30),
-        hmm = HMMConfig(n_components_range=[3, 6], max_samples = 5000),
+        hmm = HMMConfig(n_components_range=[3, 20], max_samples = 5000),
         ensemble = EnsembleConfig(kmeans_n_clusters_range=[15, 25]),
         ml_transition = MLTransitionConfig(initial_features = 20, max_features = 100),
         memory = MemoryConfig(chunk_size = 10000, max_memory_usage_gb = 16.0),

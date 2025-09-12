@@ -117,6 +117,9 @@ class CrossTimeframeConfig:
     enable_order_flow_features: bool = True
     enable_momentum_divergence: bool = True
     enable_volatility_spillover: bool = True
+    enable_advanced_interactions: bool = True
+    enable_regime_transitions: bool = True
+    enable_liquidity_features: bool = True
     
     # Data quality
     enable_data_quality_validation: bool = True
@@ -534,6 +537,21 @@ class CrossTimeframeAnalysisPipeline:
             if self.config.enable_volatility_spillover:
                 features.update(self._generate_volatility_spillover_features(aligned_data))
             
+            # Advanced interaction features
+            if self.config.enable_advanced_interactions:
+                advanced_features = self._generate_advanced_interaction_features(aligned_data)
+                features.update(advanced_features)
+            
+            # Regime transition features
+            if self.config.enable_regime_transitions:
+                regime_features = self._generate_regime_transition_features(aligned_data)
+                features.update(regime_features)
+            
+            # Liquidity features
+            if self.config.enable_liquidity_features:
+                liquidity_features = self._generate_liquidity_features(aligned_data)
+                features.update(liquidity_features)
+            
             # Remove rows with NaN values
             features = features.dropna()
             
@@ -810,6 +828,167 @@ class CrossTimeframeAnalysisPipeline:
                     
                     # Volatility difference
                     features[f'volatility_diff_{tf1}_{tf2}_{period}'] = vol1 - vol2
+        
+        return features
+    
+    def _generate_advanced_interaction_features(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
+        """Generate advanced interaction features between timeframes."""
+        features = {}
+        timeframes = list(aligned_data.keys())
+        
+        # Cross-timeframe trend alignment features
+        for i, tf1 in enumerate(timeframes):
+            for j, tf2 in enumerate(timeframes[i+1:], i+1):
+                data1 = aligned_data[tf1]
+                data2 = aligned_data[tf2]
+                
+                # Trend alignment (moving average slopes)
+                ma1_20 = data1['close'].rolling(20).mean()
+                ma2_20 = data2['close'].rolling(20).mean()
+                
+                trend1 = ma1_20.diff(5)  # 5-period trend
+                trend2 = ma2_20.diff(5)
+                
+                features[f'trend_alignment_{tf1}_{tf2}'] = (trend1 * trend2 > 0).astype(int)
+                features[f'trend_strength_diff_{tf1}_{tf2}'] = abs(trend1) - abs(trend2)
+                
+                # Breakout synchronization
+                high1 = data1['high'].rolling(20).max()
+                low1 = data1['low'].rolling(20).min()
+                high2 = data2['high'].rolling(20).max()
+                low2 = data2['low'].rolling(20).min()
+                
+                breakout1 = (data1['close'] > high1.shift(1)).astype(int)
+                breakout2 = (data2['close'] > high2.shift(1)).astype(int)
+                
+                features[f'breakout_sync_{tf1}_{tf2}'] = (breakout1 * breakout2).astype(int)
+                
+                # Volume confirmation across timeframes
+                vol1_norm = data1['volume'] / data1['volume'].rolling(20).mean()
+                vol2_norm = data2['volume'] / data2['volume'].rolling(20).mean()
+                
+                features[f'volume_confirmation_{tf1}_{tf2}'] = (vol1_norm > 1.5) & (vol2_norm > 1.5)
+        
+        # Multi-timeframe momentum convergence
+        momentum_data = {}
+        for timeframe in timeframes:
+            data = aligned_data[timeframe]
+            momentum_data[timeframe] = {
+                'momentum_5': data['close'].pct_change(5),
+                'momentum_10': data['close'].pct_change(10),
+                'momentum_20': data['close'].pct_change(20)
+            }
+        
+        # Calculate momentum convergence across all timeframes
+        for period in [5, 10, 20]:
+            momentum_series = []
+            for timeframe in timeframes:
+                momentum_series.append(momentum_data[timeframe][f'momentum_{period}'])
+            
+            # Convergence metric (standard deviation of momentum across timeframes)
+            momentum_df = pd.concat(momentum_series, axis=1)
+            features[f'momentum_convergence_{period}'] = momentum_df.std(axis=1)
+            
+            # Momentum direction alignment
+            momentum_directions = momentum_df.apply(lambda x: (x > 0).sum() / len(x), axis=1)
+            features[f'momentum_direction_alignment_{period}'] = momentum_directions
+        
+        return features
+    
+    def _generate_regime_transition_features(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
+        """Generate regime transition features across timeframes."""
+        features = {}
+        timeframes = list(aligned_data.keys())
+        
+        # Calculate regime indicators for each timeframe
+        regime_data = {}
+        for timeframe in timeframes:
+            data = aligned_data[timeframe]
+            returns = data['close'].pct_change()
+            
+            # Simple regime classification based on volatility and momentum
+            vol = returns.rolling(20).std()
+            momentum = data['close'].pct_change(10)
+            
+            # High volatility regime
+            high_vol_regime = (vol > vol.rolling(50).quantile(0.8)).astype(int)
+            
+            # Trending regime (strong momentum)
+            trending_regime = (abs(momentum) > momentum.rolling(50).quantile(0.8)).astype(int)
+            
+            regime_data[timeframe] = {
+                'high_vol_regime': high_vol_regime,
+                'trending_regime': trending_regime,
+                'volatility': vol,
+                'momentum': momentum
+            }
+        
+        # Cross-timeframe regime transitions
+        for i, tf1 in enumerate(timeframes):
+            for j, tf2 in enumerate(timeframes[i+1:], i+1):
+                # Regime alignment
+                vol_align = (regime_data[tf1]['high_vol_regime'] == regime_data[tf2]['high_vol_regime']).astype(int)
+                trend_align = (regime_data[tf1]['trending_regime'] == regime_data[tf2]['trending_regime']).astype(int)
+                
+                features[f'vol_regime_alignment_{tf1}_{tf2}'] = vol_align
+                features[f'trend_regime_alignment_{tf1}_{tf2}'] = trend_align
+                
+                # Regime transition lead/lag
+                vol_transition1 = regime_data[tf1]['high_vol_regime'].diff()
+                vol_transition2 = regime_data[tf2]['high_vol_regime'].diff()
+                
+                # Check if tf1 leads tf2 in regime transitions
+                features[f'regime_transition_lead_{tf1}_{tf2}'] = (vol_transition1 != 0) & (vol_transition2 == 0)
+        
+        # Aggregate regime strength across timeframes
+        all_vol_regimes = pd.concat([regime_data[tf]['high_vol_regime'] for tf in timeframes], axis=1)
+        all_trend_regimes = pd.concat([regime_data[tf]['trending_regime'] for tf in timeframes], axis=1)
+        
+        features['aggregate_vol_regime_strength'] = all_vol_regimes.mean(axis=1)
+        features['aggregate_trend_regime_strength'] = all_trend_regimes.mean(axis=1)
+        
+        return features
+    
+    def _generate_liquidity_features(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
+        """Generate liquidity-related features across timeframes."""
+        features = {}
+        timeframes = list(aligned_data.keys())
+        
+        for timeframe in timeframes:
+            data = aligned_data[timeframe]
+            
+            # Bid-ask spread proxy (high-low range)
+            spread_proxy = (data['high'] - data['low']) / data['close']
+            
+            # Volume-weighted spread
+            volume_weighted_spread = spread_proxy * data['volume']
+            features[f'volume_weighted_spread_{timeframe}'] = volume_weighted_spread
+            
+            # Liquidity ratio (volume vs price impact)
+            price_impact = abs(data['close'].pct_change())
+            liquidity_ratio = data['volume'] / (price_impact + 1e-10)
+            features[f'liquidity_ratio_{timeframe}'] = liquidity_ratio
+            
+            # Market depth proxy (volume persistence)
+            volume_ma = data['volume'].rolling(10).mean()
+            volume_persistence = (data['volume'] > volume_ma).rolling(5).sum()
+            features[f'volume_persistence_{timeframe}'] = volume_persistence
+        
+        # Cross-timeframe liquidity correlation
+        for i, tf1 in enumerate(timeframes):
+            for j, tf2 in enumerate(timeframes[i+1:], i+1):
+                data1 = aligned_data[tf1]
+                data2 = aligned_data[tf2]
+                
+                # Volume correlation
+                vol_corr = data1['volume'].rolling(20).corr(data2['volume'])
+                features[f'volume_correlation_{tf1}_{tf2}'] = vol_corr
+                
+                # Liquidity spillover
+                liquidity1 = data1['volume'] / (abs(data1['close'].pct_change()) + 1e-10)
+                liquidity2 = data2['volume'] / (abs(data2['close'].pct_change()) + 1e-10)
+                
+                features[f'liquidity_spillover_{tf1}_{tf2}'] = liquidity1.shift(1).rolling(10).corr(liquidity2)
         
         return features
 

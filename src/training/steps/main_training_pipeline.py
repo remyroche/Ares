@@ -136,8 +136,7 @@ class MainPipelineConfig:
         ],
         PipelineStage.MODEL_TRAINING: [
             'general_model_training', 'analyst_model_training', 'tactician_model_training',
-            'hmm_training', 'ensemble_training', 'multi_timeframe_training',
-            'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation'
+            'hmm_training', 'ensemble_training', 'multi_timeframe_training'
         ],
         PipelineStage.BACKTESTING: [
             'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
@@ -726,8 +725,7 @@ def get_full_pipeline_config(
             ],
             PipelineStage.MODEL_TRAINING: [
                 'general_model_training', 'analyst_model_training', 'tactician_model_training',
-                'hmm_training', 'ensemble_training', 'multi_timeframe_training',
-                'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation'
+                'hmm_training', 'ensemble_training', 'multi_timeframe_training'
             ],
             PipelineStage.BACKTESTING: [
                 'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',

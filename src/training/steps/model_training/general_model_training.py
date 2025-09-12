@@ -25,6 +25,10 @@ from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
+# Enhanced Model Trainer - Automatic post-training integration
+from src.utils.ml_common.enhanced_model_trainer import EnhancedModelTrainer, EnhancedTrainingConfig
+from src.utils.ml_common.multi_timeframe_training import MultiTimeframeTrainer, MultiTimeframeTrainingConfig, TimeframeConfig
+
 # ML Commons utilities - Enhanced integration
 from src.utils.ml_common import (
     ModelEvaluator, HPOptimizer, FeatureSelectionFramework,
@@ -192,7 +196,7 @@ class ModelTrainingConfig:
 
 @dataclass
 class ModelTrainingResults:
-    """Results from model training."""
+    """Results from model training with enhanced post-training integration."""
     # Basic info
     model_name: str
     task_type: TaskType
@@ -223,11 +227,19 @@ class ModelTrainingResults:
     test_samples: int = 0
     feature_count: int = 0
     
-    # Metadata
-    config: ModelTrainingConfig = field(default_factory=ModelTrainingConfig)
-    execution_time: float = 0.0
+    # Enhanced post-training integration metrics
+    pre_hpo_metrics: Dict[str, float] = field(default_factory=dict)
+    post_hpo_metrics: Dict[str, float] = field(default_factory=dict)
+    improvement_achieved: bool = False
+    hpo_trials_completed: int = 0
+    persistence_result: Optional[Any] = None
+    validation_result: Optional[Any] = None
+    
+    # Additional metadata
+    config: Optional[Any] = None
+    optimization_used: Optional[str] = None
     memory_usage_mb: float = 0.0
-    optimization_used: List[str] = field(default_factory=list)
+    execution_time: float = 0.0
 
 
 class GeneralModelTrainer:
@@ -355,7 +367,7 @@ class GeneralModelTrainer:
         data: pd.DataFrame,
         **kwargs
     ) -> ModelTrainingResults:
-        """Internal model training logic with ML commons integration."""
+        """Internal model training logic using EnhancedModelTrainer for automatic post-training integration."""
         
         # Prepare data with enhanced preprocessing
         X, y = self._prepare_data_enhanced(data)
@@ -367,25 +379,96 @@ class GeneralModelTrainer:
         # Split data with temporal integrity
         X_train, X_val, X_test, y_train, y_val, y_test = self._split_data_temporal(X, y)
         
-        # Perform hyperparameter optimization using ML commons
-        if self.config.enable_hyperparameter_optimization:
-            best_params = await self._optimize_hyperparameters_enhanced(X_train, y_train, X_val, y_val)
-        else:
-            best_params = self.config.model_params
+        # Convert to numpy arrays for EnhancedModelTrainer
+        X_train_array = X_train.values if isinstance(X_train, pd.DataFrame) else X_train
+        X_test_array = X_test.values if isinstance(X_test, pd.DataFrame) else X_test
+        y_train_array = y_train.values if isinstance(y_train, pd.Series) else y_train
+        y_test_array = y_test.values if isinstance(y_test, pd.Series) else y_test
         
-        # Train final model with best parameters
-        trained_model = await self._train_final_model_enhanced(X_train, y_train, best_params)
+        # Create EnhancedTrainingConfig
+        enhanced_config = EnhancedTrainingConfig(
+            model_types=[self.config.model_type.value],
+            enable_hyperparameter_optimization=self.config.enable_hyperparameter_optimization,
+            hpo_trials=self.config.hpo_trials,
+            hpo_timeout=self.config.hpo_timeout,
+            enable_multi_timeframe_training=False,  # Not using multi-timeframe for general training
+            enable_pre_hpo_evaluation=True,
+            enable_post_hpo_evaluation=True,
+            evaluation_metrics=['accuracy', 'f1_score', 'r2_score', 'precision', 'recall'],
+            enable_cross_validation=True,
+            cv_folds=self.config.cross_validation_folds,
+            enable_holdout_validation=True,
+            holdout_ratio=self.config.validation_split,
+            enable_model_persistence=True,
+            enable_versioning=True,
+            max_versions=10,
+            min_accuracy_threshold=0.5,
+            min_f1_threshold=0.5,
+            min_r2_threshold=0.0,
+            min_sharpe_threshold=0.0,
+            save_training_results=True,
+            generate_training_report=True,
+            training_report_path=f"{self.config.output_dir}/training_report_{self.config.model_name}.json"
+        )
         
-        # Evaluate model using ML commons
-        training_metrics = await self._evaluate_model_enhanced(trained_model, X_train, y_train)
-        validation_metrics = await self._evaluate_model_enhanced(trained_model, X_val, y_val)
-        test_metrics = await self._evaluate_model_enhanced(trained_model, X_test, y_test)
+        # Initialize EnhancedModelTrainer
+        enhanced_trainer = EnhancedModelTrainer(enhanced_config)
         
-        # Perform cross-validation using ML commons
-        cv_scores = await self._cross_validate_model_enhanced(trained_model, X_train, y_train)
+        # Train model with automatic post-training integration
+        training_result = await enhanced_trainer.train_model(
+            X_train=X_train_array,
+            y_train=y_train_array,
+            X_test=X_test_array,
+            y_test=y_test_array,
+            model_name=self.config.model_name,
+            model_type=self.config.model_type.value
+        )
+        
+        # Convert EnhancedModelTrainer result to ModelTrainingResults
+        results = self._convert_enhanced_result_to_training_results(training_result, X_train, X_val, X_test, y_train, y_val, y_test)
+        
+        return results
+    
+    def _convert_enhanced_result_to_training_results(
+        self, 
+        enhanced_result, 
+        X_train, X_val, X_test, 
+        y_train, y_val, y_test
+    ) -> ModelTrainingResults:
+        """Convert EnhancedModelTrainer result to ModelTrainingResults format."""
+        
+        # Extract metrics from enhanced result
+        pre_hpo_metrics = enhanced_result.pre_hpo_metrics.post_hpo_metrics if enhanced_result.pre_hpo_metrics else {}
+        post_hpo_metrics = enhanced_result.post_hpo_metrics.post_hpo_metrics if enhanced_result.post_hpo_metrics else {}
+        validation_result = enhanced_result.validation_result
+        
+        # Convert metrics to our format
+        training_metrics = {
+            'score': post_hpo_metrics.get('accuracy', post_hpo_metrics.get('r2_score', 0.0)),
+            'accuracy': post_hpo_metrics.get('accuracy', 0.0),
+            'f1_score': post_hpo_metrics.get('f1_score', 0.0),
+            'precision': post_hpo_metrics.get('precision', 0.0),
+            'recall': post_hpo_metrics.get('recall', 0.0),
+            'r2_score': post_hpo_metrics.get('r2_score', 0.0)
+        }
+        
+        validation_metrics = {
+            'score': validation_result.validation_metrics.get('accuracy', validation_result.validation_metrics.get('r2_score', 0.0)) if validation_result.validation_metrics else 0.0,
+            'accuracy': validation_result.validation_metrics.get('accuracy', 0.0) if validation_result.validation_metrics else 0.0,
+            'f1_score': validation_result.validation_metrics.get('f1_score', 0.0) if validation_result.validation_metrics else 0.0,
+            'precision': validation_result.validation_metrics.get('precision', 0.0) if validation_result.validation_metrics else 0.0,
+            'recall': validation_result.validation_metrics.get('recall', 0.0) if validation_result.validation_metrics else 0.0,
+            'r2_score': validation_result.validation_metrics.get('r2_score', 0.0) if validation_result.validation_metrics else 0.0
+        }
+        
+        # Test metrics (same as training for now, could be enhanced)
+        test_metrics = training_metrics.copy()
+        
+        # Cross-validation scores
+        cv_scores = validation_result.cv_scores if validation_result.cv_scores else []
         
         # Extract feature importance if available
-        feature_importance = self._extract_feature_importance(trained_model)
+        feature_importance = self._extract_feature_importance(enhanced_result.best_model)
         
         # Create results
         results = ModelTrainingResults(
@@ -394,9 +477,9 @@ class GeneralModelTrainer:
             model_type=self.config.model_type,
             start_time=datetime.now(),
             end_time=datetime.now(),
-            total_duration=0.0,  # Will be set by caller
-            trained_model=trained_model,
-            best_params=best_params,
+            total_duration=enhanced_result.training_time,
+            trained_model=enhanced_result.best_model,
+            best_params=enhanced_result.best_params,
             feature_importance=feature_importance,
             training_metrics=training_metrics,
             validation_metrics=validation_metrics,
@@ -407,7 +490,14 @@ class GeneralModelTrainer:
             test_samples=len(X_test),
             feature_count=len(self.config.feature_columns),
             config=self.config,
-            optimization_used=self._get_optimization_used()
+            optimization_used=self._get_optimization_used(),
+            # Enhanced metrics
+            pre_hpo_metrics=pre_hpo_metrics,
+            post_hpo_metrics=post_hpo_metrics,
+            improvement_achieved=enhanced_result.improvement_achieved,
+            hpo_trials_completed=enhanced_result.hpo_trials_completed,
+            persistence_result=enhanced_result.persistence_result,
+            validation_result=enhanced_result.validation_result
         )
         
         return results

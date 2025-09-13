@@ -62,17 +62,16 @@ try:
     )
     
     # Data Processing (avoid heavy imports at module import time)
-    # Import only lightweight names; defer heavy classes to local imports in callers to prevent circulars
+    # Expose lightweight getters instead of importing heavy classes to prevent circulars
     try:
-        from .data_processing import EnhancedDataLabeler  # Lightweight class definition
+        from .data_processing import (
+            get_enhanced_data_labeler as EnhancedDataLabelerGetter,
+            get_labeling_config as LabelingConfigGetter
+        )
     except Exception as e:
-        EnhancedDataLabeler = None  # type: ignore
-        tprint(f"⚠️ EnhancedDataLabeler not available at init: {e}")
-    # LabelingConfig may live in config; avoid importing non-existent symbol
-    try:
-        from .data_processing import LabelingConfig  # Optional; may not exist
-    except Exception:
-        LabelingConfig = None  # type: ignore
+        EnhancedDataLabelerGetter = None  # type: ignore
+        LabelingConfigGetter = None  # type: ignore
+        tprint(f"⚠️ Data processing getters not available at init: {e}")
     # Defer other heavy utilities to call sites
     
     # Validation

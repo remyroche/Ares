@@ -28,7 +28,8 @@ def create_simple_logger():
     """Create a basic logger without complex initialization."""
     tprint = _get_tprint()
     logger = logging.getLogger('AresSimple')
-    logger.setLevel(logging.INFO)
+    # Default to INFO; allow LIGHT mode to reduce noise if env var set
+    logger.setLevel(logging.INFO if not bool(int(os.getenv('ARES_LIGHT_MODE', '0'))) else logging.WARNING)
     # Prevent double logging via root handlers
     logger.propagate = False
 

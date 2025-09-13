@@ -62,10 +62,10 @@ tprint("✅ [IMPORTS] Main training pipeline components imported")
 
 tprint("🔧 [IMPORTS] Creating AresLauncher logger...")
 logger = system_logger.getChild('AresLauncher')
-# Ensure single emission: children propagate to AresSimple root once
+# Ensure single emission via root 'AresSimple' only; do not add handlers here
 logger.propagate = True
-# Avoid duplicate handlers on this named logger
-logger.handlers.clear()
+if logger.handlers:
+    logger.handlers.clear()
 tprint("✅ [IMPORTS] AresLauncher logger created")
 tprint("✅ [IMPORTS] All imports completed successfully")
 tprint("=" * 60)

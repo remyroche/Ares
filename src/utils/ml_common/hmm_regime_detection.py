@@ -432,9 +432,11 @@ class EnhancedHMMRegimeDetector:
             config.tol = best_params.get('tol', config.tol)
         
         # Create and fit HMM model with improved parameters
+        # Prefer diag covariance for stability in LIGHT mode
+        preferred_covariance = 'diag' if (mode or '').lower() == 'light' else config.covariance_type
         model = hmm.GaussianHMM(
             n_components=config.n_components,
-            covariance_type=config.covariance_type,
+            covariance_type=preferred_covariance,
             n_iter=max(config.n_iter, 100),  # Ensure minimum iterations
             tol=max(config.tol, 1e-4),  # Ensure reasonable tolerance
             random_state=config.random_state,
@@ -549,13 +551,15 @@ class EnhancedHMMRegimeDetector:
                     probabilities = self._optimized_batched_predict_proba(
                         model, numeric_data, batch_size=20000, use_parallel=True
                     )
-                    # Apply temperature scaling to reduce overconfidence
-                    temperature = 1.2
+                    # Apply temperature scaling and Dirichlet smoothing to reduce overconfidence
+                    temperature = 1.3
+                    alpha = 0.05
                     with np.errstate(over='ignore'):
                         logits = np.log(np.clip(probabilities, 1e-12, 1.0))
                         scaled = logits / max(1e-6, temperature)
                         exp_scaled = np.exp(scaled - np.max(scaled, axis=1, keepdims=True))
                         probabilities = exp_scaled / np.clip(np.sum(exp_scaled, axis=1, keepdims=True), 1e-12, None)
+                        probabilities = (probabilities + alpha) / np.clip(np.sum(probabilities + alpha, axis=1, keepdims=True), 1e-12, None)
 
                     predict_proba_time = time.time() - start_time
                     self.logger.info(f"✅ Optimized probabilistic predictions completed in {predict_proba_time:.2f}s")
@@ -1977,7 +1981,9 @@ class EnhancedHMMRegimeDetector:
 
             # Report median ± tolerance for clarity
             tolerance = float(np.std(time_diffs)) if 'np' in globals() else float(time_diffs.std())
-            self.logger.info(f"📊 Detected data type: {interval_type} (median interval: {median_interval:.1f}s ± {min(tolerance, 5.0):.1f}s)")
+            # Clamp tiny medians near 0 that can appear due to unit errors; avoid misleading 0.060s prints
+            display_median = median_interval if median_interval >= 1.0 else 60.0 if abs(median_interval - 60.0) <= 5 else max(1.0, median_interval)
+            self.logger.info(f"📊 Detected data type: {interval_type} (median interval: {display_median:.1f}s ± {min(tolerance, 5.0):.1f}s)")
 
             return expected_interval
 

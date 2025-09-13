@@ -96,6 +96,18 @@ try:
     from .matrix_operations import M1EnhancedMatrixOperations, get_enhanced_matrix_operations
     from .pipeline_orchestrator import PipelineOrchestrator
     from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
+    from .feature_importance_analyzer import (
+        FeatureImportanceAnalyzer, FeatureImportanceConfig, FeatureImportanceResult,
+        ImportanceMethod, analyze_feature_importance, get_important_features
+    )
+    from .data_drift_detector import (
+        DataDriftDetector, DriftDetectionConfig, DriftReport, DriftResult,
+        DriftType, DriftMethod, DriftSeverity, detect_data_drift, get_drifted_features
+    )
+    from .hmm_ensemble_manager import (
+        HMMEnsembleManager, EnsembleConfig, EnsembleResult, HMMResult,
+        EnsembleMethod, HMMType, HMMConfig, create_hmm_ensemble, get_stable_hmm_labels
+    )
     
     # Define exports
     __all__ = [
@@ -153,6 +165,18 @@ try:
         'HMMRegimeDetector', 'RegimeConfig',
         'calculate_confidence_metrics', 'calculate_calibration_metrics',
         'M1EnhancedMatrixOperations', 'get_enhanced_matrix_operations', 'PipelineOrchestrator',
+        
+        # Feature Importance Analysis
+        'FeatureImportanceAnalyzer', 'FeatureImportanceConfig', 'FeatureImportanceResult',
+        'ImportanceMethod', 'analyze_feature_importance', 'get_important_features',
+        
+        # Data Drift Detection
+        'DataDriftDetector', 'DriftDetectionConfig', 'DriftReport', 'DriftResult',
+        'DriftType', 'DriftMethod', 'DriftSeverity', 'detect_data_drift', 'get_drifted_features',
+        
+        # HMM Ensemble Management
+        'HMMEnsembleManager', 'EnsembleConfig', 'EnsembleResult', 'HMMResult',
+        'EnsembleMethod', 'HMMType', 'HMMConfig', 'create_hmm_ensemble', 'get_stable_hmm_labels',
         
         # Backward compatibility
         'tprint'

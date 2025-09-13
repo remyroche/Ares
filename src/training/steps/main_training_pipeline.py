@@ -314,12 +314,12 @@ class MainTrainingPipeline:
         # Create stage-specific configuration
         stage_config = self._create_stage_config(stage, config)
         
-        # Execute the sub-pipeline with automatic next triggering
+        # Execute the sub-pipeline without automatic next triggering
         if stage == PipelineStage.MARKET_ANALYSIS:
             if not MARKET_ANALYSIS_AVAILABLE:
                 self.logger.warning("⚠️ Market analysis sub-pipeline not available")
                 return None
-            return await self.market_analysis_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
+            return await self.market_analysis_pipeline.execute_sub_pipeline(starting_sub_pipeline, stage_config)
         else:
             self.logger.warning(f"⚠️ Auto-chaining not implemented for stage: {stage.value}")
             return None
@@ -527,19 +527,23 @@ class MainTrainingPipeline:
         # Update pipeline configuration
         self.market_analysis_pipeline.config = config
 
-        # For MARKET_ANALYSIS, always use sequential execution with automatic progression
-        # Start with the first sub-pipeline and let it trigger the next ones
-        self.logger.info("🚀 Starting automatic sequential execution: sr_parameter_optimization -> sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> cross_timeframe_analysis -> sr_feature_integration")
+        # For MARKET_ANALYSIS, execute sub-pipelines individually without automatic chaining
+        self.logger.info("🚀 Starting individual sub-pipeline execution (no automatic chaining)")
 
         results = []
         if sub_pipeline_names:
-            # Execute the first sub-pipeline with automatic next triggering
-            first_result = await self.market_analysis_pipeline.execute_sub_pipeline_with_next(
-                sub_pipeline_names[0], config
-            )
-            results.append(first_result)
-
-            # The first sub-pipeline will have automatically triggered all subsequent ones
+            # Execute each sub-pipeline individually
+            for sub_pipeline_name in sub_pipeline_names:
+                try:
+                    result = await self.market_analysis_pipeline.execute_sub_pipeline(sub_pipeline_name, config)
+                    results.append(result)
+                    if result.status == SubPipelineStatus.COMPLETED:
+                        self.logger.info(f"✅ {sub_pipeline_name} completed successfully")
+                    else:
+                        self.logger.warning(f"⚠️ {sub_pipeline_name} completed with status: {result.status.value}")
+                except Exception as e:
+                    self.logger.error(f"❌ {sub_pipeline_name} failed: {e}")
+                    # Continue with next sub-pipeline even if one fails
             # Add their results to our results list
             for result in self.market_analysis_pipeline.results:
                 if result not in results:  # Avoid duplicates

@@ -402,9 +402,12 @@ class MarketAnalysisSubPipeline:
             if sub_pipeline_name not in self.sub_pipelines:
                 raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
             
-            # Execute the sub-pipeline
+            # Execute the sub-pipeline with timeout protection
             pipeline_func = self.sub_pipelines[sub_pipeline_name]
-            artifacts = await pipeline_func(config)
+            import asyncio
+            timeout_seconds = 1800  # 30 minutes timeout
+            self.logger.info(f"⏰ Setting timeout of {timeout_seconds} seconds for {sub_pipeline_name}")
+            artifacts = await asyncio.wait_for(pipeline_func(config), timeout=timeout_seconds)
             
             # Update result
             end_time = datetime.now()
@@ -425,6 +428,15 @@ class MarketAnalysisSubPipeline:
 
             self.logger.info(f"✅ Market analysis sub-pipeline {sub_pipeline_name} completed in {result.duration_seconds:.2f}s")
 
+        except asyncio.TimeoutError:
+            end_time = datetime.now()
+            result.status = SubPipelineStatus.FAILED
+            result.end_time = end_time
+            result.duration_seconds = (end_time - start_time).total_seconds()
+            result.error_message = f"Sub-pipeline timed out after {timeout_seconds} seconds"
+            
+            self.logger.error(f"⏰ Market analysis sub-pipeline {sub_pipeline_name} timed out after {timeout_seconds}s")
+            
         except Exception as e:
             end_time = datetime.now()
             result.status = SubPipelineStatus.FAILED
@@ -1208,24 +1220,11 @@ class MarketAnalysisSubPipeline:
         self.logger.info(f"   📊 Clustering Metrics: {artifacts.get('clustering_metrics', 'N/A')}")
         self.logger.info(f"   🔧 Cluster Params: {artifacts.get('cluster_params', 'N/A')}")
         
-        # Automatically trigger the next sub-pipeline: hmm_regime_discovery
-        tprint("🔄 SR clustering completed, triggering next: hmm_regime_discovery")
-        tprint("   🚀 Starting HMM regime discovery pipeline...")
-        self.logger.info("🔄 SR clustering completed, triggering next: hmm_regime_discovery")
-        self.logger.info("   🚀 Starting HMM regime discovery pipeline...")
-        try:
-            next_artifacts = await self._hmm_regime_discovery_pipeline(config)
-            tprint("   ✅ HMM regime discovery pipeline completed successfully")
-            self.logger.info("   ✅ HMM regime discovery pipeline completed successfully")
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            tprint("   🔗 Artifacts merged from HMM regime discovery pipeline")
-            self.logger.info("   🔗 Artifacts merged from HMM regime discovery pipeline")
-        except Exception as e:
-            tprint(f"   ❌ Failed to execute HMM regime discovery pipeline: {e}")
-            self.logger.error(f"❌ Failed to execute HMM regime discovery pipeline: {e}")
-            import traceback
-            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        # Log completion without automatically triggering next sub-pipeline
+        tprint("✅ SR clustering completed successfully")
+        self.logger.info("✅ SR clustering completed successfully")
+        tprint("ℹ️ Next sub-pipeline (hmm_regime_discovery) should be run separately")
+        self.logger.info("ℹ️ Next sub-pipeline (hmm_regime_discovery) should be run separately")
         
         return artifacts
     
@@ -1284,16 +1283,10 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("hmm_clustering", config, artifacts)
         
-        # Automatically trigger the next sub-pipeline: hmm_regime_discovery
-        self.logger.info("🔄 HMM clustering completed, triggering next: hmm_regime_discovery")
-        try:
-            next_artifacts = await self._hmm_regime_discovery_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ HMM regime discovery pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute HMM regime discovery pipeline: {e}")
-
+        # Log completion without automatically triggering next sub-pipeline
+        self.logger.info("✅ HMM clustering completed successfully")
+        self.logger.info("ℹ️ Next sub-pipeline (hmm_regime_discovery) should be run separately")
+        
         return artifacts
     
     async def _hmm_models_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -1841,25 +1834,10 @@ class MarketAnalysisSubPipeline:
         self._log_sub_pipeline_completion("hmm_regime_discovery", config, artifacts)
         self.logger.info(f"🔍 DEBUG: Sub-pipeline completion logged")
 
-        # Automatically trigger the next sub-pipeline: regime_data_splitting
-        self.logger.info("🔄 HMM regime discovery completed, triggering next: regime_data_splitting")
-        self.logger.info(f"🔍 DEBUG: About to call regime_data_splitting_pipeline...")
-        try:
-            self.logger.info(f"🔍 DEBUG: Calling _regime_data_splitting_pipeline...")
-            next_artifacts = await self._regime_data_splitting_pipeline(config)
-            self.logger.info(f"🔍 DEBUG: Regime data splitting pipeline returned: {type(next_artifacts)}")
-
-            # Merge artifacts from next pipeline
-            self.logger.info(f"🔍 DEBUG: Merging artifacts...")
-            artifacts.update(next_artifacts)
-            self.logger.info(f"🔍 DEBUG: Artifacts merged successfully")
-            self.logger.info("✅ Regime data splitting pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute regime data splitting pipeline: {e}")
-            self.logger.error(f"🔍 DEBUG: Exception details: {type(e).__name__}: {str(e)}")
-            import traceback
-            self.logger.error(f"🔍 DEBUG: Full traceback:\n{traceback.format_exc()}")
-
+        # Log completion without automatically triggering next sub-pipeline
+        self.logger.info("✅ HMM regime discovery completed successfully")
+        self.logger.info("ℹ️ Next sub-pipeline (regime_data_splitting) should be run separately")
+        
         return artifacts
 
     def _check_for_constant_features(self, data: pd.DataFrame) -> List[str]:
@@ -1968,16 +1946,10 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("regime_data_splitting", config, artifacts)
 
-        # Automatically trigger the next sub-pipeline: triple_barrier_labeling
-        self.logger.info("🔄 Regime data splitting completed, triggering next: triple_barrier_labeling")
-        try:
-            next_artifacts = await self._triple_barrier_labeling_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ Triple barrier labeling pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute triple barrier labeling pipeline: {e}")
-
+        # Log completion without automatically triggering next sub-pipeline
+        self.logger.info("✅ Regime data splitting completed successfully")
+        self.logger.info("ℹ️ Next sub-pipeline (triple_barrier_labeling) should be run separately")
+        
         return artifacts
     
     async def _triple_barrier_labeling_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -2035,16 +2007,10 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("triple_barrier_labeling", config, artifacts)
 
-        # Automatically trigger the next sub-pipeline: feature_lookback_optimization
-        self.logger.info("🔄 Triple barrier labeling completed, triggering next: feature_lookback_optimization")
-        try:
-            next_artifacts = await self._feature_lookback_optimization_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ Feature lookback optimization pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute feature lookback optimization pipeline: {e}")
-
+        # Log completion without automatically triggering next sub-pipeline
+        self.logger.info("✅ Triple barrier labeling completed successfully")
+        self.logger.info("ℹ️ Next sub-pipeline (feature_lookback_optimization) should be run separately")
+        
         return artifacts
     
     async def _feature_lookback_optimization_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -2545,16 +2511,10 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("feature_lookback_optimization", config, artifacts)
 
-        # Automatically trigger the next sub-pipeline: cross_timeframe_analysis
-        self.logger.info("🔄 Feature lookback optimization completed, triggering next: cross_timeframe_analysis")
-        try:
-            next_artifacts = await self._cross_timeframe_analysis_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ Cross timeframe analysis pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute cross timeframe analysis pipeline: {e}")
-
+        # Log completion without automatically triggering next sub-pipeline
+        self.logger.info("✅ Feature lookback optimization completed successfully")
+        self.logger.info("ℹ️ Next sub-pipeline (cross_timeframe_analysis) should be run separately")
+        
         return artifacts
 
     def _validate_market_data(self, df: pd.DataFrame, data_source: str = "unknown") -> bool:

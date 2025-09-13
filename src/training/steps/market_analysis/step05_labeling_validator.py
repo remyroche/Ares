@@ -316,7 +316,7 @@ async def run_validator(
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         timeframe = training_input.get("timeframe", "1m")
-        data_dir = training_input.get("data_dir", "data_cache")
+        data_dir = training_input.get("data_dir", "historical_data")
         
         # Initialize validator with BaseValidator inheritance
         config = training_input.get("config", {})

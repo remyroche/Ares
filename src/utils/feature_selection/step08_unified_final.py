@@ -5,6 +5,8 @@ Unified Step08 Final Methods - Part 5
 
 import time
 import logging
+from datetime import datetime
+import os
 
 # Initialize logger
 logger = logging.getLogger('Step08UnifiedFinal')
@@ -92,105 +94,122 @@ from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
 
+class Step08ResultsGenerator:
+    """Wrapper class to provide context for the comprehensive results generation function."""
+
+    def __init__(self):
+        self.logger = logging.getLogger('Step08UnifiedFinal')
+        # Initialize minimal required attributes
+        self.regime_balance = RegimeBalanceMetrics(balance_score=0.5)
+        self.artifacts_dir = "artifacts"
+        self.metrics_dir = "metrics"
+        self.reports_dir = "reports"
+        self.memory_optimizer = None
+        self.parquet_serializer = None
+        self.json_serializer = None
+        self.utility_health = {}
+        self.data_quality_monitor = {}
+        self.performance_tracker = {}
+
     async def _generate_comprehensive_results(self, data: pd.DataFrame, selected_features: Dict[str, List[str]],
-                                            financial_metrics: FinancialMetrics, risk_metrics: RiskMetrics,
-                                            feature_validation: FeatureSelectionValidation, interpretability_results: Dict[str, Any],
-                                            validation_results: Dict[str, Any], start_time: datetime) -> Step08Results:
-        """Generate comprehensive results from all analysis components."""
-        start_time_func = time.time()
-        try:
-            self.logger.info('📋 Generating comprehensive results...')
-            self.logger.info(f'Input data shape: {data.shape}, selected features: {len(selected_features)}')
-            self.logger.info(f'Financial metrics available: {bool(financial_metrics)}')
-            self.logger.info(f'Risk metrics available: {bool(risk_metrics)}')
+                                                financial_metrics: FinancialMetrics, risk_metrics: RiskMetrics,
+                                                feature_validation: FeatureSelectionValidation, interpretability_results: Dict[str, Any],
+                                                validation_results: Dict[str, Any], start_time: datetime) -> Step08Results:
+            """Generate comprehensive results from all analysis components."""
+            start_time_func = time.time()
+            try:
+                self.logger.info('📋 Generating comprehensive results...')
+                self.logger.info(f'Input data shape: {data.shape}, selected features: {len(selected_features)}')
+                self.logger.info(f'Financial metrics available: {bool(financial_metrics)}')
+                self.logger.info(f'Risk metrics available: {bool(risk_metrics)}')
             
-            results = Step08Results()
+                results = Step08Results()
             
-            # Set basic results
-            results.regime_data = data
-            results.selected_features = selected_features
-            results.financial_metrics = financial_metrics
-            results.risk_metrics = risk_metrics
-            results.regime_balance = self.regime_balance
-            results.feature_validation = feature_validation
+                # Set basic results
+                results.regime_data = data
+                results.selected_features = selected_features
+                results.financial_metrics = financial_metrics
+                results.risk_metrics = risk_metrics
+                results.regime_balance = self.regime_balance
+                results.feature_validation = feature_validation
             
-            self.logger.info('Basic results structure initialized')
+                self.logger.info('Basic results structure initialized')
 
-            # Add interpretability results
-            if interpretability_results:
-                results.execution_metadata['interpretability_analysis'] = interpretability_results
-                self.logger.info(f'Interpretability results added: {len(interpretability_results)} components')
+                # Add interpretability results
+                if interpretability_results:
+                    results.execution_metadata['interpretability_analysis'] = interpretability_results
+                    self.logger.info(f'Interpretability results added: {len(interpretability_results)} components')
 
-            # Add validation results
-            if validation_results:
-                results.execution_metadata['walk_forward_validation'] = validation_results
-                self.logger.info(f'Validation results added: {len(validation_results)} components')
+                # Add validation results
+                if validation_results:
+                    results.execution_metadata['walk_forward_validation'] = validation_results
+                    self.logger.info(f'Validation results added: {len(validation_results)} components')
             
-            # Execution metadata
-            end_time = datetime.now()
-            results.execution_metadata = {
-                'start_time': start_time.isoformat(),
-                'end_time': end_time.isoformat(),
-                'duration_seconds': (end_time - start_time).total_seconds(),
-                'total_samples': len(data),
-                'total_features': len(data.columns),
-                'selected_features_count': len(selected_features.get('final', [])),
-                'regime_count': len(data['composite_cluster_id'].unique()) if 'composite_cluster_id' in data.columns else 0,
-                'optimization_used': ENHANCED_OPTIMIZATIONS_AVAILABLE,
-                'dependencies_available': {
-                    'boruta': BORUTA_AVAILABLE,
-                    'shap': SHAP_AVAILABLE,
-                    'lime': LIME_AVAILABLE,
-                    'numba': NUMBA_AVAILABLE,
-                    'joblib': JOBLIB_AVAILABLE,
-                    'walk_forward_validation': WALK_FORWARD_AVAILABLE
+                # Execution metadata
+                end_time = datetime.now()
+                results.execution_metadata = {
+                    'start_time': start_time.isoformat(),
+                    'end_time': end_time.isoformat(),
+                    'duration_seconds': (end_time - start_time).total_seconds(),
+                    'total_samples': len(data),
+                    'total_features': len(data.columns),
+                    'selected_features_count': len(selected_features.get('final', [])),
+                    'regime_count': len(data['composite_cluster_id'].unique()) if 'composite_cluster_id' in data.columns else 0,
+                    'optimization_used': ENHANCED_OPTIMIZATIONS_AVAILABLE,
+                    'dependencies_available': {
+                        'boruta': BORUTA_AVAILABLE,
+                        'shap': SHAP_AVAILABLE,
+                        'lime': LIME_AVAILABLE,
+                        'numba': NUMBA_AVAILABLE,
+                        'joblib': JOBLIB_AVAILABLE,
+                        'walk_forward_validation': WALK_FORWARD_AVAILABLE
+                    }
                 }
-            }
             
-            self.logger.info('Execution metadata generated')
+                self.logger.info('Execution metadata generated')
             
-            # Success determination
-            results.success = (
-                len(selected_features.get('final', [])) > 0 and
-                feature_validation.validation_passed and
-                risk_metrics.overall_risk_score < 0.8 and
-                self.regime_balance.balance_score > 0.3
-            )
+                # Success determination
+                results.success = (
+                    len(selected_features.get('final', [])) > 0 and
+                    feature_validation.validation_passed and
+                    risk_metrics.overall_risk_score < 0.8 and
+                    self.regime_balance.balance_score > 0.3
+                )
             
-            self.logger.info(f'Success determination completed: {results.success}')
+                self.logger.info(f'Success determination completed: {results.success}')
             
-            # Generate warnings
-            if not feature_validation.validation_passed:
-                results.warnings.append("Feature selection validation failed")
-                self.logger.warning("Feature selection validation failed")
-            if risk_metrics.overall_risk_score > 0.8:
-                results.warnings.append("High overall risk score detected")
-                self.logger.warning(f"High overall risk score detected: {risk_metrics.overall_risk_score:.3f}")
-            if self.regime_balance.balance_score < 0.3:
-                results.warnings.append("Poor regime balance detected")
-                self.logger.warning(f"Poor regime balance detected: {self.regime_balance.balance_score:.3f}")
-            if not results.success:
-                results.errors.append("Overall execution failed validation criteria")
-                self.logger.error("Overall execution failed validation criteria")
+                # Generate warnings
+                if not feature_validation.validation_passed:
+                    results.warnings.append("Feature selection validation failed")
+                    self.logger.warning("Feature selection validation failed")
+                if risk_metrics.overall_risk_score > 0.8:
+                    results.warnings.append("High overall risk score detected")
+                    self.logger.warning(f"High overall risk score detected: {risk_metrics.overall_risk_score:.3f}")
+                if self.regime_balance.balance_score < 0.3:
+                    results.warnings.append("Poor regime balance detected")
+                    self.logger.warning(f"Poor regime balance detected: {self.regime_balance.balance_score:.3f}")
+                if not results.success:
+                    results.errors.append("Overall execution failed validation criteria")
+                    self.logger.error("Overall execution failed validation criteria")
             
-            func_time = time.time() - start_time_func
-            self.logger.info(f'✅ Comprehensive results generated in {func_time:.3f} seconds:')
-            self.logger.info(f'   Success: {results.success}')
-            self.logger.info(f'   Selected features: {len(selected_features.get("final", []))}')
-            self.logger.info(f'   Risk score: {risk_metrics.overall_risk_score:.3f}')
-            self.logger.info(f'   Balance score: {self.regime_balance.balance_score:.3f}')
-            self.logger.info(f'   Warnings: {len(results.warnings)}')
-            self.logger.info(f'   Errors: {len(results.errors)}')
+                func_time = time.time() - start_time_func
+                self.logger.info(f'✅ Comprehensive results generated in {func_time:.3f} seconds:')
+                self.logger.info(f'   Success: {results.success}')
+                self.logger.info(f'   Selected features: {len(selected_features.get("final", []))}')
+                self.logger.info(f'   Risk score: {risk_metrics.overall_risk_score:.3f}')
+                self.logger.info(f'   Balance score: {self.regime_balance.balance_score:.3f}')
+                self.logger.info(f'   Warnings: {len(results.warnings)}')
+                self.logger.info(f'   Errors: {len(results.errors)}')
             
-            return results
+                return results
             
-        except Exception as e:
-            func_time = time.time() - start_time_func
-            self.logger.error(f'Failed to generate comprehensive results after {func_time:.3f} seconds: {e}')
-            self.logger.error(f'Error type: {type(e).__name__}')
-            return Step08Results(success=False, errors=[str(e)])
+            except Exception as e:
+                func_time = time.time() - start_time_func
+                self.logger.error(f'Failed to generate comprehensive results after {func_time:.3f} seconds: {e}')
+                self.logger.error(f'Error type: {type(e).__name__}')
+                return Step08Results(success=False, errors=[str(e)])
 
-    @timed_operation("artifact_saving")
+        @timed_operation("artifact_saving")
     async def _save_artifacts_and_reports(self, results: Step08Results) -> None:
         """Save all artifacts and reports with extensive utility integration."""
         start_time = time.time()

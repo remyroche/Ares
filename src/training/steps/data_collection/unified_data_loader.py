@@ -117,10 +117,9 @@ class UnifiedDataLoader:
             'trade_volume': 'float64', 
             'trade_count': 'int64', 
             'avg_price': 'float64', 
-            'min_price': 'float64', 
-            'max_price': 'float64', 
-            'volume_ratio': 'float64', 
-            'funding_rate': 'float64'
+            'min_price': 'float64',
+            'max_price': 'float64',
+            'volume_ratio': 'float64'
         }
         self.max_file_size = 100 * 1024 * 1024
         self.max_rows = 10000000
@@ -133,7 +132,7 @@ class UnifiedDataLoader:
         symbol: str, 
         exchange: str, 
         timeframe: str, 
-        data_dir: str = 'data_cache', 
+        data_dir: str = 'historical_data', 
         start_date: Optional[str] = None, 
         end_date: Optional[str] = None, 
         columns: Optional[List[str]] = None
@@ -196,6 +195,14 @@ class UnifiedDataLoader:
             # Guard against nulls
             guard_dataframe_nulls(data)
 
+            # Remove duplicate timestamps to prevent data quality issues
+            if 'timestamp' in data.columns:
+                initial_rows = len(data)
+                data = data.drop_duplicates(subset=['timestamp'], keep='first')
+                duplicates_removed = initial_rows - len(data)
+                if duplicates_removed > 0:
+                    self.logger.warning(f"🧹 Removed {duplicates_removed} duplicate timestamps during data loading")
+
             self.logger.info(f"Successfully loaded {len(data)} rows from {latest_file}")
             return data
 
@@ -255,7 +262,7 @@ class UnifiedDataLoader:
             return data
 
     @traced(span_name='UnifiedDataLoader.get_data_info')
-    async def get_data_info(self, symbol: str, exchange: str, timeframe: str, data_dir: str = 'data_cache') -> Dict[str, Any]:
+    async def get_data_info(self, symbol: str, exchange: str, timeframe: str, data_dir: str = 'historical_data') -> Dict[str, Any]:
         """Get information about available data without loading it.
 
         Args:

@@ -144,3 +144,25 @@ class DataIntegrityError(AppError):
 
     def __init__(self, message: str, **kwargs) -> None:
         super().__init__(message = message, code = ErrorCode.DATA_INTEGRITY_ERROR, status_code = 422, **kwargs)
+
+class FileOperationError(AppError):
+    """File operation error."""
+
+    def __init__(self, message: str, file_path: str | None = None, operation: str | None = None, **kwargs) -> None:
+        details = kwargs.pop('details', {})
+        if file_path:
+            details['file_path'] = file_path
+        if operation:
+            details['operation'] = operation
+        super().__init__(message = message, code = ErrorCode.INTERNAL_ERROR, status_code = 500, details = details, **kwargs)
+
+class MathValidationError(AppError):
+    """Mathematical validation error."""
+
+    def __init__(self, message: str, operation: str | None = None, values: dict | None = None, **kwargs) -> None:
+        details = kwargs.pop('details', {})
+        if operation:
+            details['operation'] = operation
+        if values:
+            details['values'] = values
+        super().__init__(message = message, code = ErrorCode.VALIDATION_ERROR, status_code = 422, details = details, **kwargs)

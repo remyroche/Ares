@@ -179,9 +179,9 @@ def _to_jsonable(obj):  # pylint: disable=too-many-return-statements
     return str(obj)
 
 from ..math_validation import safe_divide, safe_log  # noqa: F401 relative one-level up is correct (utils)
-from ..common_operations import create_fallback_logger
-from ..hardware.m1_gpu_utils import M1GPUManager
-from ..parallel_processing_optimizer import ParallelProcessor
+from ...common_operations import create_fallback_logger
+from src.utils.hardware.m1_gpu_utils import M1GPUManager
+from ...parallel_processing_optimizer import ParallelProcessor
 
 logger = _LOGGER
 

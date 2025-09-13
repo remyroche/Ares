@@ -1,10 +1,10 @@
+from __future__ import annotations
+
 from src.utils.tprint import tprint
 
 """
 Cross-validation helpers with purged/embargoed time series splits and integrity checks.
 """
-
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator, List, Optional, Tuple

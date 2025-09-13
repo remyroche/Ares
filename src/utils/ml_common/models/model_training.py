@@ -28,11 +28,11 @@ import time
 import logging
 from datetime import datetime
 
-from .model_evaluation import ModelEvaluator
-from .confidence_metrics import calculate_confidence_metrics, log_confidence_metrics
-from .model_explanations import explain_model_with_shap_lime
-from .model_explainability import ModelExplainabilityManager, with_explainability
-from .hpo_utils import HPOptimizer
+from .model_evaluation import ModelEvaluationUtilities as ModelEvaluator
+from ..confidence_metrics import calculate_confidence_metrics, log_confidence_metrics
+from ..explainability.model_explanations import explain_model_with_shap_lime
+from ..explainability.model_explainability import ModelExplainabilityManager, with_explainability
+from ..optimization.hpo_utils import HyperparameterOptimization
 from ..common_operations import create_fallback_logger
 
 # Enhanced dependency management with fast fail
@@ -104,7 +104,7 @@ class EnhancedModelTrainer:
         # Initialize HPO optimizer for post-training optimization
         if self.enable_post_training_hpo:
             _LOGGER.debug("🔧 Initializing HPO optimizer for post-training optimization...")
-            self.hpo_optimizer = HPOptimizer(self.config.get('hpo', {}))
+            self.hpo_optimizer = HyperparameterOptimization(self.config.get('hpo', {}))
         
         _LOGGER.info("✅ EnhancedModelTrainer initialized successfully")
         

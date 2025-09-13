@@ -40,8 +40,8 @@ try:
     # Ensembles
     from .ensembles import (
         EnsembleManager, EnsembleType, EnsembleConfig,
-        VotingEnsemble, StackingEnsemble, BlendingEnsemble,
-        WeightedAverageEnsemble, DynamicWeightingEnsemble,
+        # VotingEnsemble, StackingEnsemble, BlendingEnsemble,
+        # WeightedAverageEnsemble, DynamicWeightingEnsemble,
         StackingEnsembleManager, StackingEnsembleConfig, StackingEnsembleResult,
         create_analyst_ensemble, create_tactician_ensemble,
         StackingConfidenceCalibrator, StackingCalibrationConfig, StackingCalibrationResult,
@@ -50,21 +50,20 @@ try:
     
     # Explainability
     from .explainability import (
-        ModelExplainer, SHAPExplainer, LIMEExplainer,
-        ModelExplanations, ExplanationResult,
-        ModelInterpreter, InterpretabilityResult
+        ModelExplainer,
+        ModelInterpretabilityEngine, ExplanationResult
     )
     
     # Optimization
     from .optimization import (
-        HPOOptimizer, HPOConfig, HPOResult,
+        # HyperparameterOptimization,
         ParetoOptimizer, ParetoFront,
         RegimeSpecificTPSLOptimizer
     )
     
     # Data Processing
     from .data_processing import (
-        DataLabeler, LabelingConfig,
+        EnhancedDataLabeler, LabelingConfig,
         DataQualityChecker, QualityReport,
         RegimeDataProcessor,
         MultiTimeframeTrainer,
@@ -73,7 +72,7 @@ try:
     
     # Validation
     from .validation import (
-        ValidationUtils, ValidationConfig,
+        ValidationFramework, ConfigurationValidator,
         CVUtils, CVConfig, CrossValidator,
         StabilityAnalyzer,
         ThresholdOptimizer
@@ -94,7 +93,7 @@ try:
     from .feature_selection import FeatureSelector, FeatureSelectionConfig
     from .hmm_regime_detection import HMMRegimeDetector, RegimeConfig
     from .confidence_metrics import calculate_confidence_metrics, calculate_calibration_metrics
-    from .matrix_operations import MatrixOperations
+    from .matrix_operations import M1EnhancedMatrixOperations, get_enhanced_matrix_operations
     from .pipeline_orchestrator import PipelineOrchestrator
     from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
     
@@ -111,21 +110,20 @@ try:
         
         # Ensembles
         'EnsembleManager', 'EnsembleType', 'EnsembleConfig',
-        'VotingEnsemble', 'StackingEnsemble', 'BlendingEnsemble',
-        'WeightedAverageEnsemble', 'DynamicWeightingEnsemble',
+        # 'VotingEnsemble', 'StackingEnsemble', 'BlendingEnsemble',
+        # 'WeightedAverageEnsemble', 'DynamicWeightingEnsemble',
         'StackingEnsembleManager', 'StackingEnsembleConfig', 'StackingEnsembleResult',
         'create_analyst_ensemble', 'create_tactician_ensemble',
         'StackingConfidenceCalibrator', 'StackingCalibrationConfig', 'StackingCalibrationResult',
         'create_analyst_calibrator', 'create_tactician_calibrator',
         
         # Explainability
-        'ModelExplainer', 'SHAPExplainer', 'LIMEExplainer',
-        'ModelExplanations', 'ExplanationResult',
-        'ModelInterpreter', 'InterpretabilityResult',
+        'ModelExplainer',
+        'ModelInterpretabilityEngine', 'ExplanationResult',
         
         # Optimization
-        'HPOOptimizer', 'HPOConfig', 'HPOResult',
-        'ParetoOptimizer', 'ParetoFront',
+        # 'HyperparameterOptimization',
+        'ParetoFront', 'ParetoFrontAnalyzer',
         'RegimeSpecificTPSLOptimizer',
         
         # Data Processing
@@ -136,10 +134,10 @@ try:
         'SRFeatureIntegrator',
         
         # Validation
-        'ValidationUtils', 'ValidationConfig',
-        'CVUtils', 'CVConfig', 'CrossValidator',
-        'StabilityAnalyzer',
-        'ThresholdOptimizer',
+        'ValidationFramework', 'ConfigurationValidator',
+        'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
+        'feature_selection_stability', 'aggregate_time_blocks',
+        'optimize_threshold', 'calibrate_probabilities',
         
         # Utils
         'setup_logger', 'get_logger',
@@ -154,7 +152,7 @@ try:
         'FeatureSelector', 'FeatureSelectionConfig', 'LegacyFeatureSelector',
         'HMMRegimeDetector', 'RegimeConfig',
         'calculate_confidence_metrics', 'calculate_calibration_metrics',
-        'MatrixOperations', 'PipelineOrchestrator',
+        'M1EnhancedMatrixOperations', 'get_enhanced_matrix_operations', 'PipelineOrchestrator',
         
         # Backward compatibility
         'tprint'

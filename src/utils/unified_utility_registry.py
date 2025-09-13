@@ -48,7 +48,7 @@ from .math_validation import (
     safe_matrix_inverse, math_safe, MathValidationError
 )
 
-from .parquet_utils import ParquetUtils, get_parquet_utils
+from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
 
 from .serialization_utils import (
     JSONSerializer, PickleSerializer, ParquetSerializer, UniversalSerializer,

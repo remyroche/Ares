@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from ...tprint import tprint
 
 """
 Model Persistence & Versioning Utilities
@@ -29,14 +29,14 @@ import logging
 import os
 import time
 
-from ..common_operations import safe_json_dump, safe_json_load
-from ..common_operations import ensure_directory
-from ..common_operations import safe_file_exists
-from ..common_operations import create_fallback_logger
+from ...common_operations import safe_json_dump, safe_json_load
+from ...common_operations import ensure_directory
+from ...common_operations import safe_file_exists
+from ...common_operations import create_fallback_logger
 
 # Enhanced dependency management with fast fail
 try:
-    from ..logger import get_logger
+    from ...logger import get_logger
     _LOGGER = get_logger("MLCommon.ModelRegistry")
     tprint("✅ Custom logger available for MLCommon.ModelRegistry")
 except Exception as e:

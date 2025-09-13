@@ -723,7 +723,7 @@ if __name__ == "__main__":
             symbol="ETHUSDT",
             exchange="BINANCE",
             timeframe="1m",
-            data_dir="data_cache"
+            data_dir="historical_data"
         )
         
         tprint(f"Validation result: {result}")

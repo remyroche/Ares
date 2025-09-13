@@ -181,6 +181,34 @@ class ColumnVerifier:
             if missing_required:
                 missing_info['verification_passed'] = False
                 self.logger.warning(f'⚠️ Missing required columns: {missing_required}')
+
+                # Clean data quality issues that can cause HMM training to fail
+                if 'volume_return' in df.columns:
+                    # Replace infinite values with NaN, then forward/backward fill
+                    df['volume_return'] = df['volume_return'].replace([np.inf, -np.inf], np.nan)
+                    df['volume_return'] = df['volume_return'].fillna(method='ffill').fillna(method='bfill').fillna(0)
+
+                if 'volume_log_return' in df.columns:
+                    # Replace infinite values with NaN, then forward/backward fill
+                    df['volume_log_return'] = df['volume_log_return'].replace([np.inf, -np.inf], np.nan)
+                    df['volume_log_return'] = df['volume_log_return'].fillna(method='ffill').fillna(method='bfill').fillna(0)
+
+                # Remove duplicate timestamps (keep first occurrence)
+                if df['timestamp'].duplicated().sum() > 0:
+                    original_count = len(df)
+                    df = df.drop_duplicates(subset='timestamp', keep='first')
+                    removed_count = original_count - len(df)
+                    self.logger.info(f'🧹 Removed {removed_count} duplicate timestamps')
+
+                # Remove constant columns that would cause HMM training to fail
+                constant_columns = []
+                for col in df.columns:
+                    if df[col].nunique() == 1:
+                        constant_columns.append(col)
+
+                if constant_columns:
+                    self.logger.info(f'🧹 Removing constant columns: {constant_columns}')
+                    df = df.drop(columns=constant_columns)
             for category, columns in self.optional_calculated_columns.items():
                 missing_optional = [col for col in columns if col not in df.columns]
                 missing_info['missing_optional'][category] = missing_optional
@@ -297,7 +325,8 @@ class ColumnVerifier:
         """Calculate volume-related features."""
         calculated = pd.DataFrame(index = df.index)
         if 'volume_return' in missing_volume and 'volume' in df.columns:
-            calculated['volume_return'] = df['volume'].pct_change()
+            # Use safe percentage change calculation to handle zero volumes
+            calculated['volume_return'] = self._safe_pct_change(df['volume'])
         if 'volume_ma' in missing_volume and 'volume' in df.columns:
             calculated['volume_ma'] = df['volume'].rolling(window = 20).mean()
         if 'volume_ratio' in missing_volume and 'volume' in df.columns:
@@ -436,7 +465,7 @@ class ParquetDatasetManager:
                 conversions['label'] = 'int64'
         elif schema_name == 'unified':
             conversions = {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8'}
-            optional_columns = {'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64', 'funding_rate': 'float64'}
+            optional_columns = {'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64'}
         for col, dtype in optional_columns.items():
             if col in df.columns:
                 conversions[col] = dtype
@@ -1040,9 +1069,11 @@ class UnifiedDataConverter:
             unified['symbol'] = symbol
             unified['timeframe'] = timeframe
             if daily_aggtrades is not None and (not daily_aggtrades.empty):
-                for col in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio']:
-                    if col in unified.columns:
-                        unified = unified.drop(columns=[col])
+                # Only drop columns if they exist (since we may not have added them when no aggtrades data exists)
+                aggtrade_cols = ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio']
+                cols_to_drop = [col for col in aggtrade_cols if col in unified.columns]
+                if cols_to_drop:
+                    unified = unified.drop(columns=cols_to_drop)
                 unified = await self._merge_daily_aggtrades(unified, daily_aggtrades, timeframe)
             if daily_futures is not None and (not daily_futures.empty):
                 unified = await self._merge_daily_futures(unified, daily_futures)
@@ -1142,8 +1173,10 @@ class UnifiedDataConverter:
                             np.random.seed(unified.loc[nan_mask, 'timestamp'].astype(int) % 2**32)
                             variation = np.random.uniform(0, 0.001, nan_mask.sum())
                             unified.loc[nan_mask, col] = base_values[nan_mask] * (1 + variation)
-            if 'trade_volume' in unified.columns and 'volume' in unified.columns:
-                unified['volume_ratio'] = (unified['trade_volume'] / unified['volume']).replace([np.inf, -np.inf], 0).fillna(0)
+            # Calculate volume_ratio properly: current volume / 20-period moving average
+            if 'volume' in unified.columns:
+                volume_ma_20 = unified['volume'].rolling(window=20).mean()
+                unified['volume_ratio'] = (unified['volume'] / volume_ma_20).fillna(1.0)
             return unified
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to merge daily aggtrades: {e}')
@@ -1390,138 +1423,6 @@ class UnifiedDataConverter:
                 df['timestamp'] = pd.to_datetime(df['timestamp'], utc = True)
             if pd.api.types.is_datetime64_any_dtype(df['timestamp']):
                 df['timestamp'] = (df['timestamp'].astype(np.int64) // 10 ** 6).astype('int64')
-            funding_rate_col: str | None = None
-            if 'fundingRate' in df.columns:
-                funding_rate_col = 'fundingRate'
-            elif 'funding_rate' in df.columns:
-                funding_rate_col = 'funding_rate'
-            if funding_rate_col:
-                # Sort and create mapping
-                df = df.sort_values('timestamp')
-                mapping = df.set_index('timestamp')[funding_rate_col]
-
-                # Initial mapping
-                unified['funding_rate'] = unified['timestamp'].map(mapping).ffill()
-
-                # Enhanced funding rate processing to avoid constant values
-                if 'funding_rate' in unified.columns:
-                    unique_rates = unified['funding_rate'].nunique()
-
-                    # If too few unique values, enhance with realistic variation
-                    if unique_rates <= 3:
-                        self.logger.info(f"🔧 Funding rate has only {unique_rates} unique values, enhancing with market-realistic variation")
-                        self.logger.info(f"🔧 Original funding rate stats: min={valid_rates.min():.8f}, max={valid_rates.max():.8f}, std={valid_rates.std():.8f}")
-
-                        # Special handling for extremely constant data (1 unique value)
-                        if unique_rates == 1:
-                            self.logger.warning(f"⚠️ Funding rate is completely constant! Applying aggressive variation enhancement")
-                            # Force variation by adding timestamp-based noise
-                            timestamp_noise = (unified['timestamp'] - unified['timestamp'].min()) / 86400000  # milliseconds to days
-                            forced_variation = np.sin(timestamp_noise * 2 * np.pi) * 0.0001 + np.random.normal(0, 0.00005, len(unified))
-                            unified['funding_rate'] = valid_rates.iloc[0] + forced_variation
-
-                        # Get base rates from available data
-                        valid_rates = unified['funding_rate'].dropna()
-                        if len(valid_rates) > 0:
-                            base_rate = valid_rates.mean()
-                            rate_std = valid_rates.std() if len(valid_rates) > 1 else abs(base_rate) * 0.1
-
-                            # Create time-series variation that mimics real funding rates
-                            timestamps = unified['timestamp'].values
-                            if len(timestamps) > 1:
-                                # Create cyclic variation (funding rates often have daily/weekly patterns)
-                                time_factor = (timestamps - timestamps[0]) / 86400  # Days since start
-                                daily_cycle = np.sin(2 * np.pi * time_factor) * 0.00002
-                                weekly_cycle = np.sin(2 * np.pi * time_factor / 7) * 0.00001
-
-                                # Add market-driven variation (correlated with volatility)
-                                if 'close' in unified.columns:
-                                    # Use price changes as proxy for market volatility
-                                    price_changes = unified['close'].pct_change().fillna(0)
-                                    market_factor = price_changes * 0.0001  # Small correlation with price movement
-
-                                    # Combine all factors
-                                    total_variation = daily_cycle + weekly_cycle + market_factor
-                                else:
-                                    total_variation = daily_cycle + weekly_cycle
-
-                                # Apply variation to valid funding rate periods
-                                valid_mask = unified['funding_rate'].notna()
-                                if valid_mask.any():
-                                    # For valid periods, add controlled variation
-                                    # Use timestamp-based seed for reproducible but varied results
-                                    np.random.seed(unified.loc[valid_mask, 'timestamp'].astype(int) % 2**32)
-                                    unified.loc[valid_mask, 'funding_rate'] += total_variation[valid_mask] * np.random.uniform(0.5, 1.5, size=valid_mask.sum())
-
-                                # For missing periods, interpolate with realistic values
-                                nan_mask = unified['funding_rate'].isna()
-                                if nan_mask.any():
-                                    # Use neighboring values with some variation
-                                    unified['funding_rate'] = unified['funding_rate'].interpolate(method='linear')
-
-                                    # Add small random variation to interpolated values
-                                    interp_variation = np.random.normal(0, abs(base_rate) * 0.01, size=len(unified))
-                                    unified.loc[nan_mask, 'funding_rate'] += interp_variation[nan_mask]
-
-                        else:
-                            # No valid funding rates, create synthetic ones
-                            self.logger.info("🔧 No valid funding rates found, creating synthetic market-realistic rates")
-                            base_rate = 0.0001  # Typical funding rate
-                            time_factor = np.arange(len(unified)) / len(unified)  # Normalized time
-
-                            # Create more realistic synthetic rates with multiple frequency components
-                            daily_variation = np.sin(time_factor * 4 * np.pi) * 0.00005
-                            weekly_variation = np.sin(time_factor * 4 * np.pi / 7) * 0.00002
-                            random_noise = np.random.normal(0, 0.00001, len(unified))
-
-                            synthetic_rates = base_rate + daily_variation + weekly_variation + random_noise
-                            unified['funding_rate'] = synthetic_rates
-
-                    # Ensure all rates are within reasonable bounds
-                    unified['funding_rate'] = unified['funding_rate'].clip(-0.001, 0.001)
-
-                    self.logger.info(f"✅ Enhanced funding rates: {unified['funding_rate'].nunique()} unique values from {len(unified)} total")
-                    self.logger.info(f"🔧 Funding rate stats: min={unified['funding_rate'].min():.6f}, max={unified['funding_rate'].max():.6f}, mean={unified['funding_rate'].mean():.6f}")
-                    self.logger.info(f"🔧 Funding rate std: {unified['funding_rate'].std():.8f}")
-
-                    # Final check for constant funding rates
-                    if unified['funding_rate'].nunique() <= 1:
-                        self.logger.error(f"🚨 CRITICAL: Funding rate still constant after enhancement! unique={unified['funding_rate'].nunique()}, std={unified['funding_rate'].std():.2e}")
-                    else:
-                        self.logger.info(f"✅ Funding rate variation looks good: {unified['funding_rate'].nunique()} unique values")
-            else:
-                # If no funding rate data available, create a column with small variations around typical funding rates
-                # Check for large gaps first
-                if 'funding_rate' in unified.columns:
-                    nan_mask = unified['funding_rate'].isna()
-                    if nan_mask.any():
-                        # Calculate gap sizes
-                        nan_groups = nan_mask.groupby((nan_mask != nan_mask.shift()).cumsum())
-                        max_gap_size = nan_groups.sum().max() if nan_mask.any() else 0
-
-                        if max_gap_size > 1:  # Large gap - should re-download
-                            self.logger.warning(f'⚠️ Large gap detected in funding_rate: {max_gap_size} consecutive missing values')
-                            self.logger.warning(f'   This indicates missing futures data that should be re-downloaded')
-                        else:
-                            # Small gaps - safe to fill
-                            unified['funding_rate'] = unified['funding_rate'].fillna(method='ffill', limit=1).fillna(method='bfill', limit=1)
-                            nan_mask = unified['funding_rate'].isna()
-
-                # For remaining NaN values, add variation to avoid constant columns
-                nan_mask = unified['funding_rate'].isna() if 'funding_rate' in unified.columns else pd.Series([True] * len(unified), index=unified.index)
-                if nan_mask.any() or 'funding_rate' not in unified.columns:
-                    # Typical funding rates are small percentages, usually between -0.01% and 0.01%
-                    np.random.seed(42)  # For reproducibility
-                    base_rate = 0.0001  # 0.01%
-                    variation = np.random.normal(0, 0.00005, len(unified))  # Small random variation
-                    # Add some trend and periodicity to make it more realistic
-                    time_factor = np.sin(np.arange(len(unified)) * 0.01) * 0.00002
-                    if 'funding_rate' not in unified.columns:
-                        unified['funding_rate'] = base_rate + variation + time_factor
-                    else:
-                        unified.loc[nan_mask, 'funding_rate'] = base_rate + variation[nan_mask] + time_factor[nan_mask]
-                    # Ensure funding rate stays within reasonable bounds
-                    unified['funding_rate'] = unified['funding_rate'].clip(-0.001, 0.001)
             return unified
         except Exception as e:
             self.logger.warning(f'⚠️ Failed to merge daily futures: {e}')
@@ -1606,13 +1507,10 @@ class UnifiedDataConverter:
                         df = standardized_parquet_handler.read_parquet_standardized(file_path, schema_name='unified')
                         klines_present = all((c in df.columns for c in ['open', 'high', 'low', 'close', 'volume']))
                         aggtrades_present = all((c in df.columns for c in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio']))
-                        futures_present = 'funding_rate' in df.columns
                         if not klines_present:
                             quality_issues.append(f'{date_str}: Missing klines data')
                         if not aggtrades_present:
                             quality_issues.append(f'{date_str}: Missing aggtrades data')
-                        if not futures_present:
-                            quality_issues.append(f'{date_str}: Missing futures data')
                 else:
                     quality_issues.append(f'{date_str}: File not found')
             if quality_issues:
@@ -1747,6 +1645,18 @@ class UnifiedDataConverter:
             for col in numeric_columns:
                 if col in ('timestamp', 'year', 'month', 'day'):
                     continue
+                # Skip filling aggtrades-derived features if they don't exist or are constant
+                # Since we don't collect aggtrades, these columns may not exist in the data
+                aggtrade_cols = ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio']
+                if col in aggtrade_cols:
+                    if col not in unified.columns:
+                        self.logger.debug(f"   ℹ️ Skipping {col} (not present - no aggtrades data)")
+                        continue
+                    unique_vals = unified[col].nunique()
+                    if unique_vals <= 1:
+                        self.logger.info(f"   ⚠️ Skipping constant feature: {col} (unique values: {unique_vals})")
+                        continue
+
                 missing_count = int(unified[col].isna().sum())
                 if missing_count > 0:
                     unified[col] = unified[col].fillna(0)
@@ -1893,6 +1803,43 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', type = str, default='data_cache')
     parser.add_argument('--force_rerun', action='store_true')
     args = parser.parse_args()
+
+    def _safe_pct_change(self, series: pd.Series) -> pd.Series:
+        """Calculate percentage change with safe handling for zero values."""
+        current = series
+        prev = series.shift(1)
+
+        # Initialize with NaN values
+        pct_change = np.full(len(series), np.nan)
+
+        # Valid cases: both current and previous > 0
+        valid_mask = (current > 0) & (prev > 0)
+        pct_change[valid_mask] = (current[valid_mask] - prev[valid_mask]) / prev[valid_mask]
+
+        # Handle cases where current is 0 but previous was > 0
+        zero_current_mask = (current == 0) & (prev > 0)
+        pct_change[zero_current_mask] = -1.0  # -100% change
+
+        # Handle cases where previous was 0 but current is > 0
+        zero_prev_mask = (current > 0) & (prev == 0)
+        pct_change[zero_prev_mask] = 9.0  # Large positive value instead of infinity
+
+        # Handle cases where both are 0
+        both_zero_mask = (current == 0) & (prev == 0)
+        pct_change[both_zero_mask] = 0.0  # No change
+
+        # Handle any potential NaN or infinite values from original data
+        pct_change = np.nan_to_num(pct_change, nan=0.0, posinf=9.0, neginf=-9.0)
+
+        # Apply final clipping to ensure no infinite values remain
+        pct_change = np.clip(pct_change, -9.0, 9.0)
+
+        # Additional safety: replace any remaining non-finite values
+        pct_change = np.where(np.isfinite(pct_change), pct_change, 0.0)
+
+        return pd.Series(pct_change, index=series.index)
+
+        return pd.Series(pct_change, index=series.index)
 
     async def _main() -> None:
         ok = await run_step(symbol = args.symbol, exchange = args.exchange, timeframe = args.timeframe, data_dir = args.data_dir, force_rerun = args.force_rerun)

@@ -10,12 +10,12 @@ import asyncio
 from pathlib import Path
 import json
 from typing import Dict, Any, Optional, List
-from src.training.steps.market_analysis.step08_advanced_feature_selection import Step08AdvancedFeatureSelection
+from step08_advanced_feature_selection_wrapper import AdvancedFeatureSelectionStep as Step08AdvancedFeatureSelection
 from src.training.steps.market_analysis.regime_continuity_decorator import per_regime_step
 from src.utils.pipeline_standards import pipeline_standards
 import numpy as np
 
-from ....utils.decorators import traced, validates, handles_errors
+from src.utils.decorators import traced, validates, handles_errors
 from src.utils.logger import get_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 import logging
@@ -949,6 +949,6 @@ if __name__ == '__main__':
 
     async def test() -> None:
         """Test the per-regime feature selection step."""
-        success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
+        success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='historical_data')
         tprint(f'Per-regime feature selection result: {success}')
     asyncio.run(test())

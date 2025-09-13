@@ -41,7 +41,7 @@ except Exception as e:
     _LOGGER.setLevel(logging.INFO)
 
 from ..math_validation import safe_divide, MathValidationError
-from ..common_operations import create_fallback_logger
+from ...common_operations import create_fallback_logger
 
 logger = logging.getLogger(__name__)
 

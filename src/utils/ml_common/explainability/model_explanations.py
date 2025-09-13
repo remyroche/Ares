@@ -26,8 +26,8 @@ import logging
 from datetime import datetime
 import time
 
-from .confidence_metrics import calculate_confidence_metrics
-from ..common_operations import create_fallback_logger
+from ..confidence_metrics import calculate_confidence_metrics
+from ...common_operations import create_fallback_logger
 
 # Enhanced dependency management with fast fail
 try:

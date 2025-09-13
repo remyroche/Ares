@@ -279,7 +279,7 @@ def _register_common_utilities(container: DependencyInjectionContainer) -> None:
 def _register_math_validation(container: DependencyInjectionContainer) -> None:
     """Register math validation utilities."""
     try:
-        from .math_validation import (
+        from ..math_validation import (
             safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
             validate_positive, validate_range, safe_kelly_calculation,
             safe_weighted_average, safe_percentage_change, validate_correlation_matrix,
@@ -309,7 +309,7 @@ def _register_math_validation(container: DependencyInjectionContainer) -> None:
 def _register_parquet_utils(container: DependencyInjectionContainer) -> None:
     """Register parquet utilities."""
     try:
-        from .parquet_utils import ParquetUtils, get_parquet_utils
+        from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
         
         # Register as singleton services
         container.register_singleton('parquet_utils', ParquetUtils, get_parquet_utils)

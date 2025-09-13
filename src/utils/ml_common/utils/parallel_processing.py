@@ -36,7 +36,7 @@ import time
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
 from ..parallel_processing_optimizer import ParallelProcessor
-from ..hardware.memory_optimization import MemoryMonitor
+from src.utils.hardware.memory_optimization import MemoryMonitor
 from ..common_utilities import safe_dataframe_operation
 
 # Enhanced dependency management with fast fail
@@ -309,7 +309,7 @@ class ParallelProcessingCoordinator:
             # Initialize GPU manager if available
             gpu_manager = None
             try:
-                from ..hardware.m1_optimizations import M1MemoryOptimizer as _M1GPU
+                from src.utils.hardware.m1_optimizations import M1MemoryOptimizer as _M1GPU
                 gpu_manager = _M1GPU()
             except Exception:
                 gpu_manager = None

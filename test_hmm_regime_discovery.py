@@ -29,7 +29,7 @@ def test_hmm_regime_discovery():
     print("\n🔍 Pre-processing constant feature check:")
     constant_features = []
 
-    for col in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'price_std', 'funding_rate']:
+    for col in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'price_std']:
         if col in data.columns:
             unique_vals = data[col].nunique()
             std_val = data[col].std()

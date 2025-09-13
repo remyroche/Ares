@@ -39,20 +39,20 @@ from ..math_validation import (
     safe_divide, safe_log, safe_sqrt,
     validate_positive, validate_range
 )
-from ..core.common import create_fallback_logger, create_fallback_decorator
-from ..parquet_utils import ParquetUtils
-from ..serialization_utils import UniversalSerializer
-from ..data_processing_utils import DataProcessingUtils
-from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
-from ..hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
-from ..common_utilities import CommonUtilities
+from src.utils.core.common import create_fallback_logger, create_fallback_decorator
+from src.utils.parquet_utils import ParquetUtils
+from src.utils.serialization_utils import UniversalSerializer
+from src.utils.data_processing_utils import DataProcessingUtils
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+from src.utils.common_utilities import CommonUtilities
 
 # Import ML Common utilities
-from .cv_utils import TemporalCrossValidator, PurgedKFold
-from .validation_utils import ValidationFramework
-from .pareto import ParetoFrontAnalyzer
-from .ensemble_manager import EnsembleManager
+from ..validation.cv_utils import TemporalCrossValidator, PurgedKFold
+from ..validation.validation_utils import ValidationFramework
+from ..optimization.pareto import ParetoFrontAnalyzer
+from ..ensembles.ensemble_manager import EnsembleManager
 
 logger = logging.getLogger(__name__)
 
@@ -688,6 +688,80 @@ class EnhancedRegimeDataProcessor:
             self.stats.error_count += 1
             raise
 
+    def process_regime_data(
+        self,
+        data: pd.DataFrame,
+        regime_ids: np.ndarray
+    ) -> "RegimeProcessingResult":
+        """Process regime data by splitting into regime-specific datasets.
+
+        Args:
+            data: Input DataFrame with features
+            regime_ids: Array of regime IDs for each row in data
+
+        Returns:
+            RegimeProcessingResult with processed data and statistics
+        """
+        start_time = time.time()
+
+        try:
+            # Validate inputs
+            if len(data) != len(regime_ids):
+                raise ValueError(f"Data length ({len(data)}) must match regime_ids length ({len(regime_ids)})")
+
+            # Add regime column to data
+            data_with_regime = data.copy()
+            data_with_regime['regime'] = regime_ids
+
+            # Get unique regimes
+            unique_regimes = np.unique(regime_ids)
+            self.logger.info(f"📊 Processing {len(unique_regimes)} regimes: {unique_regimes}")
+
+            # Split data by regime
+            processed_data = {}
+            regime_statistics = {}
+
+            for regime_id in unique_regimes:
+                regime_mask = regime_ids == regime_id
+                regime_data = data[regime_mask].copy()
+
+                # Store processed data
+                processed_data[f'regime_{regime_id}_data.parquet'] = regime_data
+
+                # Calculate statistics
+                regime_statistics[f'regime_{regime_id}'] = {
+                    'count': len(regime_data),
+                    'percentage': len(regime_data) / len(data) * 100,
+                    'date_range': {
+                        'start': regime_data.index.min().isoformat() if len(regime_data) > 0 else None,
+                        'end': regime_data.index.max().isoformat() if len(regime_data) > 0 else None
+                    }
+                }
+
+                self.logger.info(f"✅ Regime {regime_id}: {len(regime_data)} samples ({len(regime_data)/len(data)*100:.1f}%)")
+
+            # Calculate overall statistics
+            processing_time = time.time() - start_time
+
+            # Create result object
+            result = RegimeProcessingResult(
+                processed_data=processed_data,
+                regime_statistics=regime_statistics,
+                performance_metrics={
+                    'total_samples': len(data),
+                    'regimes_found': len(unique_regimes),
+                    'processing_time_seconds': processing_time,
+                    'samples_per_second': len(data) / processing_time if processing_time > 0 else 0
+                }
+            )
+
+            self.logger.info(f"✅ Regime data processing completed in {processing_time:.2f}s")
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ Regime data processing failed: {e}")
+            raise
+
     def process_regime_data_parallel(
         self, 
         file_paths: List[str], 
@@ -844,6 +918,13 @@ class EnhancedRegimeDataProcessor:
             ),
             'memory_pool_stats': self.memory_pool.get_memory_stats()
         }
+
+@dataclass
+class RegimeProcessingResult:
+    """Result of regime data processing operations."""
+    processed_data: Dict[str, pd.DataFrame]
+    regime_statistics: Dict[str, Dict[str, Any]]
+    performance_metrics: Dict[str, Any]
 
 @dataclass
 class RegimeProcessingConfig:

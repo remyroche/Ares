@@ -54,7 +54,7 @@ class SubPipelineConfig:
     symbol: str = "BTCUSDT"
     exchange: str = "binance"
     timeframe: str = "1m"
-    data_dir: str = "data/training"
+    data_dir: str = "historical_data"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False

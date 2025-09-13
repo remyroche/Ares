@@ -76,9 +76,12 @@ class PipelineStandards:
     """Centralized pipeline standards and utilities."""
     DIRECTORY_STRUCTURE = {
         'raw_data': 'data_cache/{exchange}/{asset}',
+        'historical_data': 'historical_data/{exchange}/{asset}',
         'unified_data': 'data_cache/unified/{exchange}/{asset}/{timeframe}',
         'unified_partitioned': 'data_cache/unified/{exchange}/{asset}/{timeframe}/exchange={exchange}/symbol={asset}/timeframe={timeframe}',
         'processed_data': 'data_cache/{exchange}/{asset}/processed',
+        'hmm_clusters': 'historical_data/{exchange}/{asset}/hmm_clusters',
+        'models': 'historical_data/{exchange}/{asset}/models',
         'reports': 'data_cache/{exchange}/{asset}/reports',
         'backup': 'data_cache/{exchange}/{asset}/backup',
         'temp': 'data_cache/{exchange}/{asset}/temp',
@@ -86,11 +89,10 @@ class PipelineStandards:
         'parquet_aggtrades': 'data_cache/parquet/aggtrades_{exchange}_{asset}',
         'parquet_futures': 'data_cache/parquet/futures_{exchange}_{asset}',
         'training': 'data_cache/training',
-        'models': 'data_cache/models',
         'logs': 'data_cache/logs'
     }
-    FILE_NAMING = {'klines': 'klines_{exchange}_{asset}_{timeframe}_consolidated.parquet', 'aggtrades': 'aggtrades_{exchange}_{asset}_consolidated.parquet', 'futures': 'futures_{exchange}_{asset}_consolidated.parquet', 'unified': 'unified_{exchange}_{asset}_{timeframe}.parquet', 'unified_partitioned': 'unified/{exchange}/{asset}/{timeframe}/year={year}/month={month:02d}/day={day:02d}/part-0.parquet', 'validated_data': '{exchange}_{asset}_{timeframe}_validated_data.parquet', 'validation_report': 'validation_report_{exchange}_{asset}_{timeframe}_{timestamp}.json', 'quality_report': 'quality_report_{exchange}_{asset}_{timeframe}_{timestamp}.json'}
-    SCHEMAS = {'klines': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'optional_columns': ['quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'quote_asset_volume': 'float64', 'number_of_trades': 'int64', 'taker_buy_base_asset_volume': 'float64', 'taker_buy_quote_asset_volume': 'float64'}}, 'aggtrades': {'required_columns': ['timestamp', 'price', 'quantity'], 'optional_columns': ['first_trade_id', 'last_trade_id', 'trade_time', 'is_buyer_maker'], 'data_types': {'timestamp': 'int64', 'price': 'float64', 'quantity': 'float64', 'is_buyer_maker': 'bool'}}, 'futures': {'required_columns': ['timestamp', 'fundingRate'], 'optional_columns': ['symbol', 'mark_price', 'index_price', 'next_funding_time'], 'data_types': {'timestamp': 'int64', 'fundingRate': 'float64'}}, 'unified': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'exchange', 'symbol', 'timeframe'], 'optional_columns': ['year', 'month', 'day', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio', 'funding_rate'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8', 'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64', 'funding_rate': 'float64'}}, 'validated_data': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'exchange', 'symbol', 'timeframe'], 'optional_columns': ['year', 'month', 'day', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio', 'funding_rate', 'validation_status', 'quality_score'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8', 'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64', 'funding_rate': 'float64', 'validation_status': 'string', 'quality_score': 'float64'}}}
+    FILE_NAMING = {'klines': 'klines_{exchange}_{asset}_{timeframe}_consolidated.parquet', 'aggtrades': 'aggtrades_{exchange}_{asset}_consolidated.parquet', 'unified': 'unified_{exchange}_{asset}_{timeframe}.parquet', 'unified_partitioned': 'unified/{exchange}/{asset}/{timeframe}/year={year}/month={month:02d}/day={day:02d}/part-0.parquet', 'validated_data': '{exchange}_{asset}_{timeframe}_validated_data.parquet', 'validation_report': 'validation_report_{exchange}_{asset}_{timeframe}_{timestamp}.json', 'quality_report': 'quality_report_{exchange}_{asset}_{timeframe}_{timestamp}.json'}
+    SCHEMAS = {'klines': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'optional_columns': ['quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'quote_asset_volume': 'float64', 'number_of_trades': 'int64', 'taker_buy_base_asset_volume': 'float64', 'taker_buy_quote_asset_volume': 'float64'}}, 'aggtrades': {'required_columns': ['timestamp', 'price', 'quantity'], 'optional_columns': ['first_trade_id', 'last_trade_id', 'trade_time', 'is_buyer_maker'], 'data_types': {'timestamp': 'int64', 'price': 'float64', 'quantity': 'float64', 'is_buyer_maker': 'bool'}}, 'unified': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'exchange', 'symbol', 'timeframe'], 'optional_columns': ['year', 'month', 'day', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8', 'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64'}}, 'validated_data': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'exchange', 'symbol', 'timeframe'], 'optional_columns': ['year', 'month', 'day', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio', 'validation_status', 'quality_score'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8', 'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64', 'validation_status': 'string', 'quality_score': 'float64'}}}
     QUALITY_THRESHOLDS = {'min_rows': 100, 'max_null_percentage': 0.1, 'max_duplicate_percentage': 0.05, 'min_quality_score': 0.8, 'max_correlation': 0.95, 'timestamp_consistency_threshold': 0.99}
 
     def __init__(self, logger: logging.Logger | None = None) -> None:
@@ -294,14 +296,21 @@ class PipelineStandards:
         df = df.copy()
         for column in schema['optional_columns']:
             if column not in df.columns:
-                if schema['data_types'][column] == 'float64':
-                    df[column] = 0.0
-                elif schema['data_types'][column] == 'int64':
-                    df[column] = 0
-                elif schema['data_types'][column] == 'string':
-                    df[column] = ''
-                elif schema['data_types'][column] == 'bool':
-                    df[column] = False
+                # Special handling for aggtrades-derived features when aggtrades data is missing
+                if column in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio']:
+                    # Skip adding these features if the underlying aggtrades data is not available
+                    # This prevents constant features that would break ML training
+                    continue
+                else:
+                    # Add other optional columns with appropriate defaults
+                    if schema['data_types'][column] == 'float64':
+                        df[column] = 0.0
+                    elif schema['data_types'][column] == 'int64':
+                        df[column] = 0
+                    elif schema['data_types'][column] == 'string':
+                        df[column] = ''
+                    elif schema['data_types'][column] == 'bool':
+                        df[column] = False
         for column, expected_type in schema['data_types'].items():
             if column in df.columns:
                 try:

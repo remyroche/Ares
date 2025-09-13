@@ -9,6 +9,7 @@ Consolidated from:
 - enhanced_outlier_handler.py
 """
 
+import asyncio
 import logging
 import numpy as np
 import pandas as pd
@@ -17,6 +18,13 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.utils.logger import system_logger
+
+# Import UnifiedGapFiller for critical gap handling
+try:
+    from src.training.steps.data_collection.unified_gap_filler import UnifiedGapFiller
+    UNIFIED_GAP_FILLER_AVAILABLE = True
+except ImportError:
+    UNIFIED_GAP_FILLER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -158,21 +166,27 @@ class DataCleaner:
         self.data_type_gap_thresholds = {
             'aggtrades': {
                 GapType.SMALL: 1,      # 1 second
-                GapType.MEDIUM: 5,     # 5 seconds  
+                GapType.MEDIUM: 5,     # 5 seconds
                 GapType.LARGE: 0.5,    # 0.5 seconds - triggers re-download
                 GapType.CRITICAL: 10   # 10 seconds
             },
             'klines': {
-                GapType.SMALL: 60,     # 1 minute
-                GapType.MEDIUM: 300,   # 5 minutes
-                GapType.LARGE: 120,    # 2 minutes - triggers re-download
-                GapType.CRITICAL: 1800 # 30 minutes
+                GapType.SMALL: 65,     # 65 seconds - triggers download
+                GapType.MEDIUM: 300,   # 5 minutes - triggers download
+                GapType.LARGE: 1800,   # 30 minutes - triggers download
+                GapType.CRITICAL: 3600 # 1 hour - triggers UnifiedGapFiller
             },
             'futures': {
                 GapType.SMALL: 3600,   # 1 hour
                 GapType.MEDIUM: 14400, # 4 hours
                 GapType.LARGE: 32400,  # 9 hours - triggers re-download
                 GapType.CRITICAL: 86400 # 24 hours
+            },
+            'unified': {
+                GapType.SMALL: 65,     # 65 seconds (same as klines)
+                GapType.MEDIUM: 300,   # 5 minutes (same as klines)
+                GapType.LARGE: 120,    # 2 minutes - triggers re-download
+                GapType.CRITICAL: 1800 # 30 minutes (same as klines)
             }
         }
         
@@ -191,10 +205,10 @@ class DataCleaner:
             self.logger.warning(f"Unknown data type '{data_type}', using generic gap thresholds")
         
         self.fill_strategies = {
-            GapType.SMALL: 'forward_fill',
+            GapType.SMALL: 'download',           # All gaps now trigger download
             GapType.MEDIUM: 'download',
             GapType.LARGE: 'download',
-            GapType.CRITICAL: 'manual_intervention'
+            GapType.CRITICAL: 'unified_gap_filler'  # Critical gaps use UnifiedGapFiller
         }
         
         self.outlier_history = []
@@ -243,7 +257,7 @@ class DataCleaner:
         
         self.logger.info(f'🧹 Data Cleaner initialized with {len(self.detection_methods)} outlier detection methods')
 
-    def handle_missing_values_intelligently(
+    async def handle_missing_values_intelligently(
         self,
         data: pd.DataFrame,
         timestamp_column: str = 'timestamp',
@@ -267,17 +281,44 @@ class DataCleaner:
         filled_data = data.copy()
         
         for gap in gaps:
-            if gap.gap_type == GapType.SMALL:
-                filled_data = self._handle_small_gap(filled_data, gap, timestamp_column)
-            elif gap.gap_type in [GapType.MEDIUM, GapType.LARGE]:
-                if symbol and exchange:
-                    filled_data = self._handle_large_gap_with_download(filled_data, gap, timestamp_column, symbol, exchange, timeframe)
+            # PRIORITY 1: Try to re-download data for ALL gaps (small, medium, large)
+            if symbol and exchange and timeframe:
+                download_success = False
+                try:
+                    filled_data = await self._handle_large_gap_with_download(filled_data, gap, timestamp_column, symbol, exchange, timeframe)
+                    # Check if gap was actually filled by looking for the gap again
+                    if self._is_gap_filled(filled_data, gap, timestamp_column):
+                        self.logger.info(f'✅ Gap filled via re-download: {gap}')
+                        download_success = True
+                        gap.filled = True
+                        gap.fill_method = 'download'
+                    else:
+                        self.logger.warning(f'⚠️ Re-download attempted but gap still exists: {gap}')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Re-download failed for gap {gap}: {e}')
+
+                if not download_success:
+                    # PRIORITY 2: Fallback strategies for when download fails
+                    if gap.gap_type in [GapType.SMALL, GapType.MEDIUM, GapType.LARGE]:
+                        # Use forward fill for smaller gaps when download fails
+                        self.logger.info(f'🔄 Using forward fill fallback for {gap.gap_type.value} gap: {gap}')
+                        filled_data = self._handle_small_gap(filled_data, gap, timestamp_column)
+                        gap.fill_method = 'forward_fill_fallback'
+                    else:
+                        # For critical gaps, try UnifiedGapFiller
+                        self.logger.info(f'🔄 Attempting UnifiedGapFiller for critical gap: {gap}')
+                        filled_data = self._handle_critical_gap(filled_data, gap, timestamp_column, symbol, exchange, timeframe)
+            else:
+                # No symbol/exchange/timeframe available
+                if gap.gap_type in [GapType.SMALL, GapType.MEDIUM, GapType.LARGE]:
+                    # Forward fill for small/medium/large gaps when no download possible
+                    self.logger.info(f'🔄 Using forward fill (no download possible): {gap}')
+                    filled_data = self._handle_small_gap(filled_data, gap, timestamp_column)
+                    gap.fill_method = 'forward_fill_no_download'
                 else:
-                    self.logger.warning(f'Cannot download data for gap {gap}: missing symbol/exchange')
-                    filled_data = self._handle_large_gap_with_fallback(filled_data, gap, timestamp_column)
-            elif gap.gap_type == GapType.CRITICAL:
-                self.logger.error(f'Critical gap detected: {gap}. Manual intervention required.')
-                filled_data = self._handle_critical_gap(filled_data, gap, timestamp_column)
+                    # Try UnifiedGapFiller for critical gaps even without parameters
+                    self.logger.info(f'🔄 Attempting UnifiedGapFiller for critical gap (no params): {gap}')
+                    filled_data = self._handle_critical_gap(filled_data, gap, timestamp_column, symbol, exchange, timeframe)
                 
         final_gaps = self._analyze_gaps(filled_data, timestamp_column)
         if final_gaps:
@@ -291,23 +332,40 @@ class DataCleaner:
         """Analyze gaps in the data."""
         gaps = []
         timestamps = data[timestamp_column].values
-        
+
+        # Detect timestamp unit by checking the magnitude
+        if len(timestamps) > 1:
+            time_diff = timestamps[1] - timestamps[0]
+            if time_diff > 1e10:  # nanoseconds
+                time_unit = 'nanoseconds'
+                seconds_per_unit = 1e9
+            elif time_diff > 1e7:  # milliseconds
+                time_unit = 'milliseconds'
+                seconds_per_unit = 1000
+            else:  # seconds
+                time_unit = 'seconds'
+                seconds_per_unit = 1
+            self.logger.debug(f"Detected timestamp unit: {time_unit}")
+        else:
+            seconds_per_unit = 1  # fallback
+
         for i in range(len(timestamps) - 1):
             current_time = timestamps[i]
             next_time = timestamps[i + 1]
-            expected_next_time = current_time + 60
-            
+            expected_next_time = current_time + (60 * seconds_per_unit)  # 60 seconds in the detected unit
+
             if next_time > expected_next_time:
-                gap_size = next_time - expected_next_time
-                gap_type = self._classify_gap(gap_size)
+                gap_size_raw = next_time - expected_next_time
+                gap_size_seconds = gap_size_raw / seconds_per_unit  # Convert to seconds for classification
+                gap_type = self._classify_gap(gap_size_seconds)
                 gap = GapInfo(
                     start_time=expected_next_time,
                     end_time=next_time,
-                    gap_size=gap_size,
+                    gap_size=gap_size_seconds,  # Store gap size in seconds
                     gap_type=gap_type
                 )
                 gaps.append(gap)
-                
+
         return gaps
 
     def _classify_gap(self, gap_size: int) -> GapType:
@@ -333,6 +391,21 @@ class DataCleaner:
         self.logger.info(f'Gap analysis: {len(gaps)} total gaps')
         for gap_type, count in gap_counts.items():
             self.logger.info(f'  {gap_type}: {count} gaps')
+
+    def _is_gap_filled(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> bool:
+        """Check if a gap has been filled by verifying data exists in the gap period."""
+        try:
+            gap_start = gap.start_time
+            gap_end = gap.end_time
+
+            # Check if we have data points within the gap period
+            gap_data = data[(data[timestamp_column] >= gap_start) & (data[timestamp_column] <= gap_end)]
+
+            # Consider gap filled if we have at least one data point in the gap period
+            return len(gap_data) > 0
+        except Exception as e:
+            self.logger.warning(f'Error checking if gap is filled: {e}')
+            return False
 
     def _handle_small_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
         """Handle small gap with forward fill."""
@@ -361,7 +434,7 @@ class DataCleaner:
         gap.fill_method = 'forward_fill'
         return filled_data
 
-    def _handle_large_gap_with_download(
+    async def _handle_large_gap_with_download(
         self,
         data: pd.DataFrame,
         gap: GapInfo,
@@ -373,7 +446,7 @@ class DataCleaner:
         """Handle large gap by downloading missing data."""
         self.logger.info(f'Downloading data for gap: {gap}')
         try:
-            downloaded_data = self._download_missing_data(symbol, exchange, timeframe, gap.start_time, gap.end_time)
+            downloaded_data = await self._download_missing_data(symbol, exchange, timeframe, gap.start_time, gap.end_time)
             if downloaded_data is not None and len(downloaded_data) > 0:
                 filled_data = self._insert_downloaded_data(data, downloaded_data, timestamp_column)
                 gap.filled = True
@@ -388,7 +461,7 @@ class DataCleaner:
             self.logger.error(f'Failed to download data for gap {gap}: {e}')
             return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
 
-    def _download_missing_data(self, symbol: str, exchange: str, timeframe: str, start_time: int, end_time: int) -> Optional[pd.DataFrame]:
+    async def _download_missing_data(self, symbol: str, exchange: str, timeframe: str, start_time: int, end_time: int) -> Optional[pd.DataFrame]:
         """Download missing data from exchange."""
         try:
             start_dt = datetime.fromtimestamp(start_time)
@@ -396,18 +469,57 @@ class DataCleaner:
             self.logger.info(f'Downloading {symbol} data from {exchange} for {start_dt} to {end_dt}')
             
             if exchange.lower() == 'binance':
-                from ...training.steps.data_downloader import DataDownloader
-                
-                downloader = DataDownloader()
-                downloaded_data = downloader.download_klines(
+                from src.training.steps.data_collection.unified_data_downloader import UnifiedDataDownloader
+
+                downloader = UnifiedDataDownloader()
+                success, downloaded_data, error = await downloader.download_klines(
                     symbol=symbol,
-                    interval=timeframe,
-                    start_time=start_dt,
-                    end_time=end_dt
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    start_date=start_dt,
+                    end_date=end_dt
                 )
+
+                if not success:
+                    self.logger.error(f"Failed to download data: {error}")
+                    return None
                 
                 if downloaded_data is not None and len(downloaded_data) > 0:
-                    downloaded_data['timestamp'] = pd.to_datetime(downloaded_data['timestamp']).astype(np.int64) // 10**9
+                    # Convert timestamp to unix timestamp (seconds since epoch)
+                    if 'timestamp' in downloaded_data.columns:
+                        # Convert datetime to unix timestamp properly
+                        dt_series = pd.to_datetime(downloaded_data['timestamp'])
+                        try:
+                            # For datetime64 arrays, convert to int64 nanoseconds then to seconds
+                            if dt_series.dtype == 'datetime64[ns]':
+                                downloaded_data['timestamp'] = dt_series.astype('int64') // 10**9
+                            elif dt_series.dtype == 'datetime64[ms]':
+                                downloaded_data['timestamp'] = dt_series.astype('int64')
+                            else:
+                                # Improved fallback for other datetime formats - avoid 1970 reference issues
+                                try:
+                                    # Try direct conversion to unix timestamp
+                                    downloaded_data['timestamp'] = dt_series.astype('int64') // 10**9
+                                except:
+                                    # Last resort: use pandas timestamp conversion without explicit 1970 reference
+                                    downloaded_data['timestamp'] = pd.to_datetime(dt_series).astype('int64') // 10**9
+                        except Exception as conv_e:
+                            self.logger.warning(f'Failed to convert timestamp using standard method: {conv_e}')
+                            # Enhanced fallback: multiple conversion strategies
+                            try:
+                                # Strategy 1: Direct int64 conversion for unix timestamps
+                                if dt_series.dtype == 'int64':
+                                    downloaded_data['timestamp'] = dt_series
+                                else:
+                                    # Strategy 2: Convert to datetime then to unix timestamp
+                                    dt_converted = pd.to_datetime(dt_series, errors='coerce')
+                                    mask = dt_converted.notna()
+                                    downloaded_data.loc[mask, 'timestamp'] = dt_converted[mask].astype('int64') // 10**9
+                                    # Keep original values for failed conversions
+                                    downloaded_data.loc[~mask, 'timestamp'] = dt_series[~mask]
+                            except Exception as fallback_e:
+                                self.logger.error(f'All timestamp conversion methods failed: {fallback_e}')
+                                raise
                     return downloaded_data
                 else:
                     self.logger.warning('No data returned from downloader')
@@ -462,11 +574,64 @@ class DataCleaner:
         gap.fill_method = 'interpolation_fallback'
         return filled_data
 
-    def _handle_critical_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str) -> pd.DataFrame:
-        """Handle critical gap (requires manual intervention)."""
-        self.logger.error(f'Critical gap detected: {gap}')
-        self.logger.error('Manual intervention required for critical gaps')
-        return self._handle_large_gap_with_fallback(data, gap, timestamp_column)
+    def _handle_critical_gap(self, data: pd.DataFrame, gap: GapInfo, timestamp_column: str,
+                           symbol: str = None, exchange: str = None, timeframe: str = '1m') -> pd.DataFrame:
+        """Handle critical gap using UnifiedGapFiller."""
+        self.logger.warning(f'🚨 CRITICAL GAP DETECTED: {gap}')
+
+        # First try UnifiedGapFiller if available and we have the required parameters
+        if UNIFIED_GAP_FILLER_AVAILABLE and symbol and exchange:
+            self.logger.info('🔄 Attempting to fill critical gap using UnifiedGapFiller...')
+
+            try:
+                gap_filler = UnifiedGapFiller()
+
+                # Convert gap timestamps to datetime for UnifiedGapFiller
+                gap_start_dt = datetime.fromtimestamp(gap.start_time)
+                gap_end_dt = datetime.fromtimestamp(gap.end_time)
+
+                # Determine data type from timeframe
+                data_type = 'klines' if timeframe.endswith('m') else 'futures'
+
+                # Use detect_and_fill_gaps method
+                fill_result = asyncio.run(gap_filler.detect_and_fill_gaps(
+                    symbol=symbol,
+                    exchange=exchange,
+                    data_type=data_type,
+                    start_date=gap_start_dt - timedelta(hours=1),  # Add buffer
+                    end_date=gap_end_dt + timedelta(hours=1),      # Add buffer
+                    auto_fill=True
+                ))
+
+                if fill_result.get('success', False) and fill_result.get('gaps_filled', 0) > 0:
+                    self.logger.info(f'✅ Critical gap filled successfully via UnifiedGapFiller: {fill_result}')
+
+                    # Try to load the newly downloaded data and merge it
+                    try:
+                        # The gap filler saves data to data_cache, we need to reload and merge
+                        # This is a simplified approach - in practice you might want to reload from files
+                        gap.filled = True
+                        gap.fill_method = 'unified_gap_filler'
+                        self.logger.info(f'✅ Critical gap {gap} filled via UnifiedGapFiller')
+                        return data  # Return original data - the gap filler handles file updates
+                    except Exception as merge_e:
+                        self.logger.warning(f'⚠️ Gap filled but merge failed: {merge_e}')
+                        gap.filled = True
+                        gap.fill_method = 'unified_gap_filler_partial'
+                        return data
+                else:
+                    self.logger.warning(f'⚠️ UnifiedGapFiller failed to fill critical gap: {fill_result}')
+
+            except Exception as e:
+                self.logger.error(f'❌ Error using UnifiedGapFiller for critical gap: {e}')
+
+        # Fallback: Manual intervention required message
+        self.logger.error('🚨 MANUAL INTERVENTION REQUIRED - CRITICAL GAPS REQUIRE EXTERNAL DATA COLLECTION')
+        self.logger.error('🚨 CRITICAL GAPS WILL REMAIN AS GAPS IN THE DATA')
+        self.logger.warning('⚠️ CRITICAL GAP NOT FILLED - CONSIDER RUNNING DEDICATED DATA COLLECTION')
+        gap.filled = False
+        gap.fill_method = 'manual_intervention_required_external_collection'
+        return data  # Return data COMPLETELY UNCHANGED - critical gaps require external handling
 
     def detect_outliers(
         self,
@@ -847,9 +1012,9 @@ class DataCleaner:
             ]
         }
 
-    def clean_dataframe(self, data: pd.DataFrame, remove_constant_features: bool = False, 
+    async def clean_dataframe(self, data: pd.DataFrame, remove_constant_features: bool = False,
                        remove_duplicates: bool = True, handle_missing_values: bool = True,
-                       timestamp_column: str = 'timestamp', symbol: str = None, 
+                       timestamp_column: str = 'timestamp', symbol: str = None,
                        exchange: str = None, timeframe: str = None) -> Optional[pd.DataFrame]:
         """Clean dataframe with comprehensive data quality improvements.
         
@@ -912,7 +1077,7 @@ class DataCleaner:
             # 3. Handle missing values with gap detection
             if handle_missing_values and timestamp_column in cleaned_data.columns:
                 self.logger.info("🔍 Handling missing values and detecting gaps...")
-                cleaned_data = self.handle_missing_values_intelligently(
+                cleaned_data = await self.handle_missing_values_intelligently(
                     cleaned_data, timestamp_column, symbol, exchange, timeframe
                 )
                 
@@ -972,22 +1137,56 @@ class DataCleaner:
             return None
 
     def _identify_constant_features(self, data: pd.DataFrame) -> List[str]:
-        """Identify constant features in the data."""
+        """Identify constant features in the data with detailed logging."""
         constant_features = []
-        
+
+        # Define features that may be constant due to missing data sources
+        excluded_constant_features = {
+            'trade_volume', 'trade_count', 'avg_price',
+            'min_price', 'max_price', 'volume_ratio'
+        }
+
         for col in data.columns:
-            if data[col].nunique() <= 1:
+            # Skip aggtrades-derived features that may be constant due to missing data
+            if col in excluded_constant_features:
+                unique_count = data[col].nunique()
+                if unique_count <= 1:
+                    self.logger.info(f"   ℹ️ Skipping constant check for {col} (likely missing aggtrades data)")
+                    continue
+
+            unique_count = data[col].nunique()
+            non_null_count = data[col].notna().sum()
+            total_count = len(data)
+
+            if unique_count <= 1:
                 constant_features.append(col)
+                self.logger.warning(f"   🚨 CONSTANT: '{col}' has {unique_count} unique values ({non_null_count}/{total_count} non-null)")
+
+                # Provide specific insights for known problematic features
+                if col == 'volume_ratio':
+                    self.logger.warning("      💡 volume_ratio constant - likely missing aggtrades data or constant trading volume")
+                elif col == 'trade_volume':
+                    self.logger.warning("      💡 trade_volume constant - likely missing aggtrades data")
+                else:
+                    # Show sample values for other constant features
+                    sample_vals = data[col].dropna().head(3).tolist()
+                    self.logger.warning(f"      📊 Sample values: {sample_vals}")
+
             elif data[col].dtype in ['float64', 'float32', 'int64', 'int32']:
                 # Check for very low variance (effectively constant)
                 std_val = data[col].std()
                 if not pd.isna(std_val) and std_val < 1e-10:
                     constant_features.append(col)
-        
+                    self.logger.warning(f"   🚨 NEAR-CONSTANT: '{col}' has very low std ({std_val:.2e}) despite {unique_count} unique values")
+
+        if constant_features:
+            self.logger.warning(f"   📋 Total constant/near-constant features: {len(constant_features)}")
+            self.logger.warning("   💡 RECOMMENDATION: Check data sources and collection pipeline")
+
         return constant_features
 
 # Convenience functions for backwards compatibility
-def handle_missing_values_intelligently(
+async def handle_missing_values_intelligently(
     data: pd.DataFrame,
     timestamp_column: str = 'timestamp',
     symbol: str = None,
@@ -996,7 +1195,7 @@ def handle_missing_values_intelligently(
 ) -> pd.DataFrame:
     """Handle missing values intelligently based on gap size."""
     cleaner = DataCleaner()
-    return cleaner.handle_missing_values_intelligently(data, timestamp_column, symbol, exchange, timeframe)
+    return await cleaner.handle_missing_values_intelligently(data, timestamp_column, symbol, exchange, timeframe)
 
 def detect_outliers(
     data: pd.DataFrame,

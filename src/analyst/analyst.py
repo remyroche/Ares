@@ -31,6 +31,7 @@ except ImportError:
     AnalystModelTrainer = None
 # Note: compat module has been refactored, using enhanced_error_handler instead
 from src.utils.enhanced_error_handler import handle_errors_with_tracking
+from src.utils.compat import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.lookahead_bias_detector import LookaheadBiasError
 from src.utils.lookahead_bias_detector import get_global_detector
@@ -45,9 +46,6 @@ from src.utils.caching import intelligent_caching
 from src.utils.trading_decorators import validate_trading_inputs
 from src.utils.error_handler import handle_trading_errors
 
-try:
-except Exception:  # pragma: no cover - optional at runtime
-    MLConfidencePredictor = None  # type: ignore
 
 # Import dual model system and other components
 
@@ -75,6 +73,7 @@ class UnifiedRegimeClassifierFractal:
         self.exchange = exchange
 
 if TYPE_CHECKING:
+    pass
 
 class Analyst:
     """
@@ -121,7 +120,7 @@ class Analyst:
         self.confidence_threshold: float = self.triple_barrier_config.get("confidence_threshold", 0.6)  # 60% threshold for green light
 
         # Dual Model System integration
-        self.dual_model_system: DualModelSystem | None = None
+        self.dual_model_system: GeneralModelTrainer | None = None
         self.enable_dual_model_system: bool = self.analyst_config.get(
             "enable_dual_model_system",
             True,

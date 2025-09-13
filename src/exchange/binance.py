@@ -616,7 +616,10 @@ class BinanceExchange:
     @retry(stop=stop_after_attempt(3))
     async def futures_funding_rate(self, symbol: str, start_time_ms: int, end_time_ms: int) -> Optional[List[Dict[str, Any]]]:
         """
-        Get futures funding rates for a symbol within a time range.
+        DEPRECATED: Get futures funding rates for a symbol within a time range.
+
+        NOTE: funding_rate support has been removed from the data processing pipeline.
+        This method is kept for backward compatibility but will return None.
 
         Args:
             symbol: Trading symbol
@@ -624,45 +627,11 @@ class BinanceExchange:
             end_time_ms: End time in milliseconds
 
         Returns:
-            Optional[List[Dict[str, Any]]]: Funding rates or None
+            Optional[List[Dict[str, Any]]]: Always returns None (funding_rate support removed)
         """
-        try:
-            if not self.is_connected:
-                self.logger.error("Exchange not connected")
-                return None
-            
-            # Try primary API first
-            if not self.primary_api_failed and AIOHTTP_AVAILABLE:
-                try:
-                    params = {
-                        'symbol': symbol,
-                        'startTime': start_time_ms,
-                        'endTime': end_time_ms,
-                        'limit': 1000
-                    }
-                    url = f'{self._get_futures_base_url()}/fapi/v1/fundingRate'
-                    
-                    response = await self._make_request('GET', url, params=params)
-                    self.logger.info(f'Futures funding rates retrieved: {len(response)} records')
-                    return response
-                except Exception as e:
-                    self.logger.warning(f"Primary API failed for futures: {e}")
-                    self.primary_api_failed = True
-            
-            # Try CCXT fallback
-            if self.use_ccxt_fallback:
-                try:
-                    result = await self._ccxt_fallback_request('fetch_funding_rate', symbol)
-                    self.logger.info(f'Futures funding rates retrieved via CCXT: {result}')
-                    return [result] if result else []
-                except Exception as e:
-                    self.logger.error(f"CCXT fallback failed for futures: {e}")
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error getting funding rates: {e}")
-            return None
+        import warnings
+        warnings.warn("futures_funding_rate method is deprecated. funding_rate support has been removed from the data processing pipeline.", DeprecationWarning, stacklevel=2)
+        return None
 
     @with_error_recovery(service_name="binance_account")
     @retry(stop=stop_after_attempt(3))

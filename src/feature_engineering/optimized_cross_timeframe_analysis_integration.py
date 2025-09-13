@@ -36,8 +36,8 @@ class OptimizedCrossTimeframeAnalysisPipeline:
         # Initialize main analyzer
         self.analyzer = OptimizedCrossTimeframeAnalysis(self.config)
         
-        # Initialize method classes
-        self.methods = OptimizedCrossTimeframeMethods(self.analyzer)
+        # Initialize method classes (methods is now deprecated due to aggtrades removal)
+        self.methods = OptimizedCrossTimeframeMethods(self.analyzer)  # Placeholder - aggtrades removed
         self.advanced = OptimizedCrossTimeframeAdvanced(self.analyzer)
         
         # Integrate methods into analyzer
@@ -499,7 +499,7 @@ async def example_usage():
         
         # Perform analysis
         result = await pipeline.analyze_cross_timeframes(
-            data_dir="data/training",
+            data_dir="historical_data",
             symbol="ETHUSDT",
             exchange="BINANCE",
             timeframes=['1m', '5m', '15m', '30m']

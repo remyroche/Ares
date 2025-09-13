@@ -796,7 +796,7 @@ class LabelingStep:
 
                 # Data Management Optimizations
                 self.data_manager = OptimizedDataManager(
-                    base_path=Path(self.config.get('DATA_DIR', 'data_cache')),
+                    base_path=Path(self.config.get('DATA_DIR', 'historical_data')),
                     enable_caching=True,
                     enable_compression=True,
                     enable_parallel_io=True
@@ -1374,7 +1374,7 @@ class LabelingStep:
     @handles_errors()
     @cached()
     @log_execution_time()
-    async def execute_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False) -> bool:
+    async def execute_labeling(self, symbol: str, exchange: str, timeframe: str, data_dir: str='historical_data', force_rerun: bool=False) -> bool:
         step_start = time.time()
         self.logger.info(f'🚀 Executing Labeling for {symbol} on {exchange}')
 
@@ -1621,6 +1621,6 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str=Non
 if __name__ == '__main__':
 
     async def test() -> None:
-        success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
+        success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='historical_data')
         tprint(f'Step 5 result: {success}')
     asyncio.run(test())

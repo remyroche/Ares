@@ -160,7 +160,7 @@ class ParameterOptimizer:
         
         return all_results
     
-    def _evaluate_hmm_states(self, features: np.ndarray, n_states: int, cv_folds: int, 
+    def _evaluate_hmm_states(self, features: np.ndarray, n_states: int, cv_folds: int,
                            covariance_type: str) -> Dict[str, Any]:
         """Evaluate HMM with specific number of states."""
         try:
@@ -171,56 +171,39 @@ class ParameterOptimizer:
                 random_state=42,
                 n_iter=100
             )
-                
-                # Cross-validation scoring
-                scores = cross_val_score(
-                    model, features, 
-                    cv=cv_folds, 
-                    scoring='neg_log_likelihood'
-                )
-                
-                mean_score = scores.mean()
-                std_score = scores.std()
-                
-                result = {
-                    'n_components': n_states,
-                    'covariance_type': covariance_type,
-                    'mean_score': mean_score,
-                    'std_score': std_score,
-                    'scores': scores.tolist()
-                }
-                all_results.append(result)
-                
-                self.logger.info(f"   States {n_states}: {mean_score:.4f} ± {std_score:.4f}")
-                
-                # Update best if better
-                if mean_score > best_score:
-                    best_score = mean_score
-                    best_n_states = n_states
-                    
-            except Exception as e:
-                self.logger.warning(f"Error with {n_states} states: {e}")
-                continue
-        
-        optimization_time = time.time() - start_time
-        
-        best_params = {
-            'n_components': best_n_states,
-            'covariance_type': covariance_type
-        }
-        
-        result = OptimizationResult(
-            best_params=best_params,
-            best_score=best_score,
-            all_results=all_results,
-            optimization_time=optimization_time,
-            method='hmm_states_optimization'
-        )
-        
-        self.optimization_history.append(result)
-        self.logger.info(f"✅ Best HMM states: {best_n_states} (score: {best_score:.4f})")
-        
-        return result
+
+            # Cross-validation scoring
+            scores = cross_val_score(
+                model, features,
+                cv=cv_folds,
+                scoring='neg_log_likelihood'
+            )
+
+            mean_score = scores.mean()
+            std_score = scores.std()
+
+            result = {
+                'n_components': n_states,
+                'covariance_type': covariance_type,
+                'mean_score': mean_score,
+                'std_score': std_score,
+                'scores': scores.tolist()
+            }
+
+            self.logger.info(f"   States {n_states}: {mean_score:.4f} ± {std_score:.4f}")
+
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"Error with {n_states} states: {e}")
+            return {
+                'n_components': n_states,
+                'covariance_type': covariance_type,
+                'mean_score': float('-inf'),
+                'std_score': 0.0,
+                'scores': [],
+                'error': str(e)
+            }
     
     def optimize_covariance_type(self, features: np.ndarray, 
                                n_states: int,
@@ -394,20 +377,32 @@ class ParameterOptimizer:
         
         return result
     
-    def _optuna_optimization(self, features: np.ndarray, n_trials: int) -> OptimizationResult:
+    def _optuna_optimization(self, features: np.ndarray, n_trials: int, config=None) -> OptimizationResult:
         """Optuna-based optimization"""
         if not OPTUNA_AVAILABLE:
             raise ImportError("Optuna not available")
-        
+
         start_time = time.time()
         self.logger.info(f"🔍 Starting Optuna optimization with {n_trials} trials")
-        
+
+        # Auto-detect HMM mode from configuration
+        param_ranges = self._get_hmm_parameter_ranges()
+        hmm_mode = self._auto_detect_hmm_mode(config)
+        self.logger.info(f"🔧 Using {hmm_mode} mode: {param_ranges[hmm_mode]['description']}")
+
         def objective(trial):
-            # Suggest parameters
-            n_components = trial.suggest_int('n_components', 2, 40)
-            covariance_type = trial.suggest_categorical('covariance_type', ['full', 'tied', 'diag', 'spherical'])
-            n_iter = trial.suggest_int('n_iter', 50, 200)
-            tol = trial.suggest_float('tol', 1e-6, 1e-2, log=True)
+            # Suggest parameters based on mode
+            n_components = trial.suggest_int('n_components',
+                param_ranges[hmm_mode]['n_components_min'],
+                param_ranges[hmm_mode]['n_components_max'])
+            covariance_type = trial.suggest_categorical('covariance_type',
+                param_ranges[hmm_mode]['covariance_types'])
+            n_iter = trial.suggest_int('n_iter',
+                param_ranges[hmm_mode]['n_iter_min'],
+                param_ranges[hmm_mode]['n_iter_max'])
+            tol = trial.suggest_float('tol',
+                param_ranges[hmm_mode]['tol_min'],
+                param_ranges[hmm_mode]['tol_max'], log=True)
             
             try:
                 # Create and fit model
@@ -502,6 +497,84 @@ class ParameterOptimizer:
             json.dump(results, f, indent=2)
         
         self.logger.info(f"💾 Optimization results saved to {filepath}")
+
+    def _auto_detect_hmm_mode(self, config) -> str:
+        """Auto-detect HMM optimization mode based on launcher configuration.
+
+        Maps launcher modes to HMM optimization modes:
+        - Launcher FULL → HMM FULL (comprehensive optimization)
+        - Launcher LIGHT → HMM BLANK (moderate speedup)
+        - Launcher BLANK → HMM LIGHT (maximum speedup)
+        """
+        if not config:
+            return 'BLANK'
+
+        # Check if config has a mode attribute
+        if hasattr(config, 'mode'):
+            launcher_mode = str(config.mode).upper()
+
+            # Map launcher modes to HMM modes
+            mode_mapping = {
+                'FULL': 'FULL',      # Launcher FULL → HMM FULL
+                'LIGHT': 'BLANK',    # Launcher LIGHT → HMM BLANK
+                'BLANK': 'LIGHT'     # Launcher BLANK → HMM LIGHT
+            }
+
+            hmm_mode = mode_mapping.get(launcher_mode, 'BLANK')
+            self.logger.info(f"🔄 Auto-detected launcher mode '{launcher_mode}' → HMM mode '{hmm_mode}'")
+            return hmm_mode
+
+        # Check if config has a bayesian_optimization attribute (for future compatibility)
+        elif hasattr(config, 'bayesian_optimization'):
+            # For now, use BLANK mode as default when bayesian_optimization is present
+            self.logger.info("🔄 Detected bayesian_optimization config → using HMM BLANK mode")
+            return 'BLANK'
+
+        # Default fallback
+        self.logger.info("🔄 No mode detected, using default HMM BLANK mode")
+        return 'BLANK'
+
+    def _get_hmm_parameter_ranges(self) -> Dict[str, Dict[str, Any]]:
+        """Get HMM parameter ranges based on optimization mode.
+
+        Returns:
+            Dictionary with parameter ranges for each mode:
+            - FULL: Regular parameters (comprehensive optimization)
+            - BLANK: Lighter parameters (moderate speedup)
+            - LIGHT: Ultra-light parameters (maximum speedup)
+        """
+        return {
+            'FULL': {
+                'n_components_min': 2,
+                'n_components_max': 40,
+                'covariance_types': ['full', 'tied', 'diag', 'spherical'],
+                'n_iter_min': 50,
+                'n_iter_max': 200,
+                'tol_min': 1e-6,
+                'tol_max': 1e-2,
+                'description': 'Regular parameters for comprehensive optimization'
+            },
+            'BLANK': {
+                'n_components_min': 2,
+                'n_components_max': 20,
+                'covariance_types': ['diag', 'spherical', 'tied'],
+                'n_iter_min': 25,
+                'n_iter_max': 100,
+                'tol_min': 1e-5,
+                'tol_max': 1e-2,
+                'description': 'Lighter parameters for moderate speedup'
+            },
+            'LIGHT': {
+                'n_components_min': 2,
+                'n_components_max': 8,
+                'covariance_types': ['diag', 'spherical'],
+                'n_iter_min': 10,
+                'n_iter_max': 50,
+                'tol_min': 1e-4,
+                'tol_max': 1e-2,
+                'description': 'Ultra-light parameters for maximum speedup'
+            }
+        }
 
 # Example usage and testing
 def test_parameter_optimization():

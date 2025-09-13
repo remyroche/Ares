@@ -569,3 +569,411 @@ def _validate_against_schema(
                 field = param_name,
             )
         return value
+
+
+def validate_data_quality(
+    *,
+    check_duplicates: bool = True,
+    check_missing_values: bool = True,
+    check_outliers: bool = True,
+    max_missing_pct: float = 0.05,
+    outlier_std_threshold: float = 3.0,
+    param_name: str = "data"
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """
+    Validate data quality for DataFrames and datasets.
+
+    Args:
+        check_duplicates: Whether to check for duplicate rows
+        check_missing_values: Whether to check for missing values
+        check_outliers: Whether to check for outliers
+        max_missing_pct: Maximum allowed percentage of missing values
+        outlier_std_threshold: Standard deviation threshold for outlier detection
+        param_name: Parameter name containing the data to validate
+
+    Example:
+        @validate_data_quality(max_missing_pct=0.1)
+        def process_data(df: pd.DataFrame) -> pd.DataFrame:
+            return df.dropna()
+    """
+    if not PANDAS_AVAILABLE:
+        msg = "pandas is required for data quality validation"
+        raise ImportError(msg)
+
+    def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        # Get the data parameter
+        sig = inspect.signature(func)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+
+        if param_name not in bound.arguments:
+            msg = f"Parameter {param_name} not found"
+            raise ValidationError(message=msg)
+
+        data = bound.arguments[param_name]
+
+        if isinstance(data, pd.DataFrame):
+            _validate_dataframe_quality(data, param_name, check_duplicates,
+                                      check_missing_values, check_outliers,
+                                      max_missing_pct, outlier_std_threshold)
+        elif isinstance(data, (list, tuple)):
+            _validate_list_quality(data, param_name, check_duplicates,
+                                 check_missing_values, check_outliers,
+                                 max_missing_pct, outlier_std_threshold)
+        else:
+            # For other data types, just check for None
+            if data is None:
+                msg = f"Parameter {param_name} cannot be None"
+                raise ValidationError(message=msg, field=param_name)
+
+        return func(*args, **kwargs)
+
+    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        # Reuse sync validation logic
+        sig = inspect.signature(func)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+
+        if param_name not in bound.arguments:
+            msg = f"Parameter {param_name} not found"
+            raise ValidationError(message=msg)
+
+        data = bound.arguments[param_name]
+
+        if isinstance(data, pd.DataFrame):
+            _validate_dataframe_quality(data, param_name, check_duplicates,
+                                      check_missing_values, check_outliers,
+                                      max_missing_pct, outlier_std_threshold)
+        elif isinstance(data, (list, tuple)):
+            _validate_list_quality(data, param_name, check_duplicates,
+                                 check_missing_values, check_outliers,
+                                 max_missing_pct, outlier_std_threshold)
+        else:
+            if data is None:
+                msg = f"Parameter {param_name} cannot be None"
+                raise ValidationError(message=msg, field=param_name)
+
+        return await func(*args, **kwargs)
+
+    return uniform_wrapper("validate_data_quality", sync_handler, async_handler)
+
+
+def monitor_step_execution(
+    *,
+    step_name: str = None,
+    log_level: str = "INFO",
+    track_metrics: bool = True,
+    alert_on_failure: bool = True
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """
+    Monitor execution of pipeline steps with logging and metrics.
+
+    Args:
+        step_name: Name of the step (defaults to function name)
+        log_level: Logging level for execution tracking
+        track_metrics: Whether to track performance metrics
+        alert_on_failure: Whether to alert on step failures
+
+    Example:
+        @monitor_step_execution(step_name="data_processing")
+        def process_data(df: pd.DataFrame) -> pd.DataFrame:
+            return df.transform(...)
+    """
+    import time
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        start_time = time.time()
+        actual_step_name = step_name or func.__name__
+
+        try:
+            logger.log(getattr(logging, log_level),
+                      f"🚀 Starting step: {actual_step_name}")
+
+            result = func(*args, **kwargs)
+
+            duration = time.time() - start_time
+            logger.log(getattr(logging, log_level),
+                      f"✅ Completed step: {actual_step_name} in {duration:.2f}s")
+
+            if track_metrics:
+                # Could integrate with metrics system here
+                logger.debug(f"Step metrics: duration={duration:.2f}s")
+
+            return result
+
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(f"❌ Failed step: {actual_step_name} after {duration:.2f}s: {e}")
+
+            if alert_on_failure:
+                # Could integrate with alerting system here
+                logger.warning(f"⚠️ Alert: Step {actual_step_name} failed")
+
+            raise
+
+    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        start_time = time.time()
+        actual_step_name = step_name or func.__name__
+
+        try:
+            logger.log(getattr(logging, log_level),
+                      f"🚀 Starting async step: {actual_step_name}")
+
+            result = await func(*args, **kwargs)
+
+            duration = time.time() - start_time
+            logger.log(getattr(logging, log_level),
+                      f"✅ Completed async step: {actual_step_name} in {duration:.2f}s")
+
+            if track_metrics:
+                logger.debug(f"Async step metrics: duration={duration:.2f}s")
+
+            return result
+
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(f"❌ Failed async step: {actual_step_name} after {duration:.2f}s: {e}")
+
+            if alert_on_failure:
+                logger.warning(f"⚠️ Alert: Async step {actual_step_name} failed")
+
+            raise
+
+    return uniform_wrapper("monitor_step_execution", sync_handler, async_handler)
+
+
+def ensure_data_integrity(
+    *,
+    check_types: bool = True,
+    validate_ranges: bool = False,
+    param_name: str = "data"
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """
+    Ensure data integrity by validating types and ranges.
+
+    Args:
+        check_types: Whether to validate data types
+        validate_ranges: Whether to validate value ranges
+        param_name: Parameter name containing the data
+
+    Example:
+        @ensure_data_integrity(validate_ranges=True)
+        def process_prices(prices: List[float]) -> float:
+            return sum(prices) / len(prices)
+    """
+    def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        sig = inspect.signature(func)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+
+        if param_name not in bound.arguments:
+            msg = f"Parameter {param_name} not found"
+            raise ValidationError(message=msg)
+
+        data = bound.arguments[param_name]
+
+        if check_types:
+            _validate_data_types(data, param_name)
+
+        if validate_ranges:
+            _validate_data_ranges(data, param_name)
+
+        return func(*args, **kwargs)
+
+    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        sig = inspect.signature(func)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+
+        if param_name not in bound.arguments:
+            msg = f"Parameter {param_name} not found"
+            raise ValidationError(message=msg)
+
+        data = bound.arguments[param_name]
+
+        if check_types:
+            _validate_data_types(data, param_name)
+
+        if validate_ranges:
+            _validate_data_ranges(data, param_name)
+
+        return await func(*args, **kwargs)
+
+    return uniform_wrapper("ensure_data_integrity", sync_handler, async_handler)
+
+
+def validate_pipeline_step(
+    *,
+    required_inputs: list[str] = None,
+    required_outputs: list[str] = None,
+    validate_inputs: bool = True,
+    validate_outputs: bool = True
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """
+    Validate pipeline step inputs and outputs.
+
+    Args:
+        required_inputs: List of required input parameters
+        required_outputs: List of required output attributes/keys
+        validate_inputs: Whether to validate input parameters
+        validate_outputs: Whether to validate output structure
+
+    Example:
+        @validate_pipeline_step(required_inputs=["data", "config"])
+        def process_step(data: pd.DataFrame, config: dict) -> dict:
+            return {"processed_data": data, "metrics": {...}}
+    """
+    def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        sig = inspect.signature(func)
+
+        # Validate inputs
+        if validate_inputs and required_inputs:
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+
+            missing_inputs = []
+            for req_input in required_inputs:
+                if req_input not in bound.arguments:
+                    missing_inputs.append(req_input)
+                elif bound.arguments[req_input] is None:
+                    missing_inputs.append(req_input)
+
+            if missing_inputs:
+                msg = f"Missing required inputs: {missing_inputs}"
+                raise ValidationError(message=msg, details={"missing_inputs": missing_inputs})
+
+        # Execute function
+        result = func(*args, **kwargs)
+
+        # Validate outputs
+        if validate_outputs and required_outputs:
+            if isinstance(result, dict):
+                missing_outputs = [out for out in required_outputs if out not in result]
+                if missing_outputs:
+                    msg = f"Missing required outputs: {missing_outputs}"
+                    raise ValidationError(message=msg, details={"missing_outputs": missing_outputs})
+            else:
+                logger.warning(f"Cannot validate outputs for non-dict result in {func.__name__}")
+
+        return result
+
+    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+        sig = inspect.signature(func)
+
+        # Validate inputs
+        if validate_inputs and required_inputs:
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+
+            missing_inputs = []
+            for req_input in required_inputs:
+                if req_input not in bound.arguments:
+                    missing_inputs.append(req_input)
+                elif bound.arguments[req_input] is None:
+                    missing_inputs.append(req_input)
+
+            if missing_inputs:
+                msg = f"Missing required inputs: {missing_inputs}"
+                raise ValidationError(message=msg, details={"missing_inputs": missing_inputs})
+
+        # Execute function
+        result = await func(*args, **kwargs)
+
+        # Validate outputs
+        if validate_outputs and required_outputs:
+            if isinstance(result, dict):
+                missing_outputs = [out for out in required_outputs if out not in result]
+                if missing_outputs:
+                    msg = f"Missing required outputs: {missing_outputs}"
+                    raise ValidationError(message=msg, details={"missing_outputs": missing_outputs})
+            else:
+                logger.warning(f"Cannot validate outputs for non-dict result in {func.__name__}")
+
+        return result
+
+    return uniform_wrapper("validate_pipeline_step", sync_handler, async_handler)
+
+
+# Helper functions for data quality validation
+
+def _validate_dataframe_quality(df: pd.DataFrame, param_name: str,
+                               check_duplicates: bool, check_missing: bool,
+                               check_outliers: bool, max_missing_pct: float,
+                               outlier_std_threshold: float) -> None:
+    """Validate DataFrame data quality."""
+    if check_duplicates and df.duplicated().any():
+        msg = f"DataFrame contains duplicate rows"
+        raise ValidationError(message=msg, field=param_name)
+
+    if check_missing:
+        missing_pct = df.isnull().mean().mean()
+        if missing_pct > max_missing_pct:
+            msg = f"Too many missing values: {missing_pct:.1%} > {max_missing_pct:.1%}"
+            raise ValidationError(message=msg, field=param_name,
+                                details={"missing_percentage": missing_pct})
+
+    if check_outliers:
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            if df[col].std() > 0:  # Only check if column has variance
+                z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
+                outlier_pct = (z_scores > outlier_std_threshold).mean()
+                if outlier_pct > 0.05:  # More than 5% outliers
+                    msg = f"Column {col} has too many outliers: {outlier_pct:.1%}"
+                    raise ValidationError(message=msg, field=f"{param_name}.{col}")
+
+
+def _validate_list_quality(data: list, param_name: str,
+                          check_duplicates: bool, check_missing: bool,
+                          check_outliers: bool, max_missing_pct: float,
+                          outlier_std_threshold: float) -> None:
+    """Validate list/array data quality."""
+    if not data:
+        return  # Empty list is valid
+
+    # Check for duplicates
+    if check_duplicates and len(data) != len(set(data)):
+        msg = f"List contains duplicate values"
+        raise ValidationError(message=msg, field=param_name)
+
+    # Check for missing values (None)
+    if check_missing:
+        none_count = sum(1 for x in data if x is None)
+        none_pct = none_count / len(data)
+        if none_pct > max_missing_pct:
+            msg = f"Too many None values: {none_pct:.1%} > {max_missing_pct:.1%}"
+            raise ValidationError(message=msg, field=param_name,
+                                details={"none_percentage": none_pct})
+
+    # Check for outliers in numeric data
+    if check_outliers:
+        numeric_data = [x for x in data if isinstance(x, (int, float)) and x is not None]
+        if len(numeric_data) > 10:  # Only check if we have enough data
+            arr = np.array(numeric_data)
+            if arr.std() > 0:
+                z_scores = np.abs((arr - arr.mean()) / arr.std())
+                outlier_pct = (z_scores > outlier_std_threshold).mean()
+                if outlier_pct > 0.05:  # More than 5% outliers
+                    msg = f"List has too many outliers: {outlier_pct:.1%}"
+                    raise ValidationError(message=msg, field=param_name)
+
+
+def _validate_data_types(data: Any, param_name: str) -> None:
+    """Validate basic data types."""
+    if data is None:
+        msg = f"Parameter {param_name} cannot be None"
+        raise ValidationError(message=msg, field=param_name)
+
+
+def _validate_data_ranges(data: Any, param_name: str) -> None:
+    """Validate data value ranges (basic implementation)."""
+    if isinstance(data, (list, tuple)):
+        # Check for infinite or NaN values in numeric data
+        for i, item in enumerate(data):
+            if isinstance(item, (int, float)):
+                if np.isnan(item) or np.isinf(item):
+                    msg = f"Invalid value at index {i}: {item}"
+                    raise ValidationError(message=msg, field=f"{param_name}[{i}]")

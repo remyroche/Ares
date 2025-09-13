@@ -8,22 +8,22 @@ This module contains all validation functionality including:
 - Validation metrics
 """
 
-from .validation_utils import ValidationUtils, ValidationConfig
-from .cv_utils import CVUtils, CVConfig
-from .cv import CrossValidator
-from .stability import StabilityAnalyzer
-from .thresholding import ThresholdOptimizer
+from .validation_utils import ValidationFramework, ConfigurationValidator
+from .cv_utils import TemporalCrossValidator, PurgedKFold, CrossValidationUtilities
+from .cv import PurgedSplitConfig
+from .stability import feature_selection_stability, aggregate_time_blocks
+from .thresholding import optimize_threshold, calibrate_probabilities
 
 __all__ = [
     # Validation Utils
-    'ValidationUtils', 'ValidationConfig',
-    
+    'ValidationFramework', 'ConfigurationValidator',
+
     # Cross-validation
-    'CVUtils', 'CVConfig', 'CrossValidator',
-    
+    'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
+
     # Stability Analysis
-    'StabilityAnalyzer',
-    
+    'feature_selection_stability', 'aggregate_time_blocks',
+
     # Threshold Optimization
-    'ThresholdOptimizer'
+    'optimize_threshold', 'calibrate_probabilities'
 ]

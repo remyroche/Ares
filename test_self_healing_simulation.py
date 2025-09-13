@@ -11,7 +11,7 @@ def simulate_constant_feature_detection(data):
     """Simulate the _check_for_constant_features method from the sub_pipeline."""
     constant_features = []
     trade_stat_cols = ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'price_std']
-    funding_cols = ['funding_rate']
+    funding_cols = []
 
     # Check critical trade and funding features
     for col in trade_stat_cols + funding_cols:

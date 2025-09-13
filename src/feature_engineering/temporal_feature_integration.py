@@ -246,7 +246,7 @@ class TemporalFeatureIntegration:
             
             # Run cross timeframe analysis
             cross_timeframe_results = await analyze_cross_timeframes_optimized(
-                data_dir=data_dir or "data/training",
+                data_dir=data_dir or "historical_data",
                 symbol=symbol,
                 exchange=exchange,
                 config=self.cross_timeframe_analyzer

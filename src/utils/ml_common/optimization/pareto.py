@@ -35,13 +35,13 @@ except Exception:
 
 # Import M1 utilities for enhanced performance
 try:
-    from ..hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager
     GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    # from ..hardware.m1_memory_optimizer import (  # type: ignore
+    # from src.utils.hardware.m1_memory_optimizer import (  # type: ignore
     #     auto_skim_memory, smart_memory_allocation,
     #     memory_skim_decorator, auto_memory_skim_decorator,
     #     auto_memory_skim_context, smart_memory_context
@@ -52,7 +52,7 @@ except ImportError:
 
 
 try:
-    from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer  # type: ignore
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer  # type: ignore
     CPU_OPTIMIZER_AVAILABLE = True
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False
@@ -493,10 +493,30 @@ def get_pareto_front() -> ParetoFront:
     return _pareto_front
 
 
+class ParetoOptimizer:
+    """Wrapper class for ParetoFront functionality to maintain compatibility."""
+
+    def __init__(self):
+        """Initialize ParetoOptimizer with ParetoFront instance."""
+        self.pareto_front = ParetoFront()
+        self.logger = _LOGGER
+        self.logger.info("🚀 Initializing ParetoOptimizer...")
+
+    def optimize(self, solutions: List[Solution], objectives: ObjectiveDirection) -> List[Solution]:
+        """Optimize solutions using Pareto front computation."""
+        return self.pareto_front.compute_pareto_front_gpu(solutions, objectives)
+
+    def select_best(self, solutions: List[Solution], objectives: ObjectiveDirection) -> Optional[Solution]:
+        """Select the best solution using knee point selection."""
+        pareto_front = self.optimize(solutions, objectives)
+        return select_knee_point(pareto_front, objectives)
+
+
 __all__ = [
     'Solution',
     'ParetoFront',
     'ParetoFrontAnalyzer',
+    'ParetoOptimizer',
     'DEFAULT_FINANCIAL_WEIGHTS',
     'filter_by_constraints',
     'compute_pareto_front',

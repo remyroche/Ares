@@ -360,12 +360,24 @@ class SRDetectionStep(BaseStep):
             support_srlevels = [level for level in all_levels if hasattr(level, 'type') and getattr(level, 'type', '').lower() == 'support']
             resistance_srlevels = [level for level in all_levels if hasattr(level, 'type') and getattr(level, 'type', '').lower() == 'resistance']
             
+            # Filter out levels with zero touches (theoretical levels never touched by price)
+            original_count = len(levels_dict)
+            levels_dict = [level for level in levels_dict if level.get('touch_count', 0) > 0]
+            filtered_count = len(levels_dict)
+
+            # Re-separate support and resistance levels after filtering
+            support_levels = [level for level in levels_dict if level.get('level_type', '').lower() == 'support']
+            resistance_levels = [level for level in levels_dict if level.get('level_type', '').lower() == 'resistance']
+
+            self.logger.info(f'🧹 Filtered out {original_count - filtered_count} levels with zero touches')
+            self.logger.info(f'📊 Levels after filtering: {len(support_levels)} support, {len(resistance_levels)} resistance')
+
             detection_time = time.time() - detection_start_time
-            
+
             self.logger.info('🎯 ===== SR DETECTION PROCESS COMPLETED =====')
             self.logger.info(f'✅ Total detection time: {detection_time:.2f} seconds')
             self.logger.info(f'📊 Final results: {len(support_levels)} support levels, {len(resistance_levels)} resistance levels')
-            
+
             return {
                 'support_levels': support_levels,
                 'resistance_levels': resistance_levels,

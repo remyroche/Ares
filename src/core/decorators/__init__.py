@@ -103,6 +103,10 @@ from .validate import (
     validate_dataframe,
     validate_schema,
     validates,
+    validate_data_quality,
+    monitor_step_execution,
+    ensure_data_integrity,
+    validate_pipeline_step,
 )
 
 # Function monitoring decorators
@@ -149,6 +153,10 @@ __all__ = [
     "validates",
     "validate_schema",
     "validate_dataframe",
+    "validate_data_quality",
+    "monitor_step_execution",
+    "ensure_data_integrity",
+    "validate_pipeline_step",
     # Retry/resilience
     "retry",
     "timeout",

@@ -199,7 +199,6 @@ class WalkForwardValidator:
         self.logger.info(f"🔄 Parallel processing: {config.enable_parallel_processing}")
     
     @traced(span_name='walk_forward_validation')
-    @log_execution_time
     async def validate(
         self, 
         data: pd.DataFrame,
@@ -554,7 +553,6 @@ class BacktestingEngine:
         self.logger.info(f"🚀 BacktestingEngine initialized for {config.symbol}")
     
     @traced(span_name='execute_backtesting')
-    @log_execution_time
     async def execute(
         self, 
         data: pd.DataFrame,

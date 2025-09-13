@@ -50,7 +50,7 @@ class GapCollectionHook:
         # Data-type specific thresholds for triggering collection
         collection_thresholds = {
             'aggtrades': 0.5,  # 0.5 seconds
-            'klines': 120,     # 2 minutes
+            'klines': 66,      # 1.1 minutes for 1m klines (avoid unnecessary downloads)
             'futures': 32400   # 9 hours
         }
         

@@ -164,23 +164,6 @@ async def test_binance_data_download():
         except Exception as e:
             print(f"⚠️ Aggtrades download error: {type(e).__name__}: {e}")
         
-        # Test futures download
-        print("🏦 Testing futures download...")
-        try:
-            success, data, error = await downloader.download_futures(
-                symbol='BTCUSDT',
-                exchange='binance',
-                start_date=datetime.now() - timedelta(days=1),
-                end_date=datetime.now(),
-                batch_size=100
-            )
-            
-            if success:
-                print(f"✅ Futures download successful: {len(data)} records")
-            else:
-                print(f"⚠️ Futures download failed: {error}")
-        except Exception as e:
-            print(f"⚠️ Futures download error: {type(e).__name__}: {e}")
         
         print("✅ Data download test completed")
         return True

@@ -776,7 +776,8 @@ class AggtradesFormatValidator:
             if file_path.suffix.lower() == '.csv':
                 df.to_csv(file_path, index=False)
             else:
-                standardized_parquet_handler.write_parquet_standardized(df, file_path, compression="zstd", index=False)
+                # Use aggtrades schema for aggtrades data
+                standardized_parquet_handler.write_parquet_standardized(df, file_path, schema_name='aggtrades', compression="zstd", index=False)
 
             # Verify the saved file
             if file_path.exists():

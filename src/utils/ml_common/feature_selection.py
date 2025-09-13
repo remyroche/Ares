@@ -38,7 +38,7 @@ from ..math_validation import (
     safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile
 )
 from ..common_operations import create_fallback_logger, safe_dataframe_operation
-from ..hardware.m1_gpu_utils import M1GPUManager
+from src.utils.hardware.m1_gpu_utils import M1GPUManager
 from ..parallel_processing_optimizer import ParallelProcessor
 from .matrix_operations import (
     m1_correlation_matrix, m1_matrix_multiply, m1_batch_process,

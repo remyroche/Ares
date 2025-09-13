@@ -20,7 +20,6 @@ def test_self_healing_hook():
         'avg_price(unique=1, std=0.00e+00)',
         'min_price(unique=1, std=0.00e+00)',
         'max_price(unique=1, std=0.00e+00)',
-        'funding_rate(unique=1, std=0.00e+00)'
     ]
 
     print(f"🚨 Simulated constant features detected: {constant_features}")
@@ -81,7 +80,6 @@ def test_constant_feature_detection():
         'avg_price': [100.0] * 1000,   # Constant
         'min_price': [99.0] * 1000,    # Constant
         'max_price': [101.0] * 1000,   # Constant
-        'funding_rate': [0.001] * 1000, # Constant
         'close': np.random.normal(100, 1, 1000),  # Variable (good)
         'volume': np.random.normal(1000, 100, 1000)  # Variable (good)
     })
@@ -89,7 +87,7 @@ def test_constant_feature_detection():
     # Simulate the _check_for_constant_features logic
     constant_features = []
     trade_stat_cols = ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'price_std']
-    funding_cols = ['funding_rate']
+    funding_cols = []
 
     for col in trade_stat_cols + funding_cols:
         if col in test_data.columns:
@@ -103,7 +101,7 @@ def test_constant_feature_detection():
     print(f"✅ Variable features: close, volume (should not be flagged)")
 
     # Verify expected results
-    expected_constant = ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'funding_rate']
+    expected_constant = ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']
     detected_constant = [cf.split('(')[0] for cf in constant_features]
 
     success = set(expected_constant) == set(detected_constant)

@@ -25,7 +25,7 @@ from .step03_5_final_regime_clustering import (
     run_step as run_final_clustering_step,
     FinalRegimeClusteringStep
 )
-from .parameter_optimization import ParameterOptimizer
+# from .parameter_optimization import ParameterOptimizer  # Temporarily disabled due to syntax errors
 from .ensemble_optimization import EnsembleWeightOptimizer
 
 __all__ = [

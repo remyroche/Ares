@@ -16,7 +16,7 @@ training_modes:
     # Data Collection Parameters
     data_collection:
       enable_all_exchanges: true
-      enable_aggtrades: true
+      enable_aggtrades: false
       enable_futures: true
       data_quality_checks: true
 
@@ -95,7 +95,7 @@ training_modes:
     # Data Collection Parameters (reduced scope)
     data_collection:
       enable_all_exchanges: false  # Focus on primary exchange
-      enable_aggtrades: true
+      enable_aggtrades: false
       enable_futures: false  # Skip futures for speed
       data_quality_checks: true
 

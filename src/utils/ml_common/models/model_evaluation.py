@@ -31,9 +31,9 @@ from collections import defaultdict
 import warnings
 import time
 
-from ..math_validation import safe_divide, safe_log
-from ..common_operations import create_fallback_logger
-from ..hardware.m1_gpu_utils import M1GPUManager
+from ...math_validation import safe_divide, safe_log
+from ...common_operations import create_fallback_logger
+from src.utils.hardware.m1_gpu_utils import M1GPUManager
 
 # Enhanced dependency management with fast fail
 try:

@@ -119,7 +119,7 @@ from src.utils.math_validation import (
 )
 
 # Parquet utilities
-from src.utils.parquet_utils import (
+from src.steps.data_collection.klines_data import (
     ParquetUtils, get_parquet_utils
 )
 
@@ -129,6 +129,28 @@ from src.utils.core.file_operations import (
     UniversalSerializer, save_json, load_json, save_pickle, load_pickle,
     save_parquet, load_parquet, save_data, load_data
 )
+
+# Enhanced performance components - with fallbacks
+try:
+    from src.utils.hardware.memory_optimization import get_memory_manager
+    OPTIMIZED_MEMORY_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_MEMORY_AVAILABLE = False
+    get_memory_manager = None
+
+try:
+    from src.utils.ml_common.ensembles.ensemble_manager import EnsembleManager as AdvancedEnsembleClustering
+    OPTIMIZED_CLUSTERING_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_CLUSTERING_AVAILABLE = False
+    AdvancedEnsembleClustering = None
+
+try:
+    from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations as get_vectorized_operations_manager
+    OPTIMIZED_VECTORIZED_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_VECTORIZED_AVAILABLE = False
+    get_vectorized_operations_manager = None
 
 # Data processing utilities - using fallback implementations
 from enum import Enum
@@ -756,31 +778,44 @@ class FastFailValidator:
         
         return True
     
-    def validate_timestamp_quality(self, df: pd.DataFrame) -> bool:
-        """Validate timestamp quality with specific criteria."""
+    def validate_timestamp_quality(self, df: pd.DataFrame, expected_interval_seconds: float = 60.0) -> bool:
+        """Validate timestamp quality with data-type specific criteria.
+
+        Args:
+            df: DataFrame to validate
+            expected_interval_seconds: Expected interval between timestamps (default 60s for 1m klines)
+        """
         if 'timestamp' not in df.columns:
             raise ValueError("Timestamp column not found")
-        
+
         timestamps = df['timestamp']
-        
+
         # Check for timestamp improper order
         if not timestamps.is_monotonic_increasing:
             out_of_order = (timestamps.diff() < pd.Timedelta(0)).sum()
             if out_of_order > 0:
                 raise ValueError(f"Found {out_of_order} timestamps out of order")
-        
-        # Check for timestamp gaps over 0.5s
+
+        # Check for timestamp gaps based on data type
         time_diffs = timestamps.diff().dt.total_seconds()
-        large_gaps = (time_diffs > 0.5).sum()
+        # For klines data (>= 1m), use expected interval * 2 as gap threshold
+        # For tick data (< 1m), be more lenient
+        if expected_interval_seconds >= 60:  # Klines data
+            gap_threshold = expected_interval_seconds * 2  # Allow some tolerance
+        else:  # Tick data
+            gap_threshold = expected_interval_seconds * 10  # More lenient for tick data
+
+        large_gaps = (time_diffs > gap_threshold).sum()
         if large_gaps > 0:
-            raise ValueError(f"Found {large_gaps} timestamp gaps over 0.5s")
-        
+            interval_type = "klines" if expected_interval_seconds >= 60 else "tick"
+            raise ValueError(f"Found {large_gaps} timestamp gaps over {gap_threshold:.1f}s ({interval_type} data)")
+
         # Check for timestamp duplicates over 0.1%
         duplicates = timestamps.duplicated().sum()
         duplicate_percentage = duplicates / len(timestamps) * 100
         if duplicate_percentage > 0.1:
             raise ValueError(f"Found {duplicate_percentage:.2f}% timestamp duplicates (limit: 0.1%)")
-        
+
         return True
     
     def validate_ohlc_relationships(self, df: pd.DataFrame) -> bool:
@@ -818,7 +853,9 @@ class FastFailValidator:
             raise ValueError("Features contain NaN values")
         
         # Check for constant features
-        constant_features = (features.std() == 0).sum()
+        constant_mask = features.std() == 0
+        constant_features = constant_mask.sum()
+
         if constant_features > 0:
             raise ValueError(f"Found {constant_features} constant features")
         
@@ -1725,7 +1762,7 @@ class FinalRegimeClusteringStep:
             
             # Fast-fail validation
             self.fast_fail_validator.validate_data_quality_fast_fail(df)
-            self.fast_fail_validator.validate_timestamp_quality(df)
+            self.fast_fail_validator.validate_timestamp_quality(df, expected_interval_seconds=60.0)
             self.fast_fail_validator.validate_ohlc_relationships(df)
             
             self.logger.info("✅ Comprehensive data validation passed")
@@ -1971,7 +2008,7 @@ class FinalRegimeClusteringStep:
         try:
             self.logger.info("🔍 Performing fast-fail data validation...")
             self.fast_fail_validator.validate_data_quality_fast_fail(df)
-            self.fast_fail_validator.validate_timestamp_quality(df)
+            self.fast_fail_validator.validate_timestamp_quality(df, expected_interval_seconds=60.0)
             self.fast_fail_validator.validate_ohlc_relationships(df)
             self.logger.info("✅ Fast-fail validation passed")
         except Exception as e:
@@ -3340,7 +3377,7 @@ class FinalRegimeClusteringStep:
         else:
             self.logger.warning("⚠️ Trading performance data validation failed, skipping logging")
 
-    def _validate_financial_metrics(self, metrics: dict[str, Any]) -> bool:
+    def _validate_financial_metrics(self, metrics: dict[str, Any], financial_logger, clustering_algorithm: dict[str, Any], symbol: str, exchange: str, timeframe: str) -> bool:
         """Validate financial metrics for correctness and completeness."""
         try:
             self.logger.info("🔍 Validating financial metrics...")
@@ -3470,8 +3507,11 @@ class FinalRegimeClusteringStep:
         try:
             self.logger.info("💾 Saving final regime clustering results...")
             
-            # Create results directory using common operations
-            results_dir = str(self.artifacts.get_data_dir("regime_clustering"))
+            # Create results directory using proper exchange/symbol structure
+            # Get exchange and symbol from config
+            exchange = self.config.get('EXCHANGE', 'binance').lower()
+            symbol = self.config.get('SYMBOL', 'ethusdt').lower()
+            results_dir = Path(self.config.get('data_dir', 'historical_data')) / exchange / symbol / 'hmm_clusters'
             reports_dir = str(self.artifacts.get_reports_dir("regime_clustering"))
             
             # Save clustering results using safe JSON operations
@@ -3877,7 +3917,7 @@ class FinalRegimeClusteringStep:
         # Use injected utilities
         safe_mean_func = self.utilities.get('safe_mean', safe_mean)
         safe_std_func = self.utilities.get('safe_std', safe_std)
-        safe_divide_func = self.utilities.get('safe_divide', safe_divide)
+        safe_divide_func = self.utilities.get('safe_divide', math_safe_divide)
         validate_finite_func = self.utilities.get('validate_finite', validate_finite)
         
         for cluster_id in unique_clusters:
@@ -4026,7 +4066,7 @@ class FinalRegimeClusteringStep:
         # Use injected utilities
         safe_mean_func = self.utilities.get('safe_mean', safe_mean)
         safe_std_func = self.utilities.get('safe_std', safe_std)
-        safe_divide_func = self.utilities.get('safe_divide', safe_divide)
+        safe_divide_func = self.utilities.get('safe_divide', math_safe_divide)
         
         unique_clusters = np.unique(cluster_labels)
         persistence_stats = {
@@ -4264,7 +4304,7 @@ class FinalRegimeClusteringStep:
             # Use injected utilities for regime detection
             safe_mean_func = self.utilities.get('safe_mean', safe_mean)
             safe_std_func = self.utilities.get('safe_std', safe_std)
-            safe_divide_func = self.utilities.get('safe_divide', safe_divide)
+            safe_divide_func = self.utilities.get('safe_divide', math_safe_divide)
             
             # Simple regime detection based on volatility and momentum
             if 'volatility' in features.columns and 'momentum' in features.columns:

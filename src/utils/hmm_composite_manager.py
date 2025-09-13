@@ -51,7 +51,7 @@ except ImportError:
     MATH_VALIDATION_AVAILABLE = False
 
 try:
-    from .parquet_utils import ParquetUtils  # type: ignore[import]
+    from src.utils.parquet_utils import ParquetUtils  # type: ignore[import]
     PARQUET_UTILS_AVAILABLE = True
 except ImportError:
     PARQUET_UTILS_AVAILABLE = False
@@ -105,7 +105,7 @@ class HMMRegimeConfig:
 # Try to import the real class if available (without triggering circular imports)
 try:
     import importlib.util
-    spec = importlib.util.find_spec("utils.ml_common.hmm_regime_detection")
+    spec = importlib.util.find_spec("src.utils.ml_common.hmm_regime_detection")
     if spec is not None:
         # Import directly from the module file to avoid __init__.py issues
         import sys
@@ -285,10 +285,11 @@ class EnhancedHMMCompositeManager:
     ) -> str:
         """Get the file path for HMM composite cluster data."""
         if base_path is None:
-            base_path = "data_cache"
-        
+            base_path = "historical_data"
+
+        # Use proper exchange/symbol directory structure
         filename = f"hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet"
-        return os.path.join(base_path, "hmm_clusters", filename)
+        return os.path.join(base_path, exchange.lower(), symbol.lower(), "hmm_clusters", filename)
 
     def file_exists(
         self,
@@ -374,16 +375,29 @@ class EnhancedHMMCompositeManager:
 
         config = config or self.bayesian_config
 
+        # Auto-detect mode from launcher configuration
+        hmm_mode = self._auto_detect_hmm_mode(config)
+
         def parallel_objective(trial):
             """Parallel objective function for multiple model configurations."""
+            # Get parameter ranges based on optimization mode
+            param_ranges = self._get_hmm_parameter_ranges()
+            self.logger.info(f"🔧 Using {hmm_mode} mode: {param_ranges[hmm_mode]['description']}")
+
             # Generate multiple parameter sets for parallel evaluation
             param_sets = []
             for i in range(n_parallel_models):
-                n_components = trial.suggest_int(f'n_components_{i}', 2, 6)
+                n_components = trial.suggest_int(f'n_components_{i}',
+                    param_ranges[hmm_mode]['n_components_min'],
+                    param_ranges[hmm_mode]['n_components_max'])
                 covariance_type = trial.suggest_categorical(f'covariance_type_{i}',
-                    ['diag', 'spherical'])
-                n_iter = trial.suggest_int(f'n_iter_{i}', 25, 100)
-                tol = trial.suggest_float(f'tol_{i}', 1e-6, 1e-2, log=True)
+                    param_ranges[hmm_mode]['covariance_types'])
+                n_iter = trial.suggest_int(f'n_iter_{i}',
+                    param_ranges[hmm_mode]['n_iter_min'],
+                    param_ranges[hmm_mode]['n_iter_max'])
+                tol = trial.suggest_float(f'tol_{i}',
+                    param_ranges[hmm_mode]['tol_min'],
+                    param_ranges[hmm_mode]['tol_max'], log=True)
                 param_sets.append({
                     'n_components': n_components,
                     'covariance_type': covariance_type,
@@ -910,7 +924,7 @@ class EnhancedHMMCompositeManager:
         data: pd.DataFrame,
         config: Optional[BayesianOptimizationConfig] = None,
         use_adaptive: bool = False,
-        mode: str = 'light'
+        mode: Optional[str] = None
     ) -> Dict[str, Any]:
         """Optimize HMM parameters using Bayesian optimization.
 
@@ -930,16 +944,29 @@ class EnhancedHMMCompositeManager:
         if not OPTUNA_AVAILABLE:
             self.logger.warning("⚠️ Optuna not available, using default parameters")
             return self._get_default_hmm_parameters()
-        
+
         config = config or self.bayesian_config
-        
+
+        # Use provided mode or default to 'blank'
+        hmm_mode = (mode or 'blank').upper()
+        self.logger.info(f"🔄 Using HMM optimization mode: {hmm_mode}")
+
         def objective(trial):
-            # ULTRA-LIGHT mode optimizations for code testing (not for production results)
-            n_components = trial.suggest_int('n_components', 2, 6)  # Small range: 2-6 components
+            # Get parameter ranges based on optimization mode
+            param_ranges = self._get_hmm_parameter_ranges()
+            self.logger.info(f"🔧 Using {hmm_mode} mode: {param_ranges[hmm_mode]['description']}")
+
+            n_components = trial.suggest_int('n_components',
+                param_ranges[hmm_mode]['n_components_min'],
+                param_ranges[hmm_mode]['n_components_max'])
             covariance_type = trial.suggest_categorical('covariance_type',
-                ['diag', 'spherical'])  # Fast types only: diagonal and spherical
-            n_iter = trial.suggest_int('n_iter', 25, 100)  # Quick convergence: 25-100 iterations
-            tol = trial.suggest_float('tol', 1e-6, 1e-2, log=True)  # Relaxed tolerance: 1e-6 to 1e-2
+                param_ranges[hmm_mode]['covariance_types'])
+            n_iter = trial.suggest_int('n_iter',
+                param_ranges[hmm_mode]['n_iter_min'],
+                param_ranges[hmm_mode]['n_iter_max'])
+            tol = trial.suggest_float('tol',
+                param_ranges[hmm_mode]['tol_min'],
+                param_ranges[hmm_mode]['tol_max'], log=True)
             
             try:
                 # Create and fit HMM model
@@ -1022,6 +1049,12 @@ class EnhancedHMMCompositeManager:
                     if ('covars' in fit_error_msg and 'symmetric' in fit_error_msg) or 'positive-definite' in fit_error_msg:
                         # Try multiple approaches to fix covariance matrix issues
                         self.logger.debug(f"⚠️ Covariance matrix issue detected: {fit_error_msg}")
+
+                        # Pre-process data to remove problematic columns
+                        X_clean = self._preprocess_data_for_hmm(X)
+                        if X_clean is not X:  # Data was modified
+                            self.logger.debug(f"🧹 Pre-processed data: {X.shape} -> {X_clean.shape}")
+                            X = X_clean
 
                         # Approach 1: Try regularization
                         X_regularized = self._regularize_covariance_matrix(X)
@@ -1462,33 +1495,52 @@ class EnhancedHMMCompositeManager:
         try:
             X_reg = X.copy()
 
+            # Method 0: Remove any constant columns first
+            constant_cols = []
+            for col in X_reg.columns:
+                if X_reg[col].nunique() <= 1:
+                    constant_cols.append(col)
+
+            if constant_cols:
+                self.logger.debug(f"🗑️ Removing {len(constant_cols)} constant columns: {constant_cols}")
+                X_reg = X_reg.drop(columns=constant_cols)
+
+                # If we removed all columns, return None to trigger fallback
+                if X_reg.empty:
+                    self.logger.debug("⚠️ All columns were constant, cannot regularize")
+                    return None
+
             # Method 1: Add small noise to break exact linear dependencies
             regularization_strength = 1e-6
             for col in X_reg.columns:
                 if X_reg[col].std() < 1e-10:
-                    X_reg[col] += np.random.normal(0, regularization_strength, len(X_reg))
+                    # Very low variance - add significant noise
+                    X_reg[col] += np.random.normal(0, regularization_strength * 100, len(X_reg))
                 else:
                     # Add small noise to all columns to prevent numerical issues
                     X_reg[col] += np.random.normal(0, regularization_strength, len(X_reg))
 
             # Method 2: Check for multicollinearity and remove highly correlated features
             if len(X_reg.columns) > 2:
-                corr_matrix = X_reg.corr().abs()
-                upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+                try:
+                    corr_matrix = X_reg.corr().abs()
+                    upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
 
-                # Remove features with correlation > 0.95
-                to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > 0.95)]
-                if to_drop:
-                    self.logger.debug(f"⚠️ Removing {len(to_drop)} highly correlated features")
-                    X_reg = X_reg.drop(columns=to_drop)
+                    # Remove features with correlation > 0.95
+                    to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > 0.95)]
+                    if to_drop:
+                        self.logger.debug(f"⚠️ Removing {len(to_drop)} highly correlated features: {to_drop}")
+                        X_reg = X_reg.drop(columns=to_drop)
 
-                    # Ensure we still have enough features
-                    if len(X_reg.columns) < 2:
-                        self.logger.debug("⚠️ Too many features removed, keeping original data")
-                        X_reg = X.copy()
-                        # Just add stronger regularization
-                        for col in X_reg.columns:
-                            X_reg[col] += np.random.normal(0, regularization_strength * 10, len(X_reg))
+                        # Ensure we still have enough features
+                        if len(X_reg.columns) < 2:
+                            self.logger.debug("⚠️ Too many features removed, reverting to original with stronger regularization")
+                            X_reg = X.copy()
+                            # Just add stronger regularization
+                            for col in X_reg.columns:
+                                X_reg[col] += np.random.normal(0, regularization_strength * 10, len(X_reg))
+                except Exception as corr_error:
+                    self.logger.debug(f"⚠️ Correlation analysis failed: {corr_error}, proceeding without it")
 
             # Method 3: Ensure minimum variance for all features
             for col in X_reg.columns:
@@ -1496,30 +1548,96 @@ class EnhancedHMMCompositeManager:
                     # Add more significant noise if variance is still too low
                     X_reg[col] += np.random.normal(0, 1e-4, len(X_reg))
 
-            # Method 4: If still problematic, try dimensionality reduction as last resort
-            if len(X_reg.columns) > 3:
-                try:
-                    from sklearn.decomposition import PCA
-                    n_components = max(2, min(len(X_reg.columns) // 2, 10))  # Cap at 10 components
-                    pca = PCA(n_components=n_components, random_state=42)
-                    X_pca = pca.fit_transform(X_reg.values)
+            # Method 4: Validate the covariance matrix directly
+            try:
+                cov_matrix = np.cov(X_reg.values.T)
+                if not self._validate_covariance_matrix(cov_matrix):
+                    self.logger.debug("⚠️ Covariance matrix still not valid, applying direct regularization")
+                    # Try to make it positive definite
+                    regularized_cov = self._make_covariance_positive_definite(cov_matrix, 1e-6)
+                    if regularized_cov is not None:
+                        # Reconstruct data from regularized covariance
+                        # This is a simplified approach - use PCA-like reconstruction
+                        eigenvals, eigenvecs = np.linalg.eigh(regularized_cov)
+                        eigenvals = np.maximum(eigenvals, 1e-8)  # Ensure positive eigenvalues
 
-                    # Check explained variance ratio
-                    explained_var = pca.explained_variance_ratio_.sum()
-                    if explained_var > 0.8:  # Keep at least 80% of variance
-                        X_reg = pd.DataFrame(X_pca, columns=[f'pca_{i}' for i in range(X_pca.shape[1])], index=X_reg.index)
-                        self.logger.debug(f"✅ PCA reduced to {n_components} components (explained variance: {explained_var:.3f})")
-                    else:
-                        self.logger.debug(f"⚠️ PCA would lose too much variance ({explained_var:.3f}), keeping original")
+                        # Reconstruct the data
+                        L = eigenvecs * np.sqrt(eigenvals)
+                        X_reconstructed = X_reg.values @ L @ L.T
 
-                except Exception as pca_error:
-                    self.logger.debug(f"⚠️ PCA regularization failed: {pca_error}")
+                        # Create new dataframe with reconstructed data
+                        X_reg = pd.DataFrame(
+                            X_reconstructed,
+                            columns=X_reg.columns,
+                            index=X_reg.index
+                        )
+                        self.logger.debug("✅ Applied covariance matrix regularization")
+            except Exception as cov_error:
+                self.logger.debug(f"⚠️ Covariance validation failed: {cov_error}")
 
-            return X_reg
+            # Final validation
+            try:
+                final_cov = np.cov(X_reg.values.T)
+                if self._validate_covariance_matrix(final_cov):
+                    self.logger.debug("✅ Covariance matrix regularization successful")
+                    return X_reg
+                else:
+                    self.logger.debug("⚠️ Covariance matrix still invalid after all regularization attempts")
+                    return None
+            except Exception:
+                self.logger.debug("⚠️ Final covariance validation failed")
+                return None
 
         except Exception as e:
             self.logger.debug(f"⚠️ Covariance regularization failed: {e}")
             return None
+
+    def _preprocess_data_for_hmm(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Pre-process data to remove problematic columns that could cause HMM fitting issues."""
+        try:
+            X_processed = X.copy()
+
+            # Remove columns with all NaN values
+            nan_cols = X_processed.columns[X_processed.isna().all()]
+            if len(nan_cols) > 0:
+                self.logger.debug(f"🗑️ Removing {len(nan_cols)} all-NaN columns: {list(nan_cols)}")
+                X_processed = X_processed.drop(columns=nan_cols)
+
+            # Remove columns with all infinite values
+            inf_cols = X_processed.columns[np.isinf(X_processed).all()]
+            if len(inf_cols) > 0:
+                self.logger.debug(f"🗑️ Removing {len(inf_cols)} all-infinite columns: {list(inf_cols)}")
+                X_processed = X_processed.drop(columns=inf_cols)
+
+            # Remove constant columns
+            constant_cols = []
+            for col in X_processed.columns:
+                if X_processed[col].nunique() <= 1:
+                    constant_cols.append(col)
+
+            if constant_cols:
+                self.logger.debug(f"🗑️ Removing {len(constant_cols)} constant columns: {constant_cols}")
+                X_processed = X_processed.drop(columns=constant_cols)
+
+            # Handle remaining NaN and infinite values
+            if X_processed.isna().any().any():
+                self.logger.debug("🔧 Filling NaN values with column means")
+                X_processed = X_processed.fillna(X_processed.mean())
+
+            if np.isinf(X_processed.values).any():
+                self.logger.debug("🔧 Replacing infinite values with finite approximations")
+                X_processed = X_processed.replace([np.inf, -np.inf], [1e10, -1e10])
+
+            # Ensure we have at least 2 columns for HMM
+            if X_processed.shape[1] < 2:
+                self.logger.debug("⚠️ Too few columns after preprocessing, keeping original data")
+                return X
+
+            return X_processed
+
+        except Exception as e:
+            self.logger.debug(f"⚠️ Data preprocessing failed: {e}")
+            return X
 
     def _validate_covariance_matrix(self, cov_matrix: np.ndarray) -> bool:
         """Validate that a covariance matrix is positive-definite and well-conditioned."""
@@ -1677,6 +1795,84 @@ class EnhancedHMMCompositeManager:
                 elif model.covariance_type == 'tied':
                     base_cov = np.cov(X_subset.values.T)
                     model.covars_ = self._make_covariance_positive_definite_efficient(base_cov).astype(np.float32)
+
+    def _auto_detect_hmm_mode(self, config) -> str:
+        """Auto-detect HMM optimization mode based on launcher configuration.
+
+        Maps launcher modes to HMM optimization modes:
+        - Launcher FULL → HMM FULL (comprehensive optimization)
+        - Launcher LIGHT → HMM BLANK (moderate speedup)
+        - Launcher BLANK → HMM LIGHT (maximum speedup)
+        """
+        if not config:
+            return 'BLANK'
+
+        # Check if config has a mode attribute
+        if hasattr(config, 'mode'):
+            launcher_mode = str(config.mode).upper()
+
+            # Map launcher modes to HMM modes
+            mode_mapping = {
+                'FULL': 'FULL',      # Launcher FULL → HMM FULL
+                'LIGHT': 'LIGHT',    # Launcher LIGHT → HMM LIGHT
+                'BLANK': 'BLANK'     # Launcher BLANK → HMM BLANK
+            }
+
+            hmm_mode = mode_mapping.get(launcher_mode, 'BLANK')
+            self.logger.info(f"🔄 Auto-detected launcher mode '{launcher_mode}' → HMM mode '{hmm_mode}'")
+            return hmm_mode
+
+        # Check if config has a bayesian_optimization attribute (for future compatibility)
+        elif hasattr(config, 'bayesian_optimization'):
+            # For now, use BLANK mode as default when bayesian_optimization is present
+            self.logger.info("🔄 Detected bayesian_optimization config → using HMM BLANK mode")
+            return 'BLANK'
+
+        # Default fallback
+        self.logger.info("🔄 No mode detected, using default HMM BLANK mode")
+        return 'BLANK'
+
+    def _get_hmm_parameter_ranges(self) -> Dict[str, Dict[str, Any]]:
+        """Get HMM parameter ranges based on optimization mode.
+
+        Returns:
+            Dictionary with parameter ranges for each mode:
+            - FULL: Regular parameters (comprehensive optimization)
+            - BLANK: Lighter parameters (moderate speedup)
+            - LIGHT: Ultra-light parameters (maximum speedup)
+        """
+        return {
+            'FULL': {
+                'n_components_min': 2,
+                'n_components_max': 40,
+                'covariance_types': ['full', 'tied', 'diag', 'spherical'],
+                'n_iter_min': 50,
+                'n_iter_max': 200,
+                'tol_min': 1e-6,
+                'tol_max': 1e-2,
+                'description': 'Regular parameters for comprehensive optimization'
+            },
+            'BLANK': {
+                'n_components_min': 2,
+                'n_components_max': 20,
+                'covariance_types': ['diag', 'spherical', 'tied'],
+                'n_iter_min': 25,
+                'n_iter_max': 100,
+                'tol_min': 1e-5,
+                'tol_max': 1e-2,
+                'description': 'Lighter parameters for moderate speedup'
+            },
+            'LIGHT': {
+                'n_components_min': 2,
+                'n_components_max': 6,
+                'covariance_types': ['diag', 'spherical'],  # Removed 'full' and 'tied' to avoid covariance issues
+                'n_iter_min': 10,
+                'n_iter_max': 30,
+                'tol_min': 1e-3,
+                'tol_max': 1e-2,
+                'description': 'Ultra-light parameters for maximum speedup (stable covariance)'
+            }
+        }
 
     def _get_default_hmm_parameters(self) -> Dict[str, Any]:
         """Get default HMM parameters when optimization is not available."""

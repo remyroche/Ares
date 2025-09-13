@@ -406,8 +406,6 @@ class TripleBarrierValidator:
                 'max_drawdown': max_drawdown,
                 'total_trades': len(profits)
             }
-        else:
-            performance_details = {}
         
         passed = score >= 0.7
         severity = 'error' if not passed else ('warning' if score < 0.9 else 'info')

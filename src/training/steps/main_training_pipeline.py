@@ -23,6 +23,21 @@ from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, field
 
+# Define ExecutionMode locally as fallback
+class ExecutionMode(Enum):
+    """Execution modes for the pipeline."""
+    FULL = "full"
+    LIGHT = "light"
+    BLANK = "blank"
+
+# Define SubPipelineStatus locally as fallback
+class SubPipelineStatus(Enum):
+    """Status values for sub-pipelines."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
 # Lazy imports to avoid circular dependency
 def get_system_logger():
     from src.utils.logger import system_logger
@@ -44,8 +59,12 @@ except ImportError:
     DataCollectionSubPipeline = None
     DataCollectionConfig = None
     DataCollectionResult = None
-    ExecutionMode = None
-    SubPipelineStatus = None
+    # Don't override ExecutionMode if already defined
+    if 'ExecutionMode' not in locals():
+        ExecutionMode = None
+    # Don't override SubPipelineStatus if already defined
+    if 'SubPipelineStatus' not in locals():
+        SubPipelineStatus = None
     SubPipelineResult = None
     SubPipelineConfig = None
 
@@ -102,7 +121,7 @@ class MainPipelineConfig:
     symbol: str = "BTCUSDT"
     exchange: str = "binance"
     timeframe: str = "1m"
-    data_dir: str = "data/training"
+    data_dir: str = "historical_data"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False
@@ -135,8 +154,8 @@ class MainPipelineConfig:
             'sr_feature_integration'
         ],
         PipelineStage.MODEL_TRAINING: [
-            'hmm_training', 'analyst_model_training', 'analyst_ensemble_training', 
-            'tactician_model_training', 'tactician_ensemble_training'
+            'hmm_training', 'analyst_models_training', 'analyst_ensemble_training',
+            'tactician_models_training', 'tactician_ensemble_training'
         ],
         PipelineStage.BACKTESTING: [
             'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
@@ -510,7 +529,7 @@ class MainTrainingPipeline:
 
         # For MARKET_ANALYSIS, always use sequential execution with automatic progression
         # Start with the first sub-pipeline and let it trigger the next ones
-        self.logger.info("🚀 Starting automatic sequential execution: sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> cross_timeframe_analysis -> sr_feature_integration")
+        self.logger.info("🚀 Starting automatic sequential execution: sr_parameter_optimization -> sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> cross_timeframe_analysis -> sr_feature_integration")
 
         results = []
         if sub_pipeline_names:
@@ -682,7 +701,7 @@ def get_full_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
-    data_dir: str = "data/training"
+    data_dir: str = "historical_data"
 ) -> MainPipelineConfig:
     """Get a full pipeline configuration with all stages and sub-pipelines enabled."""
     from datetime import datetime, timedelta
@@ -739,7 +758,7 @@ def get_light_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
-    data_dir: str = "data/training"
+    data_dir: str = "historical_data"
 ) -> MainPipelineConfig:
     """Get a light pipeline configuration with essential sub-pipelines only."""
     from datetime import datetime, timedelta
@@ -777,7 +796,7 @@ def get_light_pipeline_config(
                 'sr_detection', 'hmm_regime_discovery', 'triple_barrier_labeling'
             ],
             PipelineStage.MODEL_TRAINING: [
-                'hmm_training', 'model_validation'
+                'hmm_training', 'analyst_models_training', 'model_validation'
             ],
             PipelineStage.BACKTESTING: [
                 'walk_forward_validation', 'performance_analytics'
@@ -789,7 +808,7 @@ def get_blank_pipeline_config(
     symbol: str = "ETHUSDT",
     exchange: str = "binance",
     timeframe: str = "1m",
-    data_dir: str = "data/training"
+    data_dir: str = "historical_data"
 ) -> MainPipelineConfig:
     """Get a blank pipeline configuration for testing/validation."""
     from datetime import datetime, timedelta

@@ -327,7 +327,8 @@ class DataPreparation:
         # Save file
         try:
             if output_format.lower() == "parquet":
-                standardized_parquet_handler.write_parquet_standardized(df, output_path, compression="zstd", index=False)
+                # Use unified schema for OHLCV klines data
+                standardized_parquet_handler.write_parquet_standardized(df, output_path, schema_name='unified', compression="zstd", index=False)
             else:
                 df.to_csv(output_path, index=False)
 
@@ -377,8 +378,10 @@ class DataPreparation:
 
         # Save as partitioned dataset
         try:
-            standardized_parquet_handler.write_parquet_standardized(df_partitioned, 
+            # Use unified schema for OHLCV klines data
+            standardized_parquet_handler.write_parquet_standardized(df_partitioned,
                 dataset_dir,
+                schema_name='unified',
                 partition_cols=["year", "month", "day"],
                 compression="zstd",
                 index=False
@@ -942,7 +945,8 @@ class DataPreparation:
             )
 
             # Save consolidated data
-            standardized_parquet_handler.write_parquet_standardized(klines_df, output_path, compression="zstd", index=False)
+            # Use unified schema for OHLCV klines data
+            standardized_parquet_handler.write_parquet_standardized(klines_df, output_path, schema_name='unified', compression="zstd", index=False)
 
             consolidation_result["success"] = True
             consolidation_result["file_path"] = str(output_path)

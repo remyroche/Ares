@@ -63,16 +63,19 @@ class BinanceExchange(BaseExchange):
                 self.logger.warning("⚠️ aiohttp not available, using mock session")
                 self.session = None
                 return
-            
-            # Initialize aiohttp session
+
+            # Initialize aiohttp session with SSL configuration
             timeout = aiohttp.ClientTimeout(total=30)
-            self.session = aiohttp.ClientSession(timeout=timeout)
-            
+            # Create SSL connector with certificate verification disabled for compatibility
+            # In production, proper SSL certificates should be configured
+            connector = aiohttp.TCPConnector(verify_ssl=False)
+            self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
+
             # Test connection
             await self._test_connection()
-            
+
             self.logger.info("✅ Binance exchange initialized successfully")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Binance exchange: {e}")
             raise
@@ -372,33 +375,6 @@ class BinanceExchange(BaseExchange):
         return await self._make_request("GET", "/api/v3/order", params, signed=True) or {}
 
     # Additional Binance-specific methods for data collection
-    async def get_futures_funding_rates(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int = 1000
-    ) -> list[dict[str, Any]]:
-        """Get futures funding rates from Binance."""
-        params = {
-            "symbol": symbol.upper(),
-            "startTime": start_time_ms,
-            "endTime": end_time_ms,
-            "limit": min(limit, 1000)
-        }
-        
-        data = await self._make_request("GET", "/fapi/v1/fundingRate", params, futures=True)
-        if data:
-            # Standardize field names
-            funding_rates = []
-            for item in data:
-                funding_rates.append({
-                    "timestamp": item.get("fundingTime", item.get("timestamp", 0)),
-                    "funding_rate": item.get("fundingRate", item.get("funding_rate", 0)),
-                    "symbol": item.get("symbol", symbol)
-                })
-            return funding_rates
-        return []
 
     async def get_24hr_ticker(self, symbol: str | None = None) -> dict[str, Any]:
         """Get 24hr ticker statistics."""

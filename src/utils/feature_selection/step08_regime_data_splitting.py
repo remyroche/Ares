@@ -215,7 +215,7 @@ class RegimeDataSplittingStep:
             symbol = self.config.get('symbol', 'ETHUSDT')
             exchange = self.config.get('exchange', 'BINANCE')
             timeframe = self.config.get('timeframe', '1m')
-            data_dir = self.config.get('data_dir', 'data_cache')
+            data_dir = self.config.get('data_dir', 'historical_data')
             
             self.logger.info(f'Loading unified data for {symbol} on {exchange} ({timeframe}) from {data_dir}')
             data_load_start = time.time()

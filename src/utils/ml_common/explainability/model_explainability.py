@@ -35,7 +35,7 @@ import pickle
 from dataclasses import dataclass, asdict
 
 from .model_explanations import ModelExplainer, explain_model_with_shap_lime
-from .model_registry import ModelRegistry
+from ..models.model_registry import ModelRegistry
 from ..common_operations import create_fallback_logger, safe_json_dump, safe_json_load
 
 # Enhanced dependency management with fast fail

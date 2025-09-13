@@ -269,7 +269,7 @@ class FractionalDifferentiationPipeline:
         
         try:
             # Use enhanced data quality validator
-            quality_result = self.data_quality_validator.validate_dataframe(data)
+            quality_result = self.data_quality_validator.validate_dataframe_quality(data)
             
             # Use ML data quality utilities if available
             if self.ml_data_quality:

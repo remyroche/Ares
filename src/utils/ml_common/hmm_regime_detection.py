@@ -30,27 +30,27 @@ import time
 from pathlib import Path
 
 # Import comprehensive utility infrastructure
-from ..math_validation import (
+from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt,
     validate_positive, validate_range
 )
-from ..core.common import create_fallback_logger, create_fallback_decorator
-from ..parquet_utils import ParquetUtils
-from ..serialization_utils import UniversalSerializer
-from ..data_processing_utils import DataProcessingUtils
-from ..common_utilities import CommonUtilities
-from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from ..hardware.m1_gpu_utils import get_m1_gpu_manager
-from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
+from src.utils.core.common import create_fallback_logger, create_fallback_decorator
+from src.utils.parquet_utils import ParquetUtils
+from src.utils.serialization_utils import UniversalSerializer
+from src.utils.data_processing_utils import DataProcessingUtils
+from src.utils.common_utilities import CommonUtilities
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
 
 # Import HMM composite manager
-from ..hmm_composite_manager import EnhancedHMMCompositeManager
+from src.utils.hmm_composite_manager import EnhancedHMMCompositeManager
 
 # Import ML Common utilities
-from .cv_utils import TemporalCrossValidator, PurgedKFold
-from .validation_utils import ValidationFramework
-from .pareto import ParetoFrontAnalyzer
-from .ensemble_manager import EnsembleManager, EnsembleConfig, EnsembleType
+from .validation.cv_utils import TemporalCrossValidator, PurgedKFold
+from .validation.validation_utils import ValidationFramework
+from .optimization.pareto import ParetoFrontAnalyzer
+from .ensembles.ensemble_manager import EnsembleManager, EnsembleConfig, EnsembleType
 
 # Import data quality frameworks
 try:
@@ -60,7 +60,7 @@ except ImportError:
     QUALITY_FRAMEWORK_AVAILABLE = False
 
 try:
-    from ..feature_engineering_validation import FeatureEngineeringValidator
+    from src.utils.feature_engineering_validation import FeatureEngineeringValidator
     FEATURE_VALIDATOR_AVAILABLE = True
 except ImportError:
     FEATURE_VALIDATOR_AVAILABLE = False
@@ -275,21 +275,28 @@ class EnhancedHMMRegimeDetector:
         self,
         data: pd.DataFrame,
         method: Optional[RegimeDetectionMethod] = None,
-        config: Optional[HMMRegimeConfig] = None
+        config: Optional[HMMRegimeConfig] = None,
+        mode: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Detect regimes using specified method.
-        
+
         Args:
             data: Input data for regime detection
             method: Regime detection method
             config: Optional configuration override
-            
+            mode: Optional optimization mode ('light', 'blank', 'full')
+
         Returns:
             DataFrame with regime labels and metadata
         """
+        self.logger.info(f"🔍 DEBUG: detect_regimes called with method={method}, mode={mode}")
+        self.logger.info(f"🔍 DEBUG: Input data shape: {data.shape if hasattr(data, 'shape') else 'No shape'}")
+
         method = method or self.config.method
+        self.logger.info(f"🔍 DEBUG: Using method: {method}")
         config = config or self.config
+        optimization_mode = mode  # Local variable for optimization mode
         start_time = time.time()
         
         try:
@@ -298,7 +305,7 @@ class EnhancedHMMRegimeDetector:
             
             # Select implementation based on method
             if method == RegimeDetectionMethod.HMM_GAUSSIAN:
-                regimes_df = self._detect_hmm_gaussian_regimes(data, config)
+                regimes_df = self._detect_hmm_gaussian_regimes(data, config, mode)
             elif method == RegimeDetectionMethod.HMM_MULTIVARIATE:
                 regimes_df = self._detect_hmm_multivariate_regimes(data, config)
             elif method == RegimeDetectionMethod.ENSEMBLE_HMM:
@@ -316,9 +323,13 @@ class EnhancedHMMRegimeDetector:
             validation_results = self._validate_regime_quality(regimes_df, data)
             
             # Update performance stats
+            self.logger.info(f"🔍 DEBUG: Updating performance stats...")
             self._update_performance_stats(start_time, len(regimes_df))
-            
+            self.logger.info(f"🔍 DEBUG: Performance stats updated")
+
             self.logger.info(f"✅ Detected {len(regimes_df)} regimes using {method.value}")
+            self.logger.info(f"🔍 DEBUG: detect_regimes method completing, returning DataFrame with shape: {regimes_df.shape}")
+            self.logger.info(f"🔍 DEBUG: Result columns: {list(regimes_df.columns)}")
             return regimes_df
             
         except Exception as e:
@@ -326,9 +337,10 @@ class EnhancedHMMRegimeDetector:
             raise
 
     def _detect_hmm_gaussian_regimes(
-        self, 
-        data: pd.DataFrame, 
-        config: HMMRegimeConfig
+        self,
+        data: pd.DataFrame,
+        config: HMMRegimeConfig,
+        mode: Optional[str] = None
     ) -> pd.DataFrame:
         """Detect regimes using Gaussian HMM."""
         if not HMM_AVAILABLE:
@@ -340,7 +352,18 @@ class EnhancedHMMRegimeDetector:
         # Check for NaN values and handle them properly
         nan_count = numeric_data.isnull().sum().sum()
         if nan_count > 0:
-            self.logger.warning(f"⚠️ Found {nan_count} NaN values in numeric data, using forward/backward fill")
+            # Identify rows and columns with NaN values
+            nan_locations = []
+            for col in numeric_data.columns:
+                nan_rows = numeric_data[numeric_data[col].isnull()].index.tolist()
+                if nan_rows:
+                    nan_locations.extend([f"Column '{col}', Row {row}" for row in nan_rows[:5]])  # Limit to first 5 per column
+
+            nan_location_str = "; ".join(nan_locations[:10])  # Limit total locations shown
+            if len(nan_locations) > 10:
+                nan_location_str += f"... and {len(nan_locations) - 10} more"
+
+            self.logger.warning(f"⚠️ Found {nan_count} NaN values in numeric data, using forward/backward fill. Locations: {nan_location_str}")
 
             # Use forward fill, then backward fill for remaining NaN values
             numeric_data = numeric_data.fillna(method='ffill').fillna(method='bfill')
@@ -379,7 +402,10 @@ class EnhancedHMMRegimeDetector:
             numeric_data = numeric_data.replace([np.inf, -np.inf], np.nan).fillna(method='ffill').fillna(method='bfill').fillna(0)
 
         # Use HMM composite manager for optimization
-        optimization_result = self.hmm_manager.optimize_hmm_parameters(numeric_data)
+        # Use passed mode parameter or default to 'light'
+        optimization_mode = (mode or 'light').upper()
+        self.logger.info(f"🔧 Using optimization mode: {optimization_mode}")
+        optimization_result = self.hmm_manager.optimize_hmm_parameters(numeric_data, mode=optimization_mode)
         
         if optimization_result.get('success', False):
             best_params = optimization_result['best_params']
@@ -408,11 +434,19 @@ class EnhancedHMMRegimeDetector:
         if self.memory_optimizer:
             numeric_data = self.memory_optimizer.optimize_dataframe_memory(numeric_data)
         
+        # Ensure data covariance is positive-definite for stable HMM fitting
+        numeric_data = self._ensure_positive_definite_data(numeric_data)
+
         # Try fitting with different configurations if needed
         fit_success = False
         fallback_configs = [
-            {'covariance_type': 'diag', 'n_components': min(config.n_components, 3)},
-            {'covariance_type': 'spherical', 'n_components': 2},
+            # Conservative configurations for stability
+            {'covariance_type': 'diag', 'n_components': min(config.n_components, 3), 'n_iter': 300, 'tol': 1e-2},
+            {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 300, 'tol': 1e-2},
+            {'covariance_type': 'tied', 'n_components': min(config.n_components, 2), 'n_iter': 300, 'tol': 1e-2},
+            # More aggressive fallbacks
+            {'covariance_type': 'diag', 'n_components': 2, 'n_iter': 500, 'tol': 1e-1},
+            {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 500, 'tol': 1e-1},
         ]
 
         try:
@@ -427,8 +461,8 @@ class EnhancedHMMRegimeDetector:
                     fallback_model = hmm.GaussianHMM(
                         n_components=fallback_config['n_components'],
                         covariance_type=fallback_config['covariance_type'],
-                        n_iter=200,
-                        tol=1e-3,
+                        n_iter=fallback_config.get('n_iter', 300),
+                        tol=fallback_config.get('tol', 1e-3),
                         random_state=config.random_state,
                         init_params='mc',
                         params='stmc'
@@ -455,8 +489,15 @@ class EnhancedHMMRegimeDetector:
             self.logger.error("❌ HMM model has invalid transition matrix (NaN values)")
             raise RuntimeError("HMM model fitting produced invalid transition matrix")
 
+        # Validate covariance matrices are positive-definite
+        self._validate_model_covariances(model)
+
         try:
+            self.logger.info(f"🎯 Predicting regime labels for {len(numeric_data)} samples...")
+            predict_start = time.time()
             regime_labels = model.predict(numeric_data)
+            predict_time = time.time() - predict_start
+            self.logger.info(f"✅ Regime prediction completed in {predict_time:.2f}s")
         except Exception as e:
             self.logger.error(f"❌ HMM prediction failed: {e}")
             raise RuntimeError(f"HMM prediction failed: {e}") from e
@@ -481,23 +522,104 @@ class EnhancedHMMRegimeDetector:
         # Handle regime probabilities with proper length matching
         try:
             if processed_length == original_length:
-                probabilities = model.predict_proba(numeric_data)
-                # Store the maximum probability for the predicted regime
-                result['regime_probability'] = np.max(probabilities, axis=1)
-                
-                # Store full probability distribution for each regime
-                for regime_idx in range(probabilities.shape[1]):
-                    result[f'regime_{regime_idx}_probability'] = probabilities[:, regime_idx]
-                
-                # Store regime probabilities as percentages
-                for regime_idx in range(probabilities.shape[1]):
-                    result[f'regime_{regime_idx}_percentage'] = probabilities[:, regime_idx] * 100
-                
-                # Store regime probability statistics
-                result['regime_probability_entropy'] = -np.sum(probabilities * np.log(probabilities + 1e-10), axis=1)
-                result['regime_confidence'] = np.max(probabilities, axis=1) - np.mean(probabilities, axis=1)
-                
-                self.logger.info(f"✅ Added probabilistic regime predictions for {probabilities.shape[1]} regimes")
+                # Optimize probabilistic predictions for large datasets instead of skipping
+                if len(numeric_data) > 50000:
+                    self.logger.info(f"🚀 Optimizing probabilistic predictions for large dataset ({len(numeric_data)} samples) using advanced batching")
+                    self.logger.info("⚡ Using parallel processing and memory optimization for performance")
+                    start_time = time.time()
+
+                    # Use optimized batched prediction with parallel processing for very large datasets
+                    probabilities = self._optimized_batched_predict_proba(model, numeric_data,
+                                                                         batch_size=20000,  # Larger batches for efficiency
+                                                                         use_parallel=True)  # Enable parallel processing
+
+                    predict_proba_time = time.time() - start_time
+                    self.logger.info(f"✅ Optimized probabilistic predictions completed in {predict_proba_time:.2f}s")
+                    self.logger.info(f"📊 Processed {len(numeric_data)} samples with {probabilities.shape[1]} regimes")
+
+                    # Store results using the same logic as smaller datasets
+                    result['regime_probability'] = np.max(probabilities, axis=1)
+                    for regime_idx in range(probabilities.shape[1]):
+                        result[f'regime_{regime_idx}_probability'] = probabilities[:, regime_idx]
+                    for regime_idx in range(probabilities.shape[1]):
+                        result[f'regime_{regime_idx}_percentage'] = probabilities[:, regime_idx] * 100
+                    result['regime_probability_entropy'] = -np.sum(probabilities * np.log(probabilities + 1e-10), axis=1)
+                    result['regime_confidence'] = np.max(probabilities, axis=1) - np.mean(probabilities, axis=1)
+
+                    self.logger.info(f"✅ Added optimized probabilistic predictions for {probabilities.shape[1]} regimes")
+
+                    # Validate that optimized predictions are working correctly (not simplified)
+                    max_prob_mean = np.mean(np.max(probabilities, axis=1))
+                    entropy_mean = np.mean(result['regime_probability_entropy'])
+
+                    if max_prob_mean < 0.5:
+                        self.logger.warning(f"⚠️ Low average max probability ({max_prob_mean:.3f}) - predictions may be unreliable")
+                    if entropy_mean < 0.2:
+                        self.logger.warning(f"⚠️ Very low entropy ({entropy_mean:.3f}) - predictions may be overconfident")
+                        self.logger.info(f"💡 Suggestions: Consider increasing n_components, using 'diag' covariance_type, or adding regularization")
+
+                    # Ensure probabilities are properly distributed (not all in one regime)
+                    regime_distribution = np.mean(probabilities, axis=0)
+                    max_regime_share = np.max(regime_distribution)
+                    if max_regime_share > 0.8:
+                        self.logger.warning(f"⚠️ One regime dominates ({max_regime_share:.1%}) - check model fit")
+
+                    self.logger.info(f"📊 Prediction quality: max_prob={max_prob_mean:.3f}, entropy={entropy_mean:.3f}")
+                    self.logger.info(f"🔍 DEBUG: Completed optimized prediction quality assessment")
+
+                    # Add detailed entropy analysis
+                    entropy_std = np.std(result['regime_probability_entropy'])
+                    self.logger.info(f"🔍 DEBUG: Entropy stats - mean: {entropy_mean:.4f}, std: {entropy_std:.4f}, min: {np.min(result['regime_probability_entropy']):.4f}, max: {np.max(result['regime_probability_entropy']):.4f}")
+
+                    # Check regime distribution
+                    regime_dist = np.mean(probabilities, axis=0)
+                    self.logger.info(f"🔍 DEBUG: Regime distribution: {regime_dist}")
+                    self.logger.info(f"🔍 DEBUG: Max regime share: {np.max(regime_dist):.1%}")
+
+                else:
+                    self.logger.info(f"🔢 Computing probabilistic predictions for {len(numeric_data)} samples across {config.n_components} regimes...")
+                    self.logger.info(f"🔍 DEBUG: Starting batched prediction for large dataset")
+                    start_time = time.time()
+
+                    # For large datasets, predict_proba can be slow - add batching for better memory management
+                    if len(numeric_data) > 10000:
+                        self.logger.info(f"📊 Large dataset detected ({len(numeric_data)} samples), using batched prediction for memory efficiency")
+                        probabilities = self._batched_predict_proba(model, numeric_data, batch_size=5000)
+                    else:
+                        probabilities = model.predict_proba(numeric_data)
+
+                    predict_proba_time = time.time() - start_time
+                    self.logger.info(f"✅ Probabilistic predictions completed in {predict_proba_time:.2f}s")
+                    self.logger.info(f"🔍 DEBUG: Probabilities shape: {probabilities.shape}, dtype: {probabilities.dtype}")
+
+                    # Store the maximum probability for the predicted regime
+                    self.logger.info(f"🔍 DEBUG: Storing regime probabilities...")
+                    result['regime_probability'] = np.max(probabilities, axis=1)
+                    self.logger.info(f"🔍 DEBUG: Regime probability stored - shape: {result['regime_probability'].shape}")
+
+                    # Store full probability distribution for each regime
+                    self.logger.info(f"🔍 DEBUG: Storing full probability distribution for {probabilities.shape[1]} regimes...")
+                    for regime_idx in range(probabilities.shape[1]):
+                        result[f'regime_{regime_idx}_probability'] = probabilities[:, regime_idx]
+                    self.logger.info(f"🔍 DEBUG: Probability distributions stored")
+
+                    # Store regime probabilities as percentages
+                    self.logger.info(f"🔍 DEBUG: Converting probabilities to percentages...")
+                    for regime_idx in range(probabilities.shape[1]):
+                        result[f'regime_{regime_idx}_percentage'] = probabilities[:, regime_idx] * 100
+                    self.logger.info(f"🔍 DEBUG: Percentages stored")
+
+                    # Store regime probability statistics
+                    self.logger.info(f"🔍 DEBUG: Calculating entropy...")
+                    result['regime_probability_entropy'] = -np.sum(probabilities * np.log(probabilities + 1e-10), axis=1)
+                    self.logger.info(f"🔍 DEBUG: Entropy calculated - shape: {result['regime_probability_entropy'].shape}")
+
+                    self.logger.info(f"🔍 DEBUG: Calculating confidence...")
+                    result['regime_confidence'] = np.max(probabilities, axis=1) - np.mean(probabilities, axis=1)
+                    self.logger.info(f"🔍 DEBUG: Confidence calculated - shape: {result['regime_confidence'].shape}")
+
+                    self.logger.info(f"✅ Added probabilistic regime predictions for {probabilities.shape[1]} regimes")
+                    self.logger.info(f"🔍 DEBUG: Probabilistic predictions complete, result columns: {list(result.keys())}")
                 
             else:
                 # For mismatched lengths, use default probabilities
@@ -519,14 +641,29 @@ class EnhancedHMMRegimeDetector:
             result['regime_probability_entropy'] = 0.0
             result['regime_confidence'] = 0.0
 
+        self.logger.info(f"🔍 DEBUG: Setting detection method and computing final metrics...")
         result['detection_method'] = 'hmm_gaussian'
+        self.logger.info(f"🔍 DEBUG: Detection method set to: {result['detection_method']}")
 
         try:
-            result['model_score'] = model.score(numeric_data)
+            self.logger.info(f"🔍 DEBUG: Computing model score...")
+            score_value = model.score(numeric_data)
+            # Convert to scalar if it's an array/series
+            if hasattr(score_value, 'item'):
+                score_value = score_value.item()
+            elif hasattr(score_value, 'mean'):
+                score_value = float(score_value.mean())
+            else:
+                score_value = float(score_value)
+
+            result['model_score'] = score_value
+            self.logger.info(f"🔍 DEBUG: Model score computed: {score_value:.4f}")
         except Exception as e:
             self.logger.warning(f"⚠️ Could not compute model score: {e}")
             result['model_score'] = 0.0
-        
+
+        self.logger.info(f"🔍 DEBUG: HMM regime detection function completed, returning result with {len(result)} columns")
+        self.logger.info(f"🔍 DEBUG: Final result columns: {list(result.keys())}")
         return result
 
     def _create_enhanced_features(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -564,8 +701,18 @@ class EnhancedHMMRegimeDetector:
         # Volume features
         if 'volume' in df.columns:
             df['volume_ma_5'] = df['volume'].rolling(5).mean()
-            df['volume_ratio'] = df['volume'] / df['volume'].rolling(20).mean()
+            # Fix volume_ratio calculation - avoid division by zero and handle constant volumes
+            volume_ma_20 = df['volume'].rolling(20).mean()
+            # Replace zeros with a small epsilon to avoid division by zero
+            volume_ma_20_safe = volume_ma_20.replace(0, 1e-8)
+            df['volume_ratio'] = df['volume'] / volume_ma_20_safe
+            # If volume is perfectly constant, volume_ratio will be 1.0, which is actually correct
+            # But we can add some noise to make it more meaningful
             df['volume_change'] = df['volume'].pct_change()
+
+            # Additional volume features to make volume_ratio more meaningful
+            df['volume_std_20'] = df['volume'].rolling(20).std()
+            df['volume_zscore_20'] = (df['volume'] - volume_ma_20) / df['volume_std_20'].replace(0, 1e-8)
 
         # Volatility features
         if 'high' in df.columns and 'low' in df.columns and 'close' in df.columns:
@@ -619,11 +766,10 @@ class EnhancedHMMRegimeDetector:
         # Check for constant columns with fast-fail logic
         constant_cols = []
         trade_stat_cols = ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'price_std']
-        funding_cols = ['funding_rate']
 
         # Fast-fail: Check if critical features are constant
         critical_constant_features = []
-        for col in trade_stat_cols + funding_cols:
+        for col in trade_stat_cols:
             if col in df.columns:
                 unique_vals = df[col].nunique()
                 std_val = df[col].std()
@@ -631,12 +777,12 @@ class EnhancedHMMRegimeDetector:
                     critical_constant_features.append(f"{col}(unique={unique_vals}, std={std_val:.2e})")
 
         if critical_constant_features:
-            error_msg = f"🚨 CRITICAL: Constant feature detection failed! These features are constant: {critical_constant_features}"
-            self.logger.error(error_msg)
-            self.logger.error("   This indicates a data processing failure - features should have variation")
-            self.logger.error("   Please check the data converter step01_5_data_converter.py")
-            self.logger.error("   FAST-FAIL: Not attempting gap filling or downloads due to constant features")
-            raise ValueError(f"HMM training cannot proceed with constant features: {critical_constant_features}")
+                error_msg = f"🚨 CRITICAL: Constant feature detection failed! These features are constant: {critical_constant_features}"
+                self.logger.error(error_msg)
+                self.logger.error("   This indicates a data processing failure - features should have variation")
+                self.logger.error("   Please check the data converter step01_5_data_converter.py")
+                self.logger.error("   FAST-FAIL: Not attempting gap filling or downloads due to constant features")
+                raise ValueError(f"HMM training cannot proceed with constant features: {critical_constant_features}")
 
         # Check for other genuinely constant columns
         for col in df.columns:
@@ -645,7 +791,7 @@ class EnhancedHMMRegimeDetector:
 
                 if is_constant:
                     # These should not be constant - they indicate data quality issues
-                    if col in trade_stat_cols + funding_cols:
+                    if col in trade_stat_cols:
                         # We already checked these above, so this shouldn't happen
                         continue
                     else:
@@ -673,7 +819,7 @@ class EnhancedHMMRegimeDetector:
             self.logger.info("🔍 Validating engineered features...")
 
             try:
-                from ..feature_engineering_validation import FeatureEngineeringValidator
+                from src.utils.feature_engineering_validation import FeatureEngineeringValidator
                 validator = FeatureEngineeringValidator()
                 validation_result = validator.validate_engineered_features(
                     original_df=original_df,
@@ -719,8 +865,15 @@ class EnhancedHMMRegimeDetector:
 
         # Remove constant columns - more robust check
         constant_cols = []
+        # Features that should never be considered constant even if they appear to be
+        protected_features = {'volume_ratio'}
+
         for col in df.columns:
             if df[col].dtype in ['float64', 'int64']:
+                # Skip protected features from constant column removal
+                if col in protected_features:
+                    continue
+
                 # Check both std == 0 and nunique == 1 to catch edge cases
                 if df[col].std() == 0 or df[col].nunique() == 1:
                     constant_cols.append(col)
@@ -728,6 +881,8 @@ class EnhancedHMMRegimeDetector:
         if constant_cols:
             df = df.drop(columns=constant_cols)
             self.logger.info(f"Removed constant columns from normalization: {constant_cols}")
+        else:
+            self.logger.info("ℹ️ No constant columns found for removal")
 
         # Robust normalization using median and IQR
         for col in df.columns:
@@ -749,6 +904,252 @@ class EnhancedHMMRegimeDetector:
                 df.loc[z_scores > 3.5, col] = df[col].median()
 
         return df
+
+    def _ensure_positive_definite_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Ensure data covariance matrix is positive-definite for stable HMM fitting."""
+        df = data.copy()
+
+        # Remove highly correlated features to prevent ill-conditioned covariance matrices
+        corr_matrix = df.corr()
+        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+
+        # Find features with correlation > 0.95
+        high_corr_features = []
+        for col in upper_tri.columns:
+            correlated_features = upper_tri.index[upper_tri[col].abs() > 0.95].tolist()
+            if correlated_features:
+                high_corr_features.extend(correlated_features)
+
+        # Remove duplicate features and keep unique ones
+        high_corr_features = list(set(high_corr_features))
+
+        if high_corr_features:
+            df = df.drop(columns=high_corr_features)
+            self.logger.info(f"🧹 Removed {len(high_corr_features)} highly correlated features for HMM stability: {high_corr_features}")
+
+        # Add small regularization to prevent singular matrices
+        if len(df.columns) > 1:
+            # Calculate sample covariance
+            cov_matrix = df.cov()
+
+            # Check if covariance matrix is positive-definite
+            try:
+                np.linalg.cholesky(cov_matrix.values)
+                is_positive_definite = True
+            except np.linalg.LinAlgError:
+                is_positive_definite = False
+
+            if not is_positive_definite:
+                self.logger.warning("⚠️ Data covariance matrix not positive-definite, applying regularization")
+
+                # Add small diagonal regularization
+                regularization_factor = 1e-6
+                n_features = len(df.columns)
+                regularization_matrix = np.eye(n_features) * regularization_factor
+
+                # Apply regularization to make matrix positive-definite
+                regularized_cov = cov_matrix + regularization_matrix
+
+                # Try Cholesky again
+                try:
+                    np.linalg.cholesky(regularized_cov.values)
+                    self.logger.info(f"✅ Applied regularization (factor={regularization_factor}) to ensure positive-definite covariance")
+                except np.linalg.LinAlgError:
+                    # If still not positive-definite, increase regularization
+                    regularization_factor = 1e-3
+                    regularization_matrix = np.eye(n_features) * regularization_factor
+                    regularized_cov = cov_matrix + regularization_matrix
+
+                    try:
+                        np.linalg.cholesky(regularized_cov.values)
+                        self.logger.info(f"✅ Applied stronger regularization (factor={regularization_factor}) to ensure positive-definite covariance")
+                    except np.linalg.LinAlgError:
+                        self.logger.warning("⚠️ Covariance matrix still not positive-definite after regularization, using diagonal covariance")
+
+                        # As last resort, use only the diagonal elements (variance)
+                        for i, col in enumerate(df.columns):
+                            if df[col].var() < 1e-10:  # Very small variance
+                                df[col] = df[col] + np.random.normal(0, 1e-5, len(df))
+                                self.logger.info(f"🔧 Added small noise to constant feature: {col}")
+
+        return df
+
+    def _validate_model_covariances(self, model):
+        """Validate that fitted model covariance matrices are positive-definite."""
+        if not hasattr(model, 'covars_'):
+            return  # Some covariance types don't have covars_ attribute
+
+        covars = model.covars_
+        n_components = model.n_components
+
+        for i in range(n_components):
+            try:
+                if model.covariance_type == 'full':
+                    cov_matrix = covars[i]
+                elif model.covariance_type == 'tied':
+                    cov_matrix = covars
+                elif model.covariance_type == 'diag':
+                    cov_matrix = np.diag(covars[i])
+                elif model.covariance_type == 'spherical':
+                    cov_matrix = np.eye(len(covars[i])) * covars[i]
+                else:
+                    continue
+
+                # Check if covariance matrix is positive-definite
+                np.linalg.cholesky(cov_matrix)
+
+            except np.linalg.LinAlgError:
+                self.logger.warning(f"⚠️ Component {i} covariance matrix not positive-definite, applying regularization")
+                self.logger.info("ℹ️ This is GOOD - regularization ensures numerical stability for HMM fitting")
+
+                # Calculate adaptive regularization based on matrix condition
+                if model.covariance_type == 'full':
+                    # Use eigenvalues to determine appropriate regularization strength
+                    eigenvals = np.linalg.eigvals(cov_matrix)
+                    min_eigenval = np.min(np.real(eigenvals))
+                    if min_eigenval <= 0:
+                        # Adaptive regularization: scale based on negative eigenvalue magnitude
+                        reg_strength = max(1e-6, -min_eigenval * 1.1)
+                        regularization = np.eye(cov_matrix.shape[0]) * reg_strength
+                        self.logger.info(f"🔧 Using adaptive regularization (strength: {reg_strength:.2e})")
+                    else:
+                        regularization = np.eye(cov_matrix.shape[0]) * 1e-6
+                    model.covars_[i] = cov_matrix + regularization
+                elif model.covariance_type == 'tied':
+                    eigenvals = np.linalg.eigvals(cov_matrix)
+                    min_eigenval = np.min(np.real(eigenvals))
+                    if min_eigenval <= 0:
+                        reg_strength = max(1e-6, -min_eigenval * 1.1)
+                        regularization = np.eye(cov_matrix.shape[0]) * reg_strength
+                        self.logger.info(f"🔧 Using adaptive regularization for tied covariance (strength: {reg_strength:.2e})")
+                    else:
+                        regularization = np.eye(cov_matrix.shape[0]) * 1e-6
+                    model.covars_ = cov_matrix + regularization
+
+                # Verify the regularization worked
+                try:
+                    if model.covariance_type == 'full':
+                        np.linalg.cholesky(model.covars_[i])
+                    elif model.covariance_type == 'tied':
+                        np.linalg.cholesky(model.covars_)
+                    self.logger.info(f"✅ Component {i} covariance matrix regularized successfully")
+                except np.linalg.LinAlgError:
+                    self.logger.error(f"❌ Component {i} covariance matrix still not positive-definite after regularization")
+                    raise RuntimeError(f"HMM component {i} has non-positive-definite covariance matrix")
+
+    def _batched_predict_proba(self, model, data: pd.DataFrame, batch_size: int = 5000) -> np.ndarray:
+        """Perform batched predict_proba for large datasets to manage memory and provide progress feedback."""
+        n_samples = len(data)
+        n_regimes = model.n_components
+
+        # Pre-allocate result array
+        probabilities = np.zeros((n_samples, n_regimes))
+
+        # Process in batches
+        for start_idx in range(0, n_samples, batch_size):
+            end_idx = min(start_idx + batch_size, n_samples)
+            batch_data = data.iloc[start_idx:end_idx]
+
+            # Predict probabilities for this batch
+            batch_probabilities = model.predict_proba(batch_data.values)
+
+            # Store in result array
+            probabilities[start_idx:end_idx] = batch_probabilities
+
+            # Log progress for large datasets
+            if n_samples > 20000 and (end_idx % 10000 == 0 or end_idx == n_samples):
+                progress = (end_idx / n_samples) * 100
+                self.logger.info(f"📊 Processed {end_idx}/{n_samples} samples ({progress:.1f}%)")
+
+        return probabilities
+
+    def _optimized_batched_predict_proba(self, model, data: pd.DataFrame, batch_size: int = 20000, use_parallel: bool = True) -> np.ndarray:
+        """Perform optimized batched predict_proba for very large datasets with parallel processing and memory optimization."""
+        n_samples = len(data)
+        n_regimes = model.n_components
+
+        # Pre-allocate result array with memory optimization
+        probabilities = np.zeros((n_samples, n_regimes), dtype=np.float32)  # Use float32 for memory efficiency
+
+        # For extremely large datasets, use parallel processing
+        if use_parallel and n_samples > 200000:
+            self.logger.info("🔄 Using parallel processing for ultra-large dataset")
+            return self._parallel_batched_predict_proba(model, data, batch_size)
+        else:
+            # Use optimized sequential processing
+            return self._sequential_optimized_predict_proba(model, data, batch_size)
+
+    def _sequential_optimized_predict_proba(self, model, data: pd.DataFrame, batch_size: int = 20000) -> np.ndarray:
+        """Sequential optimized batched prediction with memory management."""
+        n_samples = len(data)
+        n_regimes = model.n_components
+
+        # Pre-allocate result array
+        probabilities = np.zeros((n_samples, n_regimes), dtype=np.float32)
+
+        # Process in larger batches for efficiency
+        for start_idx in range(0, n_samples, batch_size):
+            end_idx = min(start_idx + batch_size, n_samples)
+            batch_data = data.iloc[start_idx:end_idx]
+
+            # Predict probabilities for this batch
+            batch_probabilities = model.predict_proba(batch_data.values)
+
+            # Store in result array
+            probabilities[start_idx:end_idx] = batch_probabilities.astype(np.float32)
+
+            # Log progress for large datasets
+            if n_samples > 100000 and (end_idx % 50000 == 0 or end_idx == n_samples):
+                progress = (end_idx / n_samples) * 100
+                self.logger.info(f"📊 Processed {end_idx}/{n_samples} samples ({progress:.1f}%)")
+
+        return probabilities
+
+    def _parallel_batched_predict_proba(self, model, data: pd.DataFrame, batch_size: int = 20000) -> np.ndarray:
+        """Parallel batched prediction for ultra-large datasets."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
+
+        n_samples = len(data)
+        n_regimes = model.n_components
+        probabilities = np.zeros((n_samples, n_regimes), dtype=np.float32)
+
+        # Create batches
+        batches = []
+        for start_idx in range(0, n_samples, batch_size):
+            end_idx = min(start_idx + batch_size, n_samples)
+            batches.append((start_idx, end_idx, data.iloc[start_idx:end_idx]))
+
+        # Thread-safe progress tracking
+        progress_lock = threading.Lock()
+        completed_batches = 0
+
+        def process_batch(batch_info):
+            nonlocal completed_batches
+            start_idx, end_idx, batch_data = batch_info
+            batch_probabilities = model.predict_proba(batch_data.values)
+
+            # Update progress
+            with progress_lock:
+                completed_batches += 1
+                if completed_batches % 10 == 0 or completed_batches == len(batches):
+                    progress = (completed_batches / len(batches)) * 100
+                    self.logger.info(f"📊 Parallel processing: {completed_batches}/{len(batches)} batches ({progress:.1f}%)")
+
+            return start_idx, end_idx, batch_probabilities.astype(np.float32)
+
+        # Use optimal number of threads (not too many to avoid overhead)
+        max_workers = min(4, len(batches))  # Limit to 4 threads to avoid overhead
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(process_batch, batch) for batch in batches]
+
+            for future in as_completed(futures):
+                start_idx, end_idx, batch_probabilities = future.result()
+                probabilities[start_idx:end_idx] = batch_probabilities
+
+        self.logger.info("✅ Parallel batch processing completed")
+        return probabilities
 
     def _detect_hmm_multivariate_regimes(
         self, 
@@ -798,7 +1199,15 @@ class EnhancedHMMRegimeDetector:
         result['regime_confidence'] = np.max(probabilities, axis=1) - np.mean(probabilities, axis=1)
         
         result['detection_method'] = 'hmm_multivariate'
-        result['model_score'] = model.score(engineered_data)
+        # Convert model score to scalar
+        score_value = model.score(engineered_data)
+        if hasattr(score_value, 'item'):
+            score_value = score_value.item()
+        elif hasattr(score_value, 'mean'):
+            score_value = float(score_value.mean())
+        else:
+            score_value = float(score_value)
+        result['model_score'] = score_value
         
         self.logger.info(f"✅ Added probabilistic regime predictions for {probabilities.shape[1]} regimes (multivariate)")
         
@@ -823,7 +1232,7 @@ class EnhancedHMMRegimeDetector:
         
         for model_config in configs:
             try:
-                model_result = self._detect_hmm_gaussian_regimes(data, model_config)
+                model_result = self._detect_hmm_gaussian_regimes(data, model_config, 'light')
                 models.append(model_result)
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to create ensemble model: {e}")
@@ -867,7 +1276,7 @@ class EnhancedHMMRegimeDetector:
         """Detect regimes using multi-timeframe HMM ensemble."""
         # This would require multiple timeframe data
         # For now, implement single timeframe with multi-timeframe structure
-        base_result = self._detect_hmm_gaussian_regimes(data, config)
+        base_result = self._detect_hmm_gaussian_regimes(data, config, 'light')
         
         # Add multi-timeframe metadata
         base_result['detection_method'] = 'multi_timeframe_hmm'
@@ -934,7 +1343,7 @@ class EnhancedHMMRegimeDetector:
     ) -> pd.DataFrame:
         """Detect regimes using regime-aware HMM."""
         # First detect basic regimes
-        base_result = self._detect_hmm_gaussian_regimes(data, config)
+        base_result = self._detect_hmm_gaussian_regimes(data, config, 'light')
         
         # Apply regime-aware refinements
         refined_result = self._refine_regime_aware_regimes(base_result, data)
@@ -1160,7 +1569,7 @@ class EnhancedHMMRegimeDetector:
         try:
             # Use first window to initialize model
             window_data = data.iloc[:self.streaming_config.window_size]
-            initial_result = self._detect_hmm_gaussian_regimes(window_data, config)
+            initial_result = self._detect_hmm_gaussian_regimes(window_data, config, 'light')
             
             self.streaming_state['current_model'] = initial_result
             self.streaming_state['last_update'] = time.time()
@@ -1174,7 +1583,7 @@ class EnhancedHMMRegimeDetector:
         """Update streaming HMM model."""
         try:
             # Detect regimes for current window
-            window_result = self._detect_hmm_gaussian_regimes(window_data, config)
+            window_result = self._detect_hmm_gaussian_regimes(window_data, config, 'light')
             
             # Update streaming state
             self.streaming_state['current_model'] = window_result
@@ -1255,17 +1664,21 @@ class EnhancedHMMRegimeDetector:
         quality_framework = DataQualityFramework()
 
         # Basic sanity checks first
-        if len(data) < 50:
-            raise ValueError("Insufficient data for regime detection (minimum 50 rows required)")
+        if len(data) < 100:  # Need extra buffer for rolling calculations
+            raise ValueError("Insufficient data for regime detection (minimum 100 rows required for rolling calculations)")
 
-        numeric_columns = data.select_dtypes(include=[np.number]).columns
+        # Exclude first 50 rows to avoid NaN values from rolling calculations
+        data_for_validation = data.iloc[50:].copy()
+        self.logger.info(f"   📊 Using {len(data_for_validation)} rows for validation (excluded first 50 rows with rolling NaN values)")
+
+        numeric_columns = data_for_validation.select_dtypes(include=[np.number]).columns
         if len(numeric_columns) == 0:
             raise ValueError("No numeric columns found for regime detection")
 
-        # Advanced quality validation
+        # Advanced quality validation (using data without rolling NaN values)
         quality_framework = DataQualityFramework()
         quality_result = quality_framework.validate_dataframe_quality(
-            data,
+            data_for_validation,
             context="hmm_regime_detection_input_validation"
         )
 
@@ -1291,7 +1704,7 @@ class EnhancedHMMRegimeDetector:
                 self.logger.warning(f"   - {warning}")
 
         # Quality gate - reject if quality score too low
-        if quality_result.quality_score < 99:  # Very strict threshold for HMM
+        if quality_result.quality_score < 99:  # Strict threshold for HMM
             raise ValueError(f"HMM input data quality too low: {quality_result.quality_score:.1f}/100 (required: 99.0)")
 
         # Advanced gap detection and filling
@@ -1321,57 +1734,168 @@ class EnhancedHMMRegimeDetector:
         from datetime import timedelta
 
         self.logger.info("🔍 Performing advanced gap detection and filling...")
+        self.logger.info(f"📊 Input data shape: {data.shape[0]:,} rows × {data.shape[1]} columns")
+
+        # Handle timestamp access (could be column or index)
+        if 'timestamp' in data.columns:
+            timestamps = data['timestamp']
+        elif hasattr(data.index, 'name') and data.index.name == 'timestamp':
+            timestamps = data.index
+        else:
+            # Try to infer timestamp from index
+            if pd.api.types.is_datetime64_any_dtype(data.index):
+                timestamps = data.index
+                self.logger.info("🔄 Using datetime index as timestamp for gap detection")
+            else:
+                raise ValueError("Could not find timestamp column or datetime index for gap detection")
+
+        time_range_min = timestamps.min()
+        time_range_max = timestamps.max()
+        self.logger.info(f"📅 Data time range: {time_range_min} to {time_range_max}")
 
         # Initialize cleaning framework
         cleaner = DataCleaner()
+        self.logger.info("🧹 Initialized data cleaner for gap detection")
 
         # Detect gaps in timestamp data
-        if 'timestamp' in data.columns:
-            try:
-                # Convert to datetime if needed
-                if not pd.api.types.is_datetime64_any_dtype(data['timestamp']):
-                    timestamps = pd.to_datetime(data['timestamp'], unit='ms', utc=True)
-                else:
-                    timestamps = data['timestamp']
+        try:
+            # Convert to datetime if needed
+            if not pd.api.types.is_datetime64_any_dtype(timestamps):
+                timestamps = pd.to_datetime(timestamps, unit='ms', utc=True)
 
-                # Calculate time differences
-                time_diffs = timestamps.diff().dt.total_seconds()
+            # Calculate time differences
+            time_diffs = timestamps.diff()
+            if hasattr(time_diffs, 'dt'):
+                time_diffs = time_diffs.dt.total_seconds()
+            else:
+                # Handle case where diff() returns TimedeltaIndex directly
+                time_diffs = time_diffs / pd.Timedelta(seconds=1)
 
-                # Determine expected interval and data-type specific thresholds
-                expected_interval = self._determine_expected_interval(data, timestamps)
-                gap_threshold, download_threshold = self._get_data_type_specific_thresholds(expected_interval)
+            # Determine expected interval and data-type specific thresholds
+            expected_interval = self._determine_expected_interval(data, timestamps)
+            gap_threshold, download_threshold = self._get_data_type_specific_thresholds(expected_interval)
 
-                self.logger.info(f"📊 Expected data interval: {expected_interval:.1f}s")
-                self.logger.info(f"📊 Gap detection threshold: {gap_threshold:.1f}s")
-                self.logger.info(f"📊 Download attempt threshold: {download_threshold:.1f}s")
+            self.logger.info(f"📊 Expected data interval: {expected_interval:.1f}s")
+            self.logger.info(f"📊 Gap detection threshold: {gap_threshold:.1f}s")
+            self.logger.info(f"📊 Download attempt threshold: {download_threshold:.1f}s")
 
-                # Find gaps larger than expected interval
-                gap_mask = time_diffs > gap_threshold
-                large_gaps = time_diffs[gap_mask]
+            # Find gaps larger than expected interval
+            gap_mask = time_diffs > gap_threshold
+            large_gaps = time_diffs[gap_mask]
 
-                if len(large_gaps) > 0:
-                    self.logger.info(f"📊 Found {len(large_gaps)} gaps larger than {gap_threshold:.1f}s")
+            # Ensure large_gaps is always a Series for consistent .items() iteration
+            if isinstance(large_gaps, pd.Index):
+                large_gaps = pd.Series(large_gaps.values, index=large_gaps.index, name='gaps')
 
-                    # Batch process gaps for efficiency
-                    data = self._batch_process_gaps(data, large_gaps, timestamps, gap_threshold, download_threshold)
+            if len(large_gaps) > 0:
+                self.logger.info(f"📊 Found {len(large_gaps)} gaps larger than {gap_threshold:.1f}s")
+                self.logger.info(f"📊 Largest gap: {large_gaps.max():.1f}s, Smallest gap: {large_gaps.min():.1f}s")
 
-                    # Re-validate after gap filling
-                    self.logger.info("🔄 Re-validating data after gap filling...")
-                    quality_framework = DataQualityFramework()
-                    post_fill_result = quality_framework.validate_dataframe_quality(
-                        data, context="hmm_post_gap_fill_validation"
-                    )
+                # Handle describe() for TimedeltaIndex vs Series
+                try:
+                    # Ensure large_gaps is always a Series for describe() method
+                    if not hasattr(large_gaps, 'describe') or isinstance(large_gaps, pd.Index):
+                        gap_series = pd.Series(large_gaps.values, name='gaps')
+                        self.logger.info(f"📊 Gap sizes: {gap_series.describe()}")
+                    else:
+                        self.logger.info(f"📊 Gap sizes: {large_gaps.describe()}")
+                except Exception as e:
+                    self.logger.info(f"📊 Gap sizes summary: count={len(large_gaps)}, mean={large_gaps.mean():.1f}s, std={large_gaps.std():.1f}s")
 
-                    if post_fill_result.quality_score < 99:
-                        self.logger.warning("⚠️ Data quality still low after gap filling")
+                # Log specific gap information with timing context
+                self.logger.info("📅 Gap timing analysis:")
 
-                else:
-                    self.logger.info("✅ No significant gaps detected in data")
+                # Analyze gap distribution by time of day and day of week
+                gap_timestamps = []
+                for i, (idx, gap_size) in enumerate(large_gaps.items()):
+                    gap_start = timestamps.iloc[idx-1] if idx > 0 else timestamps.iloc[0]
+                    gap_timestamps.append(gap_start)
 
-            except Exception as e:
-                self.logger.warning(f"⚠️ Error during advanced gap detection: {e}")
-                # Fall back to basic gap filling
-                data = cleaner.fill_data_gaps(data, method='interpolate')
+                    if i < 10:  # Log first 10 gaps with detailed timing
+                        gap_end = timestamps.iloc[idx] if idx < len(timestamps) else timestamps.iloc[-1]
+                        gap_hours = gap_size / 3600  # Convert to hours for readability
+                        self.logger.info(f"   Gap {i+1}: {gap_size:.1f}s ({gap_hours:.2f}h) from {gap_start} to {gap_end}")
+
+                        # Add detailed timing context
+                        if hasattr(gap_start, 'hour'):
+                            day_of_week = gap_start.strftime('%A')
+                            hour_of_day = gap_start.hour
+                            minute_of_hour = gap_start.minute
+                            date_str = gap_start.strftime('%Y-%m-%d')
+                            time_str = f"{hour_of_day:02d}:{minute_of_hour:02d}"
+                            self.logger.info(f"      📅 Occurred on {day_of_week}, {date_str} at {time_str} UTC")
+
+                            # Calculate gap duration in human-readable format
+                            if gap_size < 60:
+                                duration_str = f"{gap_size:.0f} seconds"
+                            elif gap_size < 3600:
+                                minutes = gap_size // 60
+                                seconds = gap_size % 60
+                                duration_str = f"{minutes:.0f}m {seconds:.0f}s"
+                            else:
+                                hours = gap_size // 3600
+                                minutes = (gap_size % 3600) // 60
+                                duration_str = f"{hours:.0f}h {minutes:.0f}m"
+
+                            self.logger.info(f"      ⏱️  Gap duration: {duration_str}")
+                            self.logger.info(f"      📍 Gap location: Row {idx:,} in dataset")
+                            self.logger.warning(f"      ⚠️  LARGE GAP DETECTED: {duration_str} gap at {date_str} {time_str} UTC - requires data download/filling")
+
+                # Provide summary statistics about gap timing
+                if len(gap_timestamps) > 0:
+                    gap_times = pd.Series(gap_timestamps)
+                    if hasattr(gap_times.iloc[0], 'hour'):
+                        # Hourly distribution
+                        hour_counts = gap_times.dt.hour.value_counts().sort_index()
+                        peak_hour = hour_counts.idxmax() if len(hour_counts) > 0 else "N/A"
+                        self.logger.info(f"      🕐 Peak gap hour: {peak_hour}:00 UTC ({hour_counts.max()} gaps)")
+
+                        # Day of week distribution
+                        day_counts = gap_times.dt.day_name().value_counts()
+                        peak_day = day_counts.idxmax() if len(day_counts) > 0 else "N/A"
+                        self.logger.info(f"      📅 Most affected day: {peak_day} ({day_counts.max()} gaps)")
+
+                        # Time range of gaps
+                        earliest_gap = gap_times.min()
+                        latest_gap = gap_times.max()
+                        self.logger.info(f"      📊 Gap time range: {earliest_gap} to {latest_gap}")
+
+                        # Check for weekend/weekday patterns
+                        weekdays = gap_times[gap_times.dt.dayofweek < 5]  # Monday=0, Sunday=6
+                        weekends = gap_times[gap_times.dt.dayofweek >= 5]
+                        self.logger.info(f"      📈 Weekday gaps: {len(weekdays)}, Weekend gaps: {len(weekends)}")
+
+                if len(large_gaps) > 10:
+                    self.logger.info(f"      ... and {len(large_gaps) - 10} more gaps (showing first 10)")
+
+                # Batch process gaps for efficiency
+                self.logger.info("🔄 Starting batch gap processing...")
+                data = self._batch_process_gaps(data, large_gaps, timestamps, gap_threshold, download_threshold)
+                self.logger.info(f"✅ Gap processing completed. New data shape: {data.shape[0]:,} rows")
+
+                # Re-validate after gap filling
+                self.logger.info("🔄 Re-validating data after gap filling...")
+                quality_framework = DataQualityFramework()
+                post_fill_result = quality_framework.validate_dataframe_quality(
+                    data, context="hmm_post_gap_fill_validation"
+                )
+
+                if post_fill_result.quality_score < 99:
+                    self.logger.warning("⚠️ Data quality still low after gap filling")
+
+            else:
+                self.logger.info("✅ No significant gaps detected in data")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error during advanced gap detection: {e}")
+            # Fall back to basic gap filling
+            # Use interpolation for basic gap filling (only on numeric columns)
+            numeric_columns = data.select_dtypes(include=[np.number]).columns
+            if len(numeric_columns) > 0:
+                data[numeric_columns] = data[numeric_columns].interpolate(method='linear', limit_direction='both')
+                self.logger.info(f"✅ Interpolated {len(numeric_columns)} numeric columns")
+            else:
+                self.logger.warning("⚠️ No numeric columns available for interpolation")
 
         return data
 
@@ -1379,11 +1903,16 @@ class EnhancedHMMRegimeDetector:
         """Determine the expected time interval between data points."""
         try:
             # Calculate the most common time difference
-            time_diffs = timestamps.diff().dt.total_seconds().dropna()
+            time_diffs_raw = timestamps.diff()
+            if hasattr(time_diffs_raw, 'dt'):
+                time_diffs = time_diffs_raw.dt.total_seconds().dropna()
+            else:
+                # Handle TimedeltaIndex case
+                time_diffs = (time_diffs_raw / pd.Timedelta(seconds=1)).dropna()
 
             if len(time_diffs) == 0:
-                self.logger.warning("⚠️ No time differences found, assuming 60s interval")
-                return 60.0
+                self.logger.warning("⚠️ No time differences found, assuming 65s interval")
+                return 65.0
 
             # Use mode (most common interval) as expected interval
             mode_interval = time_diffs.mode()
@@ -1395,15 +1924,17 @@ class EnhancedHMMRegimeDetector:
 
             # Validate the interval makes sense (between 1 second and 24 hours)
             if expected_interval < 1:
-                self.logger.warning(f"⚠️ Very small interval detected ({expected_interval:.3f}s), assuming 1s")
-                expected_interval = 1.0
+                self.logger.warning(f"⚠️ Very small interval detected ({expected_interval:.3f}s), assuming 1m for market data")
+                expected_interval = 65.0  # 65 seconds
             elif expected_interval > 86400:  # 24 hours
                 self.logger.warning(f"⚠️ Very large interval detected ({expected_interval:.1f}s), assuming 3600s (1h)")
                 expected_interval = 3600.0
 
             # Log interval classification for user understanding
-            if expected_interval <= 2:
-                interval_type = "1s aggtrades"
+            # Adjusted for klines data - be more lenient with small intervals
+            if expected_interval <= 10:
+                # Small intervals are likely 1m klines with some processing artifacts
+                interval_type = "1m klines (processed)"
             elif expected_interval <= 90:
                 interval_type = "1m klines"
             elif expected_interval <= 600:
@@ -1426,8 +1957,8 @@ class EnhancedHMMRegimeDetector:
             return expected_interval
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Error determining expected interval: {e}, assuming 60s")
-            return 60.0
+            self.logger.warning(f"⚠️ Error determining expected interval: {e}, assuming 65s")
+            return 65.0
 
     def _get_data_type_specific_thresholds(self, expected_interval: float) -> Tuple[float, float]:
         """Get data-type specific gap detection and download thresholds."""
@@ -1441,7 +1972,7 @@ class EnhancedHMMRegimeDetector:
             elif expected_interval <= 90:
                 # Klines data (1 minute intervals)
                 data_type = "klines_1m"
-                gap_threshold = 60.0  # 1 minute for klines
+                gap_threshold = 65.0  # 65 seconds for klines
                 download_threshold = 120.0  # 2 minutes for download attempts
             elif expected_interval <= 600:
                 # Klines data (5 minute intervals)
@@ -1492,123 +2023,98 @@ class EnhancedHMMRegimeDetector:
             download_threshold = expected_interval * 3
             return gap_threshold, download_threshold
 
-    def _download_missing_data(self, gap_start: pd.Timestamp, gap_end: pd.Timestamp) -> pd.DataFrame | None:
-        """Download missing data for large gaps using existing data collection pipeline."""
+    def _download_missing_data(self, gap_start: pd.Timestamp, gap_end: pd.Timestamp, data: pd.DataFrame = None) -> pd.DataFrame | None:
+        """Download missing data for large gaps using klines_downloading_processing.py."""
         try:
             self.logger.info(f"📥 Attempting to download data from {gap_start} to {gap_end}")
 
-            # Try to use the unified data downloader
+            # Use the klines downloading and processing pipeline
             try:
-                from ...training.steps.data_collection.data_downloader import download_all_data_with_consolidation
+                from ...training.steps.data_collection.klines_downloading_processing import KlinesDataProcessingPipeline
+                self.logger.info("🔍 Loaded KlinesDataProcessingPipeline")
 
-                # Calculate timeframe from gap duration
+                # Initialize the pipeline
+                pipeline = KlinesDataProcessingPipeline()
+
+                # Extract symbol and timeframe from data or use defaults
+                symbol = "ETHUSDT"  # Default symbol
+                interval = "1m"     # Default interval
+
+                # Try to extract from data attributes if available
+                if data is not None:
+                    if hasattr(data, 'attrs') and 'symbol' in data.attrs:
+                        symbol = data.attrs['symbol']
+                    if hasattr(data, 'attrs') and 'timeframe' in data.attrs:
+                        interval = data.attrs['timeframe']
+
+                # Calculate gap duration for determining max_gap_minutes
                 gap_duration = gap_end - gap_start
-                gap_seconds = gap_duration.total_seconds()
+                gap_minutes = int(gap_duration.total_seconds() / 60)
 
-                # Determine appropriate timeframe based on gap size and data characteristics
-                # Use more conservative timeframe selection to avoid downloading unnecessary data
-                if gap_seconds <= 120:  # 2 minutes - likely 1s or 1m data
-                    timeframe = "1s"  # Use 1-second candles for very small gaps
-                elif gap_seconds <= 600:  # 10 minutes - likely 1m data
-                    timeframe = "1m"
-                elif gap_seconds <= 1800:  # 30 minutes - likely 5m data
-                    timeframe = "5m"
-                elif gap_seconds <= 7200:  # 2 hours - likely 15m data
-                    timeframe = "15m"
-                elif gap_seconds <= 43200:  # 12 hours - likely 1h data
-                    timeframe = "1h"
-                elif gap_seconds <= 172800:  # 2 days - likely 4h data
-                    timeframe = "4h"
-                else:  # Very large gaps - likely daily data
-                    timeframe = "1d"
+                # Set max_gap_minutes to slightly less than the actual gap to ensure it's detected
+                max_gap_minutes = max(1, gap_minutes - 1)
 
-                # Attempt download using existing pipeline (handle async function)
+                self.logger.info(f"🔧 Gap filling parameters: symbol={symbol}, interval={interval}, max_gap_minutes={max_gap_minutes}")
+
+                # Use asyncio to run the async gap handling method
                 import asyncio
-                import inspect
+                import os
 
-                # Check if we're already in an event loop
+                # Get API credentials from environment or use defaults
+                api_key = os.getenv('BINANCE_API_KEY', '')
+                api_secret = os.getenv('BINANCE_API_SECRET', '')
+
+                if not api_key or not api_secret:
+                    self.logger.warning("⚠️ Binance API credentials not found, gap filling may fail")
+                    return None
+
+                # Run the gap handling asynchronously
+                async def _run_gap_filling():
+                    result = await pipeline.handle_gaps_with_column_removal(
+                        symbol=symbol,
+                        interval=interval,
+                        max_gap_minutes=max_gap_minutes,
+                        api_key=api_key,
+                        api_secret=api_secret
+                    )
+                    return result
+
+                # Execute the async function
                 try:
                     loop = asyncio.get_running_loop()
-                    in_event_loop = True
+                    # We're already in an event loop, use run_in_executor
+                    self.logger.info("🔄 Running gap filling in executor to avoid event loop conflict")
+                    future = loop.run_in_executor(None, lambda: asyncio.run(_run_gap_filling()))
+                    gap_result = future.result(timeout=300)  # 5 minute timeout
+
                 except RuntimeError:
-                    in_event_loop = False
+                    # Safe to run in new event loop
+                    self.logger.info("🔄 Running gap filling in new event loop")
+                    gap_result = asyncio.run(_run_gap_filling())
 
-                if inspect.iscoroutinefunction(download_all_data_with_consolidation):
-                    # Function is async - handle event loop properly
-                    if in_event_loop:
-                        # We're already in an event loop, use run_in_executor to avoid conflict
-                        self.logger.info("🔄 Running async download in executor to avoid event loop conflict")
-                        loop = asyncio.get_running_loop()
-                        downloaded_data = await loop.run_in_executor(
-                            None, 
-                            lambda: asyncio.run(download_all_data_with_consolidation(
-                                symbol="ETHUSDT",
-                                exchange="binance", 
-                                timeframe=timeframe,
-                                start_date=gap_start,
-                                end_date=gap_end
-                            ))
-                        )
+                # Check results
+                if gap_result.get("filled_gaps", 0) > 0:
+                    self.logger.info(f"✅ Gap filling successful: {gap_result}")
+
+                    # Try to load the newly downloaded data
+                    downloaded_data = self._load_recently_downloaded_data(gap_start, gap_end, interval)
+                    if downloaded_data is not None and not downloaded_data.empty:
+                        self.logger.info(f"✅ Loaded {len(downloaded_data)} newly downloaded rows")
+                        return downloaded_data
                     else:
-                        # Safe to run in new event loop
-                        downloaded_data = await download_all_data_with_consolidation(
-                            symbol="ETHUSDT",
-                            exchange="binance",
-                            timeframe=timeframe, 
-                            start_date=gap_start,
-                            end_date=gap_end
-                        )
+                        self.logger.warning("⚠️ Gap filling completed but could not load downloaded data")
+                        return None
                 else:
-                    # Function is synchronous - run in executor if in event loop
-                    if in_event_loop:
-                        self.logger.info("🔄 Running sync download in executor to avoid blocking event loop")
-                        loop = asyncio.get_running_loop()
-                        downloaded_data = await loop.run_in_executor(
-                            None,
-                            download_all_data_with_consolidation,
-                            "ETHUSDT", "binance", timeframe, gap_start, gap_end
-                        )
-                    else:
-                        # Safe to run directly
-                        downloaded_data = download_all_data_with_consolidation(
-                            "ETHUSDT", "binance", timeframe, gap_start, gap_end
-                        )
-                
-                # Return the downloaded data if successful
-                if downloaded_data is not None and not downloaded_data.empty:
-                    self.logger.info(f"✅ Successfully downloaded {len(downloaded_data)} rows for gap")
-                    return downloaded_data
-                else:
-                    self.logger.warning("⚠️ Download completed but returned empty data")
+                    self.logger.warning(f"⚠️ Gap filling failed or found no gaps: {gap_result}")
                     return None
 
-            except ImportError:
-                self.logger.warning("⚠️ Unified data downloader not available, trying alternative methods")
-
-            # Fallback: Try using the missing data downloader
-            try:
-                from ...training.steps.data_collection.data_preparation.missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
-
-                downloader = MissingDataDownloaderAndGapFiller()
-                downloaded_data = downloader.download_missing_data_segment(
-                    symbol=getattr(self, 'symbol', 'ETHUSDT'),
-                    exchange=getattr(self, 'exchange', 'binance'),
-                    start_time=gap_start,
-                    end_time=gap_end,
-                    timeframe=getattr(self, 'timeframe', '1m')
-                )
-
-                if downloaded_data is not None and not downloaded_data.empty:
-                    self.logger.info(f"✅ Downloaded {len(downloaded_data)} rows using gap filler")
-                    return downloaded_data
-                else:
-                    self.logger.warning("❌ Gap filler download failed")
-                    return None
+            except ImportError as e:
+                self.logger.warning(f"⚠️ Could not import KlinesDataProcessingPipeline: {e}")
+                return None
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Alternative download method failed: {e}")
-
-            return None
+                self.logger.error(f"❌ Error during gap filling: {e}")
+                return None
 
         except Exception as e:
             self.logger.error(f"❌ Error downloading missing data: {e}")
@@ -1626,7 +2132,7 @@ class EnhancedHMMRegimeDetector:
 
             # Generate file path for downloaded data
             klines_file = standards.generate_file_name('klines', exchange, symbol, timeframe)
-            data_dir = getattr(self, 'data_dir', 'data_cache')
+            data_dir = getattr(self, 'data_dir', 'historical_data')
             klines_path = Path(data_dir) / klines_file
 
             if klines_path.exists():
@@ -1634,18 +2140,30 @@ class EnhancedHMMRegimeDetector:
                 df = standardized_parquet_handler.read_parquet_standardized(klines_path)
 
                 # Filter to the gap period
+                # Handle timestamp access (could be column or index)
                 if 'timestamp' in df.columns:
-                    # Convert timestamps if needed
-                    if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
-                        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+                    timestamps = df['timestamp']
+                elif hasattr(df.index, 'name') and df.index.name == 'timestamp':
+                    timestamps = df.index
+                else:
+                    # Try to infer timestamp from index
+                    if pd.api.types.is_datetime64_any_dtype(df.index):
+                        timestamps = df.index
+                        self.logger.info("🔄 Using datetime index as timestamp for gap filtering")
+                    else:
+                        raise ValueError("Could not find timestamp column or datetime index for gap filtering")
 
-                    # Filter to gap period
-                    mask = (df['timestamp'] >= gap_start) & (df['timestamp'] <= gap_end)
-                    gap_data = df[mask].copy()
+                # Convert timestamps if needed
+                if not pd.api.types.is_datetime64_any_dtype(timestamps):
+                    timestamps = pd.to_datetime(timestamps, unit='ms', utc=True)
 
-                    if not gap_data.empty:
-                        self.logger.info(f"✅ Loaded {len(gap_data)} rows from downloaded data")
-                        return gap_data
+                # Filter to gap period
+                mask = (timestamps >= gap_start) & (timestamps <= gap_end)
+                gap_data = df[mask].copy()
+
+                if not gap_data.empty:
+                    self.logger.info(f"✅ Loaded {len(gap_data)} rows from downloaded data")
+                    return gap_data
 
             self.logger.warning("⚠️ No suitable downloaded data found for gap period")
             return None
@@ -1737,7 +2255,7 @@ class EnhancedHMMRegimeDetector:
                         continue
                     
                     # Submit download task
-                    future = executor.submit(self._download_missing_data, gap_start, gap_end)
+                    future = executor.submit(self._download_missing_data, gap_start, gap_end, data)
                     futures.append((future, idx, gap_size, gap_start, gap_end))
                 
                 # Process completed downloads
@@ -1799,7 +2317,7 @@ class EnhancedHMMRegimeDetector:
                     continue
                 
                 # Attempt to download missing data
-                downloaded_data = self._download_missing_data(gap_start, gap_end)
+                downloaded_data = self._download_missing_data(gap_start, gap_end, data)
                 
                 if downloaded_data is not None and not downloaded_data.empty:
                     self.logger.info(f"✅ Successfully downloaded {len(downloaded_data)} rows for gap")

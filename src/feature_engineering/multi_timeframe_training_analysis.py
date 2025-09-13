@@ -775,7 +775,7 @@ from src.feature_engineering.optimized_cross_timeframe_analysis_integration impo
 
 # Get cross-timeframe features
 result = await analyze_cross_timeframes_optimized(
-    data_dir="data/training",
+    data_dir="historical_data",
     symbol="ETHUSDT",
     exchange="BINANCE",
     timeframes=['1m', '5m', '15m', '30m']

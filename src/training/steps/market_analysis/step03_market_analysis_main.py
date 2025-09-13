@@ -746,7 +746,7 @@ async def main():
     symbol = "ETHUSDT"
     exchange = "BINANCE"
     timeframe = "1m"
-    data_dir = "data_cache"
+    data_dir = "historical_data"
     
     # Market analysis parameters
     config = {

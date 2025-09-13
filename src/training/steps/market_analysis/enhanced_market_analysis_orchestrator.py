@@ -50,13 +50,10 @@ except ImportError:
     try:
         from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering as FeatureEngineeringStep
     except ImportError:
-        try:
-            from src.training.steps.data_collection.feature_engineering.step06_feature_engineering import FeatureEngineeringStep
-        except ImportError:
-            # Fallback class
-            class FeatureEngineeringStep:
-                def __init__(self, *args, **kwargs):
-                    pass
+        # Fallback class
+        class FeatureEngineeringStep:
+            def __init__(self, *args, **kwargs):
+                pass
                 def process(self, *args, **kwargs):
                     return None
 
@@ -169,7 +166,7 @@ class MarketAnalysisPipelineOrchestrator:
         tprint("🎉 ORCHESTRATOR INITIALIZATION COMPLETE")
         tprint("=" * 80)
 
-    async def execute_pipeline(self, symbol: str, exchange: str, timeframe: str='1m', data_dir: str='data_cache', **kwargs) -> bool:
+    async def execute_pipeline(self, symbol: str, exchange: str, timeframe: str='1m', data_dir: str='historical_data', **kwargs) -> bool:
         """
         Execute the complete market analysis pipeline with comprehensive validation.
         
@@ -783,7 +780,7 @@ class MarketAnalysisPipelineOrchestrator:
         """Get current pipeline status."""
         return {'current_step': self.pipeline_state['current_step'], 'completed_steps': self.pipeline_state['completed_steps'], 'failed_steps': self.pipeline_state['failed_steps'], 'execution_time': self._get_execution_time(), 'correlation_id': self.pipeline_state['correlation_id']}
 
-async def run_enhanced_market_analysis_pipeline(symbol: str, exchange: str, timeframe: str='1m', data_dir: str='data_cache', **config) -> bool:
+async def run_enhanced_market_analysis_pipeline(symbol: str, exchange: str, timeframe: str='1m', data_dir: str='historical_data', **config) -> bool:
     """
     Run the enhanced market analysis pipeline with comprehensive validation.
     
@@ -795,7 +792,7 @@ if __name__ == '__main__':
 
     async def main() -> None:
         config = {'force_rerun': True, 'hmm_clustering': True, 'regime_splitting': True, 'feature_engineering': True, 'matrix_operations': True, 'feature_selection': True, 'random_state': 42}
-        success = await run_enhanced_market_analysis_pipeline(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache', **config)
+        success = await run_enhanced_market_analysis_pipeline(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='historical_data', **config)
         if success:
             tprint('🎉 Market analysis pipeline completed successfully!')
         else:

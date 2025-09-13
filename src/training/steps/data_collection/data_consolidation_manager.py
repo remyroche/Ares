@@ -65,12 +65,12 @@ class DataConsolidationManager:
     @handles_errors(context="consolidate_by_session")
     @log_all_calls
     async def consolidate_by_session(
-        self, 
-        symbol: str, 
-        exchange: str, 
+        self,
+        symbol: str,
+        exchange: str,
+        session_id: str,
         data_type: str = "klines",
         timeframe: str = "1m",
-        session_id: str,
         remove_originals: bool = False,
         max_memory_mb: int = 1000
     ) -> Dict[str, Any]:
@@ -331,14 +331,20 @@ class DataConsolidationManager:
             if 'timestamp' in combined_df.columns:
                 combined_df = combined_df.sort_values('timestamp').reset_index(drop=True)
             
-            # Remove duplicates
+            # Remove duplicates with detailed logging
             initial_rows = len(combined_df)
             if 'timestamp' in combined_df.columns:
+                # Check for duplicates before removal
+                duplicate_count = combined_df['timestamp'].duplicated().sum()
+                if duplicate_count > 0:
+                    self.logger.warning(f"⚠️ Found {duplicate_count} duplicate timestamps before consolidation")
                 combined_df = combined_df.drop_duplicates(subset=['timestamp'], keep='first')
             else:
                 combined_df = combined_df.drop_duplicates()
-            
+
             duplicates_removed = initial_rows - len(combined_df)
+            if duplicates_removed > 0:
+                self.logger.info(f"🧹 Removed {duplicates_removed} duplicate entries during consolidation")
             
             # Generate consolidated filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -498,7 +504,7 @@ class DataConsolidationManager:
     ) -> List[Path]:
         """Find batch files for a specific session."""
         try:
-            data_dir = self.data_cache_path / exchange.lower() / symbol.lower() / data_type
+            data_dir = Path("historical_data") / exchange.lower() / symbol.lower() / data_type
             
             if not data_dir.exists():
                 return []
@@ -525,7 +531,7 @@ class DataConsolidationManager:
     ) -> List[Path]:
         """Find batch files within a time range."""
         try:
-            data_dir = self.data_cache_path / exchange.lower() / symbol.lower() / data_type
+            data_dir = Path("historical_data") / exchange.lower() / symbol.lower() / data_type
             
             if not data_dir.exists():
                 return []
@@ -570,7 +576,7 @@ class DataConsolidationManager:
     ) -> List[Path]:
         """Find all batch files for a symbol/exchange combination."""
         try:
-            data_dir = self.data_cache_path / exchange.lower() / symbol.lower() / data_type
+            data_dir = Path("historical_data") / exchange.lower() / symbol.lower() / data_type
             
             if not data_dir.exists():
                 return []
@@ -623,11 +629,11 @@ class DataConsolidationManager:
 # Convenience functions
 @handles_errors()
 async def consolidate_session_data(
-    symbol: str, 
-    exchange: str, 
+    symbol: str,
+    exchange: str,
+    session_id: str,
     data_type: str = "klines",
     timeframe: str = "1m",
-    session_id: str,
     **kwargs
 ) -> Dict[str, Any]:
     """Convenience function for consolidating session data."""

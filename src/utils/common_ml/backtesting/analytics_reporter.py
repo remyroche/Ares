@@ -255,7 +255,6 @@ class AnalyticsReporter:
         self.logger.info(f"📊 Report types: {[rt.value for rt in config.report_types]}")
     
     @traced(span_name='generate_analytics_report')
-    @log_execution_time
     async def generate_report(
         self, 
         backtesting_results: Optional[Any] = None,

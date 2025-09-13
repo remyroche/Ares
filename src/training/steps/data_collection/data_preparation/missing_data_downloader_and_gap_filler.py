@@ -192,7 +192,8 @@ class MissingDataDownloaderAndGapFiller:
                     if list(df.columns) != list(column_mapping.values()):
                         df = df.rename(columns = column_mapping)
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                    standardized_parquet_handler.write_parquet_standardized(df, file_path, compression='zstd', index = False)
+                    # Use aggtrades schema for aggtrades data
+                    standardized_parquet_handler.write_parquet_standardized(df, file_path, schema_name='aggtrades', compression='zstd', index = False)
                     logger.info(f'✅ Downloaded {filename}: {len(df)} rows')
                     return True
                 else:
@@ -284,7 +285,8 @@ class MissingDataDownloaderAndGapFiller:
                 if data:
                     df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                    standardized_parquet_handler.write_parquet_standardized(df, file_path, compression='zstd', index = False)
+                    # Use unified schema for OHLCV klines data
+                    standardized_parquet_handler.write_parquet_standardized(df, file_path, schema_name='unified', compression='zstd', index = False)
                     logger.info(f'✅ Downloaded {filename}: {len(df)} rows')
                     return True
                 else:
@@ -301,100 +303,6 @@ class MissingDataDownloaderAndGapFiller:
         """Count total rows in klines files."""
         try:
             pattern = f'klines_{exchange}_{symbol}_1m_*.parquet'
-            files = list(self.data_cache_path.glob(pattern))
-            total_rows = 0
-            for file_path in files:
-                df = standardized_parquet_handler.read_parquet_standardized(file_path)
-                total_rows += len(df)
-            return total_rows
-        except Exception as e:
-            logger.exception(f'❌ Error counting rows: {e}')
-            return 0
-
-    @traced(span_name='download_futures_data')
-    @handles_errors(default_return={'success': False, 'error': 'Download failed'}, context='missing_data_downloader.download_futures_data')
-    async def download_futures_data(self, symbol: str, exchange: str, start_date: datetime, end_date: datetime) -> dict:
-        """Download futures data for a specific date range.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            start_date: Start date
-            end_date: End date
-
-        Returns:
-            Dictionary with download results
-
-        """
-        logger.info(f'📥 Downloading futures data for {exchange}_{symbol}')
-        if not await self._ensure_exchange_initialized():
-            return {'success': False, 'error': 'Exchange not initialized'}
-        results = {'success': True, 'downloaded_months': 0, 'failed_months': 0, 'total_rows': 0, 'errors': []}
-        current_date = start_date.replace(day = 1)
-        months_to_download = []
-        while current_date <= end_date:
-            filename = f"futures_{exchange}_{symbol}_{current_date.strftime('%Y%m')}.parquet"
-            file_path = self.data_cache_path / filename
-            if not file_path.exists():
-                months_to_download.append(current_date)
-            else:
-                logger.debug(f'📁 File already exists: {filename}')
-            if current_date.month == 12:
-                current_date = current_date.replace(year = current_date.year + 1, month = 1)
-            else:
-                current_date = current_date.replace(month = current_date.month + 1)
-        logger.info(f'📊 Found {len(months_to_download)} months to download')
-        for month in months_to_download:
-            try:
-                success = await self._download_single_futures_month(symbol, exchange, month)
-                if success:
-                    results['downloaded_months'] += 1
-                else:
-                    results['failed_months'] += 1
-                    results['errors'].append(f'Failed to download {month}')
-                await asyncio.sleep(self.rate_limit_delay)
-            except Exception as e:
-                results['failed_months'] += 1
-                results['errors'].append(f'Error downloading {month}: {e}')
-                logger.exception(f'❌ Error downloading {month}: {e}')
-        results['total_rows'] = await self._count_futures_rows(symbol, exchange)
-        logger.info(f"📊 Download complete: {results['downloaded_months']} downloaded, {results['failed_months']} failed, {results['total_rows']} total rows")
-        return results
-
-    async def _download_single_futures_month(self, symbol: str, exchange: str, month: datetime) -> bool:
-        """Download futures data for a single month."""
-        try:
-            filename = f"futures_{exchange}_{symbol}_{month.strftime('%Y%m')}.parquet"
-            file_path = self.data_cache_path / filename
-            start_time = month.replace(day = 1)
-            if month.month == 12:
-                end_time = month.replace(year = month.year + 1, month = 1, day = 1) - timedelta(seconds = 1)
-            else:
-                end_time = month.replace(month = month.month + 1, day = 1) - timedelta(seconds = 1)
-            if self.exchange:
-                data = await self.exchange.fetch_funding_rate(symbol = symbol, since = int(start_time.timestamp() * 1000), limit = 1000)
-                if data:
-                    df = pd.DataFrame(data)
-                    if 'timestamp' not in df.columns and 'fundingTime' in df.columns:
-                        df['timestamp'] = df['fundingTime']
-                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                    standardized_parquet_handler.write_parquet_standardized(df, file_path, compression='zstd', index = False)
-                    logger.info(f'✅ Downloaded {filename}: {len(df)} rows')
-                    return True
-                else:
-                    logger.warning(f'⚠️ No data available for {month}')
-                    return False
-            else:
-                logger.warning('⚠️ No exchange available for download')
-                return False
-        except Exception as e:
-            logger.exception(f'❌ Error downloading {month}: {e}')
-            return False
-
-    async def _count_futures_rows(self, symbol: str, exchange: str) -> int:
-        """Count total rows in futures files."""
-        try:
-            pattern = f'futures_{exchange}_{symbol}_*.parquet'
             files = list(self.data_cache_path.glob(pattern))
             total_rows = 0
             for file_path in files:
@@ -429,18 +337,15 @@ class MissingDataDownloaderAndGapFiller:
         logger.info(f'📁 Data cache path: {self.data_cache_path}')
         logger.info('-' * 60)
         results = {'success': True, 'symbol': symbol, 'exchange': exchange, 'start_date': start_date, 'end_date': end_date, 'download_results': {}, 'errors': []}
-        aggtrades_results = await self.download_aggtrades_data(symbol, exchange, start_date, end_date)
+
+        # Skip aggtrades download for klines-only setup
+        logger.info('📋 Skipping aggtrades download (klines-only setup)')
+        aggtrades_results = {'success': True, 'message': 'Skipped for klines-only setup'}
         results['download_results']['aggtrades'] = aggtrades_results
-        if not aggtrades_results['success']:
-            results['errors'].append('Aggtrades download failed')
         klines_results = await self.download_klines_data(symbol, exchange, start_date, end_date)
         results['download_results']['klines'] = klines_results
         if not klines_results['success']:
             results['errors'].append('Klines download failed')
-        futures_results = await self.download_futures_data(symbol, exchange, start_date, end_date)
-        results['download_results']['futures'] = futures_results
-        if not futures_results['success']:
-            results['errors'].append('Futures download failed')
         if results['errors']:
             results['success'] = False
         download_end = datetime.now()

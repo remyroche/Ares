@@ -38,13 +38,13 @@ from datetime import datetime
 
 # Enhanced imports for new functionality
 try:
-    from ..hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager
     GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from ..hardware.m1_memory_optimizer import M1MemoryOptimizer  # type: ignore
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer  # type: ignore
     MEMORY_OPTIMIZER_AVAILABLE = True
 except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False

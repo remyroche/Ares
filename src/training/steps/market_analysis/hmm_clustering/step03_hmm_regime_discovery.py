@@ -7,6 +7,16 @@ from src.core.decorators import handles_errors
 from src.config.environment import get_environment_settings
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
+# Import enhanced MLflow integration
+try:
+    from src.utils.enhanced_mlflow_integration import enhanced_mlflow
+except ImportError:
+    enhanced_mlflow = None
+
+# Ensure enhanced_mlflow is defined
+if 'enhanced_mlflow' not in locals():
+    enhanced_mlflow = None
+
 'Step 3: HMM Regime Discovery with Standardized Data Quality Management.\n\nThis module performs Hidden Markov Model (HMM) regime discovery with standardized\ndata quality checks and automatic data preparation using step01/step1_5 components.\n'
 import asyncio
 import gc
@@ -51,7 +61,7 @@ except ImportError:
     EXISTING_FEATURE_SELECTION_AVAILABLE = False
 
 # Import parameter optimization
-from .parameter_optimization import ParameterOptimizer
+# from .parameter_optimization import ParameterOptimizer  # Temporarily disabled due to syntax errors
 from .ensemble_optimization import EnsembleWeightOptimizer
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
@@ -97,7 +107,8 @@ except ImportError:
     HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 
 try:
-    from src.utils.ml_common.ensemble_manager import EnsembleManager as AdvancedEnsembleClustering
+    from src.utils.ml_common.ensembles.ensemble_manager import EnsembleManager as AdvancedEnsembleClustering
+    from .parameter_optimization import ParameterOptimizer
     # Create a fallback ParallelClusteringProcessor class
     class ParallelClusteringProcessor:
         def __init__(self, *args, **kwargs):
@@ -105,6 +116,7 @@ try:
     OPTIMIZED_CLUSTERING_AVAILABLE = True
 except ImportError:
     OPTIMIZED_CLUSTERING_AVAILABLE = False
+    ParameterOptimizer = None
 
 # CuPy import for GPU acceleration
 try:
@@ -822,6 +834,8 @@ class EnhancedFeatureEngineer:
         if len(constant_features) > 0:
             self.logger.info(f"   Removing {len(constant_features)} constant features")
             features = features.drop(constant_features, axis=1)
+        else:
+            self.logger.info("   No constant features to remove")
         
         self.logger.info(f"✅ Feature cleaning completed: {len(features.columns)} features")
         return features
@@ -1426,6 +1440,20 @@ class HMMRegimeDiscoveryStep:
         """Validate environment dependencies."""
         tprint("   🔍 Validating environment dependencies...")
         self.logger.info('🔍 Validating environment dependencies...')
+
+        # Define dependency status based on import availability
+        dependency_status = {
+            'enhanced_mlflow': enhanced_mlflow is not None,
+            'enhanced_matrix_ops': ENHANCED_MATRIX_OPS_AVAILABLE,
+            'optimized_bayesian': OPTIMIZED_BAYESIAN_AVAILABLE,
+            'optimized_memory': OPTIMIZED_MEMORY_AVAILABLE,
+            'hardware_optimizations': HARDWARE_OPTIMIZATIONS_AVAILABLE,
+            'optimized_clustering': OPTIMIZED_CLUSTERING_AVAILABLE,
+            'cupy': CUPY_AVAILABLE,
+            'psutil': PSUTIL_AVAILABLE,
+            'parameter_optimizer': ParameterOptimizer is not None,
+        }
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             tprint(f"   ⚠️ Missing optional modules: {missing_modules}")
@@ -1539,7 +1567,8 @@ class HMMRegimeDiscoveryStep:
         if OPTIMIZED_BAYESIAN_AVAILABLE:
             try:
                 from .step03_config import Step03Config
-                config_obj = Step03Config()
+                # Create config object from the actual config passed to this step
+                config_obj = Step03Config.from_dict(self.config)
                 # Use EnhancedHMMCompositeManager as fallback for EnhancedBayesianOptimizer
                 self.bayesian_optimizer = EnhancedHMMCompositeManager(config_obj)
                 self.logger.info('✅ Enhanced Bayesian optimizer initialized')
@@ -1554,7 +1583,8 @@ class HMMRegimeDiscoveryStep:
         if OPTIMIZED_CLUSTERING_AVAILABLE:
             try:
                 from .step03_config import Step03Config
-                config_obj = Step03Config()
+                # Create config object from the actual config passed to this step
+                config_obj = Step03Config.from_dict(self.config)
                 self.ensemble_clustering = AdvancedEnsembleClustering(config_obj)
                 self.logger.info('✅ Enhanced ensemble clustering initialized')
             except Exception as e:
@@ -1627,20 +1657,20 @@ class HMMRegimeDiscoveryStep:
         """Load data specifically for optimized pipeline."""
         try:
             # Try to load data using standard data loading
-            data_dir = training_input.get('data_dir', 'data_cache')
+            data_dir = training_input.get('data_dir', 'historical_data')
             symbol = training_input.get('symbol', '')
             exchange = training_input.get('exchange', '')
             timeframe = training_input.get('timeframe', '1m')
 
-            # Load data from standard location
-            data_path = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_aggtrades.parquet"
+            # Load data from standard location (now using klines instead of aggtrades)
+            data_path = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_klines.parquet"
             if data_path.exists():
                 data = standardized_parquet_handler.read_parquet_standardized(data_path)
                 self.logger.info(f'✅ Loaded data: {len(data)} records from {data_path}')
                 return data
 
             # Try alternative data loading
-            alt_path = Path("data/training") / f"{exchange}_{symbol}_aggtrades_{timeframe}.parquet"
+            alt_path = Path("data/training") / f"{exchange}_{symbol}_klines_{timeframe}.parquet"
             if alt_path.exists():
                 data = standardized_parquet_handler.read_parquet_standardized(alt_path)
                 self.logger.info(f'✅ Loaded data: {len(data)} records from {alt_path}')
@@ -1792,6 +1822,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info('🎯 Executing standard HMM regime discovery pipeline...')
 
         step_start = time.time()
+        sr_elapsed = 0.0  # Initialize SR timing variable
 
         if PSUTIL_AVAILABLE:
             initial_memory = psutil.virtual_memory()
@@ -1835,7 +1866,7 @@ class HMMRegimeDiscoveryStep:
             timeframe = training_input.get('timeframe', '1m')
             data_dir = training_input.get('data_dir')
             if data_dir is None:
-                data_dir = 'data_cache'
+                data_dir = 'historical_data'
             self.logger.info('=' * 60)
             self.logger.info('STEP 3: Automatic Parameter Optimization')
             self.logger.info('=' * 60)
@@ -1924,7 +1955,7 @@ class HMMRegimeDiscoveryStep:
             symbol = training_input.get('symbol', get_default_symbol())
             exchange = training_input.get('exchange', 'BINANCE')
             timeframe = training_input.get('timeframe', '1m')
-            data_dir = training_input.get('data_dir', 'data_cache')
+            data_dir = training_input.get('data_dir', 'historical_data')
             if 'composite_df' in regime_results:
                 composite_df = regime_results['composite_df']
                 artifact_name = log_step_dataframe_with_standardized_name(config = self.config, step_name='step03_hmm_regime_discovery', df = composite_df, artifact_type='composite_clusters', additional_metadata={'artifact_type': 'composite_clusters', 'dataframe_shape': list(composite_df.shape), 'regime_count': len(composite_df.get('composite_cluster_id', []).unique()) if 'composite_cluster_id' in composite_df.columns else 0, 'timeframe': timeframe})
@@ -2048,7 +2079,7 @@ class HMMRegimeDiscoveryStep:
                 self.logger.info(f'🎯 Validating data quality for {symbol} on {exchange} ({timeframe})...')
                 
                 # Load data for quality assessment
-                data_path = f"data_cache/{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+                data_path = f"historical_data/{exchange}_{symbol}_{timeframe}_consolidated.parquet"
                 try:
                     import pandas as pd
                     data = pd.read_parquet(data_path)
@@ -2188,39 +2219,99 @@ class HMMRegimeDiscoveryStep:
             timeframe = training_input.get('timeframe', '1m')
             data_dir = training_input.get('data_dir')
             if data_dir is None:
-                data_dir = 'data_cache'
+                data_dir = 'data/training'
             self.logger.info(f'📊 Loading and preparing data for HMM...')
             self.logger.info(f'   Symbol: {symbol}')
             self.logger.info(f'   Exchange: {exchange}')
             self.logger.info(f'   Timeframe: {timeframe}')
             self.logger.info(f'   Data directory: {data_dir}')
-            klines_file = self.standards.generate_file_name('klines', exchange, symbol, timeframe)
-            klines_path = Path(data_dir) / klines_file
-            self.logger.info(f'📁 Looking for klines file: {klines_path}')
-            if not klines_path.exists():
-                self.logger.error(f'❌ Klines file not found: {klines_path}')
-                return {'success': False, 'error': f'Klines file not found: {klines_path}'}
-            self.logger.info('📥 Loading klines data from parquet file...')
-            df = standardized_parquet_handler.read_parquet_standardized(klines_path)
-            df = self.standards.standardize_timestamp(df, 'timestamp')
-            df = self.standards.enforce_schema(df, 'klines')
-            validation_result = self.standards.validate_data_quality(df, 'klines')
-            if validation_result.passed:
-                self.logger.info(f'✅ Data validation passed (quality score: {validation_result.quality_score:.2f})')
-            else:
-                self.logger.warning(f'⚠️ Data validation found issues:')
-                for issue in validation_result.issues[:3]:
-                    self.logger.warning(f'   - {issue.message}')
-            if df.empty:
-                self.logger.error('❌ Klines data is empty')
-                return {'success': False, 'error': 'Klines data is empty'}
-            self.logger.info(f'✅ Klines data loaded: {len(df):,} rows, {len(df.columns)} columns')
-            self.logger.info(f'📊 Data columns: {list(df.columns)}')
+
+            # Use ParquetUtils to find and load OHLCV data
+            from src.steps.data_collection.klines_data import get_parquet_utils
+            pu = get_parquet_utils()
+
+            # Search for files with OHLCV data in the unified directory structure
+            unified_dir = Path(data_dir) / 'unified' / exchange.lower() / symbol.upper() / timeframe
+            ohlcv_files = []
+
+            if unified_dir.exists():
+                self.logger.info(f'🔍 Searching for OHLCV data in: {unified_dir}')
+                for parquet_file in unified_dir.glob("**/*.parquet"):
+                    try:
+                        result = pu.validate_parquet_file(str(parquet_file))
+                        if (result['valid'] and
+                            'open' in result['columns'] and 'high' in result['columns'] and
+                            'low' in result['columns'] and 'close' in result['columns'] and
+                            'volume' in result['columns']):
+                            ohlcv_files.append(str(parquet_file))
+                    except Exception as e:
+                        self.logger.debug(f'Skipping file {parquet_file}: {e}')
+                        continue
+
+            if not ohlcv_files:
+                self.logger.warning(f'⚠️ No OHLCV files found in unified directory, searching broader data directory')
+                # Fallback: search in the broader data directory for files with OHLCV
+                import os
+                for root, dirs, files in os.walk(data_dir):
+                    for file in files:
+                        if file.endswith('.parquet'):
+                            file_path = os.path.join(root, file)
+                            try:
+                                result = pu.validate_parquet_file(file_path)
+                                if (result['valid'] and
+                                    'open' in result['columns'] and 'high' in result['columns'] and
+                                    'low' in result['columns'] and 'close' in result['columns'] and
+                                    'volume' in result['columns'] and
+                                    not 'features' in file_path):  # Avoid features files
+                                    ohlcv_files.append(file_path)
+                            except Exception as e:
+                                continue
+
+            if not ohlcv_files:
+                self.logger.error(f'❌ No OHLCV data files found in {data_dir}')
+                return {'success': False, 'error': f'No OHLCV data files found in {data_dir}'}
+
+            self.logger.info(f'📁 Found {len(ohlcv_files)} OHLCV data files')
+
+            # Load and combine data from multiple files if needed
+            data_frames = []
+            for file_path in ohlcv_files[:10]:  # Limit to first 10 files to avoid memory issues
+                try:
+                    df = pu.safe_read_parquet(file_path)
+                    if df is not None and len(df) > 0:
+                        data_frames.append(df)
+                        self.logger.info(f'✅ Loaded {len(df)} rows from {os.path.basename(file_path)}')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Failed to load {file_path}: {e}')
+                    continue
+
+            if not data_frames:
+                self.logger.error('❌ Failed to load any OHLCV data')
+                return {'success': False, 'error': 'Failed to load any OHLCV data'}
+
+            # Combine all data frames
+            df = pd.concat(data_frames, ignore_index=True)
+            df = df.sort_values('timestamp').drop_duplicates(subset=['timestamp']).reset_index(drop=True)
+
+            self.logger.info(f'📊 Combined data: {len(df)} rows, {len(df.columns)} columns')
+
+            # Ensure required columns exist
             required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
                 self.logger.error(f'❌ Missing required columns: {missing_columns}')
                 return {'success': False, 'error': f'Missing required columns: {missing_columns}'}
+
+            # Basic data validation
+            df = self.standards.standardize_timestamp(df, 'timestamp')
+            df = self.standards.enforce_schema(df, 'klines')
+
+            # Remove any non-OHLCV columns that might cause issues
+            keep_columns = required_columns + ['exchange', 'symbol', 'timeframe', 'year', 'month', 'day']
+            df = df[[col for col in df.columns if col in keep_columns]]
+
+            self.logger.info(f'✅ OHLCV data prepared: {len(df):,} rows, {len(df.columns)} columns')
+            self.logger.info(f'📊 Final columns: {list(df.columns)}')
             self.logger.info('✅ All required columns present')
             # Validate input data for zero values (data quality check)
             zero_volume_count = (df['volume'] == 0).sum()
@@ -2260,7 +2351,7 @@ class HMMRegimeDiscoveryStep:
             timeframe = training_input.get('timeframe', '1m')
             data_dir = training_input.get('data_dir')
             if data_dir is None:
-                data_dir = 'data_cache'
+                data_dir = 'historical_data'
 
             self.logger.info(f'📊 Loading and preparing data for HMM with SR enhancement...')
             self.logger.info(f'   Symbol: {symbol}')
@@ -3641,15 +3732,19 @@ class HMMRegimeDiscoveryStep:
             self.logger.info('🎯 Phase 5: Generating comprehensive reports...')
             # Use Step03EnhancedReporter for proper HMM reporting
             try:
-                from src.training.steps.market_analysis.step04_financial_logging import Step04FinancialloggingFinancialLogger as Step03FinancialLogger
+                # Try to import the financial logger (may not exist in all versions)
+                Step03FinancialLogger = None
+                # Commented out due to missing module
+                # from src.training.steps.market_analysis.step04_financial_logging import Step04FinancialloggingFinancialLogger as Step03FinancialLogger
 
-                # Get symbol, exchange, timeframe from config
-                symbol = self.config.get('SYMBOL', 'UNKNOWN')
-                exchange = self.config.get('EXCHANGE', 'UNKNOWN')
-                timeframe = self.config.get('TIMEFRAME', '30m')
+                if Step03FinancialLogger is not None:
+                    # Get symbol, exchange, timeframe from config
+                    symbol = self.config.get('SYMBOL', 'UNKNOWN')
+                    exchange = self.config.get('EXCHANGE', 'UNKNOWN')
+                    timeframe = self.config.get('TIMEFRAME', '30m')
 
-                # Initialize the financial logger
-                financial_logger = Step03FinancialLogger()
+                    # Initialize the financial logger
+                    financial_logger = Step03FinancialLogger()
 
                 # Prepare HMM results for enhanced reporting
                 hmm_results = {
@@ -4526,7 +4621,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
     try:
         logger = system_logger.getChild('Step3HMMRegimeDiscovery')
         if data_dir is None:
-            data_dir = 'data_cache'
+            data_dir = 'historical_data'
             tprint(f"📁 Data directory set to default: {data_dir}")
         
         logger.info('=' * 80)
@@ -4991,10 +5086,21 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
     async def _load_feature_data_for_optimization(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load feature data for optimization."""
         try:
-            feature_file = Path(data_dir) / f'{exchange}_{symbol}_{timeframe}_features.parquet'
-            if feature_file.exists():
-                self.logger.info(f'📂 Loading feature data from: {feature_file}')
-                return standardized_parquet_handler.read_parquet_standardized(feature_file)
+            # Try multiple possible feature file locations
+            possible_paths = [
+                # New correct path structure
+                Path(data_dir) / exchange.lower() / symbol.lower() / 'processed' / f'{symbol.lower()}_{timeframe}' / f'features_{symbol.lower()}_{timeframe}_consolidated.parquet',
+                # Old path structure for backward compatibility
+                Path(data_dir) / f'{exchange}_{symbol}_{timeframe}_features.parquet',
+                # Alternative consolidated path
+                Path(data_dir) / f'features_{exchange}_{symbol}_consolidated.parquet'
+            ]
+
+            for feature_file in possible_paths:
+                if feature_file.exists():
+                    self.logger.info(f'📂 Loading feature data from: {feature_file}')
+                    return standardized_parquet_handler.read_parquet_standardized(feature_file)
+
             self.logger.info('📂 Feature file not found, creating basic features from raw data')
             raw_data = await self._load_data(symbol, exchange, timeframe, data_dir)
             if raw_data is not None and (not raw_data.empty):
@@ -5172,11 +5278,11 @@ if __name__ == '__main__':
             symbol = sys.argv[1]
             exchange = sys.argv[2]
             timeframe = sys.argv[3]
-            data_dir = sys.argv[4] if len(sys.argv) > 4 else 'data_cache'
+            data_dir = sys.argv[4] if len(sys.argv) > 4 else 'historical_data'
             force_rerun = len(sys.argv) > 5 and sys.argv[5].lower() == 'true'
         else:
             tprint('Usage: python step3_hmm_regime_discovery.py <symbol> <exchange> <timeframe> [data_dir] [force_rerun]')
-            tprint(f'Example: python step3_hmm_regime_discovery.py {get_default_symbol()} BINANCE 1m data_cache true')
+            tprint(f'Example: python step3_hmm_regime_discovery.py {get_default_symbol()} BINANCE 1m historical_data true')
             return
         tprint('=' * 80)
         tprint('🚀 STEP 3: HMM Regime Discovery - Command Line Execution')

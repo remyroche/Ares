@@ -91,7 +91,7 @@ def get_training_config() -> dict[str, Any]:
             "correlation_threshold": 0.8,
             "min_variance": 0.01,
             "max_features": 500,
-            "output_dir": "data/training",
+            "output_dir": "historical_data",
         },
         # --- Step 7 Enhanced Matrix Operations Configuration ---
         "step07_enhanced_matrix_operations": {

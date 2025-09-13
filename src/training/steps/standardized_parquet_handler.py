@@ -79,7 +79,6 @@ class StandardizedParquetHandler:
             'min_price': 'float64',
             'max_price': 'float64',
             'volume_ratio': 'float64',
-            'funding_rate': 'float64',
             'is_buyer_maker': 'bool',
             'first_trade_id': 'int64',
             'last_trade_id': 'int64',
@@ -290,38 +289,49 @@ class StandardizedParquetHandler:
             return self.get_standardized_path(path_type, exchange, symbol, timeframe, **kwargs)
     
     def get_standardized_path(
-        self, 
-        path_type: str, 
-        exchange: str, 
-        symbol: str, 
+        self,
+        path_type: str,
+        exchange: str,
+        symbol: str,
         timeframe: str = '1m',
         **kwargs
     ) -> str:
         """Get standardized file path using pipeline standards.
-        
+
         Args:
             path_type: Type of path (raw_data, unified_data, processed_data, etc.)
             exchange: Exchange name
             symbol: Asset symbol
             timeframe: Timeframe
             **kwargs: Additional path parameters
-            
+
         Returns:
             Standardized path string
         """
         try:
-            # Use pipeline standards for path building
-            base_path = self.standards.build_path(path_type, exchange, symbol, timeframe=timeframe, **kwargs)
-            
+            # Handle training-specific paths to use correct data directory
+            if path_type in ['training', 'unified_data', 'processed_data', 'raw_data']:
+                # Override training paths to use data/training instead of data_cache
+                base_path = f"data/training/{exchange.lower()}/{symbol.lower()}"
+                if path_type == 'unified_data':
+                    base_path += f"/{timeframe}"
+                elif path_type == 'processed_data':
+                    base_path += "/processed"
+                elif path_type == 'raw_data':
+                    base_path += "/raw"
+            else:
+                # Use pipeline standards for other path types
+                base_path = self.standards.build_path(path_type, exchange, symbol, timeframe=timeframe, **kwargs)
+
             # Ensure the path exists
             Path(base_path).mkdir(parents=True, exist_ok=True)
-            
+
             return base_path
-            
+
         except Exception as e:
             self.logger.error(f"Error building standardized path: {e}")
-            # Fallback to simple path structure
-            fallback_path = f"data_cache/{exchange.lower()}/{symbol.lower()}"
+            # Fallback to training data directory structure
+            fallback_path = f"data/training/{exchange.lower()}/{symbol.lower()}"
             if path_type == 'unified_data':
                 fallback_path += f"/{timeframe}"
             Path(fallback_path).mkdir(parents=True, exist_ok=True)
@@ -354,30 +364,37 @@ class StandardizedParquetHandler:
             # Fallback filename pattern
             return f"{file_type}_{exchange}_{symbol}_{timeframe}.parquet"
     
-    def standardize_columns(self, df: 'pd.DataFrame') -> 'pd.DataFrame':
+    def standardize_columns(self, df: 'pd.DataFrame', schema_name: str = 'unified') -> 'pd.DataFrame':
         """Standardize column names in DataFrame.
-        
+
         Args:
             df: DataFrame to standardize
-            
+            schema_name: Schema name to determine appropriate column mappings
+
         Returns:
             DataFrame with standardized column names
         """
         if df is None or df.empty:
             return df
-            
+
         df = df.copy()
-        
+
         # Apply column mappings
         column_renames = {}
         for old_name, new_name in self.column_mappings.items():
             if old_name in df.columns and new_name not in df.columns:
                 column_renames[old_name] = new_name
-        
+
+        # Special handling for aggtrades: map 'close' back to 'price' if needed
+        if schema_name == 'aggtrades':
+            if 'close' in df.columns and 'price' not in df.columns:
+                column_renames['close'] = 'price'
+                self.logger.info("🔄 Mapping 'close' to 'price' for aggtrades schema")
+
         if column_renames:
             df = df.rename(columns=column_renames)
             self.logger.info(f"Renamed columns: {column_renames}")
-        
+
         return df
     
     def standardize_dtypes(self, df: 'pd.DataFrame', schema_name: str = 'unified') -> 'pd.DataFrame':
@@ -447,15 +464,17 @@ class StandardizedParquetHandler:
     
     def validate_data_quality(self, df: 'pd.DataFrame', schema_name: str = 'unified') -> Dict[str, Any]:
         """Validate data quality using pipeline standards.
-        
+
         Args:
             df: DataFrame to validate
             schema_name: Schema name for validation
-            
+
         Returns:
             Validation results dictionary
         """
         try:
+            # Standardize columns before validation
+            df = self.standardize_columns(df, schema_name)
             validation_result = self.standards.validate_data_quality(df, schema_name)
             
             return {
@@ -518,7 +537,7 @@ class StandardizedParquetHandler:
                 return None
             
             # Standardize the data
-            df = self.standardize_columns(df)
+            df = self.standardize_columns(df, schema_name)
             df = self.standardize_timestamp(df)
             df = self.standardize_dtypes(df, schema_name)
             
@@ -582,7 +601,7 @@ class StandardizedParquetHandler:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             
             # Standardize the data before writing
-            df = self.standardize_columns(df)
+            df = self.standardize_columns(df, schema_name)
             df = self.standardize_timestamp(df)
             df = self.standardize_dtypes(df, schema_name)
             

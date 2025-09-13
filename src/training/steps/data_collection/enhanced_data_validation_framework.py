@@ -8,9 +8,11 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 Enhanced Data Validation Framework for Data Collection
 
 This module provides comprehensive validation during data collection for:
-- Klines data
-- Aggtrades data
-- Futures data
+- Klines data (PRIMARY - per new setup)
+- Aggtrades data (DEPRECATED - not used in new klines-only setup)
+- Futures data (DEPRECATED - not used in new klines-only setup)
+
+NOTE: Per new setup, only klines data validation is actively used.
 
 Features:
 - Schema enforcement with field mapping
@@ -500,12 +502,6 @@ def create_futures_schema() -> DataSchema:
                 dtype='int64',
                 source_mapping={'binance': 'fundingTime', 'coinbase': 'timestamp', 'kraken': 'time'}
             ),
-            FieldDefinition(
-                name='funding_rate',
-                dtype='float64',
-                allow_zero=True,
-                source_mapping={'binance': 'fundingRate', 'coinbase': 'funding_rate', 'kraken': 'funding_rate'}
-            ),
             FieldDefinition(name='exchange', dtype='string', required=True),
             FieldDefinition(name='symbol', dtype='string', required=True)
         ],
@@ -518,22 +514,22 @@ def create_futures_schema() -> DataSchema:
     )
 
 def create_unified_schema() -> DataSchema:
-    """Create standardized unified schema."""
+    """Create standardized unified schema - klines-only per new setup."""
     klines_schema = create_klines_schema()
-    aggtrades_schema = create_aggtrades_schema()
-    futures_schema = create_futures_schema()
     all_fields = []
     all_fields.extend(klines_schema.fields)
-    for field in aggtrades_schema.fields:
-        if field.name not in [f.name for f in all_fields]:
-            field.required = False
-            all_fields.append(field)
-    for field in futures_schema.fields:
-        if field.name not in [f.name for f in all_fields]:
-            field.required = False
-            all_fields.append(field)
-    all_fields.extend([FieldDefinition(name='trade_volume', dtype='float64', required = False, default_value = 0.0, min_value = 0.0, allow_zero = True), FieldDefinition(name='trade_count', dtype='int64', required = False, default_value = 0, min_value = 0, allow_zero = True), FieldDefinition(name='avg_price', dtype='float64', required = False, default_value = 0.0, min_value = 0.0, allow_zero = True), FieldDefinition(name='min_price', dtype='float64', required = False, default_value = 0.0, min_value = 0.0, allow_zero = True), FieldDefinition(name='max_price', dtype='float64', required = False, default_value = 0.0, min_value = 0.0, allow_zero = True), FieldDefinition(name='volume_ratio', dtype='float64', required = False, default_value = 0.0, allow_zero = True)])
-    return DataSchema(data_type = DataType.UNIFIED, fields = all_fields, primary_key=['timestamp', 'exchange', 'symbol', 'timeframe'], time_gap_config = TimeGapConfig(max_gap_seconds = 66.0, tolerance_seconds = 5.0, severity = ValidationSeverity.HIGH))
+
+    # NOTE: Since we don't collect aggtrades, skip adding trade-related columns to avoid constant features
+    # These columns were previously from aggtrades schema but are now omitted when no aggtrades data exists
+    # This prevents the data cleaner from removing them as constant features
+    pass
+
+    return DataSchema(
+        data_type=DataType.UNIFIED,
+        fields=all_fields,
+        primary_key=['timestamp', 'exchange', 'symbol', 'timeframe'],
+        time_gap_config=TimeGapConfig(max_gap_seconds=66.0, tolerance_seconds=5.0, severity=ValidationSeverity.HIGH)
+    )
 SCHEMA_REGISTRY = {DataType.KLINES: create_klines_schema(), DataType.AGGTRADES: create_aggtrades_schema(), DataType.FUTURES: create_futures_schema(), DataType.UNIFIED: create_unified_schema()}
 
 def get_validator(data_type: DataType) -> EnhancedDataValidator:

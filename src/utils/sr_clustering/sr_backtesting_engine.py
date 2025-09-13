@@ -243,10 +243,16 @@ class SRBacktestingEngine:
                 volume_threshold_multiplier = 1.5
             
             # Calculate time characteristics
-            if 'timestamp' in data.columns:
+            if isinstance(data.index, pd.DatetimeIndex):
+                time_diffs = data.index.to_series().diff().dt.total_seconds() / 3600  # Convert to hours
+                avg_time_diff = time_diffs.mean()
+
+                # Max hold time: 24 hours or 10x average time between bars
+                max_hold_time = max(1, min(24, int(avg_time_diff * 10)))
+            elif 'timestamp' in data.columns:
                 time_diffs = data['timestamp'].diff().dt.total_seconds() / 3600  # Convert to hours
                 avg_time_diff = time_diffs.mean()
-                
+
                 # Max hold time: 24 hours or 10x average time between bars
                 max_hold_time = max(1, min(24, int(avg_time_diff * 10)))
             else:
@@ -2498,6 +2504,7 @@ class SRBacktestingEngine:
                     features[attr].append(getattr(result, attr, 0.0))
             
             # Calculate correlations with quality scores
+            from scipy.stats import pearsonr
             quality_scores = [r.quality_score for r in results]
             correlations = {}
             
@@ -2583,6 +2590,7 @@ class SRBacktestingEngine:
             # Use simple linear regression with high regularization
             from sklearn.linear_model import Ridge
             from sklearn.preprocessing import StandardScaler
+            from sklearn.metrics import r2_score
             
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)

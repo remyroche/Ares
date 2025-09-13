@@ -130,7 +130,7 @@ class RegimeContinuityManager:
         _check_pandas_available()
         'Load regime data from step 4.\n        \n        Args:\n            symbol: Trading symbol\n            exchange: Exchange name\n            timeframe: Timeframe\n            data_dir: Data directory\n            \n        Returns:\n            Regime DataFrame or None\n        '
         try:
-            training_dir = Path(data_dir) / 'training'
+            training_dir = Path(data_dir) / exchange.lower() / symbol.lower() / 'training'
             regime_file = training_dir / f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet'
             if not regime_file.exists():
                 self.logger.error(f'❌ Regime data not found: {regime_file}')
@@ -323,7 +323,7 @@ class RegimeContinuityManager:
             data_dir: Data directory
         """
         try:
-            training_dir = Path(data_dir) / 'training'
+            training_dir = Path(data_dir) / exchange.lower() / symbol.lower() / 'training'
             training_dir.mkdir(parents = True, exist_ok = True)
             regime_metadata_file = training_dir / f'{exchange}_{symbol}_{timeframe}_regime_continuity_metadata.json'
             regime_data = {regime_id: {**asdict(metadata), 'status': metadata.status.value, 'step_status': {step: status.value for step, status in metadata.step_status.items()}} for regime_id, metadata in self.regime_metadata.items()}

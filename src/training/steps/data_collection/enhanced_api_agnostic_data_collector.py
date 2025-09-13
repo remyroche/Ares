@@ -35,10 +35,12 @@ from src.utils.error_handler import handles_errors
 from src.utils.common_operations import safe_fillna, safe_to_parquet, safe_read_parquet
 from src.utils.common_utilities import validate_dataframe_columns, safe_dataframe_operation
 from src.utils.validation import validate_data_quality
-from src.utils.enhanced_data_validation import (
-    DataType, EnhancedDataValidator, get_validator, ValidationSeverity
-)
+from src.utils.validation import UnifiedValidator, ValidationConfig
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.core.decorators import traced
+from src.utils.hardware.memory_optimization import memory_efficient
+from src.utils.enhanced_mlflow_integration import with_enhanced_mlflow_logging
+from typing import List, Dict, Any, Optional, Tuple
 import logging
 import numpy as np
 import typing
@@ -265,8 +267,8 @@ class IncrementalDataDownloader:
                 return False, [], None
             
             # Validate data
-            validator = get_validator(DataType(data_type), self.exchange)
-            validated_data = validator.validate_batch(raw_data, self.last_timestamp)
+            validator = UnifiedValidator(ValidationConfig())
+            validated_data = validator.validate_dataframe(raw_data)
             
             if not validated_data:
                 self.logger.error(f"❌ Data validation failed for {data_type}")
@@ -320,15 +322,11 @@ class IncrementalDataDownloader:
                 trade_symbol = self.symbol
             )
             
-            # Download data based on type
+            # Download data based on type - only klines supported per new setup
             if data_type == 'klines':
                 raw_data = await self._download_klines(exchange_instance, start_timestamp, end_timestamp, batch_size)
-            elif data_type == 'aggtrades':
-                raw_data = await self._download_aggtrades(exchange_instance, start_timestamp, end_timestamp, batch_size)
-            elif data_type == 'futures':
-                raw_data = await self._download_futures(exchange_instance, start_timestamp, end_timestamp, batch_size)
             else:
-                raise ValueError(f"Unsupported data type: {data_type}")
+                raise ValueError(f"Unsupported data type: {data_type} - only 'klines' supported per new setup")
             
             self.logger.info(f"✅ Downloaded {len(raw_data)} {data_type} records from {self.exchange}")
             return raw_data
@@ -376,41 +374,15 @@ class IncrementalDataDownloader:
     
     @handles_errors(fallback=[], context="download_aggtrades")
     async def _download_aggtrades(self, exchange_instance, start_timestamp: int, end_timestamp: int, batch_size: int) -> List[Dict[str, Any]]:
-        """Download aggtrades data from exchange."""
-        try:
-            # Convert timestamps to datetime
-            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc = True)
-            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc = True)
-            
-            self.logger.info(f"📊 Downloading aggtrades from {start_dt} to {end_dt}")
-            
-            # Download aggtrades data (this would need to be implemented in the exchange interface)
-            # For now, return empty list as aggtrades might not be available in all exchanges
-            self.logger.warning(f"⚠️ Aggtrades download not implemented for {self.exchange}")
-            return []
-            
-        except Exception as e:
-            self.logger.exception(f"❌ Error downloading aggtrades: {e}")
-            return []
+        """Download aggtrades data from exchange - DEPRECATED: Not used in new klines-only setup."""
+        self.logger.warning("⚠️ Aggtrades download is deprecated per new setup - only klines are supported")
+        return []
     
     @handles_errors(fallback=[], context="download_futures")
     async def _download_futures(self, exchange_instance, start_timestamp: int, end_timestamp: int, batch_size: int) -> List[Dict[str, Any]]:
-        """Download futures data from exchange."""
-        try:
-            # Convert timestamps to datetime
-            start_dt = pd.to_datetime(start_timestamp, unit='ms', utc = True)
-            end_dt = pd.to_datetime(end_timestamp, unit='ms', utc = True)
-            
-            self.logger.info(f"📊 Downloading futures from {start_dt} to {end_dt}")
-            
-            # Download futures data (this would need to be implemented in the exchange interface)
-            # For now, return empty list as futures might not be available in all exchanges
-            self.logger.warning(f"⚠️ Futures download not implemented for {self.exchange}")
-            return []
-            
-        except Exception as e:
-            self.logger.exception(f"❌ Error downloading futures: {e}")
-            return []
+        """Download futures data from exchange - DEPRECATED: Not used in new klines-only setup."""
+        self.logger.warning("⚠️ Futures download is deprecated per new setup - only klines are supported")
+        return []
     
     @handles_errors(fallback={}, context="get_download_summary")
     def get_download_summary(self) -> Dict[str, Any]:
@@ -472,11 +444,11 @@ class EnhancedAPIAgnosticDataCollector:
     @traced(span_name="collect_data_for_period", log_args = False, log_result_len_only = True)
     @with_enhanced_mlflow_logging
     async def collect_data_for_period(
-        self, 
-        start_time: datetime, 
-        end_time: datetime, 
+        self,
+        start_time: datetime,
+        end_time: datetime,
         data_types: List[str] = None,
-        data_dir: str = "data_cache"
+        data_dir: str = "historical_data"
     ) -> Dict[str, Any]:
         """
         Collect data for a specific time period.
@@ -484,18 +456,18 @@ class EnhancedAPIAgnosticDataCollector:
         Args:
             start_time: Start time for data collection
             end_time: End time for data collection
-            data_types: List of data types to collect (default: ['klines'])
+            data_types: List of data types to collect (default: ['klines'] - only klines per new setup)
             data_dir: Directory to save data
             
         Returns:
             Collection summary
         """
         if data_types is None:
-            data_types = ['klines']
-        
+            data_types = ['klines']  # Only klines as per new setup - aggtrades and futures removed
+
         collection_start = time.time()
         self.collection_stats['collection_start_time'] = collection_start
-        
+
         self.logger.info(f"📅 Collecting data for period: {start_time} to {end_time}")
         self.logger.info(f"📊 Data types: {data_types}")
         
@@ -578,7 +550,7 @@ class EnhancedAPIAgnosticDataCollector:
     async def collect_incremental_data(
         self, 
         data_types: List[str] = None,
-        data_dir: str = "data_cache",
+        data_dir: str = "historical_data",
         max_batches: int = 10
     ) -> Dict[str, Any]:
         """
@@ -593,11 +565,11 @@ class EnhancedAPIAgnosticDataCollector:
             Collection summary
         """
         if data_types is None:
-            data_types = ['klines']
-        
+            data_types = ['klines']  # Only klines as per new setup - aggtrades and futures removed
+
         collection_start = time.time()
         self.collection_stats['collection_start_time'] = collection_start
-        
+
         self.logger.info(f"🔄 Starting incremental data collection")
         self.logger.info(f"📊 Data types: {data_types}")
         self.logger.info(f"📦 Max batches: {max_batches}")
@@ -697,7 +669,7 @@ class EnhancedAPIAgnosticDataCollector:
     @traced(span_name="detect_and_fill_gaps", log_args = False, log_result_len_only = True)
     async def detect_and_fill_gaps(
         self, 
-        data_dir: str = "data_cache",
+        data_dir: str = "historical_data",
         data_types: List[str] = None
     ) -> Dict[str, Any]:
         """
@@ -711,8 +683,8 @@ class EnhancedAPIAgnosticDataCollector:
             Gap detection and filling summary
         """
         if data_types is None:
-            data_types = ['klines']
-        
+            data_types = ['klines']  # Only klines as per new setup - aggtrades and futures removed
+
         self.logger.info(f"🔍 Detecting and filling gaps in {data_types}")
         
         gap_results = {}
@@ -851,7 +823,10 @@ class EnhancedAPIAgnosticDataCollector:
             
             # Convert to DataFrame and save
             df = pd.DataFrame(data)
-            standardized_parquet_handler.write_parquet_standardized(df, filepath, index=False)
+
+            # Use appropriate schema based on data type
+            schema_name = 'aggtrades' if data_type == 'aggtrades' else 'unified'
+            standardized_parquet_handler.write_parquet_standardized(df, filepath, schema_name=schema_name, index=False)
             
             self.logger.info(f"💾 Saved {len(data)} {data_type} rows to {filename}")
             
@@ -910,7 +885,7 @@ async def collect_incremental_data(
     symbol: str,
     timeframe: str,
     data_types: List[str] = None,
-    data_dir: str = "data_cache",
+    data_dir: str = "historical_data",
     max_batches: int = 10
 ) -> Dict[str, Any]:
     """Collect data incrementally."""
@@ -923,7 +898,7 @@ async def detect_and_fill_gaps(
     exchange: str,
     symbol: str,
     timeframe: str,
-    data_dir: str = "data_cache",
+    data_dir: str = "historical_data",
     data_types: List[str] = None
 ) -> Dict[str, Any]:
     """Detect and fill gaps in existing data."""

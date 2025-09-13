@@ -107,7 +107,7 @@ class DataFormatConverter:
             self.logger.info('📋 Using split schema: timestamp + label')
         elif schema_name == 'unified':
             conversions = {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8'}
-            optional_columns = {'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64', 'funding_rate': 'float64'}
+            optional_columns = {'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64'}
             self.logger.info('📋 Using unified schema: comprehensive market data')
         else:
             self.logger.warning(f'⚠️ Unknown schema name: {schema_name}')

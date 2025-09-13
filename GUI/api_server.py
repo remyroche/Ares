@@ -1917,7 +1917,7 @@ async def get_data_status():
     try:
         # Check for data files
         data_files = []
-        data_dir = "data_cache"
+        data_dir = "historical_data"
         if os.path.exists(data_dir):
             for file in os.listdir(data_dir):
                 if file.endswith('.parquet') or file.endswith('.csv'):

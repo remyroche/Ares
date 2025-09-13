@@ -1,238 +1,377 @@
-# Data Utilities - Consolidated Structure
+# Historical Data Pipeline for Binance Klines
 
-This directory contains consolidated data processing, quality validation, and cleaning utilities for the Ares trading system.
+A comprehensive toolkit for downloading, processing, and managing historical Binance klines data with gap detection, feature engineering, and optimized parquet storage.
 
-## Overview
+## Features
 
-The data utilities have been consolidated from 12+ files into 6 core modules to eliminate redundancy and improve maintainability:
-
-### Before (12+ files):
-- `enhanced_data_quality_validator.py`
-- `data_quality_framework.py`
-- `data_qualification_base.py`
-- `cleaners.py`
-- `optimizers.py`
-- `data_quality_fixer.py`
-- `enhanced_missing_value_handler.py`
-- `enhanced_outlier_handler.py`
-- And more...
-
-### After (6 core modules):
-- `quality/data_quality.py` - Unified data quality validation
-- `processing/data_processing.py` - Data processing and optimization
-- `quality/data_cleaning.py` - Missing value handling and outlier detection
-- `processing/transformers.py` - Data streaming and chunking
-- `validation/validators.py` - Cross-step validation
-- `unified_data_utils.py` - Single interface for all operations
+- **Historical Data Download**: Download 3 years of Binance klines data with monthly parquet files
+- **Gap Detection & Filling**: Automatically detect and fill data gaps over 1 minute
+- **Feature Engineering**: Add price returns, volume returns, technical indicators, and more
+- **Multi-timeframe Resampling**: Resample data to 5m, 15m, 30m, 1h with proper aggregation
+- **Optimized Storage**: Use parquet partitioning for efficient storage and access
+- **Unified API**: Single interface for all data operations
+- **CLI Interface**: Easy-to-use command-line tools
 
 ## Quick Start
 
-### Using the Unified Interface (Recommended)
+### 1. Download Historical Data
 
 ```python
-from src.utils.data import UnifiedDataUtils
+from src.utils.data.historical_data_downloader import download_ethusdt_historical_data
 
-# Initialize the unified interface
-data_utils = UnifiedDataUtils()
+# Download 3 years of ETHUSDT data
+success = await download_ethusdt_historical_data(
+    years=3,
+    data_dir="historical_data",
+    api_key="your_api_key",  # Optional
+    api_secret="your_api_secret"  # Optional
+)
+```
 
-# Process and validate data in one go
-processed_data, report = data_utils.process_and_validate(
-    data=raw_data,
-    validate_quality=True,
-    clean_missing_values=True,
-    detect_outliers=True,
-    optimize_dtypes=True
+### 2. Check and Fill Gaps
+
+```python
+from src.utils.data.gap_detector import detect_and_fill_gaps
+
+# Detect and fill gaps
+results = await detect_and_fill_gaps(
+    symbol="ETHUSDT",
+    interval="1m",
+    max_gap_minutes=1,
+    data_dir="historical_data"
+)
+```
+
+### 3. Feature Engineering and Resampling
+
+```python
+from src.utils.data.feature_engineer import process_ethusdt_data
+
+# Process data with feature engineering
+results = process_ethusdt_data(
+    data_dir="historical_data",
+    target_intervals=["5m", "15m", "30m", "1h"]
+)
+```
+
+### 4. Access Data
+
+```python
+from src.utils.data.klines_parquet import read_ethusdt_data
+
+# Read raw data
+raw_data = read_ethusdt_data(
+    interval="1m",
+    start_date=datetime(2023, 1, 1),
+    end_date=datetime(2023, 12, 31),
+    data_type="raw"
 )
 
-print(f"Processing completed: {report['success']}")
-print(f"Quality score: {report['quality_results']['final']['quality_score']}")
+# Read processed data
+processed_data = read_ethusdt_data(
+    interval="5m",
+    data_type="processed"
+)
 ```
 
-### Using Individual Components
+## Command Line Interface
+
+The CLI provides easy access to all functionality:
+
+```bash
+# Download 3 years of ETHUSDT data
+python src/utils/data/cli.py download --symbol ETHUSDT --years 3
+
+# Check for gaps and fill them
+python src/utils/data/cli.py gap-check --symbol ETHUSDT --fill
+
+# Process data with feature engineering
+python src/utils/data/cli.py process --symbol ETHUSDT --intervals 5m 15m 30m 1h
+
+# Run complete pipeline
+python src/utils/data/cli.py pipeline --symbol ETHUSDT --years 3 --intervals 5m 15m 30m 1h
+
+# Check status
+python src/utils/data/cli.py status --symbol ETHUSDT
+
+# Get detailed info
+python src/utils/data/cli.py info --symbol ETHUSDT --interval 1m --data-type raw
+
+# List all available data
+python src/utils/data/cli.py list
+```
+
+## Complete Pipeline
+
+For a complete end-to-end solution:
 
 ```python
-from src.utils.data import (
-    DataQualityFramework,
-    DataProcessor,
-    DataCleaner
+from src.utils.data.historical_data_pipeline import run_ethusdt_pipeline
+
+# Run complete pipeline
+results = await run_ethusdt_pipeline(
+    years=3,
+    data_dir="historical_data",
+    api_key="your_api_key",  # Optional
+    api_secret="your_api_secret",  # Optional
+    target_intervals=["5m", "15m", "30m", "1h"]
+)
+```
+
+## Data Structure
+
+The pipeline creates the following directory structure:
+
+```
+historical_data/
+└── binance/
+    └── ethusdt/
+        ├── raw/                          # Raw klines data
+        │   ├── ethusdt_1m_2022_01.parquet
+        │   ├── ethusdt_1m_2022_02.parquet
+        │   └── ...
+        └── processed/                    # Processed data with features
+            ├── ethusdt_1m/              # Partitioned by year/month
+            │   ├── year=2022/month=01/
+            │   │   └── part-0.parquet
+            │   └── ...
+            ├── ethusdt_5m/
+            ├── ethusdt_15m/
+            ├── ethusdt_30m/
+            └── ethusdt_1h/
+```
+
+## Features Added
+
+### Price Features
+- `close_return`: Close price percentage change
+- `open_return`: Open price percentage change
+- `high_return`: High price percentage change
+- `low_return`: Low price percentage change
+- `close_log_return`: Close price log return
+- `open_log_return`: Open price log return
+
+### Volume Features
+- `volume_return`: Volume percentage change
+- `volume_log_return`: Volume log return
+- `volume_sma_20`: 20-period volume moving average
+- `volume_ratio`: Volume relative to moving average
+
+### Technical Indicators
+- `rsi_14`: 14-period RSI
+- `close_sma_5`: 5-period close price SMA
+- `close_sma_20`: 20-period close price SMA
+- `close_ema_12`: 12-period close price EMA
+- `close_ema_26`: 26-period close price EMA
+- `bb_upper`: Bollinger Bands upper band
+- `bb_middle`: Bollinger Bands middle band
+- `bb_lower`: Bollinger Bands lower band
+- `bb_width`: Bollinger Bands width
+- `bb_position`: Position within Bollinger Bands
+
+### Volatility Features
+- `volatility_20`: 20-period volatility
+- `volatility_5`: 5-period volatility
+
+### Time Features
+- `hour`: Hour of day
+- `day_of_week`: Day of week
+- `is_weekend`: Weekend indicator
+
+### Lagged Features
+- `close_lag_1`, `close_lag_2`, etc.: Lagged close prices
+- `volume_lag_1`, `volume_lag_2`, etc.: Lagged volumes
+
+## API Reference
+
+### HistoricalDataDownloader
+
+Downloads historical klines data from Binance.
+
+```python
+downloader = HistoricalDataDownloader(data_dir="historical_data")
+
+# Download data
+success = await downloader.download_historical_klines(
+    symbol="ETHUSDT",
+    interval="1m",
+    years=3,
+    api_key="your_api_key",
+    api_secret="your_api_secret"
 )
 
-# Quality validation
-quality_framework = DataQualityFramework()
-quality_result = quality_framework.validate_dataframe_quality(df)
-
-# Data processing
-processor = DataProcessor()
-processed_df = processor.regularize_timestamps(df)
-optimized_df = processor.optimize_dataframe_dtypes(processed_df)
-
-# Data cleaning
-cleaner = DataCleaner()
-cleaned_df = cleaner.handle_missing_values_intelligently(df)
-outliers = cleaner.detect_outliers(cleaned_df)
+# Get data summary
+summary = downloader.get_data_summary("ETHUSDT")
 ```
 
-## Module Structure
+### GapDetector
 
-### `quality/data_quality.py`
-**Unified Data Quality Framework**
-- Comprehensive data validation
-- Quality scoring and metrics
-- Schema validation
-- Data type checking
-- Null value analysis
-- Price anomaly detection
-
-**Key Classes:**
-- `DataQualityFramework` - Main quality validation framework
-- `QualityThresholds` - Configurable quality thresholds
-- `QualityResult` - Validation results container
-
-### `processing/data_processing.py`
-**Unified Data Processing Utilities**
-- Timestamp regularization
-- Data type optimization
-- Feature-specific optimization
-- Multi-timeframe preprocessing
-- OHLCV data fixing
-
-**Key Classes:**
-- `DataProcessor` - Main data processing class
-
-### `quality/data_cleaning.py`
-**Unified Data Cleaning**
-- Intelligent missing value handling
-- Multiple outlier detection methods
-- Gap analysis and filling
-- Data schema validation
-
-**Key Classes:**
-- `DataCleaner` - Main data cleaning class
-- `GapInfo` - Information about data gaps
-- `OutlierInfo` - Information about detected outliers
-
-### `processing/transformers.py`
-**Data Streaming and Chunking**
-- Large dataset processing
-- Memory management
-- Chunked data processing
-- File streaming
-
-**Key Classes:**
-- `DataStreamingManager` - Handles large dataset processing
-
-### `validation/validators.py`
-**Cross-Step Validation**
-- Pipeline consistency validation
-- Data lineage tracking
-- Step transition validation
-
-**Key Classes:**
-- `CrossStepValidator` - Validates data consistency across pipeline steps
-
-### `unified_data_utils.py`
-**Single Interface for All Operations**
-- Unified API for all data operations
-- Comprehensive processing pipeline
-- Integrated quality validation
-- Memory optimization
-
-**Key Classes:**
-- `UnifiedDataUtils` - Single interface for all data operations
-
-## Backwards Compatibility
-
-All existing imports continue to work through backwards compatibility aliases:
+Detects and fills gaps in historical data.
 
 ```python
-# These old imports still work:
-from src.utils.data import (
-    DataProcessor,
-    DataCleaner,
-    DataQualityFramework,
-    validate_dataframe,
-    clean_dataframe,
-    transform_dataframe
+detector = GapDetector(data_dir="historical_data")
+
+# Detect gaps
+gaps = detector.detect_gaps("ETHUSDT", "1m", max_gap_minutes=1)
+
+# Fill gaps
+results = await detector.fill_gaps(gaps, api_key, api_secret)
+```
+
+### FeatureEngineer
+
+Adds features and resamples data.
+
+```python
+engineer = FeatureEngineer(data_dir="historical_data")
+
+# Process data
+results = engineer.process_symbol_data(
+    symbol="ETHUSDT",
+    interval="1m",
+    target_intervals=["5m", "15m", "30m", "1h"]
+)
+```
+
+### KlinesParquetManager
+
+Unified interface for data operations.
+
+```python
+manager = KlinesParquetManager(data_dir="historical_data")
+
+# Read data
+data = manager.read_data(
+    symbol="ETHUSDT",
+    interval="1m",
+    start_date=datetime(2023, 1, 1),
+    end_date=datetime(2023, 12, 31),
+    data_type="raw"
 )
 
-# These functions now use the new consolidated modules internally
+# Write data
+success = manager.write_data(data, "ETHUSDT", "1m", "raw")
+
+# Get data info
+info = manager.get_data_info("ETHUSDT", "1m", "raw")
 ```
 
-## Benefits of Consolidation
+## Requirements
 
-### 1. **Reduced Redundancy**
-- **Before**: 12+ files with overlapping functionality
-- **After**: 6 core modules with clear separation of concerns
-- **Eliminated**: ~30-40% of duplicate code
+- Python 3.8+
+- pandas
+- numpy
+- pyarrow
+- aiohttp (for downloading)
+- exchange.binance (Binance API client)
 
-### 2. **Improved Maintainability**
-- Single source of truth for each functionality
-- Consistent API across all modules
-- Easier to update and extend
+## Installation
 
-### 3. **Better Performance**
-- Optimized imports and dependencies
-- Reduced memory footprint
-- Faster module loading
+1. Install dependencies:
+```bash
+pip install pandas numpy pyarrow aiohttp
+```
 
-### 4. **Enhanced Usability**
-- Unified interface for common operations
-- Comprehensive processing pipeline
-- Better error handling and logging
+2. Ensure the exchange.binance module is available in your Python path.
 
-### 5. **Backwards Compatibility**
-- All existing code continues to work
-- Gradual migration path
-- No breaking changes
+## Usage Examples
 
-## Migration Guide
-
-### For New Code
-Use the unified interface:
+### Example 1: Complete Pipeline
 
 ```python
-from src.utils.data import UnifiedDataUtils
+import asyncio
+from src.utils.data.historical_data_pipeline import run_ethusdt_pipeline
 
-data_utils = UnifiedDataUtils()
-processed_data, report = data_utils.process_and_validate(data)
+async def main():
+    results = await run_ethusdt_pipeline(
+        years=3,
+        data_dir="historical_data",
+        target_intervals=["5m", "15m", "30m", "1h"]
+    )
+    
+    if results["pipeline_success"]:
+        print("✅ Pipeline completed successfully!")
+        print(f"Steps completed: {results['steps_completed']}")
+    else:
+        print(f"❌ Pipeline failed: {results['errors']}")
+
+asyncio.run(main())
 ```
 
-### For Existing Code
-No changes needed - all imports continue to work:
+### Example 2: Custom Processing
 
 ```python
-# This still works exactly as before
-from src.utils.data import validate_dataframe, clean_dataframe
+from src.utils.data.klines_parquet import get_klines_manager
+from src.utils.data.feature_engineer import FeatureEngineer
+
+# Get data manager
+manager = get_klines_manager("historical_data")
+
+# Read raw data
+raw_data = manager.read_data("ETHUSDT", "1m", data_type="raw")
+
+# Process with custom features
+engineer = FeatureEngineer("historical_data")
+featured_data = engineer._add_features(raw_data)
+
+# Save processed data
+manager.write_data(featured_data, "ETHUSDT", "1m", "processed")
 ```
 
-### For Advanced Use Cases
-Use individual components:
+### Example 3: Data Analysis
 
 ```python
-from src.utils.data import DataQualityFramework, DataProcessor, DataCleaner
+from src.utils.data.klines_parquet import read_ethusdt_data
+import pandas as pd
 
-# Use specific components as needed
+# Read processed data
+data = read_ethusdt_data(
+    interval="5m",
+    data_type="processed",
+    start_date=datetime(2023, 1, 1)
+)
+
+# Analyze data
+print(f"Data shape: {data.shape}")
+print(f"Columns: {list(data.columns)}")
+print(f"Date range: {data.index.min()} to {data.index.max()}")
+
+# Calculate some statistics
+if 'close_return' in data.columns:
+    print(f"Average return: {data['close_return'].mean():.4f}")
+    print(f"Volatility: {data['close_return'].std():.4f}")
 ```
 
-## Performance Improvements
+## Troubleshooting
 
-- **Memory Usage**: Reduced by ~25% through optimized data types
-- **Processing Speed**: Improved by ~15% through consolidated operations
-- **Import Time**: Reduced by ~40% through simplified dependencies
-- **Code Maintainability**: Improved by ~60% through reduced redundancy
+### Common Issues
 
-## Future Enhancements
+1. **Import Errors**: Ensure all dependencies are installed and the src directory is in your Python path.
 
-The consolidated structure makes it easier to add new features:
+2. **API Rate Limits**: The Binance API has rate limits. The downloader includes delays to respect these limits.
 
-1. **New validation rules** - Add to `DataQualityFramework`
-2. **New cleaning methods** - Add to `DataCleaner`
-3. **New processing operations** - Add to `DataProcessor`
-4. **New streaming strategies** - Add to `DataStreamingManager`
+3. **Memory Issues**: For large datasets, consider processing data in chunks or using the CLI with specific date ranges.
 
-## Support
+4. **Gap Detection**: If gaps are detected, the system will automatically attempt to fill them. Check the logs for details.
 
-For questions or issues with the consolidated data utilities, please refer to:
-- Individual module docstrings for detailed API documentation
-- The unified interface for common use cases
-- Backwards compatibility module for migration support
+### Performance Tips
+
+1. **Use Parquet**: The system uses parquet format for efficient storage and access.
+
+2. **Partitioning**: Processed data is partitioned by year/month for better performance.
+
+3. **Data Types**: The system optimizes data types to reduce memory usage.
+
+4. **Chunked Processing**: For very large datasets, consider processing data in time-based chunks.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

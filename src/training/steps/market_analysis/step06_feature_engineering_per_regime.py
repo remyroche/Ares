@@ -3,17 +3,11 @@ from src.utils.tprint import tprint
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import numpy as np
 import pandas as pd
-from src.core.decorators import traced, validates, handles_errors
-from ..enhanced_error_handling import (
-    enhanced_async_error_handler,
-    critical_async_process,
-    CriticalProcessError,
-    ErrorSeverity,
-    ErrorCategory
-)
+import time
+from src.core.decorators import traced, validates, handles_errors, handle_errors_enhanced, ErrorContext, ErrorSeverity, ErrorCategory
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
-from ..enhanced_validation_framework import EnhancedValidator, ValidationLevel
-from ..enhanced_monitoring_system import monitor_critical_process
+from src.training.steps.market_analysis.enhanced_validation_framework import EnhancedValidator, ValidationLevel
+from src.utils.enhanced_error_handler import ErrorRecord, ErrorContext
 
 """Enhanced Step 6: Per-Regime Feature Engineering.
 
@@ -36,11 +30,7 @@ try:
 except ImportError:
     FEATURE_OPTIMIZATION_AVAILABLE = False
 
-try:
-    from .step06_feature_engineering import FeatureInteractionEngine
-except ImportError:
-
-    class FeatureInteractionEngine:
+class FeatureInteractionEngine:
 
         @log_important_calls
         def __init__(self, config: Dict[str, Any]) -> None:
@@ -119,9 +109,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         
         self.logger.info('🎯 Per-regime feature engineering initialized with regime-specific optimization enabled')
 
-    @critical_async_process('feature_generation')
-    @monitor_critical_process('feature_generation')
-    @enhanced_async_error_handler(
+    @handle_errors_enhanced(
         error_severity=ErrorSeverity.CRITICAL,
         error_category=ErrorCategory.BUSINESS_LOGIC,
         should_fail_fast=True,
@@ -200,7 +188,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
                 if aggregated is None or aggregated.empty:
                     raise ValueError("Feature aggregation produced no results")
                 
-                output_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_features_per_regime.parquet'
+                output_path = Path(data_dir) / exchange.lower() / symbol.lower() / 'processed' / f'{symbol.lower()}_{timeframe}_features_per_regime.parquet'
                 standardized_parquet_handler.write_parquet_standardized(aggregated, output_path, index=False)
                 self.logger.info(f'✅ Saved aggregated feature data: {output_path}')
                 
@@ -211,53 +199,27 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
                 ]
                 
                 validation_result = await self.validator.validate_process_completion(
-                    'feature_generation', expected_outputs, str(Path(data_dir) / 'training'), ValidationLevel.CRITICAL
+                    'feature_generation', expected_outputs, str(Path(data_dir) / exchange.lower() / symbol.lower() / 'processed'), ValidationLevel.CRITICAL
                 )
                 
                 if not validation_result.passed:
-                    raise CriticalProcessError(
-                        f"Feature generation completed but validation failed: {validation_result.message}",
-                        ErrorRecord(
-                            error_id=f"feature_generation_validation_failure_{int(time.time())}",
-                            error_type="ValidationError",
-                            error_message=validation_result.message,
-                            severity=ErrorSeverity.CRITICAL,
-                            category=ErrorCategory.VALIDATION,
-                            context=ErrorContext(
-                                function_name="execute_per_regime_feature_engineering",
-                                step_name="feature_generation"
-                            ),
-                            stack_trace="",
-                            should_fail_fast=True
-                        )
+                    raise RuntimeError(
+                        f"Feature generation completed but validation failed: {validation_result.message}"
                     )
                 
                 self._log_feature_statistics(aggregated, regime_feature_info)
                 self.logger.info('✅ Feature generation completed successfully')
                 return True
-        except CriticalProcessError as e:
+        except RuntimeError as e:
             self.logger.critical(f'🚨 CRITICAL PROCESS ERROR in Feature Generation: {e}')
             # Re-raise to trigger fail-fast behavior
             raise
         except Exception as e:
             self.logger.critical(f'🚨 CRITICAL ERROR in Feature Generation: {e}')
             
-            # Convert to CriticalProcessError for fail-fast behavior
-            raise CriticalProcessError(
-                f"Feature generation failed with critical error: {e}",
-                ErrorRecord(
-                    error_id=f"feature_generation_critical_error_{int(time.time())}",
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                    severity=ErrorSeverity.CRITICAL,
-                    category=ErrorCategory.BUSINESS_LOGIC,
-                    context=ErrorContext(
-                        function_name="execute_per_regime_feature_engineering",
-                        step_name="feature_generation"
-                    ),
-                    stack_trace="",
-                    should_fail_fast=True
-                )
+            # Convert to RuntimeError for fail-fast behavior
+            raise RuntimeError(
+                f"Feature generation failed with critical error: {e}"
             )
 
     async def _engineer_features_single_regime(self, ctx: RegimeProcessingContext, regime_id: int, labeled_data: pd.DataFrame, regime_config: Dict[str, Any]) -> Tuple[Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
@@ -507,7 +469,7 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
         """
         try:
             metadata = {'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe, 'total_regimes': len(regime_feature_info), 'regime_features': regime_feature_info, 'timestamp': pd.Timestamp.now().isoformat()}
-            metadata_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_regime_features_metadata.json'
+            metadata_path = Path(data_dir) / exchange.lower() / symbol.lower() / 'processed' / f'{symbol.lower()}_{timeframe}_regime_features_metadata.json'
             import json
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent = 2)
@@ -738,6 +700,6 @@ if __name__ == '__main__':
 
     async def test() -> None:
         """Test the per-regime feature engineering step."""
-        success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
+        success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='historical_data')
         tprint(f'Per-regime feature engineering result: {success}')
     asyncio.run(test())

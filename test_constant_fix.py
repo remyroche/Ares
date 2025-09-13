@@ -83,7 +83,7 @@ def test_constant_feature_detection():
             """Check for constant features that indicate data processing issues."""
             constant_features = []
             trade_stat_cols = ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'price_std']
-            funding_cols = ['funding_rate']
+            funding_cols = []
 
             # Check critical trade and funding features
             for col in trade_stat_cols + funding_cols:
@@ -108,7 +108,6 @@ def test_constant_feature_detection():
         'avg_price': [40000.0] * 10,   # Constant
         'min_price': [39900.0] * 10,   # Constant
         'max_price': [40100.0] * 10,   # Constant
-        'funding_rate': [0.0001] * 10  # Constant
     })
 
     constant_features = mock_pipeline._check_for_constant_features(test_data)

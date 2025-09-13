@@ -59,7 +59,7 @@ async def download_all_data_with_consolidation(
         
         # Download all data types
         success_count = 0
-        total_types = 3
+        total_types = 2
         
         # Download klines
         klines_success, klines_data, klines_error = await downloader.download_klines(
@@ -71,25 +71,10 @@ async def download_all_data_with_consolidation(
         else:
             logger.error(f"❌ Klines download failed: {klines_error}")
         
-        # Download aggtrades
-        aggtrades_success, aggtrades_data, aggtrades_error = await downloader.download_aggtrades(
-            symbol, exchange_name, start_date, end_date
-        )
-        if aggtrades_success:
-            success_count += 1
-            logger.info(f"✅ Downloaded {len(aggtrades_data)} aggtrades records")
-        else:
-            logger.error(f"❌ Aggtrades download failed: {aggtrades_error}")
+        # Skip aggtrades download as per new setup - only klines are processed
+        logger.info(f"⚠️ Skipping aggtrades download for {symbol} - aggtrades downloads disabled")
+        aggtrades_success, aggtrades_data, aggtrades_error = False, [], "Aggtrades downloads disabled"
         
-        # Download futures
-        futures_success, futures_data, futures_error = await downloader.download_futures(
-            symbol, exchange_name, start_date, end_date
-        )
-        if futures_success:
-            success_count += 1
-            logger.info(f"✅ Downloaded {len(futures_data)} futures records")
-        else:
-            logger.error(f"❌ Futures download failed: {futures_error}")
         
         # Return success if at least one data type was downloaded successfully
         overall_success = success_count > 0

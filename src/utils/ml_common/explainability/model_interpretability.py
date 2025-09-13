@@ -138,10 +138,11 @@ class ModelInterpretabilityEngine:
         # Results storage
         self.interpretability_results: Dict[str, InterpretabilityReport] = {}
 
-    @handles_errors(Exception, fallback=False, log_level='ERROR')
-    @validates(strict=True)
-    @traced("explain_model")
-    @log_execution_time
+    # Temporarily disabled problematic decorators
+    # @handles_errors(Exception, fallback=False, log_level='ERROR')
+    # @validates(strict=True)
+    # @traced(span_name="explain_model")
+    # @log_execution_time
     async def explain_model(
         self,
         model: Any,
@@ -247,7 +248,7 @@ class ModelInterpretabilityEngine:
         return X_train_sample, X_test_sample
 
     @handles_errors(Exception, fallback=False, log_level='WARNING')
-    @traced("generate_explanation")
+    @traced(span_name="generate_explanation")
     async def _generate_explanation(
         self,
         method: InterpretabilityMethod,
@@ -282,7 +283,7 @@ class ModelInterpretabilityEngine:
             return None
 
     @handles_errors(Exception, fallback=False, log_level='WARNING')
-    @traced("generate_shap_explanation")
+    @traced(span_name="generate_shap_explanation")
     async def _generate_shap_explanation(
         self, model: Any, X_train: pd.DataFrame, X_test: pd.DataFrame, 
         feature_names: List[str], start_time: float
@@ -335,7 +336,7 @@ class ModelInterpretabilityEngine:
             return None
 
     @handles_errors(Exception, fallback=False, log_level='WARNING')
-    @traced("generate_lime_explanation")
+    @traced(span_name="generate_lime_explanation")
     async def _generate_lime_explanation(
         self, model: Any, X_train: pd.DataFrame, X_test: pd.DataFrame, 
         feature_names: List[str], start_time: float
@@ -402,7 +403,7 @@ class ModelInterpretabilityEngine:
             return None
 
     @handles_errors(Exception, fallback=False, log_level='WARNING')
-    @traced("generate_permutation_importance_explanation")
+    @traced(span_name="generate_permutation_importance_explanation")
     async def _generate_permutation_importance_explanation(
         self, model: Any, X_test: pd.DataFrame, y_test: pd.Series, 
         feature_names: List[str], start_time: float
@@ -445,7 +446,7 @@ class ModelInterpretabilityEngine:
             return None
 
     @handles_errors(Exception, fallback=False, log_level='WARNING')
-    @traced("generate_partial_dependence_explanation")
+    @traced(span_name="generate_partial_dependence_explanation")
     async def _generate_partial_dependence_explanation(
         self, model: Any, X_train: pd.DataFrame, feature_names: List[str], start_time: float
     ) -> Optional[ExplanationResult]:
@@ -492,7 +493,7 @@ class ModelInterpretabilityEngine:
             return None
 
     @handles_errors(Exception, fallback=False, log_level='WARNING')
-    @traced("generate_feature_importance_explanation")
+    @traced(span_name="generate_feature_importance_explanation")
     async def _generate_feature_importance_explanation(
         self, model: Any, feature_names: List[str], start_time: float
     ) -> Optional[ExplanationResult]:
@@ -535,7 +536,7 @@ class ModelInterpretabilityEngine:
             return None
 
     @handles_errors(Exception, fallback=False, log_level='WARNING')
-    @traced("generate_custom_explanation")
+    @traced(span_name="generate_custom_explanation")
     async def _generate_custom_explanation(
         self, model: Any, X_train: pd.DataFrame, X_test: pd.DataFrame, 
         feature_names: List[str], start_time: float
@@ -706,7 +707,7 @@ class ModelInterpretabilityEngine:
         )
 
     @handles_errors(Exception, fallback=False, log_level='ERROR')
-    @traced("save_interpretability_report")
+    @traced(span_name="save_interpretability_report")
     async def save_interpretability_report(self, report: InterpretabilityReport, output_dir: str) -> str:
         """Save interpretability report to file."""
         ensure_directory(output_dir)

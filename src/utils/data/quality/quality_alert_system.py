@@ -1,10 +1,11 @@
 """
-from src.utils.logger import system_logger
 Quality Alert System for Data Quality Monitoring
 
 This module provides an alert system that can send notifications when data quality
 issues are detected, supporting multiple channels like Slack, email, and webhooks.
 """
+
+from src.utils.logger import get_system_logger
 import smtplib
 import sys
 from collections import defaultdict
@@ -18,7 +19,43 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
-from ..advanced_ml_validation import Alert, AlertConfig, MLValidationResult
+# Define alert classes locally since advanced_ml_validation doesn't exist
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+from dataclasses import dataclass, field
+from enum import Enum
+
+class AlertLevel(Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+@dataclass
+class Alert:
+    level: str
+    message: str
+    timestamp: datetime
+    action_required: bool = False
+    details: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class AlertConfig:
+    slack_webhook: Optional[str] = None
+    email_config: Optional[Dict[str, Any]] = None
+    webhook_url: Optional[str] = None
+
+@dataclass
+class MLValidationResult:
+    quality_score: float = 0.0
+    grade: str = "F"
+    drift_issues: List[str] = field(default_factory=list)
+    correlation_issues: List[str] = field(default_factory=list)
+    target_issues: List[str] = field(default_factory=list)
+    distribution_issues: List[str] = field(default_factory=list)
+    outlier_issues: List[str] = field(default_factory=list)
+    time_series_issues: List[str] = field(default_factory=list)
+    financial_issues: List[str] = field(default_factory=list)
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -29,10 +66,16 @@ import typing
 class QualityAlertManager:
     """Manages quality alerts and notifications."""
 
-    def __init__(self, alert_config: AlertConfig) -> None:
-        self.config = alert_config
+    def __init__(self, alert_config: Optional[AlertConfig] = None) -> None:
+        self.config = alert_config or AlertConfig()
         self.alert_history: List[Alert] = []
-        self.logger = system_logger.getChild('QualityAlertManager')
+
+        # Initialize logger with fallback
+        try:
+            self.logger = get_system_logger().getChild('QualityAlertManager')
+        except NameError:
+            import logging
+            self.logger = logging.getLogger('QualityAlertManager')
 
     def check_alerts(self, validation_result: MLValidationResult) -> List[Alert]:
         """Generate alerts based on validation results."""
@@ -157,7 +200,7 @@ class StreamingQualityValidator:
         self.validation_rules = validation_rules
         self.alert_manager = alert_manager
         self.quality_metrics = defaultdict(list)
-        self.logger = system_logger.getChild('StreamingQualityValidator')
+        self.logger = get_system_logger().getChild('StreamingQualityValidator')
 
     def validate_streaming_data(self, data_chunk: pd.DataFrame) -> Dict[str, Any]:
         """Validate streaming data in real-time."""
@@ -196,7 +239,7 @@ class QualityDashboard:
 
     def __init__(self, alert_manager: QualityAlertManager) -> None:
         self.alert_manager = alert_manager
-        self.logger = system_logger.getChild('QualityDashboard')
+        self.logger = get_system_logger().getChild('QualityDashboard')
 
     def generate_quality_report(self, validation_result: MLValidationResult) -> Dict[str, Any]:
         """Generate a comprehensive quality report."""
@@ -232,3 +275,6 @@ class QualityDashboard:
 def create_alert_config(slack_webhook: Optional[str]=None, email_config: Optional[Dict[str, Any]]=None, webhook_url: Optional[str]=None) -> AlertConfig:
     """Create alert configuration."""
     return AlertConfig(slack_webhook = slack_webhook, email_config = email_config, webhook_url = webhook_url)
+
+# Alias for backward compatibility
+QualityAlertSystem = QualityAlertManager

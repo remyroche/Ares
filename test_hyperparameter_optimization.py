@@ -18,7 +18,7 @@ from pathlib import Path
 # Add the src directory to the path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from utils.ml_common.feature_selection import FeatureSelectionFramework
+from src.utils.ml_common.feature_selection import FeatureSelectionFramework
 
 
 def create_complex_data(n_samples=1000, n_features=30, n_informative=8, noise=0.1):

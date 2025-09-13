@@ -296,7 +296,6 @@ class ConsolidatedBacktestingStep:
         self.analytics_reporter = AnalyticsReporter(self.config.analytics_config)
     
     @traced(span_name='execute_consolidated_backtesting')
-    @log_execution_time
     async def execute(
         self, 
         data: pd.DataFrame,

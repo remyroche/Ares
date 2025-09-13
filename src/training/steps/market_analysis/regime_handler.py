@@ -48,7 +48,7 @@ class RegimeHandler:
             DataFrame with unified regime data or None if not found
         """
         try:
-            training_dir = Path(data_dir) / 'training'
+            training_dir = Path(data_dir) / exchange.lower() / symbol.lower() / 'training'
             unified_file = training_dir / f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet'
             if not unified_file.exists():
                 self.logger.error(f'❌ Unified regime data not found: {unified_file}')

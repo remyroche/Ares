@@ -170,7 +170,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         """
         self.logger.info('🔍 Starting Step 4: Regime Data Splitting validation')
         try:
-            regime_splits_dir = Path(data_dir) / 'training' / 'regime_splits'
+            regime_splits_dir = Path(data_dir) / exchange.lower() / symbol.lower() / 'regime_splits'
             if not regime_splits_dir.exists():
                 self.logger.warning(f'⚠️ Regime splits directory not found: {regime_splits_dir}')
                 return False
@@ -182,7 +182,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 if not await self._validate_regime_file(regime_file):
                     return False
             timeframe = training_input.get('timeframe', '1m') if isinstance(training_input, dict) else '1m'
-            stats_file = regime_splits_dir / f'{exchange}_{symbol}_{timeframe}_regime_statistics.json'
+            stats_file = Path(data_dir) / exchange.lower() / symbol.lower() / 'models' / 'regime_statistics.json'
             if not stats_file.exists():
                 self.logger.warning(f'⚠️ Regime statistics file not found: {stats_file}')
                 return False
@@ -289,8 +289,8 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         """Validate Step 4 output files and content using BaseValidator methods."""
         validation_result = {'validation_passed': True, 'warnings': [], 'errors': [], 'details': {}}
         try:
-            output_dir = Path('data/training/regime_splits')
-            expected_files = [f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet', f'{exchange}_{symbol}_{timeframe}_regime_statistics.json']
+            output_dir = Path('historical_data') / exchange.lower() / symbol.lower() / 'regime_splits'
+            expected_files = [f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet']
             missing_files = []
             existing_files = []
             for filename in expected_files:
@@ -343,7 +343,7 @@ async def run_validator(training_input: Dict[str, Any], pipeline_state: Dict[str
         symbol = training_input.get('symbol', 'ETHUSDT')
         exchange = training_input.get('exchange', 'BINANCE')
         timeframe = training_input.get('timeframe', '1m')
-        data_dir = training_input.get('data_dir', 'data_cache')
+        data_dir = training_input.get('data_dir', 'historical_data')
         config = training_input.get('config', {})
         validator = Step4RegimeDataSplittingValidator(config)
         prereq_result = validator.validate_prerequisites(symbol, exchange, timeframe)

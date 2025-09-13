@@ -900,19 +900,19 @@ class WalkForwardValidationStep:
         if results.window_performance:
             window_df = pd.DataFrame(results.window_performance)
             window_file = output_dir / f"{self.config.symbol}_{self.config.exchange}_window_performance.parquet"
-            await self.parquet_utils.save_dataframe(window_df, window_file)
-        
+            window_df.to_parquet(window_file, index=False)
+
         # Save equity curves
         for strategy_name, equity_curve in results.equity_curves.items():
             if not equity_curve.empty:
                 equity_file = output_dir / f"{self.config.symbol}_{self.config.exchange}_{strategy_name}_equity_curve.parquet"
-                await self.parquet_utils.save_dataframe(equity_curve, equity_file)
-        
+                equity_curve.to_parquet(equity_file, index=False)
+
         # Save trade logs
         for strategy_name, trade_log in results.trade_logs.items():
             if not trade_log.empty:
                 trades_file = output_dir / f"{self.config.symbol}_{self.config.exchange}_{strategy_name}_trade_log.parquet"
-                await self.parquet_utils.save_dataframe(trade_log, trades_file)
+                trade_log.to_parquet(trades_file, index=False)
         
         self.logger.info(f"✅ Results saved to {output_dir}")
 
@@ -1912,7 +1912,7 @@ async def execute_walk_forward_validation(
     symbol: str = "ETHUSDT",
     exchange: str = "BINANCE", 
     timeframe: str = "1h",
-    data_dir: str = "data/training",
+    data_dir: str = "historical_data",
     strategy_func: Optional[Callable] = None,
     **kwargs
 ) -> WalkForwardResults:

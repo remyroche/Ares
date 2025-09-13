@@ -455,7 +455,7 @@ def _extract_context_from_args(
     # Try to extract common parameters
     symbol = kwargs.get('symbol', 'UNKNOWN')
     exchange = kwargs.get('exchange', 'UNKNOWN')
-    data_dir = kwargs.get('data_dir', 'data_cache')
+    data_dir = kwargs.get('data_dir', 'historical_data')
     step_name = kwargs.get('step_name', 'unknown_step')
     
     return DataOperationContext(

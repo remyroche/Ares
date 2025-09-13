@@ -31,7 +31,7 @@ class HMMConfig:
     """Configuration for HMM clustering."""
     n_components_range: List[int] = field(default_factory = lambda: [2, 40])
     covariance_types: List[str] = field(default_factory = lambda: ["full", "tied", "diag", "spherical"])
-    n_iter_range: List[int] = field(default_factory = lambda: [50, 200])
+    n_iter_range: List[int] = field(default_factory = lambda: [10, 50])
     tol_range: List[float] = field(default_factory = lambda: [1e-6, 1e-2])
     reg_covar_range: List[float] = field(default_factory = lambda: [1e-7, 1e-2])
     max_samples: int = 5000
@@ -165,7 +165,7 @@ class Step03Config:
     symbol: str = "ETHUSDT"
     exchange: str = "BINANCE"
     timeframe: str = "1m"
-    data_dir: str = "data_cache"
+    data_dir: str = "historical_data"
     force_rerun: bool = False
     
     # Performance settings
@@ -277,6 +277,22 @@ PRESETS = {
         ensemble = EnsembleConfig(kmeans_n_clusters_range=[5, 15]),
         ml_transition = MLTransitionConfig(initial_features = 10, max_features = 50),
         memory = MemoryConfig(chunk_size = 5000)
+    ),
+
+    'lightning_fast': Step03Config(
+        bayesian_optimization = BayesianOptimizationConfig(n_trials = 10, timeout_minutes = 2),
+        hmm = HMMConfig(n_components_range=[2, 6], n_iter_range=[5, 25], max_samples = 1000),
+        ensemble = EnsembleConfig(kmeans_n_clusters_range=[3, 10]),
+        ml_transition = MLTransitionConfig(initial_features = 5, max_features = 25),
+        memory = MemoryConfig(chunk_size = 2000)
+    ),
+
+    'comprehensive': Step03Config(
+        bayesian_optimization = BayesianOptimizationConfig(n_trials = 200, timeout_minutes = 60),
+        hmm = HMMConfig(n_components_range=[2, 40], max_samples = 10000),
+        ensemble = EnsembleConfig(kmeans_n_clusters_range=[10, 50]),
+        ml_transition = MLTransitionConfig(initial_features = 30, max_features = 150),
+        memory = MemoryConfig(chunk_size = 20000)
     ),
     
     'thorough': Step03Config(

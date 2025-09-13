@@ -87,7 +87,161 @@ class FeatureGenerators:
             return safe_sqrt(value, default)
         else:
             return np.sqrt(value) if value >= 0 else default
-    
+
+    @staticmethod
+    def taker_buy_ratio_generator(data: pd.DataFrame, taker_base_col: str = 'taker_buy_base_asset_volume') -> pd.Series:
+        """
+        Generate taker buy ratio - percentage of volume from aggressive buyers.
+
+        Args:
+            data: DataFrame with volume and taker data
+            taker_base_col: Column name for taker base volume
+
+        Returns:
+            Taker buy ratio (0-1) as pandas Series
+        """
+        if taker_base_col not in data.columns:
+            return pd.Series([0.5] * len(data), index=data.index, name='taker_buy_ratio')
+
+        total_volume = data['volume']
+        taker_volume = data[taker_base_col]
+
+        ratio = taker_volume / total_volume.replace(0, 1)
+        ratio = ratio.fillna(0.5).clip(0, 1)
+
+        return pd.Series(ratio, index=data.index, name='taker_buy_ratio')
+
+    @staticmethod
+    def market_aggression_generator(data: pd.DataFrame, taker_base_col: str = 'taker_buy_base_asset_volume') -> pd.Series:
+        """
+        Generate market aggression index - ratio of taker to maker volume.
+
+        Args:
+            data: DataFrame with volume and taker data
+            taker_base_col: Column name for taker base volume
+
+        Returns:
+            Market aggression index as pandas Series
+        """
+        if taker_base_col not in data.columns:
+            return pd.Series([1.0] * len(data), index=data.index, name='market_aggression')
+
+        total_volume = data['volume']
+        taker_volume = data[taker_base_col]
+        maker_volume = total_volume - taker_volume
+
+        aggression = taker_volume / maker_volume.replace(0, 1)
+        aggression = aggression.fillna(1.0).clip(0, 10)  # Cap extreme values
+
+        return pd.Series(aggression, index=data.index, name='market_aggression')
+
+    @staticmethod
+    def taker_price_impact_generator(data: pd.DataFrame,
+                                   taker_base_col: str = 'taker_buy_base_asset_volume',
+                                   taker_quote_col: str = 'taker_buy_quote_asset_volume') -> pd.Series:
+        """
+        Generate taker price impact - average price paid by aggressive buyers vs market price.
+
+        Args:
+            data: DataFrame with price and taker data
+            taker_base_col: Column name for taker base volume
+            taker_quote_col: Column name for taker quote volume
+
+        Returns:
+            Taker price impact as pandas Series
+        """
+        if taker_base_col not in data.columns or taker_quote_col not in data.columns:
+            return pd.Series([0.0] * len(data), index=data.index, name='taker_price_impact')
+
+        taker_avg_price = data[taker_quote_col] / data[taker_base_col].replace(0, 1)
+        market_price = data['close']
+
+        impact = (taker_avg_price - market_price) / market_price.replace(0, 1)
+        impact = impact.fillna(0.0).clip(-1, 1)  # Cap extreme values
+
+        return pd.Series(impact, index=data.index, name='taker_price_impact')
+
+    @staticmethod
+    def order_flow_imbalance_generator(data: pd.DataFrame, taker_base_col: str = 'taker_buy_base_asset_volume') -> pd.Series:
+        """
+        Generate order flow imbalance - net aggressive buying/selling pressure.
+
+        Args:
+            data: DataFrame with volume and taker data
+            taker_base_col: Column name for taker base volume
+
+        Returns:
+            Order flow imbalance (-1 to 1) as pandas Series
+        """
+        if taker_base_col not in data.columns:
+            return pd.Series([0.0] * len(data), index=data.index, name='order_flow_imbalance')
+
+        total_volume = data['volume']
+        taker_volume = data[taker_base_col]
+        maker_volume = total_volume - taker_volume
+
+        imbalance = (taker_volume - maker_volume) / total_volume.replace(0, 1)
+        imbalance = imbalance.fillna(0.0).clip(-1, 1)
+
+        return pd.Series(imbalance, index=data.index, name='order_flow_imbalance')
+
+    @staticmethod
+    def institutional_indicator_generator(data: pd.DataFrame,
+                                        taker_base_col: str = 'taker_buy_base_asset_volume',
+                                        taker_quote_col: str = 'taker_buy_quote_asset_volume') -> pd.Series:
+        """
+        Generate institutional vs retail trading indicator.
+
+        High participation rate + stable pricing = institutional activity
+        Low participation + volatile pricing = retail activity
+
+        Args:
+            data: DataFrame with price and taker data
+            taker_base_col: Column name for taker base volume
+            taker_quote_col: Column name for taker quote volume
+
+        Returns:
+            Institutional indicator (higher = more institutional) as pandas Series
+        """
+        if taker_base_col not in data.columns or taker_quote_col not in data.columns:
+            return pd.Series([0.5] * len(data), index=data.index, name='institutional_indicator')
+
+        # Participation rate
+        participation = data[taker_base_col] / data['volume'].replace(0, 1)
+
+        # Price stability (inverse of volatility)
+        taker_avg_price = data[taker_quote_col] / data[taker_base_col].replace(0, 1)
+        price_stability = 1 / (taker_avg_price.rolling(10).std() + 0.001)
+
+        # Combined indicator
+        indicator = participation * price_stability
+        indicator = indicator.fillna(0.5).clip(0, 10)  # Cap extreme values
+
+        return pd.Series(indicator, index=data.index, name='institutional_indicator')
+
+    @staticmethod
+    def taker_volume_momentum_generator(data: pd.DataFrame,
+                                      taker_base_col: str = 'taker_buy_base_asset_volume',
+                                      lookback: int = 5) -> pd.Series:
+        """
+        Generate taker volume momentum - rate of change in aggressive trading volume.
+
+        Args:
+            data: DataFrame with taker data
+            taker_base_col: Column name for taker base volume
+            lookback: Lookback period for momentum calculation
+
+        Returns:
+            Taker volume momentum as pandas Series
+        """
+        if taker_base_col not in data.columns:
+            return pd.Series([0.0] * len(data), index=data.index, name=f'taker_momentum_{lookback}')
+
+        momentum = data[taker_base_col].pct_change(lookback)
+        momentum = momentum.fillna(0.0).clip(-5, 5)  # Cap extreme values
+
+        return pd.Series(momentum, index=data.index, name=f'taker_momentum_{lookback}')
+
     @staticmethod
     def rsi_generator(data: pd.DataFrame, lookback: int, price_column: str = 'close') -> pd.Series:
         """
@@ -405,6 +559,172 @@ class FeatureGenerators:
             logger.error(f"Error generating Volatility: {e}")
             return pd.Series(index=data.index, dtype=float)
 
+    @staticmethod
+    def body_size_generator(data: pd.DataFrame) -> pd.Series:
+        """
+        Generate Body Size feature (absolute difference between open and close).
+
+        Args:
+            data: DataFrame with OHLC data
+
+        Returns:
+            Series with body size values
+        """
+        try:
+            required_cols = ['open', 'close']
+            if not all(col in data.columns for col in required_cols):
+                raise ValueError(f"Required columns {required_cols} not found in data")
+
+            body_size = np.abs(data['close'] - data['open'])
+            return pd.Series(body_size, index=data.index, name='body_size')
+
+        except Exception as e:
+            logger.error(f"Error generating Body Size: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
+    @staticmethod
+    def body_size_pct_generator(data: pd.DataFrame) -> pd.Series:
+        """
+        Generate Body Size Percentage feature (body size relative to open price).
+
+        Args:
+            data: DataFrame with OHLC data
+
+        Returns:
+            Series with body size percentage values
+        """
+        try:
+            required_cols = ['open', 'close']
+            if not all(col in data.columns for col in required_cols):
+                raise ValueError(f"Required columns {required_cols} not found in data")
+
+            body_size = np.abs(data['close'] - data['open'])
+            body_size_pct = (body_size / data['open']) * 100  # Convert to percentage
+            return pd.Series(body_size_pct, index=data.index, name='body_size_pct')
+
+        except Exception as e:
+            logger.error(f"Error generating Body Size Percentage: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
+    @staticmethod
+    def body_to_range_ratio_generator(data: pd.DataFrame) -> pd.Series:
+        """
+        Generate Body to Range Ratio feature (body size relative to total high-low range).
+
+        Args:
+            data: DataFrame with OHLC data
+
+        Returns:
+            Series with body to range ratio values
+        """
+        try:
+            required_cols = ['open', 'high', 'low', 'close']
+            if not all(col in data.columns for col in required_cols):
+                raise ValueError(f"Required columns {required_cols} not found in data")
+
+            body_size = np.abs(data['close'] - data['open'])
+            total_range = data['high'] - data['low']
+            body_to_range_ratio = body_size / total_range.replace(0, 1)  # Avoid division by zero
+            return pd.Series(body_to_range_ratio, index=data.index, name='body_to_range_ratio')
+
+        except Exception as e:
+            logger.error(f"Error generating Body to Range Ratio: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
+    @staticmethod
+    def upper_wick_generator(data: pd.DataFrame) -> pd.Series:
+        """
+        Generate Upper Wick feature (distance from high to the higher of open/close).
+
+        Args:
+            data: DataFrame with OHLC data
+
+        Returns:
+            Series with upper wick values
+        """
+        try:
+            required_cols = ['open', 'high', 'close']
+            if not all(col in data.columns for col in required_cols):
+                raise ValueError(f"Required columns {required_cols} not found in data")
+
+            upper_wick = data['high'] - np.maximum(data['open'], data['close'])
+            return pd.Series(upper_wick, index=data.index, name='upper_wick')
+
+        except Exception as e:
+            logger.error(f"Error generating Upper Wick: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
+    @staticmethod
+    def lower_wick_generator(data: pd.DataFrame) -> pd.Series:
+        """
+        Generate Lower Wick feature (distance from low to the lower of open/close).
+
+        Args:
+            data: DataFrame with OHLC data
+
+        Returns:
+            Series with lower wick values
+        """
+        try:
+            required_cols = ['open', 'low', 'close']
+            if not all(col in data.columns for col in required_cols):
+                raise ValueError(f"Required columns {required_cols} not found in data")
+
+            lower_wick = np.minimum(data['open'], data['close']) - data['low']
+            return pd.Series(lower_wick, index=data.index, name='lower_wick')
+
+        except Exception as e:
+            logger.error(f"Error generating Lower Wick: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
+    @staticmethod
+    def body_direction_generator(data: pd.DataFrame) -> pd.Series:
+        """
+        Generate Body Direction feature (sign of price movement: +1 up, -1 down, 0 no change).
+
+        Args:
+            data: DataFrame with OHLC data
+
+        Returns:
+            Series with body direction values
+        """
+        try:
+            required_cols = ['open', 'close']
+            if not all(col in data.columns for col in required_cols):
+                raise ValueError(f"Required columns {required_cols} not found in data")
+
+            body_direction = np.sign(data['close'] - data['open'])
+            return pd.Series(body_direction, index=data.index, name='body_direction')
+
+        except Exception as e:
+            logger.error(f"Error generating Body Direction: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
+    @staticmethod
+    def body_strength_generator(data: pd.DataFrame) -> pd.Series:
+        """
+        Generate Body Strength feature (signed body size: positive for up, negative for down).
+
+        Args:
+            data: DataFrame with OHLC data
+
+        Returns:
+            Series with body strength values
+        """
+        try:
+            required_cols = ['open', 'close']
+            if not all(col in data.columns for col in required_cols):
+                raise ValueError(f"Required columns {required_cols} not found in data")
+
+            body_size = np.abs(data['close'] - data['open'])
+            body_direction = np.sign(data['close'] - data['open'])
+            body_strength = body_size * body_direction
+            return pd.Series(body_strength, index=data.index, name='body_strength')
+
+        except Exception as e:
+            logger.error(f"Error generating Body Strength: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
 # Registry of available feature generators
 FEATURE_GENERATORS: Dict[str, Callable] = {
     'rsi': FeatureGenerators.rsi_generator,
@@ -416,7 +736,15 @@ FEATURE_GENERATORS: Dict[str, Callable] = {
     'atr': FeatureGenerators.atr_generator,
     'volume_sma': FeatureGenerators.volume_sma_generator,
     'price_momentum': FeatureGenerators.price_momentum_generator,
-    'volatility': FeatureGenerators.volatility_generator
+    'volatility': FeatureGenerators.volatility_generator,
+    # Candlestick body size features
+    'body_size': FeatureGenerators.body_size_generator,
+    'body_size_pct': FeatureGenerators.body_size_pct_generator,
+    'body_to_range_ratio': FeatureGenerators.body_to_range_ratio_generator,
+    'upper_wick': FeatureGenerators.upper_wick_generator,
+    'lower_wick': FeatureGenerators.lower_wick_generator,
+    'body_direction': FeatureGenerators.body_direction_generator,
+    'body_strength': FeatureGenerators.body_strength_generator
 }
 
 def get_feature_generator(feature_name: str) -> Optional[Callable]:

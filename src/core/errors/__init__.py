@@ -12,6 +12,8 @@ from .base import (
     ConflictError,
     DataIntegrityError,
     ErrorCode,
+    FileOperationError,
+    MathValidationError,
     NotFoundError,
     RateLimitError,
     ServiceUnavailableError,
@@ -41,6 +43,8 @@ __all__ = [
     "ServiceUnavailableError",
     "BusinessRuleError",
     "DataIntegrityError",
+    "FileOperationError",
+    "MathValidationError",
     # Mapping
     "ErrorMapper",
     "error_mapper",

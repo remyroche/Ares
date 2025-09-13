@@ -8,17 +8,17 @@ This module contains all optimization-related functionality including:
 - Multi-objective optimization
 """
 
-from .hpo_utils import HPOOptimizer, HPOConfig, HPOResult
-from .pareto import ParetoOptimizer, ParetoFront
+from .hpo_utils import HyperparameterOptimization
+from .pareto import ParetoFront, ParetoFrontAnalyzer, ParetoOptimizer
 from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 
 __all__ = [
     # Hyperparameter Optimization
-    'HPOOptimizer', 'HPOConfig', 'HPOResult',
-    
+    'HyperparameterOptimization',
+
     # Pareto Optimization
-    'ParetoOptimizer', 'ParetoFront',
-    
+    'ParetoFront', 'ParetoFrontAnalyzer', 'ParetoOptimizer',
+
     # Regime-specific Optimization
     'RegimeSpecificTPSLOptimizer'
 ]

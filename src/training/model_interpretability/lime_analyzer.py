@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 from src.utils.tprint import tprint
+from typing import Dict, Any, List, Optional
 
 import numpy as np
 import pandas as pd
 from src.utils.logger import system_logger
-from ..core.decorators import handles_errors
+from ..core.decorators import handles_errors, validates, log_call, traced
 
 """LIME Analyzer for Model Interpretability.
 
@@ -34,6 +35,7 @@ class LIMEAnalyzer:
     def _check_lime_availability(self):
         """Check if LIME is available and initialize if possible."""
         try:
+            import lime
             import logging
             import time
             import typing
@@ -48,8 +50,8 @@ class LIMEAnalyzer:
             tprint("⚠️ LIME library not available - install with: pip install lime")
             self.lime_available = False
     
-    @handles_errors(Exception, fallback = False, log_level="ERROR")
-    @validates(strict = True)
+    @handles_errors(exceptions=(Exception,), fallback="LIME analysis failed")
+    @validates()
     @log_call
     @traced
     async def analyze_model(
@@ -139,7 +141,7 @@ class LIMEAnalyzer:
             tprint(f"❌ LIME analysis failed: {e}")
             return {"error": str(e)}
     
-    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @handles_errors(exceptions=(Exception,), fallback="LIME analysis failed")
     @log_call
     @traced
     async def _create_lime_explainer(self, X_test: pd.DataFrame, feature_names: List[str]) -> Optional[Any]:
@@ -168,7 +170,7 @@ class LIMEAnalyzer:
             tprint(f"❌ Failed to create LIME explainer: {e}")
             return None
     
-    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @handles_errors(exceptions=(Exception,), fallback="LIME analysis failed")
     @log_call
     @traced
     async def _generate_local_explanations(
@@ -244,7 +246,7 @@ class LIMEAnalyzer:
             tprint(f"❌ Failed to generate local explanations: {e}")
             return {}
     
-    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @handles_errors(exceptions=(Exception,), fallback="LIME analysis failed")
     @log_call
     @traced
     async def _analyze_feature_importance(
@@ -301,7 +303,7 @@ class LIMEAnalyzer:
             tprint(f"❌ Failed to analyze feature importance: {e}")
             return {}
     
-    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @handles_errors(exceptions=(Exception,), fallback="LIME analysis failed")
     @log_call
     @traced
     async def _analyze_explanation_consistency(
@@ -377,7 +379,7 @@ class LIMEAnalyzer:
             tprint(f"❌ Failed to analyze explanation consistency: {e}")
             return {}
     
-    @handles_errors(Exception, fallback = False, log_level="ERROR")
+    @handles_errors(exceptions=(Exception,), fallback="LIME analysis failed")
     @log_call
     @traced
     async def _create_lime_plots(

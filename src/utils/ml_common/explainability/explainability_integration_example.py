@@ -22,7 +22,7 @@ import logging
 
 # Import ML commons utilities
 from .model_training import EnhancedModelTrainer
-from .model_registry import ModelRegistry
+from ..models.model_registry import ModelRegistry
 from .model_explainability import ModelExplainabilityManager, explain_model_quick
 from .base_safeguards import MLTrainingSafeguards
 

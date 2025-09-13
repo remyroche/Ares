@@ -39,7 +39,35 @@ class SRLevel:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert level to dictionary for storage."""
-        return {'price': self.price, 'level_type': self.level_type, 'method': self.method, 'data_source': self.data_source, 'timestamp': self.timestamp.isoformat(), 'strength': self.strength, 'volume': self.volume, 'touch_count': self.touch_count, 'age_hours': self.age_hours, 'bounce_rate': self.bounce_rate, 'isolation_score': self.isolation_score, 'confidence': self.confidence, 'last_touch': self.last_touch.isoformat(), 'total_touches': self.total_touches, 'creation_time': self.creation_time.isoformat(), 'metadata': self.metadata}
+        import numpy as np
+
+        def convert_value(value):
+            """Convert numpy types to regular Python types for JSON serialization."""
+            if isinstance(value, np.float32) or isinstance(value, np.float64):
+                return float(value)
+            elif isinstance(value, np.int32) or isinstance(value, np.int64):
+                return int(value)
+            else:
+                return value
+
+        return {
+            'price': convert_value(self.price),
+            'level_type': self.level_type,
+            'method': self.method,
+            'data_source': self.data_source,
+            'timestamp': self.timestamp.isoformat(),
+            'strength': convert_value(self.strength),
+            'volume': convert_value(self.volume),
+            'touch_count': convert_value(self.touch_count),
+            'age_hours': convert_value(self.age_hours),
+            'bounce_rate': convert_value(self.bounce_rate),
+            'isolation_score': convert_value(self.isolation_score),
+            'confidence': convert_value(self.confidence),
+            'last_touch': self.last_touch.isoformat(),
+            'total_touches': convert_value(self.total_touches),
+            'creation_time': self.creation_time.isoformat(),
+            'metadata': self.metadata
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'SRLevel':
@@ -834,12 +862,20 @@ class SRLevelsManager:
             recommendations.append('VWAP-based detection quality is low - review VWAP calculation')
         return recommendations
 
-    async def save_levels(self) -> None:
+    async def save_levels(self, detection_config: dict[str, Any] | None = None) -> None:
         """Save current levels to storage."""
         try:
             data = {'support_levels': [level.to_dict() for level in self.support_levels], 'resistance_levels': [level.to_dict() for level in self.resistance_levels], 'last_update': self.last_update.isoformat(), 'update_count': self.update_count}
             with open(self.levels_file, 'w') as f:
                 json.dump(data, f, indent = 2)
+
+            # Save detection parameters if provided
+            if detection_config:
+                params_file = self.storage_path / 'detection_config.json'
+                with open(params_file, 'w') as f:
+                    json.dump(detection_config, f, indent = 2)
+                self.logger.info(f'✅ Saved detection parameters to {params_file}')
+
             await self._save_to_history(data)
         except Exception as e:
             self.logger.exception(f'❌ Error saving SR levels: {e}')
@@ -859,6 +895,21 @@ class SRLevelsManager:
             self.logger.info(f'✅ Loaded {len(self.support_levels)} support and {len(self.resistance_levels)} resistance levels')
         except Exception as e:
             self.logger.exception(f'❌ Error loading SR levels: {e}')
+
+    async def load_detection_config(self) -> dict[str, Any] | None:
+        """Load detection configuration from storage."""
+        try:
+            params_file = self.storage_path / 'detection_config.json'
+            if not params_file.exists():
+                self.logger.info('No detection config found, using defaults')
+                return None
+            with open(params_file) as f:
+                config = json.load(f)
+            self.logger.info(f'✅ Loaded detection configuration from {params_file}')
+            return config
+        except Exception as e:
+            self.logger.exception(f'❌ Error loading detection config: {e}')
+            return None
 
     async def _save_to_history(self, data: dict[str, Any]) -> None:
         """Save current state to history file."""

@@ -26,7 +26,7 @@ from src.utils.comprehensive_function_logger import (
     log_internal_call, log_step_progress, log_data_operation
 )
 # Import math validation functions from shared module
-from .math_validation import safe_divide, validate_positive
+from .math_validation import safe_divide, safe_log, safe_sqrt, validate_positive
 
 # Import enhanced components
 from .step06_enhanced_feature_engineering import EnhancedFeatureEngineering
@@ -77,6 +77,7 @@ class EnhancedFeatureEngineeringStep(BaseStep):
             'use_interaction_features': True,
             'use_regime_features': True,
             'use_sr_features': True,
+            'use_order_flow_proxies': True,  # Enable order flow proxies (replaces aggtrades)
             'use_dynamic_lookback': True,
             'chunk_size': 10000,
             'max_features': 500,
@@ -266,6 +267,12 @@ class EnhancedFeatureEngineeringStep(BaseStep):
             self.logger.info(f'🔧 Starting enhanced feature engineering execution')
             self.logger.info(f'   Training input keys: {list(training_input.keys())}')
             self.logger.info(f'   Pipeline state keys: {list(pipeline_state.keys())}')
+            self.logger.info(f'   Feature config: technical={self.feature_config.get("use_technical_indicators")}, '
+                           f'interactions={self.feature_config.get("use_interaction_features")}, '
+                           f'regime={self.feature_config.get("use_regime_features")}, '
+                           f'sr={self.feature_config.get("use_sr_features")}, '
+                           f'order_flow={self.feature_config.get("use_order_flow_proxies")}')
+            self.logger.info(f'   Order flow proxies enabled: {self.feature_config.get("use_order_flow_proxies", True)} (replaces aggtrades features)')
         
         try:
             # Store pipeline state for SR feature extraction
@@ -405,8 +412,15 @@ class EnhancedFeatureEngineeringStep(BaseStep):
             # Step 5: Add time-based features
             time_features = self._create_time_features(processed_data)
             processed_data = pd.concat([processed_data, time_features], axis=1)
-            
-            # Step 6: Clean and validate final data
+
+            # Step 6: Add order flow proxies (replaces aggtrades features)
+            if self.feature_config.get('use_order_flow_proxies', True):
+                self.logger.info(f'💹 Adding order flow proxies for {split_name}')
+                order_flow_features = self._create_order_flow_proxies(processed_data)
+                processed_data = pd.concat([processed_data, order_flow_features], axis=1)
+                self.logger.info(f'   Added {order_flow_features.shape[1]} order flow proxy features')
+
+            # Step 7: Clean and validate final data
             processed_data = self._clean_and_validate_data(processed_data)
             
             return processed_data
@@ -437,6 +451,234 @@ class EnhancedFeatureEngineeringStep(BaseStep):
                     regime_features[f'regime_{regime}_count'] = regime_mask.cumsum()
         
         return regime_features
+
+    def _create_order_flow_proxies(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create comprehensive order flow features using real taker data + enhanced kline proxies.
+
+        This leverages the actual taker_buy_base and taker_buy_quote columns from Binance API
+        to create much more accurate order flow features, supplemented by kline-based proxies.
+        """
+        order_flow_features = pd.DataFrame(index=data.index)
+
+        try:
+            # Import numpy for mathematical operations
+            import numpy as np
+
+            # === TAKER DATA FEATURES (HIGH ACCURACY) ===
+            # Check if we have real taker data from Binance API
+            has_taker_data = False
+            taker_base = None
+            taker_quote = None
+
+            # Try different column names for taker data
+            taker_base_cols = ['taker_buy_base_asset_volume', 'taker_buy_base']
+            taker_quote_cols = ['taker_buy_quote_asset_volume', 'taker_buy_quote']
+
+            for col in taker_base_cols:
+                if col in data.columns:
+                    taker_base = data[col]
+                    has_taker_data = True
+                    break
+
+            for col in taker_quote_cols:
+                if col in data.columns:
+                    taker_quote = data[col]
+                    has_taker_data = True
+                    break
+
+            if has_taker_data and taker_base is not None and taker_quote is not None:
+                self.logger.info("✅ Using real taker data for enhanced order flow features")
+
+                # 1. REAL TAKER BUY/SELL FLOW (Direct from API)
+                total_volume = data['volume']
+                taker_ratio = safe_divide(taker_base, total_volume)
+                order_flow_features['taker_buy_ratio'] = taker_ratio
+                order_flow_features['taker_sell_ratio'] = 1.0 - taker_ratio  # Passive (maker) volume ratio
+
+                # 2. TAKER VALUE FLOW (Quote volume based)
+                total_quote_volume = data['quote_volume']
+                taker_quote_ratio = safe_divide(taker_quote, total_quote_volume)
+                order_flow_features['taker_quote_ratio'] = taker_quote_ratio
+
+                # 3. MARKET AGGRESSION INDEX (Real taker vs passive)
+                maker_volume = total_volume - taker_base
+                aggression_index = safe_divide(taker_base, maker_volume)
+                order_flow_features['market_aggression_index'] = aggression_index
+                order_flow_features['aggression_score'] = (aggression_index * 100).clip(0, 1000)  # Scaled for readability
+
+                # 4. TAKER BUYING PRESSURE (Average price paid by aggressive buyers)
+                taker_avg_price = safe_divide(taker_quote, taker_base)
+                market_price = data['close']
+                order_flow_features['taker_avg_price'] = taker_avg_price
+                order_flow_features['taker_price_deviation'] = safe_divide((taker_avg_price - market_price), market_price)
+
+                # 5. ORDER FLOW IMBALANCE (Real buy vs sell pressure)
+                order_flow_features['order_flow_imbalance'] = safe_divide((taker_base - maker_volume), total_volume)
+
+                # 6. TAKER VOLUME MOMENTUM
+                order_flow_features['taker_volume_momentum'] = taker_base.pct_change(5)
+                order_flow_features['taker_quote_momentum'] = taker_quote.pct_change(5)
+
+                # 7. TAKER PARTICIPATION RATE (How much of total volume is aggressive)
+                order_flow_features['taker_participation_rate'] = safe_divide(taker_base, total_volume)
+
+                # 8. TAKER EFFICIENCY (Value per volume for taker trades)
+                order_flow_features['taker_efficiency'] = safe_divide(taker_quote, taker_base)
+
+                # 9. TAKER FLOW DIRECTION (Net aggressive buying/selling)
+                taker_flow = taker_base - maker_volume
+                order_flow_features['taker_flow'] = taker_flow
+                order_flow_features['taker_flow_ratio'] = safe_divide(taker_flow, total_volume)
+
+                # 10. INSTITUTIONAL vs RETAIL INDICATOR (High participation + stable pricing = institutional)
+                taker_stability = taker_avg_price.rolling(10).std()
+                participation_rate = order_flow_features['taker_participation_rate']
+                order_flow_features['institutional_indicator'] = participation_rate / (taker_stability + 0.001)
+
+                # 11. TAKER VOLUME VOLATILITY (How erratic aggressive trading is)
+                order_flow_features['taker_volume_volatility'] = taker_base.rolling(20).std() / taker_base.rolling(20).mean().replace(0, 1)
+
+                # 12. BUY/SELL PRESSURE RATIO
+                order_flow_features['buy_sell_pressure_ratio'] = safe_divide(taker_base, maker_volume)
+
+                # 13. TAKER CONCENTRATION (How concentrated aggressive buying is at certain price levels)
+                order_flow_features['taker_concentration'] = safe_divide(taker_quote, taker_base)  # Price per unit volume
+
+                # 14. MARKET IMPACT PROXY (Real price impact from taker activity)
+                price_change = data['close'].pct_change()
+                order_flow_features['taker_market_impact'] = price_change * safe_sqrt(taker_base)
+
+                # 15. TAKER TREND ANALYSIS
+                order_flow_features['taker_trend_5'] = taker_base.rolling(5).mean() / taker_base.rolling(20).mean().replace(0, 1)
+                order_flow_features['taker_trend_10'] = taker_base.rolling(10).mean() / taker_base.rolling(30).mean().replace(0, 1)
+
+            else:
+                self.logger.info("ℹ️ No real taker data available, using enhanced kline proxies")
+
+            # === ENHANCED KLINE-BASED PROXIES (FALLBACK OR SUPPLEMENT) ===
+
+            # 1. BUYER/SELLER INITIATED TRADE FLOW PROXY (Enhanced with taker data if available)
+            close_position = safe_divide((data['close'] - data['open']), (data['high'] - data['low']))
+            base_flow_proxy = np.sign(close_position)
+
+            # Enhance with taker data if available
+            if has_taker_data and taker_base is not None:
+                taker_weighted_flow = np.sign(taker_base - taker_base.shift(1))
+                order_flow_features['buyer_seller_flow_proxy'] = 0.7 * base_flow_proxy + 0.3 * taker_weighted_flow
+            else:
+                order_flow_features['buyer_seller_flow_proxy'] = base_flow_proxy
+
+            # 2. ORDER MARKET IMBALANCE (OMI) PROXY (Enhanced with taker data)
+            midpoint = (data['high'] + data['low']) / 2
+            volume_weighted_deviation = ((data['close'] - midpoint) / midpoint) * safe_sqrt(data['volume'])
+
+            if has_taker_data and taker_base is not None:
+                # Use real taker data for more accurate imbalance calculation
+                taker_weighted_deviation = volume_weighted_deviation * (taker_base / data['volume'].replace(0, 1))
+                omi_base = taker_weighted_deviation
+            else:
+                omi_base = volume_weighted_deviation
+
+            omi_mean = omi_base.rolling(20).mean()
+            omi_std = omi_base.rolling(20).std()
+            omi_zscore = safe_divide((omi_base - omi_mean), omi_std)
+            order_flow_features['omi_proxy'] = omi_zscore
+
+            # 3. ORDER BOOK PRESSURE PROXY (Enhanced)
+            price_position = safe_divide((data['close'] - data['low']), (data['high'] - data['low']))
+            volume_normalized = safe_divide(data['volume'], data['volume'].rolling(20).mean())
+
+            if has_taker_data and taker_base is not None:
+                # Weight by taker participation
+                taker_participation = safe_divide(taker_base, data['volume'].replace(0, 1))
+                pressure_proxy = price_position * safe_log(volume_normalized + 1) * (1 + taker_participation)
+            else:
+                pressure_proxy = price_position * safe_log(volume_normalized + 1)
+
+            order_flow_features['order_book_pressure_proxy'] = pressure_proxy
+
+            # 4. MARKET MAKER vs RETAIL ORDER FLOW PROXY (Enhanced with taker data)
+            intrabar_range = safe_divide((data['high'] - data['low']), data['close'])
+            volume_per_range = safe_divide(data['volume'], intrabar_range)
+            volume_per_range_ma = volume_per_range.rolling(10).mean()
+
+            if has_taker_data and taker_base is not None:
+                # Adjust for taker participation - high taker ratio suggests more institutional activity
+                taker_adjustment = safe_divide(taker_base, data['volume'].replace(0, 1))
+                retail_proxy = safe_divide(volume_per_range, volume_per_range_ma) * (2 - taker_adjustment)  # Higher taker = more institutional
+            else:
+                retail_proxy = safe_divide(volume_per_range, volume_per_range_ma)
+
+            order_flow_features['market_maker_retail_proxy'] = retail_proxy
+
+            # 5. ORDER FLOW TOXICITY PROXY (Enhanced with taker data)
+            returns = data['close'].pct_change()
+
+            if has_taker_data and taker_base is not None:
+                # Use taker volume for more accurate price impact calculation
+                taker_returns = returns * safe_sqrt(taker_base)
+                toxicity_proxy = taker_returns.rolling(5).std()
+            else:
+                volume_returns = returns * safe_sqrt(data['volume'])
+                toxicity_proxy = volume_returns.rolling(5).std()
+
+            order_flow_features['order_flow_toxicity_proxy'] = toxicity_proxy
+
+            # 6. REAL ORDER DIRECTION CLASSIFICATION PROXY
+            price_direction = np.sign(data['close'] - data['open'])
+            volume_confirmation = np.sign(data['volume'] - data['volume'].shift(1))
+            order_flow_features['order_direction_proxy'] = price_direction * volume_confirmation
+
+            # 7. TRUE ORDER MARKET IMBALANCE PROXY (Enhanced)
+            price_momentum = data['close'].pct_change(3)
+
+            if has_taker_data and taker_base is not None:
+                taker_momentum = taker_base.pct_change(3)
+                true_omi = price_momentum - taker_momentum
+            else:
+                volume_momentum = data['volume'].pct_change(3)
+                true_omi = price_momentum - volume_momentum
+
+            order_flow_features['true_omi_proxy'] = true_omi
+
+            # 8. BID/ASK PRESSURE ANALYSIS PROXY
+            upper_pressure = safe_divide((data['high'] - data['close']), (data['high'] - data['low']))
+            lower_pressure = safe_divide((data['close'] - data['low']), (data['high'] - data['low']))
+            order_flow_features['bid_pressure_proxy'] = lower_pressure
+            order_flow_features['ask_pressure_proxy'] = upper_pressure
+
+            # 9. TRADE SOURCE IDENTIFICATION PROXY (Enhanced)
+            volatility = data['close'].pct_change().rolling(10).std()
+            vol_volatility_ratio = safe_divide(data['volume'], volatility)
+            vol_volatility_ratio_ma = vol_volatility_ratio.rolling(20).mean()
+
+            if has_taker_data and taker_base is not None:
+                # Use taker data for more accurate institutional vs retail classification
+                taker_volatility = taker_base.rolling(10).std()
+                taker_vol_ratio = safe_divide(taker_base, taker_volatility.replace(0, 1))
+                trade_source_proxy = safe_divide(taker_vol_ratio, taker_vol_ratio.rolling(20).mean().replace(0, 1))
+            else:
+                trade_source_proxy = safe_divide(vol_volatility_ratio, vol_volatility_ratio_ma)
+
+            order_flow_features['trade_source_proxy'] = trade_source_proxy
+
+            # Handle any NaN values that might have been created
+            order_flow_features = order_flow_features.fillna(0.0)
+
+            # Log successful creation
+            feature_count = len(order_flow_features.columns)
+            if has_taker_data:
+                self.logger.info(f"✅ Created {feature_count} enhanced order flow features using real taker data + kline proxies")
+            else:
+                self.logger.debug(f"✅ Created {feature_count} order flow proxy features using kline data only")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create order flow features: {e}")
+            # Return empty DataFrame if creation fails
+            order_flow_features = pd.DataFrame(index=data.index)
+
+        return order_flow_features
 
     def _create_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create support/resistance features with three-tier system: Enhanced → Basic → Fallback."""

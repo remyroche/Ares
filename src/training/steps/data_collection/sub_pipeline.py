@@ -99,7 +99,7 @@ class SubPipelineConfig:
     symbol: str = "BTCUSDT"
     exchange: str = "binance"
     timeframe: str = "1m"
-    data_dir: str = "data/training"
+    data_dir: str = "historical_data"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False
@@ -326,49 +326,7 @@ class DataCollectionSubPipeline:
             else:
                 self.logger.warning(f"⚠️ Klines download failed: {klines_error}")
             
-            # Download aggtrades data
-            self.logger.info(f"📥 Downloading aggtrades data for {config.exchange}_{config.symbol}")
-            aggtrades_success, aggtrades_data, aggtrades_error = await self.downloader.download_aggtrades(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                start_date=start_date,
-                end_date=end_date
-            )
-            
-            if aggtrades_success and aggtrades_data:
-                # Save aggtrades data
-                aggtrades_file = f"aggtrades_{config.exchange}_{config.symbol}_raw.parquet"
-                aggtrades_path = os.path.join(config.data_dir, aggtrades_file)
-                
-                aggtrades_df = pd.DataFrame(aggtrades_data)
-                standardized_parquet_handler.write_parquet_standardized(aggtrades_df, aggtrades_path, index=False)
-                artifacts['downloaded_files'].append(aggtrades_file)
-                artifacts['data_types'].append('aggtrades')
-                self.logger.info(f"✅ Downloaded {len(aggtrades_data)} aggtrades records")
-            else:
-                self.logger.warning(f"⚠️ Aggtrades download failed: {aggtrades_error}")
-            
-            # Download futures data
-            self.logger.info(f"📥 Downloading futures data for {config.exchange}_{config.symbol}")
-            futures_success, futures_data, futures_error = await self.downloader.download_futures(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                start_date=start_date,
-                end_date=end_date
-            )
-            
-            if futures_success and futures_data:
-                # Save futures data
-                futures_file = f"futures_{config.exchange}_{config.symbol}_raw.parquet"
-                futures_path = os.path.join(config.data_dir, futures_file)
-                
-                futures_df = pd.DataFrame(futures_data)
-                standardized_parquet_handler.write_parquet_standardized(futures_df, futures_path, index=False)
-                artifacts['downloaded_files'].append(futures_file)
-                artifacts['data_types'].append('futures')
-                self.logger.info(f"✅ Downloaded {len(futures_data)} futures records")
-            else:
-                self.logger.warning(f"⚠️ Futures download failed: {futures_error}")
+            # NOTE: Only downloading klines data as per new setup - aggtrades and futures removed
             
             # Get download statistics
             artifacts['download_stats'] = self.downloader.get_download_stats()
@@ -415,9 +373,9 @@ class DataCollectionSubPipeline:
             return artifacts
         
         try:
-            # Load raw data files
+            # Load raw data files - only klines as per new setup
             raw_data = {}
-            for data_type in ['klines', 'aggtrades', 'futures']:
+            for data_type in ['klines']:  # Only klines, removed aggtrades and futures
                 file_path = os.path.join(config.data_dir, f"{data_type}_{config.exchange}_{config.symbol}_raw.parquet")
                 if os.path.exists(file_path):
                     df = standardized_parquet_handler.read_parquet_standardized(file_path)
@@ -475,13 +433,10 @@ class DataCollectionSubPipeline:
             unified_df['symbol'] = config.symbol
             unified_df['timeframe'] = config.timeframe
             
-            # Merge aggtrades if available
-            if 'aggtrades' in raw_data:
-                unified_df = await self._merge_aggtrades_data(unified_df, raw_data['aggtrades'])
-            
-            # Merge futures if available
-            if 'futures' in raw_data:
-                unified_df = await self._merge_futures_data(unified_df, raw_data['futures'])
+            # Add klines-only features (no aggtrades needed)
+            self.logger.info("🔄 Adding klines-only features (aggtrades removed)")
+            unified_df = await self._add_klines_only_features(unified_df)
+
             
             # Add date columns
             if 'timestamp' in unified_df.columns:
@@ -489,83 +444,62 @@ class DataCollectionSubPipeline:
                 unified_df['year'] = timestamps.dt.year.astype('int16')
                 unified_df['month'] = timestamps.dt.month.astype('int8')
                 unified_df['day'] = timestamps.dt.day.astype('int8')
-            
+
+            # Remove any duplicate timestamps that might have been introduced during processing
+            if 'timestamp' in unified_df.columns:
+                initial_count = len(unified_df)
+                unified_df = unified_df.drop_duplicates(subset=['timestamp'], keep='first')
+                duplicates_removed = initial_count - len(unified_df)
+                if duplicates_removed > 0:
+                    self.logger.warning(f"🧹 Removed {duplicates_removed} duplicate timestamps in sub-pipeline")
+
             return unified_df
             
         except Exception as e:
             self.logger.exception(f"❌ Error converting to unified format: {e}")
             return None
     
-    async def _merge_aggtrades_data(self, klines_df: pd.DataFrame, aggtrades_df: pd.DataFrame) -> pd.DataFrame:
-        """Merge aggtrades data with klines data."""
+    async def _add_klines_only_features(self, klines_df: pd.DataFrame, skip_aggtrade_features: bool = True) -> pd.DataFrame:
+        """Add features using only klines data (no aggtrades).
+
+        Args:
+            klines_df: Klines dataframe
+            skip_aggtrade_features: If True, skip adding aggtrades-derived features to avoid constant columns
+        """
         try:
-            if 'timestamp' not in klines_df.columns or 'timestamp' not in aggtrades_df.columns:
-                return klines_df
-            
-            # Convert timestamps to datetime
-            klines_df['datetime'] = pd.to_datetime(klines_df['timestamp'], unit='ms', utc=True)
-            aggtrades_df['datetime'] = pd.to_datetime(aggtrades_df['timestamp'], unit='ms', utc=True)
-            aggtrades_df['kline_datetime'] = aggtrades_df['datetime'].dt.floor('1min')
-            
-            # Aggregate aggtrades by minute
-            aggtrades_agg = aggtrades_df.groupby('kline_datetime').agg({
-                'quantity': ['sum', 'count'],
-                'price': ['mean', 'min', 'max']
-            }).reset_index()
-            
-            # Flatten column names
-            aggtrades_agg.columns = ['kline_datetime', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']
-            
-            # Merge with klines
-            klines_df = klines_df.merge(aggtrades_agg, left_on='datetime', right_on='kline_datetime', how='left')
-            
-            # Fill missing values
-            for col in ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price']:
-                if col in klines_df.columns:
-                    klines_df[col] = klines_df[col].fillna(0.0)
-            
-            # Calculate volume ratio
-            if 'trade_volume' in klines_df.columns and 'volume' in klines_df.columns:
-                klines_df['volume_ratio'] = (klines_df['trade_volume'] / klines_df['volume']).fillna(0.0)
-            
-            # Clean up temporary columns
-            klines_df = klines_df.drop(columns=['datetime', 'kline_datetime'], errors='ignore')
-            
+            if not skip_aggtrade_features:
+                # Use klines volume directly as trade_volume
+                klines_df['trade_volume'] = klines_df['volume']
+
+                # Disable trade_count (set to constant)
+                klines_df['trade_count'] = 1.0
+
+                # Disable avg_price (set to close price)
+                klines_df['avg_price'] = klines_df['close']
+
+                # Use low/high directly
+                klines_df['min_price'] = klines_df['low']
+                klines_df['max_price'] = klines_df['high']
+
+                # Calculate volume_ratio properly from klines data
+                # volume_ratio = current volume / 20-period moving average of volume
+                volume_sma_20 = klines_df['volume'].rolling(window=20).mean()
+                klines_df['volume_ratio'] = klines_df['volume'] / volume_sma_20
+
+                # Handle potential NaN values from rolling calculation at the beginning
+                klines_df['volume_ratio'] = klines_df['volume_ratio'].fillna(1.0)
+
+                self.logger.info("✅ Added klines-only features: trade_volume=volume, trade_count=disabled, avg_price=disabled, volume_ratio=calculated")
+            else:
+                # Skip adding aggtrades-derived features to avoid constant columns
+                self.logger.info("ℹ️ Skipping aggtrades-derived features (no aggtrades data available)")
+
             return klines_df
-            
+
         except Exception as e:
-            self.logger.exception(f"❌ Error merging aggtrades data: {e}")
+            self.logger.exception(f"❌ Error adding klines-only features: {e}")
             return klines_df
     
-    async def _merge_futures_data(self, klines_df: pd.DataFrame, futures_df: pd.DataFrame) -> pd.DataFrame:
-        """Merge futures data with klines data."""
-        try:
-            if 'timestamp' not in klines_df.columns or 'timestamp' not in futures_df.columns:
-                return klines_df
-            
-            # Convert timestamps to datetime
-            klines_df['datetime'] = pd.to_datetime(klines_df['timestamp'], unit='ms', utc=True)
-            futures_df['datetime'] = pd.to_datetime(futures_df['timestamp'], unit='ms', utc=True)
-            futures_df['kline_datetime'] = futures_df['datetime'].dt.floor('1min')
-            
-            # Get latest funding rate for each minute
-            futures_agg = futures_df.groupby('kline_datetime')['funding_rate'].last().reset_index()
-            
-            # Merge with klines
-            klines_df = klines_df.merge(futures_agg, left_on='datetime', right_on='kline_datetime', how='left')
-            
-            # Fill missing funding rates
-            if 'funding_rate' in klines_df.columns:
-                klines_df['funding_rate'] = klines_df['funding_rate'].fillna(method='ffill').fillna(0.0)
-            
-            # Clean up temporary columns
-            klines_df = klines_df.drop(columns=['datetime', 'kline_datetime'], errors='ignore')
-            
-            return klines_df
-            
-        except Exception as e:
-            self.logger.exception(f"❌ Error merging futures data: {e}")
-            return klines_df
     
     @log_important_calls
     async def _data_resampling_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -741,13 +675,11 @@ class DataCollectionSubPipeline:
             return artifacts
         
         try:
-            # Validate all data files
+            # Validate all data files - only klines as per new setup
             data_files = [
                 f"klines_{config.exchange}_{config.symbol}_{config.timeframe}_raw.parquet",
-                f"aggtrades_{config.exchange}_{config.symbol}_raw.parquet",
-                f"futures_{config.exchange}_{config.symbol}_raw.parquet",
                 f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
-            ]
+            ]  # Removed aggtrades and futures validation
             
             validation_results = {}
             for file_name in data_files:
@@ -788,12 +720,9 @@ class DataCollectionSubPipeline:
         """Determine data type from file name."""
         if 'klines' in file_name:
             return DataType.KLINES
-        elif 'aggtrades' in file_name:
-            return DataType.AGGTRADES
-        elif 'futures' in file_name:
-            return DataType.FUTURES
         elif 'unified' in file_name:
             return DataType.UNIFIED
+        # Removed aggtrades and futures data type determination as per new setup
         return None
     
     @log_important_calls
@@ -967,7 +896,7 @@ class DataCollectionSubPipeline:
             return artifacts
         
         try:
-            # Check all data files for quality issues
+            # Check all data files for quality issues - removed aggtrades/futures as per new setup
             data_files = [
                 f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
                 f"prepared_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
@@ -983,12 +912,8 @@ class DataCollectionSubPipeline:
                         try:
                             from src.utils.data.quality.data_cleaning import DataCleaner
                             
-                            # Determine data type from filename
-                            data_type = 'klines'  # Default
-                            if 'aggtrades' in file_name:
-                                data_type = 'aggtrades'
-                            elif 'futures' in file_name:
-                                data_type = 'futures'
+                            # Determine data type from filename - only klines as per new setup
+                            data_type = 'klines'  # Default - only klines used now
                             
                             # Create data cleaner with appropriate data type
                             cleaner = DataCleaner(data_type=data_type)
@@ -1451,7 +1376,7 @@ async def execute_full_data_collection_pipeline(
     symbol: str,
     exchange: str,
     timeframe: str = "1m",
-    data_dir: str = "data_cache",
+    data_dir: str = "historical_data",
     mode: ExecutionMode = ExecutionMode.FULL,
     **kwargs
 ) -> Dict[str, Any]:
@@ -1499,7 +1424,7 @@ if __name__ == "__main__":
             symbol="ETHUSDT",
             exchange="BINANCE", 
             timeframe="1m",
-            data_dir="data_cache",
+            data_dir="historical_data",
             mode=ExecutionMode.FULL,
             lookback_days=30,
             target_timeframes=['5m', '15m', '30m', '1h'],

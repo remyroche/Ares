@@ -18,7 +18,7 @@ def test_imports():
     tprint("🔧 Testing imports...")
     
     try:
-        from utils.ml_common.feature_selection import FeatureSelectionFramework
+        from src.utils.ml_common.feature_selection import FeatureSelectionFramework
         tprint("✅ FeatureSelectionFramework imported successfully")
         
         # Test initialization
@@ -58,7 +58,7 @@ def test_method_signatures():
     tprint("\n🔧 Testing method signatures...")
     
     try:
-        from utils.ml_common.feature_selection import FeatureSelectionFramework
+        from src.utils.ml_common.feature_selection import FeatureSelectionFramework
         import inspect
         
         framework = FeatureSelectionFramework()
@@ -109,7 +109,7 @@ def test_configuration():
     tprint("\n🔧 Testing configuration...")
     
     try:
-        from utils.ml_common.feature_selection import FeatureSelectionFramework
+        from src.utils.ml_common.feature_selection import FeatureSelectionFramework
         
         framework = FeatureSelectionFramework()
         

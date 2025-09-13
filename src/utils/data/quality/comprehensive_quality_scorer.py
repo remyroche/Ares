@@ -15,10 +15,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from enum import Enum
 
 from src.utils.logger import system_logger
-from src.utils.data.quality.data_quality import DataQualityValidator, QualityThresholds, QualityResult
+from src.utils.data.quality.data_quality import DataQualityFramework, QualityThresholds, QualityResult
 from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics, QualityAssessment
 from src.utils.data.quality.data_cleaning import DataCleaner
-from src.utils.data.quality.statistical_distribution_validation import StatisticalDistributionValidator
+from src.utils.data.quality.statistical_distribution_validation import StatisticalValidator
 from src.utils.data.quality.quality_alert_system import QualityAlertSystem
 
 logger = system_logger.getChild('ComprehensiveQualityScorer')
@@ -62,7 +62,7 @@ class ComprehensiveQualityScorer:
         # Initialize quality assessment tools
         self.advanced_metrics = AdvancedQualityMetrics()
         self.data_cleaner = DataCleaner()
-        self.statistical_validator = StatisticalDistributionValidator()
+        self.statistical_validator = StatisticalValidator()
         self.alert_system = QualityAlertSystem()
         
         # Quality score history for trend analysis
@@ -277,8 +277,8 @@ class ComprehensiveQualityScorer:
                 max_constant_ratio=0.95
             )
             
-            validator = DataQualityValidator(thresholds)
-            result = validator.validate_dataframe(data)
+            validator = DataQualityFramework(thresholds)
+            result = validator.validate_dataframe_quality(data)
             
             # Convert validation result to validity score
             if result.passed:
@@ -386,7 +386,7 @@ class ComprehensiveQualityScorer:
         required_columns = {
             'klines': ['timestamp', 'open', 'high', 'low', 'close', 'volume'],
             'aggtrades': ['timestamp', 'price', 'quantity'],
-            'futures': ['timestamp', 'funding_rate']
+            'futures': ['timestamp']
         }
         return required_columns.get(data_type, ['timestamp'])
     

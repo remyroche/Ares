@@ -312,8 +312,39 @@ class EnhancedFeatureEngineering:
         
         # Process in memory
         indicators = {}
-        
+
         try:
+            # === BASIC CANDLESTICK FEATURES ===
+            # Add fundamental candlestick body size features
+            self.logger.info(f'📊 Adding candlestick body size features')
+
+            # Body size (absolute difference between open and close)
+            body_size = np.abs(market_data['close'] - market_data['open'])
+            indicators['body_size'] = body_size
+
+            # Body size percentage (relative to open price)
+            body_size_pct = safe_divide(body_size, market_data['open']) * 100  # Convert to percentage
+            indicators['body_size_pct'] = body_size_pct
+
+            # Body to range ratio (body size relative to total range)
+            total_range = market_data['high'] - market_data['low']
+            body_to_range_ratio = safe_divide(body_size, total_range)
+            indicators['body_to_range_ratio'] = body_to_range_ratio
+
+            # Upper and lower wick sizes
+            upper_wick = market_data['high'] - np.maximum(market_data['open'], market_data['close'])
+            lower_wick = np.minimum(market_data['open'], market_data['close']) - market_data['low']
+            indicators['upper_wick'] = upper_wick
+            indicators['lower_wick'] = lower_wick
+
+            # Wick ratios
+            indicators['upper_wick_ratio'] = safe_divide(upper_wick, total_range)
+            indicators['lower_wick_ratio'] = safe_divide(lower_wick, total_range)
+
+            # Body direction and strength indicators
+            body_direction = np.sign(market_data['close'] - market_data['open'])
+            indicators['body_direction'] = body_direction
+            indicators['body_strength'] = body_size * body_direction  # Signed body size
             # Vectorized RSI extraction
             if 'RSI' in periods_config and TALIB_AVAILABLE:
                 indicators.update(self._extract_rsi_batch(market_data, periods_config['RSI']))
@@ -962,10 +993,7 @@ class EnhancedFeatureEngineering:
             # Use data processing utilities for feature creation
             enhanced_features = market_data.copy()
             
-            if data_proc and data_proc.validator:
-                # Validate data quality before feature engineering
-                quality_report = data_proc.validator.validate_dataframe(enhanced_features)
-                self.logger.info(f"Data quality score: {quality_report.summary.get('data_quality_score', 0)}")
+            # Data validation already performed above
             
             # Create features using math validation for safety
             if math_val:

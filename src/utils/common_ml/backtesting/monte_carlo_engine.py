@@ -208,7 +208,6 @@ class MonteCarloEngine:
         self.logger.info(f"📊 Simulations: {config.simulation_params.n_simulations}")
     
     @traced(span_name='monte_carlo_simulation')
-    @log_execution_time
     async def simulate(
         self, 
         historical_data: Optional[pd.DataFrame] = None,

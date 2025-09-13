@@ -209,7 +209,6 @@ class ABTestingEngine:
         self.logger.info(f"📊 Statistical tests: {len(config.statistical_tests)}")
     
     @traced(span_name='ab_testing')
-    @log_execution_time
     async def execute(
         self, 
         control_data: pd.DataFrame,

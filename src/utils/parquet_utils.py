@@ -99,20 +99,20 @@ class ParquetUtils:
         self.logger.info(f"🔧 Safe reading parquet file: {file_path}")
 
         # Enhanced strategies with schema compatibility options
+        # Note: use_legacy_dataset is deprecated in newer pandas/pyarrow versions
         strategies = [
-            {"engine": "pyarrow", "use_legacy_dataset": False, "coerce_int96_timestamp_unit": "ms"},
-            {"engine": "pyarrow", "use_legacy_dataset": True, "coerce_int96_timestamp_unit": "ms"},
-            {"engine": "fastparquet", "use_legacy_dataset": False},
-            {"engine": "fastparquet", "use_legacy_dataset": True},
-            {"engine": None, "use_legacy_dataset": False},  # pandas default
+            {"engine": "pyarrow", "coerce_int96_timestamp_unit": "ms"},
+            {"engine": "pyarrow", "coerce_int96_timestamp_unit": "ns"},  # Alternative timestamp unit
+            {"engine": "fastparquet"},
+            {"engine": None},  # pandas default
         ]
         
         for idx, strategy in enumerate(strategies, start=1):
             try:
                 engine = strategy.get("engine")
                 strategy_msg = f"   Trying strategy {idx}/{len(strategies)}: {'default' if engine is None else engine} engine"
-                if strategy.get("use_legacy_dataset"):
-                    strategy_msg += " (legacy dataset)"
+                if strategy.get("coerce_int96_timestamp_unit"):
+                    strategy_msg += f" ({strategy.get('coerce_int96_timestamp_unit')} timestamps)"
                 self.logger.info(strategy_msg)
                 
                 read_kwargs = dict(kwargs)

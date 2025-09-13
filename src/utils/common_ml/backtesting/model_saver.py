@@ -218,7 +218,6 @@ class ModelSaver:
         self.logger.info(f"💾 Save formats: {[f.value for f in config.save_formats]}")
     
     @traced(span_name='save_model')
-    @log_execution_time
     async def save_model(
         self, 
         model: Any,

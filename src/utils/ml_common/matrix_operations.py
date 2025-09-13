@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from src.utils.tprint import tprint
+from src.feature_engineering.enhanced_matrix_operations import with_error_handling, with_memory_optimization
 
 """Enhanced Matrix Operations with M1 Optimization Integration.
 
@@ -49,47 +50,33 @@ except Exception as e:
 
 # Import M1 optimization utilities
 try:
-    from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-    from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+    from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
     from ..vectorized_processing_core import get_vectorized_processing_core, VectorizedProcessingCore
     M1_UTILS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"M1 optimization utilities not available: {e}")
     M1_UTILS_AVAILABLE = False
 
-# Import enhanced matrix operations as base (optional to avoid circular imports)
-try:
-    from ...feature_engineering.enhanced_matrix_operations import (
-        with_error_handling, with_gpu_fallback, with_memory_optimization,
-        get_enhanced_matrix_operations, EnhancedMatrixOperations
-    )
-    ENHANCED_MATRIX_OPS_AVAILABLE = True
-    tprint("✅ Enhanced matrix operations loaded successfully")
-except (ImportError, AttributeError) as e:
-    # Provide fallback implementations for circular import cases
-    tprint(f"⚠️ Enhanced matrix operations not available: {e}")
-    ENHANCED_MATRIX_OPS_AVAILABLE = False
+# Enhanced matrix operations will be imported locally to avoid circular imports
+ENHANCED_MATRIX_OPS_AVAILABLE = False
 
-    def with_error_handling(func):
-        """Fallback error handling decorator."""
-        return func
-
-    def with_gpu_fallback(func):
-        """Fallback GPU decorator."""
-        return func
-
-    def with_memory_optimization(func):
-        """Fallback memory optimization decorator."""
-        return func
-
-    def get_enhanced_matrix_operations():
-        """Fallback matrix operations factory."""
-        return M1EnhancedMatrixOperations()
-
-    class EnhancedMatrixOperations:
-        """Fallback EnhancedMatrixOperations class."""
-        def __init__(self):
-            pass
+def _get_enhanced_decorators():
+    """Get enhanced decorators locally to avoid circular imports."""
+    try:
+        from ...feature_engineering.enhanced_matrix_operations import (
+            with_error_handling, with_gpu_fallback, with_memory_optimization
+        )
+        return with_error_handling, with_gpu_fallback, with_memory_optimization
+    except (ImportError, AttributeError):
+        # Fallback decorators
+        def with_error_handling(func):
+            return func
+        def with_gpu_fallback(func):
+            return func
+        def with_memory_optimization(func):
+            return func
+        return with_error_handling, with_gpu_fallback, with_memory_optimization
 
 warnings.warn(
     "`src.utils.ml_common.matrix_operations` is the new canonical import path for the"
@@ -144,11 +131,8 @@ class M1EnhancedMatrixOperations:
         self.cpu_optimizer = None
         self.vectorized_core = None
 
-        # Initialize base operations if available
-        try:
-            self.base_ops = get_enhanced_matrix_operations()
-        except ImportError:
-            self.base_ops = None
+        # Note: Base operations initialization removed to prevent circular import
+        # The enhanced_matrix_operations module imports from this file, creating a cycle
 
         # Performance tracking
         self.performance_stats = {
@@ -176,7 +160,7 @@ class M1EnhancedMatrixOperations:
         try:
             # Initialize M1 GPU manager
             if self.use_gpu and self.gpu_manager is None:
-                from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer
+                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
                 self.gpu_manager = get_m1_memory_optimizer()
                 self.logger.debug(f"🎯 M1 Memory Optimizer initialized")
             else:
@@ -184,19 +168,19 @@ class M1EnhancedMatrixOperations:
 
             # Initialize M1 memory optimizer
             if self.memory_efficient and self.memory_optimizer is None:
-                from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer
+                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
                 self.memory_optimizer = get_m1_memory_optimizer()
                 self.logger.debug("🧠 M1 Memory Optimizer initialized")
 
             # Initialize M1 CPU optimizer
             if self.enable_parallel_processing and self.cpu_optimizer is None:
-                from ..hardware.m1_memory_optimizer import get_memory_manager
+                from src.utils.hardware.m1_memory_optimizer import get_memory_manager
                 self.cpu_optimizer = get_memory_manager()
                 self.logger.debug(f"⚡ Memory Manager initialized for parallel processing")
 
             # Initialize vectorized processing core
             if self.vectorized_core is None:
-                from ..hardware.m1_memory_optimizer import get_vectorized_processing_core
+                from src.utils.hardware.m1_memory_optimizer import get_vectorized_processing_core
                 self.vectorized_core = get_vectorized_processing_core()
                 self.logger.debug("🔄 Vectorized Processing Core initialized")
 
@@ -257,8 +241,6 @@ class M1EnhancedMatrixOperations:
         else:
             self.logger.debug(f"⚡ {operation_name} completed in {execution_time:.4f}s")
 
-    @with_error_handling("m1_matrix_multiply")
-    @with_gpu_fallback("m1_matrix_multiply")
     def matrix_multiply(self, a: Union[np.ndarray, torch.Tensor],
                        b: Union[np.ndarray, torch.Tensor],
                        use_gpu: Optional[bool] = None) -> Union[np.ndarray, torch.Tensor]:
@@ -318,7 +300,6 @@ class M1EnhancedMatrixOperations:
             _LOGGER.info(f"📊 Result shape: {result.shape if hasattr(result, 'shape') else 'unknown'}")
             return result
 
-    @with_error_handling("m1_batch_matrix_multiply")
     def batch_matrix_multiply(self, matrices_a: List[np.ndarray],
                             matrices_b: List[np.ndarray],
                             batch_size: Optional[int] = None) -> List[np.ndarray]:
@@ -385,7 +366,6 @@ class M1EnhancedMatrixOperations:
             _LOGGER.info(f"📊 Processed {len(results)} matrices")
             return results
 
-    @with_error_handling("m1_correlation_matrix")
     def correlation_matrix(self, data: Union[pd.DataFrame, np.ndarray],
                          method: str = 'pearson') -> np.ndarray:
         """M1-optimized correlation matrix computation."""
@@ -407,7 +387,6 @@ class M1EnhancedMatrixOperations:
                     df = pd.DataFrame(data.T)
                     return df.corr(method=method).values
 
-    @with_error_handling("m1_eigendecomposition")
     def eigendecomposition(self, matrix: np.ndarray,
                           use_gpu: Optional[bool] = None) -> Tuple[np.ndarray, np.ndarray]:
         """M1-optimized eigendecomposition with GPU acceleration."""
@@ -431,7 +410,6 @@ class M1EnhancedMatrixOperations:
             else:
                 return np.linalg.eigh(matrix)
 
-    @with_error_handling("m1_svd_decomposition")
     def svd_decomposition(self, matrix: np.ndarray,
                          k: Optional[int] = None,
                          use_gpu: Optional[bool] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -474,7 +452,6 @@ class M1EnhancedMatrixOperations:
                     V = V[:k, :]
                 return U, S, V
 
-    @with_error_handling("m1_parallel_operations")
     def parallel_matrix_operations(self, matrices: List[np.ndarray],
                                  operation: str = "eigen",
                                  max_workers: Optional[int] = None) -> List[Any]:
@@ -518,7 +495,6 @@ class M1EnhancedMatrixOperations:
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
-    @with_memory_optimization("m1_memory_cleanup")
     def optimize_memory(self) -> Dict[str, Any]:
         """Comprehensive memory optimization using M1 memory optimizer."""
         if self.memory_optimizer:
@@ -679,8 +655,6 @@ __all__ = [
     'm1_eigendecomposition', 'm1_svd_decomposition', 'm1_parallel_operations',
     'm1_optimize_memory', 'get_m1_performance_stats',
     
-    # Error handling and optimization
-    'with_error_handling', 'with_gpu_fallback', 'with_memory_optimization',
     'DynamicBatchOptimizer', 'BatchOptimizationStrategy', 'OperationComplexity',
     'ErrorHandler', 'OptimizationError', 'GPUError', 'MemoryError', 'MatrixOperationError'
 ]

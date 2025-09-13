@@ -18,7 +18,7 @@ from .multi_output_models import (
     create_multi_output_stacking_model
 )
 from .model_training import EnhancedModelTrainer, train_model_with_confidence_metrics
-from .model_evaluation import ModelEvaluator
+from .model_evaluation import ModelEvaluationUtilities as ModelEvaluator
 from .model_registry import ModelRegistry
 
 __all__ = [

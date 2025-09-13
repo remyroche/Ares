@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from src.utils.tprint import tprint
 
 """
 Ares Launcher - Granular Sub-Pipeline Control
@@ -29,22 +28,24 @@ from datetime import datetime
 from pathlib import Path
 from enum import Enum
 
-# Add the project root to the Python path
-tprint("🔧 [IMPORTS] Setting up project root path...")
+# Add the project root to the Python path BEFORE any imports
+print("🔧 [IMPORTS] Setting up project root path...")
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-tprint(f"✅ [IMPORTS] Project root added to path: {project_root}")
+print(f"✅ [IMPORTS] Project root added to path: {project_root}")
 
 # Temporarily use simple logger to bypass initialization issues
-tprint("🔧 [IMPORTS] Setting up additional paths...")
-import sys
-import os
+print("🔧 [IMPORTS] Setting up additional paths...")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-tprint("✅ [IMPORTS] Additional paths configured")
+print("✅ [IMPORTS] Additional paths configured")
 
-tprint("🔧 [IMPORTS] Importing simple_logger...")
+print("🔧 [IMPORTS] Importing simple_logger...")
 from simple_logger import system_logger
-tprint("✅ [IMPORTS] Simple logger imported")
+print("✅ [IMPORTS] Simple logger imported")
+
+print("🔧 [IMPORTS] Importing tprint...")
+from src.utils.tprint import tprint
+print("✅ [IMPORTS] Tprint imported")
 
 tprint("🔧 [IMPORTS] Importing core decorators...")
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -302,7 +303,7 @@ class AresLauncher:
         symbol: str = "ETHUSDT",
         exchange: str = "binance",
         timeframe: str = "1m",
-        data_dir: str = "data/training",
+        data_dir: str = "historical_data",
         stage: Optional[PipelineStage] = None,
         sub_pipeline: Optional[str] = None,
         execution_mode: ExecutionModeType = ExecutionModeType.FULL,
@@ -1120,8 +1121,8 @@ Examples:
     
     parser.add_argument(
         '--data-dir',
-        default='data/training',
-        help='Data directory (default: data/training)'
+        default='historical_data',
+        help='Data directory (default: historical_data)'
     )
     
     parser.add_argument(

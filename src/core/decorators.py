@@ -168,14 +168,73 @@ def cached(*args, **kwargs) -> None:
         return wrapper
     return decorator
 
-def log_execution_time(*args, **kwargs) -> None:
-    """Log execution time decorator."""
+def log_execution_time(func_or_callable=None, **kwargs):
+    """
+    Log execution time decorator.
 
-    def decorator(func: Callable) -> None:
+    Can be used as:
+    @log_execution_time
+    @log_execution_time()
+    @log_execution_time(param=value)
+    """
+    import time
+    import logging
 
-        def wrapper(*args, **kwargs) -> None:
-            return func(*args, **kwargs)
-        return wrapper
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*func_args, **func_kwargs):
+            start_time = time.time()
+            try:
+                result = func(*func_args, **func_kwargs)
+                duration = time.time() - start_time
+                # Try to get a logger, fallback to print if not available
+                try:
+                    logger = logging.getLogger(func.__module__)
+                    logger.info(f"{func.__name__} executed in {duration:.2f}s")
+                except:
+                    tprint(f"{func.__name__} executed in {duration:.2f}s")
+                return result
+            except Exception as e:
+                duration = time.time() - start_time
+                try:
+                    logger = logging.getLogger(func.__module__)
+                    logger.error(f"{func.__name__} failed after {duration:.2f}s: {e}")
+                except:
+                    tprint(f"{func.__name__} failed after {duration:.2f}s: {e}")
+                raise
+
+        @functools.wraps(func)
+        async def async_wrapper(*func_args, **func_kwargs):
+            start_time = time.time()
+            try:
+                result = await func(*func_args, **func_kwargs)
+                duration = time.time() - start_time
+                # Try to get a logger, fallback to print if not available
+                try:
+                    logger = logging.getLogger(func.__module__)
+                    logger.info(f"{func.__name__} executed in {duration:.2f}s")
+                except:
+                    tprint(f"{func.__name__} executed in {duration:.2f}s")
+                return result
+            except Exception as e:
+                duration = time.time() - start_time
+                try:
+                    logger = logging.getLogger(func.__module__)
+                    logger.error(f"{func.__name__} failed after {duration:.2f}s: {e}")
+                except:
+                    tprint(f"{func.__name__} failed after {duration:.2f}s: {e}")
+                raise
+
+        if inspect.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return wrapper
+
+    # If called as @log_execution_time (no parentheses)
+    if func_or_callable is not None and callable(func_or_callable):
+        return decorator(func_or_callable)
+
+    # If called as @log_execution_time() or @log_execution_time(param=value)
     return decorator
 
 def log_call(*args, **kwargs) -> None:

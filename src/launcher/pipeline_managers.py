@@ -390,7 +390,7 @@ class BacktestingPipelineManager(BasePipelineManager):
                 # Pre-flight validation
                 launcher_logger.log_progress("Pre-flight Validation", 0, "Starting validation checks")
                 
-                data_dir = "data_cache"
+                data_dir = "historical_data"
                 required_files = [
                     f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
                     f"volume_{exchange}_{symbol}_consolidated.parquet"

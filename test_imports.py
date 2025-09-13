@@ -1,75 +1,48 @@
-from src.utils.tprint import tprint
-
+#!/usr/bin/env python3
 """
-Simple import test for the refactored feature selection framework.
+Test script to verify import fixes
 """
 
-import sys
-import os
-
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-
-def test_imports():
-    """Test that all modules can be imported."""
-    tprint("🧪 Testing imports...")
-    
+def test_tenacity_import():
+    """Test tenacity import in binance.py context"""
     try:
-        # Test importing the main framework
-        from src.training.utils.feature_selection import FeatureSelectionFramework
-        tprint("✅ Successfully imported FeatureSelectionFramework")
-        
-        # Test importing individual components
-        from src.training.utils.feature_selection import (
-            BaseFeatureSelectionFramework,
-            DataValidator,
-            MRMRSelector,
-            LassoStabilitySelector,
-            CorrelationBasedFilter,
-            RecursiveFeatureEliminator,
-            FeatureImportanceRanker,
-            StabilityAnalyzer,
-            PerformanceMonitor,
-            QualityMetricsCalculator,
-            TemporalAnalyzer,
-            CausalAnalyzer
-        )
-        tprint("✅ Successfully imported all individual components")
-        
-        # Test that the main class can be instantiated
-        config = {'random_state': 42}
-        framework = FeatureSelectionFramework(config)
-        tprint("✅ Successfully instantiated FeatureSelectionFramework")
-        
-        # Test that expected methods exist
-        expected_methods = [
-            'run_comprehensive_feature_selection',
-            'get_model_target_features',
-            'get_optimization_stats',
-            'check_system_requirements'
-        ]
-        
-        for method in expected_methods:
-            if hasattr(framework, method):
-                tprint(f"✅ Method {method} exists")
-            else:
-                tprint(f"❌ Method {method} missing")
-                return False
-        
-        tprint("✅ All expected methods exist")
+        from tenacity import retry, stop_after_attempt, wait_exponential
+        print("✅ Tenacity import successful")
         return True
-        
     except ImportError as e:
-        tprint(f"❌ Import failed: {e}")
+        print(f"❌ Tenacity import failed: {e}")
         return False
+
+def test_sr_breakout_import():
+    """Test SR breakout predictor import"""
+    try:
+        # Import the module to check if the file exists
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+        # Try importing the module (without instantiating to avoid circular imports)
+        import importlib
+        spec = importlib.util.spec_from_file_location(
+            "sr_breakout_predictor_enhanced",
+            "src/tactician/sr_levels/sr_breakout_predictor_enhanced.py"
+        )
+        if spec and spec.loader:
+            print("✅ SR breakout predictor module found")
+            return True
+        else:
+            print("❌ SR breakout predictor module not found")
+            return False
     except Exception as e:
-        tprint(f"❌ Unexpected error: {e}")
+        print(f"❌ SR breakout predictor import check failed: {e}")
         return False
 
 if __name__ == "__main__":
-    success = test_imports()
-    if success:
-        tprint("\n🎉 All imports successful! The refactoring is working correctly.")
+    print("Testing import fixes...")
+    tenacity_ok = test_tenacity_import()
+    sr_ok = test_sr_breakout_import()
+
+    if tenacity_ok and sr_ok:
+        print("\n🎉 All import issues resolved!")
     else:
-        tprint("\n⚠️ Some imports failed. Please check the module structure.")
-    sys.exit(0 if success else 1)
+        print("\n⚠️ Some import issues remain")

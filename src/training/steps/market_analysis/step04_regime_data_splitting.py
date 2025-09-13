@@ -3,9 +3,90 @@ from src.utils.tprint import tprint
 from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
-from src.training.steps.model_training.step04_common_types import (
-    StepResult, RegimeDataResult, StepResultStatus, standardize_result
-)
+
+# Common types defined locally
+from enum import Enum
+from dataclasses import dataclass, field
+from datetime import datetime
+
+class StepResultStatus(Enum):
+    """Status for step execution results."""
+    PENDING = 'pending'
+    RUNNING = 'running'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
+    SKIPPED = 'skipped'
+
+@dataclass
+class StepResult:
+    """Standardized result from a pipeline step."""
+    status: StepResultStatus
+    data: Optional[Any] = None
+    error: Optional[Exception] = None
+    metrics: Dict[str, Any] = field(default_factory=dict)
+    artifacts: Dict[str, str] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
+    @property
+    def duration(self) -> Optional[float]:
+        """Calculate execution duration in seconds."""
+        if self.start_time and self.end_time:
+            return (self.end_time - self.start_time).total_seconds()
+        return None
+
+    @property
+    def is_success(self) -> bool:
+        """Check if step completed successfully."""
+        return self.status == StepResultStatus.COMPLETED
+
+@dataclass
+class RegimeDataResult:
+    """Result from regime data splitting operation."""
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    regime_stats: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def success_result(cls, data: Dict[str, Any], regime_stats: Dict[str, Any] = None, metadata: Dict[str, Any] = None) -> 'RegimeDataResult':
+        """Create a successful result."""
+        return cls(
+            success=True,
+            data=data,
+            regime_stats=regime_stats or {},
+            metadata=metadata or {}
+        )
+
+    @classmethod
+    def failure_result(cls, error: str, metadata: Dict[str, Any] = None) -> 'RegimeDataResult':
+        """Create a failure result."""
+        return cls(
+            success=False,
+            error=error,
+            metadata=metadata or {}
+        )
+
+def standardize_result(result: Any) -> StepResult:
+    """Standardize any result into a StepResult format."""
+    if isinstance(result, StepResult):
+        return result
+    elif isinstance(result, dict) and 'status' in result:
+        return StepResult(
+            status=result.get('status', StepResultStatus.COMPLETED),
+            data=result.get('data'),
+            error=result.get('error'),
+            metrics=result.get('metrics', {}),
+            artifacts=result.get('artifacts', {}),
+            warnings=result.get('warnings', [])
+        )
+    else:
+        return StepResult(
+            status=StepResultStatus.COMPLETED,
+            data=result
+        )
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 from src.utils.logger import system_logger
 # Core decorators imports
@@ -146,13 +227,90 @@ from src.utils.math_validation import (
 from src.utils.parquet_utils import get_parquet_utils
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-# Import dependency injection for step04 utilities
-from ..model_training.step04_dependency_injection import (
-    get_step04_utilities, get_step04_container, create_step04_config,
-    get_common_ops, get_common_utils, get_math_validation, get_parquet_utils,
-    get_serialization_utils, get_data_processing_utils, get_m1_gpu_utils,
-    get_m1_memory_optimizer, get_m1_cpu_optimizer
-)
+# Direct utility imports (replacing dependency injection)
+from src.utils.common_operations import CommonOperations
+from src.utils.common_utilities import CommonUtilities
+from src.utils.math_validation import MathValidation
+from src.utils.parquet_utils import ParquetUtils
+from src.utils.core.file_operations import JSONSerializer, PickleSerializer, ParquetSerializer
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+except ImportError:
+    M1GPUManager = None
+    M1MemoryOptimizer = None
+    M1CPUOptimizer = None
+
+# Simple factory functions to replace dependency injection
+def create_step04_config(**kwargs):
+    """Create a simple configuration dict for step04."""
+    return {
+        'common_ops': True,
+        'common_utils': True,
+        'math_validation': True,
+        'parquet_utils': True,
+        'serialization_utils': True,
+        'data_processing_utils': True,
+        'm1_gpu_utils': M1GPUManager is not None,
+        'm1_memory_optimizer': M1MemoryOptimizer is not None,
+        'm1_cpu_optimizer': M1CPUOptimizer is not None,
+        **kwargs
+    }
+
+def get_step04_container(config):
+    """Get a simple container dict with utility instances."""
+    return {
+        'common_ops': CommonOperations(),
+        'common_utils': CommonUtilities(),
+        'math_validation': MathValidation(),
+        'parquet_utils': ParquetUtils(),
+        'serialization_utils': {
+            'json': JSONSerializer(),
+            'pickle': PickleSerializer(),
+            'parquet': ParquetSerializer()
+        },
+        'data_processing_utils': CommonUtilities(),  # Using CommonUtilities as data processing
+        'm1_gpu_utils': M1GPUManager() if M1GPUManager else None,
+        'm1_memory_optimizer': M1MemoryOptimizer() if M1MemoryOptimizer else None,
+        'm1_cpu_optimizer': M1CPUOptimizer() if M1CPUOptimizer else None,
+    }
+
+def get_step04_utilities():
+    """Get utilities container."""
+    return get_step04_container(create_step04_config())
+
+# Simple getter functions
+def get_common_ops():
+    return CommonOperations()
+
+def get_common_utils():
+    return CommonUtilities()
+
+def get_math_validation():
+    return MathValidation()
+
+def get_parquet_utils():
+    return ParquetUtils()
+
+def get_serialization_utils():
+    return {
+        'json': JSONSerializer(),
+        'pickle': PickleSerializer(),
+        'parquet': ParquetSerializer()
+    }
+
+def get_data_processing_utils():
+    return CommonUtilities()
+
+def get_m1_gpu_utils():
+    return M1GPUManager() if M1GPUManager else None
+
+def get_m1_memory_optimizer():
+    return M1MemoryOptimizer() if M1MemoryOptimizer else None
+
+def get_m1_cpu_optimizer():
+    return M1CPUOptimizer() if M1CPUOptimizer else None
 
 # M1 Hardware Optimizations
 try:
@@ -177,12 +335,32 @@ except ImportError as e:
     VECTORIZED_OPTIMIZATIONS_AVAILABLE = False
 from src.utils.logger import system_logger
 
-# Import financial metrics logging system
-try:
-    from .step04_financial_logging import Step04FinancialLogger
-    FINANCIAL_LOGGING_AVAILABLE = True
-except ImportError:
-    FINANCIAL_LOGGING_AVAILABLE = False
+# Financial metrics logging system (local implementation)
+class Step04FinancialLogger:
+    """Simple financial metrics logger for step04."""
+
+    def __init__(self, symbol: str, exchange: str, timeframe: str):
+        self.symbol = symbol
+        self.exchange = exchange
+        self.timeframe = timeframe
+        self.logger = system_logger
+
+    def log_regime_metrics(self, regime_data: Dict[str, Any], stats: Dict[str, Any]) -> None:
+        """Log regime-related financial metrics."""
+        self.logger.info(f"📊 Financial metrics for {self.symbol} {self.timeframe}:")
+        self.logger.info(f"   💰 Regime count: {len(regime_data)}")
+        if stats:
+            self.logger.info(f"   📈 Total data points: {stats.get('total_points', 0)}")
+            self.logger.info(f"   🎯 Regimes with data: {stats.get('regimes_with_data', 0)}")
+
+    def log_performance_metrics(self, metrics: Dict[str, Any]) -> None:
+        """Log performance-related metrics."""
+        self.logger.info("⚡ Performance metrics logged")
+        if metrics:
+            for key, value in metrics.items():
+                self.logger.info(f"   {key}: {value}")
+
+FINANCIAL_LOGGING_AVAILABLE = True
 
 def create_fallback_logger() -> Any:
     logging.basicConfig(level = logging.INFO)
@@ -1312,12 +1490,17 @@ class RegimeDataSplittingStep:
     async def _load_regime_data_optimized(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Optimized regime data loading with async processing and memory management."""
         try:
-            unified_data_path = Path(self.standards.build_path('unified_data', exchange, symbol)) / timeframe
+            # Try historical_data path first (where HMM results are actually stored)
+            unified_data_path = Path(self.standards.build_path('historical_data', exchange, symbol)) / 'processed' / f'{symbol.lower()}_{timeframe}'
             if not unified_data_path.exists():
-                self.logger.error(f'❌ Unified data path not found: {unified_data_path}')
-                return None
+                # Fallback to standard unified_data path
+                unified_data_path = Path(self.standards.build_path('unified_data', exchange, symbol)) / timeframe
+                if not unified_data_path.exists():
+                    self.logger.error(f'❌ Unified data path not found: {unified_data_path}')
+                    return None
 
-            regime_file = Path(data_dir) / 'hmm_regimes' / f'{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet'
+            # Use the correct path for HMM clusters based on standards
+            regime_file = Path(self.standards.build_path('hmm_clusters', exchange, symbol)) / f'hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet'
             if not regime_file.exists():
                 self.logger.error(f'❌ Regime file not found: {regime_file}')
                 return None
@@ -1475,12 +1658,16 @@ class RegimeDataSplittingStep:
     async def _load_regime_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load HMM regime data with standardized validation."""
         try:
-            unified_data_path = Path(self.standards.build_path('unified_data', exchange, symbol)) / timeframe
+            # Try historical_data path first (where HMM results are actually stored)
+            unified_data_path = Path(self.standards.build_path('historical_data', exchange, symbol)) / 'processed' / f'{symbol.lower()}_{timeframe}'
             if not unified_data_path.exists():
-                self.logger.error(f'❌ Unified data path not found: {unified_data_path}')
-                return None
-            # Standardize to: data_dir/hmm_regimes/{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet
-            regime_file = Path(data_dir) / 'hmm_regimes' / f'{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet'
+                # Fallback to standard unified_data path
+                unified_data_path = Path(self.standards.build_path('unified_data', exchange, symbol)) / timeframe
+                if not unified_data_path.exists():
+                    self.logger.error(f'❌ Unified data path not found: {unified_data_path}')
+                    return None
+            # Use the correct path for HMM clusters based on standards
+            regime_file = Path(self.standards.build_path('hmm_clusters', exchange, symbol)) / f'hmm_composite_clusters_{exchange}_{symbol}_{timeframe}.parquet'
             if not regime_file.exists():
                 self.logger.error(f'❌ Regime file not found: {regime_file}')
                 return None
@@ -2045,7 +2232,8 @@ class RegimeDataSplittingStep:
         """Create unified dataset with regime labels and return dataset info."""
         try:
             data = data.sort_values('timestamp').reset_index(drop = True)
-            training_dir = ensure_directory(Path(data_dir) / 'training' / 'regime_splits')
+            training_dir = ensure_directory(Path(data_dir) / exchange.lower() / symbol.lower() / 'regime_splits')
+            models_dir = Path(data_dir) / exchange.lower() / symbol.lower() / 'models'
             if not self._save_unified_dataset(data, training_dir, exchange, symbol, timeframe):
                 return None
             if not self._save_regime_statistics(data, regime_ids, training_dir, exchange, symbol, timeframe):
@@ -2556,6 +2744,6 @@ if __name__ == '__main__':
 
     async def test() -> None:
         test_config = {'symbol': 'ETHUSDT', 'exchange': 'BINANCE', 'timeframe': '1m'}
-        success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache', force_rerun = False, config = test_config)
+        success = await run_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='historical_data', force_rerun = False, config = test_config)
         tprint(f'Test result: {success}')
     asyncio.run(test())

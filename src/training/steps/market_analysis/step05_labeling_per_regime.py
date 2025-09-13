@@ -236,6 +236,6 @@ if __name__ == '__main__':
 
     async def test() -> None:
         """Test the per-regime labeling step."""
-        success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='data_cache')
+        success = await run_per_regime_step(symbol='ETHUSDT', exchange='BINANCE', timeframe='1m', data_dir='historical_data')
         tprint(f'Per-regime labeling result: {success}')
     asyncio.run(test())

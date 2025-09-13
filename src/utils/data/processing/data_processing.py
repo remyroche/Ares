@@ -99,7 +99,18 @@ class DataProcessor:
                 if method == "forward_fill":
                     processed_data = processed_data.reindex(regular_index, method="ffill")
                 elif method == "interpolate":
-                    processed_data = processed_data.reindex(regular_index).interpolate(method="time")
+                    # CRITICAL GAPS: Never interpolate data that contains critical gaps
+                    # Check for large time gaps that indicate critical data issues
+                    max_gap_seconds = time_diffs.max().total_seconds() if len(time_diffs) > 0 else 0
+
+                    # If there are gaps > 30 minutes (1800 seconds), this is likely critical data
+                    if max_gap_seconds > 1800:
+                        self.logger.error('🚨 CRITICAL DATA GAPS DETECTED - REFUSING TO INTERPOLATE')
+                        self.logger.error(f'🚨 Maximum gap: {max_gap_seconds} seconds - CRITICAL GAPS MUST NOT BE INTERPOLATED')
+                        self.logger.warning('⚠️ Switching to forward_fill to preserve data integrity')
+                        processed_data = processed_data.reindex(regular_index, method="ffill")
+                    else:
+                        processed_data = processed_data.reindex(regular_index).interpolate(method="time")
                 elif method == "drop":
                     processed_data = processed_data.reindex(regular_index)
                 else:

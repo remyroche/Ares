@@ -3,6 +3,7 @@ from src.utils.tprint import tprint
 
 from src.utils.logger import system_logger
 from ..core.decorators import handles_errors
+from ..core.decorators.validate import validates
 
 """SHAP Analyzer for Model Interpretability.
 

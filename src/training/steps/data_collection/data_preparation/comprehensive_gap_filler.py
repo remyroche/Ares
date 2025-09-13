@@ -40,6 +40,7 @@ class ComprehensiveGapFiller:
     @log_important_calls
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
+        self.data_cache_path = Path(data_cache_path)
         self.session: aiohttp.ClientSession | None = None
         self.max_api_calls_per_gap = 50  # Maximum calls to prevent infinite loops
         self.call_delay = 0.1  # Delay between API calls
@@ -419,145 +420,6 @@ class ComprehensiveGapFiller:
         except Exception:
             return []
 
-    async def _fetch_futures_data(
-        self,
-        symbol: str,
-        gap_start: datetime,
-        gap_end: datetime,
-        market_segment: str = "um",
-    ) -> list[dict[str, Any]]:
-        """Fetch futures data using appropriate source based on date."""
-        if self._should_use_binance_vision(gap_start):
-            return await self._fetch_futures_from_binance_vision(
-                symbol = symbol,
-                gap_start = gap_start,
-                gap_end = gap_end,
-                market_segment = market_segment,
-            )
-        return await self._fetch_futures_from_regular_api(
-            symbol = symbol,
-            gap_start = gap_start,
-            gap_end = gap_end,
-        )
-
-    async def _fetch_futures_from_regular_api(
-        self,
-        symbol: str,
-        gap_start: datetime,
-        gap_end: datetime,
-    ) -> list[dict[str, Any]]:
-        """Download futures funding rate data from regular Binance API for recent data."""
-        await self._ensure_session()
-
-        try:
-            # Use the enhanced Binance exchange client
-            from src.exchange.binance import BinanceExchange
-            
-            # Initialize Binance exchange
-            binance_config = {
-                'binance_exchange': {
-                    'use_testnet': False,  # Use live data for gap filling
-                    'timeout': 30,
-                    'max_retries': 3,
-                    'use_ccxt_fallback': True
-                }
-            }
-            
-            binance = BinanceExchange(binance_config)
-            
-            # Initialize connection
-            if not await binance.initialize():
-                self.logger.warning("Failed to initialize Binance exchange for futures")
-                return []
-            
-            # Convert dates to milliseconds
-            start_time_ms = int(gap_start.timestamp() * 1000)
-            end_time_ms = int(gap_end.timestamp() * 1000)
-            
-            # Fetch futures funding rate data
-            futures_data = await binance.futures_funding_rate(
-                symbol=symbol,
-                start_time_ms=start_time_ms,
-                end_time_ms=end_time_ms
-            )
-            
-            if futures_data:
-                # Convert to standardized format
-                standardized_data = []
-                for rate in futures_data:
-                    standardized_data.append({
-                        'symbol': rate.get('symbol'),
-                        'fundingRate': float(rate.get('fundingRate', 0)),
-                        'fundingTime': rate.get('fundingTime'),
-                        'timestamp': rate.get('fundingTime')  # Use funding time as timestamp
-                    })
-                
-                self.logger.info(f"Downloaded {len(standardized_data)} futures funding rates from regular API")
-                return standardized_data
-            else:
-                self.logger.warning("No futures data received from regular API")
-                return []
-                
-        except Exception as e:
-            self.logger.error(f"Error fetching futures from regular API: {e}")
-            return []
-
-    async def _fetch_futures_from_binance_vision(
-        self,
-        symbol: str,
-        gap_start: datetime,
-        gap_end: datetime,
-        market_segment: str = "um",
-    ) -> list[dict[str, Any]]:
-        """Download futures funding rate data from Binance Vision for a specific gap period."""
-        await self._ensure_session()
-
-        base_url = "https://data.binance.vision"
-        date_str = gap_start.strftime("%Y-%m-%d")
-        path = (
-            f"data/futures/{market_segment}/daily/fundingRate/{symbol}/"
-            f"{symbol}-fundingRate-{date_str}.zip"
-        )
-        url = f"{base_url}/{path}"
-
-        try:
-            ssl_context = ssl.create_default_context(cafile = certifi.where())
-
-            assert self.session is not None
-            async with self.session.get(url, ssl = ssl_context) as resp:
-                if resp.status != 200:
-                    return []
-                content = await resp.read()
-
-            with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
-                if not csv_names:
-                    return []
-
-                with zf.open(csv_names[0]) as f:
-                    df = pd.read_csv(f)
-
-            if df.empty:
-                return []
-
-            # Process data types
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-            if "fundingRate" in df.columns:
-                df["fundingRate"] = pd.to_numeric(
-                    df["fundingRate"], errors="coerce",
-                )
-
-            # Filter to gap period
-            df = df[(df["timestamp"] >= gap_start) & (df["timestamp"] < gap_end)]
-
-            if df.empty:
-                return []
-
-            # Convert to list of dicts
-            return df.to_dict(orient="records")
-
-        except Exception:
-            return []
 
     async def _fetch_klines_data(
         self,
@@ -808,10 +670,6 @@ class ComprehensiveGapFiller:
                         gap_end = gap_end,
                         start_time_ms = start_time_ms,
                         end_time_ms = end_time_ms,
-                    )
-                elif data_type == "futures":
-                    missing_data = await self._fetch_futures_data(
-                        symbol = symbol, gap_start = gap_start, gap_end = gap_end
                     )
                 elif data_type == "klines":
                     missing_data = await self._fetch_klines_data(
@@ -1108,23 +966,24 @@ class ComprehensiveGapFiller:
         logger.info(f"⏱️  Max consecutive empty: {self.max_consecutive_empty}")
         logger.info("-" * 60)
         
-        # Find all files for each data type
-        aggtrades_pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
-        aggtrades_csv_pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
-        futures_pattern = f"futures_{exchange}_{symbol}_*.parquet"
-        futures_csv_pattern = f"futures_{exchange}_{symbol}_*.csv"
-        klines_pattern = f"klines_{exchange}_{symbol}_1m_*.parquet"
-        klines_csv_pattern = f"klines_{exchange}_{symbol}_1m_*.csv"
+        # Find all files for each data type - updated patterns to match actual file naming (lowercase exchange)
+        aggtrades_pattern = f"aggtrades_{exchange.lower()}_{symbol}_*.parquet"
+        aggtrades_csv_pattern = f"aggtrades_{exchange.lower()}_{symbol}_*.csv"
+        futures_pattern = f"futures_{exchange.lower()}_{symbol}_*.parquet"
+        futures_csv_pattern = f"futures_{exchange.lower()}_{symbol}_*.csv"
+        # Support both 1m and 1s klines files
+        klines_pattern = f"klines_{exchange.lower()}_{symbol}_*.parquet"
+        klines_csv_pattern = f"klines_{exchange.lower()}_{symbol}_*.csv"
 
-        # Get all files
-        aggtrades_files = list(self.data_cache_path.glob(aggtrades_pattern)) + list(
-            self.data_cache_path.glob(aggtrades_csv_pattern)
+        # Get all files - use recursive search to find files in subdirectories
+        aggtrades_files = list(self.data_cache_path.rglob(aggtrades_pattern)) + list(
+            self.data_cache_path.rglob(aggtrades_csv_pattern)
         )
-        futures_files = list(self.data_cache_path.glob(futures_pattern)) + list(
-            self.data_cache_path.glob(futures_csv_pattern)
+        futures_files = list(self.data_cache_path.rglob(futures_pattern)) + list(
+            self.data_cache_path.rglob(futures_csv_pattern)
         )
-        klines_files = list(self.data_cache_path.glob(klines_pattern)) + list(
-            self.data_cache_path.glob(klines_csv_pattern)
+        klines_files = list(self.data_cache_path.rglob(klines_pattern)) + list(
+            self.data_cache_path.rglob(klines_csv_pattern)
         )
 
         logger.info("📁 FILE DISCOVERY RESULTS:")
@@ -1157,14 +1016,16 @@ class ComprehensiveGapFiller:
         total_api_calls = 0
         total_successful_calls = 0
 
-        # Process each data type
-        for data_type in ["aggtrades", "futures", "klines"]:
+        # Process each data type - skip aggtrades as per new setup
+        for data_type in ["futures", "klines"]:  # Removed aggtrades from processing
             type_files = [(f, t) for f, t in all_files if t == data_type]
 
             for file_path, _file_type in type_files:
                 # Detect gaps based on data type
                 if data_type == "aggtrades":
-                    gaps = self.detect_gaps_in_aggtrades_file(file_path)
+                    # Skip aggtrades processing as per new setup - only klines and futures are processed
+                    logger.info(f"⚠️ Skipping aggtrades gap detection for {file_path.name} - aggtrades processing disabled")
+                    continue
                 elif data_type == "futures":
                     gaps = self.detect_gaps_in_futures_file(file_path)
                 elif data_type == "klines":

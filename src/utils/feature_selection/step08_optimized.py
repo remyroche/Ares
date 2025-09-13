@@ -121,24 +121,24 @@ try:
 except ImportError:
     CENTRALIZED_DECORATORS_AVAILABLE = False
     # Create fallback decorators
-    auto_fix_data_quality_issues = create_fallback_decorator(lambda x: x)
-    artifact_versioning = create_fallback_decorator(lambda x: x)
-    artifact_write_lock = create_fallback_decorator(lambda x: x)
-    circuit_breaker_protection = create_fallback_decorator(lambda x: x)
-    debug_training_step = create_fallback_decorator(lambda x: x)
-    deterministic_seed = create_fallback_decorator(lambda x: x)
-    handle_errors = create_fallback_decorator(lambda x: x)
-    idempotent_step = create_fallback_decorator(lambda x: x)
-    memory_efficient = create_fallback_decorator(lambda x: x)
-    nan_inf_and_constant_guard = create_fallback_decorator(lambda x: x)
-    prevent_data_leakage = create_fallback_decorator(lambda x: x)
-    quality_gate = create_fallback_decorator(lambda x: x)
-    resource_monitor = create_fallback_decorator(lambda x: x)
-    secure_data_processing = create_fallback_decorator(lambda x: x)
-    time_budget_watchdog = create_fallback_decorator(lambda x: x)
-    validate_step_output = create_fallback_decorator(lambda x: x)
-    validate_step_prerequisites = create_fallback_decorator(lambda x: x)
-    with_tracing_span = create_fallback_decorator(lambda x: x)
+    auto_fix_data_quality_issues = create_fallback_decorator()
+    artifact_versioning = create_fallback_decorator()
+    artifact_write_lock = create_fallback_decorator()
+    circuit_breaker_protection = create_fallback_decorator()
+    debug_training_step = create_fallback_decorator()
+    deterministic_seed = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    idempotent_step = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    nan_inf_and_constant_guard = create_fallback_decorator()
+    prevent_data_leakage = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    time_budget_watchdog = create_fallback_decorator()
+    validate_step_output = create_fallback_decorator()
+    validate_step_prerequisites = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
 
 # Enhanced MLflow integration
 try:
@@ -150,7 +150,7 @@ try:
     ENHANCED_MLFLOW_AVAILABLE = True
 except ImportError:
     ENHANCED_MLFLOW_AVAILABLE = False
-    with_enhanced_mlflow_logging = create_fallback_decorator(lambda x: x)
+    with_enhanced_mlflow_logging = create_fallback_decorator()
     log_step_report = lambda *args, **kwargs: 'fallback_report'
     create_detailed_step_report = lambda *args, **kwargs: {}
     log_step_metrics = lambda *args, **kwargs: None
@@ -358,7 +358,7 @@ class Step08Results:
 from .step08_unified_complete import UnifiedStep08
 from .step08_unified_methods import *
 # Risk methods are now consolidated in step08_unified_complete
-from .step08_unified_final import *
+# from .step08_unified_final import *  # Temporarily disabled due to syntax errors
 
 # Main class definition
 class OptimizedStep08:

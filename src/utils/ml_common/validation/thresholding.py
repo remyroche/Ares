@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from src.utils.tprint import tprint
 
 """
@@ -5,8 +7,6 @@ Threshold search and calibration helpers.
 
 Enhanced with M1 GPU acceleration, memory optimization, and parallel processing.
 """
-
-from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple, Callable
 
@@ -55,13 +55,13 @@ except Exception:
 
 # Import M1 utilities
 try:
-    from ..hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager
     GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
 
 try:
-    from ..hardware.m1_memory_optimizer import (
+    from src.utils.hardware.m1_memory_optimizer import (
         auto_skim_memory, smart_memory_allocation,
         memory_skim_decorator, auto_memory_skim_decorator,
         auto_memory_skim_context, smart_memory_context
@@ -71,7 +71,7 @@ except ImportError:
     MEMORY_OPTIMIZER_AVAILABLE = False
 
 try:
-    from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
     CPU_OPTIMIZER_AVAILABLE = True
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False

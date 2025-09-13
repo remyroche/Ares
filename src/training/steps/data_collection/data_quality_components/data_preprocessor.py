@@ -362,8 +362,24 @@ class DataPreprocessor:
         if method == 'forward_fill':
             data = data.resample(freq).ffill()
         elif method == 'interpolate':
-            numeric_cols = data.select_dtypes(include=['float64', 'int64']).columns
-            data[numeric_cols] = data[numeric_cols].interpolate(method='time').ffill()
+            # CRITICAL GAPS: Never interpolate data that contains critical gaps
+            # Check for large time gaps that indicate critical data issues
+            if hasattr(data.index, 'to_series') and len(data.index) > 1:
+                time_gaps = data.index.to_series().diff().dropna()
+                max_gap_seconds = time_gaps.max().total_seconds() if len(time_gaps) > 0 else 0
+
+                # If there are gaps > 30 minutes (1800 seconds), this is likely critical data
+                if max_gap_seconds > 1800:
+                    self.logger.error('🚨 CRITICAL DATA GAPS DETECTED - REFUSING TO INTERPOLATE')
+                    self.logger.error(f'🚨 Maximum gap: {max_gap_seconds} seconds - CRITICAL GAPS MUST NOT BE INTERPOLATED')
+                    self.logger.warning('⚠️ Switching to forward_fill to preserve data integrity')
+                    data = data.resample(freq).ffill()
+                else:
+                    numeric_cols = data.select_dtypes(include=['float64', 'int64']).columns
+                    data[numeric_cols] = data[numeric_cols].interpolate(method='time').ffill()
+            else:
+                numeric_cols = data.select_dtypes(include=['float64', 'int64']).columns
+                data[numeric_cols] = data[numeric_cols].interpolate(method='time').ffill()
         elif method == 'resample':
             data = data.resample(freq).mean().ffill()
         else:

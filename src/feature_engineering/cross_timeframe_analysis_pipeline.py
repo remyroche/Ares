@@ -244,7 +244,7 @@ class CrossTimeframeAnalysisPipeline:
         for timeframe in timeframes:
             try:
                 # Construct file path
-                file_path = Path(data_dir) / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
+                file_path = Path(data_dir) / f"klines_{exchange}_{symbol}_consolidated.parquet"
                 
                 if not file_path.exists():
                     self.logger.warning(f"⚠️ Data file not found for {timeframe}: {file_path}")
@@ -345,7 +345,7 @@ class CrossTimeframeAnalysisPipeline:
             for timeframe, data in timeframe_data.items():
                 try:
                     # Use enhanced data quality validator
-                    quality_result = self.data_quality_validator.validate_dataframe(data)
+                    quality_result = self.data_quality_validator.validate_dataframe_quality(data)
                     
                     # Add timeframe prefix to issues and warnings
                     for issue in quality_result.issues:
@@ -707,44 +707,212 @@ class CrossTimeframeAnalysisPipeline:
             data = aligned_data[timeframe]
             
             # Bid-ask spread proxy (using high-low as proxy)
-            features[f'spread_proxy_{timeframe}'] = (data['high'] - data['low']) / data['close']
-            
-            # Price impact proxy (volume vs price movement)
+            # Spread proxy (bid-ask spread approximation) - using safe math
+            features[f'spread_proxy_{timeframe}'] = safe_divide((data['high'] - data['low']), data['close'])
+
+            # Price impact proxy (volume vs price movement) - using safe math
             price_change = data['close'].pct_change().abs()
-            volume_normalized = data['volume'] / data['volume'].rolling(20).mean()
-            features[f'price_impact_{timeframe}'] = price_change / (volume_normalized + 1e-10)
-            
-            # Tick-by-tick volatility (using high-low range)
-            features[f'tick_volatility_{timeframe}'] = (data['high'] - data['low']) / data['close']
-            
-            # Order flow imbalance proxy (close position within bar)
-            features[f'order_flow_imbalance_{timeframe}'] = (data['close'] - data['open']) / (data['high'] - data['low'] + 1e-10)
+            volume_normalized = safe_divide(data['volume'], data['volume'].rolling(20).mean())
+            features[f'price_impact_{timeframe}'] = safe_divide(price_change, volume_normalized)
+
+            # Tick-by-tick volatility (using high-low range) - using safe math
+            features[f'tick_volatility_{timeframe}'] = safe_divide((data['high'] - data['low']), data['close'])
+
+            # Order flow imbalance proxy (close position within bar) - using safe math
+            features[f'order_flow_imbalance_{timeframe}'] = safe_divide((data['close'] - data['open']), (data['high'] - data['low']))
         
         return features
-    
+
+    def _generate_comprehensive_order_flow_proxies(self, data: pd.DataFrame, timeframe: str) -> Dict[str, pd.Series]:
+        """
+        Generate comprehensive order flow proxies using only kline data and safe math operations.
+
+        This replaces all the order flow features that were previously available from aggtrades.
+        """
+        from .math_validation import safe_divide, safe_log, safe_sqrt
+
+        features = {}
+
+        # === BASIC CANDLESTICK BODY FEATURES ===
+        # Add fundamental candlestick body size features for cross-timeframe analysis
+        body_size = np.abs(data['close'] - data['open'])
+        features[f'body_size_{timeframe}'] = body_size
+
+        body_size_pct = safe_divide(body_size, data['open']) * 100
+        features[f'body_size_pct_{timeframe}'] = body_size_pct
+
+        # Body to range ratio
+        total_range = data['high'] - data['low']
+        body_to_range_ratio = safe_divide(body_size, total_range)
+        features[f'body_to_range_ratio_{timeframe}'] = body_to_range_ratio
+
+        # Upper and lower wick sizes
+        upper_wick = data['high'] - np.maximum(data['open'], data['close'])
+        lower_wick = np.minimum(data['open'], data['close']) - data['low']
+        features[f'upper_wick_{timeframe}'] = upper_wick
+        features[f'lower_wick_{timeframe}'] = lower_wick
+
+        # Wick ratios
+        features[f'upper_wick_ratio_{timeframe}'] = safe_divide(upper_wick, total_range)
+        features[f'lower_wick_ratio_{timeframe}'] = safe_divide(lower_wick, total_range)
+
+        # Body direction and strength
+        body_direction = np.sign(data['close'] - data['open'])
+        features[f'body_direction_{timeframe}'] = body_direction
+        features[f'body_strength_{timeframe}'] = body_size * body_direction
+
+        # 1. BUYER/SELLER INITIATED TRADE FLOW PROXY
+        # Original: is_buyer_maker (True for sell-initiated, False for buy-initiated)
+        # Proxy: Close position within bar indicates market direction
+        close_position = safe_divide((data['close'] - data['open']), (data['high'] - data['low']))
+        features[f'buyer_seller_flow_proxy_{timeframe}'] = np.sign(close_position)  # +1 for up, -1 for down
+
+        # 2. ORDER MARKET IMBALANCE (OMI) PROXY
+        # Original: Real bid/ask order book imbalance
+        # Proxy: Volume-weighted price deviation from midpoint
+        midpoint = (data['high'] + data['low']) / 2
+        volume_weighted_deviation = ((data['close'] - midpoint) / midpoint) * safe_sqrt(data['volume'])
+        omi_mean = volume_weighted_deviation.rolling(20).mean()
+        omi_std = volume_weighted_deviation.rolling(20).std()
+        omi_zscore = safe_divide((volume_weighted_deviation - omi_mean), omi_std)
+        features[f'omi_proxy_{timeframe}'] = omi_zscore
+
+        # 3. ORDER BOOK PRESSURE PROXY
+        # Original: Real-time bid/ask volume imbalances
+        # Proxy: Price position momentum with volume amplification
+        price_position = safe_divide((data['close'] - data['low']), (data['high'] - data['low']))
+        volume_normalized = safe_divide(data['volume'], data['volume'].rolling(20).mean())
+        features[f'order_book_pressure_proxy_{timeframe}'] = price_position * safe_log(volume_normalized + 1)
+
+        # 4. MARKET MAKER vs RETAIL ORDER FLOW PROXY
+        # Original: Classification based on trade source (maker/taker)
+        # Proxy: Intrabar volatility patterns (high-frequency traders vs retail)
+        intrabar_range = safe_divide((data['high'] - data['low']), data['close'])
+        volume_per_range = safe_divide(data['volume'], intrabar_range)
+        volume_per_range_ma = volume_per_range.rolling(10).mean()
+        features[f'market_maker_retail_proxy_{timeframe}'] = safe_divide(volume_per_range, volume_per_range_ma)
+
+        # 5. ORDER FLOW TOXICITY PROXY
+        # Original: Impact of order flow on price discovery
+        # Proxy: Price impact per unit volume (Kyle's lambda approximation)
+        returns = data['close'].pct_change()
+        volume_returns = returns * safe_sqrt(data['volume'])
+        features[f'order_flow_toxicity_proxy_{timeframe}'] = volume_returns.rolling(5).std()
+
+        # 6. REAL ORDER DIRECTION CLASSIFICATION PROXY
+        # Original: Each trade's buy/sell direction
+        # Proxy: Price change direction with volume confirmation
+        price_direction = np.sign(data['close'] - data['open'])
+        volume_confirmation = np.sign(data['volume'] - data['volume'].shift(1))
+        features[f'order_direction_proxy_{timeframe}'] = price_direction * volume_confirmation
+
+        # 7. TRUE ORDER MARKET IMBALANCE PROXY
+        # Original: Bid/ask order book imbalance
+        # Proxy: Momentum imbalance between price and volume
+        price_momentum = data['close'].pct_change(3)
+        volume_momentum = data['volume'].pct_change(3)
+        features[f'true_omi_proxy_{timeframe}'] = price_momentum - volume_momentum
+
+        # 8. BID/ASK PRESSURE ANALYSIS PROXY
+        # Original: Real bid/ask pressure from order book
+        # Proxy: Support/resistance pressure from price action
+        upper_pressure = safe_divide((data['high'] - data['close']), (data['high'] - data['low']))
+        lower_pressure = safe_divide((data['close'] - data['low']), (data['high'] - data['low']))
+        features[f'bid_pressure_proxy_{timeframe}'] = lower_pressure  # Support pressure
+        features[f'ask_pressure_proxy_{timeframe}'] = upper_pressure  # Resistance pressure
+
+        # 9. TRADE SOURCE IDENTIFICATION PROXY
+        # Original: Market maker vs retail trade classification
+        # Proxy: Volatility-adjusted volume (high vol + low volatility = institutional)
+        volatility = data['close'].pct_change().rolling(10).std()
+        vol_volatility_ratio = safe_divide(data['volume'], volatility)
+        vol_volatility_ratio_ma = vol_volatility_ratio.rolling(20).mean()
+        features[f'trade_source_proxy_{timeframe}'] = safe_divide(vol_volatility_ratio, vol_volatility_ratio_ma)
+
+        return features
+
     def _generate_order_flow_features(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
-        """Generate order flow features for high leverage trading."""
+        """Generate comprehensive order flow features using kline proxies."""
         features = {}
         timeframes = list(aligned_data.keys())
-        
+
         for timeframe in timeframes:
             data = aligned_data[timeframe]
-            
+
+            # Add comprehensive order flow proxies (replaces all aggtrades features)
+            comprehensive_features = self._generate_comprehensive_order_flow_proxies(data, timeframe)
+            features.update(comprehensive_features)
+
+            # Legacy features for backward compatibility
             # Volume-weighted average price (VWAP) deviation
             vwap = (data['high'] + data['low'] + data['close']) / 3
             vwap_volume = (vwap * data['volume']).rolling(20).sum() / data['volume'].rolling(20).sum()
             features[f'vwap_deviation_{timeframe}'] = (data['close'] - vwap_volume) / vwap_volume
-            
+
             # Volume momentum
             volume_momentum = data['volume'].pct_change(5)
             features[f'volume_momentum_{timeframe}'] = volume_momentum
-            
+
             # Price-volume relationship
             price_momentum = data['close'].pct_change(5)
             features[f'price_volume_correlation_{timeframe}'] = price_momentum.rolling(10).corr(volume_momentum)
-        
+
         return features
-    
+
+    def _generate_advanced_order_flow_proxies(self, data: pd.DataFrame, timeframe: str) -> Dict[str, pd.Series]:
+        """
+        Generate advanced order flow proxies for sophisticated trading strategies using safe math.
+
+        These proxies attempt to capture more complex market dynamics that were
+        previously available from detailed aggtrades analysis.
+        """
+        features = {}
+
+        # 10. ORDER FLOW PREDICTABILITY PROXY
+        # Original: Statistical properties of order flow
+        # Proxy: Hurst exponent approximation for flow persistence
+        returns = data['close'].pct_change()
+        volume = data['volume']
+        flow_persistence = returns.rolling(20).corr(volume.shift(1))
+        features[f'order_flow_predictability_proxy_{timeframe}'] = flow_persistence
+
+        # 11. MARKET DEPTH PROXY
+        # Original: Order book depth and liquidity
+        # Proxy: Volume elasticity (volume response to price changes)
+        price_volatility = returns.rolling(10).std()
+        volume_volatility = volume.pct_change().rolling(10).std()
+        features[f'market_depth_proxy_{timeframe}'] = safe_divide(volume_volatility, price_volatility)
+
+        # 12. ORDER FLOW CLUSTERING PROXY
+        # Original: Trade clustering patterns
+        # Proxy: Volume concentration in price ranges
+        price_range = data['high'] - data['low']
+        volume_concentration = safe_divide(volume, price_range)
+        volume_concentration_ma = volume_concentration.rolling(20).mean()
+        features[f'order_flow_clustering_proxy_{timeframe}'] = safe_divide(volume_concentration, volume_concentration_ma)
+
+        # 13. INFORMATION ASYMMETRY PROXY
+        # Original: Price discovery efficiency
+        # Proxy: Bid-ask spread proxy vs volume relationship
+        spread_proxy = safe_divide((data['high'] - data['low']), data['close'])
+        volume_normalized = safe_divide(volume, volume.rolling(20).mean())
+        features[f'information_asymmetry_proxy_{timeframe}'] = safe_divide(spread_proxy, safe_sqrt(volume_normalized))
+
+        # 14. MARKET IMPACT COST PROXY
+        # Original: Transaction cost estimation
+        # Proxy: Price impact per volume unit (market impact)
+        price_impact = returns * safe_sqrt(volume)
+        features[f'market_impact_cost_proxy_{timeframe}'] = price_impact.rolling(5).mean()
+
+        # 15. LIQUIDITY PROVISION PROXY
+        # Original: Market maker activity
+        # Proxy: Intrabar price stability with high volume
+        intrabar_stability = 1 - safe_divide(price_range, data['close'])
+        liquidity_score = intrabar_stability * safe_log(volume + 1)
+        features[f'liquidity_provision_proxy_{timeframe}'] = liquidity_score
+
+        return features
+
     def _generate_momentum_divergence_features(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
         """Generate momentum divergence features between timeframes."""
         features = {}

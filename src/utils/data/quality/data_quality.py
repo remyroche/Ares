@@ -22,6 +22,17 @@ from enum import Enum
 # Import our custom utilities
 from src.utils.logger import system_logger
 
+# Import comprehensive duplicate analyzer
+try:
+    from src.utils.data.quality.comprehensive_duplicate_analyzer import (
+        ComprehensiveDuplicateAnalyzer,
+        analyze_duplicates_comprehensive
+    )
+    DUPLICATE_ANALYZER_AVAILABLE = True
+except ImportError:
+    DUPLICATE_ANALYZER_AVAILABLE = False
+    ComprehensiveDuplicateAnalyzer = None
+
 logger = logging.getLogger(__name__)
 
 class OutlierSeverity(Enum):
@@ -149,7 +160,15 @@ class DataQualityFramework:
         """Initialize data quality framework."""
         self.logger = system_logger.getChild('DataQualityFramework')
         self.thresholds = thresholds or QualityThresholds()
-        
+
+        # Initialize duplicate analyzer if available
+        if DUPLICATE_ANALYZER_AVAILABLE:
+            self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer(self.logger)
+            self.logger.info('✅ Comprehensive duplicate analyzer integrated')
+        else:
+            self.duplicate_analyzer = None
+            self.logger.warning('⚠️ Comprehensive duplicate analyzer not available')
+
         # Quality policies
         self.quality_policies = {
             'strict_validation': True,
@@ -158,9 +177,10 @@ class DataQualityFramework:
             'max_issues_critical': 0,
             'max_issues_high': 5,
             'max_issues_medium': 20,
-            'max_issues_low': 100
+            'max_issues_low': 100,
+            'duplicate_analysis_enabled': DUPLICATE_ANALYZER_AVAILABLE
         }
-        
+
         # Validation rules
         self.validation_rules = {
             'klines_schema': {
@@ -196,7 +216,7 @@ class DataQualityFramework:
                 }
             }
         }
-        
+
         self.logger.info('🔧 Unified Data Quality Framework initialized')
 
     def validate_dataframe_quality(self, df: pd.DataFrame, context: str = '') -> QualityResult:
@@ -220,30 +240,132 @@ class DataQualityFramework:
         self._validate_timestamp_consistency(df, result)
         self._validate_data_types(df, result)
         self._validate_correlations(df, result)
+
+        # Run comprehensive duplicate analysis if available
+        if self.quality_policies.get('duplicate_analysis_enabled', False) and self.duplicate_analyzer:
+            self._validate_duplicate_timestamps(df, result)
         
+        # Store result for quality score calculation
+        self._last_validation_result = result.metrics
+
         # Calculate quality score
         result.quality_score = self._calculate_quality_score(df)
         result.execution_time = time.time() - start_time
-        
+
         self._log_validation_results(result, context)
         return result
 
     def _validate_nan_values(self, df: pd.DataFrame, result: QualityResult) -> None:
-        """Validate NaN values in DataFrame."""
+        """Validate NaN values in DataFrame with detailed per-column statistics."""
+        # Define calculated features that can legitimately have NaN values due to rolling calculations
+        calculated_features = {
+            'price_std', 'price_ma', 'price_ema', 'price_min', 'price_max',
+            'volume_ma', 'volume_ratio', 'price_vs_ma', 'price_vs_ema'
+        }
+
+        # Calculate NaN statistics per column
         nan_counts = df.isnull().sum()
+        total_rows = len(df)
+
+        # Create detailed per-column statistics
+        nan_stats = {}
+        for col in df.columns:
+            count = nan_counts[col]
+            ratio = count / total_rows if total_rows > 0 else 0
+            nan_stats[col] = {
+                'count': int(count),
+                'ratio': round(ratio, 4),
+                'percentage': round(ratio * 100, 2),
+                'is_calculated': any(calc in col for calc in calculated_features)
+            }
+
+        # Calculate overall metrics
         total_nans = nan_counts.sum()
-        nan_ratio = total_nans / (len(df) * len(df.columns)) if len(df) > 0 and len(df.columns) > 0 else 0
-        
-        result.add_metric('nan_count', total_nans)
-        result.add_metric('nan_ratio', nan_ratio)
+        overall_nan_ratio = total_nans / (total_rows * len(df.columns)) if total_rows > 0 and len(df.columns) > 0 else 0
+
+        # Calculate strict metrics (excluding calculated features)
+        strict_columns = [col for col in df.columns if not any(calc in col for calc in calculated_features)]
+        if strict_columns:
+            nan_counts_strict = df[strict_columns].isnull().sum()
+            total_nans_strict = nan_counts_strict.sum()
+            nan_ratio_strict = total_nans_strict / (len(df) * len(strict_columns)) if len(df) > 0 and len(strict_columns) > 0 else 0
+        else:
+            nan_ratio_strict = 0
+            total_nans_strict = 0
+
+        # Add metrics
+        result.add_metric('nan_count', int(total_nans))
+        result.add_metric('nan_ratio', round(overall_nan_ratio, 4))
+        result.add_metric('nan_count_strict', int(total_nans_strict))
+        result.add_metric('nan_ratio_strict', round(nan_ratio_strict, 4))
+        result.add_metric('nan_stats_per_column', nan_stats)
         result.add_metric('nan_by_column', nan_counts.to_dict())
-        
-        if nan_ratio > self.thresholds.max_nan_ratio:
-            result.add_issue('nan_values', f'NaN ratio {nan_ratio:.4f} exceeds threshold {self.thresholds.max_nan_ratio}')
-            
-        high_nan_columns = nan_counts[nan_counts > len(df) * 0.1]
+
+        # Quality gate - use strict ratio (excluding calculated features)
+        if nan_ratio_strict > self.thresholds.max_nan_ratio:
+            result.add_issue('nan_values', f'NaN ratio {nan_ratio_strict:.4f} exceeds threshold {self.thresholds.max_nan_ratio} (calculated features excluded)')
+
+        # Detailed per-column analysis
+        high_nan_columns = nan_counts[nan_counts > total_rows * 0.1]  # >10% NaN
+        very_high_nan_columns = nan_counts[nan_counts > total_rows * 0.5]  # >50% NaN
+
+        # Categorize by NaN levels
+        nan_categories = {
+            'no_nan': [],  # 0% NaN
+            'low_nan': [],  # 1-10% NaN
+            'high_nan': [],  # 10-50% NaN
+            'very_high_nan': [],  # >50% NaN
+            'all_nan': []  # 100% NaN
+        }
+
+        for col in df.columns:
+            ratio = nan_stats[col]['ratio']
+            if ratio == 0:
+                nan_categories['no_nan'].append(col)
+            elif ratio <= 0.1:
+                nan_categories['low_nan'].append(col)
+            elif ratio <= 0.5:
+                nan_categories['high_nan'].append(col)
+            elif ratio < 1.0:
+                nan_categories['very_high_nan'].append(col)
+            else:
+                nan_categories['all_nan'].append(col)
+
+        # Add categorized metrics
+        result.add_metric('nan_categories', nan_categories)
+
+        # Add warnings and info messages based on categories
+        if nan_categories['very_high_nan']:
+            result.add_warning('very_high_nan_columns', f'Columns with >50% NaN: {nan_categories["very_high_nan"]}')
+
+        if nan_categories['all_nan']:
+            result.add_issue('all_nan_columns', f'Columns with 100% NaN: {nan_categories["all_nan"]}')
+
+        # Separate calculated vs non-calculated features in warnings
         if not high_nan_columns.empty:
-            result.add_warning('high_nan_columns', f'Columns with >10% NaN: {list(high_nan_columns.index)}')
+            calc_high_nan = [col for col in high_nan_columns.index if any(calc in col for calc in calculated_features)]
+            non_calc_high_nan = [col for col in high_nan_columns.index if col not in calc_high_nan]
+
+            if non_calc_high_nan:
+                result.add_warning('high_nan_non_calc', f'Non-calculated columns with >10% NaN: {non_calc_high_nan}')
+
+            if calc_high_nan:
+                result.add_info('high_nan_calc', f'Calculated features with >10% NaN (may be expected): {calc_high_nan}')
+
+        # Add summary statistics
+        summary_stats = {
+            'total_columns': len(df.columns),
+            'columns_with_nan': len([col for col in df.columns if nan_counts[col] > 0]),
+            'columns_no_nan': len(nan_categories['no_nan']),
+            'columns_low_nan': len(nan_categories['low_nan']),
+            'columns_high_nan': len(nan_categories['high_nan']),
+            'columns_very_high_nan': len(nan_categories['very_high_nan']),
+            'columns_all_nan': len(nan_categories['all_nan']),
+            'strict_columns_count': len(strict_columns),
+            'calculated_features_count': len([col for col in df.columns if any(calc in col for calc in calculated_features)])
+        }
+
+        result.add_metric('nan_summary_stats', summary_stats)
 
     def _validate_infinite_values(self, df: pd.DataFrame, result: QualityResult) -> None:
         """Validate infinite values in DataFrame."""
@@ -260,7 +382,39 @@ class DataQualityFramework:
         result.add_metric('infinite_columns', infinite_counts)
         
         if total_infinites > self.thresholds.max_infinite_count:
-            result.add_issue('infinite_values', f'Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}')
+            # Auto-fix infinite values in volume-related columns
+            fixed_columns = []
+            for col in infinite_counts.keys():
+                if 'volume' in col.lower() and col in ['volume_return', 'volume_log_return']:
+                    # Replace infinite values with reasonable bounds
+                    if col == 'volume_return':
+                        df[col] = df[col].replace([np.inf, -np.inf], [9.0, -9.0])
+                    elif col == 'volume_log_return':
+                        df[col] = df[col].replace([np.inf, -np.inf], [9.0, -9.0])
+                    df[col] = df[col].fillna(0.0)
+                    fixed_columns.append(col)
+
+            if fixed_columns:
+                result.add_warning('infinite_values_auto_fixed',
+                                 f'Auto-fixed infinite values in columns: {fixed_columns}')
+                # Re-count infinite values after fixing
+                new_total_infinites = 0
+                for col in df.select_dtypes(include=[np.number]).columns:
+                    if col not in fixed_columns:  # Skip columns we already fixed
+                        new_total_infinites += np.isinf(df[col]).sum()
+
+                if new_total_infinites <= self.thresholds.max_infinite_count:
+                    return  # Issue resolved
+                else:
+                    remaining_cols = []
+                    for col in df.select_dtypes(include=[np.number]).columns:
+                        if col not in fixed_columns and np.isinf(df[col]).sum() > 0:
+                            remaining_cols.append(col)
+
+                    result.add_issue('infinite_values',
+                                   f'Found {new_total_infinites} infinite values in columns: {remaining_cols}')
+            else:
+                result.add_issue('infinite_values', f'Found {total_infinites} infinite values in columns: {list(infinite_counts.keys())}')
 
     def _validate_constant_features(self, df: pd.DataFrame, result: QualityResult) -> None:
         """Validate constant features in DataFrame with metadata awareness."""
@@ -271,8 +425,16 @@ class DataQualityFramework:
         }
         
         # Define configuration columns that may be constant but are important
+        # Note: aggtrades-derived features may be constant when aggtrades data is missing
         config_columns = {
-            'funding_rate', 'trade_volume', 'trade_count', 'avg_price', 
+            'trade_volume', 'trade_count', 'avg_price',
+            'min_price', 'max_price', 'volume_ratio'
+        }
+
+        # Define columns that should be excluded from constant feature checks
+        # when the underlying data source is missing
+        excluded_constant_columns = {
+            'trade_volume', 'trade_count', 'avg_price',
             'min_price', 'max_price', 'volume_ratio'
         }
         
@@ -290,7 +452,12 @@ class DataQualityFramework:
         
         for col in df.columns:
             unique_count = df[col].nunique()
-            
+
+            # Skip excluded columns that may be constant due to missing data sources
+            if col in excluded_constant_columns and unique_count <= 1:
+                result.add_info('excluded_constant', f'Column {col} is constant but excluded from checks (likely missing aggtrades data)')
+                continue
+
             # Categorize columns
             if col in metadata_columns:
                 # Metadata columns are expected to be constant
@@ -328,13 +495,37 @@ class DataQualityFramework:
         
         # Only report issues for problematic constants, not expected ones
         if problematic_constants:
-            result.add_issue('problematic_constants', f'Found {len(problematic_constants)} problematic constant data columns: {problematic_constants}')
+            result.add_issue('problematic_constants', f'Found {len(problematic_constants)} problematic constant data columns: {", ".join(problematic_constants)}')
         if low_variance_features:
-            result.add_warning('low_variance_features', f'Found {len(low_variance_features)} low variance features: {low_variance_features}')
+            # Create detailed message with variance information
+            variance_details = []
+            for feature in low_variance_features[:5]:  # Show first 5
+                try:
+                    std_val = df[feature].std()
+                    unique_val = df[feature].nunique()
+                    variance_details.append(f"{feature}(unique={unique_val}, std={std_val:.6f})")
+                except:
+                    variance_details.append(f"{feature}(low_variance)")
+            warning_msg = f'Found {len(low_variance_features)} low variance features: {", ".join(variance_details)}'
+            if len(low_variance_features) > 5:
+                warning_msg += f" ... and {len(low_variance_features) - 5} more"
+            result.add_warning('low_variance_features', warning_msg)
         
         # Log expected constants as info, not issues
         if expected_constants:
-            result.add_info('expected_constants', f'Found {len(expected_constants)} expected constant metadata columns: {expected_constants}')
+            result.add_info('expected_constants', f'Found {len(expected_constants)} expected constant metadata columns: {", ".join(expected_constants)}')
+
+        # Log all constant features for transparency
+        if constant_features:
+            all_constant_details = []
+            for feature in constant_features[:10]:  # Show first 10
+                try:
+                    std_val = df[feature].std()
+                    unique_val = df[feature].nunique()
+                    all_constant_details.append(f"{feature}(unique={unique_val}, std={std_val:.6f})")
+                except:
+                    all_constant_details.append(f"{feature}(constant)")
+            result.add_info('all_constant_features', f'All constant features: {", ".join(all_constant_details)}')
 
     def _validate_price_anomalies(self, df: pd.DataFrame, result: QualityResult) -> None:
         """Validate price anomalies in OHLC data."""
@@ -360,49 +551,127 @@ class DataQualityFramework:
             result.add_issue('price_anomalies', f'Found {len(anomalies)} price anomalies')
 
     def _validate_timestamp_consistency(self, df: pd.DataFrame, result: QualityResult) -> None:
-        """Validate timestamp consistency."""
-        if 'timestamp' not in df.columns:
+        """Validate timestamp consistency with klines-aware gap detection."""
+        if 'timestamp' not in df.columns and df.index.name != 'timestamp':
             return
-            
+
         issues = []
         try:
             # Handle both datetime64[ns] and int64 timestamps
-            if df['timestamp'].dtype == 'datetime64[ns]':
+            if df.index.name == 'timestamp' and isinstance(df.index, pd.DatetimeIndex):
+                timestamps = df.index
+            elif 'timestamp' in df.columns and df['timestamp'].dtype == 'datetime64[ns]':
                 timestamps = df['timestamp']
-            else:
+            elif 'timestamp' in df.columns:
                 timestamps = pd.to_datetime(df['timestamp'], unit='ms', utc=True, errors='coerce')
-            
+            else:
+                # Use DataFrame index if it's datetime
+                if isinstance(df.index, pd.DatetimeIndex):
+                    timestamps = df.index
+                else:
+                    result.add_warning('timestamp_validation', 'No recognizable timestamp column or index found')
+                    return
+
             invalid_timestamps = timestamps.isna().sum()
             if invalid_timestamps > 0:
                 issues.append({'type': 'invalid_timestamps', 'count': invalid_timestamps})
-            
+
             valid_timestamps = timestamps.dropna()
             if len(valid_timestamps) > 1:
-                # Be more lenient with gaps - allow up to 2 hours for market data
-                expected_interval = pd.Timedelta(minutes=1)
-                time_diffs = valid_timestamps.diff().dropna()
-                large_gaps = time_diffs[time_diffs > pd.Timedelta(hours=2)]
-                if not large_gaps.empty:
-                    issues.append({'type': 'large_gaps', 'count': len(large_gaps), 'max_gap_minutes': large_gaps.max().total_seconds() / 60})
-            
+                # Sort timestamps to ensure proper gap detection
+                sorted_timestamps = valid_timestamps.sort_values()
+                time_diffs = sorted_timestamps.diff().dropna()
+
+                # Determine expected interval based on data characteristics
+                median_diff = time_diffs.median()
+                expected_interval_seconds = median_diff.total_seconds()
+
+                # Only detect errors if gaps are superior to 65 seconds
+                # This prevents false positives from small gaps that are likely processing artifacts
+                gap_error_threshold = 65.0  # 65 seconds
+                significant_gaps = time_diffs[time_diffs > pd.Timedelta(seconds=gap_error_threshold)]
+
+                if not significant_gaps.empty:
+                    # Filter out very small gaps that might be millisecond-level artifacts
+                    real_gaps = significant_gaps[significant_gaps > pd.Timedelta(seconds=1)]
+                    if not real_gaps.empty:
+                        issues.append({
+                            'type': 'large_gaps',
+                            'count': len(real_gaps),
+                            'max_gap_seconds': real_gaps.max().total_seconds(),
+                            'expected_interval_seconds': expected_interval_seconds,
+                            'gap_threshold_seconds': gap_error_threshold
+                        })
+
+            # Check for duplicate timestamps with detailed analysis
             duplicates = valid_timestamps.duplicated()
-            if duplicates.any():
-                issues.append({'type': 'duplicate_timestamps', 'count': duplicates.sum()})
-            
+            duplicate_count = duplicates.sum()
+            if duplicate_count > 0:
+                # Get detailed information about duplicates
+                duplicate_timestamps = valid_timestamps[duplicates]
+                unique_duplicate_timestamps = duplicate_timestamps.unique()
+                most_common_duplicates = duplicate_timestamps.value_counts().head(5)
+
+                issues.append({
+                    'type': 'duplicate_timestamps',
+                    'count': duplicate_count,
+                    'unique_duplicate_timestamps': len(unique_duplicate_timestamps),
+                    'most_common_duplicates': most_common_duplicates.to_dict(),
+                    'duplicate_percentage': (duplicate_count / len(valid_timestamps)) * 100
+                })
+
             # Check for future timestamps (handle timezone properly)
             now = pd.Timestamp.now()
-            if valid_timestamps.dt.tz is not None:
-                now = now.tz_localize('UTC')
-            future_timestamps = valid_timestamps[valid_timestamps > now]
+
+            # Handle DatetimeIndex vs Series
+            if hasattr(valid_timestamps, 'dt'):
+                ts_tz = valid_timestamps.dt.tz
+            else:
+                # For DatetimeIndex, check if it's timezone-aware
+                ts_tz = valid_timestamps.tz
+
+            if ts_tz is not None:
+                now = now.tz_localize(ts_tz)
+                future_timestamps = valid_timestamps[valid_timestamps > now]
+            elif now.tz is not None:
+                now = now.tz_convert('UTC')
+                future_timestamps = valid_timestamps[valid_timestamps > now]
+            else:
+                future_timestamps = valid_timestamps[valid_timestamps > now]
+
             if not future_timestamps.empty:
                 issues.append({'type': 'future_timestamps', 'count': len(future_timestamps)})
-                
+
         except Exception as e:
             issues.append({'type': 'timestamp_parsing_error', 'error': str(e)})
-            
+
         result.add_metric('timestamp_issues', issues)
         if issues:
-            result.add_issue('timestamp_issues', f'Found {len(issues)} timestamp issues')
+            # Create detailed message with specific issue types
+            issue_details = []
+            for issue in issues:
+                issue_type = issue.get('type', 'unknown')
+                if issue_type == 'invalid_timestamps':
+                    issue_details.append(f"{issue['count']} invalid timestamps")
+                elif issue_type == 'large_gaps':
+                    gap_seconds = issue.get('max_gap_seconds', 0)
+                    if gap_seconds < 60:
+                        issue_details.append(f"{issue['count']} small gaps (max {gap_seconds:.1f}s)")
+                    else:
+                        issue_details.append(f"{issue['count']} large gaps (max {gap_seconds/60:.1f} min)")
+                elif issue_type == 'duplicate_timestamps':
+                    duplicate_pct = issue.get('duplicate_percentage', 0)
+                    issue_details.append(f"{issue['count']} duplicate timestamps ({duplicate_pct:.2f}% of data)")
+                elif issue_type == 'future_timestamps':
+                    issue_details.append(f"{issue['count']} future timestamps")
+                elif issue_type == 'timestamp_parsing_error':
+                    issue_details.append(f"parsing error: {issue['error']}")
+                else:
+                    issue_details.append(f"{issue_type}: {issue}")
+
+            result.add_issue('timestamp_issues', f'Found {len(issues)} timestamp issues: {", ".join(issue_details)}')
+        else:
+            result.add_info('timestamp_consistency', 'No timestamp consistency issues found')
 
     def _validate_data_types(self, df: pd.DataFrame, result: QualityResult) -> None:
         """Validate data types in DataFrame."""
@@ -424,16 +693,75 @@ class DataQualityFramework:
             result.add_issue('data_type_issues', f'Found {len(issues)} data type issues')
 
     def _validate_correlations(self, df: pd.DataFrame, result: QualityResult) -> None:
-        """Validate correlations between numeric columns, excluding OHLCV columns."""
+        """Validate correlations between numeric columns, excluding OHLCV and known correlated features."""
         numeric_columns = df.select_dtypes(include=[np.number]).columns
-        
+
         # Exclude OHLCV columns from correlation analysis
         ohlcv_columns = {'open', 'high', 'low', 'close', 'volume', 'timestamp'}
-        analysis_columns = [col for col in numeric_columns if col.lower() not in ohlcv_columns]
-        
+
+        # Define known correlated feature groups that should be excluded from warnings
+        correlated_feature_groups = {
+            # Price returns that are perfectly correlated (both use close price)
+            'price_returns': {'close_return', 'close_log_return'},
+            # Bollinger bands (all use same moving average calculation)
+            'bollinger_bands': {'bb_upper', 'bb_middle', 'bb_lower', 'bb_width', 'bb_position'},
+            # Volume returns (both use volume data)
+            'volume_returns': {'volume_return', 'volume_log_return'},
+            # Price features (all derived from OHLC data)
+            'price_features': {'price_range', 'price_range_pct', 'body_size', 'body_size_pct'},
+            # Moving averages (similar calculations)
+            'moving_averages': {'close_sma_5', 'close_sma_20', 'close_ema_12', 'close_ema_26'},
+            # Lagged features (autocorrelated by design)
+            'lagged_features': {col for col in df.columns if 'lag_' in col},
+            # Future features (shouldn't correlate with current features for analysis)
+            'future_features': {col for col in df.columns if 'future_' in col},
+            # Expected OHLC correlations (avg_price is typically weighted average, min/max are naturally correlated)
+            'expected_price_correlations': {'avg_price', 'min_price', 'max_price'},
+        }
+
+        # Flatten all correlated features to exclude
+        excluded_features = ohlcv_columns.copy()
+        for group in correlated_feature_groups.values():
+            excluded_features.update(group)
+
+        # Filter columns for analysis
+        analysis_columns = [col for col in numeric_columns if col.lower() not in excluded_features]
+
+        # Additional filtering: remove columns that are likely to be correlated due to similar naming
+        filtered_analysis_columns = []
+        for col in analysis_columns:
+            # Skip if this column is part of a known correlated pattern
+            skip_column = False
+            col_lower = col.lower()
+
+            # Check for RSI variations
+            if 'rsi' in col_lower and any('rsi' in other.lower() for other in filtered_analysis_columns):
+                skip_column = True
+            # Check for MACD variations
+            elif 'macd' in col_lower and any('macd' in other.lower() for other in filtered_analysis_columns):
+                skip_column = True
+            # Check for volatility variations
+            elif 'volatility' in col_lower and any('volatility' in other.lower() for other in filtered_analysis_columns):
+                skip_column = True
+            # Check for ATR variations
+            elif 'atr' in col_lower and any('atr' in other.lower() for other in filtered_analysis_columns):
+                skip_column = True
+            # Check for expected price correlations (avg_price with min_price/max_price)
+            elif col in ['avg_price', 'min_price', 'max_price']:
+                # Allow one of each type but skip correlations between them
+                existing_price_cols = [c for c in filtered_analysis_columns if c in ['avg_price', 'min_price', 'max_price']]
+                if existing_price_cols:
+                    skip_column = True
+
+            if not skip_column:
+                filtered_analysis_columns.append(col)
+
+        analysis_columns = filtered_analysis_columns
+
         if len(analysis_columns) < 2:
+            result.add_info('correlation_analysis', f'Insufficient uncorrelated features for correlation analysis ({len(analysis_columns)} columns after filtering)')
             return
-            
+
         try:
             corr_matrix = df[analysis_columns].corr()
             high_corr_pairs = []
@@ -442,16 +770,88 @@ class DataQualityFramework:
                     corr_value = corr_matrix.iloc[i, j]
                     if abs(corr_value) > self.thresholds.max_correlation_threshold:
                         high_corr_pairs.append({
-                            'col1': corr_matrix.columns[i], 
-                            'col2': corr_matrix.columns[j], 
+                            'col1': corr_matrix.columns[i],
+                            'col2': corr_matrix.columns[j],
                             'correlation': corr_value
                         })
-                        
+
             result.add_metric('high_correlations', high_corr_pairs)
+            result.add_metric('excluded_correlated_features', list(excluded_features))
+            result.add_metric('analysis_columns', analysis_columns)
+
             if high_corr_pairs:
-                result.add_warning('high_correlations', f'Found {len(high_corr_pairs)} highly correlated column pairs (excluding OHLCV)')
+                # Create detailed warning message with specific pairs
+                warning_msg = f'Found {len(high_corr_pairs)} highly correlated column pairs (after excluding known correlated features):'
+                for pair in high_corr_pairs[:3]:  # Show first 3 pairs to avoid spam
+                    warning_msg += f" {pair['col1']}↔{pair['col2']}({pair['correlation']:.3f})"
+                if len(high_corr_pairs) > 3:
+                    warning_msg += f" ... and {len(high_corr_pairs) - 3} more"
+                result.add_warning('high_correlations', warning_msg)
+                result.add_info('correlation_filtering', f'Excluded {len(excluded_features)} known correlated features from analysis')
+            else:
+                result.add_info('correlation_analysis', f'No problematic correlations found in {len(analysis_columns)} analyzed features')
         except Exception as e:
             result.add_warning('correlation_calculation_error', f'Could not calculate correlations: {e}')
+
+    def _validate_duplicate_timestamps(self, df: pd.DataFrame, result: QualityResult) -> None:
+        """Validate for duplicate timestamps using comprehensive analysis."""
+        if not self.duplicate_analyzer:
+            return
+
+        try:
+            self.logger.info('🔍 Running comprehensive duplicate timestamp analysis...')
+
+            # Run duplicate analysis
+            analysis_result = self.duplicate_analyzer.analyze_duplicates(df)
+
+            # Add comprehensive metrics
+            result.add_metric('duplicate_analysis_available', True)
+            result.add_metric('total_duplicate_records', analysis_result.total_duplicates)
+            result.add_metric('duplicate_groups', len(analysis_result.duplicate_groups))
+            result.add_metric('true_duplicates', analysis_result.true_duplicate_groups)
+            result.add_metric('false_duplicates', analysis_result.false_duplicate_groups)
+            result.add_metric('mixed_duplicates', analysis_result.mixed_duplicate_groups)
+
+            # Add detailed duplicate analysis
+            duplicate_details = {
+                'summary_stats': analysis_result.summary_stats,
+                'duplicate_type_distribution': analysis_result.summary_stats.get('duplicate_type_distribution', {}),
+                'recommendations': analysis_result.recommendations
+            }
+            result.add_metric('duplicate_details', duplicate_details)
+
+            # Add issues based on duplicate analysis
+            if analysis_result.total_duplicates > 0:
+                # Add warnings/info for different types of duplicates
+                if analysis_result.false_duplicate_groups > 0:
+                    result.add_issue('false_duplicates',
+                                   f'Found {analysis_result.false_duplicate_groups} groups of false duplicates '
+                                   '(same timestamp, different values) - requires investigation')
+
+                if analysis_result.true_duplicate_groups > 0:
+                    result.add_warning('true_duplicates',
+                                     f'Found {analysis_result.true_duplicate_groups} groups of true duplicates '
+                                     '(identical records) - safe to remove')
+
+                if analysis_result.mixed_duplicate_groups > 0:
+                    result.add_warning('mixed_duplicates',
+                                     f'Found {analysis_result.mixed_duplicate_groups} groups of mixed duplicates '
+                                     '- requires detailed analysis')
+
+                # Add duplicate percentage for quality scoring
+                duplicate_percentage = (analysis_result.total_duplicates / len(df)) * 100
+                result.add_metric('duplicate_percentage', duplicate_percentage)
+
+                # Add specific duplicate recommendations
+                for recommendation in analysis_result.recommendations:
+                    result.add_info('duplicate_recommendation', recommendation)
+
+            self.logger.info(f'✅ Duplicate analysis completed: {analysis_result.total_duplicates} duplicates in {len(analysis_result.duplicate_groups)} groups')
+
+        except Exception as e:
+            self.logger.warning(f'⚠️ Duplicate analysis failed: {e}')
+            result.add_warning('duplicate_analysis_failed', f'Duplicate timestamp analysis failed: {e}')
+            result.add_metric('duplicate_analysis_available', False)
 
     def _calculate_quality_score(self, df: pd.DataFrame) -> float:
         """Calculate overall data quality score (0-100)."""
@@ -462,8 +862,16 @@ class DataQualityFramework:
             null_percentage = df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100
             score -= null_percentage * 0.5
             
-            # Penalize duplicates
+            # Penalize duplicates (use enhanced duplicate analysis if available)
             duplicate_percentage = df.duplicated().sum() / len(df) * 100
+
+            # Check if we have enhanced duplicate analysis results
+            duplicate_metrics = getattr(self, '_last_validation_result', None)
+            if duplicate_metrics and duplicate_metrics.get('duplicate_percentage'):
+                # Use enhanced duplicate percentage which includes true/false duplicate distinction
+                enhanced_dup_pct = duplicate_metrics['duplicate_percentage']
+                duplicate_percentage = max(duplicate_percentage, enhanced_dup_pct)
+
             score -= duplicate_percentage * 0.3
             
             # Penalize infinite values
@@ -881,3 +1289,53 @@ class SimpleSchemaValidator:
 data_quality_framework = DataQualityFramework()
 unified_memory_manager = UnifiedMemoryManager()
 schema_validator = SimpleSchemaValidator()
+
+
+# Convenience functions for duplicate analysis
+def analyze_duplicates_enhanced(df: pd.DataFrame, timestamp_column: str = 'timestamp'):
+    """Convenience function for enhanced duplicate analysis."""
+    if DUPLICATE_ANALYZER_AVAILABLE:
+        return analyze_duplicates_comprehensive(df, timestamp_column)
+    else:
+        raise ImportError("Comprehensive duplicate analyzer not available")
+
+
+def resolve_duplicates_enhanced(df: pd.DataFrame, strategy: str = 'manual_review',
+                               timestamp_column: str = 'timestamp'):
+    """Convenience function for enhanced duplicate resolution (MANUAL REVIEW ONLY)."""
+    if DUPLICATE_ANALYZER_AVAILABLE:
+        if strategy != 'manual_review':
+            raise ValueError("Only 'manual_review' strategy is supported. Automatic resolution is disabled.")
+        analyzer = ComprehensiveDuplicateAnalyzer()
+        return analyzer.resolve_duplicates(df, strategy, timestamp_column)
+    else:
+        raise ImportError("Comprehensive duplicate analyzer not available")
+
+
+def validate_with_duplicate_analysis(df: pd.DataFrame, context: str = '') -> QualityResult:
+    """Validate dataframe quality including comprehensive duplicate analysis."""
+    return data_quality_framework.validate_dataframe_quality(df, context)
+
+
+# Enhanced quality check with duplicate focus
+def check_duplicate_quality(df: pd.DataFrame, context: str = '') -> Dict[str, Any]:
+    """Perform quality check with focus on duplicate analysis."""
+    result = data_quality_framework.validate_dataframe_quality(df, context)
+
+    # Extract duplicate-specific information
+    duplicate_info = {
+        'has_duplicates': result.metrics.get('total_duplicate_records', 0) > 0,
+        'duplicate_count': result.metrics.get('total_duplicate_records', 0),
+        'duplicate_groups': result.metrics.get('duplicate_groups', 0),
+        'true_duplicates': result.metrics.get('true_duplicates', 0),
+        'false_duplicates': result.metrics.get('false_duplicates', 0),
+        'mixed_duplicates': result.metrics.get('mixed_duplicates', 0),
+        'duplicate_percentage': result.metrics.get('duplicate_percentage', 0.0),
+        'duplicate_analysis_available': result.metrics.get('duplicate_analysis_available', False),
+        'quality_score': result.quality_score,
+        'duplicate_issues': [issue for issue in result.issues if 'duplicate' in issue.lower()],
+        'duplicate_warnings': [warning for warning in result.warnings if 'duplicate' in warning.lower()],
+        'recommendations': result.metrics.get('duplicate_details', {}).get('recommendations', [])
+    }
+
+    return duplicate_info

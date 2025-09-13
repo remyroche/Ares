@@ -54,7 +54,7 @@ class SystemConfig:
     memory_limit_gb: float = 8.0
 
     # Data
-    data_dir: str = "data_cache"
+    data_dir: str = "historical_data"
     cache_dir: str = "cache"
     max_cache_size_gb: float = 10.0
 

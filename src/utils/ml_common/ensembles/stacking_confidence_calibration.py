@@ -21,8 +21,8 @@ import time
 from datetime import datetime
 
 # M1 Optimization imports
-from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
+from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
 
 # Common utilities
 from src.utils.common_operations import (
@@ -45,7 +45,7 @@ from src.core.errors import (
 )
 
 # Import confidence metrics
-from .confidence_metrics import (
+from ..confidence_metrics import (
     calculate_confidence_metrics, calculate_calibration_metrics,
     calculate_expected_calibration_error, ModelConfidenceCalibration
 )

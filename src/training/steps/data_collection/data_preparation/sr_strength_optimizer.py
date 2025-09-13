@@ -11,7 +11,7 @@ import os
 
 import warnings
 from src.utils.logger import system_logger
-from ....core.decorators import handles_errors
+from ....core.decorators import handles_errors, traced
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 warnings.filterwarnings('ignore')
@@ -27,16 +27,17 @@ from src.utils.logger import system_logger
 
 try:
     import numba
-import logging
-import time
-from src.utils.enhanced_artifact_manager import get_artifact_manager
-from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
-from src.utils.version_manager import get_version_manager
+    import logging
+    import time
+    from src.utils.enhanced_artifact_manager import get_artifact_manager
+    from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+    from src.utils.version_manager import get_version_manager
 
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
 try:
+    import joblib
     JOBLIB_AVAILABLE = True
 except ImportError:
     JOBLIB_AVAILABLE = False

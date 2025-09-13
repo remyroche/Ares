@@ -1,0 +1,650 @@
+"""
+Unified Klines Parquet Data Management
+
+This module provides a unified interface for creating, updating, and accessing
+historical klines data stored in optimized parquet format.
+"""
+
+import os
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import pandas as pd
+from src.utils.logger import system_logger
+from src.utils.parquet_utils import ParquetUtils
+from src.utils.data.processing.data_processing import DataProcessor
+
+
+class KlinesParquetManager:
+    """Unified manager for klines parquet data operations."""
+
+    def __init__(self, data_dir: str = "historical_data"):
+        """Initialize the klines parquet manager.
+
+        Args:
+            data_dir: Base directory for data storage
+        """
+        self.data_dir = Path(data_dir)
+        self.raw_data_dir = self.data_dir / "binance"
+        self.processed_data_dir = self.data_dir / "binance"
+        self.logger = system_logger.getChild("KlinesParquetManager")
+        self.parquet_utils = ParquetUtils()
+        self.data_processor = DataProcessor()
+        
+        # Create directories
+        self.raw_data_dir.mkdir(parents=True, exist_ok=True)
+        self.processed_data_dir.mkdir(parents=True, exist_ok=True)
+    
+    def get_data_info(self, symbol: str, interval: str, data_type: str = "raw") -> Dict[str, Any]:
+        """Get information about available data.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            data_type: 'raw' or 'processed'
+            
+        Returns:
+            Dictionary with data information
+        """
+        try:
+            if data_type == "raw":
+                data_dir = self.raw_data_dir / symbol.lower() / "raw"
+            else:
+                data_dir = self.processed_data_dir / symbol.lower() / "processed"
+            
+            if not data_dir.exists():
+                return {
+                    "available": False,
+                    "files_count": 0,
+                    "total_records": 0,
+                    "date_range": None,
+                    "file_size_mb": 0
+                }
+            
+            # Find matching files
+            if data_type == "raw":
+                pattern = f"{symbol.lower()}_{interval}_*.parquet"
+            else:
+                pattern = f"{symbol.lower()}_{interval}"
+            
+            files = list(data_dir.glob(f"{pattern}*"))
+            
+            if not files:
+                return {
+                    "available": False,
+                    "files_count": 0,
+                    "total_records": 0,
+                    "date_range": None,
+                    "file_size_mb": 0
+                }
+            
+            # Calculate total size - handle both files and partitioned directories
+            total_size = 0
+            for f in files:
+                if f.is_file():
+                    total_size += f.stat().st_size
+                elif f.is_dir() and data_type == "processed":
+                    # For partitioned processed data, calculate size recursively
+                    for root, dirs, files_in_dir in os.walk(f):
+                        for file in files_in_dir:
+                            if file.endswith('.parquet'):
+                                file_path = os.path.join(root, file)
+                                try:
+                                    total_size += os.path.getsize(file_path)
+                                except OSError:
+                                    pass  # Skip files that can't be accessed
+            
+            # Get date range and record count
+            total_records = 0
+            date_ranges = []
+            
+            for file_path in files:
+                try:
+                    if data_type == "processed" and file_path.is_dir():
+                        # For processed data, it might be partitioned - recursively find all parquet files
+                        all_parquet_files = []
+                        for root, dirs, files_in_dir in os.walk(file_path):
+                            for file in files_in_dir:
+                                if file.endswith('.parquet'):
+                                    all_parquet_files.append(os.path.join(root, file))
+
+                        # Sample a subset of files to avoid reading everything (for performance)
+                        sample_size = min(10, len(all_parquet_files))  # Sample up to 10 files
+                        sampled_files = all_parquet_files[:sample_size] if sample_size > 0 else all_parquet_files
+
+                        for pf in sampled_files:
+                            df = self.parquet_utils.safe_read_parquet(pf)
+                            if df is not None and not df.empty:
+                                total_records += len(df)
+                                date_ranges.append((df.index.min(), df.index.max()))
+
+                        # Estimate total records based on sample
+                        if len(all_parquet_files) > sample_size and sample_size > 0:
+                            avg_records_per_file = total_records / sample_size
+                            estimated_total = int(avg_records_per_file * len(all_parquet_files))
+                            total_records = estimated_total
+                            self.logger.info(f"📊 Estimated {estimated_total:,} total records from {len(all_parquet_files)} files (sampled {sample_size})")
+
+                    else:
+                        # For raw data or single files
+                        df = self.parquet_utils.safe_read_parquet(str(file_path))
+                        if df is not None and not df.empty:
+                            total_records += len(df)
+                            date_ranges.append((df.index.min(), df.index.max()))
+                except Exception as e:
+                    self.logger.warning(f"Could not read {file_path}: {e}")
+            
+            # Ensure total_size is numeric to prevent string division errors
+            try:
+                file_size_mb = float(total_size) / (1024 * 1024)
+            except (TypeError, ValueError):
+                self.logger.warning(f"⚠️ Could not calculate file size, total_size type: {type(total_size)}, value: {total_size}")
+                file_size_mb = 0.0
+
+            info = {
+                "available": True,
+                "files_count": len(files),
+                "total_records": total_records,
+                "date_range": None,
+                "file_size_mb": file_size_mb
+            }
+            
+            if date_ranges:
+                min_date = min(dt[0] for dt in date_ranges)
+                max_date = max(dt[1] for dt in date_ranges)
+                info["date_range"] = (min_date, max_date)
+            
+            return info
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to get data info: {e}")
+            return {
+                "available": False,
+                "files_count": 0,
+                "total_records": 0,
+                "date_range": None,
+                "file_size_mb": 0,
+                "error": str(e)
+            }
+    
+    def read_data(
+        self,
+        symbol: str,
+        interval: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        data_type: str = "raw",
+        columns: Optional[List[str]] = None
+    ) -> Optional[pd.DataFrame]:
+        """Read klines data for a symbol and interval.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            start_date: Start date for filtering
+            end_date: End date for filtering
+            data_type: 'raw' or 'processed'
+            columns: List of columns to read
+            
+        Returns:
+            DataFrame with klines data or None if not found
+        """
+        try:
+            if data_type == "raw":
+                data_dir = self.raw_data_dir / symbol.lower() / "raw"
+                pattern = f"{symbol.lower()}_{interval}_*.parquet"
+            else:
+                data_dir = self.processed_data_dir / symbol.lower() / "processed"
+                pattern = f"{symbol.lower()}_{interval}"
+            
+            if not data_dir.exists():
+                self.logger.warning(f"No data directory found for {symbol} {interval}")
+                return None
+            
+            # Find matching files
+            files = list(data_dir.glob(f"{pattern}*"))
+            
+            if not files:
+                self.logger.warning(f"No files found for {symbol} {interval}")
+                return None
+            
+            # Load and combine data
+            dataframes = []
+            
+            for file_path in sorted(files):
+                try:
+                    if data_type == "processed" and file_path.is_dir():
+                        # For processed data, it might be partitioned - recursively find all parquet files
+                        all_parquet_files = []
+                        for root, dirs, files_in_dir in os.walk(file_path):
+                            for file in files_in_dir:
+                                if file.endswith('.parquet'):
+                                    all_parquet_files.append(os.path.join(root, file))
+
+                        # Sort files for consistent ordering
+                        all_parquet_files.sort()
+
+                        for pf in all_parquet_files:
+                            df = self.parquet_utils.safe_read_parquet(pf, columns=columns)
+                            if df is not None and not df.empty:
+                                dataframes.append(df)
+                    else:
+                        # For raw data or single files
+                        df = self.parquet_utils.safe_read_parquet(str(file_path), columns=columns)
+                        if df is not None and not df.empty:
+                            dataframes.append(df)
+                except Exception as e:
+                    self.logger.warning(f"Could not read {file_path}: {e}")
+            
+            if not dataframes:
+                self.logger.warning(f"No valid data found for {symbol} {interval}")
+                return None
+            
+            # Combine all dataframes
+            combined_df = pd.concat(dataframes, ignore_index=False)
+            combined_df = combined_df.sort_index()
+            
+            # Remove duplicates
+            combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+            
+            # Apply date filtering if specified
+            if start_date is not None:
+                combined_df = combined_df[combined_df.index >= start_date]
+            
+            if end_date is not None:
+                combined_df = combined_df[combined_df.index <= end_date]
+            
+            self.logger.info(f"📊 Loaded {len(combined_df)} records for {symbol} {interval}")
+            return combined_df
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to read data: {e}")
+            return None
+    
+    def write_data(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str,
+        data_type: str = "raw",
+        overwrite: bool = False
+    ) -> bool:
+        """Write klines data to parquet files.
+        
+        Args:
+            df: DataFrame to write
+            symbol: Trading symbol
+            interval: Data interval
+            data_type: 'raw' or 'processed'
+            overwrite: Whether to overwrite existing files
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if df is None or df.empty:
+                self.logger.warning("Cannot write empty DataFrame")
+                return False
+            
+            if data_type == "raw":
+                data_dir = self.raw_data_dir / symbol.lower() / "raw"
+            else:
+                data_dir = self.processed_data_dir / symbol.lower() / "processed"
+            
+            data_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Add metadata if not present
+            if 'symbol' not in df.columns:
+                df = df.copy()
+                df['symbol'] = symbol
+            if 'interval' not in df.columns:
+                df = df.copy()
+                df['interval'] = interval
+            
+            # Add time-based columns for partitioning
+            df_with_partitions = df.copy()
+            df_with_partitions['year'] = df_with_partitions.index.year
+            df_with_partitions['month'] = df_with_partitions.index.month
+            df_with_partitions['day'] = df_with_partitions.index.day
+            
+            if data_type == "raw":
+                # For raw data, save as monthly files
+                for (year, month), month_data in df_with_partitions.groupby([df_with_partitions.index.year, df_with_partitions.index.month]):
+                    filename = f"{symbol.lower()}_{interval}_{year}_{month:02d}.parquet"
+                    filepath = data_dir / filename
+                    
+                    if filepath.exists() and not overwrite:
+                        # Merge with existing data
+                        existing_df = self.parquet_utils.safe_read_parquet(str(filepath))
+                        if existing_df is not None:
+                            combined_df = pd.concat([existing_df, month_data], ignore_index=False)
+                            combined_df = combined_df.sort_index()
+                            combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+                        else:
+                            combined_df = month_data
+                    else:
+                        combined_df = month_data
+                    
+                    # Optimize data types
+                    combined_df = self.data_processor.optimize_dataframe_dtypes(combined_df)
+                    
+                    # Save file
+                    combined_df.to_parquet(filepath, index=True, compression='snappy')
+                    self.logger.info(f"💾 Saved {len(combined_df)} records to {filename}")
+            
+            else:
+                # For processed data, save as partitioned parquet
+                output_path = data_dir / f"{symbol.lower()}_{interval}"
+                
+                if output_path.exists() and not overwrite:
+                    self.logger.warning(f"Processed data already exists for {symbol} {interval}")
+                    return False
+                
+                # Optimize data types
+                df_with_partitions = self.data_processor.optimize_feature_engineering_pipeline(
+                    df_with_partitions, stage="output"
+                )
+                
+                # Save as partitioned parquet
+                df_with_partitions.to_parquet(
+                    output_path,
+                    partition_cols=['year', 'month'],
+                    index=True,
+                    compression='snappy',
+                    engine='pyarrow'
+                )
+                
+                self.logger.info(f"💾 Saved processed data: {symbol} {interval} ({len(df)} records)")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to write data: {e}")
+            return False
+    
+    def update_data(
+        self,
+        new_data: pd.DataFrame,
+        symbol: str,
+        interval: str,
+        data_type: str = "raw"
+    ) -> bool:
+        """Update existing data with new data.
+        
+        Args:
+            new_data: New data to add
+            symbol: Trading symbol
+            interval: Data interval
+            data_type: 'raw' or 'processed'
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if new_data is None or new_data.empty:
+                return True
+            
+            # Read existing data
+            existing_data = self.read_data(symbol, interval, data_type=data_type)
+            
+            if existing_data is None or existing_data.empty:
+                # No existing data, just write new data
+                return self.write_data(new_data, symbol, interval, data_type, overwrite=True)
+            
+            # Combine with existing data
+            combined_data = pd.concat([existing_data, new_data], ignore_index=False)
+            combined_data = combined_data.sort_index()
+            
+            # Remove duplicates (keep last occurrence)
+            combined_data = combined_data[~combined_data.index.duplicated(keep='last')]
+            
+            # Write updated data
+            return self.write_data(combined_data, symbol, interval, data_type, overwrite=True)
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to update data: {e}")
+            return False
+    
+    def delete_data(
+        self,
+        symbol: str,
+        interval: str,
+        data_type: str = "raw",
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> bool:
+        """Delete data for a symbol and interval.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            data_type: 'raw' or 'processed'
+            start_date: Start date for deletion (optional)
+            end_date: End date for deletion (optional)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if data_type == "raw":
+                data_dir = self.raw_data_dir / symbol.lower() / "raw"
+                pattern = f"{symbol.lower()}_{interval}_*.parquet"
+            else:
+                data_dir = self.processed_data_dir / symbol.lower() / "processed"
+                pattern = f"{symbol.lower()}_{interval}"
+            
+            if not data_dir.exists():
+                return True  # Nothing to delete
+            
+            files = list(data_dir.glob(f"{pattern}*"))
+            
+            if not files:
+                return True  # Nothing to delete
+            
+            if start_date is None and end_date is None:
+                # Delete all data
+                for file_path in files:
+                    if file_path.is_file():
+                        file_path.unlink()
+                    elif file_path.is_dir():
+                        import shutil
+                        shutil.rmtree(file_path)
+                
+                self.logger.info(f"🗑️ Deleted all data for {symbol} {interval}")
+                return True
+            
+            # Delete specific date range
+            deleted_files = 0
+            for file_path in files:
+                try:
+                    if file_path.is_file():
+                        # Check if file contains data in the specified range
+                        df = self.parquet_utils.safe_read_parquet(str(file_path))
+                        if df is not None and not df.empty:
+                            file_start = df.index.min()
+                            file_end = df.index.max()
+                            
+                            # Check if file overlaps with deletion range
+                            if (start_date is None or file_end >= start_date) and \
+                               (end_date is None or file_start <= end_date):
+                                
+                                if start_date is not None and end_date is not None:
+                                    # Partial deletion - need to filter and rewrite
+                                    filtered_df = df[(df.index < start_date) | (df.index > end_date)]
+                                    if filtered_df.empty:
+                                        file_path.unlink()
+                                    else:
+                                        filtered_df.to_parquet(file_path, index=True, compression='snappy')
+                                else:
+                                    file_path.unlink()
+                                
+                                deleted_files += 1
+                    
+                except Exception as e:
+                    self.logger.warning(f"Could not process {file_path}: {e}")
+            
+            self.logger.info(f"🗑️ Deleted {deleted_files} files for {symbol} {interval}")
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to delete data: {e}")
+            return False
+    
+    def list_available_data(self) -> Dict[str, List[str]]:
+        """List all available data.
+        
+        Returns:
+            Dictionary mapping symbols to available intervals
+        """
+        try:
+            available_data = {}
+            
+            # Check raw data
+            for symbol_dir in self.raw_data_dir.iterdir():
+                if symbol_dir.is_dir():
+                    symbol = symbol_dir.name.upper()
+                    raw_dir = symbol_dir / "raw"
+                    if raw_dir.exists():
+                        intervals = set()
+                        for file_path in raw_dir.glob("*.parquet"):
+                            # Extract interval from filename
+                            parts = file_path.stem.split('_')
+                            if len(parts) >= 2:
+                                interval = parts[1]
+                                intervals.add(interval)
+                        
+                        if intervals:
+                            available_data[symbol] = list(intervals)
+            
+            # Check processed data
+            for symbol_dir in self.processed_data_dir.iterdir():
+                if symbol_dir.is_dir():
+                    symbol = symbol_dir.name.upper()
+                    processed_dir = symbol_dir / "processed"
+                    if processed_dir.exists():
+                        intervals = set()
+                        for item in processed_dir.iterdir():
+                            if item.is_dir():
+                                # Extract interval from directory name
+                                parts = item.name.split('_')
+                                if len(parts) >= 2:
+                                    interval = parts[1]
+                                    intervals.add(interval)
+                        
+                        if intervals:
+                            if symbol in available_data:
+                                available_data[symbol].extend(list(intervals))
+                            else:
+                                available_data[symbol] = list(intervals)
+            
+            return available_data
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to list available data: {e}")
+            return {}
+    
+    def get_data_statistics(self, symbol: str, interval: str, data_type: str = "raw") -> Dict[str, Any]:
+        """Get detailed statistics for data.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            data_type: 'raw' or 'processed'
+            
+        Returns:
+            Dictionary with detailed statistics
+        """
+        try:
+            # Get basic info
+            info = self.get_data_info(symbol, interval, data_type)
+            
+            if not info["available"]:
+                return info
+            
+            # Read a sample of data for detailed statistics
+            sample_data = self.read_data(symbol, interval, data_type=data_type)
+            
+            if sample_data is None or sample_data.empty:
+                return info
+            
+            # Calculate additional statistics
+            stats = info.copy()
+            stats.update({
+                "columns": list(sample_data.columns),
+                "dtypes": {col: str(dtype) for col, dtype in sample_data.dtypes.items()},
+                "memory_usage_mb": sample_data.memory_usage(deep=True).sum() / (1024 * 1024),
+                "null_counts": sample_data.isnull().sum().to_dict(),
+                "price_range": {
+                    "min": sample_data['close'].min() if 'close' in sample_data.columns else None,
+                    "max": sample_data['close'].max() if 'close' in sample_data.columns else None,
+                    "mean": sample_data['close'].mean() if 'close' in sample_data.columns else None
+                } if 'close' in sample_data.columns else None,
+                "volume_stats": {
+                    "min": sample_data['volume'].min() if 'volume' in sample_data.columns else None,
+                    "max": sample_data['volume'].max() if 'volume' in sample_data.columns else None,
+                    "mean": sample_data['volume'].mean() if 'volume' in sample_data.columns else None
+                } if 'volume' in sample_data.columns else None
+            })
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to get data statistics: {e}")
+            return {"error": str(e)}
+
+
+# Convenience functions
+def get_klines_manager(data_dir: str = "historical_data") -> KlinesParquetManager:
+    """Get a klines parquet manager instance.
+
+    Args:
+        data_dir: Base directory for data storage
+
+    Returns:
+        KlinesParquetManager instance
+    """
+    return KlinesParquetManager(data_dir)
+
+
+def read_ethusdt_data(
+    interval: str = "1m",
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    data_type: str = "raw",
+    data_dir: str = "historical_data"
+) -> Optional[pd.DataFrame]:
+    """Read ETHUSDT data.
+    
+    Args:
+        interval: Data interval
+        start_date: Start date for filtering
+        end_date: End date for filtering
+        data_type: 'raw' or 'processed'
+        data_dir: Base directory for data storage
+        
+    Returns:
+        DataFrame with ETHUSDT data or None if not found
+    """
+    manager = get_klines_manager(data_dir)
+    return manager.read_data("ETHUSDT", interval, start_date, end_date, data_type)
+
+
+if __name__ == "__main__":
+    # Example usage
+    manager = get_klines_manager()
+    
+    # List available data
+    available = manager.list_available_data()
+    print(f"Available data: {available}")
+    
+    # Get data info
+    info = manager.get_data_info("ETHUSDT", "1m", "raw")
+    print(f"ETHUSDT 1m raw data info: {info}")
+    
+    # Read data
+    data = manager.read_data("ETHUSDT", "1m", data_type="raw")
+    if data is not None:
+        print(f"Loaded {len(data)} records")
+        print(f"Columns: {list(data.columns)}")
+        print(f"Date range: {data.index.min()} to {data.index.max()}")

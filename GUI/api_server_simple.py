@@ -439,7 +439,7 @@ try:
     import os
     gui_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, gui_dir)
-    from ares_launcher import (
+    from src.launcher.ares_launcher import (
         start_launcher_mode, start_training, stop_process, stop_all_processes,
         get_process_status, get_available_modes, get_available_training_modes,
         get_available_exchanges
@@ -739,7 +739,7 @@ async def get_data_status():
     try:
         # Check for data files
         data_files = []
-        data_dir = "data_cache"
+        data_dir = "historical_data"
         if os.path.exists(data_dir):
             for file in os.listdir(data_dir):
                 if file.endswith('.parquet') or file.endswith('.csv'):

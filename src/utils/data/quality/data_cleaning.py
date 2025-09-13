@@ -167,8 +167,8 @@ class DataCleaner:
             'aggtrades': {
                 GapType.SMALL: 1,      # 1 second
                 GapType.MEDIUM: 5,     # 5 seconds
-                GapType.LARGE: 0.5,    # 0.5 seconds - triggers re-download
-                GapType.CRITICAL: 10   # 10 seconds
+                GapType.LARGE: 10,     # 10 seconds - triggers re-download
+                GapType.CRITICAL: 30   # 30 seconds
             },
             'klines': {
                 GapType.SMALL: 65,     # 65 seconds - triggers download
@@ -185,7 +185,7 @@ class DataCleaner:
             'unified': {
                 GapType.SMALL: 65,     # 65 seconds (same as klines)
                 GapType.MEDIUM: 300,   # 5 minutes (same as klines)
-                GapType.LARGE: 120,    # 2 minutes - triggers re-download
+                GapType.LARGE: 900,    # 15 minutes - consistent monotonicity
                 GapType.CRITICAL: 1800 # 30 minutes (same as klines)
             }
         }

@@ -61,14 +61,19 @@ try:
         RegimeSpecificTPSLOptimizer
     )
     
-    # Data Processing
-    from .data_processing import (
-        EnhancedDataLabeler, LabelingConfig,
-        DataQualityChecker, QualityReport,
-        RegimeDataProcessor,
-        MultiTimeframeTrainer,
-        SRFeatureIntegrator
-    )
+    # Data Processing (avoid heavy imports at module import time)
+    # Import only lightweight names; defer heavy classes to local imports in callers to prevent circulars
+    try:
+        from .data_processing import EnhancedDataLabeler  # Lightweight class definition
+    except Exception as e:
+        EnhancedDataLabeler = None  # type: ignore
+        tprint(f"⚠️ EnhancedDataLabeler not available at init: {e}")
+    # LabelingConfig may live in config; avoid importing non-existent symbol
+    try:
+        from .data_processing import LabelingConfig  # Optional; may not exist
+    except Exception:
+        LabelingConfig = None  # type: ignore
+    # Defer other heavy utilities to call sites
     
     # Validation
     from .validation import (
@@ -91,9 +96,19 @@ try:
     
     # Legacy imports for backward compatibility
     from .feature_selection import FeatureSelector, FeatureSelectionConfig
-    from .hmm_regime_detection import HMMRegimeDetector, RegimeConfig
+    # Avoid importing HMMRegimeDetector at package import to prevent circulars; callers should import directly
+    try:
+        from .hmm_regime_detection import HMMRegimeDetector, RegimeConfig
+    except Exception:
+        HMMRegimeDetector = None  # type: ignore
+        RegimeConfig = None  # type: ignore
     from .confidence_metrics import calculate_confidence_metrics, calculate_calibration_metrics
-    from .matrix_operations import M1EnhancedMatrixOperations, get_enhanced_matrix_operations
+    # Defer matrix operations to avoid circular import at init
+    try:
+        from .matrix_operations import M1EnhancedMatrixOperations, get_enhanced_matrix_operations
+    except Exception:
+        M1EnhancedMatrixOperations = None  # type: ignore
+        get_enhanced_matrix_operations = None  # type: ignore
     from .pipeline_orchestrator import PipelineOrchestrator
     from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
     

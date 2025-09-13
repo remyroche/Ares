@@ -346,8 +346,22 @@ class EnhancedHMMRegimeDetector:
         if not HMM_AVAILABLE:
             raise ImportError("HMM libraries not available")
         
-        # Prepare data - enhanced feature engineering for HMM
-        numeric_data = data.select_dtypes(include=[np.number])
+        # Prepare data - pre-filter features
+        # 1) Drop time-like and identifier columns if present
+        cols_to_drop = [
+            c for c in ['timestamp', 'open_time', 'close_time', 'symbol', 'exchange', 'timeframe', 'interval']
+            if c in data.columns
+        ]
+        filtered = data.drop(columns=cols_to_drop, errors='ignore')
+        # 2) Keep only numeric columns
+        numeric_data = filtered.select_dtypes(include=[np.number])
+        # 3) Remove near-constant/low-variance columns
+        if len(numeric_data.columns) > 0:
+            std_series = numeric_data.std(numeric_only=True)
+            low_var_cols = std_series[std_series <= 1e-8].index.tolist()
+            if low_var_cols:
+                numeric_data = numeric_data.drop(columns=low_var_cols)
+                self.logger.info(f"🧹 Removed {len(low_var_cols)} low-variance features: {low_var_cols[:10]}{'...' if len(low_var_cols) > 10 else ''}")
 
         # Check for NaN values and handle them properly
         nan_count = numeric_data.isnull().sum().sum()
@@ -388,6 +402,9 @@ class EnhancedHMMRegimeDetector:
             self.logger.info("✅ Data normalized for HMM training")
         except Exception as e:
             self.logger.warning(f"⚠️ Data normalization failed: {e}")
+
+        # Safety: ensure numeric-only after engineering
+        numeric_data = numeric_data.select_dtypes(include=[np.number])
 
         # Validate data for HMM training
         if numeric_data.empty:
@@ -529,9 +546,16 @@ class EnhancedHMMRegimeDetector:
                     start_time = time.time()
 
                     # Use optimized batched prediction with parallel processing for very large datasets
-                    probabilities = self._optimized_batched_predict_proba(model, numeric_data,
-                                                                         batch_size=20000,  # Larger batches for efficiency
-                                                                         use_parallel=True)  # Enable parallel processing
+                    probabilities = self._optimized_batched_predict_proba(
+                        model, numeric_data, batch_size=20000, use_parallel=True
+                    )
+                    # Apply temperature scaling to reduce overconfidence
+                    temperature = 1.2
+                    with np.errstate(over='ignore'):
+                        logits = np.log(np.clip(probabilities, 1e-12, 1.0))
+                        scaled = logits / max(1e-6, temperature)
+                        exp_scaled = np.exp(scaled - np.max(scaled, axis=1, keepdims=True))
+                        probabilities = exp_scaled / np.clip(np.sum(exp_scaled, axis=1, keepdims=True), 1e-12, None)
 
                     predict_proba_time = time.time() - start_time
                     self.logger.info(f"✅ Optimized probabilistic predictions completed in {predict_proba_time:.2f}s")
@@ -662,7 +686,7 @@ class EnhancedHMMRegimeDetector:
             self.logger.warning(f"⚠️ Could not compute model score: {e}")
             result['model_score'] = 0.0
 
-        self.logger.info(f"🔍 DEBUG: HMM regime detection function completed, returning result with {len(result)} columns")
+        self.logger.info(f"🔍 DEBUG: HMM regime detection function completed, returning result with {len(result)} rows")
         self.logger.info(f"🔍 DEBUG: Final result columns: {list(result.keys())}")
         return result
 
@@ -1900,42 +1924,41 @@ class EnhancedHMMRegimeDetector:
         return data
 
     def _determine_expected_interval(self, data: pd.DataFrame, timestamps: pd.Series) -> float:
-        """Determine the expected time interval between data points."""
+        """Determine the expected time interval between data points using robust statistics.
+
+        Reports median interval with tolerance and avoids misleading sub-second prints for minute data.
+        """
         try:
-            # Calculate the most common time difference
+            # Calculate time differences in seconds
             time_diffs_raw = timestamps.diff()
             if hasattr(time_diffs_raw, 'dt'):
                 time_diffs = time_diffs_raw.dt.total_seconds().dropna()
             else:
-                # Handle TimedeltaIndex case
                 time_diffs = (time_diffs_raw / pd.Timedelta(seconds=1)).dropna()
 
             if len(time_diffs) == 0:
                 self.logger.warning("⚠️ No time differences found, assuming 65s interval")
                 return 65.0
 
-            # Use mode (most common interval) as expected interval
+            # Prefer median for robustness; use mode if clearly defined
+            median_interval = float(time_diffs.median())
             mode_interval = time_diffs.mode()
-            if len(mode_interval) > 0:
-                expected_interval = mode_interval.iloc[0]
-            else:
-                # Fallback to median if no clear mode
-                expected_interval = time_diffs.median()
+            expected_interval = float(mode_interval.iloc[0]) if len(mode_interval) > 0 else median_interval
 
-            # Validate the interval makes sense (between 1 second and 24 hours)
+            # Clamp to sensible bounds and normalize 1m artifacts
             if expected_interval < 1:
-                self.logger.warning(f"⚠️ Very small interval detected ({expected_interval:.3f}s), assuming 1m for market data")
-                expected_interval = 65.0  # 65 seconds
+                # Likely unit artifact; treat as minute data if median near 60s
+                approx_minute = 60.0
+                if abs(median_interval - approx_minute) <= 5:
+                    expected_interval = approx_minute
+                else:
+                    expected_interval = max(1.0, expected_interval)
             elif expected_interval > 86400:  # 24 hours
                 self.logger.warning(f"⚠️ Very large interval detected ({expected_interval:.1f}s), assuming 3600s (1h)")
                 expected_interval = 3600.0
 
-            # Log interval classification for user understanding
-            # Adjusted for klines data - be more lenient with small intervals
-            if expected_interval <= 10:
-                # Small intervals are likely 1m klines with some processing artifacts
-                interval_type = "1m klines (processed)"
-            elif expected_interval <= 90:
+            # Log interval classification using robust expected interval
+            if expected_interval <= 90:
                 interval_type = "1m klines"
             elif expected_interval <= 600:
                 interval_type = "5m klines"
@@ -1952,7 +1975,9 @@ class EnhancedHMMRegimeDetector:
             else:
                 interval_type = "weekly/monthly data"
 
-            self.logger.info(f"📊 Detected data type: {interval_type} (interval: {expected_interval:.1f}s)")
+            # Report median ± tolerance for clarity
+            tolerance = float(np.std(time_diffs)) if 'np' in globals() else float(time_diffs.std())
+            self.logger.info(f"📊 Detected data type: {interval_type} (median interval: {median_interval:.1f}s ± {min(tolerance, 5.0):.1f}s)")
 
             return expected_interval
 
@@ -1967,12 +1992,13 @@ class EnhancedHMMRegimeDetector:
             if expected_interval <= 2:
                 # Aggtrades data (1-2 second intervals)
                 data_type = "aggtrades"
-                gap_threshold = 0.5  # 0.5 seconds for aggtrades
-                download_threshold = 1.0  # 1 second for download attempts
+                gap_threshold = 2.0  # Smallest threshold should be < medium
+                download_threshold = 5.0
             elif expected_interval <= 90:
                 # Klines data (1 minute intervals)
                 data_type = "klines_1m"
-                gap_threshold = 65.0  # 65 seconds for klines
+                # Use robust thresholds around one minute
+                gap_threshold = max(60.0, min(70.0, expected_interval + 5.0))
                 download_threshold = 120.0  # 2 minutes for download attempts
             elif expected_interval <= 600:
                 # Klines data (5 minute intervals)

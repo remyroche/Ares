@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
 from src.utils.data.klines_parquet import get_klines_manager
+from src.utils.data.basic_returns_engineer import BasicReturnsEngineer
 from src.utils.logger import system_logger
 
 
@@ -82,12 +83,12 @@ async def gap_check_command(args):
 
 async def process_command(args):
     """Handle process command."""
-    print(f"🔧 Processing {args.symbol} data with feature engineering...")
+    print(f"🔧 Processing {args.symbol} data with basic returns feature engineering...")
     
     pipeline = HistoricalDataPipeline(args.data_dir)
     
     # Process data
-    results = pipeline.feature_engineer.process_symbol_data(
+    results = pipeline.basic_returns_engineer.process_symbol_data(
         args.symbol, "1m", args.intervals
     )
     

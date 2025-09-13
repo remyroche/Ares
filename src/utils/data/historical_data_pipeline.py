@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional
 from src.utils.logger import system_logger
 from src.utils.data.historical_data_downloader import HistoricalDataDownloader
 from src.utils.data.gap_detector import GapDetector
-from src.utils.data.feature_engineer import FeatureEngineer
+from src.utils.data.basic_returns_engineer import BasicReturnsEngineer
+from src.utils.data.optimized_parquet_storage import OptimizedParquetStorage
 from src.utils.data.klines_parquet import KlinesParquetManager
 
 
@@ -32,7 +33,8 @@ class HistoricalDataPipeline:
         # Initialize components
         self.downloader = HistoricalDataDownloader(data_dir)
         self.gap_detector = GapDetector(data_dir)
-        self.feature_engineer = FeatureEngineer(data_dir)
+        self.basic_returns_engineer = BasicReturnsEngineer(data_dir)
+        self.optimized_storage = OptimizedParquetStorage(data_dir)
         self.klines_manager = KlinesParquetManager(data_dir)
     
     async def run_complete_pipeline(
@@ -107,9 +109,9 @@ class HistoricalDataPipeline:
                 results["summary"]["gap_detection"] = {"gaps_detected": 0}
                 self.logger.info("✅ No gaps detected")
             
-            # Step 3: Feature engineering and resampling
-            self.logger.info("🔧 Step 3: Feature engineering and resampling")
-            processing_results = self.feature_engineer.process_symbol_data(
+            # Step 3: Basic returns feature engineering and resampling
+            self.logger.info("🔧 Step 3: Basic returns feature engineering and resampling")
+            processing_results = self.basic_returns_engineer.process_symbol_data(
                 symbol, "1m", target_intervals
             )
             
@@ -118,8 +120,8 @@ class HistoricalDataPipeline:
                 results["summary"]["feature_engineering"] = processing_results
                 self.logger.info(f"✅ Feature engineering completed: {processing_results}")
             else:
-                results["errors"].append(f"Feature engineering failed: {processing_results.get('error', 'Unknown error')}")
-                self.logger.error(f"❌ Feature engineering failed: {processing_results.get('error', 'Unknown error')}")
+                results["errors"].append(f"Basic returns feature engineering failed: {processing_results.get('error', 'Unknown error')}")
+                self.logger.error(f"❌ Basic returns feature engineering failed: {processing_results.get('error', 'Unknown error')}")
             
             # Step 4: Verify data integrity
             self.logger.info("🔍 Step 4: Verifying data integrity")

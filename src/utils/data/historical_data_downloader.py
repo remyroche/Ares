@@ -2,7 +2,8 @@
 Historical Data Downloader for Binance Klines
 
 This module provides tools to download historical klines data from Binance
-and save it as optimized monthly parquet files.
+and save it as optimized monthly parquet files with intelligent batching
+and duplicate handling.
 """
 
 import asyncio
@@ -12,10 +13,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+import numpy as np
 from exchange.binance import BinanceExchange
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.processing.data_processing import DataProcessor
+from src.utils.hardware.memory_optimization import MemoryMonitor, optimize_dataframe_dtypes
 
 
 class HistoricalDataDownloader:
@@ -32,9 +35,14 @@ class HistoricalDataDownloader:
         self.logger = system_logger.getChild("HistoricalDataDownloader")
         self.parquet_utils = ParquetUtils()
         self.data_processor = DataProcessor()
+        self.memory_monitor = MemoryMonitor()
         
         # Create directories
         self.raw_data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Batch tracking
+        self.batch_count = 0
+        self.total_downloaded = 0
         
     async def download_historical_klines(
         self,
@@ -44,7 +52,7 @@ class HistoricalDataDownloader:
         api_key: str = "",
         api_secret: str = ""
     ) -> bool:
-        """Download historical klines data for the specified symbol.
+        """Download historical klines data for the specified symbol with intelligent batching.
         
         Args:
             symbol: Trading symbol (e.g., 'ETHUSDT')
@@ -72,46 +80,325 @@ class HistoricalDataDownloader:
             symbol_dir = self.raw_data_dir / symbol.lower() / "raw"
             symbol_dir.mkdir(parents=True, exist_ok=True)
             
-            # Download data month by month
-            current_date = start_date
-            total_months = years * 12
-            downloaded_months = 0
+            # Reset batch tracking
+            self.batch_count = 0
+            self.total_downloaded = 0
             
-            while current_date < end_date:
-                # Calculate month end
-                if current_date.month == 12:
-                    month_end = current_date.replace(year=current_date.year + 1, month=1, day=1) - timedelta(days=1)
-                else:
-                    month_end = current_date.replace(month=current_date.month + 1, day=1) - timedelta(days=1)
-                
-                # Don't go beyond end_date
-                month_end = min(month_end, end_date)
-                
-                # Download month data
-                success = await self._download_month_data(
-                    exchange, symbol, interval, current_date, month_end, symbol_dir
-                )
-                
-                if success:
-                    downloaded_months += 1
-                    self.logger.info(f"✅ Downloaded {current_date.strftime('%Y-%m')} ({downloaded_months}/{total_months})")
-                else:
-                    self.logger.warning(f"⚠️ Failed to download {current_date.strftime('%Y-%m')}")
-                
-                # Move to next month
-                if current_date.month == 12:
-                    current_date = current_date.replace(year=current_date.year + 1, month=1, day=1)
-                else:
-                    current_date = current_date.replace(month=current_date.month + 1, day=1)
+            # Download data with intelligent batching
+            success = await self._download_with_intelligent_batching(
+                exchange, symbol, interval, start_date, end_date, symbol_dir
+            )
             
             await exchange.close()
             
-            self.logger.info(f"🎉 Historical data download completed: {downloaded_months}/{total_months} months")
-            return downloaded_months > 0
+            self.logger.info(f"🎉 Historical data download completed: {self.total_downloaded} total records")
+            return success
             
         except Exception as e:
             self.logger.exception(f"❌ Historical data download failed: {e}")
             return False
+    
+    async def _download_with_intelligent_batching(
+        self,
+        exchange: BinanceExchange,
+        symbol: str,
+        interval: str,
+        start_date: datetime,
+        end_date: datetime,
+        symbol_dir: Path
+    ) -> bool:
+        """Download data with intelligent batching to minimize duplicates and gaps.
+        
+        Args:
+            exchange: Binance exchange instance
+            symbol: Trading symbol
+            interval: Kline interval
+            start_date: Start date for download
+            end_date: End date for download
+            symbol_dir: Directory to save data
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Calculate batch size based on interval
+            batch_size_days = self._calculate_batch_size(interval)
+            
+            # Get existing data to determine where to start
+            existing_data = self._get_existing_data_summary(symbol, interval, symbol_dir)
+            
+            # Adjust start date if we have existing data
+            if existing_data and existing_data.get('latest_timestamp'):
+                latest_existing = existing_data['latest_timestamp']
+                # Start from the next interval after latest existing data
+                next_start = latest_existing + self._get_interval_timedelta(interval)
+                if next_start < end_date:
+                    start_date = next_start
+                    self.logger.info(f"📊 Resuming from existing data: {start_date}")
+            
+            # Download in batches
+            current_start = start_date
+            all_data = []
+            
+            while current_start < end_date:
+                current_end = min(current_start + timedelta(days=batch_size_days), end_date)
+                
+                # Download batch
+                batch_data = await self._download_batch(
+                    exchange, symbol, interval, current_start, current_end
+                )
+                
+                if batch_data is not None and not batch_data.empty:
+                    all_data.append(batch_data)
+                    self.total_downloaded += len(batch_data)
+                    
+                    # Print sample every 10 batches
+                    self.batch_count += 1
+                    if self.batch_count % 10 == 0:
+                        self._print_batch_sample(batch_data, self.batch_count)
+                
+                # Move to next batch
+                current_start = current_end
+                
+                # Memory management
+                if len(all_data) >= 5:  # Process every 5 batches
+                    await self._process_and_save_batches(all_data, symbol, interval, symbol_dir)
+                    all_data = []
+                    self.memory_monitor.trigger_gc()
+            
+            # Process remaining data
+            if all_data:
+                await self._process_and_save_batches(all_data, symbol, interval, symbol_dir)
+            
+            return True
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Intelligent batching failed: {e}")
+            return False
+    
+    def _calculate_batch_size(self, interval: str) -> int:
+        """Calculate optimal batch size in days based on interval.
+        
+        Args:
+            interval: Kline interval
+            
+        Returns:
+            Batch size in days
+        """
+        # Binance API limit is 1000 records per request
+        # Calculate days needed for 1000 records based on interval
+        interval_minutes = self._get_interval_minutes(interval)
+        records_per_day = 24 * 60 // interval_minutes
+        batch_size_days = max(1, 1000 // records_per_day)
+        
+        # Cap at reasonable limits
+        batch_size_days = min(batch_size_days, 7)  # Max 1 week per batch
+        
+        self.logger.debug(f"📏 Calculated batch size: {batch_size_days} days for {interval}")
+        return batch_size_days
+    
+    def _get_interval_minutes(self, interval: str) -> int:
+        """Get interval in minutes.
+        
+        Args:
+            interval: Interval string (e.g., '1m', '5m', '1h')
+            
+        Returns:
+            Interval in minutes
+        """
+        interval_map = {
+            '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+            '1h': 60, '2h': 120, '4h': 240, '6h': 360, '8h': 480, '12h': 720,
+            '1d': 1440, '3d': 4320, '1w': 10080, '1M': 43200
+        }
+        return interval_map.get(interval, 1)
+    
+    def _get_interval_timedelta(self, interval: str) -> timedelta:
+        """Get interval as timedelta.
+        
+        Args:
+            interval: Interval string
+            
+        Returns:
+            Timedelta object
+        """
+        minutes = self._get_interval_minutes(interval)
+        return timedelta(minutes=minutes)
+    
+    def _get_existing_data_summary(self, symbol: str, interval: str, symbol_dir: Path) -> Optional[Dict[str, Any]]:
+        """Get summary of existing data to determine where to resume.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Kline interval
+            symbol_dir: Data directory
+            
+        Returns:
+            Dictionary with existing data summary or None
+        """
+        try:
+            # Find existing files
+            pattern = f"{symbol.lower()}_{interval}_*.parquet"
+            files = list(symbol_dir.glob(pattern))
+            
+            if not files:
+                return None
+            
+            # Get the latest file
+            latest_file = max(files, key=lambda f: f.stat().st_mtime)
+            
+            # Read a sample to get timestamp info
+            df = self.parquet_utils.safe_read_parquet(str(latest_file))
+            if df is None or df.empty:
+                return None
+            
+            return {
+                'latest_timestamp': df.index.max(),
+                'earliest_timestamp': df.index.min(),
+                'record_count': len(df),
+                'file_count': len(files)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Could not get existing data summary: {e}")
+            return None
+    
+    async def _download_batch(
+        self,
+        exchange: BinanceExchange,
+        symbol: str,
+        interval: str,
+        start_date: datetime,
+        end_date: datetime
+    ) -> Optional[pd.DataFrame]:
+        """Download a single batch of data.
+        
+        Args:
+            exchange: Binance exchange instance
+            symbol: Trading symbol
+            interval: Kline interval
+            start_date: Batch start date
+            end_date: Batch end date
+            
+        Returns:
+            DataFrame with batch data or None if failed
+        """
+        try:
+            # Convert to milliseconds
+            start_time_ms = int(start_date.timestamp() * 1000)
+            end_time_ms = int(end_date.timestamp() * 1000)
+            
+            # Download raw klines data
+            raw_data = await exchange._get_historical_klines_raw(
+                symbol, interval, start_time_ms, end_time_ms, 1000
+            )
+            
+            if not raw_data:
+                self.logger.warning(f"No data received for batch {start_date} to {end_date}")
+                return None
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(raw_data)
+            
+            # Convert timestamp to datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df = df.set_index('timestamp')
+            
+            # Convert numeric columns
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume', 'quote_volume', 'trades']
+            for col in numeric_columns:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Add metadata
+            df['symbol'] = symbol
+            df['interval'] = interval
+            df['year'] = df.index.year
+            df['month'] = df.index.month
+            df['day'] = df.index.day
+            
+            # Optimize data types
+            df = optimize_dataframe_dtypes(df)
+            
+            return df
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to download batch {start_date} to {end_date}: {e}")
+            return None
+    
+    def _print_batch_sample(self, df: pd.DataFrame, batch_number: int) -> None:
+        """Print sample of batch data every 10 batches.
+        
+        Args:
+            df: DataFrame with batch data
+            batch_number: Current batch number
+        """
+        try:
+            self.logger.info(f"📊 Batch {batch_number} sample (top 10 rows):")
+            sample_df = df.head(10)
+            
+            # Print key columns
+            key_columns = ['open', 'high', 'low', 'close', 'volume']
+            available_columns = [col for col in key_columns if col in sample_df.columns]
+            
+            if available_columns:
+                sample_data = sample_df[available_columns].round(4)
+                for idx, row in sample_data.iterrows():
+                    self.logger.info(f"  {idx}: {dict(row)}")
+            
+            self.logger.info(f"  Total records in batch: {len(df)}")
+            self.logger.info(f"  Date range: {df.index.min()} to {df.index.max()}")
+            
+        except Exception as e:
+            self.logger.warning(f"Could not print batch sample: {e}")
+    
+    async def _process_and_save_batches(
+        self,
+        batches: List[pd.DataFrame],
+        symbol: str,
+        interval: str,
+        symbol_dir: Path
+    ) -> None:
+        """Process and save multiple batches to monthly files.
+        
+        Args:
+            batches: List of DataFrames to process
+            symbol: Trading symbol
+            interval: Kline interval
+            symbol_dir: Directory to save data
+        """
+        try:
+            if not batches:
+                return
+            
+            # Combine all batches
+            combined_df = pd.concat(batches, ignore_index=False)
+            combined_df = combined_df.sort_index()
+            
+            # Remove duplicates (keep last occurrence)
+            combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+            
+            # Group by month and save
+            for (year, month), month_data in combined_df.groupby([combined_df.index.year, combined_df.index.month]):
+                filename = f"{symbol.lower()}_{interval}_{year}_{month:02d}.parquet"
+                filepath = symbol_dir / filename
+                
+                # Load existing data if file exists
+                if filepath.exists():
+                    existing_df = self.parquet_utils.safe_read_parquet(str(filepath))
+                    if existing_df is not None:
+                        # Combine with existing data
+                        month_data = pd.concat([existing_df, month_data], ignore_index=False)
+                        month_data = month_data.sort_index()
+                        # Remove duplicates
+                        month_data = month_data[~month_data.index.duplicated(keep='last')]
+                
+                # Save the combined data
+                month_data.to_parquet(filepath, index=True, compression='snappy')
+                self.logger.info(f"💾 Saved {len(month_data)} records to {filename}")
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to process and save batches: {e}")
     
     async def _download_month_data(
         self,

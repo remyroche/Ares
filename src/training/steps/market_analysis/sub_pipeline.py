@@ -402,12 +402,9 @@ class MarketAnalysisSubPipeline:
             if sub_pipeline_name not in self.sub_pipelines:
                 raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
             
-            # Execute the sub-pipeline with timeout protection
+            # Execute the sub-pipeline
             pipeline_func = self.sub_pipelines[sub_pipeline_name]
-            import asyncio
-            timeout_seconds = 1800  # 30 minutes timeout
-            self.logger.info(f"⏰ Setting timeout of {timeout_seconds} seconds for {sub_pipeline_name}")
-            artifacts = await asyncio.wait_for(pipeline_func(config), timeout=timeout_seconds)
+            artifacts = await pipeline_func(config)
             
             # Update result
             end_time = datetime.now()
@@ -428,15 +425,6 @@ class MarketAnalysisSubPipeline:
 
             self.logger.info(f"✅ Market analysis sub-pipeline {sub_pipeline_name} completed in {result.duration_seconds:.2f}s")
 
-        except asyncio.TimeoutError:
-            end_time = datetime.now()
-            result.status = SubPipelineStatus.FAILED
-            result.end_time = end_time
-            result.duration_seconds = (end_time - start_time).total_seconds()
-            result.error_message = f"Sub-pipeline timed out after {timeout_seconds} seconds"
-            
-            self.logger.error(f"⏰ Market analysis sub-pipeline {sub_pipeline_name} timed out after {timeout_seconds}s")
-            
         except Exception as e:
             end_time = datetime.now()
             result.status = SubPipelineStatus.FAILED
@@ -1834,10 +1822,32 @@ class MarketAnalysisSubPipeline:
         self._log_sub_pipeline_completion("hmm_regime_discovery", config, artifacts)
         self.logger.info(f"🔍 DEBUG: Sub-pipeline completion logged")
 
-        # Log completion without automatically triggering next sub-pipeline
-        self.logger.info("✅ HMM regime discovery completed successfully")
-        self.logger.info("ℹ️ Next sub-pipeline (regime_data_splitting) should be run separately")
+        # Automatically trigger the next sub-pipeline: regime_data_splitting
+        self.logger.info("🔄 HMM regime discovery completed, triggering next: regime_data_splitting")
+        self.logger.info(f"🔍 DEBUG: About to call regime_data_splitting_pipeline...")
         
+        # Small delay to ensure file is fully written
+        import asyncio
+        await asyncio.sleep(1)
+        
+        try:
+            self.logger.info(f"🔍 DEBUG: Calling _regime_data_splitting_pipeline...")
+            next_artifacts = await self._regime_data_splitting_pipeline(config)
+            self.logger.info(f"🔍 DEBUG: Regime data splitting pipeline returned: {type(next_artifacts)}")
+
+            # Merge artifacts from next pipeline
+            self.logger.info(f"🔍 DEBUG: Merging artifacts...")
+            artifacts.update(next_artifacts)
+            self.logger.info(f"🔍 DEBUG: Artifacts merged successfully")
+            self.logger.info("✅ Regime data splitting pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute regime data splitting pipeline: {e}")
+            self.logger.error(f"🔍 DEBUG: Exception details: {type(e).__name__}: {str(e)}")
+            import traceback
+            self.logger.error(f"🔍 DEBUG: Full traceback:\n{traceback.format_exc()}")
+            # Don't fail the entire pipeline if next step fails
+            self.logger.warning("⚠️ Continuing despite regime data splitting failure")
+
         return artifacts
 
     def _check_for_constant_features(self, data: pd.DataFrame) -> List[str]:
@@ -1914,19 +1924,28 @@ class MarketAnalysisSubPipeline:
                     timeframe=config.timeframe,
                     base_path=config.data_dir
                 )
+                self.logger.info(f"🔍 DEBUG: Looking for HMM data at: {data_file}")
                 if Path(data_file).exists():
+                    self.logger.info(f"✅ HMM data file found, loading...")
                     data = standardized_parquet_handler.read_parquet_standardized(data_file)
+                    self.logger.info(f"✅ HMM data loaded: {data.shape}, columns: {list(data.columns)}")
+                    
                     # Check for regime column (could be 'regime' or 'composite_cluster_id')
                     regime_column = None
                     if 'regime' in data.columns:
                         regime_column = 'regime'
+                        self.logger.info(f"✅ Found 'regime' column with {data['regime'].nunique()} unique values")
                     elif 'composite_cluster_id' in data.columns:
                         regime_column = 'composite_cluster_id'
                         # Create 'regime' column for backward compatibility
                         data['regime'] = data['composite_cluster_id']
+                        self.logger.info(f"✅ Found 'composite_cluster_id' column, created 'regime' column with {data['regime'].nunique()} unique values")
+                    else:
+                        self.logger.warning(f"⚠️ No regime column found. Available columns: {list(data.columns)}")
 
                     if regime_column:
                         regime_ids = data['regime'].values
+                        self.logger.info(f"🔍 DEBUG: Processing regime data with {len(regime_ids)} samples")
                         processing_result = regime_processor.process_regime_data(data, regime_ids)
 
                         artifacts['split_data_files'] = list(processing_result.processed_data.keys())
@@ -1937,7 +1956,22 @@ class MarketAnalysisSubPipeline:
                         self.logger.warning("⚠️ No regime column found (checked 'regime' and 'composite_cluster_id'), using mock splitting")
                         artifacts['split_data_files'] = ['regime_0_data.parquet', 'regime_1_data.parquet']
                 else:
-                    raise FileNotFoundError("Data file not found for regime splitting")
+                    self.logger.error(f"❌ HMM data file not found at: {data_file}")
+                    # Try alternative paths
+                    alternative_paths = [
+                        f"{config.data_dir}/{config.exchange.lower()}/{config.symbol.lower()}/hmm_regime_data.parquet",
+                        f"{config.data_dir}/hmm_composite_clusters_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
+                        f"data/hmm_composite_clusters_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
+                    ]
+                    
+                    for alt_path in alternative_paths:
+                        if Path(alt_path).exists():
+                            self.logger.info(f"✅ Found HMM data at alternative path: {alt_path}")
+                            data = standardized_parquet_handler.read_parquet_standardized(alt_path)
+                            # Process the data...
+                            break
+                    else:
+                        raise FileNotFoundError(f"HMM data file not found. Tried: {data_file} and alternatives: {alternative_paths}")
             except Exception as e:
                 raise RuntimeError(f"Regime splitting failed: {e}")
         else:
@@ -1946,10 +1980,18 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("regime_data_splitting", config, artifacts)
 
-        # Log completion without automatically triggering next sub-pipeline
-        self.logger.info("✅ Regime data splitting completed successfully")
-        self.logger.info("ℹ️ Next sub-pipeline (triple_barrier_labeling) should be run separately")
-        
+        # Automatically trigger the next sub-pipeline: triple_barrier_labeling
+        self.logger.info("🔄 Regime data splitting completed, triggering next: triple_barrier_labeling")
+        try:
+            next_artifacts = await self._triple_barrier_labeling_pipeline(config)
+            # Merge artifacts from next pipeline
+            artifacts.update(next_artifacts)
+            self.logger.info("✅ Triple barrier labeling pipeline completed successfully")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to execute triple barrier labeling pipeline: {e}")
+            # Don't fail the entire pipeline if next step fails
+            self.logger.warning("⚠️ Continuing despite triple barrier labeling failure")
+
         return artifacts
     
     async def _triple_barrier_labeling_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:

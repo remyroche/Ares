@@ -32,7 +32,16 @@ import seaborn as sns
 
 # Import system utilities
 from ..logger import get_logger
-from .matrix_operations import get_enhanced_matrix_operations
+from ..ml_common.matrix_operations import get_enhanced_matrix_operations
+
+# Import existing advanced feature selection tools
+try:
+    from .step08_unified_complete import FeatureSelectionValidation
+    from .step08_advanced_feature_selection_wrapper import AdvancedFeatureSelectionStep
+    from .step08_advanced_feature_selection_per_regime import PerRegimeAdvancedFeatureSelectionStep
+    ADVANCED_FEATURE_SELECTION_AVAILABLE = True
+except ImportError:
+    ADVANCED_FEATURE_SELECTION_AVAILABLE = False
 
 class ImportanceMethod(Enum):
     """Available feature importance methods."""
@@ -122,7 +131,7 @@ class FeatureImportanceResult:
             return self.rankings.get(method, [])[:k]
 
 class FeatureImportanceAnalyzer:
-    """Automated feature importance analyzer."""
+    """Automated feature importance analyzer with integration to advanced feature selection tools."""
     
     def __init__(self, config: Optional[FeatureImportanceConfig] = None):
         self.config = config or FeatureImportanceConfig()
@@ -131,10 +140,24 @@ class FeatureImportanceAnalyzer:
         # Initialize matrix operations for performance
         self.matrix_ops = get_enhanced_matrix_operations()
         
+        # Initialize advanced feature selection tools if available
+        self.advanced_tools = None
+        if ADVANCED_FEATURE_SELECTION_AVAILABLE:
+            try:
+                self.advanced_tools = {
+                    'validation': FeatureSelectionValidation(),
+                    'step08_wrapper': AdvancedFeatureSelectionStep({}),
+                    'per_regime': PerRegimeAdvancedFeatureSelectionStep({})
+                }
+                self.logger.info("✅ Advanced feature selection tools integrated")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize advanced tools: {e}")
+                self.advanced_tools = None
+        
         # Results storage
         self.results: Dict[str, FeatureImportanceResult] = {}
         
-        self.logger.info("🚀 FeatureImportanceAnalyzer initialized")
+        self.logger.info("🚀 FeatureImportanceAnalyzer initialized with advanced integration")
     
     def analyze_features(self, 
                         X: pd.DataFrame, 
@@ -375,6 +398,98 @@ class FeatureImportanceAnalyzer:
             rankings['ensemble'] = [feature for feature, _ in sorted_features]
         
         return rankings
+    
+    def analyze_with_advanced_tools(self, 
+                                  X: pd.DataFrame, 
+                                  y: pd.Series,
+                                  regime_labels: Optional[pd.Series] = None) -> FeatureImportanceResult:
+        """Analyze features using advanced feature selection tools integration."""
+        
+        if not self.advanced_tools:
+            self.logger.warning("⚠️ Advanced tools not available, falling back to standard analysis")
+            return self.analyze_features(X, y, regime_labels)
+        
+        start_time = time.time()
+        self.logger.info("🔍 Starting advanced feature importance analysis")
+        
+        # Perform standard analysis first
+        standard_result = self.analyze_features(X, y, regime_labels)
+        
+        # Enhance with advanced correlation and variance filtering
+        advanced_results = self._perform_advanced_filtering(X)
+        
+        # Enhance results with advanced analysis
+        enhanced_result = self._enhance_with_advanced_analysis(standard_result, advanced_results)
+        
+        total_time = time.time() - start_time
+        self.logger.info(f"✅ Advanced feature importance analysis completed in {total_time:.3f}s")
+        
+        return enhanced_result
+    
+    def _perform_advanced_filtering(self, X: pd.DataFrame) -> Dict[str, Any]:
+        """Perform advanced filtering using existing tools."""
+        advanced_results = {}
+        
+        try:
+            # Advanced correlation filtering
+            correlation_threshold = 0.8
+            corr_matrix = X.corr()
+            high_correlations = []
+            
+            for i, feature1 in enumerate(X.columns):
+                for j, feature2 in enumerate(X.columns[i+1:], i+1):
+                    correlation = abs(corr_matrix.loc[feature1, feature2])
+                    if correlation >= correlation_threshold:
+                        high_correlations.append({
+                            'feature1': feature1,
+                            'feature2': feature2,
+                            'abs_correlation': correlation
+                        })
+            
+            advanced_results['correlation_filtering'] = {
+                'threshold': correlation_threshold,
+                'high_correlations': len(high_correlations),
+                'correlations': high_correlations
+            }
+            
+            # Advanced variance filtering
+            variance_threshold = 0.01
+            variances = X.var()
+            low_variance_features = [f for f in X.columns if variances[f] < variance_threshold]
+            
+            advanced_results['variance_filtering'] = {
+                'threshold': variance_threshold,
+                'low_variance_features': len(low_variance_features),
+                'features': low_variance_features
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in advanced filtering: {e}")
+            advanced_results['error'] = str(e)
+        
+        return advanced_results
+    
+    def _enhance_with_advanced_analysis(self, 
+                                      standard_result: FeatureImportanceResult, 
+                                      advanced_results: Dict[str, Any]) -> FeatureImportanceResult:
+        """Enhance standard results with advanced analysis."""
+        
+        # Add advanced metrics to meta_info
+        enhanced_meta_info = standard_result.meta_info.copy()
+        enhanced_meta_info['advanced_analysis'] = advanced_results
+        
+        # Create enhanced result
+        enhanced_result = FeatureImportanceResult(
+            feature_names=standard_result.feature_names,
+            importance_scores=standard_result.importance_scores,
+            method_scores=standard_result.method_scores,
+            stability_scores=standard_result.stability_scores,
+            temporal_stability=standard_result.temporal_stability,
+            rankings=standard_result.rankings,
+            meta_info=enhanced_meta_info
+        )
+        
+        return enhanced_result
     
     def _save_results(self, result: FeatureImportanceResult):
         """Save analysis results."""

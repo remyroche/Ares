@@ -4,6 +4,40 @@ This guide provides comprehensive examples for using the newly implemented featu
 
 **Note:** The HMM Ensemble Manager has been removed as it was redundant with existing sophisticated HMM implementations (`EnhancedHMMCompositeManager` and `HMMRegimeDetector`).
 
+## Integration with Existing Pipeline
+
+The enhanced features can be integrated into the existing pipeline using the `IntegratedAnalysisPipeline`:
+
+```python
+from src.utils.ml_common.integrated_analysis_pipeline import (
+    IntegratedAnalysisPipeline, IntegratedAnalysisConfig,
+    run_comprehensive_analysis, detect_regime_changes
+)
+
+# Configure integrated analysis
+config = IntegratedAnalysisConfig(
+    feature_importance_methods=[ImportanceMethod.RANDOM_FOREST, ImportanceMethod.LASSO],
+    top_k_features=30,
+    drift_threshold=0.05,
+    hmm_n_components=4
+)
+
+# Run comprehensive analysis
+results = run_comprehensive_analysis(
+    current_data=your_data,
+    reference_data=historical_data,  # Optional
+    target_column='target',  # Optional
+    config=config
+)
+
+# Detect regime changes using drift detection
+regime_changes = detect_regime_changes(
+    current_data=your_data,
+    reference_data=historical_data,
+    config=config
+)
+```
+
 ## 1. Automated Feature Importance Analysis
 
 ### Basic Usage

@@ -203,11 +203,15 @@ def create_fallback_logger(name: str = 'fallback'):
     """
     import logging
     logger = logging.getLogger(name)
+    # Avoid duplicate emissions
+    logger.propagate = False
     if not logger.handlers:
         handler = logging.StreamHandler()
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+    # Align default fallback level with light verbosity
+    if logger.level == logging.NOTSET:
         logger.setLevel(logging.INFO)
     return logger
 

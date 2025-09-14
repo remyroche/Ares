@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from src.utils.tprint import tprint
-from src.feature_engineering.enhanced_matrix_operations import with_error_handling, with_memory_optimization
+"""Enhanced Matrix Operations with M1 Optimization Integration.
+
+This module defers importing feature_engineering decorators to runtime to avoid
+circular imports when feature modules import MLCommon utilities.
+"""
 
 """Enhanced Matrix Operations with M1 Optimization Integration.
 

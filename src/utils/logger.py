@@ -61,12 +61,15 @@ class EmojiFormatter(logging.Formatter):
             emoji = record.emoji
         else:
             emoji = self.LEVEL_EMOJIS.get(record.levelname, '📝')
-        
-        # Add emoji to the message
-        if not record.getMessage().startswith(emoji):
-            record.msg = f"{emoji} {record.msg}"
-        
-        return super().format(record)
+
+        # Avoid mutating record.msg permanently (which can leak to other handlers)
+        original_msg = record.msg
+        try:
+            if not record.getMessage().startswith(emoji):
+                record.msg = f"{emoji} {original_msg}"
+            return super().format(record)
+        finally:
+            record.msg = original_msg
 
 class JSONFormatter(logging.Formatter):
     """JSON formatter for structured logging."""

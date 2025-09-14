@@ -28,7 +28,10 @@ def create_simple_logger():
     """Create a basic logger without complex initialization."""
     tprint = _get_tprint()
     logger = logging.getLogger('AresSimple')
-    logger.setLevel(logging.INFO)
+    # Default to INFO; allow LIGHT mode to reduce noise if env var set
+    logger.setLevel(logging.INFO if not bool(int(os.getenv('ARES_LIGHT_MODE', '0'))) else logging.WARNING)
+    # Prevent double logging via root handlers
+    logger.propagate = False
 
     # Remove any existing handlers
     logger.handlers.clear()
@@ -56,28 +59,22 @@ class MockLogger:
     def getChild(self, name):
         self.tprint(f"🔧 [SIMPLE_LOGGER] Creating child logger: {name}")
         child = logging.getLogger(f'AresSimple.{name}')
-        if not child.handlers:
-            self.tprint(f"🔧 [SIMPLE_LOGGER] Adding console handler to child logger: {name}")
-            console_handler = logging.StreamHandler(sys.stdout)
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            console_handler.setFormatter(formatter)
-            child.addHandler(console_handler)
+        # Do not attach handlers to children; let them propagate to 'AresSimple'
+        # to avoid duplicate emissions when root also has handlers
+        child.handlers.clear()
+        child.propagate = True
         return child
 
     def info(self, msg):
-        self.tprint(f"📝 [SIMPLE_LOGGER] INFO: {msg}")
         system_logger.info(msg)
 
     def warning(self, msg):
-        self.tprint(f"⚠️ [SIMPLE_LOGGER] WARNING: {msg}")
         system_logger.warning(msg)
 
     def error(self, msg):
-        self.tprint(f"❌ [SIMPLE_LOGGER] ERROR: {msg}")
         system_logger.error(msg)
 
     def debug(self, msg):
-        self.tprint(f"🔍 [SIMPLE_LOGGER] DEBUG: {msg}")
         system_logger.debug(msg)
 
 tprint("🔧 [SIMPLE_LOGGER] Attaching MockLogger to system_logger...")

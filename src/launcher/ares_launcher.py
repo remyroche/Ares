@@ -62,6 +62,10 @@ tprint("✅ [IMPORTS] Main training pipeline components imported")
 
 tprint("🔧 [IMPORTS] Creating AresLauncher logger...")
 logger = system_logger.getChild('AresLauncher')
+# Ensure single emission via root 'AresSimple' only; do not add handlers here
+logger.propagate = True
+if logger.handlers:
+    logger.handlers.clear()
 tprint("✅ [IMPORTS] AresLauncher logger created")
 tprint("✅ [IMPORTS] All imports completed successfully")
 tprint("=" * 60)
@@ -121,10 +125,9 @@ class AresLauncher:
         tprint("🔧 [SETUP_LOGGING] Starting logging configuration...")
         tprint("🔧 [SETUP_LOGGING] Configuring logger formatters...")
         
+        # Keep light verbosity in LIGHT mode
         self.logger.info("🚀 Ares Launcher Initialized")
-        self.logger.info("=" * 80)
         self.logger.info("🎯 Granular Sub-Pipeline Control Enabled")
-        self.logger.info("=" * 80)
         
         tprint("🔧 [SETUP_LOGGING] Logger configuration complete")
         tprint("🔧 [SETUP_LOGGING] Logging levels configured")

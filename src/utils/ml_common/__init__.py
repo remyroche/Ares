@@ -61,14 +61,18 @@ try:
         RegimeSpecificTPSLOptimizer
     )
     
-    # Data Processing
-    from .data_processing import (
-        EnhancedDataLabeler, LabelingConfig,
-        DataQualityChecker, QualityReport,
-        RegimeDataProcessor,
-        MultiTimeframeTrainer,
-        SRFeatureIntegrator
-    )
+    # Data Processing (avoid heavy imports at module import time)
+    # Expose lightweight getters instead of importing heavy classes to prevent circulars
+    try:
+        from .data_processing import (
+            get_enhanced_data_labeler as EnhancedDataLabelerGetter,
+            get_labeling_config as LabelingConfigGetter
+        )
+    except Exception as e:
+        EnhancedDataLabelerGetter = None  # type: ignore
+        LabelingConfigGetter = None  # type: ignore
+        tprint(f"⚠️ Data processing getters not available at init: {e}")
+    # Defer other heavy utilities to call sites
     
     # Validation
     from .validation import (
@@ -91,9 +95,19 @@ try:
     
     # Legacy imports for backward compatibility
     from .feature_selection import FeatureSelector, FeatureSelectionConfig
-    from .hmm_regime_detection import HMMRegimeDetector, RegimeConfig
+    # Avoid importing HMMRegimeDetector at package import to prevent circulars; callers should import directly
+    try:
+        from .hmm_regime_detection import HMMRegimeDetector, RegimeConfig
+    except Exception:
+        HMMRegimeDetector = None  # type: ignore
+        RegimeConfig = None  # type: ignore
     from .confidence_metrics import calculate_confidence_metrics, calculate_calibration_metrics
-    from .matrix_operations import M1EnhancedMatrixOperations, get_enhanced_matrix_operations
+    # Defer matrix operations to avoid circular import at init
+    try:
+        from .matrix_operations import M1EnhancedMatrixOperations, get_enhanced_matrix_operations
+    except Exception:
+        M1EnhancedMatrixOperations = None  # type: ignore
+        get_enhanced_matrix_operations = None  # type: ignore
     from .pipeline_orchestrator import PipelineOrchestrator
     from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
     

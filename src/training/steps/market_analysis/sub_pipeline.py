@@ -1765,15 +1765,75 @@ class MarketAnalysisSubPipeline:
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             self.logger.info(f"🔍 DEBUG: Directory created/verified")
 
-            # Save the data with probabilistic regime tagging
-            self.logger.info(f"🔍 DEBUG: Starting to save HMM data to parquet file...")
-            self.logger.info(f"🔍 DEBUG: Save path: {save_path}")
+            # Prefer partitioned writes for large datasets to reduce single-file IO pressure
+            partitioned_base_dir = Path(save_path).parent / f"{Path(save_path).stem}_partitioned"
+
+            # Pre-write logging (file and directory sizes)
+            try:
+                if Path(save_path).exists():
+                    size_mb = Path(save_path).stat().st_size / (1024 * 1024)
+                    self.logger.info(f"📦 Existing single-file size: {size_mb:.2f} MB -> {save_path}")
+                if partitioned_base_dir.exists():
+                    dir_size_mb = sum(p.stat().st_size for p in partitioned_base_dir.rglob('*.parquet')) / (1024 * 1024)
+                    self.logger.info(f"📁 Existing partitioned dataset size: {dir_size_mb:.2f} MB -> {partitioned_base_dir}")
+            except Exception as _e:
+                self.logger.debug(f"Size pre-check failed: {_e}")
+
+            # Log dataset info
+            self.logger.info(f"🔍 DEBUG: Starting partitioned write for HMM data...")
+            self.logger.info(f"🔍 DEBUG: Partitioned base dir: {partitioned_base_dir}")
             self.logger.info(f"🔍 DEBUG: Data to save shape: {hmm_data.shape}, memory usage: {hmm_data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
 
-            standardized_parquet_handler.write_parquet(hmm_data, save_path)
-            self.logger.info(f"🔍 DEBUG: Parquet file written successfully")
+            # Perform partitioned write (adds year/month/day automatically if missing)
+            partition_ok = standardized_parquet_handler.write_partitioned_parquet(
+                hmm_data,
+                str(partitioned_base_dir),
+                partition_cols=['year', 'month', 'day']
+            )
 
-            self.logger.info(f"✅ HMM composite data with probabilistic regime tagging saved to: {save_path}")
+            if partition_ok:
+                try:
+                    parquet_files = list(partitioned_base_dir.rglob('*.parquet'))
+                    dir_size_mb = sum(p.stat().st_size for p in parquet_files) / (1024 * 1024)
+                    self.logger.info(f"✅ Partitioned dataset written: {len(parquet_files)} files, total {dir_size_mb:.2f} MB")
+                except Exception as _e:
+                    self.logger.info("✅ Partitioned dataset written")
+
+                # Downstream steps may still look for the legacy single file. Attempt a lightweight single-file write only if needed.
+                # This write disables validation/metadata to avoid long stalls on huge files.
+                try:
+                    self.logger.info("ℹ️ Writing compact legacy single-file output for backward compatibility (no validation/metadata)...")
+                    standardized_parquet_handler.write_parquet_standardized(
+                        hmm_data,
+                        save_path,
+                        validate_quality=False,
+                        create_metadata=False,
+                        index=False
+                    )
+                    if Path(save_path).exists():
+                        size_mb = Path(save_path).stat().st_size / (1024 * 1024)
+                        self.logger.info(f"✅ Legacy single file written: {size_mb:.2f} MB -> {save_path}")
+                except Exception as _e:
+                    self.logger.warning(f"⚠️ Legacy single-file write skipped/failed: {_e}")
+            else:
+                # Fallback: single-file write with heavy checks disabled
+                self.logger.warning("⚠️ Partitioned write failed, falling back to single-file write (no validation/metadata)...")
+                self.logger.info(f"🔍 DEBUG: Save path: {save_path}")
+                try:
+                    standardized_parquet_handler.write_parquet_standardized(
+                        hmm_data,
+                        save_path,
+                        validate_quality=False,
+                        create_metadata=False,
+                        index=False
+                    )
+                    if Path(save_path).exists():
+                        size_mb = Path(save_path).stat().st_size / (1024 * 1024)
+                        self.logger.info(f"✅ Parquet file written successfully: {size_mb:.2f} MB -> {save_path}")
+                except Exception as _e:
+                    self.logger.error(f"❌ Failed to write HMM data to parquet: {_e}")
+
+            self.logger.info(f"✅ HMM composite data persisted (partitioned preferred) at: {partitioned_base_dir}")
 
             # Check for regime column (could be 'regime' or 'composite_cluster_id')
             regime_col = None

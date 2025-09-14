@@ -511,7 +511,67 @@ class OptimizedTripleBarrierLabeling:
         overall_agree = float(np.mean((next_sign_filtered > 0) & long_mask | (next_sign_filtered < 0) & short_mask))
         self.logger.info({'msg': 'Triple-barrier labeling diagnostics with profit tracking', 'distribution': distribution, 'long_nextbar_agree': round(long_agree, 4) if long_agree == long_agree else None, 'short_nextbar_agree': round(short_agree, 4) if short_agree == short_agree else None, 'overall_nextbar_agree': round(overall_agree, 4)})
         self.logger.info("Diagnostics meaning: 'distribution' is LONG/SHORT counts after HOLD removal; '*_nextbar_agree' is the fraction of signals whose direction matches the immediate next-bar return; 'overall' aggregates both sides. Profit tracking shows actual profit/loss percentages at barrier hits.")
+
+        # Apply target winsorization to reduce outlier impact
+        if 'potential_profit_pct' in labeled_data.columns:
+            labeled_data = self._winsorize_targets(labeled_data, percentile=0.02)
+
         return labeled_data
+
+    def _winsorize_targets(self, data: pd.DataFrame, percentile: float = 0.02) -> pd.DataFrame:
+        """
+        Winsorize target values (profit percentages) to reduce outlier impact.
+
+        This prevents extreme profit targets from dominating model training and
+        improves generalization to typical market behavior.
+
+        Args:
+            data: DataFrame containing the labeled data with 'potential_profit_pct' column
+            percentile: Percentile to clip at (default 2% winsorization)
+
+        Returns:
+            DataFrame with winsorized profit targets
+        """
+        try:
+            if 'potential_profit_pct' not in data.columns:
+                self.logger.warning("⚠️ No 'potential_profit_pct' column found, skipping target winsorization")
+                return data
+
+            original_count = len(data)
+            profit_targets = data['potential_profit_pct']
+
+            # Calculate percentiles
+            lower_percentile = profit_targets.quantile(percentile)
+            upper_percentile = profit_targets.quantile(1 - percentile)
+
+            # Count outliers before winsorization
+            lower_outliers = (profit_targets < lower_percentile).sum()
+            upper_outliers = (profit_targets > upper_percentile).sum()
+            total_outliers = lower_outliers + upper_outliers
+
+            # Apply winsorization
+            winsorized_targets = profit_targets.clip(lower_percentile, upper_percentile)
+
+            # Update the data
+            data = data.copy()
+            data['potential_profit_pct'] = winsorized_targets
+
+            # Log the winsorization results
+            if total_outliers > 0:
+                tprint(f"🎯 Target winsorization applied (percentile: {percentile:.1%})")
+                tprint(f"   📊 Lower bound: {lower_percentile:.4f}")
+                tprint(f"   📊 Upper bound: {upper_percentile:.4f}")
+                tprint(f"   📊 Winsorized {total_outliers}/{original_count} outliers "
+                      f"({total_outliers/original_count:.1%})")
+                tprint(f"   📊 Lower outliers: {lower_outliers}, Upper outliers: {upper_outliers}")
+            else:
+                tprint(f"✅ No outliers detected for winsorization (percentile: {percentile:.1%})")
+
+            return data
+
+        except Exception as e:
+            tprint(f"⚠️ Error in target winsorization: {e}")
+            return data
 
     @step06_function_validator(validation_level=ValidationLevel.DETAILED)
     @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='optimized_triple_barrier_labeling.parallel')

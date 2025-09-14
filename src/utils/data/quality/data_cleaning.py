@@ -163,6 +163,7 @@ class DataCleaner:
         
         # Data-type specific gap thresholds (in seconds)
         # Large gaps trigger re-downloading of missing data
+        # Thresholds are adjusted based on timeframe for relevance
         self.data_type_gap_thresholds = {
             'aggtrades': {
                 GapType.SMALL: 1,      # 1 second
@@ -175,6 +176,18 @@ class DataCleaner:
                 GapType.MEDIUM: 300,   # 5 minutes - triggers download
                 GapType.LARGE: 1800,   # 30 minutes - triggers download
                 GapType.CRITICAL: 3600 # 1 hour - triggers UnifiedGapFiller
+            },
+            'klines_1h': {  # Special thresholds for 1h timeframe data
+                GapType.SMALL: 3600,   # 1 hour (3600s) - minimum meaningful gap for 1h data
+                GapType.MEDIUM: 7200,  # 2 hours - triggers download
+                GapType.LARGE: 14400,  # 4 hours - triggers download
+                GapType.CRITICAL: 28800 # 8 hours - triggers UnifiedGapFiller
+            },
+            'klines_4h': {  # Special thresholds for 4h timeframe data
+                GapType.SMALL: 14400,  # 4 hours - minimum meaningful gap
+                GapType.MEDIUM: 28800, # 8 hours - triggers download
+                GapType.LARGE: 57600,  # 16 hours - triggers download
+                GapType.CRITICAL: 86400 # 24 hours - triggers UnifiedGapFiller
             },
             'futures': {
                 GapType.SMALL: 3600,   # 1 hour
@@ -255,7 +268,8 @@ class DataCleaner:
             'mahalanobis': self._detect_mahalanobis_outliers
         }
         
-        self.logger.info(f'🧹 Data Cleaner initialized with {len(self.detection_methods)} outlier detection methods')
+        # Reduce verbosity of initialization logging
+        self.logger.debug(f'🧹 Data Cleaner initialized with {len(self.detection_methods)} outlier detection methods')
 
     async def handle_missing_values_intelligently(
         self,

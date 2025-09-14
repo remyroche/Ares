@@ -1,4 +1,4 @@
-from src.utils.tprint import tprint
+from __future__ import annotations
 
 """
 Thread/BLAS clamping utilities to prevent CPU oversubscription and nested
@@ -7,13 +7,12 @@ parallelism during CV and HPO. Safe for macOS (including Apple Silicon).
 Enhanced with comprehensive error handling and logging.
 """
 
-from __future__ import annotations
-
 import os
 import logging
 import time
 from contextlib import contextmanager
 from typing import Iterator, Dict, Any, Optional
+from src.utils.tprint import tprint
 
 # Enhanced dependency management with fast fail
 try:

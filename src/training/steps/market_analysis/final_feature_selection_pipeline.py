@@ -30,7 +30,7 @@ except ImportError:
 
 # Import system utilities
 from src.utils.logger import get_logger
-from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+from src.utils.ml_common.matrix_operations import get_unified_matrix_operations
 
 @dataclass
 class FeatureSelectionConfig:
@@ -102,7 +102,7 @@ class MultiStageFeatureSelector:
     def __init__(self, config: Optional[FeatureSelectionConfig] = None):
         self.config = config or FeatureSelectionConfig()
         self.logger = get_logger("MultiStageFeatureSelector")
-        self.matrix_ops = get_enhanced_matrix_operations()
+        self.matrix_ops = get_unified_matrix_operations()
         
         # Initialize results
         self.results = FeatureSelectionResult()

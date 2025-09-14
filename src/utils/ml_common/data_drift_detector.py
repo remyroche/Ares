@@ -32,7 +32,7 @@ import joblib
 
 # Import system utilities
 from ..logger import get_logger
-from .matrix_operations import get_enhanced_matrix_operations
+from .matrix_operations import get_unified_matrix_operations
 
 class DriftType(Enum):
     """Types of data drift."""
@@ -146,7 +146,7 @@ class DataDriftDetector:
         self.logger = get_logger("DataDriftDetector")
         
         # Initialize matrix operations for performance
-        self.matrix_ops = get_enhanced_matrix_operations()
+        self.matrix_ops = get_unified_matrix_operations()
         
         # Historical data storage for temporal analysis
         self.historical_data = defaultdict(lambda: deque(maxlen=self.config.lookback_periods))

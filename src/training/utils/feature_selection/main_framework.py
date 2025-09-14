@@ -28,9 +28,87 @@ from .quality_metrics import QualityMetricsCalculator
 from .temporal_analysis import TemporalAnalyzer
 from .causal_analysis import CausalAnalyzer
 
+
+def filter_raw_market_data_columns(feature_names: List[str]) -> Tuple[List[str], List[str]]:
+    """
+    Filter out raw market data columns that should not be considered as features for ML.
+
+    Args:
+        feature_names: List of all column/feature names
+
+    Returns:
+        Tuple of (filtered_feature_names, excluded_columns)
+    """
+    # Raw market data columns that should be excluded from feature selection
+    # These are exact column names or very specific patterns for raw OHLCV data
+    raw_data_patterns = [
+        # Exact timestamp columns
+        'timestamp', 'open_time', 'close_time', 'first_trade_time', 'last_trade_time',
+
+        # Exact OHLC columns
+        'open', 'high', 'low', 'close',
+
+        # Exact volume columns (raw data)
+        'volume', 'quote_volume', 'taker_buy_volume', 'taker_buy_quote_volume',
+        'taker_sell_volume', 'taker_sell_quote_volume', 'total_volume',
+
+        # Exact trade count columns
+        'trades', 'taker_buy_trades', 'taker_sell_trades', 'total_trades',
+
+        # Exact price columns (raw data)
+        'price', 'avg_price', 'weighted_avg_price', 'last_price',
+
+        # Return columns (these are often perfectly correlated with close)
+        'close_return', 'close_log_return', 'open_return', 'high_return', 'low_return',
+
+        # Basic market data identifiers
+        'symbol', 'exchange', 'market', 'pair',
+
+        # Target/label columns that shouldn't be features
+        'target', 'label', 'y', 'model_score', 'prediction',
+
+        # Regime-related columns (to avoid circular dependency)
+        'regime', 'regime_label', 'hmm_regime', 'cluster_regime'
+    ]
+
+    # Specific patterns for raw data columns (more restrictive)
+    raw_data_specific_patterns = [
+        '_time', '_volume', '_trades', '_price', '_return', '_log_return'
+    ]
+
+    excluded_columns = []
+    filtered_features = []
+
+    for feature in feature_names:
+        feature_lower = feature.lower()
+
+        # Check for exact matches first (most restrictive)
+        is_raw_data = feature_lower in raw_data_patterns
+
+        # If not an exact match, check for specific patterns at the end of column names
+        if not is_raw_data:
+            for pattern in raw_data_specific_patterns:
+                if feature_lower.endswith(pattern):
+                    # Only exclude if it's a raw data pattern (not derived features)
+                    # For example, exclude 'volume' but keep 'volume_ratio'
+                    if pattern in ['_time', '_volume', '_trades', '_price', '_return', '_log_return']:
+                        is_raw_data = True
+                        break
+
+        # Special handling for regime columns - exclude any column containing regime
+        if not is_raw_data and 'regime' in feature_lower:
+            is_raw_data = True
+
+        if is_raw_data:
+            excluded_columns.append(feature)
+        else:
+            filtered_features.append(feature)
+
+    return filtered_features, excluded_columns
+
 # Enhanced dependency management
 try:
-    from ...utils.logger import get_logger
+    from src.utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.MainFramework")
     tprint("✅ Custom logger available for FeatureSelection.MainFramework")
 except Exception as e:
@@ -65,14 +143,22 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             
             # Selection methods
             self.mrmr_selector = MRMRSelector(self.config.get('mrmr', {}))
-            self.lasso_stability_selector = LassoStabilitySelector(self.config.get('lasso_stability', {}))
+
+            # Pass mode information to lasso stability selector for bootstrap count configuration
+            lasso_config = self.config.get('lasso_stability', {})
+            lasso_config['mode'] = self.config.get('mode', 'blank')
+            self.lasso_stability_selector = LassoStabilitySelector(lasso_config)
+
             self.correlation_filter = CorrelationBasedFilter(self.config.get('correlation_filter', {}))
             self.rfe_selector = RecursiveFeatureEliminator(self.config.get('rfe', {}))
             self.importance_ranker = FeatureImportanceRanker(self.config.get('importance', {}))
             _LOGGER.info("✅ Selection methods initialized")
             
             # Analysis components
-            self.stability_analyzer = StabilityAnalyzer(self.config.get('stability_analysis', {}))
+            # Pass mode information to stability analyzer for bootstrap count configuration
+            stability_config = self.config.get('stability_analysis', {})
+            stability_config['mode'] = self.config.get('mode', 'blank')
+            self.stability_analyzer = StabilityAnalyzer(stability_config)
             self.quality_calculator = QualityMetricsCalculator(self.config.get('quality_metrics', {}))
             self.temporal_analyzer = TemporalAnalyzer(self.config.get('temporal_analysis', {}))
             self.causal_analyzer = CausalAnalyzer(self.config.get('causal_analysis', {}))
@@ -87,6 +173,113 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             _LOGGER.error(f"❌ Component initialization failed: {e}")
             raise
 
+    def select_features(self, X: pd.DataFrame, y: np.ndarray,
+                       method: str = 'comprehensive',
+                       max_features: Optional[int] = None,
+                       is_classification: bool = True) -> Dict[str, Any]:
+        """
+        Main feature selection interface compatible with HMM training pipeline.
+
+        Args:
+            X: Feature matrix (DataFrame)
+            y: Target vector
+            method: Selection method ('comprehensive', 'fast', 'basic')
+            max_features: Maximum number of features to select
+            is_classification: Whether this is a classification task
+
+        Returns:
+            Dictionary with 'selected_features' key containing selected feature names
+        """
+        try:
+            _LOGGER.info(f"🔍 Starting feature selection with method: {method}")
+
+            # Convert DataFrame to numpy array and get feature names
+            if isinstance(X, pd.DataFrame):
+                original_feature_names = X.columns.tolist()
+                X_array = X.values
+            else:
+                original_feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+                X_array = X
+
+            # Step 1: Filter out raw market data columns that shouldn't be features
+            _LOGGER.info("🔍 Filtering out raw market data columns...")
+            filtered_features, excluded_columns = filter_raw_market_data_columns(original_feature_names)
+
+            if excluded_columns:
+                _LOGGER.info(f"📊 Excluded {len(excluded_columns)} raw market data columns: {excluded_columns[:10]}{'...' if len(excluded_columns) > 10 else ''}")
+                _LOGGER.info(f"📊 Keeping {len(filtered_features)} potential features for selection")
+
+                # Create filtered dataset
+                if isinstance(X, pd.DataFrame):
+                    X_filtered = X[filtered_features]
+                    feature_names = filtered_features
+                else:
+                    # For numpy arrays, we need to filter columns
+                    feature_indices = [original_feature_names.index(feat) for feat in filtered_features]
+                    X_filtered = X_array[:, feature_indices]
+                    feature_names = filtered_features
+                    X_array = X_filtered
+            else:
+                _LOGGER.info("📊 No raw data columns found to exclude")
+                feature_names = original_feature_names
+                X_filtered = X
+                if not isinstance(X, pd.DataFrame):
+                    X_array = X_filtered
+
+            # Use comprehensive feature selection if available
+            try:
+                if hasattr(self, 'run_comprehensive_feature_selection'):
+                    result = self.run_comprehensive_feature_selection(
+                        X_array, y,
+                        feature_names,
+                        target_features=max_features
+                    )
+                    if result and 'selected_features' in result:
+                        selected_features = result['selected_features']
+                        _LOGGER.info(f"✅ Feature selection completed (comprehensive): {len(selected_features)} features selected")
+                    else:
+                        # Fallback to simple selection
+                        if max_features and max_features < len(feature_names):
+                            selected_features = feature_names[:max_features]
+                        else:
+                            selected_features = feature_names
+                        _LOGGER.info(f"✅ Feature selection completed (simple fallback): {len(selected_features)} features selected")
+                else:
+                    # Simple fallback
+                    if max_features and max_features < len(feature_names):
+                        selected_features = feature_names[:max_features]
+                    else:
+                        selected_features = feature_names
+                    _LOGGER.info(f"✅ Feature selection completed (simple): {len(selected_features)} features selected")
+            except Exception as cache_error:
+                _LOGGER.warning(f"⚠️ Comprehensive selection failed ({cache_error}), using simple fallback")
+                # Fallback to simple selection
+                if max_features and max_features < len(feature_names):
+                    selected_features = feature_names[:max_features]
+                else:
+                    selected_features = feature_names
+                _LOGGER.info(f"✅ Feature selection completed (fallback): {len(selected_features)} features selected")
+
+            return {
+                'selected_features': selected_features,
+                'method': method,
+                'total_features': len(feature_names),
+                'selected_count': len(selected_features),
+                'selection_details': {'fallback': True, 'reason': 'Cache implementation issue'},
+                'fallback': True
+            }
+
+        except Exception as e:
+            _LOGGER.error(f"❌ Feature selection failed: {e}")
+            # Fallback: return all features
+            all_features = X.columns.tolist() if isinstance(X, pd.DataFrame) else [f'feature_{i}' for i in range(X.shape[1])]
+            return {
+                'selected_features': all_features[:max_features] if max_features else all_features,
+                'method': method,
+                'error': str(e),
+                'fallback': True
+            }
+
     def run_comprehensive_feature_selection(self, X: np.ndarray, y: np.ndarray,
                                           feature_names: List[str],
                                           target_features: Optional[int] = None,
@@ -98,15 +291,19 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
         start_time = time.time()
         _LOGGER.info(f"🚀 Starting comprehensive feature selection pipeline...")
         _LOGGER.info(f"📊 Parameters - Data shape: {X.shape}, Target features: {target_features}")
-        
+
         try:
-            # Step 1: Data validation and cleaning
+            # Step 1: Data validation and cleaning (on pre-filtered data)
             _LOGGER.info("🔍 Step 1: Data validation and cleaning...")
-            validation_result = self.data_validator.validate_data_quality(X, y)
-            
+            _LOGGER.info("📊 Note: Raw market data columns have been pre-filtered before this step")
+
+            validation_result = self.data_validator.validate_data_quality(X, y, feature_names)
+
             if not validation_result.get('is_valid', True):
                 _LOGGER.warning(f"⚠️ Data validation issues: {validation_result.get('issues', [])}")
-            
+            else:
+                _LOGGER.info("✅ Data validation passed - no major issues detected")
+
             # Clean data if needed
             X_cleaned, y_cleaned, cleaning_log = self.data_validator.clean_data(
                 X, y, remove_constant=True, remove_high_corr=True, remove_nan_inf=True

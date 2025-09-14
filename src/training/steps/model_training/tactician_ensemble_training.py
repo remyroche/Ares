@@ -4,6 +4,8 @@ Tactician Ensemble Training Step
 This step handles all-regime ensemble training of Tactician models using common dependencies.
 The Tactician Ensemble operates on 1m timeframe and combines individual tactician models
 with all previous model inputs (HMM, Analyst) to create the final meta-learner for timing decisions.
+
+Enhanced with vectorized training capabilities for improved performance.
 """
 
 import numpy as np
@@ -14,6 +16,13 @@ import logging
 from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
 from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
+
+# Import vectorized training manager
+try:
+    from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
+    VECTORIZED_TRAINING_AVAILABLE = True
+except ImportError:
+    VECTORIZED_TRAINING_AVAILABLE = False
 
 logger = system_logger.getChild('TacticianEnsembleTraining')
 
@@ -26,12 +35,13 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     with all previous model inputs (HMM, Analyst) to create the final meta-learner for timing decisions.
     """
     
-    def __init__(self, config: Optional[EnsembleTrainingConfig] = None):
+    def __init__(self, config: Optional[EnsembleTrainingConfig] = None, enable_vectorization: bool = True):
         """
-        Initialize Tactician ensemble training step.
-        
+        Initialize Tactician ensemble training step with vectorization support.
+
         Args:
             config: Per-regime training configuration
+            enable_vectorization: Whether to enable vectorized training
         """
         # Set default configuration for tactician ensemble models
         if config is None:
@@ -47,11 +57,14 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 model_save_path="./models/tactician_ensemble_models",
                 evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
             )
-        
-        super().__init__(config)
+
+        super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
         self.logger = logger.getChild('TacticianEnsembleTrainingStep')
-        
-        self.logger.info("✅ Tactician Ensemble Training Step initialized")
+
+        if self.enable_vectorization:
+            self.logger.info("🚀 Tactician Ensemble Training Step initialized with vectorization")
+        else:
+            self.logger.info("✅ Tactician Ensemble Training Step initialized (standard mode)")
     
     def execute(
         self,

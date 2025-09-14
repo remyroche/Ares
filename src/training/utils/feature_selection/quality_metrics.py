@@ -17,7 +17,7 @@ from collections import defaultdict
 
 # Enhanced dependency management
 try:
-    from ...utils.logger import get_logger
+    from src.utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.QualityMetrics")
     tprint("✅ Custom logger available for FeatureSelection.QualityMetrics")
 except Exception as e:
@@ -352,9 +352,60 @@ class QualityMetricsCalculator:
                 cv = KFold(n_splits=3, shuffle=True, random_state=42)
                 scoring = 'r2'
             
+            # Preprocess data to handle infinity and NaN values before cross-validation
+            try:
+                from .selection_methods import preprocess_features_for_ml
+                X_processed = preprocess_features_for_ml(X_selected, "quality_metrics_cross_validation")
+
+                # Additional NaN handling
+                nan_mask = np.isnan(X_processed)
+                if np.any(nan_mask):
+                    nan_count = np.sum(nan_mask)
+                    _LOGGER.warning(f"⚠️ Found {nan_count} NaN values in features after preprocessing, filling with column means")
+                    # Fill NaN values with column means
+                    for col in range(X_processed.shape[1]):
+                        col_data = X_processed[:, col]
+                        finite_mask = np.isfinite(col_data)
+                        if np.any(finite_mask):
+                            col_mean = np.mean(col_data[finite_mask])
+                            X_processed[np.isnan(col_data), col] = col_mean
+                        else:
+                            X_processed[np.isnan(col_data), col] = 0.0
+
+                # Validate target variable
+                if np.any(np.isnan(y)):
+                    nan_target_count = np.sum(np.isnan(y))
+                    _LOGGER.warning(f"⚠️ Found {nan_target_count} NaN values in target variable, cannot perform cross-validation")
+                    return {
+                        'performance_score': 0.0,
+                        'error': f"Target variable contains {nan_target_count} NaN values",
+                        'target_has_nan': True
+                    }
+
+                if np.all(y == y[0]):
+                    _LOGGER.warning(f"⚠️ All target values are identical ({y[0]}), cannot perform meaningful cross-validation")
+                    return {
+                        'performance_score': 0.0,
+                        'error': f"All target values are identical ({y[0]})",
+                        'constant_target': True
+                    }
+
+            except ImportError:
+                _LOGGER.warning("⚠️ Could not import preprocessing function, using basic validation")
+                X_processed = X_selected
+
+                # Basic NaN handling
+                if np.any(np.isnan(X_processed)) or np.any(np.isnan(y)):
+                    _LOGGER.warning("⚠️ NaN values found in data, cannot perform cross-validation")
+                    return {
+                        'performance_score': 0.0,
+                        'error': "NaN values found in features or target",
+                        'has_nan': True
+                    }
+
             # Perform cross-validation
             try:
-                cv_scores = cross_val_score(model, X_selected, y, cv=cv, scoring=scoring)
+                cv_scores = cross_val_score(model, X_processed, y, cv=cv, scoring=scoring)
                 mean_cv_score = np.mean(cv_scores)
                 std_cv_score = np.std(cv_scores)
                 
@@ -372,9 +423,39 @@ class QualityMetricsCalculator:
                 
             except Exception as e:
                 _LOGGER.warning(f"⚠️ Cross-validation failed: {e}")
+                # Enhanced error diagnostics
+                error_diagnostics = {
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'data_shape': X_processed.shape,
+                    'target_shape': y.shape,
+                    'target_unique_values': len(np.unique(y)),
+                    'target_dtype': str(y.dtype),
+                    'features_have_nan': np.any(np.isnan(X_processed)),
+                    'features_have_inf': np.any(np.isinf(X_processed)),
+                    'target_has_nan': np.any(np.isnan(y)),
+                    'target_has_inf': np.any(np.isinf(y)),
+                    'model_type': type(model).__name__,
+                    'cv_type': type(cv).__name__,
+                    'scoring_metric': scoring
+                }
+
+                # Try to provide more specific guidance
+                if "Input contains NaN" in str(e):
+                    error_diagnostics['guidance'] = "Data contains NaN values that weren't properly handled"
+                elif "Input contains infinity" in str(e):
+                    error_diagnostics['guidance'] = "Data contains infinity values that weren't properly handled"
+                elif "classification" in str(e).lower() and is_classification:
+                    error_diagnostics['guidance'] = "Classification task failed - check target variable format"
+                elif "regression" in str(e).lower() and not is_classification:
+                    error_diagnostics['guidance'] = "Regression task failed - check target variable format"
+                else:
+                    error_diagnostics['guidance'] = "General cross-validation failure - check data quality"
+
                 metrics = {
                     'performance_score': 0.0,
                     'error': str(e),
+                    'error_diagnostics': error_diagnostics,
                     'scoring_method': scoring,
                     'is_classification': is_classification
                 }

@@ -293,14 +293,14 @@ class EnhancedRegimePredictor:
         """Extract regime characteristics for boundary calculation."""
         try:
             characteristics = pd.DataFrame()
-            key_features = ['price_momentum_10', 'volatility_20', 'volume_ratio_10', 'rsi', 'adx', 'bb_position', 'atr_normalized']
+            key_features = ['price_momentum_5', 'volatility_20', 'volume_ratio_10', 'rsi', 'adx', 'bb_position', 'atr_normalized']
             for feature in key_features:
                 if feature in features.columns:
                     characteristics[f'{feature}_mean'] = features[feature].rolling(20).mean()
                     characteristics[f'{feature}_std'] = features[feature].rolling(20).std()
                     characteristics[f'{feature}_trend'] = features[feature].diff(10)
-            if 'price_momentum_10' in features.columns and 'volatility_20' in features.columns:
-                characteristics['momentum_volatility_ratio'] = features['price_momentum_10'] / (features['volatility_20'] + 1e-08)
+            if 'price_momentum_5' in features.columns and 'volatility_20' in features.columns:
+                characteristics['momentum_volatility_ratio'] = features['price_momentum_5'] / (features['volatility_20'] + 1e-08)
             characteristics = characteristics.dropna()
             return characteristics
         except Exception as e:

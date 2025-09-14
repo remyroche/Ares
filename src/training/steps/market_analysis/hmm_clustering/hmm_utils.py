@@ -193,10 +193,8 @@ class FeatureCalculator:
         """Add momentum features."""
         self.logger.info('🚀 Calculating momentum features...')
         features['price_momentum_5'] = df['close'].pct_change(5)
-        features['price_momentum_10'] = df['close'].pct_change(10)
         features['price_momentum_20'] = df['close'].pct_change(20)
         features['volume_momentum_5'] = df['volume'].pct_change(5)
-        features['volume_momentum_10'] = df['volume'].pct_change(10)
         features['volume_momentum_20'] = df['volume'].pct_change(20)
         features['rsi'] = self.indicators.calculate_rsi(df['close'])
         features['rsi_momentum'] = features['rsi'].diff(5)
@@ -253,9 +251,9 @@ class FeatureCalculator:
     def _add_feature_interactions(self, features: pd.DataFrame) -> None:
         """Add feature interactions."""
         self.logger.info('🔄 Calculating feature interactions...')
-        features['momentum_volume_interaction'] = features['price_momentum_10'] * features['volume_ratio_10']
+        features['momentum_volume_interaction'] = features['price_momentum_5'] * features['volume_ratio_10']
         features['volatility_volume_interaction'] = features['volatility_20'] * features['volume_ratio_20']
-        features['rsi_momentum_interaction'] = features['rsi'] * features['price_momentum_10']
+        features['rsi_momentum_interaction'] = features['rsi'] * features['price_momentum_5']
 
     def _clean_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Clean and validate features."""
@@ -302,7 +300,7 @@ class RegimeAnalyzer:
                     'percentage': len(state_data) / len(features) * 100
                 }
                 
-                key_features = ['price_momentum_10', 'volatility_20', 'volume_ratio_10', 'rsi', 'adx', 'bb_position']
+                key_features = ['price_momentum_5', 'volatility_20', 'volume_ratio_10', 'rsi', 'adx', 'bb_position']
                 for feature in key_features:
                     if feature in state_data.columns:
                         feature_data = state_data[feature].dropna()
@@ -326,7 +324,7 @@ class RegimeAnalyzer:
     def _map_state_to_regime(self, state_char: Dict[str, Any]) -> str:
         """Map state characteristics to regime name."""
         try:
-            momentum = state_char.get('price_momentum_10_mean', 0)
+            momentum = state_char.get('price_momentum_5_mean', 0)
             volatility = state_char.get('volatility_20_mean', 0)
             volume_ratio = state_char.get('volume_ratio_10_mean', 1)
             rsi = state_char.get('rsi_mean', 50)

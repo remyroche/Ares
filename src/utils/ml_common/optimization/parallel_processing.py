@@ -4,7 +4,7 @@ ML Common - Optimization Parallel Processing Module
 This module provides parallel processing utilities for optimization.
 """
 
-from ...parallel_processing_optimizer import ParallelProcessor
+from src.utils.parallel_processing_optimizer import ParallelProcessor
 
 
 class ParallelProcessingCoordinator:

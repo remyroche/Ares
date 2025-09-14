@@ -3,7 +3,7 @@ Tactician Models Training Step - Refactored
 
 This step handles per-regime training of individual Tactician models using common dependencies.
 The Tactician operates on 1m timeframe and decides WHEN to trade based on Analyst's green light signals.
-This is a refactored version that demonstrates the use of common utilities.
+This is a refactored version that demonstrates the use of common utilities and vectorized training.
 """
 
 import numpy as np
@@ -14,6 +14,13 @@ import logging
 from src.utils.logger import system_logger
 from src.utils.ml_common.config import PerRegimeTrainingConfig
 from src.utils.ml_common.training import PerRegimeTrainingStep
+
+# Import vectorized training manager for enhanced capabilities
+try:
+    from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
+    VECTORIZED_TRAINING_AVAILABLE = True
+except ImportError:
+    VECTORIZED_TRAINING_AVAILABLE = False
 
 logger = system_logger.getChild('TacticianModelsTrainingRefactored')
 
@@ -29,12 +36,13 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
     This is a refactored version that uses common dependencies to reduce code duplication.
     """
     
-    def __init__(self, config: Optional[PerRegimeTrainingConfig] = None):
+    def __init__(self, config: Optional[PerRegimeTrainingConfig] = None, enable_vectorization: bool = True):
         """
-        Initialize Tactician models training step.
-        
+        Initialize Tactician models training step with vectorization support.
+
         Args:
             config: Per-regime training configuration
+            enable_vectorization: Whether to enable vectorized training
         """
         # Set default configuration for tactician models
         if config is None:
@@ -50,11 +58,16 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 model_save_path="./models/tactician_models",
                 evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
             )
-        
+
         super().__init__(config)
         self.logger = logger.getChild('TacticianModelsTrainingStepRefactored')
-        
-        self.logger.info("✅ Tactician Models Training Step (Refactored) initialized")
+
+        # Vectorization support
+        self.enable_vectorization = enable_vectorization and VECTORIZED_TRAINING_AVAILABLE
+        if self.enable_vectorization:
+            self.logger.info("🚀 Tactician Models Training Step (Refactored) initialized with vectorization")
+        else:
+            self.logger.info("✅ Tactician Models Training Step (Refactored) initialized (standard mode)")
     
     def execute(
         self,
@@ -139,18 +152,48 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             
             self.logger.info(f"📊 Total features: {X.shape[1]} (base + HMM + all analyst models)")
         
-        # Use the parent class execute method with additional tactician-specific logic
-        results = super().execute(
-            X=X,
-            y=y,
-            regime_labels=regime_labels,
-            feature_names=feature_names,
-            hmm_states=hmm_states,
-            is_classification=False,  # Tactician models are typically regression
-            symbol=None,  # Can be passed as kwargs
-            exchange=None,
-            timeframe=self.config.timeframe
-        )
+        # VECTORIZED: Use ultra-fast vectorized training by default
+        self.logger.info("🚀 Using VECTORIZED tactician models training")
+        try:
+            results = super().execute_vectorized(
+                X=X,
+                y=y,
+                regime_labels=regime_labels,
+                feature_names=feature_names,
+                hmm_states=hmm_states,
+                is_classification=False,  # Tactician models are typically regression
+                symbol=None,  # Can be passed as kwargs
+                exchange=None,
+                timeframe=self.config.timeframe
+            )
+            if results.get('vectorized', False):
+                self.logger.info("✅ VECTORIZED tactician training completed successfully")
+            else:
+                self.logger.warning("⚠️ VECTORIZED tactician training failed, falling back to standard method")
+                results = super().execute(
+                    X=X,
+                    y=y,
+                    regime_labels=regime_labels,
+                    feature_names=feature_names,
+                    hmm_states=hmm_states,
+                    is_classification=False,  # Tactician models are typically regression
+                    symbol=None,  # Can be passed as kwargs
+                    exchange=None,
+                    timeframe=self.config.timeframe
+                )
+        except Exception as e:
+            self.logger.warning(f"⚠️ VECTORIZED tactician training failed: {e}, falling back to standard method")
+            results = super().execute(
+                X=X,
+                y=y,
+                regime_labels=regime_labels,
+                feature_names=feature_names,
+                hmm_states=hmm_states,
+                is_classification=False,  # Tactician models are typically regression
+                symbol=None,  # Can be passed as kwargs
+                exchange=None,
+                timeframe=self.config.timeframe
+            )
         
         # Add tactician-specific post-processing if needed
         if 'error' not in results:

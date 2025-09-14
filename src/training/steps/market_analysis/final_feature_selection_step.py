@@ -124,6 +124,37 @@ class FinalFeatureSelectionStep:
                 if file_path.exists():
                     self.logger.info(f"📂 Loading feature data from: {file_path}")
                     data = pd.read_parquet(file_path)
+
+                    # 🔧 INTEGRATE DATA CLEANING UTILITY
+                    # Clean corrupted data before final feature selection
+                    try:
+                        from src.utils.ml_common.data_processing.data_cleaning_utils import exclude_corrupted_periods
+
+                        # Ensure datetime column exists
+                        if 'timestamp' in data.columns and data['timestamp'].dtype == 'int64':
+                            data['datetime'] = pd.to_datetime(data['timestamp'], unit='s')
+                        elif 'datetime' not in data.columns:
+                            # Try to infer datetime column
+                            datetime_cols = [col for col in data.columns if 'time' in col.lower()]
+                            if datetime_cols:
+                                data['datetime'] = pd.to_datetime(data[datetime_cols[0]])
+                            else:
+                                data['datetime'] = data.index
+
+                        # Apply data cleaning
+                        original_count = len(data)
+                        data = exclude_corrupted_periods(data)
+                        cleaned_count = len(data)
+
+                        if original_count != cleaned_count:
+                            excluded_count = original_count - cleaned_count
+                            self.logger.info(f"🧹 Final Feature Selection Data cleaning applied: Excluded {excluded_count:,} corrupted rows ({100*excluded_count/original_count:.4f}%)")
+
+                    except ImportError as e:
+                        self.logger.warning(f"⚠️ Data cleaning utility not available for final feature selection: {e}")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Data cleaning failed for final feature selection, proceeding with original data: {e}")
+
                     self.logger.info(f"✅ Loaded {len(data)} samples with {len(data.columns)} features")
                     return data
             

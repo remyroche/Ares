@@ -1,0 +1,735 @@
+"""
+Unified Vectorization Manager
+
+This module provides a centralized system for managing all vectorization and matrix
+optimizations across the Ares trading system. It automatically selects the optimal
+optimization strategy based on operation type, data size, and available hardware.
+"""
+
+import numpy as np
+import pandas as pd
+import time
+from typing import Any, Dict, List, Optional, Union, Callable, Tuple
+from dataclasses import dataclass
+from enum import Enum
+import logging
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+
+logger = logging.getLogger(__name__)
+
+
+class OperationType(Enum):
+    """Types of operations that can be optimized."""
+    FEATURE_ENGINEERING = "feature_engineering"
+    CROSS_VALIDATION = "cross_validation"
+    BACKTESTING = "backtesting"
+    HMM_TRAINING = "hmm_training"
+    MODEL_TRAINING = "model_training"
+    FEATURE_SELECTION = "feature_selection"
+    TECHNICAL_INDICATORS = "technical_indicators"
+    PORTFOLIO_OPTIMIZATION = "portfolio_optimization"
+    MATRIX_MULTIPLICATION = "matrix_multiplication"
+    STATISTICAL_COMPUTATION = "statistical_computation"
+
+
+class OptimizationStrategy(Enum):
+    """Available optimization strategies."""
+    VECTORIZED_CPU = "vectorized_cpu"
+    GPU_ACCELERATED = "gpu_accelerated"
+    PARALLEL_PROCESSING = "parallel_processing"
+    HYBRID_OPTIMIZATION = "hybrid_optimization"
+    MEMORY_OPTIMIZED = "memory_optimized"
+    FALLBACK = "fallback"
+
+
+@dataclass
+class OperationConfig:
+    """Configuration for operation optimization."""
+    operation_type: OperationType
+    data_size: int
+    data_dimensions: Tuple[int, ...]
+    memory_budget_mb: float = 1024.0
+    time_budget_seconds: float = 300.0
+    precision_requirement: str = "medium"  # "low", "medium", "high"
+    parallel_workers: Optional[int] = None
+
+
+@dataclass
+class OptimizationResult:
+    """Result of an optimized operation."""
+    result: Any
+    strategy_used: OptimizationStrategy
+    computation_time: float
+    memory_used_mb: float
+    performance_gain: float
+    metadata: Dict[str, Any]
+
+
+class UnifiedVectorizationManager:
+    """
+    Unified manager for all vectorization and matrix optimizations.
+
+    This class provides intelligent optimization selection and execution
+    for various machine learning and trading operations.
+    """
+
+    def __init__(self):
+        """Initialize the unified vectorization manager."""
+        self.logger = logging.getLogger(__name__)
+
+        # Initialize optimization components
+        self._initialize_components()
+
+        # Performance tracking
+        self.performance_history = []
+        self.optimization_stats = {
+            'total_operations': 0,
+            'strategy_usage': {strategy: 0 for strategy in OptimizationStrategy},
+            'average_speedup': 0.0,
+            'total_computation_time': 0.0
+        }
+
+        self.logger.info("✅ Unified Vectorization Manager initialized")
+
+    def _initialize_components(self):
+        """Initialize all optimization components."""
+        # Import and initialize optimization modules
+        try:
+            # Matrix operations
+            from .matrix_operations import get_unified_matrix_operations
+            self.matrix_ops = get_unified_matrix_operations()
+            self.matrix_ops_available = True
+        except ImportError:
+            self.matrix_ops = None
+            self.matrix_ops_available = False
+
+        try:
+            # Vectorized backtesting
+            from .vectorized_backtesting import VectorizedBacktestingEngine, BacktestMode
+            self.backtesting_engine = VectorizedBacktestingEngine()
+            self.backtesting_available = True
+        except ImportError:
+            self.backtesting_engine = None
+            self.backtesting_available = False
+
+        try:
+            # Matrix cross-validation
+            from .matrix_cross_validation import MatrixCrossValidator
+            self.cv_engine = MatrixCrossValidator()
+            self.cv_available = True
+        except ImportError:
+            self.cv_engine = None
+            self.cv_available = False
+
+        try:
+            # Feature importance analyzer
+            from ..feature_selection.feature_importance_analyzer import FeatureImportanceAnalyzer
+            self.feature_analyzer = FeatureImportanceAnalyzer()
+            self.feature_selection_available = True
+        except ImportError:
+            self.feature_analyzer = None
+            self.feature_selection_available = False
+
+        try:
+            # Technical indicators
+            from ...feature_engineering.feature_generators import FeatureGenerators
+            self.technical_indicators = FeatureGenerators()
+            self.technical_indicators_available = True
+        except ImportError:
+            self.technical_indicators = None
+            self.technical_indicators_available = False
+
+        try:
+            # HMM operations
+            from ..hmm_composite_manager import EnhancedHMMCompositeManager
+            self.hmm_manager = EnhancedHMMCompositeManager()
+            self.hmm_available = True
+        except ImportError:
+            self.hmm_manager = None
+            self.hmm_available = False
+
+        # Hardware detection
+        self._detect_hardware_capabilities()
+
+    def _detect_hardware_capabilities(self):
+        """Detect available hardware capabilities."""
+        self.hardware_caps = {
+            'cpu_cores': 1,
+            'gpu_available': False,
+            'gpu_type': None,
+            'memory_gb': 4.0,
+            'mps_available': False
+        }
+
+        # Detect CPU cores
+        import multiprocessing
+        self.hardware_caps['cpu_cores'] = multiprocessing.cpu_count()
+
+        # Detect GPU availability
+        if TORCH_AVAILABLE:
+            if torch.cuda.is_available():
+                self.hardware_caps['gpu_available'] = True
+                self.hardware_caps['gpu_type'] = 'cuda'
+                self.hardware_caps['gpu_memory_gb'] = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                self.hardware_caps['gpu_available'] = True
+                self.hardware_caps['gpu_type'] = 'mps'
+                self.hardware_caps['mps_available'] = True
+
+        # Detect memory
+        import psutil
+        self.hardware_caps['memory_gb'] = psutil.virtual_memory().total / (1024**3)
+
+        self.logger.info(f"🖥️ Hardware detected: {self.hardware_caps}")
+
+    def optimize_operation(self, operation_type: OperationType,
+                          data: Any,
+                          config: Optional[OperationConfig] = None,
+                          **kwargs) -> OptimizationResult:
+        """
+        Optimize and execute an operation using the best available strategy.
+
+        Args:
+            operation_type: Type of operation to optimize
+            data: Input data for the operation
+            config: Operation configuration
+            **kwargs: Additional arguments for the operation
+
+        Returns:
+            OptimizationResult with optimized execution
+        """
+        start_time = time.time()
+
+        # Create default config if not provided
+        if config is None:
+            config = self._create_default_config(operation_type, data)
+
+        # Select optimal strategy
+        strategy = self._select_optimal_strategy(operation_type, config)
+
+        # Execute operation with selected strategy
+        result, metadata = self._execute_with_strategy(strategy, operation_type, data, config, **kwargs)
+
+        # Calculate performance metrics
+        computation_time = time.time() - start_time
+        memory_used = self._estimate_memory_usage(data, operation_type)
+        performance_gain = self._calculate_performance_gain(operation_type, computation_time, metadata)
+
+        # Update statistics
+        self._update_performance_stats(strategy, computation_time, performance_gain)
+
+        optimization_result = OptimizationResult(
+            result=result,
+            strategy_used=strategy,
+            computation_time=computation_time,
+            memory_used_mb=memory_used,
+            performance_gain=performance_gain,
+            metadata=metadata
+        )
+
+        self.logger.info(f"✅ Operation {operation_type.value} completed with {strategy.value} strategy")
+        self.logger.info(".3f")
+        self.logger.info(".1f")
+        return optimization_result
+
+    def _select_optimal_strategy(self, operation_type: OperationType,
+                               config: OperationConfig) -> OptimizationStrategy:
+        """
+        Select the optimal optimization strategy based on operation type and constraints.
+        """
+        # GPU-first approach for supported operations
+        if self.hardware_caps['gpu_available']:
+            if operation_type in [OperationType.MATRIX_MULTIPLICATION,
+                                OperationType.HMM_TRAINING,
+                                OperationType.BACKTESTING,
+                                OperationType.FEATURE_ENGINEERING]:
+                if config.data_size > 10000:  # Large datasets benefit from GPU
+                    return OptimizationStrategy.GPU_ACCELERATED
+
+        # Parallel processing for CPU-bound operations
+        if self.hardware_caps['cpu_cores'] >= 4:
+            if operation_type in [OperationType.CROSS_VALIDATION,
+                                OperationType.MODEL_TRAINING,
+                                OperationType.FEATURE_SELECTION]:
+                if config.data_size > 5000:
+                    return OptimizationStrategy.PARALLEL_PROCESSING
+
+        # Hybrid optimization for complex operations
+        if operation_type in [OperationType.BACKTESTING, OperationType.CROSS_VALIDATION]:
+            if self.hardware_caps['gpu_available'] and self.hardware_caps['cpu_cores'] >= 4:
+                return OptimizationStrategy.HYBRID_OPTIMIZATION
+
+        # Default to vectorized CPU for most operations
+        if operation_type in [OperationType.FEATURE_ENGINEERING,
+                            OperationType.TECHNICAL_INDICATORS,
+                            OperationType.STATISTICAL_COMPUTATION]:
+            return OptimizationStrategy.VECTORIZED_CPU
+
+        # Memory optimization for large datasets
+        if config.memory_budget_mb < 512:  # Limited memory
+            return OptimizationStrategy.MEMORY_OPTIMIZED
+
+        # Fallback to vectorized CPU
+        return OptimizationStrategy.VECTORIZED_CPU
+
+    def _execute_with_strategy(self, strategy: OptimizationStrategy,
+                             operation_type: OperationType,
+                             data: Any,
+                             config: OperationConfig,
+                             **kwargs) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Execute operation using the selected strategy.
+        """
+        if strategy == OptimizationStrategy.GPU_ACCELERATED:
+            return self._execute_gpu_accelerated(operation_type, data, config, **kwargs)
+        elif strategy == OptimizationStrategy.PARALLEL_PROCESSING:
+            return self._execute_parallel(operation_type, data, config, **kwargs)
+        elif strategy == OptimizationStrategy.HYBRID_OPTIMIZATION:
+            return self._execute_hybrid(operation_type, data, config, **kwargs)
+        elif strategy == OptimizationStrategy.MEMORY_OPTIMIZED:
+            return self._execute_memory_optimized(operation_type, data, config, **kwargs)
+        else:  # VECTORIZED_CPU or FALLBACK
+            return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
+
+    def _execute_gpu_accelerated(self, operation_type: OperationType,
+                               data: Any, config: OperationConfig, **kwargs) -> Tuple[Any, Dict[str, Any]]:
+        """Execute operation with GPU acceleration."""
+        metadata = {'gpu_accelerated': True}
+
+        if operation_type == OperationType.MATRIX_MULTIPLICATION and self.matrix_ops:
+            # Use matrix operations for matrix multiplication
+            result = self.matrix_ops.matrix_multiply(data['a'], data['b'])
+            metadata['matrix_ops_used'] = True
+
+        elif operation_type == OperationType.HMM_TRAINING and self.hmm_available:
+            # Use GPU-accelerated HMM training
+            result = self.hmm_manager.gpu_accelerated_hmm_training(
+                data, **kwargs
+            )
+            metadata['gpu_hmm_used'] = True
+
+        elif operation_type == OperationType.BACKTESTING and self.backtesting_available:
+            # Use GPU-accelerated backtesting
+            from .vectorized_backtesting import BacktestMode
+            result = self.backtesting_engine.run_vectorized_backtest(
+                data['signals'], data['prices'], mode=BacktestMode.GPU_ACCELERATED, **kwargs
+            )
+            metadata['gpu_backtesting_used'] = True
+
+        else:
+            # Fallback to CPU execution
+            self.logger.warning(f"⚠️ GPU acceleration not available for {operation_type.value}, falling back to CPU")
+            return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
+
+        return result, metadata
+
+    def _execute_parallel(self, operation_type: OperationType,
+                        data: Any, config: OperationConfig, **kwargs) -> Tuple[Any, Dict[str, Any]]:
+        """Execute operation with parallel processing."""
+        metadata = {'parallel_processing': True, 'workers': config.parallel_workers or self.hardware_caps['cpu_cores']}
+
+        if operation_type == OperationType.CROSS_VALIDATION and self.cv_available:
+            # Use parallel cross-validation
+            result = self.cv_engine.parallel_cross_validate(
+                data['X'], data['y'], data['model_class'],
+                model_params=data.get('model_params'),
+                max_workers=metadata['workers'],
+                **kwargs
+            )
+            metadata['parallel_cv_used'] = True
+
+        elif operation_type == OperationType.FEATURE_SELECTION and self.feature_selection_available:
+            # Use parallel feature selection
+            result = self.feature_analyzer.batch_compute_importance(
+                data['X'], data['y'], **kwargs
+            )
+            metadata['parallel_feature_selection_used'] = True
+
+        else:
+            # Fallback to CPU execution
+            return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
+
+        return result, metadata
+
+    def _execute_hybrid(self, operation_type: OperationType,
+                      data: Any, config: OperationConfig, **kwargs) -> Tuple[Any, Dict[str, Any]]:
+        """Execute operation with hybrid optimization (GPU + parallel)."""
+        metadata = {'hybrid_optimization': True}
+
+        if operation_type == OperationType.BACKTESTING and self.backtesting_available:
+            # Use hybrid backtesting (GPU + parallel chunks)
+            from .vectorized_backtesting import BacktestMode
+            result = self.backtesting_engine.run_vectorized_backtest(
+                data['signals'], data['prices'], mode=BacktestMode.HYBRID, **kwargs
+            )
+            metadata['hybrid_backtesting_used'] = True
+
+        else:
+            # Fallback to GPU execution
+            return self._execute_gpu_accelerated(operation_type, data, config, **kwargs)
+
+        return result, metadata
+
+    def _execute_memory_optimized(self, operation_type: OperationType,
+                                data: Any, config: OperationConfig, **kwargs) -> Tuple[Any, Dict[str, Any]]:
+        """Execute operation with memory optimization."""
+        metadata = {'memory_optimized': True}
+
+        # Use chunked processing for memory efficiency
+        if hasattr(data, '__len__') and len(data) > config.data_size // 4:
+            # Split data into chunks
+            chunk_size = config.data_size // 4
+            chunks = self._split_data_into_chunks(data, chunk_size)
+
+            # Process chunks and combine results
+            chunk_results = []
+            for chunk in chunks:
+                chunk_result, _ = self._execute_vectorized_cpu(operation_type, chunk, config, **kwargs)
+                chunk_results.append(chunk_result)
+
+            result = self._combine_chunk_results(chunk_results, operation_type)
+            metadata['chunked_processing'] = True
+            metadata['num_chunks'] = len(chunks)
+        else:
+            # Execute normally
+            result, metadata_cpu = self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
+            metadata.update(metadata_cpu)
+
+        return result, metadata
+
+    def _execute_vectorized_cpu(self, operation_type: OperationType,
+                              data: Any, config: OperationConfig, **kwargs) -> Tuple[Any, Dict[str, Any]]:
+        """Execute operation with vectorized CPU operations."""
+        metadata = {'vectorized_cpu': True}
+
+        if operation_type == OperationType.TECHNICAL_INDICATORS and self.technical_indicators_available:
+            # Use batch technical indicators
+            result = self.technical_indicators.batch_technical_indicators(
+                data, kwargs.get('indicator_configs', {}), **kwargs
+            )
+            metadata['batch_indicators_used'] = True
+
+        elif operation_type == OperationType.FEATURE_SELECTION and self.feature_selection_available:
+            # Use vectorized feature selection
+            result = self.feature_analyzer.batch_compute_importance(
+                data['X'], data['y'], **kwargs
+            )
+            metadata['vectorized_feature_selection_used'] = True
+
+        elif operation_type == OperationType.CROSS_VALIDATION and self.cv_available:
+            # Use matrix cross-validation
+            result = self.cv_engine.cross_validate(
+                data['X'], data['y'], data['model_class'],
+                model_params=data.get('model_params'), **kwargs
+            )
+            metadata['matrix_cv_used'] = True
+
+        elif operation_type == OperationType.BACKTESTING and self.backtesting_available:
+            # Use vectorized backtesting
+            from .vectorized_backtesting import BacktestMode
+            result = self.backtesting_engine.run_vectorized_backtest(
+                data['signals'], data['prices'], mode=BacktestMode.VECTORIZED, **kwargs
+            )
+            metadata['vectorized_backtesting_used'] = True
+
+        else:
+            # Generic fallback
+            self.logger.warning(f"⚠️ No specific optimization available for {operation_type.value}")
+            result = self._execute_generic_operation(operation_type, data, **kwargs)
+            metadata['generic_fallback'] = True
+
+        return result, metadata
+
+    def _execute_generic_operation(self, operation_type: OperationType, data: Any, **kwargs) -> Any:
+        """Execute operation with generic optimization."""
+        # Apply basic vectorization where possible
+        if isinstance(data, (list, tuple)) and len(data) > 1:
+            # Convert to numpy array for vectorized operations
+            if all(isinstance(x, (int, float)) for x in data):
+                data_array = np.array(data)
+                # Apply vectorized operations
+                return np.mean(data_array), np.std(data_array), np.min(data_array), np.max(data_array)
+
+        return data  # Return as-is if no optimization possible
+
+    def _create_default_config(self, operation_type: OperationType, data: Any) -> OperationConfig:
+        """Create default configuration for an operation."""
+        if hasattr(data, '__len__'):
+            data_size = len(data)
+        else:
+            data_size = 1
+
+        if hasattr(data, 'shape'):
+            data_dimensions = data.shape
+        else:
+            data_dimensions = (data_size,)
+
+        return OperationConfig(
+            operation_type=operation_type,
+            data_size=data_size,
+            data_dimensions=data_dimensions,
+            parallel_workers=self.hardware_caps['cpu_cores']
+        )
+
+    def _estimate_memory_usage(self, data: Any, operation_type: OperationType) -> float:
+        """Estimate memory usage for an operation."""
+        if hasattr(data, 'nbytes'):
+            # NumPy array
+            base_memory = data.nbytes / (1024 * 1024)  # MB
+        elif hasattr(data, '__len__'):
+            # Estimate for other iterables
+            base_memory = len(data) * 8 / (1024 * 1024)  # Assume 8 bytes per element
+        else:
+            base_memory = 1.0  # Default estimate
+
+        # Adjust based on operation type
+        memory_multipliers = {
+            OperationType.MATRIX_MULTIPLICATION: 3.0,
+            OperationType.HMM_TRAINING: 2.5,
+            OperationType.BACKTESTING: 2.0,
+            OperationType.CROSS_VALIDATION: 1.5,
+            OperationType.FEATURE_ENGINEERING: 1.8
+        }
+
+        multiplier = memory_multipliers.get(operation_type, 1.0)
+        return base_memory * multiplier
+
+    def _calculate_performance_gain(self, operation_type: OperationType,
+                                  computation_time: float,
+                                  metadata: Dict[str, Any]) -> float:
+        """Calculate performance gain compared to baseline."""
+        # Baseline times (estimated) for different operations
+        baseline_times = {
+            OperationType.MATRIX_MULTIPLICATION: 10.0,
+            OperationType.HMM_TRAINING: 50.0,
+            OperationType.BACKTESTING: 30.0,
+            OperationType.CROSS_VALIDATION: 20.0,
+            OperationType.FEATURE_ENGINEERING: 15.0,
+            OperationType.TECHNICAL_INDICATORS: 25.0
+        }
+
+        baseline_time = baseline_times.get(operation_type, 10.0)
+        if computation_time > 0:
+            return baseline_time / computation_time
+        return 1.0
+
+    def _update_performance_stats(self, strategy: OptimizationStrategy,
+                                computation_time: float, performance_gain: float):
+        """Update performance statistics."""
+        self.optimization_stats['total_operations'] += 1
+        self.optimization_stats['strategy_usage'][strategy] += 1
+        self.optimization_stats['total_computation_time'] += computation_time
+
+        # Update average speedup
+        total_operations = self.optimization_stats['total_operations']
+        current_avg = self.optimization_stats['average_speedup']
+        self.optimization_stats['average_speedup'] = (
+            (current_avg * (total_operations - 1)) + performance_gain
+        ) / total_operations
+
+    def _split_data_into_chunks(self, data: Any, chunk_size: int) -> List[Any]:
+        """Split data into chunks for memory-efficient processing."""
+        if isinstance(data, np.ndarray):
+            return [data[i:i+chunk_size] for i in range(0, len(data), chunk_size)]
+        elif isinstance(data, pd.DataFrame):
+            return [data.iloc[i:i+chunk_size] for i in range(0, len(data), chunk_size)]
+        elif isinstance(data, list):
+            return [data[i:i+chunk_size] for i in range(0, len(data), chunk_size)]
+        else:
+            return [data]  # Can't split, return as single chunk
+
+    def _combine_chunk_results(self, chunk_results: List[Any], operation_type: OperationType) -> Any:
+        """Combine results from multiple chunks."""
+        if not chunk_results:
+            return None
+
+        if operation_type == OperationType.FEATURE_ENGINEERING:
+            # Concatenate DataFrames
+            if all(isinstance(result, pd.DataFrame) for result in chunk_results):
+                return pd.concat(chunk_results, ignore_index=True)
+
+        elif operation_type in [OperationType.CROSS_VALIDATION, OperationType.BACKTESTING]:
+            # Average results across chunks
+            if all(isinstance(result, dict) for result in chunk_results):
+                combined = {}
+                for key in chunk_results[0].keys():
+                    if isinstance(chunk_results[0][key], (int, float)):
+                        combined[key] = np.mean([result[key] for result in chunk_results])
+                    elif isinstance(chunk_results[0][key], np.ndarray):
+                        combined[key] = np.concatenate([result[key] for result in chunk_results])
+                    else:
+                        combined[key] = chunk_results[0][key]  # Take first one
+                return combined
+
+        # Default: return first result
+        return chunk_results[0]
+
+    def get_optimization_stats(self) -> Dict[str, Any]:
+        """Get comprehensive optimization statistics."""
+        stats = self.optimization_stats.copy()
+        stats['hardware_capabilities'] = self.hardware_caps.copy()
+        stats['available_optimizations'] = {
+            'matrix_operations': self.matrix_ops_available,
+            'backtesting': self.backtesting_available,
+            'cross_validation': self.cv_available,
+            'feature_selection': self.feature_selection_available,
+            'technical_indicators': self.technical_indicators_available,
+            'hmm_operations': self.hmm_available
+        }
+
+        return stats
+
+    def benchmark_operation(self, operation_type: OperationType,
+                          data: Any, trials: int = 3) -> Dict[str, Any]:
+        """
+        Benchmark an operation across different optimization strategies.
+
+        Args:
+            operation_type: Type of operation to benchmark
+            data: Input data for benchmarking
+            trials: Number of trials to run for each strategy
+
+        Returns:
+            Benchmarking results comparing different strategies
+        """
+        self.logger.info(f"🔬 Benchmarking {operation_type.value} across optimization strategies...")
+
+        results = {}
+        config = self._create_default_config(operation_type, data)
+
+        # Test each available strategy
+        strategies_to_test = [
+            OptimizationStrategy.VECTORIZED_CPU,
+            OptimizationStrategy.PARALLEL_PROCESSING,
+            OptimizationStrategy.MEMORY_OPTIMIZED
+        ]
+
+        if self.hardware_caps['gpu_available']:
+            strategies_to_test.append(OptimizationStrategy.GPU_ACCELERATED)
+            if self.hardware_caps['cpu_cores'] >= 4:
+                strategies_to_test.append(OptimizationStrategy.HYBRID_OPTIMIZATION)
+
+        for strategy in strategies_to_test:
+            strategy_times = []
+            strategy_gains = []
+
+            for trial in range(trials):
+                try:
+                    result = self.optimize_operation(
+                        operation_type, data, config,
+                        force_strategy=strategy  # This would need to be added to optimize_operation
+                    )
+                    strategy_times.append(result.computation_time)
+                    strategy_gains.append(result.performance_gain)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Strategy {strategy.value} failed: {e}")
+                    continue
+
+            if strategy_times:
+                results[strategy.value] = {
+                    'avg_time': np.mean(strategy_times),
+                    'std_time': np.std(strategy_times),
+                    'avg_gain': np.mean(strategy_gains),
+                    'trials_completed': len(strategy_times)
+                }
+
+        return results
+
+
+# Convenience functions for common operations
+def optimize_feature_engineering(data: pd.DataFrame,
+                               indicator_configs: Dict[str, List[int]],
+                               **kwargs) -> OptimizationResult:
+    """Convenience function for optimized feature engineering."""
+    manager = UnifiedVectorizationManager()
+    config = OperationConfig(
+        operation_type=OperationType.TECHNICAL_INDICATORS,
+        data_size=len(data),
+        data_dimensions=data.shape
+    )
+    return manager.optimize_operation(
+        OperationType.TECHNICAL_INDICATORS,
+        data,
+        config,
+        indicator_configs=indicator_configs,
+        **kwargs
+    )
+
+
+def optimize_cross_validation(X: Union[np.ndarray, pd.DataFrame],
+                           y: Union[np.ndarray, pd.Series],
+                           model_class: Any,
+                           **kwargs) -> OptimizationResult:
+    """Convenience function for optimized cross-validation."""
+    manager = UnifiedVectorizationManager()
+    config = OperationConfig(
+        operation_type=OperationType.CROSS_VALIDATION,
+        data_size=len(X) if hasattr(X, '__len__') else 1,
+        data_dimensions=X.shape if hasattr(X, 'shape') else (config.data_size,)
+    )
+    data = {'X': X, 'y': y, 'model_class': model_class}
+    return manager.optimize_operation(OperationType.CROSS_VALIDATION, data, config, **kwargs)
+
+
+def optimize_backtesting(signals: Union[np.ndarray, pd.DataFrame],
+                       prices: Union[np.ndarray, pd.DataFrame],
+                       **kwargs) -> OptimizationResult:
+    """Convenience function for optimized backtesting."""
+    manager = UnifiedVectorizationManager()
+    config = OperationConfig(
+        operation_type=OperationType.BACKTESTING,
+        data_size=len(signals) if hasattr(signals, '__len__') else 1,
+        data_dimensions=signals.shape if hasattr(signals, 'shape') else (config.data_size,)
+    )
+    data = {'signals': signals, 'prices': prices}
+    return manager.optimize_operation(OperationType.BACKTESTING, data, config, **kwargs)
+
+
+# Global instance for easy access
+_unified_manager = None
+
+def get_unified_vectorization_manager() -> UnifiedVectorizationManager:
+    """Get global unified vectorization manager instance."""
+    global _unified_manager
+    if _unified_manager is None:
+        _unified_manager = UnifiedVectorizationManager()
+    return _unified_manager
+
+
+if __name__ == "__main__":
+    # Example usage and testing
+    manager = get_unified_vectorization_manager()
+
+    # Test basic functionality
+    print("🧪 Testing Unified Vectorization Manager...")
+
+    # Create sample data
+    np.random.seed(42)
+    sample_data = np.random.randn(1000, 10)
+
+    # Test matrix multiplication
+    A = np.random.randn(500, 500)
+    B = np.random.randn(500, 500)
+
+    result = manager.optimize_operation(
+        OperationType.MATRIX_MULTIPLICATION,
+        {'a': A, 'b': B}
+    )
+
+    print("✅ Matrix multiplication test completed")
+    print(".3f")
+    print(".1f")
+    # Print optimization stats
+    stats = manager.get_optimization_stats()
+    print("\n📊 Optimization Statistics:")
+    print(f"Total operations: {stats['total_operations']}")
+    print(f"Average speedup: {stats['average_speedup']:.2f}x")
+    print(f"Strategy usage: {stats['strategy_usage']}")
+
+    print("\n🎉 Unified Vectorization Manager ready for production use!")

@@ -418,6 +418,37 @@ class PerRegimeFeatureEngineeringStep(FeatureInteractionEngine):
                 labeled_path = Path(data_dir) / 'training' / f'{exchange}_{symbol}_{timeframe}_labeled.parquet'
             if labeled_path.exists():
                 data = standardized_parquet_handler.read_parquet_standardized(labeled_path)
+
+                # 🔧 INTEGRATE DATA CLEANING UTILITY
+                # Clean corrupted data before feature engineering to prevent infinity values
+                try:
+                    from src.utils.ml_common.data_processing.data_cleaning_utils import exclude_corrupted_periods
+
+                    # Ensure datetime column exists
+                    if 'timestamp' in data.columns and data['timestamp'].dtype == 'int64':
+                        data['datetime'] = pd.to_datetime(data['timestamp'], unit='s')
+                    elif 'datetime' not in data.columns:
+                        # Try to infer datetime column
+                        datetime_cols = [col for col in data.columns if 'time' in col.lower()]
+                        if datetime_cols:
+                            data['datetime'] = pd.to_datetime(data[datetime_cols[0]])
+                        else:
+                            data['datetime'] = data.index
+
+                    # Apply data cleaning
+                    original_count = len(data)
+                    data = exclude_corrupted_periods(data)
+                    cleaned_count = len(data)
+
+                    if original_count != cleaned_count:
+                        excluded_count = original_count - cleaned_count
+                        self.logger.info(f"🧹 Feature Engineering Data cleaning applied: Excluded {excluded_count:,} corrupted rows ({100*excluded_count/original_count:.4f}%)")
+
+                except ImportError as e:
+                    self.logger.warning(f"⚠️ Data cleaning utility not available for feature engineering: {e}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Data cleaning failed for feature engineering, proceeding with original data: {e}")
+
                 self.logger.info(f'✅ Loaded labeled data: {len(data)} rows')
                 return data
             else:

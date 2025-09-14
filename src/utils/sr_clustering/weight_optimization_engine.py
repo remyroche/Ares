@@ -25,13 +25,13 @@ from .sr_backtesting_engine import SRBacktestingEngine, BacktestResult, SRLevel
 # Import M1 optimization utilities
 try:
     from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-    from ..ml_common.matrix_operations import get_enhanced_matrix_operations, M1EnhancedMatrixOperations
+    from ..ml_common.matrix_operations import get_unified_matrix_operations, M1EnhancedMatrixOperations
     from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
     M1_OPTIMIZATIONS_AVAILABLE = True
 except ImportError as e:
     M1_OPTIMIZATIONS_AVAILABLE = False
     get_m1_memory_optimizer = None
-    get_enhanced_matrix_operations = None
+    get_unified_matrix_operations = None
     get_memory_manager = None
     tprint(f"⚠️ M1 optimizations not available: {e}")
 
@@ -116,7 +116,7 @@ class WeightOptimizationEngine:
         if self.enable_m1_optimizations:
             try:
                 self.m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=self.config.memory_limit_gb)
-                self.matrix_ops = get_enhanced_matrix_operations()
+                self.matrix_ops = get_unified_matrix_operations()
                 self.memory_monitor = get_memory_manager()
                 self.logger.info("✅ M1 optimizations initialized for weight optimization")
             except Exception as e:

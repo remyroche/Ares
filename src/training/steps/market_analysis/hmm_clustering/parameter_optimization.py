@@ -545,34 +545,34 @@ class ParameterOptimizer:
         """
         return {
             'FULL': {
-                'n_components_min': 2,
-                'n_components_max': 40,
-                'covariance_types': ['full', 'tied', 'diag', 'spherical'],
+                'n_components_min': 3,
+                'n_components_max': 20,  # Increased to allow more regimes to prevent overlap
+                'covariance_types': ['diag', 'spherical', 'tied', 'full'],  # Add more covariance types for better cluster separation
                 'n_iter_min': 50,
-                'n_iter_max': 200,
-                'tol_min': 1e-6,
-                'tol_max': 1e-2,
-                'description': 'Regular parameters for comprehensive optimization'
+                'n_iter_max': 150,
+                'tol_min': 1e-4,  # More reasonable convergence tolerance
+                'tol_max': 1e-3,
+                'description': 'Expanded parameters for better regime separation (3-20 regimes, multiple covariance types)'
             },
             'BLANK': {
-                'n_components_min': 2,
-                'n_components_max': 20,
-                'covariance_types': ['diag', 'spherical', 'tied'],
-                'n_iter_min': 25,
-                'n_iter_max': 100,
-                'tol_min': 1e-5,
-                'tol_max': 1e-2,
-                'description': 'Lighter parameters for moderate speedup'
+                'n_components_min': 3,
+                'n_components_max': 10,
+                'covariance_types': ['diag', 'spherical', 'tied'],  # Include tied for better structure
+                'n_iter_min': 5,  # Reduced for BLANK mode as requested
+                'n_iter_max': 5,  # Fixed at 5 iterations for BLANK mode
+                'tol_min': 1e-4,
+                'tol_max': 1e-3,
+                'description': 'Balanced parameters with tied covariance (3-10 regimes, 5 iterations)'
             },
             'LIGHT': {
-                'n_components_min': 2,
-                'n_components_max': 8,
-                'covariance_types': ['diag', 'spherical'],
-                'n_iter_min': 10,
-                'n_iter_max': 50,
+                'n_components_min': 3,
+                'n_components_max': 6,
+                'covariance_types': ['diag', 'spherical'],  # Keep stable types for LIGHT
+                'n_iter_min': 2,  # Reduced to 2 iterations for LIGHT mode as requested
+                'n_iter_max': 2,  # Fixed at 2 iterations for LIGHT mode
                 'tol_min': 1e-4,
-                'tol_max': 1e-2,
-                'description': 'Ultra-light parameters for maximum speedup'
+                'tol_max': 5e-4,
+                'description': 'Minimal parameters for fastest execution (3-6 regimes, 2 iterations)'
             }
         }
 

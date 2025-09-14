@@ -88,30 +88,34 @@ class FeaturePreparator:
     @staticmethod
     def calculate_regime_durations(regime_labels: np.ndarray) -> np.ndarray:
         """
-        Calculate duration of current regime for each sample.
-        
+        Calculate duration of current regime for each sample using vectorized operations.
+
         Args:
             regime_labels: Array of regime labels
-            
+
         Returns:
             Array of regime durations for each sample
         """
+        # VECTORIZED: Calculate regime durations without loops
+        # Find where regime changes occur
+        regime_changes = np.diff(regime_labels, prepend=regime_labels[0])
+        change_indices = np.where(regime_changes != 0)[0]
+
+        if len(change_indices) == 0:
+            # All same regime
+            return np.full(len(regime_labels), len(regime_labels))
+
+        # Calculate durations for each regime segment
         durations = np.zeros(len(regime_labels))
-        current_regime = regime_labels[0]
-        current_duration = 1
-        
-        for i in range(1, len(regime_labels)):
-            if regime_labels[i] == current_regime:
-                current_duration += 1
-            else:
-                # Regime changed, update durations for previous regime
-                durations[i-current_duration:i] = current_duration
-                current_regime = regime_labels[i]
-                current_duration = 1
-        
-        # Update durations for the last regime
-        durations[-current_duration:] = current_duration
-        
+
+        # Add start and end indices
+        segment_starts = np.concatenate([[0], change_indices])
+        segment_ends = np.concatenate([change_indices, [len(regime_labels)]])
+
+        for start, end in zip(segment_starts, segment_ends):
+            duration = end - start
+            durations[start:end] = duration
+
         return durations
     
     @staticmethod

@@ -241,7 +241,7 @@ class ModelEvaluator:
         )
     
     @handles_errors(default_return=None, context='Model evaluation')
-    @log_execution_time
+    # @log_execution_time  # Temporarily disabled due to import conflicts
     async def evaluate_model(self, model: Any, X_test: np.ndarray, y_test: np.ndarray,
                            model_name: str = "", pre_hpo_metrics: Optional[EvaluationMetrics] = None) -> EvaluationResult:
         """Evaluate a trained model.

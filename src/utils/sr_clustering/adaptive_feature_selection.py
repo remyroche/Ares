@@ -337,6 +337,42 @@ class AdaptiveFeatureSelector:
                                        feature_names: List[str], max_features: int) -> Tuple[pd.DataFrame, List[str]]:
         """Use recursive feature elimination."""
         try:
+            # Preprocess data to handle infinity and large values
+            X_processed = X.copy()
+
+            # Handle infinity values
+            inf_mask = np.isinf(X_processed.values)
+            if np.any(inf_mask):
+                self.logger.warning(f"⚠️ Found {np.sum(inf_mask)} infinity values in data for adaptive RFE, replacing with finite values")
+
+                # Replace positive infinity
+                pos_inf_mask = np.isposinf(X_processed.values)
+                if np.any(pos_inf_mask):
+                    finite_mask = np.isfinite(X_processed.values)
+                    if np.any(finite_mask):
+                        max_finite = np.max(X_processed.values[finite_mask])
+                        X_processed.values[pos_inf_mask] = max(max_finite * 10, 1e10)
+                    else:
+                        X_processed.values[pos_inf_mask] = 1e10
+
+                # Replace negative infinity
+                neg_inf_mask = np.isneginf(X_processed.values)
+                if np.any(neg_inf_mask):
+                    finite_mask = np.isfinite(X_processed.values)
+                    if np.any(finite_mask):
+                        min_finite = np.min(X_processed.values[finite_mask])
+                        X_processed.values[neg_inf_mask] = min(min_finite * 10, -1e10)
+                    else:
+                        X_processed.values[neg_inf_mask] = -1e10
+
+            # Clip extremely large values
+            max_float64 = 1e308
+            min_float64 = -1e308
+            X_processed = X_processed.clip(min_float64, max_float64)
+
+            # Use processed data for RFE
+            X = X_processed
+
             # Use Random Forest for RFE
             estimator = RandomForestRegressor(n_estimators=50, random_state=42)
             selector = RFE(estimator, n_features_to_select=max_features)

@@ -439,6 +439,16 @@ class AresLauncher:
         base_config['mode'] = ExecutionMode(execution_mode.value)
         tprint("✅ [STAGE_CONFIG] Execution mode set")
         
+        # OVERRIDE TIMEFRAME FOR MARKET ANALYSIS STAGE (WHICH INCLUDES HMM SUB-PIPELINES)
+        if stage == PipelineStage.MARKET_ANALYSIS:
+            original_timeframe = base_config.get('timeframe', '1m')
+            base_config['timeframe'] = '1h'
+            tprint(f"🎯 [STAGE_CONFIG] Market Analysis stage detected")
+            tprint(f"🎯 [STAGE_CONFIG] Overriding timeframe: {original_timeframe} → 1h")
+            tprint("🎯 [STAGE_CONFIG] Using 1h data for HMM sub-pipelines in market analysis stage")
+        else:
+            tprint(f"📊 [STAGE_CONFIG] Using standard timeframe for {stage.value}: {base_config.get('timeframe', '1m')}")
+
         # Get configuration based on execution mode
         tprint("🎭 [STAGE_CONFIG] Getting base configuration...")
         if execution_mode == ExecutionModeType.FULL:
@@ -497,6 +507,24 @@ class AresLauncher:
         tprint("🔧 [SUB_PIPELINE_CONFIG] Filtering configuration parameters...")
         supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
         filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
+
+        # OVERRIDE TIMEFRAME FOR HMM-RELATED SUB-PIPELINES TO USE 1H DATA
+        hmm_sub_pipelines = [
+            'hmm_regime_discovery',     # Discover market regimes
+            'hmm_clustering',           # HMM-based regime clustering
+            'hmm_models_training',      # base models training, HPO, saving, metrics
+            'hmm_ensemble_training'     # meta-model, HPO, saving, metrics
+        ]
+
+        if sub_pipeline in hmm_sub_pipelines:
+            original_timeframe = filtered_config.get('timeframe', '1m')
+            filtered_config['timeframe'] = '1h'
+            tprint(f"🎯 [SUB_PIPELINE_CONFIG] HMM sub-pipeline detected: {sub_pipeline}")
+            tprint(f"🎯 [SUB_PIPELINE_CONFIG] Overriding timeframe: {original_timeframe} → 1h")
+            tprint("🎯 [SUB_PIPELINE_CONFIG] Using 1h data for better regime stability and reduced computational load")
+        else:
+            tprint(f"📊 [SUB_PIPELINE_CONFIG] Using standard timeframe for {sub_pipeline}: {filtered_config.get('timeframe', '1m')}")
+
         tprint(f"✅ [SUB_PIPELINE_CONFIG] Filtered config: {list(filtered_config.keys())}")
         
         # Get configuration based on execution mode

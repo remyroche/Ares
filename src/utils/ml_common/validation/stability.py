@@ -6,7 +6,9 @@ Enhanced with M1 GPU acceleration, memory optimization, and parallel processing.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
+from collections import defaultdict
+import time
 
 import numpy as np
 
@@ -240,9 +242,199 @@ def _aggregate_time_blocks_gpu(
     return agg
 
 
+class StabilityAnalyzer:
+    """Comprehensive stability analysis for feature selection.
+
+    Enhanced with M1 GPU acceleration, memory optimization, and parallel processing.
+    """
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize stability analyzer."""
+        self.config = config or {}
+        self.logger = _LOGGER.getChild('StabilityAnalyzer')
+
+        # Bootstrap parameters
+        self.n_bootstraps = self.config.get('n_bootstraps', 100)
+        self.bootstrap_fraction = self.config.get('bootstrap_fraction', 0.8)
+        self.stability_threshold = self.config.get('stability_threshold', 0.6)
+
+        # Temporal analysis parameters
+        self.temporal_windows = self.config.get('temporal_windows', [0.5, 0.7, 0.9])
+        self.min_window_size = self.config.get('min_window_size', 100)
+
+        # Cross-dataset parameters
+        self.min_dataset_overlap = self.config.get('min_dataset_overlap', 0.3)
+
+        _LOGGER.info("📈 StabilityAnalyzer initialized")
+        _LOGGER.info(f"⚙️ Bootstrap samples: {self.n_bootstraps}")
+        _LOGGER.info(f"⚙️ Bootstrap fraction: {self.bootstrap_fraction}")
+        _LOGGER.info(f"⚙️ Stability threshold: {self.stability_threshold}")
+
+    def analyze_bootstrap_stability(self, X: np.ndarray, y: np.ndarray,
+                                   feature_names: List[str],
+                                   selection_method: callable,
+                                   method_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze feature selection stability using bootstrap sampling."""
+        start_time = time.time()
+        _LOGGER.info(f"📈 Starting bootstrap stability analysis...")
+        _LOGGER.info(f"📊 Parameters - Bootstrap samples: {self.n_bootstraps}, Data shape: {X.shape}")
+
+        try:
+            n_samples, n_features = X.shape
+            bootstrap_size = int(n_samples * self.bootstrap_fraction)
+
+            # Track feature selection across bootstraps
+            feature_selection_counts = defaultdict(int)
+            feature_scores = defaultdict(list)
+            bootstrap_results = []
+
+            # Perform bootstrap sampling
+            np.random.seed(42)  # For reproducibility
+
+            for bootstrap_idx in range(self.n_bootstraps):
+                _LOGGER.debug(f"🔄 Bootstrap {bootstrap_idx + 1}/{self.n_bootstraps}")
+
+                # Sample bootstrap data
+                bootstrap_indices = np.random.choice(n_samples, size=bootstrap_size, replace=True)
+                X_bootstrap = X[bootstrap_indices]
+                y_bootstrap = y[bootstrap_indices]
+
+                try:
+                    # Apply selection method
+                    result = selection_method(X_bootstrap, y_bootstrap, feature_names, **method_params)
+
+                    if result.get('success', False):
+                        selected_features = result.get('selected_features', [])
+                        scores = result.get('scores', {})
+
+                        # Count feature selections
+                        for feature in selected_features:
+                            feature_selection_counts[feature] += 1
+
+                        # Collect scores
+                        for feature, score in scores.items():
+                            feature_scores[feature].append(score)
+
+                        bootstrap_results.append({
+                            'bootstrap_idx': bootstrap_idx,
+                            'selected_features': selected_features,
+                            'scores': scores,
+                            'success': True
+                        })
+                    else:
+                        _LOGGER.warning(f"⚠️ Bootstrap {bootstrap_idx + 1} failed: {result.get('error', 'Unknown error')}")
+                        bootstrap_results.append({
+                            'bootstrap_idx': bootstrap_idx,
+                            'success': False,
+                            'error': result.get('error', 'Unknown error')
+                        })
+
+                except Exception as e:
+                    _LOGGER.warning(f"⚠️ Bootstrap {bootstrap_idx + 1} failed: {e}")
+                    bootstrap_results.append({
+                        'bootstrap_idx': bootstrap_idx,
+                        'success': False,
+                        'error': str(e)
+                    })
+
+            # Calculate stability scores
+            stability_scores = {}
+            for feature in feature_names:
+                selection_count = feature_selection_counts[feature]
+                stability_score = selection_count / self.n_bootstraps
+                stability_scores[feature] = stability_score
+
+            # Select stable features
+            stable_features = [feature for feature, score in stability_scores.items()
+                             if score >= self.stability_threshold]
+
+            # Calculate stability metrics
+            stability_metrics = self._calculate_stability_metrics(bootstrap_results, stability_scores)
+
+            execution_time = time.time() - start_time
+
+            result = {
+                'stable_features': stable_features,
+                'stability_scores': stability_scores,
+                'bootstrap_results': bootstrap_results,
+                'stability_metrics': stability_metrics,
+                'method': 'bootstrap_stability',
+                'parameters': {
+                    'n_bootstraps': self.n_bootstraps,
+                    'bootstrap_fraction': self.bootstrap_fraction,
+                    'stability_threshold': self.stability_threshold
+                },
+                'execution_time': execution_time,
+                'success': True
+            }
+
+            _LOGGER.info(f"✅ Bootstrap stability analysis completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Found {len(stable_features)} stable features out of {len(feature_names)}")
+
+            return result
+
+        except Exception as e:
+            _LOGGER.error(f"❌ Bootstrap stability analysis failed: {e}")
+            return {
+                'stable_features': [],
+                'stability_scores': {},
+                'bootstrap_results': [],
+                'stability_metrics': {},
+                'method': 'bootstrap_stability',
+                'error': str(e),
+                'success': False
+            }
+
+    def _calculate_stability_metrics(self, bootstrap_results: List[Dict[str, Any]],
+                                   stability_scores: Dict[str, float]) -> Dict[str, Any]:
+        """Calculate comprehensive stability metrics."""
+        try:
+            successful_bootstraps = [r for r in bootstrap_results if r.get('success', False)]
+
+            if not successful_bootstraps:
+                return {'error': 'No successful bootstrap results'}
+
+            # Calculate feature overlap metrics
+            all_selected_features = [r['selected_features'] for r in successful_bootstraps]
+
+            # Jaccard similarity between bootstrap results
+            jaccard_similarities = []
+            for i in range(len(all_selected_features)):
+                for j in range(i + 1, len(all_selected_features)):
+                    set1 = set(all_selected_features[i])
+                    set2 = set(all_selected_features[j])
+                    if set1 or set2:  # Avoid division by zero
+                        jaccard = len(set1 & set2) / len(set1 | set2)
+                        jaccard_similarities.append(jaccard)
+
+            # Stability distribution
+            stability_values = list(stability_scores.values())
+
+            metrics = {
+                'n_successful_bootstraps': len(successful_bootstraps),
+                'n_total_bootstraps': len(bootstrap_results),
+                'success_rate': len(successful_bootstraps) / len(bootstrap_results),
+                'mean_jaccard_similarity': np.mean(jaccard_similarities) if jaccard_similarities else 0,
+                'std_jaccard_similarity': np.std(jaccard_similarities) if jaccard_similarities else 0,
+                'mean_stability_score': np.mean(stability_values),
+                'std_stability_score': np.std(stability_values),
+                'min_stability_score': np.min(stability_values),
+                'max_stability_score': np.max(stability_values),
+                'features_above_threshold': sum(1 for score in stability_values if score >= self.stability_threshold),
+                'stability_threshold': self.stability_threshold
+            }
+
+            return metrics
+
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Failed to calculate stability metrics: {e}")
+            return {'error': str(e)}
+
+
 __all__ = [
     'feature_selection_stability',
     'aggregate_time_blocks',
+    'StabilityAnalyzer',
 ]
 
 

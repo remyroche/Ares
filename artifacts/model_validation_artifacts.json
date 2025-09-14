@@ -1,0 +1,24 @@
+{
+  "sub_pipeline_config": {
+    "sub_pipeline": "model_validation",
+    "stage": "model_training",
+    "mode": "light",
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m"
+  },
+  "execution_metadata": {
+    "start_time": "2025-09-12T20:36:46.596465",
+    "pipeline_id": "sub_pipeline_model_validation_20250912_203646",
+    "execution_mode": "sub_pipeline_execution"
+  },
+  "sub_pipeline_info": {
+    "description": "Model validation and testing",
+    "dependencies": [
+      "regime_specific_training"
+    ],
+    "outputs": [
+      "validation_results.json"
+    ]
+  }
+}

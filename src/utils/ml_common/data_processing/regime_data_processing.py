@@ -729,13 +729,36 @@ class EnhancedRegimeDataProcessor:
                 processed_data[f'regime_{regime_id}_data.parquet'] = regime_data
 
                 # Calculate statistics
+                if len(regime_data) > 0:
+                    # Convert timestamp index to datetime objects before calling isoformat()
+                    index_min = regime_data.index.min()
+                    index_max = regime_data.index.max()
+
+                    # Handle both int64 timestamps and datetime objects
+                    if isinstance(index_min, np.integer):
+                        start_datetime = pd.to_datetime(index_min, unit='ms', utc=True)
+                    else:
+                        start_datetime = pd.to_datetime(index_min, utc=True)
+
+                    if isinstance(index_max, np.integer):
+                        end_datetime = pd.to_datetime(index_max, unit='ms', utc=True)
+                    else:
+                        end_datetime = pd.to_datetime(index_max, utc=True)
+
+                    date_range = {
+                        'start': start_datetime.isoformat(),
+                        'end': end_datetime.isoformat()
+                    }
+                else:
+                    date_range = {
+                        'start': None,
+                        'end': None
+                    }
+
                 regime_statistics[f'regime_{regime_id}'] = {
                     'count': len(regime_data),
                     'percentage': len(regime_data) / len(data) * 100,
-                    'date_range': {
-                        'start': regime_data.index.min().isoformat() if len(regime_data) > 0 else None,
-                        'end': regime_data.index.max().isoformat() if len(regime_data) > 0 else None
-                    }
+                    'date_range': date_range
                 }
 
                 self.logger.info(f"✅ Regime {regime_id}: {len(regime_data)} samples ({len(regime_data)/len(data)*100:.1f}%)")

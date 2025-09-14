@@ -74,18 +74,48 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
         """
         self.logger.info("🚀 Starting Analyst models training step (refactored)")
         
-        # Use the parent class execute method with additional analyst-specific logic
-        results = super().execute(
-            X=X,
-            y=y,
-            regime_labels=regime_labels,
-            feature_names=feature_names,
-            hmm_states=hmm_states,
-            is_classification=False,  # Analyst models are typically regression
-            symbol=None,  # Can be passed as kwargs
-            exchange=None,
-            timeframe=self.config.timeframe
-        )
+        # VECTORIZED: Use ultra-fast vectorized training by default
+        self.logger.info("🚀 Using VECTORIZED analyst models training")
+        try:
+            results = super().execute_vectorized(
+                X=X,
+                y=y,
+                regime_labels=regime_labels,
+                feature_names=feature_names,
+                hmm_states=hmm_states,
+                is_classification=False,  # Analyst models are typically regression
+                symbol=None,  # Can be passed as kwargs
+                exchange=None,
+                timeframe=self.config.timeframe
+            )
+            if results.get('vectorized', False):
+                self.logger.info("✅ VECTORIZED analyst training completed successfully")
+            else:
+                self.logger.warning("⚠️ VECTORIZED analyst training failed, falling back to standard method")
+                results = super().execute(
+                    X=X,
+                    y=y,
+                    regime_labels=regime_labels,
+                    feature_names=feature_names,
+                    hmm_states=hmm_states,
+                    is_classification=False,  # Analyst models are typically regression
+                    symbol=None,  # Can be passed as kwargs
+                    exchange=None,
+                    timeframe=self.config.timeframe
+                )
+        except Exception as e:
+            self.logger.warning(f"⚠️ VECTORIZED analyst training failed: {e}, falling back to standard method")
+            results = super().execute(
+                X=X,
+                y=y,
+                regime_labels=regime_labels,
+                feature_names=feature_names,
+                hmm_states=hmm_states,
+                is_classification=False,  # Analyst models are typically regression
+                symbol=None,  # Can be passed as kwargs
+                exchange=None,
+                timeframe=self.config.timeframe
+            )
         
         # Add analyst-specific post-processing if needed
         if 'error' not in results:

@@ -410,7 +410,7 @@ class MultiTimeframeTrainer:
         return self.config
     
     @handles_errors(default_return=False, context='Enhanced multi-timeframe training')
-    @log_execution_time
+    # @log_execution_time  # Temporarily disabled due to import conflicts
     async def train_models(self, training_data: Dict[str, pd.DataFrame], 
                           model_trainer: Any, model_config: Dict[str, Any]) -> bool:
         """Enhanced train models across multiple timeframes with advanced feature selection and hardware optimization.

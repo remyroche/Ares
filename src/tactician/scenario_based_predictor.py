@@ -411,7 +411,6 @@ class ScenarioBasedPredictor:
             current_price = close_prices[-1]
             returns = np.diff(close_prices) / close_prices[:-1]
             price_momentum_5 = (current_price - close_prices[-5]) / close_prices[-5]
-            price_momentum_10 = (current_price - close_prices[-10]) / close_prices[-10]
             price_momentum_20 = (current_price - close_prices[-20]) / close_prices[-20]
             volatility_5 = np.std(returns[-5:])
             volatility_10 = np.std(returns[-10:])
@@ -438,7 +437,6 @@ class ScenarioBasedPredictor:
 
             features = [
                 price_momentum_5,
-                price_momentum_10,
                 price_momentum_20,
                 volatility_5,
                 volatility_10,

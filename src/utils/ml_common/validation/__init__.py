@@ -11,7 +11,7 @@ This module contains all validation functionality including:
 from .validation_utils import ValidationFramework, ConfigurationValidator
 from .cv_utils import TemporalCrossValidator, PurgedKFold, CrossValidationUtilities
 from .cv import PurgedSplitConfig
-from .stability import feature_selection_stability, aggregate_time_blocks
+from .stability import feature_selection_stability, aggregate_time_blocks, StabilityAnalyzer
 from .thresholding import optimize_threshold, calibrate_probabilities
 
 __all__ = [
@@ -22,7 +22,7 @@ __all__ = [
     'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
 
     # Stability Analysis
-    'feature_selection_stability', 'aggregate_time_blocks',
+    'feature_selection_stability', 'aggregate_time_blocks', 'StabilityAnalyzer',
 
     # Threshold Optimization
     'optimize_threshold', 'calibrate_probabilities'

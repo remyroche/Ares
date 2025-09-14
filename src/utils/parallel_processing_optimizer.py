@@ -264,8 +264,13 @@ class ParallelProcessor:
     Simple parallel processor wrapper for ML Common utilities compatibility.
     """
 
-    def __init__(self):
-        """Initialize the parallel processor."""
+    def __init__(self, max_workers=None):
+        """Initialize the parallel processor.
+
+        Args:
+            max_workers: Maximum number of workers (optional, for compatibility)
+        """
+        self.max_workers = max_workers
         self.optimizer = get_parallel_optimizer()
         self.logger = logger.getChild('ParallelProcessor')
 

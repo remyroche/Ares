@@ -96,12 +96,15 @@ class PerRegimeTrainingConfig(BaseTrainingConfig):
 @dataclass
 class EnsembleTrainingConfig(BaseTrainingConfig):
     """Configuration for ensemble training steps."""
-    
+
     # Ensemble configuration
     base_models: List[str] = field(default_factory=lambda: [
         "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor"
     ])
     meta_model: str = "Ridge"
+
+    # Intensity configuration (for scaling training parameters)
+    intensity_percentage: float = 1.0
     
     # Meta model HPO search space
     meta_model_hpo_space: Dict[str, Any] = field(default_factory=lambda: {
@@ -158,11 +161,16 @@ class TacticianTrainingConfig(BaseTrainingConfig):
 @dataclass
 class HMMTrainingConfig(BaseTrainingConfig):
     """Configuration for HMM training steps."""
-    
+
     # HMM specific configuration
     n_features: int = 100
     sequence_length: int = 20
     n_regimes: int = 3
+    intensity_percentage: float = 1.0
+    training_mode_config: Optional[Dict[str, Any]] = None
+    model_training: Optional[Dict[str, Any]] = None
+    validation: Optional[Dict[str, Any]] = None
+    optimization: Optional[Dict[str, Any]] = None
     
     # Model types
     model_types: List[str] = field(default_factory=lambda: [

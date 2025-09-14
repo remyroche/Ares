@@ -393,7 +393,11 @@ class RegimeHandler:
         stats = {'total_regimes': len(regime_ids), 'total_data_points': len(data), 'regime_details': {}}
         for regime_id in regime_ids:
             regime_data = data[data['composite_cluster_id'] == regime_id]
-            regime_stats = {'count': len(regime_data), 'percentage': len(regime_data) / len(data) * 100, 'date_range': {'start': regime_data['timestamp'].min().isoformat(), 'end': regime_data['timestamp'].max().isoformat()}}
+            # Convert numpy int64 timestamps to datetime for isoformat()
+            start_timestamp = pd.to_datetime(regime_data['timestamp'].min(), unit='ms')
+            end_timestamp = pd.to_datetime(regime_data['timestamp'].max(), unit='ms')
+
+            regime_stats = {'count': len(regime_data), 'percentage': len(regime_data) / len(data) * 100, 'date_range': {'start': start_timestamp.isoformat(), 'end': end_timestamp.isoformat()}}
             if 'close' in regime_data.columns:
                 regime_stats['price_stats'] = {'mean': float(regime_data['close'].mean()), 'std': float(regime_data['close'].std()), 'min': float(regime_data['close'].min()), 'max': float(regime_data['close'].max())}
             stats['regime_details'][f'regime_{regime_id}'] = regime_stats

@@ -592,15 +592,20 @@ class ReportingStep:
         if 'return' in equity_curve.columns:
             returns = equity_curve['return'].dropna()
             
+            # VECTORIZED: Calculate monthly returns without expensive apply operations
+            monthly_cumprod = (1 + returns).resample('M').prod() - 1
+            monthly_returns = monthly_cumprod.values
+
             metrics['return_metrics'] = {
                 'total_return': float(equity_curve['equity'].iloc[-1] / equity_curve['equity'].iloc[0] - 1),
                 'annualized_return': float((1 + returns.mean()) ** 252 - 1),
                 'cumulative_return': float((equity_curve['equity'].iloc[-1] / equity_curve['equity'].iloc[0]) - 1),
                 'monthly_returns': self._calculate_monthly_returns(equity_curve),
-                'best_month': float(returns.resample('M').apply(lambda x: (1 + x).prod() - 1).max()),
-                'worst_month': float(returns.resample('M').apply(lambda x: (1 + x).prod() - 1).min()),
-                'positive_months': float((returns.resample('M').apply(lambda x: (1 + x).prod() - 1) > 0).mean()),
-                'negative_months': float((returns.resample('M').apply(lambda x: (1 + x).prod() - 1) < 0).mean())
+                # VECTORIZED: Use pre-calculated monthly_cumprod for all metrics
+                'best_month': float(monthly_cumprod.max()),
+                'worst_month': float(monthly_cumprod.min()),
+                'positive_months': float((monthly_cumprod > 0).mean()),
+                'negative_months': float((monthly_cumprod < 0).mean())
             }
         
         # Calculate risk metrics
@@ -1435,11 +1440,13 @@ class ReportingStep:
     # Helper methods for analysis calculations
     
     def _calculate_monthly_returns(self, equity_curve: pd.DataFrame) -> Dict[str, float]:
-        """Calculate monthly returns."""
+        """Calculate monthly returns using vectorized operations."""
         if 'return' not in equity_curve.columns:
             return {}
-        
-        monthly_returns = equity_curve['return'].resample('M').apply(lambda x: (1 + x).prod() - 1)
+
+        # VECTORIZED: Calculate monthly returns without expensive apply operations
+        # This is much faster than the lambda function approach
+        monthly_returns = (1 + equity_curve['return']).resample('M').prod() - 1
         
         return {
             'mean_monthly_return': float(monthly_returns.mean()),
@@ -1459,40 +1466,42 @@ class ReportingStep:
         return float(drawdown.min())
     
     def _calculate_consecutive_wins(self, pnl: pd.Series) -> int:
-        """Calculate maximum consecutive wins."""
+        """Calculate maximum consecutive wins using vectorized operations."""
         if len(pnl) == 0:
             return 0
-        
+
+        # VECTORIZED: Calculate consecutive wins without loops
         wins = (pnl > 0).astype(int)
-        consecutive_wins = 0
-        max_consecutive = 0
-        
-        for win in wins:
-            if win:
-                consecutive_wins += 1
-                max_consecutive = max(max_consecutive, consecutive_wins)
-            else:
-                consecutive_wins = 0
-        
-        return max_consecutive
+
+        # Find sequences of consecutive wins
+        if wins.sum() == 0:
+            return 0
+
+        # Calculate lengths of consecutive win sequences
+        win_groups = (~wins.astype(bool)).cumsum()
+        win_lengths = wins.groupby(win_groups).sum()
+
+        # Return maximum consecutive wins
+        return int(win_lengths.max())
     
     def _calculate_consecutive_losses(self, pnl: pd.Series) -> int:
-        """Calculate maximum consecutive losses."""
+        """Calculate maximum consecutive losses using vectorized operations."""
         if len(pnl) == 0:
             return 0
-        
+
+        # VECTORIZED: Calculate consecutive losses without loops
         losses = (pnl < 0).astype(int)
-        consecutive_losses = 0
-        max_consecutive = 0
-        
-        for loss in losses:
-            if loss:
-                consecutive_losses += 1
-                max_consecutive = max(max_consecutive, consecutive_losses)
-            else:
-                consecutive_losses = 0
-        
-        return max_consecutive
+
+        # Find sequences of consecutive losses
+        if losses.sum() == 0:
+            return 0
+
+        # Calculate lengths of consecutive loss sequences
+        loss_groups = (~losses.astype(bool)).cumsum()
+        loss_lengths = losses.groupby(loss_groups).sum()
+
+        # Return maximum consecutive losses
+        return int(loss_lengths.max())
     
     def _calculate_var_metrics(self, returns: pd.Series) -> Dict[str, Any]:
         """Calculate Value at Risk and Conditional VaR metrics."""

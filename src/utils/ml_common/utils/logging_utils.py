@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from src.utils.tprint import tprint
 
 """
@@ -5,8 +7,6 @@ Standardized trial/result logging and summaries for HPO and CV runs.
 
 Enhanced with comprehensive type hints, error handling, and extensive logging.
 """
-
-from __future__ import annotations
 
 import logging
 import traceback

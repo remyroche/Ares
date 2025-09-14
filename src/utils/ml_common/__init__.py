@@ -77,24 +77,30 @@ try:
     # Validation
     from .validation import (
         ValidationFramework, ConfigurationValidator,
-        CVUtils, CVConfig, CrossValidator,
-        StabilityAnalyzer,
-        ThresholdOptimizer
+        CrossValidationUtilities, PurgedKFold, TemporalCrossValidator,
+        StabilityAnalyzer
     )
+    # Thresholding functions (imported separately to avoid sklearn dependency issues)
+    try:
+        from .validation.thresholding import optimize_threshold, calibrate_probabilities
+    except ImportError as e:
+        optimize_threshold = None  # type: ignore
+        calibrate_probabilities = None  # type: ignore
+        tprint(f"⚠️ Thresholding functions not available: {e}")
     
     # Utils
     from .utils import (
         setup_logger, get_logger,
         MemoryOptimizer, MemoryIntegrator,
         ParallelProcessor,
-        SharedCache,
-        ThreadGuard,
-        LookaheadProtection, BaseSafeguards,
-        EnhancedErrorHandler
+        SharedMLCache,
+        limit_blas_threads, get_thread_info, validate_thread_environment,
+        LookaheadProtection, MLTrainingSafeguards,
+        RobustErrorHandler
     )
     
     # Legacy imports for backward compatibility
-    from .feature_selection import FeatureSelector, FeatureSelectionConfig
+    from .feature_selection_backwards_compat import FeatureSelector, FeatureSelectionConfig
     # Avoid importing HMMRegimeDetector at package import to prevent circulars; callers should import directly
     try:
         from .hmm_regime_detection import HMMRegimeDetector, RegimeConfig
@@ -108,7 +114,7 @@ try:
     except Exception:
         M1EnhancedMatrixOperations = None  # type: ignore
         get_enhanced_matrix_operations = None  # type: ignore
-    from .pipeline_orchestrator import PipelineOrchestrator
+    from .pipeline_orchestrator import MLPipelineOrchestrator as PipelineOrchestrator
     from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
     from ..feature_selection.feature_importance_analyzer import (
         FeatureImportanceAnalyzer, FeatureImportanceConfig, FeatureImportanceResult,
@@ -158,17 +164,17 @@ try:
         # Validation
         'ValidationFramework', 'ConfigurationValidator',
         'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
-        'feature_selection_stability', 'aggregate_time_blocks',
+        'StabilityAnalyzer', 'feature_selection_stability', 'aggregate_time_blocks',
         'optimize_threshold', 'calibrate_probabilities',
         
         # Utils
         'setup_logger', 'get_logger',
         'MemoryOptimizer', 'MemoryIntegrator',
         'ParallelProcessor',
-        'SharedCache',
-        'ThreadGuard',
-        'LookaheadProtection', 'BaseSafeguards',
-        'EnhancedErrorHandler',
+        'SharedMLCache',
+        'limit_blas_threads', 'get_thread_info', 'validate_thread_environment',
+        'LookaheadProtection', 'MLTrainingSafeguards',
+        'RobustErrorHandler',
         
         # Legacy
         'FeatureSelector', 'FeatureSelectionConfig', 'LegacyFeatureSelector',

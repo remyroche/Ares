@@ -146,7 +146,7 @@ except ImportError:
     AdvancedEnsembleClustering = None
 
 try:
-    from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations as get_vectorized_operations_manager
+    from src.utils.ml_common.matrix_operations import get_unified_matrix_operations as get_vectorized_operations_manager
     OPTIMIZED_VECTORIZED_AVAILABLE = True
 except ImportError:
     OPTIMIZED_VECTORIZED_AVAILABLE = False
@@ -283,6 +283,7 @@ from src.utils.artifact_manager import ArtifactManager
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
+from src.utils.performance_utils import PerformanceMonitor
 # Step defaults - using fallback implementation
 class Step03_5Defaults:
     """Step 03_5 defaults fallback."""
@@ -3603,17 +3604,26 @@ class FinalRegimeClusteringStep:
         context="calculate_rsi"
     )
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index using safe mathematical operations."""
+        """Calculate Relative Strength Index using fully vectorized operations."""
+        # VECTORIZED: Calculate price changes
         delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-        
-        # Use safe division to prevent division by zero
-        rs = gain.apply(lambda x: math_safe_divide(x, loss.iloc[gain.index.get_loc(x.name)] if x.name in loss.index else 1.0, default=1.0))
-        
-        # Use safe division for RSI calculation
+
+        # VECTORIZED: Calculate gains and losses
+        gains = delta.where(delta > 0, 0)
+        losses = -delta.where(delta < 0, 0)
+
+        # VECTORIZED: Use exponential smoothing for better performance (like Wilder)
+        # This replaces the expensive apply operations with efficient ewm
+        avg_gain = gains.ewm(span=window, adjust=False).mean()
+        avg_loss = losses.ewm(span=window, adjust=False).mean()
+
+        # VECTORIZED: Calculate RS ratio with safe division
+        rs = avg_gain / avg_loss.replace(0, np.nan)  # Avoid division by zero
+
+        # VECTORIZED: Calculate RSI
         rsi = 100 - (100 / (1 + rs))
-        return rsi
+
+        return rsi.fillna(50)  # Fill NaN with neutral RSI value
 
     @handles_errors(
         exceptions=(Exception,),
@@ -3783,10 +3793,13 @@ class FinalRegimeClusteringStep:
             # Calculate technical indicators using safe operations
             if 'close' in features_df.columns:
                 # Price-based features
+                # VECTORIZED: Calculate returns and log returns without expensive apply operations
                 features_df['returns'] = features_df['close'].pct_change()
-                features_df['log_returns'] = features_df['returns'].apply(
-                    lambda x: self.utilities.get('safe_log', safe_log)(1 + x) if pd.notna(x) else 0
-                )
+
+                # VECTORIZED: Calculate log returns using numpy's vectorized log function
+                # Much more efficient than element-wise apply operations
+                returns_plus_one = features_df['returns'] + 1
+                features_df['log_returns'] = np.log(np.where(returns_plus_one > 0, returns_plus_one, 1)).fillna(0)
                 
                 # Volatility features using safe rolling
                 rolling_20 = safe_rolling_func(features_df['returns'], 20)

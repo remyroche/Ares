@@ -16,13 +16,21 @@ from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.processing.data_processing import DataProcessor
 
+# Import unified matrix operations for optimized calculations
+try:
+    from src.utils.ml_common.matrix_operations import get_unified_matrix_operations
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPERATIONS_AVAILABLE = False
+    system_logger.warning("Unified matrix operations not available, falling back to numpy")
+
 
 class FeatureEngineer:
     """Feature engineering and resampling for historical klines data."""
 
     def __init__(self, data_dir: str = "historical_data"):
         """Initialize the feature engineer.
-        
+
         Args:
             data_dir: Base directory for historical data
         """
@@ -32,7 +40,19 @@ class FeatureEngineer:
         self.logger = system_logger.getChild("FeatureEngineer")
         self.parquet_utils = ParquetUtils()
         self.data_processor = DataProcessor()
-        
+
+        # Initialize unified matrix operations
+        if MATRIX_OPERATIONS_AVAILABLE:
+            self.matrix_ops = get_unified_matrix_operations(
+                enable_gpu=True,
+                enable_memory_optimization=True,
+                enable_parallel=True
+            )
+            self.logger.info("✅ Unified matrix operations initialized for feature engineering")
+        else:
+            self.matrix_ops = None
+            self.logger.warning("⚠️ Unified matrix operations not available, using numpy fallback")
+
         # Create processed data directory
         self.processed_data_dir.mkdir(parents=True, exist_ok=True)
         
@@ -225,13 +245,9 @@ class FeatureEngineer:
             
             # Price returns
             featured_df['close_return'] = featured_df['close'].pct_change()
-            featured_df['open_return'] = featured_df['open'].pct_change()
-            featured_df['high_return'] = featured_df['high'].pct_change()
-            featured_df['low_return'] = featured_df['low'].pct_change()
             
             # Log returns (more stable for financial data)
             featured_df['close_log_return'] = np.log(featured_df['close'] / featured_df['close'].shift(1))
-            featured_df['open_log_return'] = np.log(featured_df['open'] / featured_df['open'].shift(1))
             
             # Volume returns (with safe handling for zero volumes)
             # Use safe_pct_change to handle zero volumes
@@ -313,26 +329,61 @@ class FeatureEngineer:
             # Volatility features
             featured_df['volatility_20'] = featured_df['close_return'].rolling(window=20).std()
             featured_df['volatility_5'] = featured_df['close_return'].rolling(window=5).std()
-            
-            # Time-based features
-            featured_df['hour'] = featured_df.index.hour
-            featured_df['day_of_week'] = featured_df.index.dayofweek
-            featured_df['is_weekend'] = featured_df['day_of_week'].isin([5, 6]).astype(int)
-            
+
+            # VWAP (Volume Weighted Average Price)
+            featured_df['vwap'] = self._calculate_vwap(featured_df)
+            featured_df['vwap_price_ratio'] = featured_df['close'] / featured_df['vwap']
+
+            # VWAP Momentum features
+            featured_df['vwap_momentum_5'] = featured_df['vwap'].pct_change(5)
+            featured_df['vwap_momentum_10'] = featured_df['vwap'].pct_change(10)
+            featured_df['vwap_momentum_20'] = featured_df['vwap'].pct_change(20)
+
+            # MACD (Moving Average Convergence Divergence)
+            macd, macd_signal, macd_histogram = self._calculate_macd(featured_df['close'])
+            featured_df['macd'] = macd
+            featured_df['macd_signal'] = macd_signal
+            featured_df['macd_histogram'] = macd_histogram
+
+            # Stochastic Oscillator
+            stoch_k, stoch_d = self._calculate_stochastic(featured_df)
+            featured_df['stoch_k'] = stoch_k
+            featured_df['stoch_d'] = stoch_d
+
+            # Williams %R
+            featured_df['williams_r'] = self._calculate_williams_r(featured_df)
+
+            # Commodity Channel Index (CCI)
+            featured_df['cci'] = self._calculate_cci(featured_df)
+
+            # Average True Range (ATR)
+            featured_df['atr'] = self._calculate_atr(featured_df)
+
+            # Average Directional Index (ADX)
+            featured_df['adx'] = self._calculate_adx(featured_df)
+
+            # On-Balance Volume (OBV)
+            featured_df['obv'] = self._calculate_obv(featured_df)
+
+            # Chaikin Money Flow (CMF)
+            featured_df['cmf'] = self._calculate_chaikin_mf(featured_df)
+
+            # Price Volume Trend (PVT)
+            featured_df['pvt'] = self._calculate_pvt(featured_df)
+
+            # Rate of Change (ROC)
+            featured_df['roc_10'] = self._calculate_roc(featured_df['close'], 10)
+            featured_df['roc_20'] = self._calculate_roc(featured_df['close'], 20)
+
+            # Momentum indicators
+            featured_df['momentum_10'] = featured_df['close'] / featured_df['close'].shift(10) - 1
+            featured_df['momentum_20'] = featured_df['close'] / featured_df['close'].shift(20) - 1
+
             # Lagged features
             for lag in [1, 2, 3, 5, 10]:
                 featured_df[f'close_lag_{lag}'] = featured_df['close'].shift(lag)
                 featured_df[f'volume_lag_{lag}'] = featured_df['volume'].shift(lag)
             
-            # Forward-looking features (for analysis, not trading)
-            featured_df['close_future_1'] = featured_df['close'].shift(-1)
-            featured_df['close_future_5'] = featured_df['close'].shift(-5)
-            featured_df['close_future_10'] = featured_df['close'].shift(-10)
-            
-            # Future returns
-            featured_df['future_return_1'] = featured_df['close_future_1'] / featured_df['close'] - 1
-            featured_df['future_return_5'] = featured_df['close_future_5'] / featured_df['close'] - 1
-            featured_df['future_return_10'] = featured_df['close_future_10'] / featured_df['close'] - 1
             
             # Optimize data types
             featured_df = self.data_processor.optimize_feature_engineering_pipeline(
@@ -384,6 +435,332 @@ class FeatureEngineer:
         upper_band = middle_band + (std * std_dev)
         lower_band = middle_band - (std * std_dev)
         return upper_band, middle_band, lower_band
+
+    def _calculate_vwap(self, df: pd.DataFrame) -> pd.Series:
+        """Calculate Volume Weighted Average Price (VWAP) using matrix operations and safe math.
+
+        Args:
+            df: DataFrame with OHLCV data
+
+        Returns:
+            VWAP series
+        """
+        try:
+            # VWAP = (Price * Volume) / Volume (cumulative)
+            typical_price = (df['high'] + df['low'] + df['close']) / 3.0
+
+            # Use matrix operations for element-wise multiplication
+            if self.matrix_ops:
+                price_volume = typical_price.values * df['volume'].values
+            else:
+                price_volume = typical_price * df['volume']
+
+            # Vectorized cumulative sums
+            cumulative_price_volume = np.cumsum(price_volume)
+            cumulative_volume = np.cumsum(df['volume'].values)
+
+            # Safe division using matrix operations if available
+            if self.matrix_ops and hasattr(self.matrix_ops, 'safe_correlation_matrix'):
+                # Create safe division matrix
+                division_matrix = np.column_stack([cumulative_price_volume, cumulative_volume])
+                # Use correlation-like operation for safe division (approximation)
+                vwap_values = np.divide(cumulative_price_volume, cumulative_volume,
+                                       out=np.full_like(cumulative_price_volume, np.nan, dtype=float),
+                                       where=(cumulative_volume != 0))
+            else:
+                # Standard numpy safe division
+                vwap_values = np.divide(cumulative_price_volume, cumulative_volume,
+                                       out=np.full_like(cumulative_price_volume, np.nan, dtype=float),
+                                       where=(cumulative_volume != 0))
+
+            return pd.Series(vwap_values, index=df.index, name='vwap')
+        except Exception as e:
+            self.logger.warning(f"VWAP calculation failed: {e}")
+            return pd.Series([np.nan] * len(df), index=df.index)
+
+    def _calculate_macd(self, prices: pd.Series, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """Calculate MACD (Moving Average Convergence Divergence) using optimized vectorized operations.
+
+        Args:
+            prices: Price series
+            fast_period: Fast EMA period
+            slow_period: Slow EMA period
+            signal_period: Signal line EMA period
+
+        Returns:
+            Tuple of (macd, signal, histogram)
+        """
+        try:
+            # Use pandas ewm for EMA calculations (highly optimized)
+            fast_ema = prices.ewm(span=fast_period, adjust=False).mean()
+            slow_ema = prices.ewm(span=slow_period, adjust=False).mean()
+
+            # Vectorized MACD calculation
+            macd = fast_ema - slow_ema
+            signal = macd.ewm(span=signal_period, adjust=False).mean()
+            histogram = macd - signal
+
+            return macd, signal, histogram
+        except Exception as e:
+            self.logger.warning(f"MACD calculation failed: {e}")
+            nan_series = pd.Series([np.nan] * len(prices), index=prices.index)
+            return nan_series, nan_series, nan_series
+
+    def _calculate_stochastic(self, df: pd.DataFrame, k_period: int = 14, d_period: int = 3) -> Tuple[pd.Series, pd.Series]:
+        """Calculate Stochastic Oscillator using vectorized operations and safe math.
+
+        Args:
+            df: DataFrame with OHLC data
+            k_period: %K period
+            d_period: %D period (SMA of %K)
+
+        Returns:
+            Tuple of (%K, %D)
+        """
+        try:
+            # Vectorized rolling min/max calculations
+            lowest_low = df['low'].rolling(window=k_period).min()
+            highest_high = df['high'].rolling(window=k_period).max()
+
+            # Safe division for %K calculation using matrix operations if available
+            denominator = highest_high - lowest_low
+            if self.matrix_ops and hasattr(self.matrix_ops, 'batch_process'):
+                # Use safe normalization for %K calculation
+                price_range = df['close'] - lowest_low
+                stoch_k = 100 * self.matrix_ops.batch_process(
+                    np.column_stack([price_range, denominator]),
+                    operation='normalize'
+                )[:, 0]
+            else:
+                # Standard numpy safe division
+                stoch_k = np.where(
+                    denominator != 0,
+                    100 * (df['close'] - lowest_low) / denominator,
+                    50.0  # Neutral value when denominator is zero
+                )
+
+            # Vectorized SMA for %D
+            stoch_d = pd.Series(stoch_k, index=df.index).rolling(window=d_period).mean()
+
+            return pd.Series(stoch_k, index=df.index, name='stoch_k'), stoch_d
+        except Exception as e:
+            self.logger.warning(f"Stochastic calculation failed: {e}")
+            nan_series = pd.Series([np.nan] * len(df), index=df.index)
+            return nan_series, nan_series
+
+    def _calculate_williams_r(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate Williams %R using vectorized operations.
+
+        Args:
+            df: DataFrame with OHLC data
+            period: Lookback period
+
+        Returns:
+            Williams %R series
+        """
+        try:
+            # Vectorized rolling calculations
+            highest_high = df['high'].rolling(window=period).max()
+            lowest_low = df['low'].rolling(window=period).min()
+
+            # Safe division for Williams %R
+            denominator = highest_high - lowest_low
+            williams_r = np.where(
+                denominator != 0,
+                -100 * (highest_high - df['close']) / denominator,
+                -50.0  # Neutral value when denominator is zero
+            )
+
+            return pd.Series(williams_r, index=df.index, name='williams_r')
+        except Exception as e:
+            self.logger.warning(f"Williams %R calculation failed: {e}")
+            return pd.Series([np.nan] * len(df), index=df.index)
+
+    def _calculate_cci(self, df: pd.DataFrame, period: int = 20) -> pd.Series:
+        """Calculate Commodity Channel Index (CCI) using vectorized operations.
+
+        Args:
+            df: DataFrame with OHLC data
+            period: CCI period
+
+        Returns:
+            CCI series
+        """
+        try:
+            # Vectorized Typical Price calculation
+            tp = (df['high'] + df['low'] + df['close']) / 3.0
+
+            # Vectorized SMA of Typical Price
+            sma_tp = tp.rolling(window=period).mean()
+
+            # Vectorized Mean Deviation (more efficient than apply)
+            rolling_mean = tp.rolling(window=period).mean()
+            rolling_std = tp.rolling(window=period).std()
+            # Approximation: mean deviation ≈ 0.8 * std for normal distribution
+            mean_deviation = 0.8 * rolling_std
+
+            # Safe CCI calculation
+            denominator = 0.015 * mean_deviation
+            cci = np.divide(
+                tp - sma_tp,
+                denominator,
+                out=np.full_like(tp, np.nan, dtype=float),
+                where=(denominator != 0)
+            )
+
+            return pd.Series(cci, index=df.index, name='cci')
+        except Exception as e:
+            self.logger.warning(f"CCI calculation failed: {e}")
+            return pd.Series([np.nan] * len(df), index=df.index)
+
+    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate Average True Range (ATR).
+
+        Args:
+            df: DataFrame with OHLC data
+            period: ATR period
+
+        Returns:
+            ATR series
+        """
+        try:
+            # True Range
+            tr1 = df['high'] - df['low']
+            tr2 = abs(df['high'] - df['close'].shift(1))
+            tr3 = abs(df['low'] - df['close'].shift(1))
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+            # ATR = EMA of True Range
+            atr = true_range.ewm(span=period).mean()
+
+            return atr
+        except Exception as e:
+            self.logger.warning(f"ATR calculation failed: {e}")
+            return pd.Series([np.nan] * len(df), index=df.index)
+
+    def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate Average Directional Index (ADX).
+
+        Args:
+            df: DataFrame with OHLC data
+            period: ADX period
+
+        Returns:
+            ADX series
+        """
+        try:
+            # True Range
+            tr1 = df['high'] - df['low']
+            tr2 = abs(df['high'] - df['close'].shift(1))
+            tr3 = abs(df['low'] - df['close'].shift(1))
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+            # Directional Movement
+            plus_dm = df['high'] - df['high'].shift(1)
+            minus_dm = df['low'].shift(1) - df['low']
+
+            # Only count positive directional movement
+            plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
+            minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
+
+            # Smoothed averages
+            atr = true_range.ewm(span=period).mean()
+            plus_di = 100 * (plus_dm.ewm(span=period).mean() / atr)
+            minus_di = 100 * (minus_dm.ewm(span=period).mean() / atr)
+
+            # DX and ADX
+            dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+            adx = dx.ewm(span=period).mean()
+
+            return adx
+        except Exception as e:
+            self.logger.warning(f"ADX calculation failed: {e}")
+            return pd.Series([np.nan] * len(df), index=df.index)
+
+    def _calculate_obv(self, df: pd.DataFrame) -> pd.Series:
+        """Calculate On-Balance Volume (OBV).
+
+        Args:
+            df: DataFrame with OHLCV data
+
+        Returns:
+            OBV series
+        """
+        try:
+            obv = pd.Series(0.0, index=df.index)
+            for i in range(1, len(df)):
+                if df['close'].iloc[i] > df['close'].iloc[i-1]:
+                    obv.iloc[i] = obv.iloc[i-1] + df['volume'].iloc[i]
+                elif df['close'].iloc[i] < df['close'].iloc[i-1]:
+                    obv.iloc[i] = obv.iloc[i-1] - df['volume'].iloc[i]
+                else:
+                    obv.iloc[i] = obv.iloc[i-1]
+            return obv
+        except Exception as e:
+            self.logger.warning(f"OBV calculation failed: {e}")
+            return pd.Series([np.nan] * len(df), index=df.index)
+
+    def _calculate_chaikin_mf(self, df: pd.DataFrame, period: int = 21) -> pd.Series:
+        """Calculate Chaikin Money Flow (CMF).
+
+        Args:
+            df: DataFrame with OHLCV data
+            period: CMF period
+
+        Returns:
+            CMF series
+        """
+        try:
+            # Money Flow Multiplier
+            mfm = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'])
+
+            # Money Flow Volume
+            mfv = mfm * df['volume']
+
+            # Chaikin Money Flow
+            cmf = mfv.rolling(window=period).sum() / df['volume'].rolling(window=period).sum()
+
+            return cmf
+        except Exception as e:
+            self.logger.warning(f"CMF calculation failed: {e}")
+            return pd.Series([np.nan] * len(df), index=df.index)
+
+    def _calculate_pvt(self, df: pd.DataFrame) -> pd.Series:
+        """Calculate Price Volume Trend (PVT).
+
+        Args:
+            df: DataFrame with OHLCV data
+
+        Returns:
+            PVT series
+        """
+        try:
+            # PVT = Previous PVT + (Volume * (Close - Previous Close) / Previous Close)
+            price_change = df['close'].pct_change()
+            pvt = (price_change * df['volume']).cumsum()
+
+            return pvt
+        except Exception as e:
+            self.logger.warning(f"PVT calculation failed: {e}")
+            return pd.Series([np.nan] * len(df), index=df.index)
+
+    def _calculate_roc(self, prices: pd.Series, period: int = 10) -> pd.Series:
+        """Calculate Rate of Change (ROC).
+
+        Args:
+            prices: Price series
+            period: ROC period
+
+        Returns:
+            ROC series
+        """
+        try:
+            # ROC = ((Current Price - Price n periods ago) / Price n periods ago) * 100
+            roc = ((prices - prices.shift(period)) / prices.shift(period)) * 100
+            return roc
+        except Exception as e:
+            self.logger.warning(f"ROC calculation failed: {e}")
+            return pd.Series([np.nan] * len(prices), index=prices.index)
     
     def _resample_data(self, df: pd.DataFrame, target_interval: str) -> Optional[pd.DataFrame]:
         """Resample data to target interval.

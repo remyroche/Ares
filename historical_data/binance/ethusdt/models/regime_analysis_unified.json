@@ -1,0 +1,47 @@
+{
+  "artifact_type": "regime_model_complete",
+  "timestamp": "2025-09-14T17:14:39.329755",
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "1h",
+  "method": "hmm_gaussian",
+  "model_file": "regime_model.pkl",
+  "consolidated": true,
+  "regime_statistics": {
+    "n_regimes": 4,
+    "regime_counts": {
+      "2": 5587,
+      "0": 5576,
+      "1": 3148
+    },
+    "probabilistic_tagging": true,
+    "regime_probability_columns": [
+      "regime_probability",
+      "regime_0_probability",
+      "regime_1_probability",
+      "regime_2_probability"
+    ],
+    "regime_percentage_columns": [
+      "regime_0_percentage",
+      "regime_1_percentage",
+      "regime_2_percentage"
+    ]
+  },
+  "data_info": {
+    "probabilistic_data_saved": true,
+    "data_path": "historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1h.parquet",
+    "partitioned_data_path": "historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1h_partitioned/",
+    "total_files": 597,
+    "data_format": "parquet"
+  },
+  "analysis_summary": {
+    "total_samples": 14311,
+    "most_common_regime": 2,
+    "regime_balance_score": "moderate_imbalance"
+  },
+  "model_info": {
+    "model_type": "HiddenMarkovModel",
+    "n_components": 4,
+    "covariance_type": "diag"
+  }
+}

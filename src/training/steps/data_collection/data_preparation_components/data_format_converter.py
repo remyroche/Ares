@@ -125,22 +125,55 @@ class DataFormatConverter:
             self.logger.info('🕐 Converting timestamp column...')
             try:
                 original_dtype = str(df['timestamp'].dtype)
+
+                # Validate timestamp bounds before conversion
                 if pd.api.types.is_datetime64_any_dtype(df['timestamp']):
                     self.logger.info('🕐 Converting datetime to milliseconds timestamp')
-                    df.loc[:, 'timestamp'] = (pd.to_datetime(df['timestamp'], utc = True).astype('int64') // 10 ** 6).astype('int64')
+                    # Convert to datetime first to catch bounds errors
+                    dt_series = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
+
+                    # Check for out of bounds timestamps
+                    out_of_bounds = dt_series.isna() & df['timestamp'].notna()
+                    if out_of_bounds.any():
+                        self.logger.warning(f'⚠️ Found {out_of_bounds.sum()} out of bounds timestamp(s), replacing with NaT')
+                        dt_series = dt_series.where(~out_of_bounds, pd.NaT)
+
+                    df.loc[:, 'timestamp'] = (dt_series.astype('int64') // 10 ** 6).astype('int64')
                 else:
                     ts_numeric = pd.to_numeric(df['timestamp'], errors='coerce')
-                    if pd.notna(ts_numeric.max()) and float(ts_numeric.max()) > 100000000000000.0:
-                        self.logger.info('🕐 Converting nanosecond timestamp to milliseconds')
-                        df.loc[:, 'timestamp'] = (ts_numeric // 10 ** 6).astype('int64')
+
+                    # Check for extremely large timestamps that might be out of bounds
+                    if pd.notna(ts_numeric.max()):
+                        max_ts = float(ts_numeric.max())
+
+                        # Handle different timestamp scales
+                        if max_ts > 10**18:  # Likely nanoseconds, out of bounds
+                            self.logger.warning(f'⚠️ Timestamp values too large (max: {max_ts}), likely out of bounds nanosecond timestamps')
+                            # Replace out of bounds values with current time
+                            current_time_ms = int(pd.Timestamp.now().timestamp() * 1000)
+                            out_of_bounds_mask = ts_numeric > 10**18
+                            ts_numeric = ts_numeric.where(~out_of_bounds_mask, current_time_ms)
+                            self.logger.info(f'🕐 Replaced {out_of_bounds_mask.sum()} out of bounds timestamps with current time')
+                            df.loc[:, 'timestamp'] = ts_numeric.astype('int64')
+
+                        elif max_ts > 100000000000000.0:  # Nanoseconds to milliseconds
+                            self.logger.info('🕐 Converting nanosecond timestamp to milliseconds')
+                            df.loc[:, 'timestamp'] = (ts_numeric // 10 ** 6).astype('int64')
+                        else:
+                            self.logger.info('🕐 Converting numeric timestamp to int64')
+                            df.loc[:, 'timestamp'] = ts_numeric.astype('int64')
                     else:
                         self.logger.info('🕐 Converting numeric timestamp to int64')
                         df.loc[:, 'timestamp'] = ts_numeric.astype('int64')
-                        
+
                 new_dtype = str(df['timestamp'].dtype)
                 self.logger.info(f'✅ Timestamp converted: {original_dtype} → {new_dtype}')
             except Exception as e:
                 self.logger.error(f'❌ Failed to convert timestamp: {e}')
+                # Fallback: replace with current timestamp
+                current_ts = int(pd.Timestamp.now().timestamp() * 1000)
+                df.loc[:, 'timestamp'] = current_ts
+                self.logger.info(f'🕐 Applied fallback timestamp: {current_ts}')
                 
         # Convert other columns
         conversion_results = {'success': 0, 'failed': 0, 'skipped': 0}

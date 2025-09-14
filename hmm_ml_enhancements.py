@@ -322,10 +322,46 @@ class EnhancedHMMModelTrainer:
     
     # ==================== FEATURE SELECTION ====================
     
-    def select_features(self, X: pd.DataFrame, y: np.ndarray, method: str = 'mutual_info', 
+    def select_features(self, X: pd.DataFrame, y: np.ndarray, method: str = 'mutual_info',
                        k: int = 50, is_classification: bool = True) -> Tuple[pd.DataFrame, List[str]]:
         """Advanced feature selection methods."""
-        
+
+        # Preprocess data to handle infinity and large values
+        X_processed = X.copy()
+
+        # Handle infinity values
+        inf_mask = np.isinf(X_processed.values)
+        if np.any(inf_mask):
+            print(f"⚠️ Found {np.sum(inf_mask)} infinity values in data for HMM feature selection, replacing with finite values")
+
+            # Replace positive infinity
+            pos_inf_mask = np.isposinf(X_processed.values)
+            if np.any(pos_inf_mask):
+                finite_mask = np.isfinite(X_processed.values)
+                if np.any(finite_mask):
+                    max_finite = np.max(X_processed.values[finite_mask])
+                    X_processed.values[pos_inf_mask] = max(max_finite * 10, 1e10)
+                else:
+                    X_processed.values[pos_inf_mask] = 1e10
+
+            # Replace negative infinity
+            neg_inf_mask = np.isneginf(X_processed.values)
+            if np.any(neg_inf_mask):
+                finite_mask = np.isfinite(X_processed.values)
+                if np.any(finite_mask):
+                    min_finite = np.min(X_processed.values[finite_mask])
+                    X_processed.values[neg_inf_mask] = min(min_finite * 10, -1e10)
+                else:
+                    X_processed.values[neg_inf_mask] = -1e10
+
+        # Clip extremely large values
+        max_float64 = 1e308
+        min_float64 = -1e308
+        X_processed = X_processed.clip(min_float64, max_float64)
+
+        # Use processed data
+        X = X_processed
+
         if method == 'mutual_info':
             if is_classification:
                 selector = SelectKBest(score_func=mutual_info_classif, k=k)

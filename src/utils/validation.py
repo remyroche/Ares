@@ -2,7 +2,7 @@
 Unified Validation System - Enhanced Data Validation Framework
 
 This module provides comprehensive data validation functionality consolidated
-from multiple validation utilities.
+from multiple validation utilities, including HMM statistical validation.
 """
 
 import logging
@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import warnings
 
 from .error_handler import UnifiedErrorHandler, ValidationError, DataQualityError
+
 
 # =============================================================================
 # VALIDATION CONFIGURATION

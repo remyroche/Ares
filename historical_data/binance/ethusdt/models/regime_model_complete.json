@@ -1,0 +1,42 @@
+{
+  "artifact_type": "regime_model_complete",
+  "timestamp": "2025-09-14T17:40:22.573943",
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "1h",
+  "method": "hmm_gaussian",
+  "model_file": "regime_model.pkl",
+  "consolidated": true,
+  "regime_statistics": {
+    "n_regimes": 6,
+    "regime_counts": {
+      "4": 3848,
+      "0": 3169,
+      "2": 2918,
+      "1": 2737,
+      "3": 1639
+    },
+    "probabilistic_tagging": true,
+    "regime_probability_columns": [
+      "regime_probability",
+      "regime_0_probability",
+      "regime_1_probability",
+      "regime_2_probability",
+      "regime_3_probability",
+      "regime_4_probability"
+    ],
+    "regime_percentage_columns": [
+      "regime_0_percentage",
+      "regime_1_percentage",
+      "regime_2_percentage",
+      "regime_3_percentage",
+      "regime_4_percentage"
+    ]
+  },
+  "data_info": {},
+  "model_info": {
+    "model_score": null,
+    "n_regimes_detected": 6,
+    "regime_confidence": 0
+  }
+}

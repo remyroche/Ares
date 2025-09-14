@@ -214,7 +214,7 @@ class ModelValidator:
         )
     
     @handles_errors(default_return=None, context='Model validation')
-    @log_execution_time
+    # @log_execution_time  # Temporarily disabled due to import conflicts
     async def validate_model(self, model: Any, X: np.ndarray, y: np.ndarray,
                            model_name: str = "", scoring: str = "accuracy") -> ValidationResult:
         """Validate a trained model.

@@ -598,20 +598,26 @@ class MainTrainingPipeline:
         total_sub_pipelines = 0
         completed_sub_pipelines = 0
         failed_sub_pipelines = 0
-        
+
+        self.logger.info(f"🔍 Calculating metrics from {len(result.stage_results)} stages")
+
         # Aggregate metrics from all stages
         for stage, stage_results in result.stage_results.items():
+            self.logger.info(f"📊 Stage {stage.value}: {len(stage_results)} results")
             for sub_result in stage_results:
                 total_sub_pipelines += 1
+                self.logger.info(f"   Sub-pipeline: {sub_result.sub_pipeline_name}, Status: {sub_result.status.value}")
                 if sub_result.status == SubPipelineStatus.COMPLETED:
                     completed_sub_pipelines += 1
                 elif sub_result.status == SubPipelineStatus.FAILED:
                     failed_sub_pipelines += 1
-        
+
         result.total_sub_pipelines = total_sub_pipelines
         result.completed_sub_pipelines = completed_sub_pipelines
         result.failed_sub_pipelines = failed_sub_pipelines
         result.success_rate = completed_sub_pipelines / total_sub_pipelines if total_sub_pipelines > 0 else 0
+
+        self.logger.info(f"📈 Final metrics: Total={total_sub_pipelines}, Completed={completed_sub_pipelines}, Failed={failed_sub_pipelines}, Rate={result.success_rate:.1%}")
         
         # Calculate performance metrics
         result.performance_metrics = {

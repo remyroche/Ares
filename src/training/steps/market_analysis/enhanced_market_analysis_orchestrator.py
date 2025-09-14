@@ -58,13 +58,13 @@ except ImportError:
                     return None
 
 # Use standardized matrix operations from ml_common
-from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+from src.utils.ml_common.matrix_operations import get_unified_matrix_operations
 
 # Import final feature selection step
 from .final_feature_selection_step import FinalFeatureSelectionStep, run_final_feature_selection_step
 class EnhancedMatrixOperationsStep:
     def __init__(self, config):
-        self.matrix_ops = get_enhanced_matrix_operations()
+        self.matrix_ops = get_unified_matrix_operations()
 
 try:
     from src.utils.feature_selection.step08_advanced_feature_selection_wrapper import AdvancedFeatureSelectionWrapper as AdvancedFeatureSelectionStep

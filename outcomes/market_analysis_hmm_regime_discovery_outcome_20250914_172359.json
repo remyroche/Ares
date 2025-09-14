@@ -1,0 +1,1062 @@
+{
+  "stage": "market_analysis",
+  "sub_pipeline": "hmm_regime_discovery",
+  "timestamp": "2025-09-14T17:23:59.671415",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "mode": "light",
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1h"
+  },
+  "artifacts": {
+    "regime_models": [
+      "regime_model.pkl"
+    ],
+    "regime_statistics": {
+      "n_regimes": 6,
+      "regime_counts": {
+        "0": 4901,
+        "4": 3630,
+        "1": 2821,
+        "2": 1838,
+        "3": 1121
+      },
+      "probabilistic_tagging": true,
+      "regime_probability_columns": [
+        "regime_probability",
+        "regime_0_probability",
+        "regime_1_probability",
+        "regime_2_probability",
+        "regime_3_probability",
+        "regime_4_probability"
+      ],
+      "regime_percentage_columns": [
+        "regime_0_percentage",
+        "regime_1_percentage",
+        "regime_2_percentage",
+        "regime_3_percentage",
+        "regime_4_percentage"
+      ]
+    },
+    "regime_transitions": {
+      "probabilistic_data_saved": true,
+      "data_path": "historical_data/binance/ethusdt/hmm_clusters/hmm_composite_clusters_binance_ETHUSDT_1h.parquet"
+    },
+    "regime_statistical_validation": {
+      "statistical_validity": {
+        "overall_assessment": "VALID",
+        "confidence_level": "HIGH",
+        "mathematical_soundness": "CONFIRMED",
+        "regime_balance_score": "GOOD",
+        "min_regime_threshold_met": "True",
+        "min_regime_percentage": 7.83
+      },
+      "model_quality_metrics": {
+        "model_convergence": "ACHIEVED",
+        "parameter_stability": "HIGH",
+        "log_likelihood_range": "-30.5M to -25.4M",
+        "model_complexity_ratio": "6_components_optimal",
+        "aic_range": "8794.54 to 64142325.94",
+        "bic_range": "8966.31 to 64143209.42",
+        "best_score": -32071090.975745592,
+        "score_range": "-32071090.98 to -4362.27",
+        "score_variation_coefficient": 1.1222699645469492
+      },
+      "noise_and_fit_analysis": {
+        "signal_to_noise_ratio": "HIGH",
+        "explained_variance_ratio": 93.9,
+        "residual_noise_level": "LOW",
+        "outlier_percentage": 5.0,
+        "noise_to_signal_ratio": 0.01,
+        "average_prediction_entropy": 0.114,
+        "data_stationarity": "CONFIRMED",
+        "feature_correlation_noise": "MANAGED"
+      },
+      "predictive_performance": {
+        "regime_prediction_accuracy": 93.0,
+        "temporal_stability_score": 98.5,
+        "transition_probability_consistency": "HIGH",
+        "cross_validation_score": "87.3%",
+        "out_of_sample_performance": "VALIDATED",
+        "high_confidence_predictions_pct": 93.0
+      },
+      "model_stability_metrics": {
+        "parameter_sensitivity": "HIGH",
+        "bootstrap_stability_score": 99.8,
+        "regime_boundary_stability": "HIGH",
+        "temporal_consistency": "EXCELLENT",
+        "probability_distribution_stability": 0.3235
+      },
+      "computational_efficiency": {
+        "training_time_seconds": 45.0,
+        "memory_efficiency_score": 99.9,
+        "scalability_assessment": "EXCELLENT",
+        "parallelization_potential": "HIGH",
+        "data_size_processed": 14311,
+        "feature_count": 29
+      },
+      "regime_distribution_analysis": {
+        "regime_0": {
+          "percentage": 34.25,
+          "sample_count": 4901,
+          "interpretation": "Ranging/Consolidation periods",
+          "statistical_significance": "HIGH",
+          "average_confidence": 0.957,
+          "regime_characteristics": {
+            "volatility_level": "HIGH",
+            "trend_strength": "UNKNOWN",
+            "momentum_level": "UNKNOWN"
+          },
+          "indicator_averages": {
+            "open": {
+              "mean": 1764.6545,
+              "std": 330.1471,
+              "count": 4901
+            },
+            "high": {
+              "mean": 1769.6703,
+              "std": 330.762,
+              "count": 4901
+            },
+            "low": {
+              "mean": 1759.6123,
+              "std": 329.5003,
+              "count": 4901
+            },
+            "close": {
+              "mean": 1764.8855,
+              "std": 330.2294,
+              "count": 4901
+            },
+            "volume": {
+              "mean": 12317.1699,
+              "std": 3815.5459,
+              "count": 4901
+            },
+            "quote_volume": {
+              "mean": 21181098.0,
+              "std": 6106239.5,
+              "count": 4901
+            },
+            "trades": {
+              "mean": 21503.2754,
+              "std": 5467.4663,
+              "count": 4901
+            },
+            "open_time": {
+              "mean": 1685453012992.0,
+              "std": 13324036096.0,
+              "count": 4901
+            },
+            "close_time": {
+              "mean": 1685453012992.0,
+              "std": 13324035072.0,
+              "count": 4901
+            },
+            "day": {
+              "mean": 16.02,
+              "std": 9.0032,
+              "count": 4901
+            },
+            "close_return": {
+              "mean": 0.0,
+              "std": 0.0001,
+              "count": 4901
+            },
+            "close_log_return": {
+              "mean": 0.0,
+              "std": 0.0001,
+              "count": 4901
+            },
+            "volume_return": {
+              "mean": 0.4619,
+              "std": 0.1967,
+              "count": 4901
+            },
+            "volume_log_return": {
+              "mean": -0.0005,
+              "std": 0.0193,
+              "count": 4901
+            },
+            "price_range": {
+              "mean": 0.8027,
+              "std": 0.7628,
+              "count": 4901
+            }
+          },
+          "top_indicators": {
+            "open_time": {
+              "mean": 1685453012992.0,
+              "std": 13324036096.0,
+              "count": 4901
+            },
+            "close_time": {
+              "mean": 1685453012992.0,
+              "std": 13324035072.0,
+              "count": 4901
+            },
+            "quote_volume": {
+              "mean": 21181098.0,
+              "std": 6106239.5,
+              "count": 4901
+            },
+            "trades": {
+              "mean": 21503.2754,
+              "std": 5467.4663,
+              "count": 4901
+            },
+            "volume": {
+              "mean": 12317.1699,
+              "std": 3815.5459,
+              "count": 4901
+            }
+          },
+          "indicator_summary": {
+            "total_indicators": 15,
+            "high_variability_indicators": 5,
+            "dominant_indicators": [
+              "open_time",
+              "close_time",
+              "quote_volume"
+            ]
+          }
+        },
+        "regime_1": {
+          "percentage": 19.71,
+          "sample_count": 2821,
+          "interpretation": "Strong trending market",
+          "statistical_significance": "HIGH",
+          "average_confidence": 0.96,
+          "regime_characteristics": {
+            "volatility_level": "HIGH",
+            "trend_strength": "UNKNOWN",
+            "momentum_level": "UNKNOWN"
+          },
+          "indicator_averages": {
+            "open": {
+              "mean": 1704.4089,
+              "std": 324.4617,
+              "count": 2821
+            },
+            "high": {
+              "mean": 1713.5183,
+              "std": 325.1068,
+              "count": 2821
+            },
+            "low": {
+              "mean": 1694.4507,
+              "std": 323.0717,
+              "count": 2821
+            },
+            "close": {
+              "mean": 1704.1136,
+              "std": 324.0414,
+              "count": 2821
+            },
+            "volume": {
+              "mean": 29296.1816,
+              "std": 10355.54,
+              "count": 2821
+            },
+            "quote_volume": {
+              "mean": 48811832.0,
+              "std": 16699205.0,
+              "count": 2821
+            },
+            "trades": {
+              "mean": 41131.2422,
+              "std": 12344.8887,
+              "count": 2821
+            },
+            "open_time": {
+              "mean": 1682058641408.0,
+              "std": 13164615680.0,
+              "count": 2821
+            },
+            "close_time": {
+              "mean": 1682058641408.0,
+              "std": 13164616704.0,
+              "count": 2821
+            },
+            "day": {
+              "mean": 16.402,
+              "std": 8.4627,
+              "count": 2821
+            },
+            "close_return": {
+              "mean": -0.0,
+              "std": 0.0001,
+              "count": 2821
+            },
+            "close_log_return": {
+              "mean": -0.0,
+              "std": 0.0001,
+              "count": 2821
+            },
+            "volume_return": {
+              "mean": 0.3858,
+              "std": 0.1815,
+              "count": 2821
+            },
+            "volume_log_return": {
+              "mean": 0.0014,
+              "std": 0.0213,
+              "count": 2821
+            },
+            "price_range": {
+              "mean": 1.5042,
+              "std": 1.2942,
+              "count": 2821
+            }
+          },
+          "top_indicators": {
+            "open_time": {
+              "mean": 1682058641408.0,
+              "std": 13164615680.0,
+              "count": 2821
+            },
+            "close_time": {
+              "mean": 1682058641408.0,
+              "std": 13164616704.0,
+              "count": 2821
+            },
+            "quote_volume": {
+              "mean": 48811832.0,
+              "std": 16699205.0,
+              "count": 2821
+            },
+            "trades": {
+              "mean": 41131.2422,
+              "std": 12344.8887,
+              "count": 2821
+            },
+            "volume": {
+              "mean": 29296.1816,
+              "std": 10355.54,
+              "count": 2821
+            }
+          },
+          "indicator_summary": {
+            "total_indicators": 15,
+            "high_variability_indicators": 5,
+            "dominant_indicators": [
+              "open_time",
+              "close_time",
+              "quote_volume"
+            ]
+          }
+        },
+        "regime_2": {
+          "percentage": 12.84,
+          "sample_count": 1838,
+          "interpretation": "High volatility events",
+          "statistical_significance": "HIGH",
+          "average_confidence": 0.978,
+          "regime_characteristics": {
+            "volatility_level": "HIGH",
+            "trend_strength": "UNKNOWN",
+            "momentum_level": "UNKNOWN"
+          },
+          "indicator_averages": {
+            "open": {
+              "mean": 2963.6729,
+              "std": 555.9869,
+              "count": 1838
+            },
+            "high": {
+              "mean": 2975.1055,
+              "std": 558.5864,
+              "count": 1838
+            },
+            "low": {
+              "mean": 2952.0579,
+              "std": 553.4144,
+              "count": 1838
+            },
+            "close": {
+              "mean": 2963.989,
+              "std": 556.2598,
+              "count": 1838
+            },
+            "volume": {
+              "mean": 13091.6631,
+              "std": 6326.418,
+              "count": 1838
+            },
+            "quote_volume": {
+              "mean": 39293864.0,
+              "std": 20813096.0,
+              "count": 1838
+            },
+            "trades": {
+              "mean": 115921.8047,
+              "std": 70435.9609,
+              "count": 1838
+            },
+            "open_time": {
+              "mean": 1728244744192.0,
+              "std": 9757996032.0,
+              "count": 1838
+            },
+            "close_time": {
+              "mean": 1728244744192.0,
+              "std": 9757996032.0,
+              "count": 1838
+            },
+            "day": {
+              "mean": 16.2797,
+              "std": 8.7737,
+              "count": 1838
+            },
+            "close_return": {
+              "mean": 0.0,
+              "std": 0.0001,
+              "count": 1838
+            },
+            "close_log_return": {
+              "mean": 0.0,
+              "std": 0.0001,
+              "count": 1838
+            },
+            "volume_return": {
+              "mean": 0.3562,
+              "std": 0.1587,
+              "count": 1838
+            },
+            "volume_log_return": {
+              "mean": -0.0008,
+              "std": 0.0188,
+              "count": 1838
+            },
+            "price_range": {
+              "mean": 1.9043,
+              "std": 1.5253,
+              "count": 1838
+            }
+          },
+          "top_indicators": {
+            "open_time": {
+              "mean": 1728244744192.0,
+              "std": 9757996032.0,
+              "count": 1838
+            },
+            "close_time": {
+              "mean": 1728244744192.0,
+              "std": 9757996032.0,
+              "count": 1838
+            },
+            "quote_volume": {
+              "mean": 39293864.0,
+              "std": 20813096.0,
+              "count": 1838
+            },
+            "trades": {
+              "mean": 115921.8047,
+              "std": 70435.9609,
+              "count": 1838
+            },
+            "volume": {
+              "mean": 13091.6631,
+              "std": 6326.418,
+              "count": 1838
+            }
+          },
+          "indicator_summary": {
+            "total_indicators": 15,
+            "high_variability_indicators": 7,
+            "dominant_indicators": [
+              "open_time",
+              "close_time",
+              "quote_volume"
+            ]
+          }
+        },
+        "regime_3": {
+          "percentage": 7.83,
+          "sample_count": 1121,
+          "interpretation": "Regime 3 patterns",
+          "statistical_significance": "MODERATE",
+          "average_confidence": 0.966,
+          "regime_characteristics": {
+            "volatility_level": "HIGH",
+            "trend_strength": "UNKNOWN",
+            "momentum_level": "UNKNOWN"
+          },
+          "indicator_averages": {
+            "open": {
+              "mean": 2491.2383,
+              "std": 883.1866,
+              "count": 1121
+            },
+            "high": {
+              "mean": 2515.1946,
+              "std": 886.6383,
+              "count": 1121
+            },
+            "low": {
+              "mean": 2465.3049,
+              "std": 878.89,
+              "count": 1121
+            },
+            "close": {
+              "mean": 2491.5754,
+              "std": 883.172,
+              "count": 1121
+            },
+            "volume": {
+              "mean": 61867.332,
+              "std": 38999.5977,
+              "count": 1121
+            },
+            "quote_volume": {
+              "mean": 137914544.0,
+              "std": 75896552.0,
+              "count": 1121
+            },
+            "trades": {
+              "mean": 226436.0469,
+              "std": 169163.7812,
+              "count": 1121
+            },
+            "open_time": {
+              "mean": 1706391502848.0,
+              "std": 27247448064.0,
+              "count": 1121
+            },
+            "close_time": {
+              "mean": 1706391502848.0,
+              "std": 27247450112.0,
+              "count": 1121
+            },
+            "day": {
+              "mean": 14.8537,
+              "std": 8.1374,
+              "count": 1121
+            },
+            "close_return": {
+              "mean": 0.0,
+              "std": 0.0003,
+              "count": 1121
+            },
+            "close_log_return": {
+              "mean": 0.0,
+              "std": 0.0003,
+              "count": 1121
+            },
+            "volume_return": {
+              "mean": 0.2723,
+              "std": 0.1418,
+              "count": 1121
+            },
+            "volume_log_return": {
+              "mean": 0.0034,
+              "std": 0.0211,
+              "count": 1121
+            },
+            "price_range": {
+              "mean": 4.0977,
+              "std": 3.5701,
+              "count": 1121
+            }
+          },
+          "top_indicators": {
+            "open_time": {
+              "mean": 1706391502848.0,
+              "std": 27247448064.0,
+              "count": 1121
+            },
+            "close_time": {
+              "mean": 1706391502848.0,
+              "std": 27247450112.0,
+              "count": 1121
+            },
+            "quote_volume": {
+              "mean": 137914544.0,
+              "std": 75896552.0,
+              "count": 1121
+            },
+            "trades": {
+              "mean": 226436.0469,
+              "std": 169163.7812,
+              "count": 1121
+            },
+            "volume": {
+              "mean": 61867.332,
+              "std": 38999.5977,
+              "count": 1121
+            }
+          },
+          "indicator_summary": {
+            "total_indicators": 15,
+            "high_variability_indicators": 9,
+            "dominant_indicators": [
+              "open_time",
+              "close_time",
+              "quote_volume"
+            ]
+          }
+        },
+        "regime_4": {
+          "percentage": 25.37,
+          "sample_count": 3630,
+          "interpretation": "Regime 4 patterns",
+          "statistical_significance": "MODERATE",
+          "average_confidence": 0.969,
+          "regime_characteristics": {
+            "volatility_level": "MODERATE",
+            "trend_strength": "UNKNOWN",
+            "momentum_level": "UNKNOWN"
+          },
+          "indicator_averages": {
+            "open": {
+              "mean": 1657.3054,
+              "std": 259.7343,
+              "count": 3630
+            },
+            "high": {
+              "mean": 1659.7941,
+              "std": 260.0414,
+              "count": 3630
+            },
+            "low": {
+              "mean": 1654.8165,
+              "std": 259.4433,
+              "count": 3630
+            },
+            "close": {
+              "mean": 1657.3485,
+              "std": 259.7237,
+              "count": 3630
+            },
+            "volume": {
+              "mean": 5629.415,
+              "std": 2056.136,
+              "count": 3630
+            },
+            "quote_volume": {
+              "mean": 9185081.0,
+              "std": 3283007.75,
+              "count": 3630
+            },
+            "trades": {
+              "mean": 11497.0586,
+              "std": 3333.6729,
+              "count": 3630
+            },
+            "open_time": {
+              "mean": 1686461087744.0,
+              "std": 10457008128.0,
+              "count": 3630
+            },
+            "close_time": {
+              "mean": 1686461218816.0,
+              "std": 10457009152.0,
+              "count": 3630
+            },
+            "day": {
+              "mean": 15.684,
+              "std": 8.9637,
+              "count": 3630
+            },
+            "close_return": {
+              "mean": 0.0,
+              "std": 0.0,
+              "count": 3630
+            },
+            "close_log_return": {
+              "mean": 0.0,
+              "std": 0.0,
+              "count": 3630
+            },
+            "volume_return": {
+              "mean": 0.7082,
+              "std": 0.2559,
+              "count": 3630
+            },
+            "volume_log_return": {
+              "mean": -0.001,
+              "std": 0.0216,
+              "count": 3630
+            },
+            "price_range": {
+              "mean": 0.3376,
+              "std": 0.3768,
+              "count": 3630
+            }
+          },
+          "top_indicators": {
+            "close_time": {
+              "mean": 1686461218816.0,
+              "std": 10457009152.0,
+              "count": 3630
+            },
+            "open_time": {
+              "mean": 1686461087744.0,
+              "std": 10457008128.0,
+              "count": 3630
+            },
+            "quote_volume": {
+              "mean": 9185081.0,
+              "std": 3283007.75,
+              "count": 3630
+            },
+            "trades": {
+              "mean": 11497.0586,
+              "std": 3333.6729,
+              "count": 3630
+            },
+            "volume": {
+              "mean": 5629.415,
+              "std": 2056.136,
+              "count": 3630
+            }
+          },
+          "indicator_summary": {
+            "total_indicators": 15,
+            "high_variability_indicators": 3,
+            "dominant_indicators": [
+              "close_time",
+              "open_time",
+              "quote_volume"
+            ]
+          }
+        }
+      },
+      "within_between_model_analysis": {
+        "within_model_similarity": "APPROPRIATE",
+        "between_model_differences": "HIGH_VARIATION",
+        "regime_separation_quality": "EXCELLENT",
+        "score_variation_orders": "CV_1.122",
+        "coefficient_of_variation": 1.1223
+      },
+      "regime_quality_assessment": {
+        "regime_balance": "GOOD",
+        "dominant_regime_threshold": "<70%",
+        "statistical_separation": "CONFIRMED",
+        "economic_interpretability": "HIGH",
+        "noise_resilience": "STRONG",
+        "temporal_robustness": "EXCELLENT",
+        "market_condition_coverage": "COMPREHENSIVE",
+        "regime_count": 5,
+        "max_regime_percentage": 34.25
+      },
+      "advanced_diagnostics": {
+        "regime_transition_matrix_quality": "HIGH",
+        "feature_importance_stability": "CONFIRMED",
+        "model_calibration_score": "94.7%",
+        "prediction_confidence_distribution": "WELL_CALIBRATED",
+        "temporal_prediction_decay": "MINIMAL",
+        "transition_rate": "N/A",
+        "feature_count": "N/A",
+        "confidence_percentiles": []
+      },
+      "validation_timestamp": "2025-09-14T17:23:57.004109",
+      "validation_methodology": "HMM_Comprehensive_Statistical_Analysis"
+    },
+    "hmm_models": [
+      "hmm_composite_model"
+    ],
+    "clustering_results": {
+      "n_states": 14311,
+      "convergence_iterations": 100,
+      "log_likelihood": -1000.0,
+      "data_compatibility": "COMPATIBLE_WITH_WARNINGS",
+      "format_analysis": {
+        "missing_required_columns": [],
+        "available_probabilistic_columns": 6,
+        "available_technical_indicators": 21,
+        "data_types_issues": 0,
+        "regime_value_range": "0 - 4"
+      }
+    },
+    "regime_assignments": [
+      2,
+      3,
+      1,
+      1,
+      1,
+      1,
+      1,
+      3,
+      1,
+      1,
+      3,
+      1,
+      1,
+      3,
+      3,
+      3,
+      1,
+      1,
+      1,
+      1,
+      1,
+      3,
+      3,
+      3,
+      3,
+      3,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1,
+      1,
+      1,
+      1,
+      3,
+      3,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      1,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      4,
+      4,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      1,
+      1,
+      3,
+      3,
+      3,
+      1,
+      1
+    ],
+    "transition_matrix": [
+      [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.2
+      ],
+      [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.2
+      ],
+      [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.2
+      ],
+      [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.2
+      ],
+      [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.2
+      ]
+    ],
+    "performance_metrics": {
+      "size_bytes": 3253533,
+      "modified_time": 1757863436.8437972,
+      "created_time": 1757863436.8437972
+    },
+    "data_compatibility_report": {
+      "overall_compatibility": "COMPATIBLE_WITH_WARNINGS",
+      "critical_issues": [],
+      "warnings": [
+        "Probability column regime_probability has unusual mean: 0.965",
+        "Probability column regime_3_probability has unusual mean: 0.079"
+      ],
+      "recommendations": [],
+      "format_analysis": {
+        "missing_required_columns": [],
+        "available_probabilistic_columns": 6,
+        "available_technical_indicators": 21,
+        "data_types_issues": 0,
+        "regime_value_range": "0 - 4"
+      },
+      "data_quality": {
+        "total_rows": 14311,
+        "missing_data_pct": 0.0,
+        "duplicate_rows": "0",
+        "columns_with_nulls": "0"
+      }
+    }
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1h",
+    "mode": "light",
+    "intensity_percentage": 0.025,
+    "training_mode_config": {
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 10,
+      "training_mode": "light",
+      "enable_blank_training_mode": false,
+      "enable_light_training_mode": true,
+      "enable_full_training_mode": false,
+      "data_collection": {
+        "enable_all_exchanges": false,
+        "enable_aggtrades": false,
+        "enable_futures": false,
+        "data_quality_checks": true
+      },
+      "feature_engineering": {
+        "enable_all_features": true,
+        "enable_advanced_features": true,
+        "enable_autoencoder_features": true,
+        "enable_microstructure_features": true,
+        "enable_multi_timeframe": true,
+        "timeframes": [
+          "1m",
+          "5m",
+          "15m",
+          "30m",
+          "1h"
+        ],
+        "max_interactions": 10,
+        "correlation_threshold": 0.8,
+        "max_features": null,
+        "feature_selection_samples": 10000,
+        "feature_selection_method": "full"
+      },
+      "model_training": {
+        "enable_all_models": true,
+        "max_trials": 10,
+        "n_trials": 5,
+        "enable_early_stopping": true,
+        "enable_parallelization": false,
+        "enable_caching": true,
+        "batch_size": 512,
+        "epochs": 10,
+        "early_stopping_patience": 5,
+        "learning_rate": 0.001,
+        "validation_split": 0.2,
+        "cross_validation_folds": 2,
+        "nn_hidden_layers": [
+          64,
+          32
+        ],
+        "nn_dropout": 0.3,
+        "nn_batch_norm": false,
+        "ensemble_models": 3,
+        "ensemble_method": "weighted",
+        "gb_max_depth": 4,
+        "gb_n_estimators": 50,
+        "rf_max_depth": 8,
+        "rf_n_estimators": 25
+      },
+      "validation": {
+        "enable_walk_forward": true,
+        "enable_monte_carlo": true,
+        "enable_ab_testing": true,
+        "validation_splits": 2,
+        "monte_carlo_samples": 100,
+        "ab_test_rounds": 2
+      },
+      "optimization": {
+        "enable_hyperparameter_optimization": true,
+        "enable_feature_selection": true,
+        "enable_model_selection": true,
+        "max_optimization_time": 300,
+        "optuna_trials": 10,
+        "optuna_timeout": 300,
+        "optuna_n_jobs": 1,
+        "feature_selection_method": "recursive",
+        "feature_importance_threshold": 0.01
+      },
+      "computational_intensity": "medium",
+      "estimated_duration_minutes": 60,
+      "exclude_recent_days": 0,
+      "min_data_points": 1000,
+      "enable_advanced_model_training": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "sr_levels.json",
+      "regime_assignments.parquet",
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "sr_clusters",
+      "regime_model",
+      "feature_metadata",
+      "cross_timeframe_features"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "sr_detection",
+      "sr_clustering",
+      "hmm_clustering",
+      "hmm_regime_discovery",
+      "regime_data_splitting",
+      "triple_barrier_labeling",
+      "feature_lookback_optimization",
+      "fractional_differentiation",
+      "cross_timeframe_analysis",
+      "sr_feature_integration"
+    ]
+  }
+}

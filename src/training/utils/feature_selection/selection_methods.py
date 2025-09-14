@@ -17,11 +17,11 @@ import warnings
 
 # Import utilities
 try:
-    from ...utils.math_validation import (
+    from src.utils.math_validation import (
         safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
         safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile
     )
-    from ...utils.common_operations import create_fallback_logger, safe_dataframe_operation
+    from src.utils.common_operations import create_fallback_logger, safe_dataframe_operation
 except ImportError as e:
     tprint(f"⚠️ Some utilities not available: {e}")
     # Create fallback implementations
@@ -36,9 +36,242 @@ except ImportError as e:
     def safe_std(x): return np.std(x) if len(x) > 1 else 0
     def safe_percentile(x, p): return np.percentile(x, p) if len(x) > 0 else 0
 
+
+def analyze_infinity_values(X: Union[np.ndarray, pd.DataFrame], method_name: str = "unknown", feature_names: List[str] = None) -> Dict[str, Any]:
+    """
+    Comprehensive analysis of infinity values in the dataset.
+
+    Args:
+        X: Input feature matrix (numpy array or pandas DataFrame)
+        method_name: Name of the method for context
+        feature_names: List of feature names
+
+    Returns:
+        Dictionary with detailed infinity value analysis
+    """
+    # Convert pandas DataFrame to numpy array if needed
+    if isinstance(X, pd.DataFrame):
+        X_array = X.values
+    else:
+        X_array = X
+
+    analysis = {
+        'total_elements': X_array.size,
+        'data_shape': X_array.shape,
+        'method_name': method_name,
+        'infinity_count': 0,
+        'positive_infinity_count': 0,
+        'negative_infinity_count': 0,
+        'features_with_infinity': [],
+        'rows_with_infinity': 0,
+        'infinity_percentage': 0.0,
+        'feature_analysis': []
+    }
+
+    if X_array.size == 0:
+        return analysis
+
+    # Basic infinity detection
+    inf_mask = np.isinf(X_array)
+    pos_inf_mask = np.isposinf(X_array)
+    neg_inf_mask = np.isneginf(X_array)
+
+    analysis['infinity_count'] = int(np.sum(inf_mask))
+    analysis['positive_infinity_count'] = int(np.sum(pos_inf_mask))
+    analysis['negative_infinity_count'] = int(np.sum(neg_inf_mask))
+    analysis['infinity_percentage'] = (analysis['infinity_count'] / X_array.size) * 100
+
+    if analysis['infinity_count'] > 0:
+        # Row analysis
+        inf_rows = np.sum(inf_mask, axis=1)
+        analysis['rows_with_infinity'] = int(np.sum(inf_rows > 0))
+        if analysis['rows_with_infinity'] > 0:
+            analysis['avg_infinity_per_affected_row'] = float(np.mean(inf_rows[inf_rows > 0]))
+
+        # Feature analysis
+        pos_inf_count = np.sum(pos_inf_mask, axis=0)
+        neg_inf_count = np.sum(neg_inf_mask, axis=0)
+
+        for i in range(X_array.shape[1]):
+            total_inf = pos_inf_count[i] + neg_inf_count[i]
+            if total_inf > 0:
+                feature_name = feature_names[i] if feature_names and i < len(feature_names) else f"feature_{i}"
+
+                # Get row indices for this feature
+                feature_inf_mask = inf_mask[:, i]
+                inf_row_indices = np.where(feature_inf_mask)[0]
+
+                feature_info = {
+                    'feature_name': feature_name,
+                    'feature_index': i,
+                    'total_infinity': int(total_inf),
+                    'positive_infinity': int(pos_inf_count[i]),
+                    'negative_infinity': int(neg_inf_count[i]),
+                    'infinity_percentage': (total_inf / X_array.shape[0]) * 100,
+                    'infinity_row_indices': inf_row_indices.tolist()[:10],  # First 10 indices
+                    'additional_indices_count': max(0, len(inf_row_indices) - 10)
+                }
+
+                # Statistics for finite values in this feature
+                finite_mask = np.isfinite(X_array[:, i])
+                if np.any(finite_mask):
+                    finite_values = X_array[finite_mask, i]
+                    feature_info['finite_stats'] = {
+                        'count': int(np.sum(finite_mask)),
+                        'mean': float(np.mean(finite_values)),
+                        'std': float(np.std(finite_values)),
+                        'min': float(np.min(finite_values)),
+                        'max': float(np.max(finite_values)),
+                        'median': float(np.median(finite_values)),
+                        'q25': float(np.percentile(finite_values, 25)),
+                        'q75': float(np.percentile(finite_values, 75))
+                    }
+
+                analysis['feature_analysis'].append(feature_info)
+                analysis['features_with_infinity'].append(feature_name)
+
+        # Sort features by infinity count
+        analysis['feature_analysis'].sort(key=lambda x: x['total_infinity'], reverse=True)
+
+    return analysis
+
+
+def preprocess_features_for_ml(X: Union[np.ndarray, pd.DataFrame], method_name: str = "unknown", feature_names: List[str] = None) -> np.ndarray:
+    """
+    Preprocess features to handle infinity and large values that cause sklearn issues.
+
+    Args:
+        X: Input feature matrix (numpy array or pandas DataFrame)
+        method_name: Name of the method using this preprocessing (for logging)
+
+    Returns:
+        Preprocessed feature matrix with infinity values handled
+    """
+    # Convert pandas DataFrame to numpy array if needed
+    if isinstance(X, pd.DataFrame):
+        X = X.values
+
+    if X is None or X.size == 0:
+        return X
+
+    X_processed = X.copy()
+
+    # Check for infinity values
+    inf_mask = np.isinf(X_processed)
+    inf_count = np.sum(inf_mask)
+
+    if inf_count > 0:
+        logger.warning(f"⚠️ Found {inf_count} infinity values in data for {method_name}, replacing with finite values")
+        logger.info(f"📊 Data shape: {X.shape}, Total elements: {X.size}, Infinity percentage: {(inf_count/X.size)*100:.4f}%")
+
+        # Use comprehensive analysis function
+        analysis = analyze_infinity_values(X_processed, method_name, feature_names)
+
+        # Log overall statistics
+        logger.info(f"📊 Overall infinity distribution:")
+        logger.info(f"  Rows with infinity: {analysis['rows_with_infinity']}/{X_processed.shape[0]} ({(analysis['rows_with_infinity']/X_processed.shape[0])*100:.2f}%)")
+        if 'avg_infinity_per_affected_row' in analysis:
+            logger.info(f"  Average infinity values per affected row: {analysis['avg_infinity_per_affected_row']:.2f}")
+
+        # Log detailed feature analysis
+        if analysis['feature_analysis']:
+            logger.warning(f"⚠️ Features with infinity values for {method_name} (showing all {len(analysis['feature_analysis'])} features):")
+            for feature_info in analysis['feature_analysis']:
+                logger.warning(f"  Feature {feature_info['feature_name']} (idx {feature_info['feature_index']}): {feature_info['total_infinity']} infinity values ({feature_info['positive_infinity']} positive, {feature_info['negative_infinity']} negative)")
+
+                # Show row indices
+                indices = feature_info['infinity_row_indices']
+                if feature_info['additional_indices_count'] > 0:
+                    logger.warning(f"    Row indices: {indices} (and {feature_info['additional_indices_count']} more)")
+                else:
+                    logger.warning(f"    Row indices: {indices}")
+
+                # Enhanced logging with feature context
+                logger.info(f"    📊 Feature {feature_info['feature_name']} infinity analysis:")
+                logger.info(f"      Infinity percentage: {feature_info['infinity_percentage']:.4f}%")
+
+                # Show context around infinity values for first few samples
+                feature_idx = feature_info['feature_index']
+                for idx, row_idx in enumerate(indices[:3]):  # Show first 3 samples
+                    if row_idx > 0 and row_idx < len(X_processed) - 1:
+                        prev_val = X_processed[row_idx - 1, feature_idx]
+                        curr_val = X_processed[row_idx, feature_idx]
+                        next_val = X_processed[row_idx + 1, feature_idx]
+
+                        logger.info(f"      Row {row_idx}: prev={prev_val:.6f}, current={curr_val}, next={next_val:.6f}")
+
+                # Show feature statistics for finite values
+                if 'finite_stats' in feature_info:
+                    stats = feature_info['finite_stats']
+                    logger.info(f"      Feature stats (finite values only):")
+                    logger.info(f"        Count: {stats['count']}, Mean: {stats['mean']:.6f}, Std: {stats['std']:.6f}")
+                    logger.info(f"        Min: {stats['min']:.6f}, Max: {stats['max']:.6f}")
+                    logger.info(f"        Median: {stats['median']:.6f}, Q25: {stats['q25']:.6f}, Q75: {stats['q75']:.6f}")
+
+        # Replace positive infinity with a large finite value
+        pos_inf_mask = np.isposinf(X_processed)
+        if np.any(pos_inf_mask):
+            # Use a large finite value based on the data range
+            finite_mask = np.isfinite(X_processed)
+            if np.any(finite_mask):
+                max_finite = np.max(X_processed[finite_mask])
+                replacement_pos_inf = max(max_finite * 10, 1e10)  # 10x max or large default
+                logger.info(f"  Replacing {np.sum(pos_inf_mask)} positive infinity values with: {replacement_pos_inf:.2e} (10x max_finite={max_finite:.2e})")
+            else:
+                replacement_pos_inf = 1e10
+                logger.info(f"  Replacing {np.sum(pos_inf_mask)} positive infinity values with default: {replacement_pos_inf:.2e}")
+            X_processed[pos_inf_mask] = replacement_pos_inf
+
+        # Replace negative infinity with a large negative finite value
+        neg_inf_mask = np.isneginf(X_processed)
+        if np.any(neg_inf_mask):
+            finite_mask = np.isfinite(X_processed)
+            if np.any(finite_mask):
+                min_finite = np.min(X_processed[finite_mask])
+                replacement_neg_inf = min(min_finite * 10, -1e10)  # 10x min or large default
+                logger.info(f"  Replacing {np.sum(neg_inf_mask)} negative infinity values with: {replacement_neg_inf:.2e} (10x min_finite={min_finite:.2e})")
+            else:
+                replacement_neg_inf = -1e10
+                logger.info(f"  Replacing {np.sum(neg_inf_mask)} negative infinity values with default: {replacement_neg_inf:.2e}")
+            X_processed[neg_inf_mask] = replacement_neg_inf
+
+        # Log final state after replacement
+        logger.info(f"✅ Infinity replacement completed for {method_name}")
+        remaining_inf = np.sum(np.isinf(X_processed))
+        if remaining_inf == 0:
+            logger.info(f"✅ All infinity values successfully replaced")
+        else:
+            logger.warning(f"⚠️ {remaining_inf} infinity values still remain after replacement")
+
+    # Check for values too large for float32/float64
+    # Clip extremely large values that might cause overflow
+    max_float64 = 1e308
+    min_float64 = -1e308
+
+    too_large_mask = X_processed > max_float64
+    too_small_mask = X_processed < min_float64
+
+    if np.any(too_large_mask):
+        large_count = np.sum(too_large_mask)
+        logger.warning(f"⚠️ Found {large_count} values too large for float64 in {method_name}, clipping to max float64")
+        if large_count > 0:
+            largest_val = np.max(X_processed[too_large_mask])
+            logger.info(f"  Largest value found: {largest_val:.2e}, will be clipped to: {max_float64:.2e}")
+        X_processed[too_large_mask] = max_float64
+
+    if np.any(too_small_mask):
+        small_count = np.sum(too_small_mask)
+        logger.warning(f"⚠️ Found {small_count} values too small for float64 in {method_name}, clipping to min float64")
+        if small_count > 0:
+            smallest_val = np.min(X_processed[too_small_mask])
+            logger.info(f"  Smallest value found: {smallest_val:.2e}, will be clipped to: {min_float64:.2e}")
+        X_processed[too_small_mask] = min_float64
+
+    return X_processed
+
 # Enhanced dependency management
 try:
-    from ...utils.logger import get_logger
+    from src.utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.SelectionMethods")
     tprint("✅ Custom logger available for FeatureSelection.SelectionMethods")
 except Exception as e:
@@ -77,22 +310,25 @@ class MRMRSelector:
         _LOGGER.info(f"⚙️ Relevance method: {self.relevance_method}")
         _LOGGER.info(f"⚙️ Redundancy method: {self.redundancy_method}")
 
-    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str], 
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int) -> Dict[str, Any]:
         """Perform mRMR feature selection."""
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting mRMR feature selection...")
         _LOGGER.info(f"📊 Parameters - Features to select: {n_features}, Data shape: {X.shape}")
-        
+
         try:
             if not SKLEARN_AVAILABLE:
                 raise ImportError("Scikit-learn is required for mRMR selection")
-            
+
+            # Preprocess data once to handle infinity values
+            X = preprocess_features_for_ml(X, "mRMR selection", feature_names)
+
             n_samples, n_total_features = X.shape
             n_features = min(n_features, n_total_features)
-            
+
             # Calculate relevance scores
-            relevance_scores = self._calculate_relevance_scores(X, y)
+            relevance_scores = self._calculate_relevance_scores(X, y, feature_names)
             
             # Initialize selected features
             selected_features = []
@@ -114,10 +350,14 @@ class MRMRSelector:
                     # Calculate mRMR score
                     relevance = relevance_scores[feature_idx]
                     redundancy = self._calculate_redundancy(feature_idx, selected_features, X)
-                    
+
                     # mRMR score: relevance - redundancy
                     mrmr_score = relevance - redundancy
-                    
+
+                    # Debug logging for first few iterations (only for very small feature sets)
+                    if i < 2 and len(remaining_features) <= 5:
+                        _LOGGER.debug(f"📊 Feature {feature_idx}: relevance={relevance:.6f}, redundancy={redundancy:.6f}, mRMR={mrmr_score:.6f}")
+
                     if mrmr_score > best_score:
                         best_score = mrmr_score
                         best_feature = feature_idx
@@ -125,12 +365,22 @@ class MRMRSelector:
                 if best_feature is not None:
                     selected_features.append(best_feature)
                     remaining_features.remove(best_feature)
-                    
-                    _LOGGER.info(f"🎯 Selected feature {i+1}/{n_features}: {feature_names[best_feature]} "
-                               f"(mRMR score: {best_score:.4f})")
-            
+
             # Prepare results
             selected_feature_names = [feature_names[i] for i in selected_features]
+
+            # Single recap print for all selected features with mRMR and relevance scores
+            if selected_features:
+                recap_lines = ["📊 Feature Selection Recap:"]
+                for idx, feature_idx in enumerate(selected_features):
+                    feature_name = feature_names[feature_idx]
+                    relevance = relevance_scores[feature_idx]
+                    # Calculate mRMR score for this feature (relevance - redundancy)
+                    redundancy = self._calculate_redundancy(feature_idx, selected_features[:idx], X)
+                    mrmr_score = relevance - redundancy
+                    recap_lines.append(f"  {idx+1:2d}. {feature_name} (mRMR: {mrmr_score:.4f}, relevance: {relevance:.4f})")
+                _LOGGER.info("ℹ️ 🎯 " + "\nℹ️ 🎯 ".join(recap_lines))
+
             selected_scores = {feature_names[i]: relevance_scores[i] for i in selected_features}
             
             execution_time = time.time() - start_time
@@ -165,17 +415,35 @@ class MRMRSelector:
                 'success': False
             }
 
-    def _calculate_relevance_scores(self, X: np.ndarray, y: np.ndarray) -> Dict[int, float]:
+    def _calculate_relevance_scores(self, X: np.ndarray, y: np.ndarray, feature_names: List[str] = None) -> Dict[int, float]:
         """Calculate relevance scores for all features."""
         relevance_scores = {}
-        
+
+        # Check if shapes match
+        if len(X) != len(y):
+            _LOGGER.error(f"❌ Shape mismatch: X has {len(X)} samples, y has {len(y)} samples")
+            return {i: 0.0 for i in range(X.shape[1])}
+
+        # X is already preprocessed at the method level
         for i in range(X.shape[1]):
             if self.relevance_method == 'mutual_info':
                 if SKLEARN_AVAILABLE:
                     try:
-                        mi = mutual_info_regression(X[:, i].reshape(-1, 1), y)[0]
+                        # Ensure proper shapes for sklearn
+                        x_feature = X[:, i].reshape(-1, 1)
+                        y_target = y.reshape(-1)
+
+                        mi = mutual_info_regression(x_feature, y_target)[0]
                         relevance_scores[i] = mi
-                    except Exception:
+
+                        # Debug: Log first few features only if MI is very low
+                        if i < 3 and mi < 0.001:
+                            feature_name = feature_names[i] if feature_names and i < len(feature_names) else f"feature_{i}"
+                            x_std = np.std(X[:, i])
+                            _LOGGER.debug(f"📊 Feature {feature_name}: MI={mi:.6f}, X_std={x_std:.6f}")
+                    except Exception as e:
+                        feature_name = feature_names[i] if feature_names and i < len(feature_names) else f"feature_{i}"
+                        _LOGGER.warning(f"⚠️ MI calculation failed for feature {feature_name}: {e}")
                         relevance_scores[i] = 0.0
                 else:
                     relevance_scores[i] = 0.0
@@ -183,14 +451,15 @@ class MRMRSelector:
                 relevance_scores[i] = abs(safe_correlation(X[:, i], y))
             else:
                 relevance_scores[i] = 0.0
-        
+
         return relevance_scores
 
     def _calculate_redundancy(self, feature_idx: int, selected_features: List[int], X: np.ndarray) -> float:
         """Calculate redundancy of a feature with already selected features."""
         if not selected_features:
             return 0.0
-        
+
+        # X is already preprocessed at the method level
         redundancies = []
         for selected_idx in selected_features:
             if self.redundancy_method == 'correlation':
@@ -205,7 +474,7 @@ class MRMRSelector:
                         redundancies.append(0.0)
                 else:
                     redundancies.append(0.0)
-        
+
         return safe_mean(redundancies) if redundancies else 0.0
 
 
@@ -216,8 +485,8 @@ class LassoStabilitySelector:
         """Initialize LASSO stability selector."""
         self.config = config or {}
         self.logger = logger.getChild('LassoStabilitySelector')
-        
-        self.n_bootstraps = self.config.get('n_bootstraps', 100)
+
+        self.n_bootstraps = self._get_bootstrap_count()
         self.bootstrap_fraction = self.config.get('bootstrap_fraction', 0.8)
         self.stability_threshold = self.config.get('stability_threshold', 0.6)
         self.alpha_range = self.config.get('alpha_range', (0.001, 1.0))
@@ -229,16 +498,36 @@ class LassoStabilitySelector:
         _LOGGER.info(f"⚙️ Bootstrap fraction: {self.bootstrap_fraction}")
         _LOGGER.info(f"⚙️ Stability threshold: {self.stability_threshold}")
 
+    def _get_bootstrap_count(self) -> int:
+        """Get bootstrap count based on execution mode."""
+        # Get mode from config, default to 'blank' for backward compatibility
+        mode = self.config.get('mode', 'blank').lower()
+
+        # Define bootstrap counts per mode
+        bootstrap_counts = {
+            'full': 100,   # FULL mode: 100 bootstrap samples
+            'blank': 5,    # BLANK mode: 5 bootstrap samples
+            'light': 2     # LIGHT mode: 2 bootstrap samples
+        }
+
+        bootstrap_count = bootstrap_counts.get(mode, 5)  # Default to 5 if unknown mode
+
+        _LOGGER.info(f"📊 Bootstrap count for mode '{mode}': {bootstrap_count}")
+        return bootstrap_count
+
     def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
         """Perform LASSO stability selection."""
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting LASSO stability selection...")
         _LOGGER.info(f"📊 Parameters - Bootstrap samples: {self.n_bootstraps}, Data shape: {X.shape}")
-        
+
         try:
             if not SKLEARN_AVAILABLE:
                 raise ImportError("Scikit-learn is required for LASSO stability selection")
-            
+
+            # Preprocess data to handle infinity values
+            X = preprocess_features_for_ml(X, "LASSO stability selection", feature_names)
+
             n_samples, n_features = X.shape
             bootstrap_size = int(n_samples * self.bootstrap_fraction)
             
@@ -516,17 +805,20 @@ class FeatureImportanceRanker:
         _LOGGER.info(f"⚙️ N estimators: {self.n_estimators}")
         _LOGGER.info(f"⚙️ Max depth: {self.max_depth}")
 
-    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str], 
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int) -> Dict[str, Any]:
         """Perform feature importance ranking."""
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting feature importance ranking...")
         _LOGGER.info(f"📊 Parameters - Features to select: {n_features}, Data shape: {X.shape}")
-        
+
         try:
             if not SKLEARN_AVAILABLE:
                 raise ImportError("Scikit-learn is required for feature importance ranking")
-            
+
+            # Preprocess data to handle infinity values
+            X = preprocess_features_for_ml(X, "feature importance ranking", feature_names)
+
             # Auto-detect if classification or regression
             if len(np.unique(y)) <= 10:  # Classification
                 model = RandomForestClassifier(

@@ -33,10 +33,18 @@ class TrainingUtils:
     def __init__(self, config: Any):
         """
         Initialize training utilities with hardware optimization.
-        
+
         Args:
-            config: Training configuration object
+            config: Training configuration object or dict
         """
+        # Handle case where config is a dict instead of proper config object
+        if isinstance(config, dict):
+            # Convert dict to BaseTrainingConfig
+            from .config.base_training_config import BaseTrainingConfig
+            default_config = BaseTrainingConfig()
+            config_dict = {**default_config.__dict__, **config}
+            config = BaseTrainingConfig(**config_dict)
+
         self.config = config
         self.model_factory = EnhancedModelFactory()
         self.overfitting_prevention = OverfittingPrevention(
@@ -75,8 +83,11 @@ class TrainingUtils:
         if model_params is None:
             model_params = {}
         
+        # Map string model type to ModelType enum
+        model_type_enum = self._map_string_to_model_type(model_type)
+
         model_config = ModelConfig(
-            model_type=ModelType[model_type.upper()],
+            model_type=model_type_enum,
             model_name=model_name,
             model_params=model_params
         )
@@ -88,7 +99,83 @@ class TrainingUtils:
             model = self.overfitting_prevention.apply_regularization(model, model_type)
         
         return model
-    
+
+    def _map_string_to_model_type(self, model_type_str: str) -> 'ModelType':
+        """
+        Map string model type to ModelType enum.
+
+        Args:
+            model_type_str: String representation of model type
+
+        Returns:
+            ModelType enum value
+
+        Raises:
+            ValueError: If model type string cannot be mapped
+        """
+        from src.utils.ml_common.models.model_factory import ModelType
+
+        # Create mapping from string to enum value
+        string_to_enum_mapping = {}
+
+        # Build the mapping by checking the .value attribute of each enum
+        for enum_member in ModelType:
+            string_to_enum_mapping[enum_member.value] = enum_member
+
+        # Handle common variations and aliases
+        aliases = {
+            'XGBClassifier': 'XGBClassifier',
+            'XGBRegressor': 'XGBRegressor',
+            'LGBMClassifier': 'LGBMClassifier',
+            'LGBMRegressor': 'LGBMRegressor',
+            'CatBoostClassifier': 'CatBoostClassifier',
+            'CatBoostRegressor': 'CatBoostRegressor',
+            'RandomForestClassifier': 'RandomForestClassifier',
+            'RandomForestRegressor': 'RandomForestRegressor',
+            'ExtraTreesClassifier': 'ExtraTreesClassifier',
+            'ExtraTreesRegressor': 'ExtraTreesRegressor',
+            'HistGradientBoostingClassifier': 'HistGradientBoostingClassifier',
+            'HistGradientBoostingRegressor': 'HistGradientBoostingRegressor',
+            'RidgeClassifier': 'RidgeClassifier',
+            'Ridge': 'Ridge',
+            'LogisticRegression': 'LogisticRegression',
+            'LinearRegression': 'LinearRegression',
+            'TabNetClassifier': 'TabNetClassifier',
+            'TabNetRegressor': 'TabNetRegressor',
+            'TCN': 'TCN',
+            'LSTM': 'LSTM',
+            'WaveNet': 'WaveNet',
+            'NODE': 'NODE',
+            'NODEClassifier': 'NODEClassifier',
+            'VotingClassifier': 'VotingClassifier',
+            'VotingRegressor': 'VotingRegressor',
+            'StackingClassifier': 'StackingClassifier',
+            'StackingRegressor': 'StackingRegressor',
+            'BaggingClassifier': 'BaggingClassifier',
+            'BaggingRegressor': 'BaggingRegressor',
+            'AdaBoostClassifier': 'AdaBoostClassifier',
+            'AdaBoostRegressor': 'AdaBoostRegressor'
+        }
+
+        # Update mapping with aliases
+        for alias, target in aliases.items():
+            if target in string_to_enum_mapping:
+                string_to_enum_mapping[alias] = string_to_enum_mapping[target]
+
+        # Try direct mapping first
+        if model_type_str in string_to_enum_mapping:
+            return string_to_enum_mapping[model_type_str]
+
+        # Try case-insensitive matching
+        model_type_upper = model_type_str.upper()
+        for enum_value, enum_member in string_to_enum_mapping.items():
+            if enum_value.upper() == model_type_upper:
+                return enum_member
+
+        # If no match found, raise error with helpful message
+        available_types = list(string_to_enum_mapping.keys())[:10]  # Show first 10
+        raise ValueError(f"Unknown model type: '{model_type_str}'. Available types: {available_types}...")
+
     def optimize_model_with_hpo(
         self, 
         model_type: str, 
@@ -378,7 +465,7 @@ class TrainingUtils:
                 'recurrent_dropout': 0.1,
                 'l2_regularization': 0.01
             },
-            'CATBOOSTREGRESSOR': {
+            'CATBOOST': {
                 'n_estimators': 1000,
                 'learning_rate': 0.05,
                 'depth': 6,
@@ -386,7 +473,7 @@ class TrainingUtils:
                 'subsample': 0.8,
                 'colsample_bylevel': 0.8
             },
-            'LGBMREGRESSOR': {
+            'LIGHTGBM': {
                 'n_estimators': 1000,
                 'learning_rate': 0.05,
                 'max_depth': 6,
@@ -395,7 +482,7 @@ class TrainingUtils:
                 'subsample': 0.8,
                 'colsample_bytree': 0.8
             },
-            'RANDOMFORESTREGRESSOR': {
+            'RANDOM_FOREST': {
                 'n_estimators': 500,
                 'max_depth': 10,
                 'min_samples_split': 5,

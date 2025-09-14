@@ -199,8 +199,8 @@ class FeatureEngineeringOrchestrator:
         """Calculate multi-timeframe features."""
         try:
             # Use existing feature engineering from src.feature_engineering
-from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
-            advanced_fe = EnhancedFeatureEngineeringStep(self.config)
+            from src.feature_engineering.step06_enhanced_feature_engineering import EnhancedFeatureEngineering
+            advanced_fe = EnhancedFeatureEngineering(self.config)
             await advanced_fe.initialize()
             multi_timeframe_features = await advanced_fe._engineer_multi_timeframe_features(price_data, volume_data, order_flow_data)
 
@@ -345,11 +345,8 @@ from src.feature_engineering.step06_enhanced_feature_engineering import Enhanced
     def _calculate_ml_enhanced_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate ML-enhanced features."""
         try:
-            df['price_momentum_1'] = df['close'].pct_change(1)
             df['price_momentum_5'] = df['close'].pct_change(5)
-            df['price_momentum_10'] = df['close'].pct_change(10)
             if 'volume' in df.columns:
-                df['volume_momentum_1'] = df['volume'].pct_change(1)
                 df['volume_momentum_5'] = df['volume'].pct_change(5)
                 df['volume_ratio'] = df['volume'] / df['volume'].rolling(window = 20).mean()
             df['resistance_20'] = df['high'].rolling(window = 20).max()

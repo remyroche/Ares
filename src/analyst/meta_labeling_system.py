@@ -310,9 +310,6 @@ class MetaLabelingSystem:
             features["price_momentum_5"] = (
                 data["close"].pct_change(5).iloc[-1] if len(data) >= 5 else 0
             )
-            features["price_momentum_10"] = (
-                data["close"].pct_change(10).iloc[-1] if len(data) >= 10 else 0
-            )
             features["price_acceleration"] = (
                 data["close"].pct_change(5).diff().iloc[-1] if len(data) >= 5 else 0
             )
@@ -420,7 +417,7 @@ class MetaLabelingSystem:
         """Detect STRONG_TREND_CONTINUATION pattern."""
         try:
             # Strong trend continuation: healthy pullback within established trend
-            trend_strength = features.get("price_momentum_10", 0)
+            trend_strength = features.get("price_momentum_5", 0)
             rsi = features.get("rsi", 50)
             bb_position = features.get("bb_position", 0.5)
 
@@ -494,7 +491,7 @@ class MetaLabelingSystem:
             # Conditions for range mean reversion
             is_at_edge = bb_position < 0.2 or bb_position > 0.8
             is_low_volatility = volatility < self.volatility_threshold
-            is_sideways = abs(features.get("price_momentum_10", 0)) < 0.01
+            is_sideways = abs(features.get("price_momentum_5", 0)) < 0.01
 
             range_mean_reversion = is_at_edge and is_low_volatility and is_sideways
 
@@ -649,7 +646,7 @@ class MetaLabelingSystem:
             patterns["MOMENTUM_IGNITION"] = 1 if is_momentum_ignition else 0
 
             # Gradual momentum fade: declining momentum
-            momentum_10 = features.get("price_momentum_10", 0)
+            momentum_10 = features.get("price_momentum_5", 0)
             is_fade = (
                 abs(momentum) < abs(momentum_10)
                 and abs(momentum) < self.momentum_threshold

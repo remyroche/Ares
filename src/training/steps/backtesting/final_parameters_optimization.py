@@ -45,9 +45,9 @@ class FinalParametersOptimizer:
         # Parameter categories for optimization
         self.categories = [
             'confidence', 'intensity', 'position_sizing', 'leverage', 'tpsl',
-            'ensemble', 'sr', 'two_tier', 'technical_indicators', 
+            'ensemble', 'sr', 'two_tier', 'technical_indicators',
             'system_monitoring', 'training_optimization', 'regime_transitions',
-            'signal_aggregation'
+            'signal_aggregation', 'turnover_cost_penalty'
         ]
         
         # Default search spaces for each category
@@ -148,6 +148,13 @@ class FinalParametersOptimizer:
                 'regime_alignment_bonus': {'type': 'float', 'min': 0.1, 'max': 0.25},
                 'multi_signal_alignment_bonus': {'type': 'float', 'min': 0.05, 'max': 0.15},
                 'use_multiplicative': {'type': 'bool', 'value': True}
+            },
+            'turnover_cost_penalty': {
+                'turnover_penalty_weight': {'type': 'float', 'min': 0.1, 'max': 1.0},
+                'commission_rate': {'type': 'float', 'min': 0.0005, 'max': 0.002},
+                'slippage_rate': {'type': 'float', 'min': 0.0002, 'max': 0.001},
+                'max_turnover_rate': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'round_trip_multiplier': {'type': 'float', 'min': 1.5, 'max': 3.0}
             }
         }
     
@@ -299,22 +306,22 @@ class FinalParametersOptimizer:
             self.logger.error(f"Error in objective function for {category}: {e}")
             return -999.0
     
-    def _evaluate_configuration(self, category: str, params: Dict[str, Any], 
+    def _evaluate_configuration(self, category: str, params: Dict[str, Any],
                               calibration_results: Dict[str, Any]) -> float:
         """
         Evaluate a configuration by running a backtest or simulation.
-        
+
         Args:
             category: Parameter category being evaluated
             params: Parameters to evaluate
             calibration_results: Results from confidence calibration
-            
+
         Returns:
             Evaluation score (higher is better)
         """
         try:
             base_score = 0.0
-            
+
             if category == 'confidence':
                 base_score = self._evaluate_confidence_params(params, calibration_results)
             elif category == 'position_sizing':
@@ -339,9 +346,16 @@ class FinalParametersOptimizer:
                 base_score = self._evaluate_regime_transitions_params(params, calibration_results)
             elif category == 'signal_aggregation':
                 base_score = self._evaluate_signal_aggregation_params(params, calibration_results)
-            
+            elif category == 'turnover_cost_penalty':
+                base_score = self._evaluate_turnover_cost_penalty_params(params, calibration_results)
+
+            # Apply turnover cost penalty to all categories
+            if base_score > 0.0:
+                turnover_penalty = self._calculate_turnover_penalty(params, calibration_results)
+                base_score -= turnover_penalty
+
             return base_score
-            
+
         except Exception as e:
             self.logger.error(f"Error evaluating configuration for {category}: {e}")
             return 0.0
@@ -693,8 +707,152 @@ class FinalParametersOptimizer:
             score += 0.1
         
         return score
-    
-    async def save_optimization_results(self, optimization_results: Dict[str, Any], 
+
+    def _evaluate_turnover_cost_penalty_params(self, params: Dict[str, Any],
+                                             calibration_results: Dict[str, Any]) -> float:
+        """Evaluate turnover cost penalty parameters."""
+        score = 0.0
+
+        if 'turnover_penalty_weight' in params:
+            weight = params['turnover_penalty_weight']
+            if 0.2 <= weight <= 0.8:
+                score += 0.3
+            elif 0.1 <= weight <= 1.0:
+                score += 0.2
+            else:
+                score += 0.1
+
+        if 'commission_rate' in params:
+            commission = params['commission_rate']
+            if 0.0008 <= commission <= 0.0015:
+                score += 0.2
+            else:
+                score += 0.1
+
+        if 'slippage_rate' in params:
+            slippage = params['slippage_rate']
+            if 0.0003 <= slippage <= 0.0008:
+                score += 0.2
+            else:
+                score += 0.1
+
+        if 'round_trip_multiplier' in params:
+            multiplier = params['round_trip_multiplier']
+            if 1.8 <= multiplier <= 2.5:
+                score += 0.2
+            else:
+                score += 0.1
+
+        return score
+
+    def _calculate_turnover_penalty(self, params: Dict[str, Any],
+                                  calibration_results: Dict[str, Any]) -> float:
+        """
+        Calculate turnover penalty for a given configuration.
+
+        The penalty is calculated as:
+        turnover_penalty = turnover_rate * transaction_cost * round_trip_multiplier
+
+        Where transaction_cost = commission_rate + slippage_rate
+
+        Args:
+            params: Current parameter configuration
+            calibration_results: Results from calibration/backtesting
+
+        Returns:
+            Turnover penalty to subtract from base score
+        """
+        try:
+            # Extract cost parameters from current params or use defaults
+            commission_rate = params.get('commission_rate', 0.001)
+            slippage_rate = params.get('slippage_rate', 0.0005)
+            round_trip_multiplier = params.get('round_trip_multiplier', 2.0)
+            turnover_penalty_weight = params.get('turnover_penalty_weight', 0.5)
+
+            # Calculate transaction cost per trade
+            transaction_cost = commission_rate + slippage_rate
+
+            # Estimate turnover rate from calibration results or use default
+            # In a real implementation, this would be calculated from actual backtesting results
+            estimated_turnover_rate = self._estimate_turnover_rate(params, calibration_results)
+
+            # Calculate round-trip cost
+            round_trip_cost = transaction_cost * round_trip_multiplier
+
+            # Calculate penalty
+            turnover_penalty = estimated_turnover_rate * round_trip_cost * turnover_penalty_weight
+
+            # Log the calculation for transparency
+            if turnover_penalty > 0.001:  # Only log significant penalties
+                self.logger.debug(f"⚠️ Turnover penalty: {turnover_penalty:.4f} "
+                                f"(rate: {estimated_turnover_rate:.3f}, cost: {round_trip_cost:.6f})")
+
+            return turnover_penalty
+
+        except Exception as e:
+            self.logger.warning(f"Error calculating turnover penalty: {e}")
+            return 0.001  # Small default penalty
+
+    def _estimate_turnover_rate(self, params: Dict[str, Any],
+                               calibration_results: Dict[str, Any]) -> float:
+        """
+        Estimate turnover rate based on parameters and calibration results.
+
+        Turnover rate represents how much of the portfolio changes per period.
+        Higher trading frequency = higher turnover = higher costs.
+
+        Args:
+            params: Current parameter configuration
+            calibration_results: Calibration/backtesting results
+
+        Returns:
+            Estimated turnover rate (0.0 to 1.0)
+        """
+        try:
+            # Base turnover rate depends on trading frequency
+            base_turnover = 0.15  # Default 15% portfolio turnover per period
+
+            # Adjust based on confidence thresholds (lower thresholds = more trades)
+            if 'base_entry_threshold' in params:
+                threshold = params['base_entry_threshold']
+                if threshold < 0.6:
+                    base_turnover *= 1.3  # More aggressive = more trades
+                elif threshold > 0.8:
+                    base_turnover *= 0.7  # More conservative = fewer trades
+
+            # Adjust based on position sizing (larger positions = potentially more turnover)
+            if 'base_position_size' in params:
+                position_size = params['base_position_size']
+                if position_size > 0.1:
+                    base_turnover *= 1.2
+                elif position_size < 0.03:
+                    base_turnover *= 0.8
+
+            # Adjust based on TP/SL ratios (wider ranges = fewer trades)
+            if all(key in params for key in ['tp_long', 'sl_long']):
+                tp = params['tp_long']
+                sl = params['sl_long']
+                if tp > sl * 2:
+                    base_turnover *= 0.8  # Wider profit targets = fewer trades
+                elif tp < sl * 1.2:
+                    base_turnover *= 1.2  # Narrow profit targets = more trades
+
+            # Extract from calibration results if available
+            if calibration_results and 'estimated_turnover' in calibration_results:
+                calibrated_turnover = calibration_results['estimated_turnover']
+                base_turnover = (base_turnover + calibrated_turnover) / 2  # Average with estimate
+
+            # Ensure reasonable bounds
+            max_turnover = params.get('max_turnover_rate', 0.5)
+            base_turnover = min(base_turnover, max_turnover)
+
+            return base_turnover
+
+        except Exception as e:
+            self.logger.warning(f"Error estimating turnover rate: {e}")
+            return 0.15  # Default turnover rate
+
+    async def save_optimization_results(self, optimization_results: Dict[str, Any],
                                       symbol: str, exchange: str, data_dir: str) -> None:
         """Save optimization results."""
         try:

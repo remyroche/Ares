@@ -610,11 +610,17 @@ class RegimeDataSplittingStep:
     def _create_regime_statistics(self, unified_data: Any, unique_clusters: List[Any]) -> dict[str, Any]:
         """Create regime statistics."""
         try:
-            stats = {'approach': 'unified_dataset_with_labels', 'total_regimes': len(unique_clusters), 'total_data_points': len(unified_data), 'regime_details': {}, 'overall_statistics': {'date_range': {'start': unified_data.index.min().isoformat(), 'end': unified_data.index.max().isoformat()}}}
+            # Convert numpy int64 timestamps to datetime for isoformat()
+            start_timestamp = pd.to_datetime(unified_data.index.min(), unit='ms')
+            end_timestamp = pd.to_datetime(unified_data.index.max(), unit='ms')
+            stats = {'approach': 'unified_dataset_with_labels', 'total_regimes': len(unique_clusters), 'total_data_points': len(unified_data), 'regime_details': {}, 'overall_statistics': {'date_range': {'start': start_timestamp.isoformat(), 'end': end_timestamp.isoformat()}}}
             for cluster_id in unique_clusters:
                 regime_data = unified_data[unified_data['composite_cluster_id'] == cluster_id]
                 if len(regime_data) > 0:
-                    regime_stats = {'data_points': len(regime_data), 'percentage': len(regime_data) / len(unified_data) * 100, 'date_range': {'start': regime_data.index.min().isoformat(), 'end': regime_data.index.max().isoformat()}}
+                    # Convert numpy int64 timestamps to datetime for isoformat()
+                    regime_start = pd.to_datetime(regime_data.index.min(), unit='ms')
+                    regime_end = pd.to_datetime(regime_data.index.max(), unit='ms')
+                    regime_stats = {'data_points': len(regime_data), 'percentage': len(regime_data) / len(unified_data) * 100, 'date_range': {'start': regime_start.isoformat(), 'end': regime_end.isoformat()}}
                     if 'close' in regime_data.columns:
                         regime_stats['price_stats'] = {'mean': float(regime_data['close'].mean()), 'std': float(regime_data['close'].std()), 'min': float(regime_data['close'].min()), 'max': float(regime_data['close'].max())}
                     stats['regime_details'][f'regime_{cluster_id}'] = regime_stats

@@ -18,7 +18,7 @@ import warnings
 
 # Enhanced dependency management
 try:
-    from ...utils.logger import get_logger
+    from src.utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.StabilityAnalysis")
     tprint("✅ Custom logger available for FeatureSelection.StabilityAnalysis")
 except Exception as e:
@@ -36,9 +36,9 @@ class StabilityAnalyzer:
         """Initialize stability analyzer."""
         self.config = config or {}
         self.logger = logger.getChild('StabilityAnalyzer')
-        
+
         # Bootstrap parameters
-        self.n_bootstraps = self.config.get('n_bootstraps', 100)
+        self.n_bootstraps = self._get_bootstrap_count()
         self.bootstrap_fraction = self.config.get('bootstrap_fraction', 0.8)
         self.stability_threshold = self.config.get('stability_threshold', 0.6)
         
@@ -53,6 +53,23 @@ class StabilityAnalyzer:
         _LOGGER.info(f"⚙️ Bootstrap samples: {self.n_bootstraps}")
         _LOGGER.info(f"⚙️ Bootstrap fraction: {self.bootstrap_fraction}")
         _LOGGER.info(f"⚙️ Stability threshold: {self.stability_threshold}")
+
+    def _get_bootstrap_count(self) -> int:
+        """Get bootstrap count based on execution mode."""
+        # Get mode from config, default to 'blank' for backward compatibility
+        mode = self.config.get('mode', 'blank').lower()
+
+        # Define bootstrap counts per mode
+        bootstrap_counts = {
+            'full': 100,   # FULL mode: 100 bootstrap samples
+            'blank': 5,    # BLANK mode: 5 bootstrap samples
+            'light': 2     # LIGHT mode: 2 bootstrap samples
+        }
+
+        bootstrap_count = bootstrap_counts.get(mode, 5)  # Default to 5 if unknown mode
+
+        _LOGGER.info(f"📊 Bootstrap count for mode '{mode}': {bootstrap_count}")
+        return bootstrap_count
 
     def analyze_bootstrap_stability(self, X: np.ndarray, y: np.ndarray, 
                                    feature_names: List[str], 

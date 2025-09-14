@@ -121,6 +121,27 @@ class HumanReadableFormatter(logging.Formatter):
             return super().formatTime(record, datefmt)
 
 # =============================================================================
+# SAFE STREAM HANDLER
+# =============================================================================
+
+class SafeStreamHandler(logging.StreamHandler):
+    """StreamHandler that gracefully handles broken pipes."""
+
+    def emit(self, record):
+        """Emit a record, handling broken pipe errors gracefully."""
+        try:
+            super().emit(record)
+        except (BrokenPipeError, OSError) as e:
+            # Handle broken pipe by silently suppressing the error
+            # This prevents crashes during module initialization when stdout is broken
+            if hasattr(e, 'errno') and e.errno == 32:  # Broken pipe
+                # Silently ignore broken pipe errors during logging
+                pass
+            else:
+                # Re-raise other OSError exceptions
+                raise
+
+# =============================================================================
 # UNIFIED LOGGER CLASS
 # =============================================================================
 
@@ -146,11 +167,11 @@ class UnifiedLogger:
         # Clear existing handlers
         root_logger.handlers.clear()
         
-        # Setup console handler
+        # Setup console handler with error handling for broken pipes
         if self.config.console_output:
-            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler = SafeStreamHandler(sys.stdout)
             console_handler.setLevel(self.config.log_level)
-            
+
             if self.config.json_format:
                 console_handler.setFormatter(JSONFormatter())
             elif self.config.include_emojis:
@@ -161,7 +182,7 @@ class UnifiedLogger:
                 console_handler.setFormatter(HumanReadableFormatter(
                     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
                 ))
-            
+
             root_logger.addHandler(console_handler)
             self.handlers['console'] = console_handler
         

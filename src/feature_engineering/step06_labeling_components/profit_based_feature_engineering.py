@@ -152,7 +152,7 @@ class ProfitBasedFeatureEngineering:
         if self.enable_m1_optimizations:
             try:
                 self.m1_memory_optimizer = get_m1_memory_optimizer()
-                self.matrix_ops = get_enhanced_matrix_operations()
+                self.matrix_ops = get_unified_matrix_operations()
                 self.memory_monitor = get_memory_manager()
                 self.logger.info("✅ M1 optimizations initialized for profit feature engineering")
             except Exception as e:

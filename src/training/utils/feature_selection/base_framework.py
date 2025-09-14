@@ -13,6 +13,14 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from datetime import datetime
 import logging
 from functools import partial
+
+# Define SHARED_CACHE_AVAILABLE early to avoid import issues
+SHARED_CACHE_AVAILABLE = False
+try:
+    from src.utils.ml_common.utils.shared_cache import SharedMLCache, shared_cache
+    SHARED_CACHE_AVAILABLE = True
+except ImportError:
+    SHARED_CACHE_AVAILABLE = False
 from concurrent.futures import ThreadPoolExecutor
 import warnings
 import time
@@ -20,24 +28,24 @@ import sys
 
 # Import utilities from the original location
 try:
-    from ...utils.math_validation import (
+    from src.utils.math_validation import (
         safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
         safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile
     )
-    from ...utils.common_operations import create_fallback_logger, safe_dataframe_operation
-    from ...utils.hardware.m1_gpu_utils import M1GPUManager
-    from ...utils.parallel_processing_optimizer import ParallelProcessor
-    from ...utils.ml_common.matrix_operations import (
-        m1_correlation_matrix, m1_matrix_multiply, m1_batch_process,
-        m1_parallel_operations, m1_optimize_memory, get_m1_performance_stats
+    from src.utils.common_operations import create_fallback_logger, safe_dataframe_operation
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.parallel_processing_optimizer import ParallelProcessor
+    from src.utils.ml_common.matrix_operations import (
+        safe_correlation_matrix, safe_matrix_multiply, get_unified_matrix_operations
     )
-    from ...utils.performance_utils import PerformanceMonitor, performance_timer, memory_monitor
-    from ...utils.caching import intelligent_caching
-    from ...utils.ml_common.memory_optimization import M1MemoryOptimizer, MemoryEfficientProcessor
-    from ...utils.ml_common.shared_cache import MLSharedCache, cache_ml_artifact
-    from ...utils.ml_common.validation_utils import validate_data_quality, validate_feature_matrix
-    from ...utils.ml_common.stability import StabilityAnalyzer
-    from ...utils.ml_common.thresholding import AdaptiveThresholding
+    from src.utils.performance_utils import PerformanceMonitor, performance_timer, memory_monitor
+    from src.utils.caching import intelligent_caching
+    from src.utils.ml_common.utils.memory_optimization import M1MemoryOptimizer, MemoryEfficientProcessor
+
+# SHARED_CACHE_AVAILABLE is already defined at the top of the file
+    from src.utils.ml_common.validation.validation_utils import validate_data_quality, validate_feature_matrix
+    from src.utils.ml_common.validation.stability import StabilityAnalyzer
+    from src.utils.ml_common.validation.thresholding import AdaptiveThresholding
 except ImportError as e:
     tprint(f"⚠️ Some utilities not available: {e}")
     # Create fallback implementations
@@ -52,9 +60,105 @@ except ImportError as e:
     def safe_std(x): return np.std(x) if len(x) > 1 else 0
     def safe_percentile(x, p): return np.percentile(x, p) if len(x) > 0 else 0
 
+    # Create fallback classes for failed imports
+    class PerformanceMonitor:
+        def __init__(self, max_history=1000):
+            self.max_history = max_history
+            self.history = []
+            self.logger = logging.getLogger(__name__)
+
+        def log_performance(self, operation, time_taken, memory_used=None):
+            self.history.append({
+                'operation': operation,
+                'time': time_taken,
+                'memory': memory_used,
+                'timestamp': time.time()
+            })
+            if len(self.history) > self.max_history:
+                self.history.pop(0)
+
+        def get_stats(self):
+            return {'total_operations': len(self.history)}
+
+    class M1GPUManager:
+        def __init__(self):
+            self.logger = logging.getLogger(__name__)
+
+        def detect_m1(self):
+            return False
+
+        def check_mps_availability(self):
+            return False
+
+    def performance_timer():
+        return lambda func: func
+
+    def memory_monitor():
+        return lambda func: func
+
+    class M1MemoryOptimizer:
+        pass
+
+    class MemoryEfficientProcessor:
+        pass
+
+    # SharedMLCache fallback only used if import failed
+    if not SHARED_CACHE_AVAILABLE:
+        class SharedMLCache:
+            def __init__(self):
+                self.logger = logging.getLogger(__name__)
+
+            def get_cached_value(self, key):
+                return None
+
+            def set_cached_value(self, key, value):
+                pass
+
+            def get_stats(self):
+                return {'cache_enabled': False}
+
+        def shared_cache():
+            return None
+    else:
+        # Use real shared_cache function
+        pass
+
+    def validate_data_quality(data):
+        return True
+
+    def validate_feature_matrix(X, y=None):
+        return True
+
+    class StabilityAnalyzer:
+        pass
+
+    class AdaptiveThresholding:
+        pass
+
+    def intelligent_caching():
+        return lambda func: func
+
+    class ParallelProcessor:
+        def __init__(self, max_workers=4, chunk_size=10000):
+            self.max_workers = max_workers
+            self.chunk_size = chunk_size
+            self.logger = logging.getLogger(__name__)
+
+        def process_parallel(self, func, items, *args, **kwargs):
+            """Process items in parallel using ThreadPoolExecutor"""
+            try:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    futures = [executor.submit(func, item, *args, **kwargs) for item in items]
+                    results = [future.result() for future in futures]
+                return results
+            except Exception as e:
+                self.logger.warning(f"Parallel processing failed: {e}, falling back to sequential")
+                return [func(item, *args, **kwargs) for item in items]
+
 # Enhanced dependency management with fast fail
 try:
-    from ...utils.logger import get_logger
+    from src.utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.BaseFramework")
     tprint("✅ Custom logger available for FeatureSelection.BaseFramework")
 except Exception as e:
@@ -216,8 +320,12 @@ class BaseFeatureSelectionFramework:
             _LOGGER.info("🧠 Memory optimization tools initialized")
             
             # Caching and shared resources
-            self.shared_cache = MLSharedCache()
-            _LOGGER.info("💾 Shared cache initialized")
+            if SHARED_CACHE_AVAILABLE:
+                self.shared_cache = SharedMLCache.get()  # Use singleton
+                _LOGGER.info("💾 Shared cache initialized (real)")
+            else:
+                self.shared_cache = SharedMLCache()  # Use fallback
+                _LOGGER.info("💾 Shared cache initialized (fallback)")
             
             # Stability and thresholding
             self.stability_analyzer = StabilityAnalyzer()
@@ -318,10 +426,16 @@ class BaseFeatureSelectionFramework:
             # Check cache first
             if self.cache_enabled and hasattr(self, 'shared_cache'):
                 cache_key = self._generate_cache_key(method_name, args, kwargs)
-                cached_result = self.shared_cache.get(cache_key)
-                if cached_result is not None:
-                    _LOGGER.debug(f"🎯 Cache hit for {method_name}")
-                    return cached_result
+                try:
+                    # Use the SharedMLCache singleton instance
+                    from src.utils.ml_common.utils.shared_cache import SharedMLCache
+                    cache_instance = SharedMLCache.get()
+                    cached_result = cache_instance.get_cached_value(cache_key)
+                    if cached_result is not None:
+                        _LOGGER.debug(f"🎯 Cache hit for {method_name}")
+                        return cached_result
+                except Exception as e:
+                    _LOGGER.debug(f"Cache lookup failed: {e}")
             
             # Execute method with monitoring
             if self.performance_monitoring and hasattr(self, 'performance_monitor'):
@@ -332,8 +446,15 @@ class BaseFeatureSelectionFramework:
             
             # Cache result
             if self.cache_enabled and hasattr(self, 'shared_cache'):
-                self.shared_cache.set(cache_key, result)
-                _LOGGER.debug(f"💾 Cached result for {method_name}")
+                try:
+                    # Use the SharedMLCache singleton instance
+                    from src.utils.ml_common.utils.shared_cache import SharedMLCache
+                    cache_instance = SharedMLCache.get()
+                    if hasattr(cache_instance, 'set_cached_value') and callable(getattr(cache_instance, 'set_cached_value')):
+                        cache_instance.set_cached_value(cache_key, result)
+                        _LOGGER.debug(f"💾 Cached result for {method_name}")
+                except Exception as e:
+                    _LOGGER.debug(f"Cache storage failed: {e}")
             
             # Log performance
             execution_time = time.time() - start_time
@@ -607,8 +728,15 @@ class BaseFeatureSelectionFramework:
             stats['memory_stats'] = self.memory_optimizer.get_stats()
         
         # Add cache stats if available
-        if hasattr(self, 'shared_cache') and self.shared_cache:
-            stats['cache_stats'] = self.shared_cache.get_stats()
+        try:
+            from src.utils.ml_common.utils.shared_cache import SharedMLCache
+            cache_instance = SharedMLCache.get()
+            if hasattr(cache_instance, 'get_stats'):
+                stats['cache_stats'] = cache_instance.get_stats()
+            else:
+                stats['cache_stats'] = {'status': 'no_stats_method'}
+        except Exception as e:
+            stats['cache_stats'] = {'error': str(e)}
         
         return stats
 
@@ -639,7 +767,7 @@ class BaseFeatureSelectionFramework:
         
         return requirements
 
-    def generate_error_report(self, error_context: Dict[str, Any]) -> str:
+    def generate_error_report(self, error_context: Dict[str, Any], requirements: Dict[str, Any] = None) -> str:
         """Generate comprehensive error report."""
         report = f"""
 === Feature Selection Framework Error Report ===
@@ -673,7 +801,8 @@ Stack Trace:
 
     def log_error_with_context(self, error_context: Dict[str, Any], level: str = "ERROR"):
         """Log error with comprehensive context."""
-        error_report = self.generate_error_report(error_context)
+        requirements = self.check_system_requirements()
+        error_report = self.generate_error_report(error_context, requirements)
         
         if level.upper() == "ERROR":
             _LOGGER.error(error_report)

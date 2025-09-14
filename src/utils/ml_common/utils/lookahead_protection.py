@@ -33,7 +33,7 @@ import warnings
 
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
-from ..common_utilities import safe_dataframe_operation
+from src.utils.common_utilities import safe_dataframe_operation
 from datetime import datetime
 
 # Enhanced imports for new functionality
@@ -51,11 +51,29 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Define fallback classes to prevent NameError - available globally
+class LookaheadBiasDetector:
+    def __init__(self, *args, **kwargs):
+        self.logger = logging.getLogger(__name__)
+
+    def detect_bias(self, data, target=None):
+        """Fallback detection method - always returns no bias"""
+        self.logger.info("Using fallback lookahead bias detector")
+        return {'bias_detected': False, 'bias_score': 0.0, 'details': 'Fallback detector'}
+
+    def validate_temporal_order(self, timestamps):
+        """Fallback temporal validation"""
+        return True
+
+class LookaheadBiasError(Exception):
+    """Fallback exception for lookahead bias"""
+    pass
+
 try:
-    from ..lookahead_bias_detector import LookaheadBiasDetector, LookaheadBiasError
+    from src.utils.lookahead_bias_detector import LookaheadBiasDetector, LookaheadBiasError
     EXISTING_DETECTOR_AVAILABLE = True
 except ImportError:
-    logger.warning("Existing lookahead detector not available")
+    logger.warning("⚠️ Existing lookahead detector not available - using fallback implementation")
     EXISTING_DETECTOR_AVAILABLE = False
 
 

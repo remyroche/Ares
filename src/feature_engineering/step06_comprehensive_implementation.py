@@ -377,10 +377,10 @@ class Step06ComprehensiveImplementation:
                     default=0.0
                 )
                 
-                # Momentum features
-                enhanced_features['momentum_5'] = enhanced_features['close'].pct_change(5)
-                enhanced_features['momentum_10'] = enhanced_features['close'].pct_change(10)
-                enhanced_features['momentum_20'] = enhanced_features['close'].pct_change(20)
+                # Momentum features - SAFE CALCULATION to prevent infinity from corrupted data
+                enhanced_features['momentum_5'] = self._calculate_safe_momentum(enhanced_features['close'], 5)
+                enhanced_features['momentum_10'] = self._calculate_safe_momentum(enhanced_features['close'], 10)
+                enhanced_features['momentum_20'] = self._calculate_safe_momentum(enhanced_features['close'], 20)
             
             # Use data processing utilities for feature transformation
             if data_proc and data_proc.transformer:
@@ -454,7 +454,9 @@ class Step06ComprehensiveImplementation:
                 profit_take = self.optimized_labeling.profit_take_multiplier
                 stop_loss = self.optimized_labeling.stop_loss_multiplier
                 labels = pd.Series(index=market_data.index, dtype='float64')
-                finite_mask = returns.apply(lambda x: pd.notna(x) and validate_finite(x))
+                # VECTORIZED: Check for finite values without expensive apply operations
+                # Use pandas built-in methods for much better performance
+                finite_mask = pd.notna(returns) & np.isfinite(returns)
                 pos_mask = (returns > profit_take) & finite_mask
                 neg_mask = (returns < -stop_loss) & finite_mask
                 mid_mask = (~pos_mask & ~neg_mask) & finite_mask
@@ -587,6 +589,44 @@ class Step06ComprehensiveImplementation:
         rs = safe_divide(gain, loss, default=1.0)
         rsi = 100 - safe_divide(100, (1 + rs), default=50.0)
         return rsi
+
+    def _calculate_safe_momentum(self, prices: pd.Series, period: int) -> pd.Series:
+        """
+        Calculate momentum with safe mathematical operations to prevent infinity.
+
+        This prevents division by zero that occurs when corrupted data contains zeros.
+        Instead of creating infinity, we return NaN for corrupted periods.
+
+        Args:
+            prices: Price series
+            period: Momentum period (e.g., 10 for momentum_10)
+
+        Returns:
+            Momentum series with safe division (NaN instead of infinity)
+        """
+        try:
+            # Calculate price differences
+            current_prices = prices
+            past_prices = prices.shift(period)
+
+            # Check for corrupted data (zeros) that would cause division by zero
+            zero_mask = (past_prices == 0) | (past_prices.isna())
+            if zero_mask.any():
+                zero_count = zero_mask.sum()
+                self.logger.warning(f"⚠️ Detected {zero_count} zero/NaN past prices in momentum_{period} calculation")
+                self.logger.warning("   This indicates corrupted data - using NaN instead of infinity")
+
+            # Calculate momentum with safe division
+            # momentum = (current - past) / past
+            price_diff = current_prices - past_prices
+            momentum = safe_divide(price_diff, past_prices, default=np.nan)
+
+            return momentum
+
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating safe momentum_{period}: {e}")
+            # Return NaN series as fallback
+            return pd.Series(np.nan, index=prices.index, name=f'momentum_{period}')
 
     @inject_utilities('common_ops', 'serialization', 'parquet')
     async def _integrate_results_with_utilities(self, enhanced_features: pd.DataFrame, labels: pd.Series, 

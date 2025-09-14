@@ -248,8 +248,67 @@ class RegimeAwareTripleBarrierLabeling:
             self.logger.info(f"   SHORT (-1): {(labeled_data['label'] == -1).sum()} samples")
             self.logger.info(f'   HOLD (0): {hold_samples} samples (removed)')
             self.logger.info(f'   Total: {filtered_count}/{original_count} samples retained')
+        # Apply target winsorization to reduce outlier impact
+        if 'potential_profit_pct' in labeled_data.columns:
+            labeled_data = self._winsorize_targets(labeled_data, percentile=0.02)
+
         return labeled_data
     @log_all_calls
+
+    def _winsorize_targets(self, data: pd.DataFrame, percentile: float = 0.02) -> pd.DataFrame:
+        """
+        Winsorize target values (profit percentages) to reduce outlier impact.
+
+        This prevents extreme profit targets from dominating model training and
+        improves generalization to typical market behavior.
+
+        Args:
+            data: DataFrame containing the labeled data with 'potential_profit_pct' column
+            percentile: Percentile to clip at (default 2% winsorization)
+
+        Returns:
+            DataFrame with winsorized profit targets
+        """
+        try:
+            if 'potential_profit_pct' not in data.columns:
+                self.logger.warning("⚠️ No 'potential_profit_pct' column found, skipping target winsorization")
+                return data
+
+            original_count = len(data)
+            profit_targets = data['potential_profit_pct']
+
+            # Calculate percentiles
+            lower_percentile = profit_targets.quantile(percentile)
+            upper_percentile = profit_targets.quantile(1 - percentile)
+
+            # Count outliers before winsorization
+            lower_outliers = (profit_targets < lower_percentile).sum()
+            upper_outliers = (profit_targets > upper_percentile).sum()
+            total_outliers = lower_outliers + upper_outliers
+
+            # Apply winsorization
+            winsorized_targets = profit_targets.clip(lower_percentile, upper_percentile)
+
+            # Update the data
+            data = data.copy()
+            data['potential_profit_pct'] = winsorized_targets
+
+            # Log the winsorization results
+            if total_outliers > 0:
+                self.logger.info(f"🎯 Target winsorization applied (percentile: {percentile:.1%})")
+                self.logger.info(f"   📊 Lower bound: {lower_percentile:.4f}")
+                self.logger.info(f"   📊 Upper bound: {upper_percentile:.4f}")
+                self.logger.info(f"   📊 Winsorized {total_outliers}/{original_count} outliers "
+                                f"({total_outliers/original_count:.1%})")
+                self.logger.info(f"   📊 Lower outliers: {lower_outliers}, Upper outliers: {upper_outliers}")
+            else:
+                self.logger.info(f"✅ No outliers detected for winsorization (percentile: {percentile:.1%})")
+
+            return data
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error in target winsorization: {e}")
+            return data
 
     def _create_regime_mapping(self, unique_regimes: np.ndarray) -> None:
         """Create regime ID to name mapping."
@@ -431,7 +490,13 @@ class RegimeAwareTripleBarrierLabeling:
         self.logger.info('📝 Applying default triple barrier labeling')
         from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
         labeler = OptimizedTripleBarrierLabeling(profit_take_multiplier = self.config.default_profit_take_multiplier, stop_loss_multiplier = self.config.default_stop_loss_multiplier, time_barrier_minutes = self.config.default_time_barrier_minutes, max_lookahead = self.config.default_max_lookahead, binary_classification = self.binary_classification)
-        return labeler.apply_triple_barrier_labeling_vectorized(data)
+        labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
+
+        # Apply target winsorization to reduce outlier impact
+        if 'potential_profit_pct' in labeled_data.columns:
+            labeled_data = self._winsorize_targets(labeled_data, percentile=0.02)
+
+        return labeled_data
 
     def get_regime_performance_summary(self, data: pd.DataFrame, regime_column: str='composite_cluster_id') -> Dict[str, Dict[str, float]]:
         """Get performance summary for each regime.

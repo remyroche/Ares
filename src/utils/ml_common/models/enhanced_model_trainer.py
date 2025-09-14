@@ -237,7 +237,7 @@ class EnhancedModelTrainer:
         )
     
     @handles_errors(default_return=TrainingResult(success=False), context='Enhanced model training')
-    @log_execution_time
+    # @log_execution_time  # Temporarily disabled due to import conflicts
     async def train_model(self, X_train: np.ndarray, y_train: np.ndarray,
                          X_test: np.ndarray, y_test: np.ndarray,
                          model_name: str = "enhanced_model", 

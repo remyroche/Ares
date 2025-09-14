@@ -616,12 +616,24 @@ class EnhancedModelFactory:
                 self.dilations = kwargs.get('dilations', [1, 2, 4, 8, 16, 32])
                 self.use_skip_connections = kwargs.get('use_skip_connections', True)
                 self.use_batch_norm = kwargs.get('use_batch_norm', True)
-            
+
+            def set_params(self, **params):
+                """Set model parameters."""
+                for key, value in params.items():
+                    if hasattr(self, key):
+                        setattr(self, key, value)
+                    self.params[key] = value
+                return self
+
+            def get_params(self, deep=True):
+                """Get model parameters."""
+                return self.params.copy()
+
             def fit(self, X, y):
                 # Placeholder implementation with overfitting prevention
                 self.is_fitted = True
                 return self
-            
+
             def predict(self, X):
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")

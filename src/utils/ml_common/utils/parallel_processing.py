@@ -35,9 +35,9 @@ import time
 
 from ..math_validation import safe_divide
 from ..common_operations import create_fallback_logger
-from ..parallel_processing_optimizer import ParallelProcessor
+from src.utils.parallel_processing_optimizer import ParallelProcessor
 from src.utils.hardware.memory_optimization import MemoryMonitor
-from ..common_utilities import safe_dataframe_operation
+from src.utils.common_utilities import safe_dataframe_operation
 
 # Enhanced dependency management with fast fail
 try:

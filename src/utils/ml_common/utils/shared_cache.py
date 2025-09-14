@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from src.utils.tprint import tprint
 
 """
@@ -10,12 +12,11 @@ Optional integration with joblib.Memory when available.
 Enhanced with aggressive memory management and comprehensive error handling.
 """
 
-from __future__ import annotations
-
 import gc
 import os
 import psutil
 import threading
+import time
 import weakref
 from typing import Any, Dict, List, Tuple, Optional, Union, Callable
 from contextlib import contextmanager
@@ -171,6 +172,31 @@ class SharedMLCache:
         self._update_cache_stats(key, imp)
         self._check_memory_usage()
 
+    def set_cached_value(self, key: str, data: Any) -> None:
+        """Generic cache setter for arbitrary data."""
+        try:
+            # Use a general cache dictionary for arbitrary data
+            if not hasattr(self, '_generic_cache'):
+                self._generic_cache: Dict[str, Any] = {}
+
+            self._generic_cache[key] = data
+            self._update_cache_stats(key, data)
+            self._check_memory_usage()
+        except Exception as e:
+            tprint(f"❌ Failed to cache data: {e}")
+
+    def get_cached_value(self, key: str) -> Any:
+        """Generic cache getter for arbitrary data."""
+        try:
+            if hasattr(self, '_generic_cache') and key in self._generic_cache:
+                # Update access stats for LRU
+                self._update_access_stats(key)
+                return self._generic_cache[key]
+            return None
+        except Exception as e:
+            tprint(f"❌ Failed to get cached data: {e}")
+            return None
+
     # ---- Memory Management Methods ----
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
@@ -252,12 +278,16 @@ class SharedMLCache:
             self.mi_scores.pop(key, None)
             self.corr_matrices.pop(key, None)
             self.rf_importances.pop(key, None)
-            
+
+            # Remove from generic cache if it exists
+            if hasattr(self, '_generic_cache'):
+                self._generic_cache.pop(key, None)
+
             # Remove from tracking dictionaries
             self._cache_sizes.pop(key, None)
             self._access_counts.pop(key, None)
             self._last_access.pop(key, None)
-            
+
         except Exception as e:
             tprint(f"⚠️ Failed to remove key {key}: {e}")
 
@@ -271,6 +301,10 @@ class SharedMLCache:
             self.mi_scores.clear()
             self.corr_matrices.clear()
             self.rf_importances.clear()
+
+            # Clear generic cache if it exists
+            if hasattr(self, '_generic_cache'):
+                self._generic_cache.clear()
             
             # Clear tracking dictionaries
             self._cache_sizes.clear()
@@ -286,15 +320,47 @@ class SharedMLCache:
         except Exception as e:
             tprint(f"❌ Cache clearing failed: {e}")
 
+    def get_stats(self) -> Dict[str, Any]:
+        """Get comprehensive cache statistics."""
+        try:
+            current_memory = self._get_memory_usage()
+            total_entries = sum(len(cache) for cache in [
+                self.cv_splits, self.mi_scores,
+                self.corr_matrices, self.rf_importances
+            ])
+
+            # Include generic cache if it exists
+            if hasattr(self, '_generic_cache'):
+                total_entries += len(self._generic_cache)
+
+            return {
+                'memory_usage_mb': current_memory,
+                'max_memory_mb': self._max_memory_mb,
+                'memory_threshold': self._memory_threshold,
+                'total_entries': total_entries,
+                'cv_splits_count': len(self.cv_splits),
+                'mi_scores_count': len(self.mi_scores),
+                'corr_matrices_count': len(self.corr_matrices),
+                'rf_importances_count': len(self.rf_importances),
+                'generic_cache_count': len(self._generic_cache) if hasattr(self, '_generic_cache') else 0,
+                'cache_enabled': True
+            }
+
+        except Exception as e:
+            return {
+                'error': str(e),
+                'cache_enabled': False
+            }
+
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get comprehensive memory statistics."""
         try:
             current_memory = self._get_memory_usage()
             total_entries = sum(len(cache) for cache in [
-                self.cv_splits, self.mi_scores, 
+                self.cv_splits, self.mi_scores,
                 self.corr_matrices, self.rf_importances
             ])
-            
+
             return {
                 'current_memory_mb': current_memory,
                 'max_memory_mb': self._max_memory_mb,

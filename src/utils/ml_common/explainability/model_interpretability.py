@@ -142,7 +142,7 @@ class ModelInterpretabilityEngine:
     # @handles_errors(Exception, fallback=False, log_level='ERROR')
     # @validates(strict=True)
     # @traced(span_name="explain_model")
-    # @log_execution_time
+    # @log_execution_time  # Temporarily disabled due to import conflicts
     async def explain_model(
         self,
         model: Any,

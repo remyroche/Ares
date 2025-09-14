@@ -133,13 +133,6 @@ hmm_regime_test_results_*.csv
 training_*.log
 model_*.log
 
-# =============================================================================
-# ARES PROJECT SPECIFIC - ARTIFACTS
-# =============================================================================
-# Generated artifacts
-/artifacts/
-artifacts/
-*.artifact
 
 # =============================================================================
 # ARES PROJECT SPECIFIC - GUI AND FRONTEND

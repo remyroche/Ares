@@ -166,3 +166,25 @@ class MathValidationError(AppError):
         if values:
             details['values'] = values
         super().__init__(message = message, code = ErrorCode.VALIDATION_ERROR, status_code = 422, details = details, **kwargs)
+
+class ConfigurationError(AppError):
+    """Configuration error."""
+
+    def __init__(self, message: str, config_key: str | None = None, config_value: Any = None, **kwargs) -> None:
+        details = kwargs.pop('details', {})
+        if config_key:
+            details['config_key'] = config_key
+        if config_value is not None:
+            details['config_value'] = config_value
+        super().__init__(message = message, code = ErrorCode.VALIDATION_ERROR, status_code = 400, details = details, **kwargs)
+
+class ModelTrainingError(AppError):
+    """Model training error."""
+
+    def __init__(self, message: str, model_type: str | None = None, training_phase: str | None = None, **kwargs) -> None:
+        details = kwargs.pop('details', {})
+        if model_type:
+            details['model_type'] = model_type
+        if training_phase:
+            details['training_phase'] = training_phase
+        super().__init__(message = message, code = ErrorCode.INTERNAL_ERROR, status_code = 500, details = details, **kwargs)

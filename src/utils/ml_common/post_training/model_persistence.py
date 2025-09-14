@@ -181,7 +181,7 @@ class ModelPersistence:
         )
     
     @handles_errors(default_return=PersistenceResult(success=False), context='Model saving')
-    @log_execution_time
+    # @log_execution_time  # Temporarily disabled due to import conflicts
     async def save_model(self, model: Any, model_name: str, model_type: str,
                         metadata: Optional[ModelMetadata] = None, 
                         version: Optional[str] = None) -> PersistenceResult:
@@ -306,7 +306,7 @@ class ModelPersistence:
             )
     
     @handles_errors(default_return=PersistenceResult(success=False), context='Model loading')
-    @log_execution_time
+    # @log_execution_time  # Temporarily disabled due to import conflicts
     async def load_model(self, model_name: str, version: Optional[str] = None) -> PersistenceResult:
         """Load a saved model with metadata.
         
@@ -694,7 +694,7 @@ class ModelPersistence:
             self.logger.exception(f"💥 Error listing models: {e}")
             return []
     
-    def get_model_info(self, model_name: str, version: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    async def get_model_info(self, model_name: str, version: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Get information about a specific model."""
         try:
             if version is None:

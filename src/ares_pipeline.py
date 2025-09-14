@@ -52,7 +52,7 @@ from utils.dependency_manager import optional_package
 from utils.dependency_manager import requires_package
 from utils.logger import setup_logging
 from utils.logger import system_logger
-from utils.lookahead_bias_detector import get_global_detector
+from src.utils.lookahead_bias_detector import get_global_detector
 from utils.observability import init_observability
 from utils.regime_transition_handler import RegimeTransitionHandler
 from utils.regime_transition_handler import handle_regime_transition

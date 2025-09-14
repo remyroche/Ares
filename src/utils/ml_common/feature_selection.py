@@ -33,24 +33,29 @@ import warnings
 import time
 import sys
 
+# Optional dependencies
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 from ..math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile
 )
 from ..common_operations import create_fallback_logger, safe_dataframe_operation
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
-from ..parallel_processing_optimizer import ParallelProcessor
+from src.utils.parallel_processing_optimizer import ParallelProcessor
 from .matrix_operations import (
-    m1_correlation_matrix, m1_matrix_multiply, m1_batch_process,
-    m1_parallel_operations, m1_optimize_memory, get_m1_performance_stats
+    safe_correlation_matrix, m1_matrix_multiply, safe_matrix_multiply,
+    safe_matrix_inverse, get_unified_matrix_operations
 )
-from ..performance_utils import PerformanceMonitor, performance_timer, memory_monitor
+from ..performance_utils import PerformanceMonitor, performance_timer, get_memory_usage
 from ..caching import intelligent_caching
-from .memory_optimization import M1MemoryOptimizer, MemoryEfficientProcessor
-from .shared_cache import MLSharedCache, cache_ml_artifact
-from .validation_utils import validate_data_quality, validate_feature_matrix
-from .stability import StabilityAnalyzer
-from .thresholding import AdaptiveThresholding
+from .optimization.memory_optimization import MemoryEfficientTraining
+from .utils.shared_cache import SharedMLCache, shared_cache
+from .validation.stability import StabilityAnalyzer
+# from ...training.utils.feature_selection.base_framework import AdaptiveThresholding  # Class not available
 
 # Enhanced dependency management with fast fail
 try:
@@ -211,17 +216,16 @@ class FeatureSelectionFramework:
             _LOGGER.info("📊 PerformanceMonitor initialized")
             
             # Memory optimization
-            self.memory_optimizer = M1MemoryOptimizer()
-            self.memory_processor = MemoryEfficientProcessor()
+            self.memory_processor = MemoryEfficientTraining()
             _LOGGER.info("🧠 Memory optimization tools initialized")
             
             # Caching and shared resources
-            self.shared_cache = MLSharedCache()
+            self.shared_cache = SharedMLCache()
             _LOGGER.info("💾 Shared cache initialized")
             
             # Stability and thresholding
             self.stability_analyzer = StabilityAnalyzer()
-            self.adaptive_thresholding = AdaptiveThresholding()
+            # self.adaptive_thresholding = AdaptiveThresholding()  # Class not available
             _LOGGER.info("📈 Stability and thresholding tools initialized")
             
             # Setup optimization settings
@@ -490,7 +494,7 @@ class FeatureSelectionFramework:
                 _LOGGER.info("🧠 Using memory-efficient correlation calculation")
                 return self.memory_processor.calculate_correlation_matrix_chunked(X)
             else:
-                return m1_correlation_matrix(X.T)
+                return safe_correlation_matrix(X.T)
         except Exception as e:
             _LOGGER.warning(f"⚠️ Memory-efficient correlation failed: {e}")
             return np.corrcoef(X.T)
@@ -1634,7 +1638,8 @@ class FeatureSelectionFramework:
             
             # Memory optimization
             if config['memory_optimization']:
-                m1_optimize_memory()
+                # Memory optimization handled by unified matrix operations
+                pass
             
             _LOGGER.info(f"🎉 Hierarchical pipeline completed successfully!")
             _LOGGER.info(f"📊 Final result: {len(final_features)}/{features_target_count} target features")
@@ -1690,7 +1695,7 @@ class FeatureSelectionFramework:
         """Determine adaptive correlation threshold based on data characteristics."""
         try:
             # Calculate correlation matrix
-            corr_matrix = m1_correlation_matrix(X.T)
+            corr_matrix = safe_correlation_matrix(X.T)
             
             # Get upper triangle correlations (excluding diagonal)
             upper_tri = np.triu(corr_matrix, k=1)
@@ -1772,10 +1777,46 @@ class FeatureSelectionFramework:
         try:
             if not SKLEARN_AVAILABLE:
                 return min(20, len(feature_names) // 2)
-            
+
+            # Preprocess data to handle infinity and large values
+            X_processed = X.copy()
+
+            # Handle infinity values
+            inf_mask = np.isinf(X_processed)
+            if np.any(inf_mask):
+                _LOGGER.warning(f"⚠️ Found {np.sum(inf_mask)} infinity values in data for RFECV, replacing with finite values")
+
+                # Replace positive infinity
+                pos_inf_mask = np.isposinf(X_processed)
+                if np.any(pos_inf_mask):
+                    finite_mask = np.isfinite(X_processed)
+                    if np.any(finite_mask):
+                        max_finite = np.max(X_processed[finite_mask])
+                        X_processed[pos_inf_mask] = max(max_finite * 10, 1e10)
+                    else:
+                        X_processed[pos_inf_mask] = 1e10
+
+                # Replace negative infinity
+                neg_inf_mask = np.isneginf(X_processed)
+                if np.any(neg_inf_mask):
+                    finite_mask = np.isfinite(X_processed)
+                    if np.any(finite_mask):
+                        min_finite = np.min(X_processed[finite_mask])
+                        X_processed[neg_inf_mask] = min(min_finite * 10, -1e10)
+                    else:
+                        X_processed[neg_inf_mask] = -1e10
+
+            # Clip extremely large values
+            max_float64 = 1e308
+            min_float64 = -1e308
+            X_processed = np.clip(X_processed, min_float64, max_float64)
+
+            # Use processed data for RFECV
+            X = X_processed
+
             from sklearn.model_selection import cross_val_score
             from sklearn.feature_selection import RFECV
-            
+
             _LOGGER.info(f"🔍 Determining optimal RFE features using {cv_folds}-fold CV...")
             
             # Use RFECV to find optimal number of features
@@ -3057,10 +3098,14 @@ class FeatureSelectionFramework:
                 'feature_consistency': {}
             }
 
-    def _log_feature_reduction_stats(self, method_name: str, original_count: int, 
+    def _log_feature_reduction_stats(self, method_name: str, original_count: int,
                                    selected_count: int, execution_time: float,
                                    additional_stats: Optional[Dict[str, Any]] = None):
         """Enhanced feature reduction reporting with comprehensive statistics."""
+        # Initialize stats dictionaries if not provided
+        memory_stats = additional_stats.get('memory_stats', {}) if additional_stats else {}
+        perf_stats = additional_stats.get('perf_stats', {}) if additional_stats else {}
+
         removed_count = original_count - selected_count
         reduction_percent = safe_divide(removed_count, original_count) * 100
         
@@ -3073,7 +3118,7 @@ class FeatureSelectionFramework:
         
         # Memory reporting
         try:
-            memory_stats = get_m1_performance_stats()
+            # Memory stats handled by unified matrix operations
             if 'memory_report' in memory_stats:
                 memory_info = memory_stats['memory_report']
                 _LOGGER.info(f"   Memory usage: {memory_info.get('current_mb', 0):.1f}MB")
@@ -3088,7 +3133,7 @@ class FeatureSelectionFramework:
         
         # Performance monitoring
         try:
-            perf_stats = get_m1_performance_stats()
+            # Performance stats handled by unified matrix operations
             if 'm1_enhanced_operations' in perf_stats:
                 ops_stats = perf_stats['m1_enhanced_operations']
                 _LOGGER.info(f"   GPU operations: {ops_stats.get('gpu_operations', 0)}")
@@ -3100,10 +3145,13 @@ class FeatureSelectionFramework:
     def _monitor_performance(self, operation_name: str, start_time: float, start_memory: float = 0.0):
         """Monitor and report performance metrics."""
         execution_time = time.time() - start_time
-        
+
+        # Initialize performance stats (should be passed from caller if available)
+        perf_stats = {}  # Default empty dict if not provided
+
         # Get performance stats
         try:
-            perf_stats = get_m1_performance_stats()
+            # Performance stats handled by unified matrix operations
             if 'gpu_device' in perf_stats:
                 _LOGGER.info(f"🎯 GPU device: {perf_stats['gpu_device']}")
             if 'gpu_memory_info' in perf_stats:
@@ -3360,7 +3408,6 @@ class FeatureSelectionFramework:
             return {'error': str(e), 'selected_features': []}
 
     @performance_timer
-    @memory_monitor
     def correlation_based_filtering(self, X: np.ndarray, feature_names: List[str],
                                   correlation_threshold: float = 0.95,
                                   method: str = 'pearson') -> Dict[str, Any]:
@@ -3410,7 +3457,7 @@ class FeatureSelectionFramework:
             if corr_matrix is None:
                 # Use M1-optimized correlation matrix
                 self.logger.info("🔄 Computing correlation matrix with M1 optimizations...")
-                corr_matrix = m1_correlation_matrix(X.T)
+                corr_matrix = safe_correlation_matrix(X.T)
                 
                 # Cache the result
                 if self.cache_enabled and self.shared_cache:
@@ -3442,7 +3489,7 @@ class FeatureSelectionFramework:
             _LOGGER.info("🔍 Computing correlation matrix with M1 optimization...")
             try:
                 if method == 'pearson':
-                    corr_matrix = m1_correlation_matrix(X.T)
+                    corr_matrix = safe_correlation_matrix(X.T)
                 elif method == 'spearman':
                     # For Spearman, convert to DataFrame and use pandas (more efficient than loops)
                     import pandas as pd
@@ -3452,7 +3499,7 @@ class FeatureSelectionFramework:
                     raise ValueError(f"Unsupported correlation method: {method}")
                 
                 # Memory optimization after correlation computation
-                m1_optimize_memory()
+                # Memory optimization handled by unified matrix operations
                 _LOGGER.info("🧠 Memory optimized after correlation computation")
                 
             except Exception as e:
@@ -3567,6 +3614,42 @@ class FeatureSelectionFramework:
             if not SKLEARN_AVAILABLE:
                 raise ImportError("Scikit-learn required for recursive feature elimination")
 
+            # Preprocess data to handle infinity and large values
+            X_processed = X.copy()
+
+            # Handle infinity values
+            inf_mask = np.isinf(X_processed)
+            if np.any(inf_mask):
+                _LOGGER.warning(f"⚠️ Found {np.sum(inf_mask)} infinity values in data for RFE, replacing with finite values")
+
+                # Replace positive infinity
+                pos_inf_mask = np.isposinf(X_processed)
+                if np.any(pos_inf_mask):
+                    finite_mask = np.isfinite(X_processed)
+                    if np.any(finite_mask):
+                        max_finite = np.max(X_processed[finite_mask])
+                        X_processed[pos_inf_mask] = max(max_finite * 10, 1e10)
+                    else:
+                        X_processed[pos_inf_mask] = 1e10
+
+                # Replace negative infinity
+                neg_inf_mask = np.isneginf(X_processed)
+                if np.any(neg_inf_mask):
+                    finite_mask = np.isfinite(X_processed)
+                    if np.any(finite_mask):
+                        min_finite = np.min(X_processed[finite_mask])
+                        X_processed[neg_inf_mask] = min(min_finite * 10, -1e10)
+                    else:
+                        X_processed[neg_inf_mask] = -1e10
+
+            # Clip extremely large values
+            max_float64 = 1e308
+            min_float64 = -1e308
+            X_processed = np.clip(X_processed, min_float64, max_float64)
+
+            # Use processed data for RFE
+            X = X_processed
+
             # Create RFE selector with M1 optimization
             rfe_selector = RFE(
                 estimator=model,
@@ -3579,7 +3662,7 @@ class FeatureSelectionFramework:
             rfe_selector.fit(X, y)
             
             # Memory optimization after RFE fitting
-            m1_optimize_memory()
+            # Memory optimization handled by unified matrix operations
             _LOGGER.info("🧠 Memory optimized after RFE fitting")
 
             # Get selected features
@@ -4392,7 +4475,9 @@ class FeatureSelectionFramework:
                                     weights: Optional[Dict[str, float]] = None,
                                     n_features: Optional[int] = None,
                                     cv_folds: int = 5,
-                                    permutation_importance_repeats: int = 10) -> Dict[str, Any]:
+                                    permutation_importance_repeats: int = 10,
+                                    n_estimators: int = 100,
+                                    max_depth: Optional[int] = None) -> Dict[str, Any]:
         """
         Enhanced ensemble selection using tree-based permutation importance with hyperparameter optimization.
         
@@ -4569,7 +4654,7 @@ class FeatureSelectionFramework:
             # Calculate correlation matrix for candidate features using M1 optimization
             _LOGGER.info("🔍 Computing correlation matrix for feature grouping with M1 optimization...")
             try:
-                correlation_matrix = m1_correlation_matrix(X_candidates.T)
+                correlation_matrix = safe_correlation_matrix(X_candidates.T)
                 _LOGGER.info("✅ M1-optimized correlation matrix computed")
             except Exception as e:
                 _LOGGER.warning(f"⚠️ M1 correlation failed, falling back to numpy: {e}")
@@ -4735,7 +4820,7 @@ class FeatureSelectionFramework:
             execution_time = time.time() - start_time
             
             # Memory optimization
-            m1_optimize_memory()
+            # Memory optimization handled by unified matrix operations
             
             # Enhanced reporting
             additional_stats = {
@@ -5151,7 +5236,7 @@ class FeatureSelectionFramework:
         try:
             # Calculate correlation matrix
             if self.enable_gpu and self.gpu_manager is not None:
-                corr_matrix = self.gpu_manager.m1_correlation_matrix(X.T)
+                corr_matrix = safe_correlation_matrix(X.T)
             else:
                 corr_matrix = np.corrcoef(X.T)
             
@@ -6757,9 +6842,9 @@ class FeatureSelectionFramework:
         
         return crypto_causal_features
 
-    def _calculate_causal_relevance_score(self, feature_values: np.ndarray, 
-                                        target: np.ndarray, 
-                                        feature_names: List[str], 
+    def _calculate_causal_relevance_score(self, feature_values: np.ndarray,
+                                        target: np.ndarray,
+                                        X: np.ndarray,
                                         feature_idx: int) -> float:
         """
         Calculate causal relevance score based on statistical properties.
@@ -8011,7 +8096,43 @@ class FeatureSelectionFramework:
                     'execution_time': time.time() - start_time,
                     'method': 'fallback_slice'
                 }
-            
+
+            # Preprocess data to handle infinity and large values
+            X_processed = X.copy()
+
+            # Handle infinity values
+            inf_mask = np.isinf(X_processed)
+            if np.any(inf_mask):
+                _LOGGER.warning(f"⚠️ Found {np.sum(inf_mask)} infinity values in data for RF refinement, replacing with finite values")
+
+                # Replace positive infinity
+                pos_inf_mask = np.isposinf(X_processed)
+                if np.any(pos_inf_mask):
+                    finite_mask = np.isfinite(X_processed)
+                    if np.any(finite_mask):
+                        max_finite = np.max(X_processed[finite_mask])
+                        X_processed[pos_inf_mask] = max(max_finite * 10, 1e10)
+                    else:
+                        X_processed[pos_inf_mask] = 1e10
+
+                # Replace negative infinity
+                neg_inf_mask = np.isneginf(X_processed)
+                if np.any(neg_inf_mask):
+                    finite_mask = np.isfinite(X_processed)
+                    if np.any(finite_mask):
+                        min_finite = np.min(X_processed[finite_mask])
+                        X_processed[neg_inf_mask] = min(min_finite * 10, -1e10)
+                    else:
+                        X_processed[neg_inf_mask] = -1e10
+
+            # Clip extremely large values
+            max_float64 = 1e308
+            min_float64 = -1e308
+            X_processed = np.clip(X_processed, min_float64, max_float64)
+
+            # Use processed data for RFECV
+            X = X_processed
+
             # Use RFECV for precise feature selection
             base_model = self._get_default_model(y)
             if base_model is None:

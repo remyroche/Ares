@@ -124,19 +124,30 @@ class CrossTimeframeFeatureGenerator:
                 self.logger.warning(f"⚠️ Fallback Cross Timeframe Analysis Pipeline not available: {e2}")
                 self.cross_timeframe_pipeline = None
 
-    def generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, pd.Series]:
-        """Generate cross-timeframe features with reduced complexity.
+    def generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None,
+                                        use_vectorized: bool = True) -> dict[str, pd.Series]:
+        """
+        Generate cross-timeframe features with vectorized processing option.
 
         Args:
             price_data: OHLCV price data
             volume_data: Volume data (optional)
+            use_vectorized: Whether to use ultra-fast vectorized processing (default: True)
 
         Returns:
             Dictionary of feature name to Series mappings
         """
         if not self._validate_input_data(price_data):
             return {}
-        
+
+        # VECTORIZED: Use ultra-fast vectorized processing by default
+        if use_vectorized:
+            try:
+                return self.generate_cross_timeframe_features_vectorized(price_data, volume_data)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Vectorized processing failed: {e}, falling back to legacy method")
+
+        # LEGACY: Original implementation with pipeline fallback
         # Try to use the comprehensive cross timeframe analysis pipeline first
         if self.cross_timeframe_pipeline is not None:
             try:
@@ -151,7 +162,7 @@ class CrossTimeframeFeatureGenerator:
                     loop.close()
             except Exception as e:
                 self.logger.warning(f"⚠️ Pipeline-based feature generation failed: {e}, falling back to legacy method")
-        
+
         # Fallback to legacy method
         price_components = self._extract_price_components(price_data)
         if not price_components:
@@ -164,7 +175,404 @@ class CrossTimeframeFeatureGenerator:
         valid_features = self._validate_features(features)
         self.logger.info(f'✅ Generated {len(valid_features)} valid cross-timeframe features')
         return valid_features
-    
+
+    def generate_cross_timeframe_features_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, pd.Series]:
+        """
+        VECTORIZED: Generate cross-timeframe features with ultra-fast batch processing.
+
+        This method uses vectorized operations to compute all timeframe combinations
+        simultaneously, resulting in significant performance improvements.
+
+        Args:
+            price_data: OHLCV price data
+            volume_data: Volume data (optional)
+
+        Returns:
+            Dictionary of feature name to Series mappings
+        """
+        import time
+        start_time = time.time()
+
+        if not self._validate_input_data(price_data):
+            return {}
+
+        self.logger.info("🚀 VECTORIZED: Starting ultra-fast cross-timeframe feature generation")
+
+        price_components = self._extract_price_components(price_data)
+        if not price_components:
+            return {}
+
+        # VECTORIZED: Generate all features simultaneously
+        features = {}
+
+        # Vectorized momentum features
+        momentum_features = self._generate_momentum_features_vectorized(price_components)
+        features.update(momentum_features)
+
+        # Vectorized volatility features
+        volatility_features = self._generate_volatility_features_vectorized(price_components)
+        features.update(volatility_features)
+
+        # Vectorized range features
+        range_features = self._generate_range_features_vectorized(price_components)
+        features.update(range_features)
+
+        # Vectorized technical indicator features
+        tech_features = self._generate_technical_indicator_features_vectorized(price_components)
+        features.update(tech_features)
+
+        # Vectorized volume features (if volume data available)
+        if volume_data is not None:
+            volume_features = self._generate_volume_features_vectorized(price_components, volume_data)
+            features.update(volume_features)
+
+        valid_features = self._validate_features(features)
+
+        processing_time = time.time() - start_time
+        self.logger.info(f"✅ VECTORIZED: Generated {len(valid_features)} cross-timeframe features in {processing_time:.2f} seconds")
+
+        return valid_features
+
+    def _generate_momentum_features_vectorized(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """VECTORIZED: Generate momentum-based cross-timeframe features"""
+        features = {}
+        close = price_components['close']
+
+        # Pre-compute all timeframe momentum calculations
+        timeframes = self.config.momentum_timeframes[:3]  # Limit to avoid excessive computation
+        momentum_cache = {}
+
+        for tf in timeframes:
+            momentum_cache[tf] = close.pct_change(tf)
+
+        # VECTORIZED: Compute all timeframe combinations simultaneously
+        for i, tf1 in enumerate(timeframes):
+            for tf2 in timeframes[i + 1:]:
+                if tf1 < len(close) and tf2 < len(close):
+                    # Vectorized momentum difference
+                    momentum_diff = momentum_cache[tf1] - momentum_cache[tf2]
+                    if self._is_valid_feature(momentum_diff):
+                        features[f'momentum_diff_{tf1}m_{tf2}m'] = momentum_diff
+
+                    # Vectorized momentum ratio
+                    momentum_ratio = momentum_cache[tf1] / (momentum_cache[tf2] + 1e-08)
+                    if self._is_valid_feature(momentum_ratio):
+                        features[f'momentum_ratio_{tf1}m_{tf2}m'] = momentum_ratio
+
+                    # Vectorized high-low momentum features
+                    hl_features = self._calculate_hl_momentum_vectorized(price_components, tf1, tf2)
+                    features.update(hl_features)
+
+        return features
+
+    def _calculate_hl_momentum_vectorized(self, price_components: dict[str, pd.Series], tf1: int, tf2: int) -> dict[str, pd.Series]:
+        """VECTORIZED: Calculate high-low momentum features"""
+        features = {}
+        high, low, close = price_components['high'], price_components['low'], price_components['close']
+
+        if len(close) >= max(tf1, tf2) * 2:
+            # VECTORIZED: Compute HL momentum for both timeframes simultaneously
+            hl_momentum_1 = (high.rolling(tf1, min_periods=tf1//2).max() -
+                           low.rolling(tf1, min_periods=tf1//2).min()) / (close.rolling(tf1, min_periods=tf1//2).mean() + 1e-08)
+            hl_momentum_2 = (high.rolling(tf2, min_periods=tf2//2).max() -
+                           low.rolling(tf2, min_periods=tf2//2).min()) / (close.rolling(tf2, min_periods=tf2//2).mean() + 1e-08)
+
+            hl_diff = hl_momentum_1 - hl_momentum_2
+            if self._is_valid_feature(hl_diff):
+                features[f'hl_momentum_{tf1}m_{tf2}m'] = hl_diff
+
+        return features
+
+    def _generate_volatility_features_vectorized(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """VECTORIZED: Generate volatility-based cross-timeframe features"""
+        features = {}
+        close = price_components['close']
+        returns = close.pct_change().fillna(method='ffill').fillna(method='bfill').fillna(0)
+
+        timeframes = self.config.volatility_timeframes[:3]
+
+        # VECTORIZED: Pre-compute all volatility calculations
+        vol_cache = {}
+        for tf in timeframes:
+            vol_cache[tf] = returns.rolling(tf, min_periods=tf//2).std()
+
+        # VECTORIZED: Compute all timeframe combinations simultaneously
+        for i, tf1 in enumerate(timeframes):
+            for tf2 in timeframes[i + 1:]:
+                if tf1 < len(close) and tf2 < len(close):
+                    vol_features = self._calculate_volatility_pair_vectorized(vol_cache, tf1, tf2)
+                    features.update(vol_features)
+
+        return features
+
+    def _calculate_volatility_pair_vectorized(self, vol_cache: dict[int, pd.Series], tf1: int, tf2: int) -> dict[str, pd.Series]:
+        """VECTORIZED: Calculate volatility features for a timeframe pair"""
+        features = {}
+
+        vol_1 = vol_cache[tf1]
+        vol_2 = vol_cache[tf2]
+
+        # VECTORIZED: Volatility ratio
+        vol_ratio = vol_1 / (vol_2 + 1e-08)
+        if self._is_valid_feature(vol_ratio):
+            features[f'volatility_ratio_{tf1}m_{tf2}m'] = vol_ratio
+
+        # VECTORIZED: Volatility difference
+        vol_diff = vol_1 - vol_2
+        if self._is_valid_feature(vol_diff):
+            features[f'volatility_diff_{tf1}m_{tf2}m'] = vol_diff
+
+        # VECTORIZED: Volatility of volatility
+        if len(vol_diff.dropna()) >= 20:
+            vol_std = vol_diff.rolling(20, min_periods=10).std()
+            if self._is_valid_feature(vol_std):
+                features[f'volatility_std_{tf1}m_{tf2}m'] = vol_std
+
+        return features
+
+    def _generate_range_features_vectorized(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """VECTORIZED: Generate price range cross-timeframe features"""
+        features = {}
+        high, low, close = price_components['high'], price_components['low'], price_components['close']
+
+        timeframes = self.config.momentum_timeframes[:3]
+
+        # VECTORIZED: Pre-compute all range calculations
+        range_cache = {}
+        for tf in timeframes:
+            range_cache[tf] = (high.rolling(tf, min_periods=tf//2).max() -
+                             low.rolling(tf, min_periods=tf//2).min()) / (close.rolling(tf, min_periods=tf//2).mean() + 1e-08)
+
+        # VECTORIZED: Compute all timeframe combinations simultaneously
+        for i, tf1 in enumerate(timeframes):
+            for tf2 in timeframes[i + 1:]:
+                if tf1 < len(close) and tf2 < len(close):
+                    range_features = self._calculate_range_pair_vectorized(range_cache, tf1, tf2)
+                    features.update(range_features)
+
+        return features
+
+    def _calculate_range_pair_vectorized(self, range_cache: dict[int, pd.Series], tf1: int, tf2: int) -> dict[str, pd.Series]:
+        """VECTORIZED: Calculate range features for a timeframe pair"""
+        features = {}
+
+        range_1 = range_cache[tf1]
+        range_2 = range_cache[tf2]
+
+        # VECTORIZED: Range ratio
+        range_ratio = range_1 / (range_2 + 1e-08)
+        if self._is_valid_feature(range_ratio):
+            features[f'price_range_ratio_{tf1}m_{tf2}m'] = range_ratio
+
+        # VECTORIZED: Range difference
+        range_diff = range_1 - range_2
+        if self._is_valid_feature(range_diff):
+            features[f'price_range_diff_{tf1}m_{tf2}m'] = range_diff
+
+        return features
+
+    def _generate_technical_indicator_features_vectorized(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """VECTORIZED: Generate technical indicator cross-timeframe features"""
+        features = {}
+
+        # VECTORIZED: RSI features
+        rsi_features = self._generate_rsi_features_vectorized(price_components)
+        features.update(rsi_features)
+
+        # VECTORIZED: MACD features
+        macd_features = self._generate_macd_features_vectorized(price_components)
+        features.update(macd_features)
+
+        # VECTORIZED: Bollinger Bands features
+        bb_features = self._generate_bb_features_vectorized(price_components)
+        features.update(bb_features)
+
+        return features
+
+    def _generate_rsi_features_vectorized(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """VECTORIZED: Generate RSI cross-timeframe features"""
+        features = {}
+        close = price_components['close']
+
+        # VECTORIZED: Pre-compute all RSI calculations using our ultra-fast method
+        rsi_cache = {}
+        for period in self.config.rsi_periods:
+            if period < len(close):
+                rsi_cache[period] = self._calculate_rsi_vectorized(close, period)
+
+        # VECTORIZED: Compute all period combinations simultaneously
+        periods = list(rsi_cache.keys())
+        for i, period1 in enumerate(periods[:-1]):
+            for period2 in periods[i + 1:]:
+                rsi_1 = rsi_cache[period1]
+                rsi_2 = rsi_cache[period2]
+
+                # VECTORIZED: RSI difference
+                rsi_diff = rsi_1 - rsi_2
+                if self._is_valid_feature(rsi_diff):
+                    features[f'rsi_diff_{period1}_{period2}'] = rsi_diff
+
+                # VECTORIZED: RSI ratio
+                rsi_ratio = rsi_1 / (rsi_2 + 1e-08)
+                if self._is_valid_feature(rsi_ratio):
+                    features[f'rsi_ratio_{period1}_{period2}'] = rsi_ratio
+
+        return features
+
+    def _calculate_rsi_vectorized(self, prices: pd.Series, period: int) -> pd.Series:
+        """VECTORIZED: Calculate RSI using ultra-fast pandas operations"""
+        if len(prices) < period:
+            return pd.Series([50.0] * len(prices), index=prices.index)
+
+        # VECTORIZED: RSI calculation using pandas ewm (most efficient)
+        delta = prices.diff()
+        gains = np.where(delta > 0, delta, 0)
+        losses = np.where(delta < 0, -delta, 0)
+
+        gains_series = pd.Series(gains)
+        losses_series = pd.Series(losses)
+
+        avg_gains = gains_series.ewm(span=period, adjust=False).mean()
+        avg_losses = losses_series.ewm(span=period, adjust=False).mean()
+
+        rs = avg_gains / (avg_losses + 1e-08)
+        rsi = 100 - (100 / (1 + rs))
+
+        return rsi
+
+    def _generate_macd_features_vectorized(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """VECTORIZED: Generate MACD cross-timeframe features"""
+        features = {}
+        close = price_components['close']
+
+        # VECTORIZED: Pre-compute all MACD calculations
+        macd_cache = {}
+        fast_periods = self.config.macd_fast_periods[:3]
+        slow_periods = self.config.macd_slow_periods[:3]
+
+        for fast in fast_periods:
+            for slow in slow_periods:
+                if fast < slow < len(close):
+                    macd_cache[(fast, slow)] = self._calculate_macd_vectorized(close, fast, slow)
+
+        # VECTORIZED: Compute all period combinations simultaneously
+        for (fast1, slow1), macd_1 in macd_cache.items():
+            for (fast2, slow2), macd_2 in macd_cache.items():
+                if fast1 != fast2 or slow1 != slow2:
+                    # VECTORIZED: MACD difference
+                    macd_diff = macd_1 - macd_2
+                    if self._is_valid_feature(macd_diff):
+                        features[f'macd_diff_{fast1}_{slow1}_{fast2}_{slow2}'] = macd_diff
+
+                    # VECTORIZED: MACD ratio
+                    macd_ratio = macd_1 / (macd_2 + 1e-08)
+                    if self._is_valid_feature(macd_ratio):
+                        features[f'macd_ratio_{fast1}_{slow1}_{fast2}_{slow2}'] = macd_ratio
+
+        return features
+
+    def _calculate_macd_vectorized(self, prices: pd.Series, fast_period: int, slow_period: int) -> pd.Series:
+        """VECTORIZED: Calculate MACD using pandas ewm operations"""
+        if len(prices) < slow_period:
+            return pd.Series([0.0] * len(prices), index=prices.index)
+
+        # VECTORIZED: MACD calculation
+        fast_ema = prices.ewm(span=fast_period, adjust=False).mean()
+        slow_ema = prices.ewm(span=slow_period, adjust=False).mean()
+        return fast_ema - slow_ema
+
+    def _generate_bb_features_vectorized(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """VECTORIZED: Generate Bollinger Bands cross-timeframe features"""
+        features = {}
+        close = price_components['close']
+
+        # VECTORIZED: Pre-compute all Bollinger Band calculations
+        bb_cache = {}
+        for window in self.config.bb_windows:
+            for std in self.config.bb_stds[:2]:
+                if window < len(close):
+                    bb_cache[(window, std)] = self._calculate_bollinger_position_vectorized(close, window, std)
+
+        # VECTORIZED: Compute all window combinations simultaneously
+        for (window1, std1), bb_1 in bb_cache.items():
+            for (window2, std2), bb_2 in bb_cache.items():
+                if window1 != window2 and bb_1 is not None and bb_2 is not None:
+                    # VECTORIZED: Bollinger Band position difference
+                    bb_diff = bb_1 - bb_2
+                    if self._is_valid_feature(bb_diff):
+                        features[f'bb_position_diff_{window1}_{std1}_{window2}_{std2}'] = bb_diff
+
+        return features
+
+    def _calculate_bollinger_position_vectorized(self, prices: pd.Series, window: int, num_std: float) -> pd.Series | None:
+        """VECTORIZED: Calculate position relative to Bollinger Bands"""
+        if len(prices) < window:
+            return None
+
+        # VECTORIZED: Bollinger Bands calculation
+        sma = prices.rolling(window=window).mean()
+        std = prices.rolling(window=window).std()
+        upper_band = sma + std * num_std
+        lower_band = sma - std * num_std
+
+        # VECTORIZED: Position calculation
+        return (prices - lower_band) / (upper_band - lower_band + 1e-08)
+
+    def _generate_volume_features_vectorized(self, price_components: dict[str, pd.Series], volume_data: pd.DataFrame) -> dict[str, pd.Series]:
+        """VECTORIZED: Generate volume-based cross-timeframe features"""
+        features = {}
+        if 'volume' not in volume_data.columns:
+            return features
+
+        volume = volume_data['volume'].astype(float)
+        if volume.var() <= self.config.variance_threshold:
+            return features
+
+        timeframes = self.config.volume_timeframes[:3]
+
+        # VECTORIZED: Pre-compute all volume calculations
+        vol_cache = {}
+        vol_pct_cache = {}
+        for tf in timeframes:
+            vol_cache[tf] = volume.rolling(tf, min_periods=tf//2).mean()
+            vol_pct_cache[tf] = volume.pct_change(tf)
+
+        # VECTORIZED: Compute all timeframe combinations simultaneously
+        for i, tf1 in enumerate(timeframes):
+            for tf2 in timeframes[i + 1:]:
+                if tf1 < len(volume) and tf2 < len(volume):
+                    volume_features = self._calculate_volume_pair_vectorized(vol_cache, vol_pct_cache, tf1, tf2)
+                    features.update(volume_features)
+
+        return features
+
+    def _calculate_volume_pair_vectorized(self, vol_cache: dict[int, pd.Series],
+                                        vol_pct_cache: dict[int, pd.Series], tf1: int, tf2: int) -> dict[str, pd.Series]:
+        """VECTORIZED: Calculate volume features for a timeframe pair"""
+        features = {}
+
+        vol_1 = vol_cache[tf1]
+        vol_2 = vol_cache[tf2]
+
+        # VECTORIZED: Volume ratio
+        vol_ratio = vol_1 / (vol_2 + 1e-08)
+        if self._is_valid_feature(vol_ratio):
+            features[f'volume_ratio_{tf1}m_{tf2}m'] = vol_ratio
+
+        # VECTORIZED: Volume difference
+        vol_diff = vol_1 - vol_2
+        if self._is_valid_feature(vol_diff):
+            features[f'volume_diff_{tf1}m_{tf2}m'] = vol_diff
+
+        # VECTORIZED: Volume momentum difference
+        vol_momentum_1 = vol_pct_cache[tf1]
+        vol_momentum_2 = vol_pct_cache[tf2]
+        vol_momentum = vol_momentum_1 - vol_momentum_2
+        if self._is_valid_feature(vol_momentum):
+            features[f'volume_momentum_{tf1}m_{tf2}m'] = vol_momentum
+
+        return features
+
     async def _generate_features_with_pipeline(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, pd.Series]:
         """Generate features using the comprehensive cross timeframe analysis pipeline."""
         try:
@@ -697,4 +1105,3 @@ class InteractionFeatureGenerator:
         result = features.drop(columns = to_drop)
         self.logger.info(f'Removed {len(to_drop)} highly correlated features')
         return result
-'\nRefactored cross-timeframe and interaction feature generation with reduced complexity.\nThis module breaks down the high-complexity feature generation methods into smaller,\nfocused functions with proper type annotations.\n'

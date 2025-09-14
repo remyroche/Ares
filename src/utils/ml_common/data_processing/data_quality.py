@@ -35,7 +35,7 @@ from collections import Counter
 import warnings
 import time
 
-from ..common_utilities import safe_dataframe_operation
+from src.utils.common_utilities import safe_dataframe_operation
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 

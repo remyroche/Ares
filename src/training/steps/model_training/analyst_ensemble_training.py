@@ -4,6 +4,8 @@ Analyst Ensemble Training Step
 This step handles per-regime ensemble training of Analyst models using common dependencies.
 The Analyst Ensemble operates on 5m timeframe and combines individual analyst models
 to create robust ensemble predictions for trade decisions.
+
+Enhanced with vectorized training capabilities for improved performance.
 """
 
 import numpy as np
@@ -14,6 +16,13 @@ import logging
 from src.utils.logger import system_logger
 from src.utils.ml_common.config.base_training_config import EnsembleTrainingConfig
 from src.utils.ml_common.training.ensemble_training_step import EnsembleTrainingStep
+
+# Import vectorized training manager
+try:
+    from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
+    VECTORIZED_TRAINING_AVAILABLE = True
+except ImportError:
+    VECTORIZED_TRAINING_AVAILABLE = False
 
 logger = system_logger.getChild('AnalystEnsembleTraining')
 
@@ -26,12 +35,13 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     to create robust ensemble predictions for trade decisions.
     """
     
-    def __init__(self, config: Optional[EnsembleTrainingConfig] = None):
+    def __init__(self, config: Optional[EnsembleTrainingConfig] = None, enable_vectorization: bool = True):
         """
-        Initialize Analyst ensemble training step.
-        
+        Initialize Analyst ensemble training step with vectorization support.
+
         Args:
             config: Per-regime training configuration
+            enable_vectorization: Whether to enable vectorized training
         """
         # Set default configuration for analyst ensemble models
         if config is None:
@@ -47,11 +57,14 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 model_save_path="./models/analyst_ensemble_models",
                 evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
             )
-        
-        super().__init__(config)
+
+        super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
         self.logger = logger.getChild('AnalystEnsembleTrainingStep')
-        
-        self.logger.info("✅ Analyst Ensemble Training Step initialized")
+
+        if self.enable_vectorization:
+            self.logger.info("🚀 Analyst Ensemble Training Step initialized with vectorization")
+        else:
+            self.logger.info("✅ Analyst Ensemble Training Step initialized (standard mode)")
     
     def execute(
         self,

@@ -113,6 +113,14 @@ except Exception as e:
     M1_BATCH_AVAILABLE = False
     logger.error(f"Unexpected error in M1 utilities integration: {e}")
 
+# Register cleanup on exit to prevent memory monitoring infinite loops
+import atexit
+try:
+    from src.utils.common_operations import cleanup_m1_optimizers
+    atexit.register(lambda: cleanup_m1_optimizers())
+except ImportError:
+    pass  # Cleanup function not available
+
 # Utility functions for memory management and validation
 def get_memory_usage():
     try:

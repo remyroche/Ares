@@ -303,8 +303,9 @@ class HMMTrainingPipeline:
         results: Dict[str, Any],
         pipeline_state: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Create mock results when training fails."""
-        self.logger.info("🔄 Creating mock HMM training results")
+        """Create mock results when training fails - FOR DEVELOPMENT ONLY."""
+        self.logger.warning("⚠️ Creating MOCK HMM training results - this should not happen in production!")
+        self.logger.warning("💡 This indicates that real HMM training failed and needs to be fixed")
 
         # Mock regime data
         mock_regime_states = [0, 1, 2] * 10  # Simple repeating pattern

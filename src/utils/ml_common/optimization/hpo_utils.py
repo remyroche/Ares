@@ -35,7 +35,7 @@ import time
 from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 from src.utils.hardware.m1_optimizations import M1MemoryOptimizer
-from ..parallel_processing_optimizer import ParallelProcessor
+from src.utils.parallel_processing_optimizer import ParallelProcessor
 from .parallel_processing import ParallelProcessingCoordinator
 from .memory_optimization import MemoryEfficientTraining
 

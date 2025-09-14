@@ -65,15 +65,25 @@ class M1MemoryOptimizer:
 
     def _memory_monitoring_loop(self):
         """Main memory monitoring loop."""
-        while self.monitoring_active:
+        max_iterations = 3600  # Maximum 1 hour of monitoring (3600 * 5 seconds)
+        iteration_count = 0
+
+        while self.monitoring_active and iteration_count < max_iterations:
             try:
                 self._check_memory_pressure()
                 self._apply_memory_optimizations()
                 time.sleep(5)  # Check every 5 seconds
+                iteration_count += 1
 
             except Exception as e:
                 self.logger.error(f"Memory monitoring error: {e}")
                 time.sleep(10)  # Wait longer on error
+                iteration_count += 2  # Count error iterations
+
+        # Auto-stop monitoring if we hit the iteration limit
+        if iteration_count >= max_iterations:
+            self.logger.warning(f"🧠 Memory monitoring reached maximum iterations ({max_iterations}), auto-stopping")
+            self.monitoring_active = False
 
     def _check_memory_pressure(self):
         """Check current memory pressure."""

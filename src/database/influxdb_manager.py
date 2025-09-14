@@ -8,7 +8,7 @@ from src.config import (
     INFLUXDB_TOKEN,
     INFLUXDB_URL,
 )
-from .utils.logger import logger
+from src.utils.logger import logger
 import pandas as pd
 
 import numpy as np

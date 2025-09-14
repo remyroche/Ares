@@ -55,6 +55,7 @@ from .ensembles.ensemble_manager import EnsembleManager, EnsembleConfig, Ensembl
 # Import data quality frameworks
 try:
     from ..data.quality.data_quality import DataQualityFramework
+    from ..data.quality.data_cleaning import DataCleaner
     QUALITY_FRAMEWORK_AVAILABLE = True
 except ImportError:
     QUALITY_FRAMEWORK_AVAILABLE = False
@@ -77,6 +78,13 @@ try:
 except ImportError:
     HMM_AVAILABLE = False
     logger.warning("HMM libraries not available - limited regime detection functionality")
+
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    logger.warning("Optuna not available - Bayesian optimization disabled")
 
 class RegimeDetectionMethod(Enum):
     """Available regime detection methods."""
@@ -431,23 +439,300 @@ class EnhancedHMMRegimeDetector:
             config.n_iter = best_params.get('n_iter', config.n_iter)
             config.tol = best_params.get('tol', config.tol)
         
-        # Create and fit HMM model with improved parameters
-        # Prefer diag covariance for stability in LIGHT mode
-        preferred_covariance = 'diag' if (mode or '').lower() == 'light' else config.covariance_type
+        # Multi-stage HMM parameter optimization: coarse grid -> fine grid -> Bayesian
+        import time as time_module
+        n_samples = len(numeric_data)
+
+        # Determine optimization intensity based on mode
+        mode = (mode or 'blank').lower()
+        if mode == 'full':
+            # Very detailed in full mode
+            use_bayesian = True
+            n_coarse_configs = 8
+            n_fine_configs = 12
+            bayesian_trials = 25
+            verbose_logging = True
+        elif mode == 'blank':
+            # Lighter in blank mode
+            use_bayesian = True
+            n_coarse_configs = 3
+            n_fine_configs = 3
+            bayesian_trials = 4
+            verbose_logging = True
+        else:  # light mode
+            # Light mode with Bayesian optimization (reduced trials)
+            use_bayesian = True
+            n_coarse_configs = 3
+            n_fine_configs = 3
+            bayesian_trials = 3      # Reduced trials for light mode
+            verbose_logging = True   # Verbose logging: Every step, every config, every score
+
+        self.logger.info(f"🎛️ HMM Optimization Mode: {mode.upper()}")
+        self.logger.info(f"📊 Dataset: {n_samples:,} samples, {numeric_data.shape[1]} features")
+        stages_desc = "Coarse Grid → Fine Grid → Bayesian Opt"
+        if not use_bayesian:
+            stages_desc = "Coarse Grid → Fine Grid → Best Config"
+        self.logger.info(f"🔬 Stages: {stages_desc}")
+
+        # Stage 1: Coarse Grid Search
+        self.logger.info(f"\n🔍 Stage 1: Coarse Grid Search ({n_coarse_configs} configs)")
+
+        coarse_configs = [
+            {'n_components': 2, 'covariance_type': 'spherical', 'n_iter': 30, 'tol': 1e-2},
+            {'n_components': 3, 'covariance_type': 'diag', 'n_iter': 50, 'tol': 5e-3},
+            {'n_components': 4, 'covariance_type': 'diag', 'n_iter': 75, 'tol': 1e-3},
+            {'n_components': 2, 'covariance_type': 'diag', 'n_iter': 40, 'tol': 1e-2},
+            {'n_components': 5, 'covariance_type': 'diag', 'n_iter': 60, 'tol': 5e-4},
+            {'n_components': 3, 'covariance_type': 'spherical', 'n_iter': 45, 'tol': 1e-2},
+            {'n_components': 4, 'covariance_type': 'tied', 'n_iter': 55, 'tol': 1e-3},
+            {'n_components': 2, 'covariance_type': 'tied', 'n_iter': 35, 'tol': 5e-3},
+        ][:n_coarse_configs]
+
+        coarse_results = []
+        best_coarse_config = None
+        best_coarse_score = float('-inf')
+
+        for i, coarse_config in enumerate(coarse_configs):
+            try:
+                start_time = time_module.time()
+
+                if verbose_logging:
+                    self.logger.info(f"  Testing coarse config {i+1}/{len(coarse_configs)}: {coarse_config}")
+
+                # Create temporary model for scoring
+                temp_model = hmm.GaussianHMM(
+                    n_components=coarse_config['n_components'],
+                    covariance_type=coarse_config['covariance_type'],
+                    n_iter=coarse_config['n_iter'],
+                    tol=coarse_config['tol'],
+                    random_state=42,  # Use fixed random state for reproducibility
+                    init_params='mc',
+                    params='stmc'
+                )
+
+                # Initialize start probabilities
+                if hasattr(temp_model, 'startprob_'):
+                    temp_model.startprob_ = np.ones(coarse_config['n_components']) / coarse_config['n_components']
+
+                # Fit on full dataset for coarse evaluation
+                temp_model.fit(numeric_data)
+                score = temp_model.score(numeric_data)
+
+                elapsed = time_module.time() - start_time
+                coarse_results.append({
+                    'config': coarse_config.copy(),
+                    'score': score,
+                    'time': elapsed
+                })
+
+                if verbose_logging:
+                    self.logger.info(f"    Score: {score:.2f} (took {elapsed:.2f}s)")
+
+                if score > best_coarse_score:
+                    best_coarse_score = score
+                    best_coarse_config = coarse_config.copy()
+
+            except Exception as e:
+                if verbose_logging:
+                    self.logger.warning(f"    Coarse config {i+1} failed: {e}")
+                continue
+
+        if not best_coarse_config:
+            self.logger.error("❌ All coarse configurations failed!")
+            raise ValueError("Coarse grid search failed to find any working configuration")
+
+        self.logger.info(f"🏅 Stage 1 Complete - Best coarse config: {best_coarse_config} (score: {best_coarse_score:.2f})")
+
+        # Stage 2: Fine Grid Search around best coarse configuration
+        self.logger.info(f"\n🎯 Stage 2: Fine Grid Search ({n_fine_configs} configs)")
+
+        base_n_comp = best_coarse_config['n_components']
+        base_cov = best_coarse_config['covariance_type']
+        base_iter = best_coarse_config['n_iter']
+        base_tol = best_coarse_config['tol']
+
+        fine_configs = []
+
+        # Generate fine grid around best coarse config
+        for n_comp in [max(2, base_n_comp - 1), base_n_comp, min(6, base_n_comp + 1)]:
+            for cov_type in [base_cov, 'diag' if base_cov != 'diag' else 'spherical']:
+                for n_iter_mult in [0.7, 1.0, 1.3]:
+                    for tol_mult in [0.3, 1.0, 3.0]:
+                        fine_config = {
+                            'n_components': n_comp,
+                            'covariance_type': cov_type,
+                            'n_iter': max(20, int(base_iter * n_iter_mult)),
+                            'tol': base_tol * tol_mult
+                        }
+                        if fine_config not in fine_configs:
+                            fine_configs.append(fine_config)
+
+        # Limit to requested number of configs
+        fine_configs = fine_configs[:n_fine_configs]
+
+        fine_results = []
+        best_fine_config = best_coarse_config
+        best_fine_score = best_coarse_score
+
+        for i, fine_config in enumerate(fine_configs):
+            try:
+                start_time = time_module.time()
+
+                if verbose_logging:
+                    self.logger.info(f"  Testing fine config {i+1}/{len(fine_configs)}: {fine_config}")
+
+                temp_model = hmm.GaussianHMM(
+                    n_components=fine_config['n_components'],
+                    covariance_type=fine_config['covariance_type'],
+                    n_iter=fine_config['n_iter'],
+                    tol=fine_config['tol'],
+                    random_state=42,  # Use fixed random state for reproducibility
+                    init_params='mc',
+                    params='stmc'
+                )
+
+                if hasattr(temp_model, 'startprob_'):
+                    temp_model.startprob_ = np.ones(fine_config['n_components']) / fine_config['n_components']
+
+                # Fit on full dataset for fine search
+                temp_model.fit(numeric_data)
+                score = temp_model.score(numeric_data)
+
+                elapsed = time_module.time() - start_time
+                fine_results.append({
+                    'config': fine_config.copy(),
+                    'score': score,
+                    'time': elapsed
+                })
+
+                if verbose_logging:
+                    self.logger.info(f"    Score: {score:.2f} (took {elapsed:.2f}s)")
+
+                if score > best_fine_score:
+                    best_fine_score = score
+                    best_fine_config = fine_config.copy()
+
+            except Exception as e:
+                if verbose_logging:
+                    self.logger.warning(f"    Fine config {i+1} failed: {e}")
+                continue
+
+        self.logger.info(f"🏅 Stage 2 Complete - Best fine config: {best_fine_config} (score: {best_fine_score:.2f})")
+
+        # Stage 3: Bayesian Optimization (Full/Blank modes only)
+        final_config = best_fine_config
+
+        if use_bayesian and OPTUNA_AVAILABLE:
+            self.logger.info(f"\n🧠 Stage 3: Bayesian Optimization ({bayesian_trials} trials)")
+
+            def bayesian_objective(trial):
+                # Suggest parameters around best fine config
+                n_comp = trial.suggest_int('n_components',
+                                         max(2, best_fine_config['n_components'] - 1),
+                                         min(6, best_fine_config['n_components'] + 1))
+
+                cov_options = ['diag', 'spherical']
+                if best_fine_config['covariance_type'] == 'tied':
+                    cov_options.append('tied')
+                cov_type = trial.suggest_categorical('covariance_type', cov_options)
+
+                # Suggest n_iter around best fine config
+                n_iter = trial.suggest_int('n_iter',
+                                         max(20, int(best_fine_config['n_iter'] * 0.5)),
+                                         int(best_fine_config['n_iter'] * 1.5))
+
+                # Suggest tol around best fine config
+                tol = trial.suggest_float('tol',
+                                        best_fine_config['tol'] * 0.1,
+                                        best_fine_config['tol'] * 10,
+                                        log=True)
+
+                bayesian_config = {
+                    'n_components': n_comp,
+                    'covariance_type': cov_type,
+                    'n_iter': n_iter,
+                    'tol': tol
+                }
+
+                try:
+                    temp_model = hmm.GaussianHMM(
+                        n_components=n_comp,
+                        covariance_type=cov_type,
+                        n_iter=n_iter,
+                        tol=tol,
+                        random_state=42,  # Use fixed random state for reproducibility
+                        init_params='mc',
+                        params='stmc'
+                    )
+
+                    if hasattr(temp_model, 'startprob_'):
+                        temp_model.startprob_ = np.ones(n_comp) / n_comp
+
+                    # Use full dataset for Bayesian optimization
+                    temp_model.fit(numeric_data)
+                    score = temp_model.score(numeric_data)
+
+                    if verbose_logging:
+                        self.logger.info(f"    Bayesian trial - Config: {config}, Score: {score:.2f}")
+
+                    return score
+
+                except Exception as e:
+                    if verbose_logging:
+                        self.logger.warning(f"    Bayesian trial failed: {e}")
+                    return float('-inf')
+
+            # Create study with pruner for early stopping
+            pruner = optuna.pruners.MedianPruner(
+                n_startup_trials=5,
+                n_warmup_steps=10,
+                interval_steps=1
+            )
+
+            study = optuna.create_study(
+                direction='maximize',
+                pruner=pruner,
+                study_name=f"hmm_bayesian_optimization_{mode}"
+            )
+
+            study.optimize(bayesian_objective, n_trials=bayesian_trials)
+
+            if study.best_params:
+                final_config = {
+                    'n_components': study.best_params['n_components'],
+                    'covariance_type': study.best_params['covariance_type'],
+                    'n_iter': study.best_params['n_iter'],
+                    'tol': study.best_params['tol']
+                }
+                best_bayesian_score = study.best_value
+                self.logger.info(f"🏅 Stage 3 Complete - Best Bayesian config: {final_config} (score: {best_bayesian_score:.2f})")
+            else:
+                self.logger.warning("⚠️ Bayesian optimization failed, using fine grid result")
+
+        self.logger.info(f"\n🏆 OPTIMIZATION COMPLETE - Final config: {final_config}")
+        if verbose_logging:
+            self.logger.info("📊 Optimization Summary:")
+            self.logger.info(f"   Coarse configs tested: {len(coarse_results)}")
+            self.logger.info(f"   Fine configs tested: {len(fine_results)}")
+            if use_bayesian and OPTUNA_AVAILABLE:
+                self.logger.info(f"   Bayesian trials: {bayesian_trials}")
+            self.logger.info(f"   Total time: ~{(sum(r['time'] for r in coarse_results) + sum(r['time'] for r in fine_results)):.1f}s")
+
+        # Create final model with optimized parameters
         model = hmm.GaussianHMM(
-            n_components=config.n_components,
-            covariance_type=preferred_covariance,
-            n_iter=max(config.n_iter, 100),  # Ensure minimum iterations
-            tol=max(config.tol, 1e-4),  # Ensure reasonable tolerance
+            n_components=final_config['n_components'],
+            covariance_type=final_config['covariance_type'],
+            n_iter=max(final_config['n_iter'], 10),
+            tol=max(final_config['tol'], 1e-4),
             random_state=config.random_state,
-            init_params='mc',  # Only initialize transition matrix, use better initialization
-            params='stmc'  # Estimate start, transition, and means/covariances
+            init_params='mc',
+            params='stmc'
         )
 
         # Better initialization for start probabilities
         if hasattr(model, 'startprob_'):
             # Initialize with uniform distribution
-            model.startprob_ = np.ones(config.n_components) / config.n_components
+            model.startprob_ = np.ones(final_config['n_components']) / final_config['n_components']
         
         # Use memory optimizer if available
         if self.memory_optimizer:
@@ -456,23 +741,32 @@ class EnhancedHMMRegimeDetector:
         # Ensure data covariance is positive-definite for stable HMM fitting
         numeric_data = self._ensure_positive_definite_data(numeric_data)
 
-        # Try fitting with different configurations if needed
-        fit_success = False
+        # Standard fallback configurations
         fallback_configs = [
-            # Conservative configurations for stability
             {'covariance_type': 'diag', 'n_components': min(config.n_components, 3), 'n_iter': 300, 'tol': 1e-2},
             {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 300, 'tol': 1e-2},
             {'covariance_type': 'tied', 'n_components': min(config.n_components, 2), 'n_iter': 300, 'tol': 1e-2},
-            # More aggressive fallbacks
             {'covariance_type': 'diag', 'n_components': 2, 'n_iter': 500, 'tol': 1e-1},
             {'covariance_type': 'spherical', 'n_components': 2, 'n_iter': 500, 'tol': 1e-1},
         ]
 
+        # Try fitting with different configurations if needed
+        fit_success = False
+
         try:
+            self.logger.info(f"🏃 Starting HMM fitting with {final_config['n_components']} components on {len(numeric_data)} samples...")
+
+            fit_start_time = time_module.time()
+
             model.fit(numeric_data)
             fit_success = True
+
+            fit_time = time_module.time() - fit_start_time
+            self.logger.info(f"✅ HMM fitting completed in {fit_time:.2f}s")
+
         except Exception as e:
             self.logger.warning(f"⚠️ Primary HMM fitting failed: {e}, trying fallback configurations")
+            fit_success = False
 
             for i, fallback_config in enumerate(fallback_configs):
                 try:
@@ -1756,8 +2050,13 @@ class EnhancedHMMRegimeDetector:
 
         self.logger.info("✅ Basic validation passed")
 
-    def _advanced_gap_detection_and_filling(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Advanced gap detection and filling with download capability for large gaps."""
+    def _advanced_gap_detection_and_filling(self, data: pd.DataFrame, skip_download_gaps: bool = False) -> pd.DataFrame:
+        """Advanced gap detection and filling with download capability for large gaps.
+
+        Args:
+            data: Input DataFrame to process
+            skip_download_gaps: If True, skip downloading data for large gaps and use interpolation only
+        """
         from ..data.quality.data_cleaning import DataCleaner
         from datetime import timedelta
 
@@ -1781,9 +2080,9 @@ class EnhancedHMMRegimeDetector:
         time_range_max = timestamps.max()
         self.logger.info(f"📅 Data time range: {time_range_min} to {time_range_max}")
 
-        # Initialize cleaning framework
-        cleaner = DataCleaner()
-        self.logger.info("🧹 Initialized data cleaner for gap detection")
+        # Initialize cleaning framework - data_type will be determined later
+        cleaner = None  # Will be initialized later with correct data_type
+        self.logger.info("🧹 Data cleaner will be initialized with detected timeframe")
 
         # Detect gaps in timestamp data
         try:
@@ -1898,7 +2197,7 @@ class EnhancedHMMRegimeDetector:
 
                 # Batch process gaps for efficiency
                 self.logger.info("🔄 Starting batch gap processing...")
-                data = self._batch_process_gaps(data, large_gaps, timestamps, gap_threshold, download_threshold)
+                data = self._batch_process_gaps(data, large_gaps, timestamps, gap_threshold, download_threshold, skip_download_gaps, 'klines')
                 self.logger.info(f"✅ Gap processing completed. New data shape: {data.shape[0]:,} rows")
 
                 # Re-validate after gap filling
@@ -1933,6 +2232,41 @@ class EnhancedHMMRegimeDetector:
         Reports median interval with tolerance and avoids misleading sub-second prints for minute data.
         """
         try:
+            # First, check if this is klines data by looking for interval column
+            is_klines_data = False
+            expected_interval_override = None
+
+            if 'interval' in data.columns:
+                # Check for common kline interval patterns
+                interval_values = data['interval'].dropna().unique()
+                if len(interval_values) > 0:
+                    interval_str = str(interval_values[0]).lower()
+                    if '1m' in interval_str or '1min' in interval_str or interval_str == '1':
+                        expected_interval_override = 60.0  # 1 minute
+                        is_klines_data = True
+                    elif '5m' in interval_str or '5min' in interval_str or interval_str == '5':
+                        expected_interval_override = 300.0  # 5 minutes
+                        is_klines_data = True
+                    elif '15m' in interval_str or '15min' in interval_str or interval_str == '15':
+                        expected_interval_override = 900.0  # 15 minutes
+                        is_klines_data = True
+                    elif '30m' in interval_str or '30min' in interval_str or interval_str == '30':
+                        expected_interval_override = 1800.0  # 30 minutes
+                        is_klines_data = True
+                    elif '1h' in interval_str or '1hour' in interval_str or interval_str == '60':
+                        expected_interval_override = 3600.0  # 1 hour
+                        is_klines_data = True
+                    elif '4h' in interval_str or '4hour' in interval_str:
+                        expected_interval_override = 14400.0  # 4 hours
+                        is_klines_data = True
+                    elif '1d' in interval_str or '1day' in interval_str:
+                        expected_interval_override = 86400.0  # 1 day
+                        is_klines_data = True
+
+            if is_klines_data and expected_interval_override is not None:
+                self.logger.info(f"📊 Detected klines data with interval column: {interval_str}, using expected interval: {expected_interval_override:.1f}s")
+                return expected_interval_override
+
             # Calculate time differences in seconds
             time_diffs_raw = timestamps.diff()
             if hasattr(time_diffs_raw, 'dt'):
@@ -1994,6 +2328,7 @@ class EnhancedHMMRegimeDetector:
     def _get_data_type_specific_thresholds(self, expected_interval: float) -> Tuple[float, float]:
         """Get data-type specific gap detection and download thresholds."""
         try:
+            from ..data.quality.data_cleaning import DataCleaner
             # Define thresholds based on data type
             if expected_interval <= 2:
                 # Aggtrades data (1-2 second intervals)
@@ -2019,8 +2354,8 @@ class EnhancedHMMRegimeDetector:
             elif expected_interval <= 3600:
                 # Klines data (1 hour intervals)
                 data_type = "klines_1h"
-                gap_threshold = 1800.0  # 30 minutes for klines
-                download_threshold = 3600.0  # 1 hour for download attempts
+                gap_threshold = 3600.0  # 1 hour for klines - minimum meaningful gap
+                download_threshold = 7200.0  # 2 hours for download attempts
             elif expected_interval <= 14400:
                 # Klines data (4 hour intervals)
                 data_type = "klines_4h"
@@ -2045,6 +2380,9 @@ class EnhancedHMMRegimeDetector:
             self.logger.info(f"📊 Data type: {data_type}")
             self.logger.info(f"📊 Gap threshold: {gap_threshold:.1f}s ({gap_threshold/60:.1f}min)")
             self.logger.info(f"📊 Download threshold: {download_threshold:.1f}s ({download_threshold/60:.1f}min)")
+
+            # Update DataCleaner with the correct data_type for proper gap thresholds
+            cleaner = DataCleaner(data_type=data_type)
             
             return gap_threshold, download_threshold
             
@@ -2223,9 +2561,19 @@ class EnhancedHMMRegimeDetector:
             self.logger.error(f"❌ Error inserting downloaded data: {e}")
             return original_data
 
-    def _batch_process_gaps(self, data: pd.DataFrame, large_gaps: pd.Series, timestamps: pd.Series, 
-                           gap_threshold: float, download_threshold: float) -> pd.DataFrame:
-        """Batch process gaps for efficiency with prioritization."""
+    def _batch_process_gaps(self, data: pd.DataFrame, large_gaps: pd.Series, timestamps: pd.Series,
+                           gap_threshold: float, download_threshold: float, skip_download_gaps: bool = False,
+                           data_type: str = 'klines') -> pd.DataFrame:
+        """Batch process gaps for efficiency with prioritization.
+
+        Args:
+            data: Input DataFrame
+            large_gaps: Series of gap sizes
+            timestamps: Timestamp series
+            gap_threshold: Minimum gap size to process
+            download_threshold: Gap size above which to attempt downloads
+            skip_download_gaps: If True, skip downloading and use interpolation for all gaps
+        """
         try:
             # Categorize gaps by size and priority
             download_gaps = []
@@ -2233,31 +2581,35 @@ class EnhancedHMMRegimeDetector:
             
             for idx in large_gaps.index:
                 gap_size = large_gaps.loc[idx]
-                if gap_size > download_threshold:
+                if gap_size > download_threshold and not skip_download_gaps:
                     download_gaps.append((idx, gap_size))
                 else:
                     interpolation_gaps.append((idx, gap_size))
+            
+            if skip_download_gaps and len(large_gaps) > 0:
+                self.logger.info(f"🚫 Skipping download gaps (skip_download_gaps=True): {len(large_gaps)} gaps will be interpolated")
+                interpolation_gaps = [(idx, large_gaps.loc[idx]) for idx in large_gaps.index]
             
             self.logger.info(f"📊 Gap categorization: {len(download_gaps)} for download, {len(interpolation_gaps)} for interpolation")
             
             # Process download gaps in batches (limit concurrent downloads)
             if download_gaps:
                 self.logger.info(f"🔄 Processing {len(download_gaps)} gaps for download in batches...")
-                data = self._process_download_gaps_batch(data, download_gaps, timestamps)
+                data = self._process_download_gaps_batch(data, download_gaps, timestamps, data_type)
             
             # Process interpolation gaps in batches
             if interpolation_gaps:
                 self.logger.info(f"🔄 Processing {len(interpolation_gaps)} gaps for interpolation in batches...")
-                data = self._process_interpolation_gaps_batch(data, interpolation_gaps)
+                data = self._process_interpolation_gaps_batch(data, interpolation_gaps, data_type)
             
             return data
             
         except Exception as e:
             self.logger.error(f"❌ Error in batch gap processing: {e}")
             # Fall back to individual processing
-            return self._fallback_individual_gap_processing(data, large_gaps, timestamps, gap_threshold, download_threshold)
+            return self._fallback_individual_gap_processing(data, large_gaps, timestamps, gap_threshold, download_threshold, data_type)
 
-    def _process_download_gaps_batch(self, data: pd.DataFrame, download_gaps: list, timestamps: pd.Series) -> pd.DataFrame:
+    def _process_download_gaps_batch(self, data: pd.DataFrame, download_gaps: list, timestamps: pd.Series, data_type: str = 'klines') -> pd.DataFrame:
         """Process download gaps in batches with concurrency control."""
         import asyncio
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -2300,15 +2652,15 @@ class EnhancedHMMRegimeDetector:
                             data = self._insert_downloaded_data(data, downloaded_data, idx)
                         else:
                             self.logger.warning(f"❌ Download failed for gap {gap_size:.1f}s - using interpolation")
-                            data = self._interpolate_gap(data, idx, gap_size)
+                            data = self._interpolate_gap(data, idx, gap_size, data_type)
                             
                     except Exception as e:
                         self.logger.warning(f"❌ Download error for gap {gap_size:.1f}s: {e} - using interpolation")
-                        data = self._interpolate_gap(data, idx, gap_size)
+                        data = self._interpolate_gap(data, idx, gap_size, data_type)
         
         return data
 
-    def _process_interpolation_gaps_batch(self, data: pd.DataFrame, interpolation_gaps: list) -> pd.DataFrame:
+    def _process_interpolation_gaps_batch(self, data: pd.DataFrame, interpolation_gaps: list, data_type: str = 'klines') -> pd.DataFrame:
         """Process interpolation gaps in batches for efficiency."""
         batch_size = 50  # Process more interpolation gaps per batch since they're faster
         
@@ -2316,20 +2668,21 @@ class EnhancedHMMRegimeDetector:
         
         for i in range(0, len(interpolation_gaps), batch_size):
             batch = interpolation_gaps[i:i + batch_size]
-            self.logger.info(f"🔧 Processing interpolation batch {i//batch_size + 1}/{(len(interpolation_gaps) + batch_size - 1)//batch_size}")
+            if (i//batch_size + 1) % 10 == 0 or i == 0:  # Log every 10th batch or first batch
+                self.logger.info(f"🔧 Processing interpolation batch {i//batch_size + 1}/{(len(interpolation_gaps) + batch_size - 1)//batch_size}")
             
             # Process interpolation gaps in the batch
             for idx, gap_size in batch:
                 try:
-                    data = self._interpolate_gap(data, idx, gap_size)
+                    data = self._interpolate_gap(data, idx, gap_size, data_type)
                 except Exception as e:
                     self.logger.warning(f"⚠️ Interpolation error for gap {gap_size:.1f}s: {e}")
         
         return data
 
-    def _fallback_individual_gap_processing(self, data: pd.DataFrame, large_gaps: pd.Series, 
-                                          timestamps: pd.Series, gap_threshold: float, 
-                                          download_threshold: float) -> pd.DataFrame:
+    def _fallback_individual_gap_processing(self, data: pd.DataFrame, large_gaps: pd.Series,
+                                          timestamps: pd.Series, gap_threshold: float,
+                                          download_threshold: float, data_type: str = 'klines') -> pd.DataFrame:
         """Fallback to individual gap processing if batch processing fails."""
         self.logger.warning("⚠️ Falling back to individual gap processing")
         
@@ -2345,7 +2698,7 @@ class EnhancedHMMRegimeDetector:
                 current_time = pd.Timestamp.now(tz='UTC')
                 if gap_start > current_time or gap_end > current_time:
                     self.logger.warning(f"⚠️ Cannot download future data: gap from {gap_start} to {gap_end}")
-                    data = self._interpolate_gap(data, idx, gap_size)
+                    data = self._interpolate_gap(data, idx, gap_size, data_type)
                     continue
                 
                 # Attempt to download missing data
@@ -2356,19 +2709,19 @@ class EnhancedHMMRegimeDetector:
                     data = self._insert_downloaded_data(data, downloaded_data, idx)
                 else:
                     self.logger.warning(f"❌ Failed to download data for gap - using interpolation")
-                    data = self._interpolate_gap(data, idx, gap_size)
+                    data = self._interpolate_gap(data, idx, gap_size, data_type)
             else:
                 self.logger.info(f"🔧 Gap detected ({gap_size:.1f}s) - using interpolation")
-                data = self._interpolate_gap(data, idx, gap_size)
+                data = self._interpolate_gap(data, idx, gap_size, data_type)
         
         return data
 
-    def _interpolate_gap(self, data: pd.DataFrame, gap_index: int, gap_size: float) -> pd.DataFrame:
+    def _interpolate_gap(self, data: pd.DataFrame, gap_index: int, gap_size: float, data_type: str = 'klines') -> pd.DataFrame:
         """Interpolate data for small gaps using various methods."""
         try:
             from ..data.quality.data_cleaning import DataCleaner
 
-            cleaner = DataCleaner()
+            cleaner = DataCleaner(data_type=data_type)
 
             # Choose interpolation method based on gap size and data type
             if gap_size <= 30:  # Very small gaps - linear interpolation
@@ -2412,7 +2765,7 @@ class EnhancedHMMRegimeDetector:
                         # Last resort: don't sort but warn
                         self.logger.warning("⚠️ Unable to sort timestamp column - data may be unsorted")
 
-            self.logger.info(f"✅ Interpolated gap using {method} method")
+            self.logger.debug(f"✅ Interpolated gap using {method} method")
             return data
 
         except Exception as e:

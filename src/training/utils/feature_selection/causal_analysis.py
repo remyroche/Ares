@@ -17,7 +17,7 @@ from collections import defaultdict
 
 # Enhanced dependency management
 try:
-    from ...utils.logger import get_logger
+    from src.utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.CausalAnalysis")
     tprint("✅ Custom logger available for FeatureSelection.CausalAnalysis")
 except Exception as e:

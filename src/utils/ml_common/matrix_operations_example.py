@@ -21,15 +21,15 @@ def demonstrate_basic_operations():
     
     try:
         from matrix_operations_improved import (
-            get_enhanced_matrix_operations, 
-            m1_matrix_multiply, 
+            get_unified_matrix_operations,
+            m1_matrix_multiply,
             m1_correlation_matrix,
             m1_eigendecomposition,
             m1_svd_decomposition
         )
-        
+
         # Get the enhanced operations instance
-        ops = get_enhanced_matrix_operations()
+        ops = get_unified_matrix_operations()
         
         # Create sample matrices
         np.random.seed(42)
@@ -91,11 +91,11 @@ def demonstrate_batch_operations():
     
     try:
         from matrix_operations_improved import (
-            get_enhanced_matrix_operations,
+            get_unified_matrix_operations,
             m1_parallel_operations
         )
-        
-        ops = get_enhanced_matrix_operations()
+
+        ops = get_unified_matrix_operations()
         
         # Create multiple matrices for batch processing
         np.random.seed(42)
@@ -138,12 +138,12 @@ def demonstrate_memory_optimization():
     
     try:
         from matrix_operations_improved import (
-            get_enhanced_matrix_operations,
+            get_unified_matrix_operations,
             m1_optimize_memory,
             get_m1_performance_stats
         )
-        
-        ops = get_enhanced_matrix_operations()
+
+        ops = get_unified_matrix_operations()
         
         # Get initial memory stats
         initial_stats = get_m1_performance_stats()
@@ -200,9 +200,9 @@ def demonstrate_vectorized_processing():
     logger.info("🔄 Demonstrating Vectorized Processing")
     
     try:
-        from matrix_operations_improved import get_enhanced_matrix_operations
-        
-        ops = get_enhanced_matrix_operations()
+        from matrix_operations_improved import get_unified_matrix_operations
+
+        ops = get_unified_matrix_operations()
         
         # Create sample financial data
         np.random.seed(42)

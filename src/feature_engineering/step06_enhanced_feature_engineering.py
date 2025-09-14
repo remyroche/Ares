@@ -1013,10 +1013,10 @@ class EnhancedFeatureEngineering:
                     default=0.0
                 )
                 
-                # Momentum features
-                enhanced_features['momentum_5'] = enhanced_features['close'].pct_change(5)
-                enhanced_features['momentum_10'] = enhanced_features['close'].pct_change(10)
-                enhanced_features['momentum_20'] = enhanced_features['close'].pct_change(20)
+                # Momentum features - SAFE CALCULATION to prevent infinity from corrupted data
+                enhanced_features['momentum_5'] = self._calculate_safe_momentum(enhanced_features['close'], 5, math_val)
+                enhanced_features['momentum_10'] = self._calculate_safe_momentum(enhanced_features['close'], 10, math_val)
+                enhanced_features['momentum_20'] = self._calculate_safe_momentum(enhanced_features['close'], 20, math_val)
                 
                 # Technical indicators with safe math
                 enhanced_features['rsi_14'] = self._calculate_rsi_safe(enhanced_features['close'], 14, math_val)
@@ -1083,6 +1083,57 @@ class EnhancedFeatureEngineering:
         rsi = 100 - safe_divide(100, 1 + rs, default=50.0)
         
         return rsi
+
+    def _calculate_safe_momentum(self, prices: pd.Series, period: int, math_val) -> pd.Series:
+        """
+        Calculate momentum with safe mathematical operations to prevent infinity.
+
+        This prevents division by zero that occurs when corrupted data contains zeros.
+        Instead of creating infinity, we return NaN for corrupted periods.
+
+        Args:
+            prices: Price series
+            period: Momentum period (e.g., 10 for momentum_10)
+            math_val: Math validation utilities
+
+        Returns:
+            Momentum series with safe division (NaN instead of infinity)
+        """
+        try:
+            # Calculate price differences
+            current_prices = prices
+            past_prices = prices.shift(period)
+
+            # Check for corrupted data (zeros) that would cause division by zero
+            zero_mask = (past_prices == 0) | (past_prices.isna())
+            if zero_mask.any():
+                zero_count = zero_mask.sum()
+                self.logger.warning(f"⚠️ Detected {zero_count} zero/NaN past prices in momentum_{period} calculation")
+                self.logger.warning("   This indicates corrupted data - using NaN instead of infinity")
+
+            # Calculate momentum with safe division
+            # momentum = (current - past) / past
+            price_diff = current_prices - past_prices
+            momentum = safe_divide(price_diff, past_prices, default=np.nan)
+
+            # Additional validation: check for unreasonable momentum values
+            if math_val and hasattr(math_val, 'validate_feature_quality'):
+                try:
+                    validation_result = math_val.validate_feature_quality(
+                        momentum.values.reshape(-1, 1),
+                        feature_names=[f'momentum_{period}']
+                    )
+                    if not validation_result['passed']:
+                        self.logger.warning(f"⚠️ Momentum_{period} validation failed: {validation_result['message']}")
+                except Exception as e:
+                    self.logger.debug(f"Feature validation failed for momentum_{period}: {e}")
+
+            return momentum
+
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating safe momentum_{period}: {e}")
+            # Return NaN series as fallback
+            return pd.Series(np.nan, index=prices.index, name=f'momentum_{period}')
 
     async def cleanup(self) -> None:
         """Clean up utility services and resources."""

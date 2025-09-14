@@ -680,6 +680,36 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
             features_file = f'{data_dir}/features_{exchange}_{symbol}_consolidated.parquet'
             if safe_file_exists(features_file):
                 features_df = safe_read_parquet(features_file)
+
+                # 🔧 INTEGRATE DATA CLEANING UTILITY
+                # Automatically clean corrupted data before training
+                try:
+                    from src.utils.ml_common.data_processing.data_cleaning_utils import exclude_corrupted_periods
+
+                    # Convert timestamp if needed
+                    if 'timestamp' in features_df.columns and features_df['timestamp'].dtype == 'int64':
+                        features_df['datetime'] = pd.to_datetime(features_df['timestamp'], unit='s')
+                    elif 'datetime' not in features_df.columns:
+                        # Try to infer datetime column
+                        datetime_cols = [col for col in features_df.columns if 'time' in col.lower()]
+                        if datetime_cols:
+                            features_df['datetime'] = pd.to_datetime(features_df[datetime_cols[0]])
+                        else:
+                            features_df['datetime'] = features_df.index
+
+                    # Apply data cleaning
+                    original_count = len(features_df)
+                    features_df = exclude_corrupted_periods(features_df)
+                    cleaned_count = len(features_df)
+
+                    if original_count != cleaned_count:
+                        excluded_count = original_count - cleaned_count
+                        logger.info(f"🧹 Data cleaning applied: Excluded {excluded_count:,} corrupted rows ({100*excluded_count/original_count:.4f}%)")
+
+                except ImportError as e:
+                    logger.warning(f"⚠️ Data cleaning utility not available: {e}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Data cleaning failed, proceeding with original data: {e}")
                 if feature_names:
                     available_features = [col for col in feature_names if col in features_df.columns]
                     if available_features:

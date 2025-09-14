@@ -40,8 +40,8 @@ except ImportError as e:
 # Import feature selection tools
 try:
     from src.utils.feature_selection.step08_optimized_methods import (
-        fast_correlation_matrix, optimized_mutual_information, 
-        vectorized_feature_stability, parallel_feature_importance
+        fast_correlation_matrix, optimized_mutual_information,
+        vectorized_feature_stability
     )
     FEATURE_SELECTION_AVAILABLE = True
 except ImportError as e:

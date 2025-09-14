@@ -179,7 +179,11 @@ class CrossTimeframeAnalysisPipeline:
             timeframes = self.config.timeframes
         
         self.logger.info(f"⏰ Starting cross timeframe analysis for {symbol} on {exchange} ({timeframes})")
-        
+
+        if len(timeframes) == 1:
+            self.logger.info(f"📊 Single timeframe mode: Analysis will focus on base features for {timeframes[0]}")
+            self.logger.info(f"💡 Multi-timeframe features (correlations, momentum differences) require 2+ timeframes")
+
         try:
             # Load multi-timeframe data
             timeframe_data = await self._load_multi_timeframe_data(data_dir, symbol, exchange, timeframes)
@@ -243,12 +247,18 @@ class CrossTimeframeAnalysisPipeline:
         
         for timeframe in timeframes:
             try:
-                # Construct file path
-                file_path = Path(data_dir) / f"klines_{exchange}_{symbol}_consolidated.parquet"
-                
-                if not file_path.exists():
-                    self.logger.warning(f"⚠️ Data file not found for {timeframe}: {file_path}")
+                # Look for parquet files with this timeframe pattern
+                pattern = Path(data_dir) / f"klines_{exchange}_{symbol}_{timeframe}_*.parquet"
+                import glob
+                matching_files = glob.glob(str(pattern))
+
+                if not matching_files:
+                    self.logger.warning(f"⚠️ No data files found for {timeframe} in {data_dir}")
                     continue
+
+                # Take the most recent file
+                file_path = Path(sorted(matching_files, key=lambda x: Path(x).stat().st_mtime)[-1])
+                self.logger.info(f"📊 Using data file: {file_path.name} for timeframe {timeframe}")
                 
                 # Load data using standardized handler
                 data = standardized_parquet_handler.read_parquet_standardized(file_path)
@@ -354,23 +364,25 @@ class CrossTimeframeAnalysisPipeline:
                         all_warnings.append(f"{timeframe}: {warning}")
                     
                     # Use ML data quality utilities if available
-                    if self.ml_data_quality:
+                    if self.ml_data_quality and hasattr(self.ml_data_quality, 'perform_comprehensive_validation'):
                         try:
                             ml_quality_report = await self.ml_data_quality.perform_comprehensive_validation(
                                 data, symbol=symbol, exchange=exchange
                             )
-                            
+
                             # Merge ML quality insights
                             if ml_quality_report.get('has_critical_issues', False):
                                 for issue in ml_quality_report.get('critical_issues', []):
                                     all_issues.append(f"{timeframe} (ML): {issue}")
-                            
+
                             if ml_quality_report.get('warnings', []):
                                 for warning in ml_quality_report.get('warnings', []):
                                     all_warnings.append(f"{timeframe} (ML): {warning}")
-                            
+
                         except Exception as e:
                             self.logger.warning(f"⚠️ ML data quality validation failed for {timeframe}: {e}")
+                    else:
+                        self.logger.debug(f"📊 ML data quality validation not available for {timeframe}, using basic validation only")
                 
                 except Exception as e:
                     all_issues.append(f"{timeframe}: Validation failed - {e}")
@@ -459,80 +471,160 @@ class CrossTimeframeAnalysisPipeline:
         self.logger.info("🔧 Engineering cross timeframe features")
         
         try:
-            features = pd.DataFrame()
             timeframes = list(aligned_data.keys())
-            
+            self.logger.info(f"🔧 Engineering features for {len(timeframes)} timeframes: {timeframes}")
+
             # Base timeframe features
             base_timeframe = timeframes[0]
             base_data = aligned_data[base_timeframe]
-            
-            # Create base features
+
+            # Create base features DataFrame with proper index
+            features = pd.DataFrame(index=base_data.index)
             features['base_close'] = base_data['close']
             features['base_volume'] = base_data['volume']
             features['base_returns'] = base_data['close'].pct_change()
             features['base_volatility'] = features['base_returns'].rolling(20).std()
-            
+
+            # Check if we have multiple timeframes for cross-timeframe features
+            if len(timeframes) < 2:
+                self.logger.info(f"📊 Single timeframe analysis: Only {base_timeframe} data available, creating base features only")
+                self.logger.info(f"💡 Cross-timeframe features (correlation, momentum diff, etc.) require multiple timeframes")
+                # Return base features only when single timeframe
+                return features
+
             # Cross timeframe interaction features
+            self.logger.info(f"🔄 Creating cross-timeframe features between {len(timeframes)} timeframes")
+
+            # Create a common index from all timeframes
+            common_index = base_data.index
+            self.logger.info(f"📊 Using common index with {len(common_index)} points for cross-timeframe features")
+
             for i, tf1 in enumerate(timeframes):
                 for j, tf2 in enumerate(timeframes[i+1:], i+1):
                     data1 = aligned_data[tf1]
                     data2 = aligned_data[tf2]
-                    
+
+                    # Reindex data to common timeframe to ensure alignment
+                    data1_aligned = data1.reindex(common_index, method='nearest')
+                    data2_aligned = data2.reindex(common_index, method='nearest')
+
                     # Correlation features
                     if 'correlation' in self.config.interaction_features:
-                        corr_5 = data1['close'].rolling(5).corr(data2['close'])
-                        corr_20 = data1['close'].rolling(20).corr(data2['close'])
-                        
-                        features[f'corr_{tf1}_{tf2}_5'] = corr_5
-                        features[f'corr_{tf1}_{tf2}_20'] = corr_20
-                    
+                        try:
+                            corr_5 = data1_aligned['close'].rolling(5).corr(data2_aligned['close'])
+                            corr_20 = data1_aligned['close'].rolling(20).corr(data2_aligned['close'])
+
+                            features[f'corr_{tf1}_{tf2}_5'] = corr_5
+                            features[f'corr_{tf1}_{tf2}_20'] = corr_20
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed to compute correlation features for {tf1}-{tf2}: {e}")
+
                     # Momentum features
                     if 'momentum' in self.config.interaction_features:
-                        mom1 = data1['close'].pct_change(5)
-                        mom2 = data2['close'].pct_change(5)
-                        features[f'mom_diff_{tf1}_{tf2}'] = mom1 - mom2
-                        features[f'mom_ratio_{tf1}_{tf2}'] = mom1 / (mom2 + 1e-10)
-                    
+                        try:
+                            mom1 = data1_aligned['close'].pct_change(5)
+                            mom2 = data2_aligned['close'].pct_change(5)
+                            features[f'mom_diff_{tf1}_{tf2}'] = mom1 - mom2
+                            features[f'mom_ratio_{tf1}_{tf2}'] = mom1 / (mom2 + 1e-10)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed to compute momentum features for {tf1}-{tf2}: {e}")
+
                     # Volatility features
                     if 'volatility' in self.config.interaction_features:
-                        vol1 = data1['close'].pct_change().rolling(20).std()
-                        vol2 = data2['close'].pct_change().rolling(20).std()
-                        features[f'vol_ratio_{tf1}_{tf2}'] = vol1 / (vol2 + 1e-10)
-                        features[f'vol_diff_{tf1}_{tf2}'] = vol1 - vol2
-                    
+                        try:
+                            vol1 = data1_aligned['close'].pct_change().rolling(20).std()
+                            vol2 = data2_aligned['close'].pct_change().rolling(20).std()
+                            features[f'vol_ratio_{tf1}_{tf2}'] = vol1 / (vol2 + 1e-10)
+                            features[f'vol_diff_{tf1}_{tf2}'] = vol1 - vol2
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed to compute volatility features for {tf1}-{tf2}: {e}")
+
                     # Volume features
                     if 'volume' in self.config.interaction_features:
-                        vol_ratio = data1['volume'] / (data2['volume'] + 1e-10)
-                        features[f'volume_ratio_{tf1}_{tf2}'] = vol_ratio
+                        try:
+                            vol_ratio = data1_aligned['volume'] / (data2_aligned['volume'] + 1e-10)
+                            features[f'volume_ratio_{tf1}_{tf2}'] = vol_ratio
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed to compute volume features for {tf1}-{tf2}: {e}")
+
+                    self.logger.info(f"✅ Generated cross-timeframe features for {tf1}-{tf2} pair")
             
             # Multi-timeframe aggregation features
             for timeframe in timeframes:
                 data = aligned_data[timeframe]
-                
+                # Ensure data is aligned to common index
+                data_aligned = data.reindex(common_index, method='nearest')
+
                 # Price position across timeframes
                 for period in self.config.lookback_periods:
-                    high_period = data['high'].rolling(period).max()
-                    low_period = data['low'].rolling(period).min()
-                    price_position = (data['close'] - low_period) / (high_period - low_period + 1e-10)
-                    features[f'price_pos_{timeframe}_{period}'] = price_position
-                
-                # Volume profile
-                volume_ma = data['volume'].rolling(20).mean()
-                volume_ratio = data['volume'] / (volume_ma + 1e-10)
-                features[f'volume_profile_{timeframe}'] = volume_ratio
+                    try:
+                        high_period = data_aligned['high'].rolling(period).max()
+                        low_period = data_aligned['low'].rolling(period).min()
+                        price_position = (data_aligned['close'] - low_period) / (high_period - low_period + 1e-10)
+                        features[f'price_pos_{timeframe}_{period}'] = price_position
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to compute price position for {timeframe} period {period}: {e}")
+
+                # Volume profile with safe ratio calculation
+                try:
+                    volume_ma = data_aligned['volume'].rolling(20).mean()
+                    volume_ma_safe = volume_ma.replace(0, np.nan)
+                    volume_ma_safe = volume_ma_safe.fillna(method='bfill').fillna(1.0)
+                    volume_ratio = data_aligned['volume'] / volume_ma_safe
+                    # Clip extreme ratios to prevent infinity
+                    volume_ratio = volume_ratio.clip(-100, 100)
+                    features[f'volume_profile_{timeframe}'] = volume_ratio
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to compute volume profile for {timeframe}: {e}")
             
             # High leverage specific features
             if self.config.enable_microstructure_features:
-                features.update(self._generate_microstructure_features(aligned_data))
-            
+                try:
+                    micro_features = self._generate_microstructure_features(aligned_data)
+                    # Ensure all features are aligned to the common index
+                    for feature_name, feature_series in micro_features.items():
+                        if hasattr(feature_series, 'reindex'):
+                            features[feature_name] = feature_series.reindex(common_index, method='nearest')
+                        else:
+                            features[feature_name] = feature_series
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to generate microstructure features: {e}")
+
             if self.config.enable_order_flow_features:
-                features.update(self._generate_order_flow_features(aligned_data))
-            
+                try:
+                    order_features = self._generate_order_flow_features(aligned_data)
+                    # Ensure all features are aligned to the common index
+                    for feature_name, feature_series in order_features.items():
+                        if hasattr(feature_series, 'reindex'):
+                            features[feature_name] = feature_series.reindex(common_index, method='nearest')
+                        else:
+                            features[feature_name] = feature_series
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to generate order flow features: {e}")
+
             if self.config.enable_momentum_divergence:
-                features.update(self._generate_momentum_divergence_features(aligned_data))
-            
+                try:
+                    momentum_features = self._generate_momentum_divergence_features(aligned_data)
+                    # Ensure all features are aligned to the common index
+                    for feature_name, feature_series in momentum_features.items():
+                        if hasattr(feature_series, 'reindex'):
+                            features[feature_name] = feature_series.reindex(common_index, method='nearest')
+                        else:
+                            features[feature_name] = feature_series
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to generate momentum divergence features: {e}")
+
             if self.config.enable_volatility_spillover:
-                features.update(self._generate_volatility_spillover_features(aligned_data))
+                try:
+                    volatility_features = self._generate_volatility_spillover_features(aligned_data)
+                    # Ensure all features are aligned to the common index
+                    for feature_name, feature_series in volatility_features.items():
+                        if hasattr(feature_series, 'reindex'):
+                            features[feature_name] = feature_series.reindex(common_index, method='nearest')
+                        else:
+                            features[feature_name] = feature_series
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to generate volatility spillover features: {e}")
             
             # Remove rows with NaN values
             features = features.dropna()

@@ -5,6 +5,7 @@ Simple logger replacement to bypass initialization issues
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from datetime import datetime

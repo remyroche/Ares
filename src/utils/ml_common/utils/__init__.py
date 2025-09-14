@@ -10,15 +10,15 @@ This module contains all utility functionality including:
 - Safeguards
 """
 
-from .logging_utils import setup_logger, get_logger
-from .memory_optimization import MemoryOptimizer
+from ..logger import setup_logger, get_logger
+from .memory_optimization import MemoryEfficientTraining as MemoryOptimizer
 from .memory_integration import MemoryIntegrator
 from .parallel_processing import ParallelProcessor
-from .shared_cache import SharedCache
-from .thread_guard import ThreadGuard
+from .shared_cache import SharedMLCache
+from .thread_guard import limit_blas_threads, get_thread_info, validate_thread_environment
 from .lookahead_protection import LookaheadProtection
-from .base_safeguards import BaseSafeguards
-from .enhanced_error_handling import EnhancedErrorHandler
+from .base_safeguards import MLTrainingSafeguards
+from .enhanced_error_handling import RobustErrorHandler
 
 __all__ = [
     # Logging
@@ -31,14 +31,14 @@ __all__ = [
     'ParallelProcessor',
     
     # Caching
-    'SharedCache',
+    'SharedMLCache',
     
     # Threading
-    'ThreadGuard',
+    'limit_blas_threads', 'get_thread_info', 'validate_thread_environment',
     
     # Protection
-    'LookaheadProtection', 'BaseSafeguards',
+    'LookaheadProtection', 'MLTrainingSafeguards',
     
     # Error Handling
-    'EnhancedErrorHandler'
+    'RobustErrorHandler'
 ]

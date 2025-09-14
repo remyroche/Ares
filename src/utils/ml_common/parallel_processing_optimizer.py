@@ -5,6 +5,6 @@ This module provides parallel processing utilities for the ML Common package.
 """
 
 # Re-export from parent parallel_processing_optimizer
-from ...utils.parallel_processing_optimizer import ParallelProcessor
+from src.utils.parallel_processing_optimizer import ParallelProcessor
 
 __all__ = ['ParallelProcessor']

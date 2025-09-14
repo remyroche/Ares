@@ -15,9 +15,9 @@ from .hmm_models_training_refactored import (
     execute_hmm_models_training_refactored as execute_hmm_models_training
 )
 from .hmm_ensemble_training import (
-    HMMEnsembleTrainingRefactored as HMMEnsembleTraining,
-    create_hmm_ensemble_training_refactored as create_hmm_ensemble_training,
-    execute_hmm_ensemble_training_refactored as execute_hmm_ensemble_training
+    HMMEnsembleTraining,
+    create_hmm_ensemble_training,
+    execute_hmm_ensemble_training
 )
 
 __all__ = [

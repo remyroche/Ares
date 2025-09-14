@@ -527,7 +527,7 @@ class MainTrainingPipeline:
         # Update pipeline configuration
         self.market_analysis_pipeline.config = config
 
-        # For MARKET_ANALYSIS, always use sequential execution with automatic progression
+        # For MARKET_ANALYSIS, use sequential execution with automatic progression
         # Start with the first sub-pipeline and let it trigger the next ones
         self.logger.info("🚀 Starting automatic sequential execution: sr_parameter_optimization -> sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> triple_barrier_labeling -> feature_lookback_optimization -> cross_timeframe_analysis -> sr_feature_integration")
 

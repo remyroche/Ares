@@ -26,6 +26,7 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+import hashlib
 
 # Import existing utilities
 from .logger import system_logger  # type: ignore[import]
@@ -956,11 +957,13 @@ class EnhancedHMMCompositeManager:
             param_ranges = self._get_hmm_parameter_ranges()
             self.logger.info(f"🔧 Using {hmm_mode} mode: {param_ranges[hmm_mode]['description']}")
 
-            n_components = trial.suggest_int('n_components',
-                param_ranges[hmm_mode]['n_components_min'],
-                param_ranges[hmm_mode]['n_components_max'])
-            covariance_type = trial.suggest_categorical('covariance_type',
-                param_ranges[hmm_mode]['covariance_types'])
+            # Expand search for components (prefer 4–10 where feasible)
+            n_min = 4 if param_ranges[hmm_mode]['n_components_min'] <= 4 else param_ranges[hmm_mode]['n_components_min']
+            n_max = max(6, min(10, param_ranges[hmm_mode]['n_components_max']))
+            n_components = trial.suggest_int('n_components', n_min, n_max)
+            # Prefer diag covariance for stability
+            cov_candidates = ['diag'] + [ct for ct in param_ranges[hmm_mode]['covariance_types'] if ct != 'diag']
+            covariance_type = trial.suggest_categorical('covariance_type', cov_candidates)
             n_iter = trial.suggest_int('n_iter',
                 param_ranges[hmm_mode]['n_iter_min'],
                 param_ranges[hmm_mode]['n_iter_max'])
@@ -1041,9 +1044,25 @@ class EnhancedHMMCompositeManager:
                 # Initialize model with better defaults to prevent initialization issues
                 self._initialize_hmm_model(model, X, n_components)
 
-                # Try to fit the model with error handling
+                # Try to fit the model with error handling (apply tiny noise as covariance floor)
                 try:
-                    model.fit(X)
+                    eps = 1e-6
+                    X_eps = X + np.random.normal(0, eps, X.shape)
+                    model.fit(X_eps)
+                    # Compute AIC/BIC style scores for model selection guidance
+                    try:
+                        n_params = getattr(model, 'n_components', 1) * X_eps.shape[1]
+                        log_likelihood = model.score(X_eps)
+                        aic = 2 * n_params - 2 * log_likelihood
+                        bic = n_params * np.log(max(1, len(X_eps))) - 2 * log_likelihood
+                        # Store as trial user attrs for later inspection
+                        try:
+                            trial.set_user_attr('aic', float(aic))
+                            trial.set_user_attr('bic', float(bic))
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
                 except Exception as fit_error:
                     fit_error_msg = str(fit_error)
                     if ('covars' in fit_error_msg and 'symmetric' in fit_error_msg) or 'positive-definite' in fit_error_msg:
@@ -1082,7 +1101,7 @@ class EnhancedHMMCompositeManager:
                                 )
                                 try:
                                     self._initialize_hmm_model(model, X, n_components)
-                                    model.fit(X)
+                                    model.fit(X_eps)
                                     self.logger.debug("✅ Diagonal covariance successful")
                                 except Exception as cov_error:
                                     self.logger.debug(f"⚠️ Diagonal covariance failed: {cov_error}")
@@ -1144,9 +1163,8 @@ class EnhancedHMMCompositeManager:
         try:
             study = optuna.create_study(
                 direction='maximize',
-                study_name=config.study_name,
-                storage=config.storage_url,
-                load_if_exists=config.load_if_exists
+                pruner=pruner,
+                study_name=f"hmm_{hmm_mode.lower()}_optimization"
             )
             
             study.optimize(
@@ -1161,12 +1179,19 @@ class EnhancedHMMCompositeManager:
             
             self.logger.info(f"✅ Bayesian optimization completed. Best score: {best_score:.4f}")
             
-            return {
+            result = {
                 'best_params': best_params,
                 'best_score': best_score,
-                'study': study,
-                'success': True
+                'study_name': study.study_name,
+                'n_trials': len(study.trials)
             }
+            # Persist to JSON with version and data hash
+            try:
+                payload = self._build_json_optimization_payload(data, result, study)
+                self._persist_optimization_result_json(payload)
+            except Exception as e:
+                self.logger.debug(f"Could not persist optimization JSON: {e}")
+            return result
             
         except Exception as e:
             self.logger.error(f"❌ Bayesian optimization failed: {e}")
@@ -2010,6 +2035,62 @@ class EnhancedHMMCompositeManager:
         """
 
         return guidance.strip()
+
+    # -----------------------
+    # JSON persistence helpers
+    # -----------------------
+    def _build_json_optimization_payload(self, data: pd.DataFrame, result: Dict[str, Any], study) -> Dict[str, Any]:
+        # Compute a quick data hash on index and first 1000 rows/cols to avoid heavy ops
+        try:
+            sample = data.head(1000).select_dtypes(include=[np.number])
+            sample_bytes = sample.to_csv(index=False).encode('utf-8')
+            data_hash = hashlib.md5(sample_bytes).hexdigest()
+        except Exception:
+            data_hash = 'unknown'
+        trials_summary = []
+        try:
+            for t in study.trials:
+                trials_summary.append({
+                    'number': t.number,
+                    'value': t.value,
+                    'params': t.params,
+                    'state': str(t.state),
+                    'user_attrs': getattr(t, 'user_attrs', {})
+                })
+        except Exception:
+            pass
+        payload = {
+            'version': '1.0',
+            'timestamp': time.time(),
+            'data_hash': data_hash,
+            'result': result,
+            'trials': trials_summary
+        }
+        return payload
+
+    def _persist_optimization_result_json(self, payload: Dict[str, Any]) -> None:
+        try:
+            artifacts_dir = Path('artifacts')
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            out_file = artifacts_dir / 'optuna_hmm_results.json'
+            # Append or create
+            if out_file.exists():
+                try:
+                    with open(out_file, 'r') as f:
+                        existing = json.load(f)
+                except Exception:
+                    existing = []
+            else:
+                existing = []
+            if isinstance(existing, list):
+                existing.append(payload)
+            else:
+                existing = [existing, payload]
+            with open(out_file, 'w') as f:
+                json.dump(existing, f, indent=2)
+            self.logger.info(f"💾 Saved optimization results to {out_file}")
+        except Exception as e:
+            self.logger.debug(f"Failed to write optimization JSON: {e}")
 
 # Global instance for backward compatibility
 hmm_composite_manager = EnhancedHMMCompositeManager()

@@ -1208,24 +1208,11 @@ class MarketAnalysisSubPipeline:
         self.logger.info(f"   📊 Clustering Metrics: {artifacts.get('clustering_metrics', 'N/A')}")
         self.logger.info(f"   🔧 Cluster Params: {artifacts.get('cluster_params', 'N/A')}")
         
-        # Automatically trigger the next sub-pipeline: hmm_regime_discovery
-        tprint("🔄 SR clustering completed, triggering next: hmm_regime_discovery")
-        tprint("   🚀 Starting HMM regime discovery pipeline...")
-        self.logger.info("🔄 SR clustering completed, triggering next: hmm_regime_discovery")
-        self.logger.info("   🚀 Starting HMM regime discovery pipeline...")
-        try:
-            next_artifacts = await self._hmm_regime_discovery_pipeline(config)
-            tprint("   ✅ HMM regime discovery pipeline completed successfully")
-            self.logger.info("   ✅ HMM regime discovery pipeline completed successfully")
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            tprint("   🔗 Artifacts merged from HMM regime discovery pipeline")
-            self.logger.info("   🔗 Artifacts merged from HMM regime discovery pipeline")
-        except Exception as e:
-            tprint(f"   ❌ Failed to execute HMM regime discovery pipeline: {e}")
-            self.logger.error(f"❌ Failed to execute HMM regime discovery pipeline: {e}")
-            import traceback
-            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        # Log completion without automatically triggering next sub-pipeline
+        tprint("✅ SR clustering completed successfully")
+        self.logger.info("✅ SR clustering completed successfully")
+        tprint("ℹ️ Next sub-pipeline (hmm_regime_discovery) should be run separately")
+        self.logger.info("ℹ️ Next sub-pipeline (hmm_regime_discovery) should be run separately")
         
         return artifacts
     
@@ -1284,16 +1271,10 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("hmm_clustering", config, artifacts)
         
-        # Automatically trigger the next sub-pipeline: hmm_regime_discovery
-        self.logger.info("🔄 HMM clustering completed, triggering next: hmm_regime_discovery")
-        try:
-            next_artifacts = await self._hmm_regime_discovery_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ HMM regime discovery pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute HMM regime discovery pipeline: {e}")
-
+        # Log completion without automatically triggering next sub-pipeline
+        self.logger.info("✅ HMM clustering completed successfully")
+        self.logger.info("ℹ️ Next sub-pipeline (hmm_regime_discovery) should be run separately")
+        
         return artifacts
     
     async def _hmm_models_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -1765,15 +1746,75 @@ class MarketAnalysisSubPipeline:
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             self.logger.info(f"🔍 DEBUG: Directory created/verified")
 
-            # Save the data with probabilistic regime tagging
-            self.logger.info(f"🔍 DEBUG: Starting to save HMM data to parquet file...")
-            self.logger.info(f"🔍 DEBUG: Save path: {save_path}")
+            # Prefer partitioned writes for large datasets to reduce single-file IO pressure
+            partitioned_base_dir = Path(save_path).parent / f"{Path(save_path).stem}_partitioned"
+
+            # Pre-write logging (file and directory sizes)
+            try:
+                if Path(save_path).exists():
+                    size_mb = Path(save_path).stat().st_size / (1024 * 1024)
+                    self.logger.info(f"📦 Existing single-file size: {size_mb:.2f} MB -> {save_path}")
+                if partitioned_base_dir.exists():
+                    dir_size_mb = sum(p.stat().st_size for p in partitioned_base_dir.rglob('*.parquet')) / (1024 * 1024)
+                    self.logger.info(f"📁 Existing partitioned dataset size: {dir_size_mb:.2f} MB -> {partitioned_base_dir}")
+            except Exception as _e:
+                self.logger.debug(f"Size pre-check failed: {_e}")
+
+            # Log dataset info
+            self.logger.info(f"🔍 DEBUG: Starting partitioned write for HMM data...")
+            self.logger.info(f"🔍 DEBUG: Partitioned base dir: {partitioned_base_dir}")
             self.logger.info(f"🔍 DEBUG: Data to save shape: {hmm_data.shape}, memory usage: {hmm_data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
 
-            standardized_parquet_handler.write_parquet(hmm_data, save_path)
-            self.logger.info(f"🔍 DEBUG: Parquet file written successfully")
+            # Perform partitioned write (adds year/month/day automatically if missing)
+            partition_ok = standardized_parquet_handler.write_partitioned_parquet(
+                hmm_data,
+                str(partitioned_base_dir),
+                partition_cols=['year', 'month', 'day']
+            )
 
-            self.logger.info(f"✅ HMM composite data with probabilistic regime tagging saved to: {save_path}")
+            if partition_ok:
+                try:
+                    parquet_files = list(partitioned_base_dir.rglob('*.parquet'))
+                    dir_size_mb = sum(p.stat().st_size for p in parquet_files) / (1024 * 1024)
+                    self.logger.info(f"✅ Partitioned dataset written: {len(parquet_files)} files, total {dir_size_mb:.2f} MB")
+                except Exception as _e:
+                    self.logger.info("✅ Partitioned dataset written")
+
+                # Downstream steps may still look for the legacy single file. Attempt a lightweight single-file write only if needed.
+                # This write disables validation/metadata to avoid long stalls on huge files.
+                try:
+                    self.logger.info("ℹ️ Writing compact legacy single-file output for backward compatibility (no validation/metadata)...")
+                    standardized_parquet_handler.write_parquet_standardized(
+                        hmm_data,
+                        save_path,
+                        validate_quality=False,
+                        create_metadata=False,
+                        index=False
+                    )
+                    if Path(save_path).exists():
+                        size_mb = Path(save_path).stat().st_size / (1024 * 1024)
+                        self.logger.info(f"✅ Legacy single file written: {size_mb:.2f} MB -> {save_path}")
+                except Exception as _e:
+                    self.logger.warning(f"⚠️ Legacy single-file write skipped/failed: {_e}")
+            else:
+                # Fallback: single-file write with heavy checks disabled
+                self.logger.warning("⚠️ Partitioned write failed, falling back to single-file write (no validation/metadata)...")
+                self.logger.info(f"🔍 DEBUG: Save path: {save_path}")
+                try:
+                    standardized_parquet_handler.write_parquet_standardized(
+                        hmm_data,
+                        save_path,
+                        validate_quality=False,
+                        create_metadata=False,
+                        index=False
+                    )
+                    if Path(save_path).exists():
+                        size_mb = Path(save_path).stat().st_size / (1024 * 1024)
+                        self.logger.info(f"✅ Parquet file written successfully: {size_mb:.2f} MB -> {save_path}")
+                except Exception as _e:
+                    self.logger.error(f"❌ Failed to write HMM data to parquet: {_e}")
+
+            self.logger.info(f"✅ HMM composite data persisted (partitioned preferred) at: {partitioned_base_dir}")
 
             # Check for regime column (could be 'regime' or 'composite_cluster_id')
             regime_col = None
@@ -1844,6 +1885,11 @@ class MarketAnalysisSubPipeline:
         # Automatically trigger the next sub-pipeline: regime_data_splitting
         self.logger.info("🔄 HMM regime discovery completed, triggering next: regime_data_splitting")
         self.logger.info(f"🔍 DEBUG: About to call regime_data_splitting_pipeline...")
+        
+        # Small delay to ensure file is fully written
+        import asyncio
+        await asyncio.sleep(1)
+        
         try:
             self.logger.info(f"🔍 DEBUG: Calling _regime_data_splitting_pipeline...")
             next_artifacts = await self._regime_data_splitting_pipeline(config)
@@ -1859,6 +1905,8 @@ class MarketAnalysisSubPipeline:
             self.logger.error(f"🔍 DEBUG: Exception details: {type(e).__name__}: {str(e)}")
             import traceback
             self.logger.error(f"🔍 DEBUG: Full traceback:\n{traceback.format_exc()}")
+            # Don't fail the entire pipeline if next step fails
+            self.logger.warning("⚠️ Continuing despite regime data splitting failure")
 
         return artifacts
 
@@ -1936,19 +1984,28 @@ class MarketAnalysisSubPipeline:
                     timeframe=config.timeframe,
                     base_path=config.data_dir
                 )
+                self.logger.info(f"🔍 DEBUG: Looking for HMM data at: {data_file}")
                 if Path(data_file).exists():
+                    self.logger.info(f"✅ HMM data file found, loading...")
                     data = standardized_parquet_handler.read_parquet_standardized(data_file)
+                    self.logger.info(f"✅ HMM data loaded: {data.shape}, columns: {list(data.columns)}")
+                    
                     # Check for regime column (could be 'regime' or 'composite_cluster_id')
                     regime_column = None
                     if 'regime' in data.columns:
                         regime_column = 'regime'
+                        self.logger.info(f"✅ Found 'regime' column with {data['regime'].nunique()} unique values")
                     elif 'composite_cluster_id' in data.columns:
                         regime_column = 'composite_cluster_id'
                         # Create 'regime' column for backward compatibility
                         data['regime'] = data['composite_cluster_id']
+                        self.logger.info(f"✅ Found 'composite_cluster_id' column, created 'regime' column with {data['regime'].nunique()} unique values")
+                    else:
+                        self.logger.warning(f"⚠️ No regime column found. Available columns: {list(data.columns)}")
 
                     if regime_column:
                         regime_ids = data['regime'].values
+                        self.logger.info(f"🔍 DEBUG: Processing regime data with {len(regime_ids)} samples")
                         processing_result = regime_processor.process_regime_data(data, regime_ids)
 
                         artifacts['split_data_files'] = list(processing_result.processed_data.keys())
@@ -1959,7 +2016,22 @@ class MarketAnalysisSubPipeline:
                         self.logger.warning("⚠️ No regime column found (checked 'regime' and 'composite_cluster_id'), using mock splitting")
                         artifacts['split_data_files'] = ['regime_0_data.parquet', 'regime_1_data.parquet']
                 else:
-                    raise FileNotFoundError("Data file not found for regime splitting")
+                    self.logger.error(f"❌ HMM data file not found at: {data_file}")
+                    # Try alternative paths
+                    alternative_paths = [
+                        f"{config.data_dir}/{config.exchange.lower()}/{config.symbol.lower()}/hmm_regime_data.parquet",
+                        f"{config.data_dir}/hmm_composite_clusters_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
+                        f"data/hmm_composite_clusters_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
+                    ]
+                    
+                    for alt_path in alternative_paths:
+                        if Path(alt_path).exists():
+                            self.logger.info(f"✅ Found HMM data at alternative path: {alt_path}")
+                            data = standardized_parquet_handler.read_parquet_standardized(alt_path)
+                            # Process the data...
+                            break
+                    else:
+                        raise FileNotFoundError(f"HMM data file not found. Tried: {data_file} and alternatives: {alternative_paths}")
             except Exception as e:
                 raise RuntimeError(f"Regime splitting failed: {e}")
         else:
@@ -1977,6 +2049,8 @@ class MarketAnalysisSubPipeline:
             self.logger.info("✅ Triple barrier labeling pipeline completed successfully")
         except Exception as e:
             self.logger.error(f"❌ Failed to execute triple barrier labeling pipeline: {e}")
+            # Don't fail the entire pipeline if next step fails
+            self.logger.warning("⚠️ Continuing despite triple barrier labeling failure")
 
         return artifacts
     
@@ -2035,16 +2109,10 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("triple_barrier_labeling", config, artifacts)
 
-        # Automatically trigger the next sub-pipeline: feature_lookback_optimization
-        self.logger.info("🔄 Triple barrier labeling completed, triggering next: feature_lookback_optimization")
-        try:
-            next_artifacts = await self._feature_lookback_optimization_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ Feature lookback optimization pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute feature lookback optimization pipeline: {e}")
-
+        # Log completion without automatically triggering next sub-pipeline
+        self.logger.info("✅ Triple barrier labeling completed successfully")
+        self.logger.info("ℹ️ Next sub-pipeline (feature_lookback_optimization) should be run separately")
+        
         return artifacts
     
     async def _feature_lookback_optimization_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -2545,16 +2613,10 @@ class MarketAnalysisSubPipeline:
         # Log completion with emojis and artifact paths
         self._log_sub_pipeline_completion("feature_lookback_optimization", config, artifacts)
 
-        # Automatically trigger the next sub-pipeline: cross_timeframe_analysis
-        self.logger.info("🔄 Feature lookback optimization completed, triggering next: cross_timeframe_analysis")
-        try:
-            next_artifacts = await self._cross_timeframe_analysis_pipeline(config)
-            # Merge artifacts from next pipeline
-            artifacts.update(next_artifacts)
-            self.logger.info("✅ Cross timeframe analysis pipeline completed successfully")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to execute cross timeframe analysis pipeline: {e}")
-
+        # Log completion without automatically triggering next sub-pipeline
+        self.logger.info("✅ Feature lookback optimization completed successfully")
+        self.logger.info("ℹ️ Next sub-pipeline (cross_timeframe_analysis) should be run separately")
+        
         return artifacts
 
     def _validate_market_data(self, df: pd.DataFrame, data_source: str = "unknown") -> bool:

@@ -1,14 +1,32 @@
+
 """
-Data processing module for ML common utilities.
+Lightweight exports for data_processing. Heavy imports are deferred to call sites
+to avoid circular imports and import-time side effects.
 """
 
-from .regime_processing import RegimeProcessor
-from .feature_preparation import FeaturePreparator
-from .data_labeling import EnhancedDataLabeler, LabelingConfig
+# Defer heavy modules: expose import helpers instead of importing at package init
+
+def get_regime_processor():
+    from .regime_processing import RegimeProcessor
+    return RegimeProcessor
+
+def get_feature_preparator():
+    from .feature_preparation import FeaturePreparator
+    return FeaturePreparator
+
+def get_enhanced_data_labeler():
+    from .data_labeling import EnhancedDataLabeler
+    return EnhancedDataLabeler
+
+def get_labeling_config():
+    try:
+        from .data_labeling import TripleBarrierConfig as LabelingConfig
+        return LabelingConfig
+    except Exception:
+        return None
 
 __all__ = [
-    'RegimeProcessor',
-    'FeaturePreparator',
-    'EnhancedDataLabeler',
-    'LabelingConfig'
-]
+    'get_regime_processor',
+    'get_feature_preparator',
+    'get_enhanced_data_labeler',
+    'get_labeling_config'

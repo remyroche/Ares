@@ -110,6 +110,14 @@ try:
         get_enhanced_matrix_operations = None  # type: ignore
     from .pipeline_orchestrator import PipelineOrchestrator
     from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
+    from ..feature_selection.feature_importance_analyzer import (
+        FeatureImportanceAnalyzer, FeatureImportanceConfig, FeatureImportanceResult,
+        ImportanceMethod, analyze_feature_importance, get_important_features
+    )
+    from .data_drift_detector import (
+        DataDriftDetector, DriftDetectionConfig, DriftReport, DriftResult,
+        DriftType, DriftMethod, DriftSeverity, detect_data_drift, get_drifted_features
+    )
     
     # Define exports
     __all__ = [
@@ -167,6 +175,14 @@ try:
         'HMMRegimeDetector', 'RegimeConfig',
         'calculate_confidence_metrics', 'calculate_calibration_metrics',
         'M1EnhancedMatrixOperations', 'get_enhanced_matrix_operations', 'PipelineOrchestrator',
+        
+        # Feature Importance Analysis
+        'FeatureImportanceAnalyzer', 'FeatureImportanceConfig', 'FeatureImportanceResult',
+        'ImportanceMethod', 'analyze_feature_importance', 'get_important_features',
+        
+        # Data Drift Detection
+        'DataDriftDetector', 'DriftDetectionConfig', 'DriftReport', 'DriftResult',
+        'DriftType', 'DriftMethod', 'DriftSeverity', 'detect_data_drift', 'get_drifted_features',
         
         # Backward compatibility
         'tprint'

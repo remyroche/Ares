@@ -59,6 +59,9 @@ except ImportError:
 
 # Use standardized matrix operations from ml_common
 from src.utils.ml_common.matrix_operations import get_enhanced_matrix_operations
+
+# Import final feature selection step
+from .final_feature_selection_step import FinalFeatureSelectionStep, run_final_feature_selection_step
 class EnhancedMatrixOperationsStep:
     def __init__(self, config):
         self.matrix_ops = get_enhanced_matrix_operations()
@@ -143,7 +146,7 @@ class MarketAnalysisPipelineOrchestrator:
             self.ml_pipeline_orchestrator = None
             tprint("⚠️ ML Common utilities not available - using fallback components")
         self.pipeline_state = {'current_step': None, 'completed_steps': [], 'failed_steps': [], 'start_time': None, 'end_time': None, 'correlation_id': None}
-        self.step_configs = {'hmm_clustering': {'enabled': True, 'timeout': 300, 'retry_attempts': 3, 'validator': None, 'step_number': 1}, 'regime_splitting': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': RegimeDataSplittingValidator(), 'step_number': 2}, 'labeling': {'enabled': True, 'timeout': 240, 'retry_attempts': 2, 'validator': LabelingValidator(), 'step_number': 3}, 'feature_engineering': {'enabled': True, 'timeout': 600, 'retry_attempts': 2, 'validator': FeatureEngineeringValidator(), 'step_number': 4}, 'matrix_operations': {'enabled': True, 'timeout': 300, 'retry_attempts': 2, 'validator': None, 'step_number': 5}, 'feature_selection': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': None, 'step_number': 6}}
+        self.step_configs = {'hmm_clustering': {'enabled': True, 'timeout': 300, 'retry_attempts': 3, 'validator': None, 'step_number': 1}, 'regime_splitting': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': RegimeDataSplittingValidator(), 'step_number': 2}, 'labeling': {'enabled': True, 'timeout': 240, 'retry_attempts': 2, 'validator': LabelingValidator(), 'step_number': 3}, 'feature_engineering': {'enabled': True, 'timeout': 600, 'retry_attempts': 2, 'validator': FeatureEngineeringValidator(), 'step_number': 4}, 'matrix_operations': {'enabled': True, 'timeout': 300, 'retry_attempts': 2, 'validator': None, 'step_number': 5}, 'feature_selection': {'enabled': True, 'timeout': 180, 'retry_attempts': 2, 'validator': None, 'step_number': 6}, 'final_feature_selection': {'enabled': True, 'timeout': 600, 'retry_attempts': 2, 'validator': None, 'step_number': 7}}
         
         # 🖨️ THOROUGH PRINTING: Pipeline state and step configurations
         tprint("📊 PIPELINE STATE INITIALIZATION")
@@ -217,7 +220,8 @@ class MarketAnalysisPipelineOrchestrator:
                 ('labeling', self._execute_labeling, 'Triple Barrier Labeling'),
                 ('feature_engineering', self._execute_feature_engineering, 'Feature Engineering'),
                 ('matrix_operations', self._execute_matrix_operations, 'Matrix Operations'),
-                ('feature_selection', self._execute_feature_selection, 'Feature Selection')
+                ('feature_selection', self._execute_feature_selection, 'Feature Selection'),
+                ('final_feature_selection', self._execute_final_feature_selection, 'Final Feature Selection (120→100→80→60)')
             ]
             
             for step_name, step_func, step_display_name in steps_to_execute:
@@ -756,6 +760,29 @@ class MarketAnalysisPipelineOrchestrator:
             return success
         except Exception as e:
             self.logger.exception(f'❌ Feature selection failed with exception: {e}')
+            return False
+
+    @handles_errors(Exception, fallback=False)
+    async def _execute_final_feature_selection(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> bool:
+        """Execute final feature selection step (120→100→80→60)."""
+        self.logger.info('🎯 Executing final feature selection step...')
+        try:
+            # Run final feature selection step
+            success = await run_final_feature_selection_step(
+                symbol=symbol, 
+                exchange=exchange, 
+                timeframe=timeframe, 
+                data_dir=data_dir,
+                config=kwargs.get('final_feature_selection_config', {})
+            )
+            
+            if success:
+                self.logger.info('✅ Final feature selection completed successfully')
+            else:
+                self.logger.error('❌ Final feature selection failed')
+            return success
+        except Exception as e:
+            self.logger.exception(f'❌ Final feature selection failed with exception: {e}')
             return False
 
     @handles_errors(Exception, fallback = None)

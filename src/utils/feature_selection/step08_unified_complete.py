@@ -79,6 +79,16 @@ try:
 except ImportError:
     ML_COMMONS_AVAILABLE = False
 
+# Import feature importance analyzer
+try:
+    from .feature_importance_analyzer import (
+        FeatureImportanceAnalyzer, FeatureImportanceConfig, ImportanceMethod,
+        analyze_feature_importance, get_important_features
+    )
+    FEATURE_IMPORTANCE_AVAILABLE = True
+except ImportError:
+    FEATURE_IMPORTANCE_AVAILABLE = False
+
 def ensure_directory(path: str) -> str:
     """Ensure directory exists and return path."""
     Path(path).mkdir(parents=True, exist_ok=True)

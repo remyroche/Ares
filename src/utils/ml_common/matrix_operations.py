@@ -68,12 +68,12 @@ ENHANCED_MATRIX_OPS_AVAILABLE = False
 def _get_enhanced_decorators():
     """Get enhanced decorators locally to avoid circular imports."""
     try:
-        from ...feature_engineering.enhanced_matrix_operations import (
+        from src.feature_engineering.enhanced_matrix_operations import (
             with_error_handling, with_gpu_fallback, with_memory_optimization
         )
         return with_error_handling, with_gpu_fallback, with_memory_optimization
-    except (ImportError, AttributeError):
-        # Fallback decorators
+    except (ImportError, AttributeError) as e:
+        # Fallback decorators to prevent circular imports
         def with_error_handling(func):
             return func
         def with_gpu_fallback(func):

@@ -1,6 +1,3 @@
-"""
-Data processing module for ML common utilities.
-"""
 
 """
 Lightweight exports for data_processing. Heavy imports are deferred to call sites
@@ -33,4 +30,3 @@ __all__ = [
     'get_feature_preparator',
     'get_enhanced_data_labeler',
     'get_labeling_config'
-]

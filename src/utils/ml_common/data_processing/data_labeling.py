@@ -104,6 +104,37 @@ class LabelQualityMetrics:
     warnings: List[str]
     errors: List[str]
 
+@dataclass
+class LabelingConfig:
+    """Main configuration class for data labeling operations."""
+    # Triple barrier configuration
+    triple_barrier: TripleBarrierConfig = field(default_factory=TripleBarrierConfig)
+    
+    # Regime-aware configuration
+    regime_aware: RegimeAwareConfig = field(default_factory=RegimeAwareConfig)
+    
+    # General labeling settings
+    method: LabelingMethod = LabelingMethod.TRIPLE_BARRIER
+    enable_quality_assessment: bool = True
+    enable_cross_validation: bool = True
+    enable_memory_optimization: bool = True
+    enable_gpu_acceleration: bool = True
+    
+    # Performance settings
+    batch_size: int = 10000
+    max_workers: int = 4
+    chunk_size: int = 1000
+    
+    # Quality thresholds
+    min_quality_score: float = 0.7
+    max_label_imbalance: float = 0.8
+    min_samples_per_regime: int = 100
+    
+    # Output settings
+    save_intermediate_results: bool = True
+    verbose_logging: bool = True
+    output_directory: Optional[str] = None
+
 class EnhancedDataLabeler:
     """Enhanced data labeler with consolidated triple barrier implementations."""
     

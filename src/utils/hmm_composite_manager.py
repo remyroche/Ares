@@ -187,7 +187,7 @@ class ValidationConfig:
     """Configuration for validation."""
     min_regime_samples: int = 100
     max_regime_imbalance: float = 0.8
-    min_silhouette_score: float = 0.3
+    # Note: Removed min_silhouette_score as silhouette metrics are not relevant for HMMs
     max_convergence_iterations: int = 100
 
 class EnhancedHMMCompositeManager:
@@ -3225,7 +3225,7 @@ class EnhancedHMMCompositeManager:
             validation_results = {
                 'regime_counts': {},
                 'regime_imbalance': 0.0,
-                'silhouette_score': 0.0,
+                'regime_balance_score': 0.0,  # HMM-relevant metric instead of silhouette
                 'validation_passed': False,
                 'warnings': [],
                 'errors': []
@@ -3258,11 +3258,12 @@ class EnhancedHMMCompositeManager:
             skip_expensive_validation = hasattr(config, 'mode') and config.mode == 'light'
 
             if skip_expensive_validation:
-                validation_results['validation_note'] = 'Skipped expensive clustering validation in light mode'
-                self.logger.info("ℹ️ Skipping expensive silhouette calculation in light mode")
+                validation_results['validation_note'] = 'Skipped expensive validation in light mode'
+                self.logger.info("ℹ️ Skipping expensive validation in light mode")
             elif len(unique_regimes) > 1 and len(data) > len(unique_regimes):
                 try:
-                    from sklearn.metrics import silhouette_score
+                    # HMM-specific validation instead of traditional clustering metrics
+                    self.logger.info("📊 Performing HMM-specific regime validation")
                     numeric_data = data.select_dtypes(include=[np.number]).fillna(0)
                     if len(numeric_data.columns) > 0:
                         # PERFORMANCE OPTIMIZATION: Sample data for silhouette calculation

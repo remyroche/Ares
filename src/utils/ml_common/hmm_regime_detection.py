@@ -115,6 +115,24 @@ class HMMRegimeConfig:
     min_regime_samples: int = 100
     max_regime_imbalance: float = 0.8
     economic_significance_threshold: float = 0.05
+    
+    # Mode-based regime limits
+    light_mode_max_regimes: int = 2
+    blank_mode_max_regimes: int = 5
+    full_mode_max_regimes: int = 150
+    
+    def get_max_regimes_for_mode(self, mode: str) -> int:
+        """Get the maximum number of regimes allowed for a given mode."""
+        mode = mode.lower() if mode else 'light'
+        if mode == 'light':
+            return self.light_mode_max_regimes
+        elif mode == 'blank':
+            return self.blank_mode_max_regimes
+        elif mode == 'full':
+            return self.full_mode_max_regimes
+        else:
+            # Default to light mode for unknown modes
+            return self.light_mode_max_regimes
 
 @dataclass
 class MultiTimeframeConfig:
@@ -306,6 +324,13 @@ class EnhancedHMMRegimeDetector:
         config = config or self.config
         optimization_mode = mode  # Local variable for optimization mode
         start_time = time.time()
+        
+        # Apply mode-based regime limits
+        if mode:
+            max_regimes = config.get_max_regimes_for_mode(mode)
+            if config.n_components > max_regimes:
+                self.logger.info(f"🔧 Limiting n_components from {config.n_components} to {max_regimes} for {mode} mode (range: 2-150)")
+                config.n_components = max_regimes
         
         try:
             # Validate input data

@@ -1,14 +1,15 @@
-# A/B/C Testing Framework for Paper Trading
+# Enhanced A/B/C Testing Framework for Paper Trading
 
-A comprehensive framework for paper-trading multiple models simultaneously with advanced statistical analysis, risk management, and performance monitoring.
+A comprehensive framework for paper-trading **unlimited models** simultaneously with advanced statistical analysis, risk management, performance monitoring, and **flexible TPSL (Take Profit/Stop Loss) parameter optimization**.
 
 ## 🚀 Features
 
 ### Core Components
 
-- **A/B/C Testing Framework**: Compare multiple trading models with statistical rigor
+- **Enhanced A/B/C Testing Framework**: Compare **unlimited models** (A/B/C/D/E/F...) with statistical rigor
 - **Multi-Model Orchestrator**: Coordinate and manage multiple models simultaneously
 - **Paper Trading Engine**: Realistic market simulation with slippage, fees, and latency
+- **Advanced TPSL Management**: Flexible Take Profit/Stop Loss strategies and optimization
 - **Risk Management System**: Advanced position sizing and risk controls
 - **Statistical Analysis**: Comprehensive statistical testing and validation
 - **Performance Monitoring**: Real-time monitoring with alerts and notifications
@@ -17,6 +18,9 @@ A comprehensive framework for paper-trading multiple models simultaneously with 
 
 ### Advanced Capabilities
 
+- **Unlimited Model Support**: Test 3, 5, 10, or more models simultaneously
+- **Flexible TPSL Strategies**: Fixed, ATR-based, Volatility-based, Dynamic, Trailing, Scaling
+- **TPSL Parameter Optimization**: Grid search optimization for optimal TPSL parameters
 - **Realistic Market Simulation**: Order book simulation, market impact, partial fills
 - **Multiple Position Sizing Methods**: Kelly, Fixed Fractional, Volatility Adjusted, Risk Parity
 - **Statistical Rigor**: Multiple testing correction, effect size analysis, power analysis
@@ -27,7 +31,8 @@ A comprehensive framework for paper-trading multiple models simultaneously with 
 ## 📁 Framework Structure
 
 ```
-src/training/steps/backtesting/
+src/training/steps/backtesting/abc_testing/
+├── enhanced_abc_testing_framework.py # Enhanced A/B/C testing with TPSL support
 ├── abc_testing_framework.py          # Core A/B/C testing framework
 ├── multi_model_orchestrator.py       # Multi-model coordination
 ├── paper_trading_engine.py           # Realistic paper trading simulation
@@ -37,6 +42,8 @@ src/training/steps/backtesting/
 ├── results_visualization.py          # Visualization and reporting
 ├── configuration_management.py       # Configuration system
 ├── abc_testing_integration_example.py # Complete integration example
+├── multi_model_tpsl_example.py       # Multi-model TPSL testing example
+├── tpsl_optimization_example.py      # TPSL parameter optimization example
 └── README.md                         # This file
 ```
 
@@ -69,19 +76,19 @@ memory_limit = psutil.virtual_memory().total * 0.8  # Use 80% of available memor
 
 ## 🚀 Quick Start
 
-### Basic A/B/C Test
+### Basic A/B/C Test (3+ Models)
 
 ```python
 import asyncio
-from src.training.steps.backtesting.abc_testing_integration_example import ABCTestingIntegrationExample
+from src.training.steps.backtesting.abc_testing.abc_testing_integration_example import ABCTestingIntegrationExample
 
 async def run_basic_test():
     # Initialize the framework
     integration = ABCTestingIntegrationExample("config/my_test")
     
-    # Define test configuration
+    # Define test configuration with 5 models
     test_config = {
-        "test_name": "My_ABC_Test",
+        "test_name": "My_5_Model_ABC_Test",
         "symbol": "BTCUSDT",
         "exchange": "BINANCE",
         "timeframe": "1h",
@@ -101,6 +108,27 @@ async def run_basic_test():
                 "model_type": "lightgbm",
                 "initial_capital": 100000.0,
                 "model_params": {"n_estimators": 200, "learning_rate": 0.1}
+            },
+            {
+                "model_id": "model_c",
+                "model_name": "XGBoost",
+                "model_type": "xgboost",
+                "initial_capital": 100000.0,
+                "model_params": {"n_estimators": 150, "max_depth": 8}
+            },
+            {
+                "model_id": "model_d",
+                "model_name": "TabNet",
+                "model_type": "tabnet",
+                "initial_capital": 100000.0,
+                "model_params": {"n_d": 64, "n_a": 64, "n_steps": 5}
+            },
+            {
+                "model_id": "model_e",
+                "model_name": "CatBoost",
+                "model_type": "catboost",
+                "initial_capital": 100000.0,
+                "model_params": {"iterations": 200, "depth": 8}
             }
         ]
     }
@@ -219,6 +247,68 @@ The framework supports a wide range of machine learning models:
 - **Elastic Net**: L1 + L2 regularization
 - **Huber Regression**: Robust to outliers
 - **Histogram Gradient Boosting**: Fast gradient boosting
+
+## 🎯 TPSL (Take Profit/Stop Loss) Strategies
+
+### Available TPSL Strategies
+
+1. **Fixed**: Fixed percentage TPSL levels
+2. **ATR-Based**: Based on Average True Range
+3. **Volatility-Based**: Based on asset volatility
+4. **Dynamic**: Dynamic adjustment based on market conditions
+5. **Trailing**: Trailing stop loss with profit protection
+6. **Scaling**: Scale out positions at multiple levels
+7. **Time-Based**: Time-based TPSL with decay
+8. **Momentum-Based**: Based on momentum indicators
+9. **Support/Resistance**: Based on support/resistance levels
+10. **Breakeven**: Move to breakeven after profit target
+
+### TPSL Configuration Example
+
+```python
+from src.training.steps.backtesting.abc_testing.enhanced_abc_testing_framework import TPSLConfig, TPSLStrategy
+
+# Fixed TPSL strategy
+fixed_tpsl = TPSLConfig(
+    strategy=TPSLStrategy.FIXED,
+    take_profit_pct=0.02,      # 2% take profit
+    stop_loss_pct=0.01,        # 1% stop loss
+    enable_breakeven=True,     # Enable breakeven functionality
+    breakeven_trigger_pct=0.01 # Trigger breakeven after 1% profit
+)
+
+# ATR-based TPSL strategy
+atr_tpsl = TPSLConfig(
+    strategy=TPSLStrategy.ATR_BASED,
+    atr_multiplier_tp=2.0,     # 2x ATR for take profit
+    atr_multiplier_sl=1.0,     # 1x ATR for stop loss
+    atr_period=14,             # 14-period ATR
+    enable_trailing_sl=True,   # Enable trailing stop loss
+    trailing_start_pct=0.01    # Start trailing after 1% profit
+)
+
+# Dynamic TPSL strategy
+dynamic_tpsl = TPSLConfig(
+    strategy=TPSLStrategy.DYNAMIC,
+    take_profit_pct=0.02,
+    stop_loss_pct=0.01,
+    dynamic_adjustment_factor=0.5,  # Adjustment sensitivity
+    min_tp_pct=0.005,              # Minimum take profit (0.5%)
+    max_tp_pct=0.05,               # Maximum take profit (5%)
+    volatile_market_multiplier=1.5, # Adjust for volatile markets
+    trending_market_multiplier=0.8  # Adjust for trending markets
+)
+
+# Scaling TPSL strategy
+scaling_tpsl = TPSLConfig(
+    strategy=TPSLStrategy.SCALING,
+    take_profit_pct=0.02,
+    stop_loss_pct=0.01,
+    scale_out_levels=[0.5, 0.3, 0.2],  # Scale out at 50%, 30%, 20%
+    scale_out_sizes=[0.25, 0.25, 0.5], # Scale out sizes
+    enable_partial_tp=True
+)
+```
 
 ## 🎯 Position Sizing Methods
 
@@ -461,33 +551,137 @@ python tests/performance/backtesting_benchmarks.py
 
 ## 📚 Examples
 
-### Example 1: Basic A/B Test
+### Example 1: Multi-Model TPSL Testing (6 Models)
 
 ```python
-# See abc_testing_integration_example.py for complete example
+import asyncio
+from src.training.steps.backtesting.abc_testing.multi_model_tpsl_example import MultiModelTPSLExample
+
+async def run_6_model_test():
+    example = MultiModelTPSLExample("config/6_model_test")
+    
+    test_config = {
+        "test_name": "Crypto_6_Model_TPSL_Test",
+        "symbol": "BTCUSDT",
+        "models": [
+            # 6 different models with different TPSL strategies
+            {"model_id": "model_a", "model_name": "RandomForest_Conservative", "model_type": "random_forest"},
+            {"model_id": "model_b", "model_name": "LightGBM_Aggressive", "model_type": "lightgbm"},
+            {"model_id": "model_c", "model_name": "XGBoost_Balanced", "model_type": "xgboost"},
+            {"model_id": "model_d", "model_name": "TabNet_Advanced", "model_type": "tabnet"},
+            {"model_id": "model_e", "model_name": "CatBoost_Stable", "model_type": "catboost"},
+            {"model_id": "model_f", "model_name": "ExtraTrees_Fast", "model_type": "extra_trees"}
+        ],
+        "tpsl_configs": {
+            "model_a": {"strategy": "fixed", "take_profit_pct": 0.015, "stop_loss_pct": 0.008},
+            "model_b": {"strategy": "atr_based", "atr_multiplier_tp": 2.5, "atr_multiplier_sl": 1.5},
+            "model_c": {"strategy": "volatility_based", "volatility_multiplier_tp": 1.8},
+            "model_d": {"strategy": "dynamic", "dynamic_adjustment_factor": 0.6},
+            "model_e": {"strategy": "trailing", "trailing_start_pct": 0.015},
+            "model_f": {"strategy": "scaling", "scale_out_levels": [0.5, 0.3, 0.2]}
+        }
+    }
+    
+    results = await example.run_multi_model_tpsl_test(test_config)
+    return results
+
+# Run 6-model test
+results = asyncio.run(run_6_model_test())
 ```
 
-### Example 2: Multi-Asset Testing
+### Example 2: TPSL Parameter Optimization
 
 ```python
-# Test multiple assets simultaneously
-multi_asset_config = {
-    "test_name": "Multi_Asset_Test",
+import asyncio
+from src.training.steps.backtesting.abc_testing.tpsl_optimization_example import TPSLOptimizationExample
+
+async def run_tpsl_optimization():
+    example = TPSLOptimizationExample("config/tpsl_opt")
+    
+    optimization_config = {
+        "test_name": "TPSL_Parameter_Optimization",
+        "symbol": "BTCUSDT",
+        "models": [
+            {"model_id": "model_a", "model_name": "RandomForest", "model_type": "random_forest"},
+            {"model_id": "model_b", "model_name": "LightGBM", "model_type": "lightgbm"},
+            {"model_id": "model_c", "model_name": "XGBoost", "model_type": "xgboost"},
+            {"model_id": "model_d", "model_name": "TabNet", "model_type": "tabnet"}
+        ],
+        "optimization_strategies": {
+            "model_a": "fixed",        # Optimize fixed TPSL parameters
+            "model_b": "atr_based",    # Optimize ATR-based parameters
+            "model_c": "volatility_based", # Optimize volatility-based parameters
+            "model_d": "dynamic"       # Optimize dynamic parameters
+        }
+    }
+    
+    results = await example.run_tpsl_optimization(optimization_config)
+    return results
+
+# Run TPSL optimization
+results = asyncio.run(run_tpsl_optimization())
+```
+
+### Example 3: Enhanced A/B/C Testing with TPSL
+
+```python
+import asyncio
+from src.training.steps.backtesting.abc_testing.enhanced_abc_testing_framework import (
+    EnhancedABCTestingFramework, TPSLConfig, TPSLStrategy
+)
+
+async def run_enhanced_abc_test():
+    # Create TPSL configurations for each model
+    tpsl_configs = {
+        "model_a": TPSLConfig(strategy=TPSLStrategy.FIXED, take_profit_pct=0.02, stop_loss_pct=0.01),
+        "model_b": TPSLConfig(strategy=TPSLStrategy.ATR_BASED, atr_multiplier_tp=2.0, atr_multiplier_sl=1.0),
+        "model_c": TPSLConfig(strategy=TPSLStrategy.DYNAMIC, dynamic_adjustment_factor=0.5),
+        "model_d": TPSLConfig(strategy=TPSLStrategy.TRAILING, trailing_start_pct=0.01),
+        "model_e": TPSLConfig(strategy=TPSLStrategy.SCALING, scale_out_levels=[0.5, 0.3, 0.2])
+    }
+    
+    # Create enhanced framework
+    framework = EnhancedABCTestingFramework(abc_config, tpsl_configs)
+    
+    # Add more models dynamically
+    framework.add_model({
+        "model_id": "model_f",
+        "model_name": "New_Model",
+        "model_type": "random_forest"
+    }, TPSLConfig(strategy=TPSLStrategy.VOLATILITY_BASED))
+    
+    # Run the test
+    results = await framework.execute(orchestrator)
+    return results
+```
+
+### Example 4: Multi-Asset Testing with Different TPSL
+
+```python
+# Test multiple assets with different TPSL strategies
+multi_asset_tpsl_config = {
+    "test_name": "Multi_Asset_TPSL_Test",
     "assets": ["BTCUSDT", "ETHUSDT", "ADAUSDT"],
     "models": [...],
-    # ... other configuration
+    "tpsl_configs": {
+        "BTCUSDT": {"strategy": "atr_based", "atr_multiplier_tp": 2.0},
+        "ETHUSDT": {"strategy": "volatility_based", "volatility_multiplier_tp": 1.5},
+        "ADAUSDT": {"strategy": "fixed", "take_profit_pct": 0.03}
+    }
 }
 ```
 
-### Example 3: Walk-Forward Validation
+### Example 5: Walk-Forward Validation with TPSL
 
 ```python
-# Use walk-forward validation for robust testing
-walk_forward_config = {
+# Use walk-forward validation with TPSL optimization
+walk_forward_tpsl_config = {
     "validation_method": "walk_forward",
     "train_window": 252,  # 1 year
     "test_window": 63,    # 3 months
-    "step_size": 21       # 1 month
+    "step_size": 21,      # 1 month
+    "tpsl_optimization": True,  # Optimize TPSL in each window
+    "tpsl_optimization_period": 126  # Use 6 months for TPSL optimization
 }
 ```
 

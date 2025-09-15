@@ -268,7 +268,7 @@ class ValidatorOrchestrator:
             'step02_data_reading': 'step02_data_reading_validator',
             'step02_5_sr_optimization': 'step02_5_sr_optimization_validator',
             'step03_hmm_regime_discovery': 'step03_hmm_regime_discovery_validator',
-            'step04_regime_data_splitting': 'step04_regime_data_splitting_validator',
+            'step04_regime_data_splitting': 'regime_data_splitting.validator',
             'step04_5_triple_barrier_method': 'step04_5_triple_barrier_method_validator',
             'step05_labeling': 'step05_labeling_validator',
             'step06_feature_engineering': 'step06_feature_engineering_validator',

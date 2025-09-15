@@ -140,8 +140,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             hmm_models = validated_result['hmm_models']
             cluster_assignments = validated_result['cluster_assignments']
             
-            # Perform comprehensive regime quality validation
-            quality_metrics = self._validate_regime_quality(
+            # Perform comprehensive cluster quality validation
+            quality_metrics = self._validate_cluster_quality(
                 hmm_models, cluster_assignments, market_data, clustering_config
             )
             
@@ -151,7 +151,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'hmm_models': hmm_models,
                     'cluster_assignments': cluster_assignments,
                     'cluster_metrics': cluster_metrics,
-                    'regime_quality_metrics': quality_metrics,
+                    'cluster_quality_metrics': quality_metrics,
                     'clustering_summary': {
                         'total_clusters': len(hmm_models),
                         'total_assignments': len(cluster_assignments),
@@ -294,7 +294,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         cluster_assignments: List[int], 
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Apply regime constraints: max 25 regimes and 1% sample threshold."""
+        """Apply cluster constraints: max 25 clusters and 1% sample threshold."""
         max_regimes = config.get('max_regimes', 25)
         min_sample_percentage = config.get('min_regime_sample_percentage', 0.01)
         
@@ -304,83 +304,83 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         total_samples = len(cluster_assignments)
         min_samples = int(total_samples * min_sample_percentage)
         
-        # Count samples per regime
-        regime_counts = {}
+        # Count samples per cluster
+        cluster_counts = {}
         for assignment in cluster_assignments:
-            regime_counts[assignment] = regime_counts.get(assignment, 0) + 1
+            cluster_counts[assignment] = cluster_counts.get(assignment, 0) + 1
         
-        # Filter regimes that meet the minimum sample threshold
-        valid_regimes = []
-        for regime, count in regime_counts.items():
+        # Filter clusters that meet the minimum sample threshold
+        valid_clusters = []
+        for cluster, count in cluster_counts.items():
             if count >= min_samples:
-                valid_regimes.append(regime)
+                valid_clusters.append(cluster)
             else:
-                self.logger.warning(f"⚠️ Regime {regime} has {count} samples ({count/total_samples:.2%}), below 1% threshold - removing")
+                self.logger.warning(f"⚠️ Cluster {cluster} has {count} samples ({count/total_samples:.2%}), below 1% threshold - removing")
         
-        # Limit to max_regimes
-        if len(valid_regimes) > max_regimes:
-            # Keep the regimes with the most samples
-            regime_counts_sorted = sorted(regime_counts.items(), key=lambda x: x[1], reverse=True)
-            valid_regimes = [regime for regime, _ in regime_counts_sorted[:max_regimes]]
-            self.logger.warning(f"⚠️ Limiting to {max_regimes} regimes (had {len(regime_counts)} regimes)")
+        # Limit to max_clusters
+        if len(valid_clusters) > max_regimes:
+            # Keep the clusters with the most samples
+            cluster_counts_sorted = sorted(cluster_counts.items(), key=lambda x: x[1], reverse=True)
+            valid_clusters = [cluster for cluster, _ in cluster_counts_sorted[:max_regimes]]
+            self.logger.warning(f"⚠️ Limiting to {max_regimes} clusters (had {len(cluster_counts)} clusters)")
         
-        # Filter cluster assignments to only include valid regimes
+        # Filter cluster assignments to only include valid clusters
         filtered_assignments = []
         for assignment in cluster_assignments:
-            if assignment in valid_regimes:
+            if assignment in valid_clusters:
                 filtered_assignments.append(assignment)
             else:
-                # Assign to the most common valid regime as fallback
-                if valid_regimes:
-                    filtered_assignments.append(valid_regimes[0])
+                # Assign to the most common valid cluster as fallback
+                if valid_clusters:
+                    filtered_assignments.append(valid_clusters[0])
                 else:
-                    filtered_assignments.append(0)  # Fallback to regime 0
+                    filtered_assignments.append(0)  # Fallback to cluster 0
         
-        # Filter HMM models to match valid regimes
+        # Filter HMM models to match valid clusters
         filtered_models = []
-        for i, regime in enumerate(valid_regimes):
+        for i, cluster in enumerate(valid_clusters):
             if i < len(hmm_models):
                 filtered_models.append(hmm_models[i])
         
-        self.logger.info(f"✅ Applied regime constraints: {len(valid_regimes)} valid regimes (min {min_samples} samples each, max {max_regimes} regimes)")
+        self.logger.info(f"✅ Applied cluster constraints: {len(valid_clusters)} valid clusters (min {min_samples} samples each, max {max_regimes} clusters)")
         
         return {
             'hmm_models': filtered_models,
             'cluster_assignments': filtered_assignments
         }
     
-    def _validate_regime_quality(
+    def _validate_cluster_quality(
         self, 
         hmm_models: List[Any], 
         cluster_assignments: List[int], 
         market_data: Any,
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Perform comprehensive regime quality validation."""
+        """Perform comprehensive cluster quality validation."""
         start_time = time.time()
         
         try:
             quality_metrics = {}
             
-            # 1. Regime Persistence Analysis
-            persistence_metrics = self._calculate_regime_persistence(cluster_assignments)
+            # 1. Cluster Persistence Analysis
+            persistence_metrics = self._calculate_cluster_persistence(cluster_assignments)
             quality_metrics['persistence_analysis'] = persistence_metrics
             
             # 2. Economic Significance Validation
             if PANDAS_AVAILABLE and market_data is not None:
-                economic_metrics = self._validate_economic_significance(
+                economic_metrics = self._validate_cluster_economic_significance(
                     hmm_models, cluster_assignments, market_data
                 )
                 quality_metrics['economic_significance'] = economic_metrics
             
             # 3. Cross-validation Stability
-            stability_metrics = self._cross_validate_regimes(
+            stability_metrics = self._cross_validate_clusters(
                 hmm_models, cluster_assignments, market_data
             )
             quality_metrics['stability_analysis'] = stability_metrics
             
-            # 4. Regime Transition Analysis
-            transition_metrics = self._analyze_regime_transitions(cluster_assignments)
+            # 4. Cluster Transition Analysis
+            transition_metrics = self._analyze_cluster_transitions(cluster_assignments)
             quality_metrics['transition_analysis'] = transition_metrics
             
             # 5. Multi-stage Validation Gates
@@ -401,13 +401,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             validation_time = time.time() - start_time
             quality_metrics['validation_time'] = validation_time
             
-            self.logger.info(f"✅ Regime quality validation completed in {validation_time:.2f}s")
+            self.logger.info(f"✅ Cluster quality validation completed in {validation_time:.2f}s")
             self.logger.info(f"📊 Overall quality score: {overall_score:.2f} ({'PASSED' if quality_metrics['validation_passed'] else 'FAILED'})")
             
             return quality_metrics
             
         except Exception as e:
-            self.logger.error(f"❌ Regime quality validation failed: {e}")
+            self.logger.error(f"❌ Cluster quality validation failed: {e}")
             return {
                 'overall_quality_score': 0.0,
                 'validation_passed': False,
@@ -415,36 +415,36 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'validation_time': time.time() - start_time
             }
     
-    def _calculate_regime_persistence(self, cluster_assignments: List[int]) -> Dict[str, Any]:
-        """Calculate regime persistence metrics."""
+    def _calculate_cluster_persistence(self, cluster_assignments: List[int]) -> Dict[str, Any]:
+        """Calculate cluster persistence metrics."""
         if not cluster_assignments or len(cluster_assignments) < 2:
             return {'error': 'Insufficient data for persistence analysis'}
         
-        # Calculate regime durations
-        regime_durations = []
-        current_regime = cluster_assignments[0]
+        # Calculate cluster durations
+        cluster_durations = []
+        current_cluster = cluster_assignments[0]
         current_duration = 1
         
         for i in range(1, len(cluster_assignments)):
-            if cluster_assignments[i] == current_regime:
+            if cluster_assignments[i] == current_cluster:
                 current_duration += 1
             else:
-                regime_durations.append(current_duration)
-                current_regime = cluster_assignments[i]
+                cluster_durations.append(current_duration)
+                current_cluster = cluster_assignments[i]
                 current_duration = 1
         
-        # Add the last regime duration
-        regime_durations.append(current_duration)
+        # Add the last cluster duration
+        cluster_durations.append(current_duration)
         
-        if not regime_durations:
-            return {'error': 'No regime durations calculated'}
+        if not cluster_durations:
+            return {'error': 'No cluster durations calculated'}
         
         # Calculate persistence metrics
-        avg_duration = np.mean(regime_durations) if NUMPY_AVAILABLE else sum(regime_durations) / len(regime_durations)
-        median_duration = np.median(regime_durations) if NUMPY_AVAILABLE else sorted(regime_durations)[len(regime_durations)//2]
-        std_duration = np.std(regime_durations) if NUMPY_AVAILABLE else 0
+        avg_duration = np.mean(cluster_durations) if NUMPY_AVAILABLE else sum(cluster_durations) / len(cluster_durations)
+        median_duration = np.median(cluster_durations) if NUMPY_AVAILABLE else sorted(cluster_durations)[len(cluster_durations)//2]
+        std_duration = np.std(cluster_durations) if NUMPY_AVAILABLE else 0
         
-        # Calculate regime stability (lower std = more stable)
+        # Calculate cluster stability (lower std = more stable)
         stability_score = max(0, 1 - (std_duration / avg_duration)) if avg_duration > 0 else 0
         
         return {
@@ -452,51 +452,51 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             'median_duration': median_duration,
             'std_duration': std_duration,
             'stability_score': stability_score,
-            'total_transitions': len(regime_durations) - 1,
-            'regime_durations': regime_durations
+            'total_transitions': len(cluster_durations) - 1,
+            'cluster_durations': cluster_durations
         }
     
-    def _validate_economic_significance(
+    def _validate_cluster_economic_significance(
         self, 
         hmm_models: List[Any], 
         cluster_assignments: List[int], 
         market_data: Any
     ) -> Dict[str, Any]:
-        """Validate economic significance of regimes."""
+        """Validate economic significance of clusters."""
         if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
             return {'error': 'Pandas not available or invalid market data'}
         
         try:
-            # Calculate returns for each regime
-            regime_returns = {}
-            regime_volatilities = {}
+            # Calculate returns for each cluster
+            cluster_returns = {}
+            cluster_volatilities = {}
             
-            for regime in set(cluster_assignments):
-                regime_mask = np.array(cluster_assignments) == regime
-                regime_data = market_data[regime_mask]
+            for cluster in set(cluster_assignments):
+                cluster_mask = np.array(cluster_assignments) == cluster
+                cluster_data = market_data[cluster_mask]
                 
-                if len(regime_data) < 2:
+                if len(cluster_data) < 2:
                     continue
                 
                 # Calculate returns (assuming 'close' column exists)
-                if 'close' in regime_data.columns:
-                    returns = regime_data['close'].pct_change().dropna()
-                    regime_returns[regime] = returns.mean()
-                    regime_volatilities[regime] = returns.std()
+                if 'close' in cluster_data.columns:
+                    returns = cluster_data['close'].pct_change().dropna()
+                    cluster_returns[cluster] = returns.mean()
+                    cluster_volatilities[cluster] = returns.std()
             
-            if not regime_returns:
-                return {'error': 'No valid regime returns calculated'}
+            if not cluster_returns:
+                return {'error': 'No valid cluster returns calculated'}
             
             # Calculate economic significance metrics
-            return_spread = max(regime_returns.values()) - min(regime_returns.values())
-            volatility_spread = max(regime_volatilities.values()) - min(regime_volatilities.values())
+            return_spread = max(cluster_returns.values()) - min(cluster_returns.values())
+            volatility_spread = max(cluster_volatilities.values()) - min(cluster_volatilities.values())
             
             # Economic significance score (higher is better)
             economic_score = min(1.0, (return_spread + volatility_spread) / 0.1)  # Normalize to 0-1
             
             return {
-                'regime_returns': regime_returns,
-                'regime_volatilities': regime_volatilities,
+                'cluster_returns': cluster_returns,
+                'cluster_volatilities': cluster_volatilities,
                 'return_spread': return_spread,
                 'volatility_spread': volatility_spread,
                 'economic_significance_score': economic_score,
@@ -506,13 +506,13 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             return {'error': f'Economic significance validation failed: {e}'}
     
-    def _cross_validate_regimes(
+    def _cross_validate_clusters(
         self, 
         hmm_models: List[Any], 
         cluster_assignments: List[int], 
         market_data: Any
     ) -> Dict[str, Any]:
-        """Perform cross-validation to ensure regime stability."""
+        """Perform cross-validation to ensure cluster stability."""
         if not cluster_assignments or len(cluster_assignments) < 100:
             return {'error': 'Insufficient data for cross-validation'}
         
@@ -522,7 +522,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             train_assignments = cluster_assignments[:split_point]
             test_assignments = cluster_assignments[split_point:]
             
-            # Calculate regime distributions
+            # Calculate cluster distributions
             train_dist = self._calculate_cluster_distribution(train_assignments)
             test_dist = self._calculate_cluster_distribution(test_assignments)
             
@@ -530,10 +530,10 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             stability_score = 0.0
             if train_dist and test_dist:
                 # Calculate correlation between distributions
-                common_regimes = set(train_dist.keys()) & set(test_dist.keys())
-                if common_regimes:
-                    train_values = [train_dist.get(regime, 0) for regime in common_regimes]
-                    test_values = [test_dist.get(regime, 0) for regime in common_regimes]
+                common_clusters = set(train_dist.keys()) & set(test_dist.keys())
+                if common_clusters:
+                    train_values = [train_dist.get(cluster, 0) for cluster in common_clusters]
+                    test_values = [test_dist.get(cluster, 0) for cluster in common_clusters]
                     
                     if NUMPY_AVAILABLE and len(train_values) > 1:
                         correlation = np.corrcoef(train_values, test_values)[0, 1]
@@ -541,7 +541,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     else:
                         # Simple similarity measure
                         diff = sum(abs(t - s) for t, s in zip(train_values, test_values))
-                        stability_score = max(0, 1 - diff / len(common_regimes))
+                        stability_score = max(0, 1 - diff / len(common_clusters))
             
             return {
                 'train_distribution': train_dist,
@@ -553,8 +553,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             return {'error': f'Cross-validation failed: {e}'}
     
-    def _analyze_regime_transitions(self, cluster_assignments: List[int]) -> Dict[str, Any]:
-        """Analyze regime transition patterns."""
+    def _analyze_cluster_transitions(self, cluster_assignments: List[int]) -> Dict[str, Any]:
+        """Analyze cluster transition patterns."""
         if not cluster_assignments or len(cluster_assignments) < 2:
             return {'error': 'Insufficient data for transition analysis'}
         
@@ -564,19 +564,19 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             total_transitions = 0
             
             for i in range(1, len(cluster_assignments)):
-                from_regime = cluster_assignments[i-1]
-                to_regime = cluster_assignments[i]
+                from_cluster = cluster_assignments[i-1]
+                to_cluster = cluster_assignments[i]
                 
-                if from_regime != to_regime:
-                    transition_key = f"{from_regime}->{to_regime}"
+                if from_cluster != to_cluster:
+                    transition_key = f"{from_cluster}->{to_cluster}"
                     transitions[transition_key] = transitions.get(transition_key, 0) + 1
                     total_transitions += 1
             
             # Calculate transition probabilities
             transition_probs = {}
             for transition, count in transitions.items():
-                from_regime = int(transition.split('->')[0])
-                from_count = cluster_assignments.count(from_regime)
+                from_cluster = int(transition.split('->')[0])
+                from_count = cluster_assignments.count(from_cluster)
                 if from_count > 0:
                     transition_probs[transition] = count / from_count
             
@@ -682,25 +682,25 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         # Check persistence
         persistence_score = quality_metrics.get('persistence_analysis', {}).get('stability_score', 0)
         if persistence_score < 0.5:
-            recommendations.append("Consider increasing minimum regime duration to improve persistence")
+            recommendations.append("Consider increasing minimum cluster duration to improve persistence")
         
         # Check economic significance
         economic_score = quality_metrics.get('economic_significance', {}).get('economic_significance_score', 0)
         if economic_score < 0.5:
-            recommendations.append("Regimes may not be economically significant - consider feature engineering")
+            recommendations.append("Clusters may not be economically significant - consider feature engineering")
         
         # Check stability
         stability_score = quality_metrics.get('stability_analysis', {}).get('stability_score', 0)
         if stability_score < 0.7:
-            recommendations.append("Regimes show low stability - consider cross-validation improvements")
+            recommendations.append("Clusters show low stability - consider cross-validation improvements")
         
         # Check transitions
         transition_entropy = quality_metrics.get('transition_analysis', {}).get('transition_entropy', 0)
         if transition_entropy > 2.0:
-            recommendations.append("High transition entropy - consider regime smoothing or filtering")
+            recommendations.append("High transition entropy - consider cluster smoothing or filtering")
         
         if not recommendations:
-            recommendations.append("Regime quality is good - no specific recommendations")
+            recommendations.append("Cluster quality is good - no specific recommendations")
         
         return recommendations
     

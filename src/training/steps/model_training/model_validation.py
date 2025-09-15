@@ -1,8 +1,9 @@
 """
-Model Validation Sub-Pipeline
+Enhanced Model Validation Sub-Pipeline with Comprehensive Error Detection
 
 This module provides comprehensive model validation functionality
-for trained ML models in the trading pipeline.
+for trained ML models in the trading pipeline with enhanced error detection,
+monitoring, and reporting capabilities.
 """
 
 import asyncio
@@ -13,20 +14,244 @@ from pathlib import Path
 from datetime import datetime
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.model_selection import cross_val_score
+from collections import defaultdict
+import traceback
 
 from src.utils.logger import get_system_logger
+from src.utils.ml_training_safeguards import MLTrainingSafeguards, ErrorRecord, ErrorSeverity
 
 logger = get_system_logger().getChild('ModelValidation')
 
 
 class ModelValidationStep:
     """
-    Model Validation Step for comprehensive model evaluation.
+    Enhanced Model Validation Step for comprehensive model evaluation with error detection.
     """
 
-    def __init__(self):
-        """Initialize the model validation step."""
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the enhanced model validation step."""
+        self.config = config or {}
         self.logger = logger.getChild('ModelValidationStep')
+        
+        # Enhanced error detection and monitoring
+        self.safeguards = MLTrainingSafeguards(self.config.get('safeguards', {}))
+        self.validation_history = []
+        self.error_summary = defaultdict(int)
+        self.performance_tracking = {}
+        
+        # Validation configuration
+        self.validation_thresholds = self.config.get('validation_thresholds', {
+            'min_accuracy': 0.6,
+            'min_precision': 0.5,
+            'min_recall': 0.5,
+            'min_f1_score': 0.5,
+            'max_validation_time': 300  # seconds
+        })
+        
+        self.logger.info("🔍 Enhanced Model Validation Step initialized with monitoring capabilities")
+
+    def validate_model_performance(self, metrics: Dict[str, float], model_id: str) -> Dict[str, Any]:
+        """Validate model performance against thresholds with enhanced error detection."""
+        try:
+            validation_result = {
+                'is_valid': True,
+                'issues': [],
+                'recommendations': [],
+                'risk_level': 'low',
+                'validation_score': 0.0
+            }
+            
+            # Check accuracy threshold
+            accuracy = metrics.get('accuracy', 0)
+            if accuracy < self.validation_thresholds['min_accuracy']:
+                validation_result['issues'].append(f"Low accuracy: {accuracy:.3f} < {self.validation_thresholds['min_accuracy']}")
+                validation_result['recommendations'].append("Consider retraining with more data or different features")
+                validation_result['risk_level'] = 'high'
+                validation_result['is_valid'] = False
+            
+            # Check precision threshold
+            precision = metrics.get('precision', 0)
+            if precision < self.validation_thresholds['min_precision']:
+                validation_result['issues'].append(f"Low precision: {precision:.3f} < {self.validation_thresholds['min_precision']}")
+                validation_result['recommendations'].append("Review feature selection and class balance")
+                if validation_result['risk_level'] == 'low':
+                    validation_result['risk_level'] = 'medium'
+            
+            # Check recall threshold
+            recall = metrics.get('recall', 0)
+            if recall < self.validation_thresholds['min_recall']:
+                validation_result['issues'].append(f"Low recall: {recall:.3f} < {self.validation_thresholds['min_recall']}")
+                validation_result['recommendations'].append("Check for class imbalance and model bias")
+                if validation_result['risk_level'] == 'low':
+                    validation_result['risk_level'] = 'medium'
+            
+            # Check F1 score threshold
+            f1 = metrics.get('f1_score', 0)
+            if f1 < self.validation_thresholds['min_f1_score']:
+                validation_result['issues'].append(f"Low F1 score: {f1:.3f} < {self.validation_thresholds['min_f1_score']}")
+                validation_result['recommendations'].append("Balance precision and recall optimization")
+                if validation_result['risk_level'] == 'low':
+                    validation_result['risk_level'] = 'medium'
+            
+            # Calculate validation score
+            validation_result['validation_score'] = (accuracy + precision + recall + f1) / 4
+            
+            # Log validation result
+            if validation_result['is_valid']:
+                self.logger.info(f"✅ Model {model_id} validation passed (score: {validation_result['validation_score']:.3f})")
+            else:
+                self.logger.warning(f"⚠️ Model {model_id} validation failed: {validation_result['issues']}")
+            
+            return validation_result
+            
+        except Exception as e:
+            error_context = {
+                'component': 'model_validation',
+                'function': 'validate_model_performance',
+                'model_id': model_id,
+                'metrics': metrics
+            }
+            self.safeguards.detect_and_classify_error(e, error_context)
+            self.logger.error(f"❌ Model performance validation failed: {e}")
+            return {
+                'is_valid': False,
+                'issues': ['Validation failed due to error'],
+                'recommendations': ['Manual review required'],
+                'risk_level': 'unknown',
+                'validation_score': 0.0
+            }
+
+    def track_validation_metrics(self, model_id: str, metrics: Dict[str, float], 
+                               validation_result: Dict[str, Any]):
+        """Track validation metrics over time for trend analysis."""
+        try:
+            tracking_record = {
+                'timestamp': datetime.now(),
+                'model_id': model_id,
+                'metrics': metrics.copy(),
+                'validation_result': validation_result.copy(),
+                'validation_score': validation_result.get('validation_score', 0)
+            }
+            
+            self.validation_history.append(tracking_record)
+            
+            # Keep only recent history (last 100 validations)
+            if len(self.validation_history) > 100:
+                self.validation_history = self.validation_history[-100:]
+            
+            self.logger.debug(f"📊 Validation metrics tracked for {model_id}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to track validation metrics: {e}")
+
+    def get_validation_summary(self) -> Dict[str, Any]:
+        """Get comprehensive validation summary with monitoring data."""
+        try:
+            if not self.validation_history:
+                return {'validation_summary': 'no_data'}
+            
+            # Calculate statistics
+            total_validations = len(self.validation_history)
+            successful_validations = sum(1 for v in self.validation_history if v['validation_result']['is_valid'])
+            failed_validations = total_validations - successful_validations
+            
+            # Calculate average metrics
+            avg_metrics = defaultdict(float)
+            for validation in self.validation_history:
+                for metric, value in validation['metrics'].items():
+                    avg_metrics[metric] += value
+            for metric in avg_metrics:
+                avg_metrics[metric] /= total_validations
+            
+            # Calculate trend
+            recent_validations = self.validation_history[-10:] if len(self.validation_history) >= 10 else self.validation_history
+            recent_success_rate = sum(1 for v in recent_validations if v['validation_result']['is_valid']) / len(recent_validations)
+            
+            # Get error summary from safeguards
+            error_summary = self.safeguards.get_error_summary()
+            
+            return {
+                'validation_summary': {
+                    'total_validations': total_validations,
+                    'successful_validations': successful_validations,
+                    'failed_validations': failed_validations,
+                    'success_rate': successful_validations / total_validations,
+                    'recent_success_rate': recent_success_rate,
+                    'average_metrics': dict(avg_metrics)
+                },
+                'error_summary': error_summary,
+                'recent_validations': recent_validations,
+                'performance_tracking': self.performance_tracking
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to get validation summary: {e}")
+            return {'error': str(e)}
+
+    def check_validation_health(self) -> Dict[str, Any]:
+        """Check health status of the validation system."""
+        try:
+            health_status = {
+                'overall_health': 'good',
+                'issues': [],
+                'recommendations': [],
+                'risk_level': 'low'
+            }
+            
+            # Check validation success rate
+            if self.validation_history:
+                recent_validations = self.validation_history[-20:] if len(self.validation_history) >= 20 else self.validation_history
+                success_rate = sum(1 for v in recent_validations if v['validation_result']['is_valid']) / len(recent_validations)
+                
+                if success_rate < 0.7:
+                    health_status['issues'].append(f"Low validation success rate: {success_rate:.2%}")
+                    health_status['recommendations'].append("Review model training pipeline and data quality")
+                    health_status['risk_level'] = 'high'
+                elif success_rate < 0.8:
+                    health_status['issues'].append(f"Moderate validation success rate: {success_rate:.2%}")
+                    health_status['recommendations'].append("Monitor validation trends closely")
+                    if health_status['risk_level'] == 'low':
+                        health_status['risk_level'] = 'medium'
+            
+            # Check for performance degradation
+            if len(self.validation_history) >= 10:
+                recent_scores = [v['validation_score'] for v in self.validation_history[-10:]]
+                older_scores = [v['validation_score'] for v in self.validation_history[-20:-10]] if len(self.validation_history) >= 20 else []
+                
+                if older_scores:
+                    recent_avg = sum(recent_scores) / len(recent_scores)
+                    older_avg = sum(older_scores) / len(older_scores)
+                    
+                    if recent_avg < older_avg - 0.1:  # 10% degradation
+                        health_status['issues'].append(f"Performance degradation detected: {recent_avg:.3f} vs {older_avg:.3f}")
+                        health_status['recommendations'].append("Investigate recent model changes and data drift")
+                        if health_status['risk_level'] == 'low':
+                            health_status['risk_level'] = 'medium'
+            
+            # Check error rates
+            error_summary = self.safeguards.get_error_summary()
+            if error_summary['recent_errors_1h'] > 5:
+                health_status['issues'].append(f"High validation error rate: {error_summary['recent_errors_1h']} errors in last hour")
+                health_status['recommendations'].append("Check validation pipeline stability")
+                if health_status['risk_level'] == 'low':
+                    health_status['risk_level'] = 'medium'
+            
+            # Determine overall health
+            if health_status['risk_level'] == 'high':
+                health_status['overall_health'] = 'poor'
+            elif health_status['risk_level'] == 'medium':
+                health_status['overall_health'] = 'fair'
+            
+            return health_status
+            
+        except Exception as e:
+            self.logger.error(f"❌ Validation health check failed: {e}")
+            return {
+                'overall_health': 'unknown',
+                'issues': ['Health check failed'],
+                'recommendations': ['Manual review required'],
+                'risk_level': 'unknown'
+            }
 
     async def execute_model_validation(
         self,

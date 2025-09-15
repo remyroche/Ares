@@ -19,12 +19,170 @@ from src.utils.common_operations import (
 from src.utils.logger import system_logger
 
 class InterpretabilityReporter:
-    """Reporter for model interpretability results."""
+    """Enhanced reporter for model interpretability results with comprehensive monitoring."""
     
     def __init__(self, config: Dict[str, Any]):
-        """Initialize the interpretability reporter."""
+        """Initialize the enhanced interpretability reporter."""
         self.config = config
         self.logger = system_logger.getChild("InterpretabilityReporter")
+        
+        # Enhanced reporting capabilities
+        self.report_history = []
+        self.alert_thresholds = self.config.get('alert_thresholds', {
+            'low_accuracy': 0.7,
+            'high_bias': 0.3,
+            'feature_importance_variance': 0.5
+        })
+        self.enable_real_time_monitoring = self.config.get('enable_real_time_monitoring', True)
+        
+        self.logger.info("📊 Enhanced Interpretability Reporter initialized")
+
+    def analyze_model_health(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze model health and detect potential issues."""
+        try:
+            health_analysis = {
+                'overall_health': 'good',
+                'issues_detected': [],
+                'recommendations': [],
+                'risk_level': 'low'
+            }
+            
+            # Check model accuracy
+            if 'model_performance' in results:
+                accuracy = results['model_performance'].get('accuracy', 0)
+                if accuracy < self.alert_thresholds['low_accuracy']:
+                    health_analysis['issues_detected'].append(f"Low model accuracy: {accuracy:.3f}")
+                    health_analysis['recommendations'].append("Consider retraining with more data or different features")
+                    health_analysis['risk_level'] = 'high'
+            
+            # Check feature importance distribution
+            if 'feature_importance' in results:
+                importance_values = list(results['feature_importance'].values())
+                if importance_values:
+                    importance_variance = np.var(importance_values)
+                    if importance_variance > self.alert_thresholds['feature_importance_variance']:
+                        health_analysis['issues_detected'].append(f"High feature importance variance: {importance_variance:.3f}")
+                        health_analysis['recommendations'].append("Review feature selection and consider feature engineering")
+                        if health_analysis['risk_level'] == 'low':
+                            health_analysis['risk_level'] = 'medium'
+            
+            # Check for bias indicators
+            if 'bias_analysis' in results:
+                bias_score = results['bias_analysis'].get('overall_bias', 0)
+                if bias_score > self.alert_thresholds['high_bias']:
+                    health_analysis['issues_detected'].append(f"High model bias: {bias_score:.3f}")
+                    health_analysis['recommendations'].append("Investigate bias sources and consider bias mitigation techniques")
+                    health_analysis['risk_level'] = 'high'
+            
+            # Determine overall health
+            if len(health_analysis['issues_detected']) > 2:
+                health_analysis['overall_health'] = 'poor'
+            elif len(health_analysis['issues_detected']) > 0:
+                health_analysis['overall_health'] = 'fair'
+            
+            return health_analysis
+            
+        except Exception as e:
+            self.logger.error(f"❌ Model health analysis failed: {e}")
+            return {
+                'overall_health': 'unknown',
+                'issues_detected': ['Health analysis failed'],
+                'recommendations': ['Manual review required'],
+                'risk_level': 'unknown'
+            }
+
+    def generate_alert_if_needed(self, health_analysis: Dict[str, Any], model_id: str):
+        """Generate alerts for critical model health issues."""
+        try:
+            if health_analysis['risk_level'] in ['high', 'critical']:
+                alert_message = f"🚨 Model Health Alert for {model_id}: {health_analysis['overall_health']}"
+                self.logger.critical(alert_message)
+                
+                # In a real implementation, you would send alerts to:
+                # - Email notifications
+                # - Slack/Teams channels
+                # - Monitoring dashboards
+                # - Incident management systems
+                
+                # For now, save to file
+                alert_data = {
+                    'timestamp': get_current_datetime(),
+                    'model_id': model_id,
+                    'alert_type': 'model_health',
+                    'risk_level': health_analysis['risk_level'],
+                    'issues': health_analysis['issues_detected'],
+                    'recommendations': health_analysis['recommendations']
+                }
+                
+                alert_file = f"alerts/model_health_{model_id}_{get_current_datetime().strftime('%Y%m%d_%H%M%S')}.json"
+                safe_json_dump(alert_data, alert_file)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Alert generation failed: {e}")
+
+    def track_interpretability_metrics(self, results: Dict[str, Any], model_id: str):
+        """Track interpretability metrics over time."""
+        try:
+            metrics = {
+                'timestamp': get_current_datetime(),
+                'model_id': model_id,
+                'feature_count': len(results.get('feature_importance', {})),
+                'top_feature_importance': max(results.get('feature_importance', {}).values()) if results.get('feature_importance') else 0,
+                'model_accuracy': results.get('model_performance', {}).get('accuracy', 0),
+                'bias_score': results.get('bias_analysis', {}).get('overall_bias', 0)
+            }
+            
+            self.report_history.append(metrics)
+            
+            # Keep only recent history (last 100 reports)
+            if len(self.report_history) > 100:
+                self.report_history = self.report_history[-100:]
+            
+            self.logger.debug(f"📈 Interpretability metrics tracked for {model_id}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Metrics tracking failed: {e}")
+
+    def get_interpretability_trends(self) -> Dict[str, Any]:
+        """Analyze trends in interpretability metrics over time."""
+        try:
+            if len(self.report_history) < 2:
+                return {'trends': 'insufficient_data'}
+            
+            # Extract metrics over time
+            timestamps = [m['timestamp'] for m in self.report_history]
+            accuracies = [m['model_accuracy'] for m in self.report_history]
+            bias_scores = [m['bias_score'] for m in self.report_history]
+            feature_counts = [m['feature_count'] for m in self.report_history]
+            
+            # Calculate trends
+            accuracy_trend = 'stable'
+            if len(accuracies) >= 2:
+                if accuracies[-1] > accuracies[0] + 0.05:
+                    accuracy_trend = 'improving'
+                elif accuracies[-1] < accuracies[0] - 0.05:
+                    accuracy_trend = 'declining'
+            
+            bias_trend = 'stable'
+            if len(bias_scores) >= 2:
+                if bias_scores[-1] > bias_scores[0] + 0.1:
+                    bias_trend = 'increasing'
+                elif bias_scores[-1] < bias_scores[0] - 0.1:
+                    bias_trend = 'decreasing'
+            
+            return {
+                'trends': {
+                    'accuracy_trend': accuracy_trend,
+                    'bias_trend': bias_trend,
+                    'feature_count_trend': 'stable',  # Could be enhanced
+                    'data_points': len(self.report_history)
+                },
+                'recent_metrics': self.report_history[-5:] if self.report_history else []
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Trend analysis failed: {e}")
+            return {'trends': 'analysis_failed', 'error': str(e)}
     
     @handles_errors(Exception, fallback = False, log_level="ERROR")
     @validates(strict = True)

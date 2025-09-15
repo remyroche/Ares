@@ -71,14 +71,14 @@ except ImportError:
 
 
 class HyperparameterOptimization:
-    """Advanced hyperparameter optimization utilities."""
+    """Enhanced hyperparameter optimization utilities with monitoring and failure detection."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize hyperparameter optimization utilities with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('HPOUtils')
         
-        _LOGGER.info("🚀 Initializing HyperparameterOptimization...")
+        _LOGGER.info("🚀 Initializing Enhanced HyperparameterOptimization...")
 
         # Configuration defaults
         self.enable_gpu = self.config.get('enable_gpu', True)
@@ -88,12 +88,30 @@ class HyperparameterOptimization:
         self.default_timeout = self.config.get('default_timeout', 300)
         self.enable_pruning = self.config.get('enable_pruning', True)
 
+        # Enhanced monitoring configuration
+        self.enable_monitoring = self.config.get('enable_monitoring', True)
+        self.convergence_config = self.config.get('convergence', {
+            'improvement_threshold': 0.001,
+            'patience_trials': 20,
+            'variance_threshold': 0.01,
+            'confidence_level': 0.95,
+            'min_trials_for_convergence': 10
+        })
+        self.failure_detection_config = self.config.get('failure_detection', {
+            'max_failure_rate': 0.3,
+            'consecutive_failures_threshold': 5,
+            'timeout_threshold': 3600,
+            'memory_threshold': 0.9,
+            'performance_degradation_threshold': 0.1
+        })
+
         _LOGGER.info(f"⚙️ Configuration - GPU enabled: {self.enable_gpu}")
         _LOGGER.info(f"⚙️ Configuration - Parallel processing: {self.enable_parallel}")
         _LOGGER.info(f"⚙️ Configuration - Max workers: {self.max_workers}")
         _LOGGER.info(f"⚙️ Configuration - Default trials: {self.default_n_trials}")
         _LOGGER.info(f"⚙️ Configuration - Default timeout: {self.default_timeout}s")
         _LOGGER.info(f"⚙️ Configuration - Pruning enabled: {self.enable_pruning}")
+        _LOGGER.info(f"⚙️ Configuration - Monitoring enabled: {self.enable_monitoring}")
 
         # Initialize utilities
         self.gpu_manager = M1MemoryOptimizer() if self.enable_gpu else None
@@ -101,14 +119,310 @@ class HyperparameterOptimization:
         self.parallel_coordinator = ParallelProcessingCoordinator(self.config) if self.enable_parallel else None
         self.memory_tools = MemoryEfficientTraining(self.config)
 
-        # Optimization history
+        # Enhanced optimization tracking
         self.optimization_history = []
+        self.active_studies = {}
+        self.trial_results = {}
+        self.convergence_tracking = {}
+        self.failure_tracking = {}
 
         # Default search spaces for common models
         _LOGGER.debug("🔧 Initializing default search spaces...")
         self.default_search_spaces = self._initialize_default_search_spaces()
         
-        _LOGGER.info("✅ HyperparameterOptimization initialized successfully")
+        _LOGGER.info("✅ Enhanced HyperparameterOptimization initialized successfully")
+
+    def start_study_monitoring(self, study_id: str, study_name: str) -> Dict[str, Any]:
+        """Start monitoring a new HPO study."""
+        try:
+            study_info = {
+                'study_id': study_id,
+                'study_name': study_name,
+                'start_time': datetime.now(),
+                'status': 'running',
+                'total_trials': 0,
+                'successful_trials': 0,
+                'failed_trials': 0,
+                'best_value': None,
+                'best_parameters': None,
+                'convergence_info': None,
+                'error_summary': {}
+            }
+            
+            self.active_studies[study_id] = study_info
+            self.trial_results[study_id] = []
+            self.convergence_tracking[study_id] = []
+            self.failure_tracking[study_id] = []
+            
+            _LOGGER.info(f"🚀 Started monitoring HPO study: {study_name} ({study_id})")
+            return study_info
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Failed to start study monitoring: {e}")
+            raise
+
+    def record_trial_with_monitoring(self, 
+                                   study_id: str,
+                                   trial_number: int,
+                                   parameters: Dict[str, Any],
+                                   objective_value: float,
+                                   **kwargs) -> Dict[str, Any]:
+        """Record trial result with enhanced monitoring."""
+        try:
+            trial_result = {
+                'trial_number': trial_number,
+                'timestamp': datetime.now(),
+                'parameters': parameters,
+                'objective_value': objective_value,
+                'objective_std': kwargs.get('objective_std'),
+                'training_time': kwargs.get('training_time'),
+                'memory_usage': kwargs.get('memory_usage'),
+                'convergence_info': kwargs.get('convergence_info'),
+                'error_info': kwargs.get('error_info'),
+                'metadata': kwargs.get('metadata', {})
+            }
+            
+            if study_id in self.active_studies:
+                self.trial_results[study_id].append(trial_result)
+                study_info = self.active_studies[study_id]
+                study_info['total_trials'] += 1
+                
+                if trial_result['error_info'] is None:
+                    study_info['successful_trials'] += 1
+                    
+                    # Update best value
+                    if (study_info['best_value'] is None or 
+                        objective_value > study_info['best_value']):
+                        study_info['best_value'] = objective_value
+                        study_info['best_parameters'] = parameters.copy()
+                else:
+                    study_info['failed_trials'] += 1
+                    self._update_error_summary(study_info, trial_result['error_info'])
+                
+                # Check for convergence
+                convergence_info = self._check_convergence(study_id)
+                if convergence_info and convergence_info.get('is_converged'):
+                    study_info['convergence_info'] = convergence_info
+                    study_info['status'] = 'converged'
+                    _LOGGER.info(f"✅ Study {study_id} converged after {trial_number} trials")
+                
+                # Check for failure conditions
+                if self._check_failure_conditions(study_id):
+                    study_info['status'] = 'failed'
+                    _LOGGER.error(f"❌ Study {study_id} failed due to failure conditions")
+            
+            return trial_result
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Failed to record trial: {e}")
+            raise
+
+    def _check_convergence(self, study_id: str) -> Optional[Dict[str, Any]]:
+        """Check if the study has converged."""
+        try:
+            if study_id not in self.trial_results:
+                return None
+            
+            trial_results = self.trial_results[study_id]
+            if len(trial_results) < self.convergence_config['min_trials_for_convergence']:
+                return None
+            
+            # Extract objective values
+            objective_values = [t['objective_value'] for t in trial_results if t['error_info'] is None]
+            if len(objective_values) < self.convergence_config['min_trials_for_convergence']:
+                return None
+            
+            convergence_criteria = []
+            convergence_confidence = 0.0
+            
+            # Check improvement threshold
+            if len(objective_values) >= 2:
+                recent_improvement = abs(objective_values[-1] - objective_values[-2])
+                if recent_improvement < self.convergence_config['improvement_threshold']:
+                    convergence_criteria.append('improvement_threshold')
+                    convergence_confidence += 0.3
+            
+            # Check patience (no improvement for N trials)
+            patience_trials = self.convergence_config['patience_trials']
+            if len(objective_values) >= patience_trials:
+                best_value = max(objective_values)
+                recent_values = objective_values[-patience_trials:]
+                if all(v <= best_value + self.convergence_config['improvement_threshold'] for v in recent_values):
+                    convergence_criteria.append('patience')
+                    convergence_confidence += 0.4
+            
+            # Check variance threshold
+            if len(objective_values) >= 10:
+                recent_values = objective_values[-10:]
+                variance = np.var(recent_values)
+                if variance < self.convergence_config['variance_threshold']:
+                    convergence_criteria.append('variance_threshold')
+                    convergence_confidence += 0.3
+            
+            # Calculate improvement rate
+            if len(objective_values) >= 2:
+                improvement_rate = (objective_values[-1] - objective_values[0]) / len(objective_values)
+            else:
+                improvement_rate = 0.0
+            
+            # Calculate variance estimate
+            variance_estimate = np.var(objective_values) if len(objective_values) > 1 else 0.0
+            
+            # Determine if converged
+            is_converged = (len(convergence_criteria) >= 2 and 
+                          convergence_confidence >= 0.6)
+            
+            convergence_analysis = {
+                'objective_values': objective_values,
+                'recent_improvement': recent_improvement if len(objective_values) >= 2 else 0.0,
+                'variance': variance_estimate,
+                'improvement_rate': improvement_rate,
+                'convergence_criteria_met': convergence_criteria
+            }
+            
+            return {
+                'is_converged': is_converged,
+                'convergence_criteria': convergence_criteria,
+                'convergence_confidence': convergence_confidence,
+                'improvement_rate': improvement_rate,
+                'variance_estimate': variance_estimate,
+                'best_value_history': objective_values,
+                'convergence_analysis': convergence_analysis
+            }
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Convergence check failed: {e}")
+            return None
+
+    def _check_failure_conditions(self, study_id: str) -> bool:
+        """Check if failure conditions are met."""
+        try:
+            if study_id not in self.active_studies:
+                return False
+            
+            study_info = self.active_studies[study_id]
+            trial_results = self.trial_results[study_id]
+            
+            # Check failure rate
+            if study_info['total_trials'] > 0:
+                failure_rate = study_info['failed_trials'] / study_info['total_trials']
+                if failure_rate > self.failure_detection_config['max_failure_rate']:
+                    _LOGGER.error(f"❌ High failure rate: {failure_rate:.2%}")
+                    return True
+            
+            # Check consecutive failures
+            if len(trial_results) >= self.failure_detection_config['consecutive_failures_threshold']:
+                recent_trials = trial_results[-self.failure_detection_config['consecutive_failures_threshold']:]
+                if all(t['error_info'] is not None for t in recent_trials):
+                    _LOGGER.error("❌ Too many consecutive failures")
+                    return True
+            
+            # Check timeout
+            if study_info['start_time']:
+                elapsed_time = (datetime.now() - study_info['start_time']).total_seconds()
+                if elapsed_time > self.failure_detection_config['timeout_threshold']:
+                    _LOGGER.error(f"❌ Study timeout: {elapsed_time:.0f}s")
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Failure condition check failed: {e}")
+            return False
+
+    def _update_error_summary(self, study_info: Dict[str, Any], error_info: Dict[str, Any]):
+        """Update error summary for a study."""
+        try:
+            error_type = error_info.get('error_type', 'unknown')
+            study_info['error_summary'][error_type] = study_info['error_summary'].get(error_type, 0) + 1
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Failed to update error summary: {e}")
+
+    def get_study_status(self, study_id: str) -> Optional[Dict[str, Any]]:
+        """Get current status of a study."""
+        try:
+            study_info = self.active_studies.get(study_id)
+            if not study_info:
+                return None
+            
+            trial_results = self.trial_results.get(study_id, [])
+            
+            return {
+                'study_id': study_info['study_id'],
+                'study_name': study_info['study_name'],
+                'status': study_info['status'],
+                'start_time': study_info['start_time'].isoformat(),
+                'total_trials': study_info['total_trials'],
+                'successful_trials': study_info['successful_trials'],
+                'failed_trials': study_info['failed_trials'],
+                'best_value': study_info['best_value'],
+                'convergence_info': study_info['convergence_info'],
+                'error_summary': study_info['error_summary'],
+                'recent_trials': len(trial_results[-10:]) if trial_results else 0
+            }
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Failed to get study status: {e}")
+            return None
+
+    def get_monitoring_summary(self) -> Dict[str, Any]:
+        """Get comprehensive monitoring summary."""
+        try:
+            active_count = len(self.active_studies)
+            
+            # Calculate overall statistics
+            all_trials = []
+            for study_id in self.trial_results:
+                all_trials.extend(self.trial_results[study_id])
+            
+            successful_trials = [t for t in all_trials if t['error_info'] is None]
+            failed_trials = [t for t in all_trials if t['error_info'] is not None]
+            
+            total_trials = len(all_trials)
+            success_rate = len(successful_trials) / max(1, total_trials)
+            
+            # Calculate performance metrics
+            if successful_trials:
+                objective_values = [t['objective_value'] for t in successful_trials]
+                training_times = [t['training_time'] for t in successful_trials if t['training_time'] is not None]
+                
+                performance_metrics = {
+                    'best_objective_value': max(objective_values),
+                    'mean_objective_value': np.mean(objective_values),
+                    'mean_training_time': np.mean(training_times) if training_times else None,
+                    'total_training_time': sum(training_times) if training_times else None
+                }
+            else:
+                performance_metrics = {}
+            
+            # Error analysis
+            error_types = defaultdict(int)
+            for trial in failed_trials:
+                if trial['error_info']:
+                    error_type = trial['error_info'].get('error_type', 'unknown')
+                    error_types[error_type] += 1
+            
+            return {
+                'monitoring_summary': {
+                    'active_studies': active_count,
+                    'total_trials': total_trials,
+                    'successful_trials': len(successful_trials),
+                    'failed_trials': len(failed_trials),
+                    'overall_success_rate': success_rate,
+                    'monitoring_enabled': self.enable_monitoring
+                },
+                'performance_metrics': performance_metrics,
+                'error_analysis': dict(error_types),
+                'convergence_analysis': {
+                    'converged_studies': sum(1 for s in self.active_studies.values() 
+                                           if s.get('convergence_info') and s['convergence_info'].get('is_converged'))
+                }
+            }
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Failed to get monitoring summary: {e}")
+            return {'error': str(e)}
 
     def automated_search_space_generation(self, model_type: str,
                                        data_characteristics: Dict[str, Any]) -> Dict[str, Any]:

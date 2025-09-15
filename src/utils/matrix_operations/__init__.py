@@ -1,0 +1,275 @@
+"""
+Unified Matrix Operations Module
+
+This module provides a single source of truth for all matrix and vectorized operations
+in the codebase, consolidating functionality from multiple scattered sources while
+maintaining full backwards compatibility.
+
+Key Features:
+- Unified interface for all matrix operations
+- GPU acceleration with Apple Silicon M1/M2/M3 support
+- Memory optimization and batch processing
+- Vectorized operations for machine learning workflows
+- Comprehensive error handling and recovery
+- Backwards compatibility with existing code
+
+Usage:
+    from src.utils.matrix_operations import (
+        get_unified_matrix_operations,
+        get_vectorized_processing_core,
+        get_batch_matrix_processor,
+        get_enhanced_matrix_operations
+    )
+    
+    # Get unified operations instance
+    ops = get_unified_matrix_operations()
+    result = ops.matrix_multiply(A, B)
+    
+    # Get vectorized processing core
+    core = get_vectorized_processing_core()
+    optimized_data = core.optimize_dataframe_for_processing(df)
+    
+    # Get batch processor
+    batch_processor = get_batch_matrix_processor()
+    results = batch_processor.batch_matrix_multiply(matrices_a, matrices_b)
+"""
+
+# Core unified operations
+try:
+    from .unified_operations import (
+        get_unified_matrix_operations,
+        UnifiedMatrixOperations,
+        M1EnhancedMatrixOperations,  # Backwards compatibility alias
+    )
+    UNIFIED_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    UNIFIED_OPERATIONS_AVAILABLE = False
+    logger.warning(f"Unified operations not available: {e}")
+
+# Vectorized processing core
+try:
+    from .vectorized_core import (
+        get_vectorized_processing_core,
+        VectorizedProcessingCore,
+        OptimizedPipelineExecutor,
+        PipelineStage,
+        PipelineExecutionMode,
+        PipelineStageStatus,
+        PipelineExecutionResult,
+    )
+    VECTORIZED_CORE_AVAILABLE = True
+except ImportError as e:
+    VECTORIZED_CORE_AVAILABLE = False
+    logger.warning(f"Vectorized core not available: {e}")
+
+# Batch matrix operations
+try:
+    from .batch_operations import (
+        get_batch_matrix_processor,
+        BatchMatrixProcessor,
+    )
+    BATCH_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    BATCH_OPERATIONS_AVAILABLE = False
+    logger.warning(f"Batch operations not available: {e}")
+
+# Enhanced matrix operations with GPU support
+try:
+    from .enhanced_operations import (
+        get_enhanced_matrix_operations,
+        EnhancedMatrixOperations,
+        BatchOptimizationStrategy,
+        OperationComplexity,
+        DynamicBatchOptimizer,
+        CustomMatrixOperation,
+        CustomMatrixOperationsRegistry,
+        get_custom_operations_registry,
+        register_custom_matrix_operation,
+        execute_custom_matrix_operation,
+        list_custom_matrix_operations,
+    )
+    ENHANCED_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    ENHANCED_OPERATIONS_AVAILABLE = False
+    logger.warning(f"Enhanced operations not available: {e}")
+
+# Error handling and recovery (should always be available)
+try:
+    from .error_handling import (
+        ErrorHandler,
+        OptimizationError,
+        GPUError,
+        MemoryError,
+        MatrixOperationError,
+        DataProcessingError,
+        ConfigurationError,
+        ErrorRecoveryResult,
+        with_error_handling,
+        with_gpu_fallback,
+        with_memory_optimization,
+        get_global_error_handler,
+    )
+    ERROR_HANDLING_AVAILABLE = True
+except ImportError as e:
+    ERROR_HANDLING_AVAILABLE = False
+    logger.warning(f"Error handling not available: {e}")
+
+# Convenience functions for common operations
+try:
+    from .convenience import (
+        # Matrix operations
+        safe_matrix_multiply,
+        safe_correlation_matrix,
+        safe_matrix_inverse,
+        gpu_matrix_multiply,
+        correlation_matrix_gpu,
+        eigendecomposition_gpu,
+        svd_gpu,
+        
+        # Vectorized operations
+        optimize_dataframe,
+        vectorized_rolling_features,
+        matrix_correlation_analysis,
+        parallel_feature_engineering,
+        
+        # Batch operations
+        batch_matrix_multiply,
+        batch_feature_transformation,
+        batch_correlation_analysis,
+        
+        # Sparse matrix operations
+        sparse_matrix_multiply,
+        sparse_svd,
+        sparse_eigen,
+        create_sparse_matrix,
+        sparse_solve,
+        
+        # Pipeline operations
+        create_ml_pipeline,
+        execute_ml_pipeline,
+        optimize_pipeline_config,
+        get_pipeline_executor,
+        
+        # Optimization utilities
+        optimize_batch_size,
+        record_batch_performance,
+        get_batch_optimization_stats,
+    )
+    CONVENIENCE_FUNCTIONS_AVAILABLE = True
+except ImportError as e:
+    CONVENIENCE_FUNCTIONS_AVAILABLE = False
+    logger.warning(f"Convenience functions not available: {e}")
+
+# Version and compatibility information
+__version__ = "1.0.0"
+__author__ = "Unified Matrix Operations Team"
+__description__ = "Unified matrix and vectorized operations with Apple Silicon optimization"
+
+# Build __all__ list conditionally based on available modules
+__all__ = []
+
+# Always available
+if ERROR_HANDLING_AVAILABLE:
+    __all__.extend([
+        "ErrorHandler",
+        "OptimizationError",
+        "GPUError",
+        "MemoryError",
+        "MatrixOperationError",
+        "DataProcessingError",
+        "ConfigurationError",
+        "ErrorRecoveryResult",
+        "with_error_handling",
+        "with_gpu_fallback",
+        "with_memory_optimization",
+        "get_global_error_handler",
+    ])
+
+# Core unified operations
+if UNIFIED_OPERATIONS_AVAILABLE:
+    __all__.extend([
+        "UnifiedMatrixOperations",
+        "M1EnhancedMatrixOperations",  # Backwards compatibility
+        "get_unified_matrix_operations",
+    ])
+
+# Vectorized processing core
+if VECTORIZED_CORE_AVAILABLE:
+    __all__.extend([
+        "VectorizedProcessingCore",
+        "OptimizedPipelineExecutor",
+        "PipelineStage",
+        "PipelineExecutionMode",
+        "PipelineStageStatus",
+        "PipelineExecutionResult",
+        "get_vectorized_processing_core",
+    ])
+
+# Batch operations
+if BATCH_OPERATIONS_AVAILABLE:
+    __all__.extend([
+        "BatchMatrixProcessor",
+        "get_batch_matrix_processor",
+    ])
+
+# Enhanced operations
+if ENHANCED_OPERATIONS_AVAILABLE:
+    __all__.extend([
+        "EnhancedMatrixOperations",
+        "BatchOptimizationStrategy",
+        "OperationComplexity",
+        "DynamicBatchOptimizer",
+        "CustomMatrixOperation",
+        "CustomMatrixOperationsRegistry",
+        "get_enhanced_matrix_operations",
+        "get_custom_operations_registry",
+        "register_custom_matrix_operation",
+        "execute_custom_matrix_operation",
+        "list_custom_matrix_operations",
+    ])
+
+# Convenience functions
+if CONVENIENCE_FUNCTIONS_AVAILABLE:
+    __all__.extend([
+        "safe_matrix_multiply",
+        "safe_correlation_matrix",
+        "safe_matrix_inverse",
+        "gpu_matrix_multiply",
+        "correlation_matrix_gpu",
+        "eigendecomposition_gpu",
+        "svd_gpu",
+        "optimize_dataframe",
+        "vectorized_rolling_features",
+        "matrix_correlation_analysis",
+        "parallel_feature_engineering",
+        "batch_matrix_multiply",
+        "batch_feature_transformation",
+        "batch_correlation_analysis",
+        "sparse_matrix_multiply",
+        "sparse_svd",
+        "sparse_eigen",
+        "create_sparse_matrix",
+        "sparse_solve",
+        "create_ml_pipeline",
+        "execute_ml_pipeline",
+        "optimize_pipeline_config",
+        "get_pipeline_executor",
+        "optimize_batch_size",
+        "record_batch_performance",
+        "get_batch_optimization_stats",
+    ])
+
+# Initialize default custom operations
+try:
+    from .enhanced_operations import register_default_custom_operations
+    register_default_custom_operations()
+except ImportError:
+    pass  # Custom operations are optional
+
+# Log initialization
+import logging
+logger = logging.getLogger(__name__)
+logger.info("✅ Unified Matrix Operations module initialized")
+logger.info(f"📦 Version: {__version__}")
+logger.info("🔧 Features: GPU acceleration, memory optimization, vectorized processing, batch operations")
+logger.info("🍎 Optimized for: Apple Silicon M1/M2/M3 Macs")

@@ -32,7 +32,7 @@ import warnings
 
 # Import the triple barrier labeling module
 from .triple_barrier_labeling import (
-    MarketAnalysisTripleBarrierLabeling,
+    UnifiedTripleBarrierLabeler,
     TripleBarrierConfig,
     create_triple_barrier_labeler,
     apply_triple_barrier_labeling
@@ -273,10 +273,11 @@ class RegimeAwareTripleBarrierOptimizer:
                 )
                 
                 # Create labeler with regime-specific config
-                labeler = MarketAnalysisTripleBarrierLabeling(regime_config)
+                labeler = UnifiedTripleBarrierLabeler(regime_config)
                 
                 # Apply labeling to validation data
-                labeled_data = labeler.apply_triple_barrier_labeling(val_data)
+                result = labeler.apply_labeling(val_data)
+                labeled_data = result.labeled_data if result.success else pd.DataFrame()
                 
                 if len(labeled_data) == 0:
                     return -1.0  # Poor performance if no labels generated
@@ -432,8 +433,9 @@ class RegimeAwareTripleBarrierOptimizer:
             regime_aware=False
         )
         
-        labeler = MarketAnalysisTripleBarrierLabeling(regime_config)
-        labeled_data = labeler.apply_triple_barrier_labeling(data)
+        labeler = UnifiedTripleBarrierLabeler(regime_config)
+        result = labeler.apply_labeling(data)
+        labeled_data = result.labeled_data if result.success else pd.DataFrame()
         
         if len(labeled_data) == 0:
             return RegimePerformanceMetrics(
@@ -583,8 +585,9 @@ class RegimeAwareTripleBarrierOptimizer:
                 regime_aware=False
             )
             
-            labeler = MarketAnalysisTripleBarrierLabeling(regime_config)
-            labeled_regime_data = labeler.apply_triple_barrier_labeling(regime_data)
+            labeler = UnifiedTripleBarrierLabeler(regime_config)
+            result = labeler.apply_labeling(regime_data)
+            labeled_regime_data = result.labeled_data if result.success else pd.DataFrame()
             
             if len(labeled_regime_data) > 0:
                 # Store results

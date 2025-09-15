@@ -36,6 +36,19 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("Scikit-learn not available - limited temporal analysis functionality")
 
+# Import optimization utilities
+try:
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+    from src.utils.matrix_operations import get_unified_matrix_operations
+    from src.utils.common_operations import COMMON_OPERATIONS_AVAILABLE
+    from src.utils.matrix_operations import MATRIX_OPERATIONS_AVAILABLE
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+    logger.warning("Optimization utilities not available - using standard operations")
+
 
 class TemporalAnalyzer:
     """Temporal analysis for feature selection."""
@@ -51,9 +64,46 @@ class TemporalAnalyzer:
         self.min_window_size = self.config.get('min_window_size', 50)
         self.regime_detection_threshold = self.config.get('regime_detection_threshold', 0.1)
         
+        # Initialize optimization tools
+        self._initialize_optimization_tools()
+        
         _LOGGER.info("⏰ TemporalAnalyzer initialized")
         _LOGGER.info(f"⚙️ Window sizes: {self.window_sizes}")
         _LOGGER.info(f"⚙️ Overlap ratio: {self.overlap_ratio}")
+    
+    def _initialize_optimization_tools(self):
+        """Initialize hardware optimization utilities."""
+        try:
+            if OPTIMIZATION_AVAILABLE and COMMON_OPERATIONS_AVAILABLE:
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+                
+                if self.gpu_manager:
+                    _LOGGER.info("✅ M1 GPU manager initialized for temporal analysis")
+                if self.memory_optimizer:
+                    _LOGGER.info("✅ M1 memory optimizer initialized for temporal analysis")
+                if self.cpu_optimizer:
+                    _LOGGER.info("✅ M1 CPU optimizer initialized for temporal analysis")
+            else:
+                self.gpu_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+        
+        try:
+            if OPTIMIZATION_AVAILABLE and MATRIX_OPERATIONS_AVAILABLE:
+                self.matrix_ops = get_unified_matrix_operations()
+                _LOGGER.info("✅ Unified matrix operations initialized for temporal analysis")
+            else:
+                self.matrix_ops = None
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Matrix operations initialization failed: {e}")
+            self.matrix_ops = None
 
     def analyze_temporal_feature_importance(self, X: np.ndarray, y: np.ndarray, 
                                           feature_names: List[str],
@@ -278,16 +328,32 @@ class TemporalAnalyzer:
                     importances[feature] = abs(corr) if not np.isnan(corr) else 0.0
                 return importances
             
+            # Use memory optimization if available
+            if self.memory_optimizer:
+                memory_status = self.memory_optimizer.check_memory_status()
+                if memory_status.get('pressure', False):
+                    _LOGGER.debug("🧠 Memory pressure detected, using optimized parameters")
+                    n_estimators = 25  # Reduce for memory pressure
+                else:
+                    n_estimators = 50
+            else:
+                n_estimators = 50
+            
             # Use tree-based model for importance
             is_classification = len(np.unique(y_window)) <= 10
             
             if is_classification:
-                model = RandomForestClassifier(n_estimators=50, random_state=42)
+                model = RandomForestClassifier(n_estimators=n_estimators, random_state=42)
             else:
-                model = RandomForestRegressor(n_estimators=50, random_state=42)
+                model = RandomForestRegressor(n_estimators=n_estimators, random_state=42)
             
             model.fit(X_window, y_window)
             importances = model.feature_importances_
+            
+            # Use optimized matrix operations if available
+            if self.matrix_ops:
+                # Use optimized operations for importance processing
+                importances = self.matrix_ops.normalize_vector(importances)
             
             return {feature_names[i]: importances[i] for i in range(len(feature_names))}
             

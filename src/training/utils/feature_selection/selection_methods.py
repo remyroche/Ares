@@ -36,6 +36,19 @@ except ImportError as e:
     def safe_std(x): return np.std(x) if len(x) > 1 else 0
     def safe_percentile(x, p): return np.percentile(x, p) if len(x) > 0 else 0
 
+# Import optimization utilities
+try:
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+    from src.utils.matrix_operations import get_unified_matrix_operations
+    from src.utils.common_operations import COMMON_OPERATIONS_AVAILABLE
+    from src.utils.matrix_operations import MATRIX_OPERATIONS_AVAILABLE
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+    tprint("⚠️ Optimization utilities not available - using standard operations")
+
 
 def analyze_infinity_values(X: Union[np.ndarray, pd.DataFrame], method_name: str = "unknown", feature_names: List[str] = None) -> Dict[str, Any]:
     """
@@ -500,11 +513,48 @@ class ElasticNetStabilitySelector:
         self.cv_folds = self.config.get('cv_folds', 5)
         self.random_state = self.config.get('random_state', 42)
         
+        # Initialize optimization tools
+        self._initialize_optimization_tools()
+        
         _LOGGER.info("🔍 ElasticNetStabilitySelector initialized")
         _LOGGER.info(f"⚙️ Bootstrap samples: {self.n_bootstraps}")
         _LOGGER.info(f"⚙️ Bootstrap fraction: {self.bootstrap_fraction}")
         _LOGGER.info(f"⚙️ Stability threshold: {self.stability_threshold}")
         _LOGGER.info(f"⚙️ L1 ratio range: {self.l1_ratio_range}")
+    
+    def _initialize_optimization_tools(self):
+        """Initialize hardware optimization utilities."""
+        try:
+            if OPTIMIZATION_AVAILABLE and COMMON_OPERATIONS_AVAILABLE:
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+                
+                if self.gpu_manager:
+                    _LOGGER.info("✅ M1 GPU manager initialized for Elastic Net stability")
+                if self.memory_optimizer:
+                    _LOGGER.info("✅ M1 memory optimizer initialized for Elastic Net stability")
+                if self.cpu_optimizer:
+                    _LOGGER.info("✅ M1 CPU optimizer initialized for Elastic Net stability")
+            else:
+                self.gpu_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+        
+        try:
+            if OPTIMIZATION_AVAILABLE and MATRIX_OPERATIONS_AVAILABLE:
+                self.matrix_ops = get_unified_matrix_operations()
+                _LOGGER.info("✅ Unified matrix operations initialized for Elastic Net stability")
+            else:
+                self.matrix_ops = None
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Matrix operations initialization failed: {e}")
+            self.matrix_ops = None
 
     def _get_bootstrap_count(self) -> int:
         """Get bootstrap count based on execution mode, capped at 50."""

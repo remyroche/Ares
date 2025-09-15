@@ -1,0 +1,365 @@
+# Short-Term Entry Timing Configuration
+# Configuration for Tactician short-term entry timing model with triple barrier method
+# This extends the existing Tactician configuration for 0.1% to 0.5% price movements
+
+# Basic configuration
+short_term_entry_timing:
+  model_name: "short_term_entry_timing"
+  timeframe: "1m"
+  n_outputs: 10  # 5 targets × 2 outputs (probability + timing) each
+  output_names: [
+    "0.1pct_probability", "0.1pct_timing",
+    "0.2pct_probability", "0.2pct_timing", 
+    "0.3pct_probability", "0.3pct_timing",
+    "0.4pct_probability", "0.4pct_timing",
+    "0.5pct_probability", "0.5pct_timing"
+  ]
+  
+  # Target configuration
+  targets:
+    - name: "0.1pct"
+      target_percentage: 0.001
+      lookforward_minutes: 15
+      min_confidence: 0.7
+      max_adverse_movement: 0.0005  # 0.05%
+      min_risk_reward_ratio: 2.0
+      
+    - name: "0.2pct"
+      target_percentage: 0.002
+      lookforward_minutes: 15
+      min_confidence: 0.65
+      max_adverse_movement: 0.001   # 0.1%
+      min_risk_reward_ratio: 2.0
+      
+    - name: "0.3pct"
+      target_percentage: 0.003
+      lookforward_minutes: 15
+      min_confidence: 0.6
+      max_adverse_movement: 0.0015  # 0.15%
+      min_risk_reward_ratio: 2.0
+      
+    - name: "0.4pct"
+      target_percentage: 0.004
+      lookforward_minutes: 15
+      min_confidence: 0.55
+      max_adverse_movement: 0.002   # 0.2%
+      min_risk_reward_ratio: 2.0
+      
+    - name: "0.5pct"
+      target_percentage: 0.005
+      lookforward_minutes: 15
+      min_confidence: 0.5
+      max_adverse_movement: 0.0025  # 0.25%
+      min_risk_reward_ratio: 2.0
+
+# Triple barrier configuration
+triple_barrier:
+  # Barrier multipliers
+  upper_barrier_multiplier: 1.0    # Same as target for profit take
+  lower_barrier_multiplier: 0.5    # Half of target for stop loss
+  
+  # Time barriers
+  max_hold_time_minutes: 15        # Maximum time to hold position
+  min_hold_time_minutes: 1         # Minimum time before exit allowed
+  
+  # Direction detection
+  enable_direction_detection: true
+  direction_threshold: 0.0005      # 0.05% minimum movement for direction
+  
+  # Validation settings
+  enable_validation: true
+  validation_lookback_minutes: 30  # Look back 30 minutes for validation
+  
+  # Risk management
+  max_adverse_movement: 0.002      # 0.2% maximum adverse movement
+  min_risk_reward_ratio: 1.5       # Minimum risk/reward ratio
+
+# Model configuration
+model_config:
+  base_models:
+    tabnet:
+      model_type: "TabNetRegressor"
+      params:
+        n_d: 64
+        n_a: 64
+        n_steps: 5
+        gamma: 1.5
+        n_independent: 2
+        n_shared: 2
+        lambda_sparse: 1e-3
+        optimizer_fn: "adam"
+        optimizer_params:
+          lr: 2e-2
+        scheduler_params:
+          step_size: 50
+          gamma: 0.9
+        scheduler_fn: "step"
+        seed: 42
+    
+    catboost:
+      model_type: "CatBoostRegressor"
+      params:
+        iterations: 2000
+        learning_rate: 0.05
+        depth: 8
+        random_seed: 42
+        verbose: false
+    
+    lightgbm:
+      model_type: "LGBMRegressor"
+      params:
+        n_estimators: 2000
+        learning_rate: 0.05
+        max_depth: -1
+        num_leaves: 63
+        random_state: 42
+        verbosity: -1
+    
+    linear_ridge:
+      model_type: "Ridge"
+      params:
+        alpha: 1.0
+        random_state: 42
+  
+  # Meta model configuration
+  meta_models:
+    probability_models:
+      model_type: "Ridge"
+      params:
+        alpha: 0.5
+        random_state: 42
+    
+    timing_models:
+      model_type: "Ridge"
+      params:
+        alpha: 1.0
+        random_state: 42
+
+# Training configuration
+training:
+  enable_cross_validation: true
+  cv_folds: 5
+  enable_early_stopping: true
+  early_stopping_patience: 15
+  validation_split: 0.2
+  test_split: 0.1
+  
+  # Stacking configuration
+  stacking:
+    method: "blending"
+    enable_meta_learning: true
+    meta_learning_rate: 0.005
+    meta_learning_iterations: 2000
+  
+  # Multi-output specific settings
+  multi_output:
+    output_weights: [0.2, 0.2, 0.2, 0.2, 0.2]  # Equal weights for all targets
+    output_loss_weights: [1.0, 1.0, 1.0, 1.0, 1.0]
+    enable_output_correlation: true
+    correlation_threshold: 0.6
+
+# Feature engineering configuration
+feature_engineering:
+  # Ultra-short-term features (1-5 minutes)
+  ultra_short_term:
+    enable_price_action: true
+    price_action_periods: [1, 2, 3, 5]  # minutes
+    enable_volume_microstructure: true
+    volume_periods: [1, 3, 5]  # minutes
+    enable_momentum_indicators: true
+    momentum_periods: [3, 5, 7]  # minutes
+    
+  # Cross-timeframe features
+  cross_timeframe:
+    enable_cross_timeframe_features: true
+    cross_timeframe_periods: [5, 15, 30]  # minutes
+    enable_regime_features: true
+    enable_technical_indicators: true
+    
+  # Market microstructure features
+  microstructure:
+    enable_orderbook_features: true
+    enable_trade_size_analysis: true
+    enable_bid_ask_spread: true
+    enable_order_flow_imbalance: true
+  
+  # Feature selection
+  feature_selection:
+    method: "lasso"
+    alpha: 0.005
+    max_features: 200
+    enable_recursive_elimination: true
+  
+  # Feature scaling
+  scaling:
+    method: "robust"
+    enable_outlier_handling: true
+    outlier_threshold: 2.5
+
+# Data preparation configuration
+data_preparation:
+  # Time series specific
+  time_series:
+    enable_temporal_features: true
+    lookback_window: 200
+    forecast_horizon: 1
+    
+  # Target generation
+  target_generation:
+    method: "triple_barrier"
+    enable_direction_detection: true
+    enable_adverse_movement_protection: true
+    enable_timing_prediction: true
+    
+    # Triple barrier parameters
+    triple_barrier:
+      upper_barrier_multiplier: 1.0
+      lower_barrier_multiplier: 0.5
+      max_hold_time_minutes: 15
+      min_hold_time_minutes: 1
+      direction_threshold: 0.0005
+      max_adverse_movement: 0.002
+      min_risk_reward_ratio: 1.5
+
+# Model evaluation configuration
+evaluation:
+  metrics:
+    regression: ["mse", "mae", "r2", "mape"]
+    classification: ["accuracy", "precision", "recall", "f1"]
+    custom: ["hit_rate", "timing_accuracy", "profit_factor", "sharpe_ratio"]
+  
+  # Cross-validation
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+  
+  # Model comparison
+  comparison:
+    enable_model_ranking: true
+    ranking_metric: "hit_rate"
+    enable_feature_importance: true
+    enable_model_explanations: true
+
+# Confidence calibration configuration
+confidence_calibration:
+  enable_calibration: true
+  methods: ["platt_scaling", "isotonic_regression"]
+  enable_temperature_scaling: true
+  enable_histogram_binning: true
+  enable_bayesian_calibration: true
+  
+  # Calibration parameters
+  platt_scaling:
+    learning_rate: 0.005
+    max_iterations: 2000
+    convergence_threshold: 1e-6
+  
+  isotonic_regression:
+    out_of_bounds: "clip"
+    increasing: true
+  
+  temperature_scaling:
+    temperature_range: [0.1, 10.0]
+    optimization_method: "lbfgs"
+  
+  histogram_binning:
+    bin_count: 15
+    bin_strategy: "uniform"
+  
+  bayesian_calibration:
+    prior_strength: 1.0
+    mcmc_samples: 2000
+    burn_in_samples: 200
+
+# Risk management configuration
+risk_management:
+  enable_position_sizing: true
+  max_position_size: 0.05  # 5% max position for short-term trades
+  enable_stop_loss: true
+  enable_take_profit: true
+  enable_portfolio_limits: true
+  
+  # Risk limits
+  limits:
+    max_drawdown: 0.02      # 2% max drawdown for short-term
+    max_daily_loss: 0.01    # 1% max daily loss
+    max_position_concentration: 0.2  # 20% max concentration
+  
+  # Risk monitoring
+  monitoring:
+    enable_real_time_monitoring: true
+    alert_thresholds:
+      drawdown: 0.015       # 1.5% drawdown alert
+      daily_loss: 0.005     # 0.5% daily loss alert
+      position_size: 0.04   # 4% position size alert
+
+# Integration with existing Tactician
+tactician_integration:
+  # Analyst dependency
+  analyst_dependency:
+    enable_analyst_input: true
+    analyst_model_path: "./analyst_models"
+    analyst_output_names: ["signal_strength", "confidence", "risk_score", "regime_label"]
+    analyst_threshold: 0.6  # minimum analyst confidence to proceed
+  
+  # Existing Tactician compatibility
+  compatibility:
+    enable_legacy_support: true
+    migration_mode: "gradual"  # gradual, immediate, hybrid
+    fallback_to_legacy: true
+    enable_performance_comparison: true
+  
+  # Integration steps
+  integration_steps:
+    - "validate_data_compatibility"
+    - "train_short_term_models"
+    - "compare_with_legacy_tactician"
+    - "gradual_rollout"
+    - "full_integration"
+
+# Performance optimization
+performance:
+  # M1 optimization settings
+  hardware:
+    enable_gpu_acceleration: true
+    enable_memory_optimization: true
+    enable_parallel_processing: true
+    memory_limit_gb: 8.0
+    max_workers: null
+  
+  # Performance settings
+  performance:
+    enable_caching: true
+    cache_size_mb: 200
+    enable_profiling: false
+
+# Logging and monitoring configuration
+logging:
+  level: "INFO"
+  enable_detailed_logging: true
+  log_predictions: true
+  log_performance_metrics: true
+  log_feature_importance: true
+  log_risk_metrics: true
+  
+  # Logging intervals
+  intervals:
+    training_progress: 50  # log every 50 iterations
+    prediction_summary: 500  # log every 500 predictions
+    performance_update: 2000  # log every 2000 samples
+    risk_monitoring: 100  # log every 100 samples
+
+# Output settings
+output:
+  save_models: true
+  save_predictions: true
+  generate_reports: true
+  output_dir: "./short_term_entry_timing_models"
+  
+  # Report generation
+  reports:
+    enable_performance_report: true
+    enable_feature_importance_report: true
+    enable_risk_analysis_report: true
+    enable_comparison_report: true

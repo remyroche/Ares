@@ -7,6 +7,7 @@ This component performs HMM-based regime clustering.
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,28 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
+try:
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score, calinski_harabasz_score
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    KMeans = None
+    silhouette_score = None
+    calinski_harabasz_score = None
+
+# Hardware optimization imports
+try:
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.matrix_operations import MatrixOperations
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    M1MemoryOptimizer = None
+    M1CPUOptimizer = None
+    MatrixOperations = None
+
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 
@@ -41,6 +64,17 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         """Initialize the HMM clustering component."""
         super().__init__(config)
         self.logger = system_logger.getChild('HMMClustering')
+        
+        # Initialize hardware optimization components
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            self.memory_optimizer = M1MemoryOptimizer()
+            self.cpu_optimizer = M1CPUOptimizer()
+            self.matrix_ops = MatrixOperations()
+        else:
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.matrix_ops = None
+            self.logger.warning("⚠️ Hardware optimization not available - using fallback methods")
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
@@ -115,17 +149,25 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             hmm_models = validated_result['hmm_models']
             cluster_assignments = validated_result['cluster_assignments']
             
+            # Perform comprehensive regime quality validation
+            quality_metrics = self._validate_regime_quality(
+                hmm_models, cluster_assignments, market_data, clustering_config
+            )
+            
             # Create single consolidated artifact
             artifacts = {
                 'hmm_clustering_result': {
                     'hmm_models': hmm_models,
                     'cluster_assignments': cluster_assignments,
                     'cluster_metrics': cluster_metrics,
+                    'regime_quality_metrics': quality_metrics,
                     'clustering_summary': {
                         'total_clusters': len(hmm_models),
                         'total_assignments': len(cluster_assignments),
                         'cluster_distribution': self._calculate_cluster_distribution(cluster_assignments),
-                        'clustering_time': clustering_result.get('clustering_time', 0.0)
+                        'clustering_time': clustering_result.get('clustering_time', 0.0),
+                        'quality_score': quality_metrics.get('overall_quality_score', 0.0),
+                        'validation_passed': quality_metrics.get('validation_passed', False)
                     },
                     'metadata': {
                         'symbol': self.config.symbol,
@@ -177,13 +219,23 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
         regime_discovery: Dict[str, Any],
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Perform the actual HMM clustering process."""
+        """Perform the actual HMM clustering process with hardware optimization."""
+        start_time = time.time()
+        
         try:
-            # Prepare data for clustering
-            prepared_data = self._prepare_data_for_clustering(market_data, regime_discovery)
+            # Prepare data for clustering with memory optimization
+            prepared_data = await self._prepare_data_for_clustering_optimized(market_data, regime_discovery, config)
             
-            # Perform HMM clustering
-            clustering_result = await hmm_manager.perform_hmm_clustering(prepared_data, config)
+            # Perform HMM clustering with hardware optimization
+            if self.cpu_optimizer and config.get('enable_parallel_processing', True):
+                clustering_result = await self._perform_parallel_hmm_clustering(
+                    hmm_manager, prepared_data, config
+                )
+            else:
+                clustering_result = await hmm_manager.perform_hmm_clustering(prepared_data, config)
+            
+            clustering_time = time.time() - start_time
+            clustering_result['clustering_time'] = clustering_time
             
             return clustering_result
             
@@ -197,7 +249,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'clustering_method': 'fallback',
                     'error': str(e)
                 },
-                'clustering_time': 0.0
+                'clustering_time': time.time() - start_time
             }
     
     def _prepare_data_for_clustering(self, data: Any, regime_discovery: Dict[str, Any]) -> Any:
@@ -305,3 +357,547 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             'hmm_models': filtered_models,
             'cluster_assignments': filtered_assignments
         }
+    
+    def _validate_regime_quality(
+        self, 
+        hmm_models: List[Any], 
+        cluster_assignments: List[int], 
+        market_data: Any,
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform comprehensive regime quality validation."""
+        start_time = time.time()
+        
+        try:
+            quality_metrics = {}
+            
+            # 1. Regime Persistence Analysis
+            persistence_metrics = self._calculate_regime_persistence(cluster_assignments)
+            quality_metrics['persistence_analysis'] = persistence_metrics
+            
+            # 2. Economic Significance Validation
+            if PANDAS_AVAILABLE and market_data is not None:
+                economic_metrics = self._validate_economic_significance(
+                    hmm_models, cluster_assignments, market_data
+                )
+                quality_metrics['economic_significance'] = economic_metrics
+            
+            # 3. Cross-validation Stability
+            stability_metrics = self._cross_validate_regimes(
+                hmm_models, cluster_assignments, market_data
+            )
+            quality_metrics['stability_analysis'] = stability_metrics
+            
+            # 4. Regime Transition Analysis
+            transition_metrics = self._analyze_regime_transitions(cluster_assignments)
+            quality_metrics['transition_analysis'] = transition_metrics
+            
+            # 5. Multi-stage Validation Gates
+            validation_gates = self._apply_quality_gates(
+                persistence_metrics, economic_metrics, stability_metrics, transition_metrics
+            )
+            quality_metrics['validation_gates'] = validation_gates
+            
+            # 6. Overall Quality Score
+            overall_score = self._calculate_overall_quality_score(quality_metrics)
+            quality_metrics['overall_quality_score'] = overall_score
+            quality_metrics['validation_passed'] = overall_score >= 0.7  # 70% threshold
+            
+            # 7. Quality Recommendations
+            recommendations = self._generate_quality_recommendations(quality_metrics)
+            quality_metrics['recommendations'] = recommendations
+            
+            validation_time = time.time() - start_time
+            quality_metrics['validation_time'] = validation_time
+            
+            self.logger.info(f"✅ Regime quality validation completed in {validation_time:.2f}s")
+            self.logger.info(f"📊 Overall quality score: {overall_score:.2f} ({'PASSED' if quality_metrics['validation_passed'] else 'FAILED'})")
+            
+            return quality_metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Regime quality validation failed: {e}")
+            return {
+                'overall_quality_score': 0.0,
+                'validation_passed': False,
+                'error': str(e),
+                'validation_time': time.time() - start_time
+            }
+    
+    def _calculate_regime_persistence(self, cluster_assignments: List[int]) -> Dict[str, Any]:
+        """Calculate regime persistence metrics."""
+        if not cluster_assignments or len(cluster_assignments) < 2:
+            return {'error': 'Insufficient data for persistence analysis'}
+        
+        # Calculate regime durations
+        regime_durations = []
+        current_regime = cluster_assignments[0]
+        current_duration = 1
+        
+        for i in range(1, len(cluster_assignments)):
+            if cluster_assignments[i] == current_regime:
+                current_duration += 1
+            else:
+                regime_durations.append(current_duration)
+                current_regime = cluster_assignments[i]
+                current_duration = 1
+        
+        # Add the last regime duration
+        regime_durations.append(current_duration)
+        
+        if not regime_durations:
+            return {'error': 'No regime durations calculated'}
+        
+        # Calculate persistence metrics
+        avg_duration = np.mean(regime_durations) if NUMPY_AVAILABLE else sum(regime_durations) / len(regime_durations)
+        median_duration = np.median(regime_durations) if NUMPY_AVAILABLE else sorted(regime_durations)[len(regime_durations)//2]
+        std_duration = np.std(regime_durations) if NUMPY_AVAILABLE else 0
+        
+        # Calculate regime stability (lower std = more stable)
+        stability_score = max(0, 1 - (std_duration / avg_duration)) if avg_duration > 0 else 0
+        
+        return {
+            'avg_duration': avg_duration,
+            'median_duration': median_duration,
+            'std_duration': std_duration,
+            'stability_score': stability_score,
+            'total_transitions': len(regime_durations) - 1,
+            'regime_durations': regime_durations
+        }
+    
+    def _validate_economic_significance(
+        self, 
+        hmm_models: List[Any], 
+        cluster_assignments: List[int], 
+        market_data: Any
+    ) -> Dict[str, Any]:
+        """Validate economic significance of regimes."""
+        if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
+            return {'error': 'Pandas not available or invalid market data'}
+        
+        try:
+            # Calculate returns for each regime
+            regime_returns = {}
+            regime_volatilities = {}
+            
+            for regime in set(cluster_assignments):
+                regime_mask = np.array(cluster_assignments) == regime
+                regime_data = market_data[regime_mask]
+                
+                if len(regime_data) < 2:
+                    continue
+                
+                # Calculate returns (assuming 'close' column exists)
+                if 'close' in regime_data.columns:
+                    returns = regime_data['close'].pct_change().dropna()
+                    regime_returns[regime] = returns.mean()
+                    regime_volatilities[regime] = returns.std()
+            
+            if not regime_returns:
+                return {'error': 'No valid regime returns calculated'}
+            
+            # Calculate economic significance metrics
+            return_spread = max(regime_returns.values()) - min(regime_returns.values())
+            volatility_spread = max(regime_volatilities.values()) - min(regime_volatilities.values())
+            
+            # Economic significance score (higher is better)
+            economic_score = min(1.0, (return_spread + volatility_spread) / 0.1)  # Normalize to 0-1
+            
+            return {
+                'regime_returns': regime_returns,
+                'regime_volatilities': regime_volatilities,
+                'return_spread': return_spread,
+                'volatility_spread': volatility_spread,
+                'economic_significance_score': economic_score,
+                'is_economically_significant': economic_score >= 0.5
+            }
+            
+        except Exception as e:
+            return {'error': f'Economic significance validation failed: {e}'}
+    
+    def _cross_validate_regimes(
+        self, 
+        hmm_models: List[Any], 
+        cluster_assignments: List[int], 
+        market_data: Any
+    ) -> Dict[str, Any]:
+        """Perform cross-validation to ensure regime stability."""
+        if not cluster_assignments or len(cluster_assignments) < 100:
+            return {'error': 'Insufficient data for cross-validation'}
+        
+        try:
+            # Split data into train/test for stability check
+            split_point = len(cluster_assignments) // 2
+            train_assignments = cluster_assignments[:split_point]
+            test_assignments = cluster_assignments[split_point:]
+            
+            # Calculate regime distributions
+            train_dist = self._calculate_cluster_distribution(train_assignments)
+            test_dist = self._calculate_cluster_distribution(test_assignments)
+            
+            # Calculate stability score (how similar are the distributions)
+            stability_score = 0.0
+            if train_dist and test_dist:
+                # Calculate correlation between distributions
+                common_regimes = set(train_dist.keys()) & set(test_dist.keys())
+                if common_regimes:
+                    train_values = [train_dist.get(regime, 0) for regime in common_regimes]
+                    test_values = [test_dist.get(regime, 0) for regime in common_regimes]
+                    
+                    if NUMPY_AVAILABLE and len(train_values) > 1:
+                        correlation = np.corrcoef(train_values, test_values)[0, 1]
+                        stability_score = max(0, correlation) if not np.isnan(correlation) else 0
+                    else:
+                        # Simple similarity measure
+                        diff = sum(abs(t - s) for t, s in zip(train_values, test_values))
+                        stability_score = max(0, 1 - diff / len(common_regimes))
+            
+            return {
+                'train_distribution': train_dist,
+                'test_distribution': test_dist,
+                'stability_score': stability_score,
+                'is_stable': stability_score >= 0.7
+            }
+            
+        except Exception as e:
+            return {'error': f'Cross-validation failed: {e}'}
+    
+    def _analyze_regime_transitions(self, cluster_assignments: List[int]) -> Dict[str, Any]:
+        """Analyze regime transition patterns."""
+        if not cluster_assignments or len(cluster_assignments) < 2:
+            return {'error': 'Insufficient data for transition analysis'}
+        
+        try:
+            # Count transitions
+            transitions = {}
+            total_transitions = 0
+            
+            for i in range(1, len(cluster_assignments)):
+                from_regime = cluster_assignments[i-1]
+                to_regime = cluster_assignments[i]
+                
+                if from_regime != to_regime:
+                    transition_key = f"{from_regime}->{to_regime}"
+                    transitions[transition_key] = transitions.get(transition_key, 0) + 1
+                    total_transitions += 1
+            
+            # Calculate transition probabilities
+            transition_probs = {}
+            for transition, count in transitions.items():
+                from_regime = int(transition.split('->')[0])
+                from_count = cluster_assignments.count(from_regime)
+                if from_count > 0:
+                    transition_probs[transition] = count / from_count
+            
+            # Calculate transition entropy (higher = more random transitions)
+            entropy = 0.0
+            if total_transitions > 0:
+                for count in transitions.values():
+                    prob = count / total_transitions
+                    if prob > 0:
+                        entropy -= prob * np.log2(prob) if NUMPY_AVAILABLE else prob * np.log(prob) / np.log(2)
+            
+            return {
+                'transitions': transitions,
+                'transition_probabilities': transition_probs,
+                'total_transitions': total_transitions,
+                'transition_entropy': entropy,
+                'transition_frequency': total_transitions / len(cluster_assignments),
+                'is_transition_stable': entropy < 2.0  # Lower entropy = more stable
+            }
+            
+        except Exception as e:
+            return {'error': f'Transition analysis failed: {e}'}
+    
+    def _apply_quality_gates(
+        self, 
+        persistence_metrics: Dict[str, Any],
+        economic_metrics: Dict[str, Any], 
+        stability_metrics: Dict[str, Any],
+        transition_metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Apply multi-stage validation gates."""
+        gates = {}
+        
+        # Gate 1: Persistence Gate
+        gates['persistence_gate'] = {
+            'passed': persistence_metrics.get('stability_score', 0) >= 0.5,
+            'score': persistence_metrics.get('stability_score', 0),
+            'threshold': 0.5
+        }
+        
+        # Gate 2: Economic Significance Gate
+        gates['economic_gate'] = {
+            'passed': economic_metrics.get('is_economically_significant', False),
+            'score': economic_metrics.get('economic_significance_score', 0),
+            'threshold': 0.5
+        }
+        
+        # Gate 3: Stability Gate
+        gates['stability_gate'] = {
+            'passed': stability_metrics.get('is_stable', False),
+            'score': stability_metrics.get('stability_score', 0),
+            'threshold': 0.7
+        }
+        
+        # Gate 4: Transition Gate
+        gates['transition_gate'] = {
+            'passed': transition_metrics.get('is_transition_stable', False),
+            'score': 1 - (transition_metrics.get('transition_entropy', 0) / 3.0),  # Normalize entropy
+            'threshold': 0.5
+        }
+        
+        # Overall gate result
+        gates['overall_passed'] = all(gate['passed'] for gate in gates.values() if isinstance(gate, dict) and 'passed' in gate)
+        
+        return gates
+    
+    def _calculate_overall_quality_score(self, quality_metrics: Dict[str, Any]) -> float:
+        """Calculate overall quality score from all metrics."""
+        try:
+            scores = []
+            
+            # Persistence score
+            if 'persistence_analysis' in quality_metrics:
+                scores.append(quality_metrics['persistence_analysis'].get('stability_score', 0))
+            
+            # Economic significance score
+            if 'economic_significance' in quality_metrics:
+                scores.append(quality_metrics['economic_significance'].get('economic_significance_score', 0))
+            
+            # Stability score
+            if 'stability_analysis' in quality_metrics:
+                scores.append(quality_metrics['stability_analysis'].get('stability_score', 0))
+            
+            # Transition score
+            if 'transition_analysis' in quality_metrics:
+                transition_entropy = quality_metrics['transition_analysis'].get('transition_entropy', 0)
+                transition_score = max(0, 1 - (transition_entropy / 3.0))  # Normalize entropy
+                scores.append(transition_score)
+            
+            if not scores:
+                return 0.0
+            
+            return sum(scores) / len(scores)
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating overall quality score: {e}")
+            return 0.0
+    
+    def _generate_quality_recommendations(self, quality_metrics: Dict[str, Any]) -> List[str]:
+        """Generate recommendations based on quality metrics."""
+        recommendations = []
+        
+        # Check persistence
+        persistence_score = quality_metrics.get('persistence_analysis', {}).get('stability_score', 0)
+        if persistence_score < 0.5:
+            recommendations.append("Consider increasing minimum regime duration to improve persistence")
+        
+        # Check economic significance
+        economic_score = quality_metrics.get('economic_significance', {}).get('economic_significance_score', 0)
+        if economic_score < 0.5:
+            recommendations.append("Regimes may not be economically significant - consider feature engineering")
+        
+        # Check stability
+        stability_score = quality_metrics.get('stability_analysis', {}).get('stability_score', 0)
+        if stability_score < 0.7:
+            recommendations.append("Regimes show low stability - consider cross-validation improvements")
+        
+        # Check transitions
+        transition_entropy = quality_metrics.get('transition_analysis', {}).get('transition_entropy', 0)
+        if transition_entropy > 2.0:
+            recommendations.append("High transition entropy - consider regime smoothing or filtering")
+        
+        if not recommendations:
+            recommendations.append("Regime quality is good - no specific recommendations")
+        
+        return recommendations
+    
+    async def _prepare_data_for_clustering_optimized(
+        self, 
+        data: Any, 
+        regime_discovery: Dict[str, Any], 
+        config: Dict[str, Any]
+    ) -> Any:
+        """Prepare data for clustering with memory optimization."""
+        if not PANDAS_AVAILABLE or not isinstance(data, pd.DataFrame):
+            self.logger.warning("Pandas not available or data is not a DataFrame, using fallback")
+            return {
+                'market_data': data,
+                'regime_discovery': regime_discovery
+            }
+        
+        # Use memory optimizer to determine optimal chunk size
+        if self.memory_optimizer:
+            memory_limit_gb = config.get('memory_limit_gb', 8.0)
+            optimal_chunk_size = self.memory_optimizer.calculate_optimal_chunk_size(
+                data.shape, memory_limit_gb
+            )
+            self.logger.info(f"🔧 Memory optimization: Using chunk size {optimal_chunk_size} for {data.shape[0]} rows")
+        else:
+            optimal_chunk_size = min(10000, len(data))  # Fallback chunk size
+        
+        # Ensure we have required columns
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        
+        if missing_columns:
+            self.logger.warning(f"Missing columns for clustering: {missing_columns}")
+            # Use available columns or create fallback data
+            for col in missing_columns:
+                if col == 'volume':
+                    data[col] = 1000  # Default volume
+                else:
+                    data[col] = data.get('close', 100.0)  # Use close price as fallback
+        
+        return {
+            'market_data': data,
+            'regime_discovery': regime_discovery,
+            'chunk_size': optimal_chunk_size,
+            'memory_optimized': self.memory_optimizer is not None
+        }
+    
+    async def _perform_parallel_hmm_clustering(
+        self, 
+        hmm_manager: Any, 
+        prepared_data: Any, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform HMM clustering with parallel processing optimization."""
+        try:
+            # Get optimal number of workers
+            if self.cpu_optimizer:
+                max_workers = self.cpu_optimizer.get_optimal_worker_count()
+                self.logger.info(f"🔧 CPU optimization: Using {max_workers} workers for parallel processing")
+            else:
+                max_workers = 4  # Fallback worker count
+            
+            # Split data into chunks for parallel processing
+            market_data = prepared_data.get('market_data')
+            chunk_size = prepared_data.get('chunk_size', 10000)
+            
+            if PANDAS_AVAILABLE and isinstance(market_data, pd.DataFrame):
+                # Create data chunks
+                chunks = []
+                for i in range(0, len(market_data), chunk_size):
+                    chunk = market_data.iloc[i:i+chunk_size].copy()
+                    chunks.append(chunk)
+                
+                self.logger.info(f"🔧 Processing {len(chunks)} data chunks in parallel")
+                
+                # Process chunks in parallel
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit clustering tasks for each chunk
+                    future_to_chunk = {
+                        executor.submit(
+                            self._cluster_single_chunk, 
+                            hmm_manager, chunk, config, i
+                        ): i for i, chunk in enumerate(chunks)
+                    }
+                    
+                    # Collect results
+                    chunk_results = []
+                    for future in concurrent.futures.as_completed(future_to_chunk):
+                        chunk_idx = future_to_chunk[future]
+                        try:
+                            result = future.result()
+                            chunk_results.append((chunk_idx, result))
+                        except Exception as e:
+                            self.logger.error(f"❌ Chunk {chunk_idx} clustering failed: {e}")
+                            chunk_results.append((chunk_idx, None))
+                
+                # Merge chunk results
+                merged_result = self._merge_chunk_clustering_results(chunk_results)
+                return merged_result
+            else:
+                # Fallback to single-threaded processing
+                return await hmm_manager.perform_hmm_clustering(prepared_data, config)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Parallel HMM clustering failed: {e}")
+            # Fallback to single-threaded processing
+            return await hmm_manager.perform_hmm_clustering(prepared_data, config)
+    
+    def _cluster_single_chunk(
+        self, 
+        hmm_manager: Any, 
+        chunk_data: Any, 
+        config: Dict[str, Any], 
+        chunk_idx: int
+    ) -> Dict[str, Any]:
+        """Cluster a single data chunk."""
+        try:
+            # Prepare chunk data
+            chunk_prepared = {
+                'market_data': chunk_data,
+                'regime_discovery': {},  # Empty for individual chunks
+                'chunk_index': chunk_idx
+            }
+            
+            # Perform clustering on chunk
+            result = hmm_manager.perform_hmm_clustering(chunk_prepared, config)
+            result['chunk_index'] = chunk_idx
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Chunk {chunk_idx} clustering failed: {e}")
+            return {
+                'hmm_models': [],
+                'cluster_assignments': [],
+                'cluster_metrics': {'error': str(e)},
+                'chunk_index': chunk_idx
+            }
+    
+    def _merge_chunk_clustering_results(self, chunk_results: List[Tuple[int, Any]]) -> Dict[str, Any]:
+        """Merge results from multiple clustering chunks."""
+        try:
+            # Sort results by chunk index
+            chunk_results.sort(key=lambda x: x[0])
+            
+            # Merge HMM models
+            all_models = []
+            all_assignments = []
+            all_metrics = []
+            
+            for chunk_idx, result in chunk_results:
+                if result is None:
+                    continue
+                
+                models = result.get('hmm_models', [])
+                assignments = result.get('cluster_assignments', [])
+                metrics = result.get('cluster_metrics', {})
+                
+                # Adjust assignment indices to be globally unique
+                if assignments:
+                    max_assignment = max(all_assignments) if all_assignments else -1
+                    adjusted_assignments = [a + max_assignment + 1 for a in assignments]
+                    all_assignments.extend(adjusted_assignments)
+                
+                all_models.extend(models)
+                all_metrics.append(metrics)
+            
+            # Calculate merged metrics
+            merged_metrics = {
+                'clustering_method': 'parallel_chunked',
+                'total_chunks': len(chunk_results),
+                'successful_chunks': len([r for r in chunk_results if r[1] is not None]),
+                'total_models': len(all_models),
+                'total_assignments': len(all_assignments)
+            }
+            
+            self.logger.info(f"✅ Merged {len(chunk_results)} chunks: {len(all_models)} models, {len(all_assignments)} assignments")
+            
+            return {
+                'hmm_models': all_models,
+                'cluster_assignments': all_assignments,
+                'cluster_metrics': merged_metrics
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to merge chunk results: {e}")
+            return {
+                'hmm_models': [],
+                'cluster_assignments': [],
+                'cluster_metrics': {'error': f'Merge failed: {e}'}
+            }

@@ -11,7 +11,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
-from src.training.steps.market_analysis.unified_triple_barrier_labeler import (
+from .unified_labeler import (
     UnifiedTripleBarrierLabeler,
     TripleBarrierConfig,
     TripleBarrierResult,

@@ -680,6 +680,9 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             # Run PID decomposition
             pid_result = self.pid_decompositor.decompose_information(X, y, feature_names)
             
+            # Calculate interaction scores for each feature
+            interaction_scores = self.pid_decompositor.calculate_interaction_scores(pid_result, feature_names)
+            
             # Generate artifacts with datetime
             artifacts = self.pid_decompositor.create_comprehensive_artifact(
                 X, y, feature_names, pid_result, output_dir="pid_artifacts"
@@ -690,6 +693,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                 'redundancy_scores': pid_result.redundancy,
                 'synergy_scores': pid_result.synergy,
                 'unique_info_scores': pid_result.unique_info,
+                'interaction_scores': interaction_scores,  # NEW: Individual feature scores
                 'polynomial_features': pid_result.polynomial_features,
                 'interaction_features': pid_result.interaction_features,
                 'cross_timeframe_features': pid_result.cross_timeframe_features,
@@ -702,6 +706,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             
             _LOGGER.info(f"✅ PID analysis completed in {pid_result.execution_time:.3f}s")
             _LOGGER.info(f"📊 Found {pid_result.significant_interactions} significant interactions")
+            _LOGGER.info(f"📊 Calculated interaction scores for {len(interaction_scores)} features")
             _LOGGER.info(f"🔧 Generated {len(pid_result.polynomial_features)} polynomial features")
             _LOGGER.info(f"🔧 Generated {len(pid_result.interaction_features)} interaction features")
             _LOGGER.info(f"🔧 Generated {len(pid_result.cross_timeframe_features)} cross-timeframe features")
@@ -714,6 +719,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                 'redundancy_scores': {},
                 'synergy_scores': {},
                 'unique_info_scores': {},
+                'interaction_scores': {},
                 'polynomial_features': [],
                 'interaction_features': [],
                 'cross_timeframe_features': [],
@@ -762,9 +768,23 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                         if feature in statistical_scores:
                             statistical_scores[feature] += score
             
-            # Temporal and PID analyses - check if they actually provide feature-level scores
-            # For now, we'll skip them since they don't seem to provide individual feature scores
-            # This is a more honest approach than using made-up weights
+            # Temporal analysis contribution (if available and provides scores)
+            if temporal_results and 'error' not in temporal_results and 'temporal_scores' in temporal_results:
+                temporal_scores = temporal_results.get('temporal_scores', {})
+                if temporal_scores:  # Only if we actually have scores
+                    available_analyses.append('temporal')
+                    for feature, score in temporal_scores.items():
+                        if feature in statistical_scores:
+                            statistical_scores[feature] += score
+            
+            # PID analysis contribution (if available and provides scores)
+            if pid_results and 'error' not in pid_results and 'interaction_scores' in pid_results:
+                interaction_scores = pid_results.get('interaction_scores', {})
+                if interaction_scores:  # Only if we actually have scores
+                    available_analyses.append('pid')
+                    for feature, score in interaction_scores.items():
+                        if feature in statistical_scores:
+                            statistical_scores[feature] += score
             
             # Equal weighting for available analyses
             n_available = len(available_analyses)
@@ -785,7 +805,8 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             
             _LOGGER.info(f"📊 Statistical scores calculated for {len(statistical_scores)} features")
             _LOGGER.info(f"📊 Available analyses: {available_analyses} (equal weighting)")
-            _LOGGER.info(f"📊 Note: Temporal and PID analyses skipped - they don't provide individual feature scores")
+            if len(available_analyses) == 0:
+                _LOGGER.info(f"📊 Note: No analyses provided individual feature scores, using neutral scores")
             
             return statistical_scores
             
@@ -1096,6 +1117,28 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
             feature_importance_scores = method_scores.get('feature_importance_scores', {})
             rfe_scores = method_scores.get('rfe_scores', {})
             
+            # Extract individual analysis scores for detailed CSV
+            stability_scores = {}
+            temporal_scores = {}
+            causal_scores = {}
+            pid_scores = {}
+            
+            # Get individual scores from results
+            if 'stability_results' in results:
+                for method_name, method_results in results['stability_results'].items():
+                    if method_results.get('success', False) and 'stability_scores' in method_results:
+                        stability_scores = method_results.get('stability_scores', {})
+                        break
+            
+            if 'temporal_results' in results and 'temporal_scores' in results['temporal_results']:
+                temporal_scores = results['temporal_results'].get('temporal_scores', {})
+            
+            if 'causal_results' in results and 'causal_scores' in results['causal_results']:
+                causal_scores = results['causal_results'].get('causal_scores', {})
+            
+            if 'pid_results' in results and 'interaction_scores' in results['pid_results']:
+                pid_scores = results['pid_results'].get('interaction_scores', {})
+            
             # Get final ranking
             final_ranking = {}
             if final_scores:
@@ -1114,6 +1157,10 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
                     'elastic_net_score',
                     'feature_importance_score',
                     'rfe_score',
+                    'stability_score',
+                    'temporal_score',
+                    'causal_score',
+                    'pid_interaction_score',
                     'selected'
                 ]
                 
@@ -1133,6 +1180,10 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
                         'elastic_net_score': elastic_net_scores.get(feature, 0.0),
                         'feature_importance_score': feature_importance_scores.get(feature, 0.0),
                         'rfe_score': rfe_scores.get(feature, 0.0),
+                        'stability_score': stability_scores.get(feature, 0.0),
+                        'temporal_score': temporal_scores.get(feature, 0.0),
+                        'causal_score': causal_scores.get(feature, 0.0),
+                        'pid_interaction_score': pid_scores.get(feature, 0.0),
                         'selected': 'Yes' if feature in selected_features else 'No'
                     }
                     writer.writerow(row)
@@ -1160,7 +1211,9 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
                     {'metric': 'pid_analysis_enabled', 'value': pipeline_summary.get('pid_analysis_enabled', False)},
                     {'metric': 'scoring_weights', 'value': 'Statistical(25%), ElasticNet(25%), FeatureImportance(25%), RFE(25%)'},
                     {'metric': 'mrmr_excluded_from_final', 'value': 'Yes (used for pre-filtering only)'},
-                    {'metric': 'statistical_score_note', 'value': 'Based on available analyses only (stability, causal) with equal weighting'}
+                    {'metric': 'statistical_score_note', 'value': 'Based on available analyses (stability, temporal, causal, pid) with equal weighting'},
+                    {'metric': 'temporal_analysis_implemented', 'value': 'Yes - provides individual feature scores'},
+                    {'metric': 'pid_analysis_implemented', 'value': 'Yes - provides individual feature scores'}
                 ]
                 
                 for row in summary_data:

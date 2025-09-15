@@ -133,6 +133,9 @@ class TemporalAnalyzer:
             # Calculate temporal decay
             temporal_decay = self._calculate_temporal_decay(feature_temporal_importance)
             
+            # Calculate temporal scores for each feature
+            temporal_scores = self._calculate_temporal_scores(feature_temporal_importance, feature_names)
+            
             execution_time = time.time() - start_time
             
             result = {
@@ -142,6 +145,7 @@ class TemporalAnalyzer:
                 'cross_timeframe_analysis': cross_timeframe_analysis,
                 'optimal_features_by_timeframe': optimal_features_by_timeframe,
                 'temporal_decay': temporal_decay,
+                'temporal_scores': temporal_scores,  # NEW: Individual feature scores
                 'method': 'temporal_importance_analysis',
                 'parameters': {
                     'window_sizes': self.window_sizes,
@@ -587,3 +591,87 @@ class TemporalAnalyzer:
         except Exception as e:
             _LOGGER.warning(f"⚠️ Regime-specific feature identification failed: {e}")
             return {}
+
+    def _calculate_temporal_scores(self, feature_temporal_importance: Dict[str, List[Dict]], 
+                                 feature_names: List[str]) -> Dict[str, float]:
+        """Calculate temporal scores for each feature based on temporal stability and importance."""
+        try:
+            temporal_scores = {}
+            
+            for feature in feature_names:
+                if feature not in feature_temporal_importance:
+                    temporal_scores[feature] = 0.0
+                    continue
+                
+                feature_data = feature_temporal_importance[feature]
+                if not feature_data:
+                    temporal_scores[feature] = 0.0
+                    continue
+                
+                # Extract importance values across all windows
+                importances = [item['importance'] for item in feature_data]
+                
+                if not importances:
+                    temporal_scores[feature] = 0.0
+                    continue
+                
+                # Calculate temporal stability metrics
+                mean_importance = np.mean(importances)
+                std_importance = np.std(importances)
+                min_importance = np.min(importances)
+                max_importance = np.max(importances)
+                
+                # Calculate temporal consistency (inverse of coefficient of variation)
+                if mean_importance > 0:
+                    coefficient_of_variation = std_importance / mean_importance
+                    temporal_consistency = 1.0 / (1.0 + coefficient_of_variation)
+                else:
+                    temporal_consistency = 0.0
+                
+                # Calculate temporal range (how much importance varies)
+                if max_importance > min_importance:
+                    temporal_range = (max_importance - min_importance) / max_importance
+                else:
+                    temporal_range = 0.0
+                
+                # Calculate temporal trend (linear trend over time)
+                temporal_positions = [item['temporal_position'] for item in feature_data]
+                if len(temporal_positions) > 1:
+                    # Calculate correlation between time and importance
+                    temporal_trend = np.corrcoef(temporal_positions, importances)[0, 1]
+                    if np.isnan(temporal_trend):
+                        temporal_trend = 0.0
+                else:
+                    temporal_trend = 0.0
+                
+                # Calculate temporal persistence (how often feature is important)
+                importance_threshold = np.percentile(importances, 50)  # Median as threshold
+                persistence_ratio = np.mean([imp >= importance_threshold for imp in importances])
+                
+                # Combine metrics into temporal score
+                # Weight: mean importance (40%), consistency (25%), persistence (20%), trend (15%)
+                temporal_score = (
+                    mean_importance * 0.4 +
+                    temporal_consistency * 0.25 +
+                    persistence_ratio * 0.2 +
+                    abs(temporal_trend) * 0.15  # Use absolute trend (both positive and negative trends are valuable)
+                )
+                
+                # Normalize to 0-1 range
+                temporal_score = max(0.0, min(1.0, temporal_score))
+                temporal_scores[feature] = temporal_score
+            
+            # Normalize all scores to 0-1 range
+            if temporal_scores:
+                max_score = max(temporal_scores.values())
+                min_score = min(temporal_scores.values())
+                if max_score > min_score:
+                    for feature in temporal_scores:
+                        temporal_scores[feature] = (temporal_scores[feature] - min_score) / (max_score - min_score)
+            
+            _LOGGER.info(f"📊 Calculated temporal scores for {len(temporal_scores)} features")
+            return temporal_scores
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Temporal score calculation failed: {e}")
+            return {feature: 0.0 for feature in feature_names}

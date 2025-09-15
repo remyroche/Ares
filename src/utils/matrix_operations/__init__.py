@@ -164,11 +164,34 @@ try:
         compute_trend_indicators,
         compute_oscillator_indicators,
         compute_pattern_indicators,
+        
+        # Hardware optimization
+        get_hardware_performance_report,
+        optimize_matrix_operation_with_hardware,
+        cleanup_hardware_resources,
+        get_processing_performance_stats,
+        
     )
     CONVENIENCE_FUNCTIONS_AVAILABLE = True
 except ImportError as e:
     CONVENIENCE_FUNCTIONS_AVAILABLE = False
     logger.warning(f"Convenience functions not available: {e}")
+
+# Computation toolbox imports
+try:
+    from .computation_toolbox import (
+        compute_trading_indicators_optimized,
+        matrix_multiply_optimized,
+        correlation_analysis_optimized,
+        batch_process_optimized,
+        optimize_dataframe_optimized,
+        get_toolbox_performance_report,
+        cleanup_toolbox_resources,
+    )
+    COMPUTATION_TOOLBOX_AVAILABLE = True
+except ImportError as e:
+    COMPUTATION_TOOLBOX_AVAILABLE = False
+    logger.warning(f"Computation toolbox not available: {e}")
 
 # Version and compatibility information
 __version__ = "1.0.0"
@@ -269,7 +292,7 @@ if CONVENIENCE_FUNCTIONS_AVAILABLE:
         "get_batch_optimization_stats",
     ])
 
-# Add trading indicators to __all__ if available
+# Add trading indicators and hardware optimization to __all__ if available
 if VECTORIZED_CORE_AVAILABLE:
     __all__.extend([
         # Trading indicators
@@ -281,6 +304,25 @@ if VECTORIZED_CORE_AVAILABLE:
         "compute_trend_indicators",
         "compute_oscillator_indicators",
         "compute_pattern_indicators",
+        
+        # Hardware optimization
+        "get_hardware_performance_report",
+        "optimize_matrix_operation_with_hardware",
+        "cleanup_hardware_resources",
+        "get_processing_performance_stats",
+    ])
+
+# Add computation toolbox to __all__ if available
+if COMPUTATION_TOOLBOX_AVAILABLE:
+    __all__.extend([
+        # Computation toolbox
+        "compute_trading_indicators_optimized",
+        "matrix_multiply_optimized",
+        "correlation_analysis_optimized",
+        "batch_process_optimized",
+        "optimize_dataframe_optimized",
+        "get_toolbox_performance_report",
+        "cleanup_toolbox_resources",
     ])
 
 # Initialize default custom operations

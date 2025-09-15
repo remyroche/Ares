@@ -209,8 +209,9 @@ def get_batch_optimization_stats() -> Dict[str, Any]:
 
 # Trading indicators convenience functions
 def compute_trading_indicators(data: 'pd.DataFrame', 
-                              config: Optional[Dict[str, Any]] = None) -> 'pd.DataFrame':
-    """Compute comprehensive trading indicators in vectorized fashion."""
+                              config: Optional[Dict[str, Any]] = None,
+                              use_hardware_optimization: bool = True) -> 'pd.DataFrame':
+    """Compute comprehensive trading indicators in vectorized fashion with hardware optimization."""
     core = get_vectorized_processing_core()
     return core.compute_trading_indicators(data, config)
 
@@ -303,6 +304,33 @@ def compute_pattern_indicators(data: 'pd.DataFrame') -> 'pd.DataFrame':
     """Compute pattern recognition indicators."""
     core = get_vectorized_processing_core()
     return core._compute_pattern_indicators(data, {})
+
+# Hardware optimization convenience functions
+def get_hardware_performance_report() -> Optional[Dict[str, Any]]:
+    """Get comprehensive hardware performance report."""
+    core = get_vectorized_processing_core()
+    return core.get_hardware_performance_report()
+
+def optimize_matrix_operation_with_hardware(data: Union['np.ndarray', 'pd.DataFrame'], 
+                                          operation_func: Callable,
+                                          *args, **kwargs) -> Any:
+    """Optimize a matrix operation using available hardware."""
+    try:
+        from .hardware_integration import optimize_matrix_operation
+        return optimize_matrix_operation(data, operation_func, *args, **kwargs)
+    except ImportError:
+        # Fallback to standard operation
+        return operation_func(data, *args, **kwargs)
+
+def cleanup_hardware_resources():
+    """Cleanup hardware resources."""
+    core = get_vectorized_processing_core()
+    core.cleanup_hardware_resources()
+
+def get_processing_performance_stats() -> Dict[str, Any]:
+    """Get comprehensive processing performance statistics."""
+    core = get_vectorized_processing_core()
+    return core.get_processing_stats()
 
 # Additional convenience functions for common operations
 def matrix_multiply(a: 'np.ndarray', b: 'np.ndarray', use_gpu: bool = True) -> 'np.ndarray':

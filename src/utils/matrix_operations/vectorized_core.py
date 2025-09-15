@@ -47,6 +47,23 @@ except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
 
+# Hardware optimization imports
+try:
+    from .hardware_integration import (
+        get_hardware_optimized_processor, 
+        hardware_optimized,
+        optimize_matrix_operation,
+        HardwareConfig
+    )
+    HARDWARE_INTEGRATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Hardware integration not available: {e}")
+    HARDWARE_INTEGRATION_AVAILABLE = False
+    get_hardware_optimized_processor = None
+    hardware_optimized = None
+    optimize_matrix_operation = None
+    HardwareConfig = None
+
 logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
@@ -297,7 +314,8 @@ class OptimizedPipelineExecutor:
 class VectorizedProcessingCore:
     """Core class for vectorized processing operations with memory optimization."""
 
-    def __init__(self, chunk_size: int = 50000, max_memory_gb: float = 8.0, enable_gpu: bool = True):
+    def __init__(self, chunk_size: int = 50000, max_memory_gb: float = 8.0, enable_gpu: bool = True,
+                 hardware_config: Optional[HardwareConfig] = None):
         """Initialize vectorized processing core."""
         self.chunk_size = chunk_size
         self.max_memory_gb = max_memory_gb
@@ -319,8 +337,35 @@ class VectorizedProcessingCore:
             self.m1_cpu_optimizer = None
             self.m1_available = False
 
+        # Initialize hardware integration
+        self._initialize_hardware_integration(hardware_config)
+
         self.logger = logger.getChild('VectorizedProcessingCore')
         self.logger.info("🔧 Vectorized Processing Core initialized")
+    
+    def _initialize_hardware_integration(self, hardware_config: Optional[HardwareConfig] = None):
+        """Initialize hardware integration for optimized computations."""
+        if HARDWARE_INTEGRATION_AVAILABLE and get_hardware_optimized_processor:
+            try:
+                # Create hardware config if not provided
+                if hardware_config is None:
+                    hardware_config = HardwareConfig(
+                        max_memory_gb=self.max_memory_gb,
+                        enable_gpu=self.enable_gpu,
+                        chunk_size_threshold=self.chunk_size
+                    )
+                
+                self.hardware_processor = get_hardware_optimized_processor(hardware_config)
+                self.hardware_optimization_enabled = True
+                self.logger.info("✅ Hardware optimization integration enabled")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Hardware integration initialization failed: {e}")
+                self.hardware_processor = None
+                self.hardware_optimization_enabled = False
+        else:
+            self.hardware_processor = None
+            self.hardware_optimization_enabled = False
+            self.logger.info("ℹ️ Hardware optimization integration not available")
 
         # Pipeline optimization components
         self.pipeline_executor = OptimizedPipelineExecutor(
@@ -432,7 +477,7 @@ class VectorizedProcessingCore:
     def compute_trading_indicators(self, data: 'pd.DataFrame', 
                                  config: Optional[Dict[str, Any]] = None) -> 'pd.DataFrame':
         """
-        Compute comprehensive trading indicators in vectorized fashion.
+        Compute comprehensive trading indicators in vectorized fashion with hardware optimization.
         
         Args:
             data: DataFrame with OHLCV data (columns: open, high, low, close, volume)
@@ -443,7 +488,26 @@ class VectorizedProcessingCore:
         """
         if config is None:
             config = self._get_default_indicator_config()
-            
+        
+        # Use hardware optimization if available
+        if self.hardware_optimization_enabled and self.hardware_processor:
+            return self._compute_trading_indicators_hardware_optimized(data, config)
+        else:
+            return self._compute_trading_indicators_standard(data, config)
+    
+    def _compute_trading_indicators_hardware_optimized(self, data: 'pd.DataFrame', 
+                                                     config: Dict[str, Any]) -> 'pd.DataFrame':
+        """Compute trading indicators with hardware optimization."""
+        def compute_indicators_func(df, config):
+            return self._compute_trading_indicators_standard(df, config)
+        
+        return self.hardware_processor.process_with_hardware_optimization(
+            data, compute_indicators_func, config
+        )
+    
+    def _compute_trading_indicators_standard(self, data: 'pd.DataFrame', 
+                                           config: Dict[str, Any]) -> 'pd.DataFrame':
+        """Standard trading indicators computation."""
         with self.memory_checkpoint("trading_indicators"):
             result_df = data.copy()
             
@@ -755,7 +819,8 @@ class VectorizedProcessingCore:
             'chunk_size': self.chunk_size,
             'max_memory_gb': self.max_memory_gb,
             'gpu_enabled': self.enable_gpu,
-            'm1_optimizations': self.m1_available
+            'm1_optimizations': self.m1_available,
+            'hardware_optimization_enabled': self.hardware_optimization_enabled
         }
 
         if psutil:
@@ -769,8 +834,24 @@ class VectorizedProcessingCore:
         if self.m1_memory_optimizer:
             memory_report = self.m1_memory_optimizer.get_memory_report()
             stats['memory_efficiency'] = memory_report.get('memory_efficiency', 0.0)
+        
+        # Add hardware performance report if available
+        if self.hardware_optimization_enabled and self.hardware_processor:
+            stats['hardware_performance_report'] = self.hardware_processor.get_performance_report()
 
         return stats
+    
+    def get_hardware_performance_report(self) -> Optional[Dict[str, Any]]:
+        """Get comprehensive hardware performance report."""
+        if self.hardware_optimization_enabled and self.hardware_processor:
+            return self.hardware_processor.get_performance_report()
+        return None
+    
+    def cleanup_hardware_resources(self):
+        """Cleanup hardware resources."""
+        if self.hardware_optimization_enabled and self.hardware_processor:
+            self.hardware_processor.cleanup()
+            self.logger.info("🧹 Hardware resources cleaned up")
 
 # Global instance for easy access
 _vectorized_core = None

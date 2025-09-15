@@ -1,14 +1,21 @@
 """
-Analyst Models Training Step - Refactored
+Analyst Models Training Step - Cleaned and Optimized
 
 This step handles per-regime training of individual Analyst models using common dependencies.
-This is a refactored version that demonstrates the use of common utilities.
+Features:
+- Fast-fail error handling
+- Comprehensive datetime-stamped reports
+- Clean, maintainable code structure
+- Proper resource management
 """
 
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 import logging
+from datetime import datetime
+from pathlib import Path
+import json
 
 from src.utils.logger import system_logger
 from src.utils.ml_common.config import PerRegimeTrainingConfig
@@ -26,7 +33,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
     
     def __init__(self, config: Optional[PerRegimeTrainingConfig] = None):
         """
-        Initialize Analyst models training step.
+        Initialize Analyst models training step with enhanced error handling.
         
         Args:
             config: Per-regime training configuration
@@ -49,7 +56,87 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
         super().__init__(config)
         self.logger = logger.getChild('AnalystModelsTrainingStepRefactored')
         
-        self.logger.info("✅ Analyst Models Training Step (Refactored) initialized")
+        # Validate configuration
+        if not self._validate_config(config):
+            raise ValueError("Invalid configuration provided for Analyst models training")
+        
+        self.logger.info("✅ Analyst Models Training Step (Cleaned) initialized")
+    
+    def _validate_config(self, config: PerRegimeTrainingConfig) -> bool:
+        """Validate configuration parameters."""
+        try:
+            if not config.model_name or not config.timeframe:
+                self.logger.error("❌ Missing required config fields: model_name, timeframe")
+                return False
+            
+            if not config.model_types:
+                self.logger.error("❌ No model types specified")
+                return False
+            
+            if config.hpo_n_trials <= 0:
+                self.logger.error("❌ Invalid HPO trials: must be > 0")
+                return False
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Config validation failed: {e}")
+            return False
+    
+    def _generate_datetime_stamp(self) -> str:
+        """Generate a consistent datetime stamp for artifacts."""
+        return datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    def _create_training_report(
+        self, 
+        results: Dict[str, Any], 
+        execution_time: float,
+        status: str = "SUCCESS"
+    ) -> str:
+        """Create a comprehensive training report with datetime stamp."""
+        timestamp = self._generate_datetime_stamp()
+        report_filename = f"analyst_models_training_report_{timestamp}.json"
+        report_path = f"{self.config.model_save_path}/reports/{report_filename}"
+        
+        # Ensure reports directory exists
+        Path(f"{self.config.model_save_path}/reports").mkdir(parents=True, exist_ok=True)
+        
+        # Create comprehensive report
+        report_data = {
+            "metadata": {
+                "model_name": self.config.model_name,
+                "timeframe": self.config.timeframe,
+                "timestamp": timestamp,
+                "execution_time_seconds": execution_time,
+                "status": status,
+                "config": {
+                    "model_types": self.config.model_types,
+                    "hpo_n_trials": self.config.hpo_n_trials,
+                    "hpo_timeout_seconds": self.config.hpo_timeout_seconds,
+                    "min_samples_per_regime": self.config.min_samples_per_regime,
+                    "enable_data_augmentation": self.config.enable_data_augmentation,
+                    "augmentation_method": self.config.augmentation_method,
+                    "evaluation_metrics": self.config.evaluation_metrics
+                }
+            },
+            "results": results,
+            "summary": {
+                "models_trained": len(results.get('models', [])),
+                "regimes_processed": len(results.get('regime_analysis', {}).get('unique_regimes', [])),
+                "best_performing_model": results.get('best_models_per_regime', {}),
+                "training_successful": status == "SUCCESS"
+            }
+        }
+        
+        # Save report
+        try:
+            with open(report_path, 'w') as f:
+                json.dump(report_data, f, indent=2, default=str)
+            self.logger.info(f"📋 Training report saved: {report_path}")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save training report: {e}")
+            report_path = None
+        
+        return report_path
     
     def execute(
         self,
@@ -60,7 +147,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
         hmm_states: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """
-        Execute Analyst models training step.
+        Execute Analyst models training step with enhanced error handling and reporting.
         
         Args:
             X: Input features
@@ -71,27 +158,50 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             
         Returns:
             Dictionary containing training results and metadata
+            
+        Raises:
+            ValueError: If input data is invalid
+            RuntimeError: If training fails
         """
-        self.logger.info("🚀 Starting Analyst models training step (refactored)")
+        start_time = datetime.now()
+        self.logger.info("🚀 Starting Analyst models training step (cleaned)")
         
-        # VECTORIZED: Use ultra-fast vectorized training by default
-        self.logger.info("🚀 Using VECTORIZED analyst models training")
         try:
-            results = super().execute_vectorized(
-                X=X,
-                y=y,
-                regime_labels=regime_labels,
-                feature_names=feature_names,
-                hmm_states=hmm_states,
-                is_classification=False,  # Analyst models are typically regression
-                symbol=None,  # Can be passed as kwargs
-                exchange=None,
-                timeframe=self.config.timeframe
-            )
-            if results.get('vectorized', False):
-                self.logger.info("✅ VECTORIZED analyst training completed successfully")
-            else:
-                self.logger.warning("⚠️ VECTORIZED analyst training failed, falling back to standard method")
+            # Fast-fail: Validate input data
+            if not self._validate_input_data(X, y, regime_labels):
+                raise ValueError("Invalid input data provided")
+            
+            # VECTORIZED: Use ultra-fast vectorized training by default
+            self.logger.info("🚀 Using VECTORIZED analyst models training")
+            try:
+                results = super().execute_vectorized(
+                    X=X,
+                    y=y,
+                    regime_labels=regime_labels,
+                    feature_names=feature_names,
+                    hmm_states=hmm_states,
+                    is_classification=False,  # Analyst models are typically regression
+                    symbol=None,  # Can be passed as kwargs
+                    exchange=None,
+                    timeframe=self.config.timeframe
+                )
+                if results.get('vectorized', False):
+                    self.logger.info("✅ VECTORIZED analyst training completed successfully")
+                else:
+                    self.logger.warning("⚠️ VECTORIZED analyst training failed, falling back to standard method")
+                    results = super().execute(
+                        X=X,
+                        y=y,
+                        regime_labels=regime_labels,
+                        feature_names=feature_names,
+                        hmm_states=hmm_states,
+                        is_classification=False,  # Analyst models are typically regression
+                        symbol=None,  # Can be passed as kwargs
+                        exchange=None,
+                        timeframe=self.config.timeframe
+                    )
+            except Exception as e:
+                self.logger.warning(f"⚠️ VECTORIZED analyst training failed: {e}, falling back to standard method")
                 results = super().execute(
                     X=X,
                     y=y,
@@ -103,25 +213,59 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     exchange=None,
                     timeframe=self.config.timeframe
                 )
+            
+            # Add analyst-specific post-processing if needed
+            if 'error' not in results:
+                results = self._add_analyst_specific_metadata(results)
+            
+            # Create comprehensive training report
+            execution_time = (datetime.now() - start_time).total_seconds()
+            report_path = self._create_training_report(results, execution_time, "SUCCESS")
+            if report_path:
+                results['training_report'] = report_path
+            
+            self.logger.info(f"✅ Analyst models training completed in {execution_time:.2f}s")
+            return results
+            
         except Exception as e:
-            self.logger.warning(f"⚠️ VECTORIZED analyst training failed: {e}, falling back to standard method")
-            results = super().execute(
-                X=X,
-                y=y,
-                regime_labels=regime_labels,
-                feature_names=feature_names,
-                hmm_states=hmm_states,
-                is_classification=False,  # Analyst models are typically regression
-                symbol=None,  # Can be passed as kwargs
-                exchange=None,
-                timeframe=self.config.timeframe
-            )
-        
-        # Add analyst-specific post-processing if needed
-        if 'error' not in results:
-            results = self._add_analyst_specific_metadata(results)
-        
-        return results
+            execution_time = (datetime.now() - start_time).total_seconds()
+            error_msg = f"Analyst models training failed: {e}"
+            self.logger.error(f"❌ {error_msg}")
+            
+            # Create failure report
+            failure_results = {'error': error_msg, 'execution_time': execution_time}
+            self._create_training_report(failure_results, execution_time, "FAILED")
+            
+            # Fast-fail: Re-raise the exception
+            raise RuntimeError(error_msg) from e
+    
+    def _validate_input_data(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> bool:
+        """Validate input data for training."""
+        try:
+            if X is None or y is None or regime_labels is None:
+                self.logger.error("❌ Input data cannot be None")
+                return False
+            
+            if len(X) != len(y) or len(X) != len(regime_labels):
+                self.logger.error("❌ Input data length mismatch")
+                return False
+            
+            if len(X) == 0:
+                self.logger.error("❌ Input data is empty")
+                return False
+            
+            if np.any(np.isnan(X)) or np.any(np.isinf(X)):
+                self.logger.error("❌ Input features contain NaN or infinite values")
+                return False
+            
+            if np.any(np.isnan(y)) or np.any(np.isinf(y)):
+                self.logger.error("❌ Target values contain NaN or infinite values")
+                return False
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Input data validation failed: {e}")
+            return False
     
     def _add_analyst_specific_metadata(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -175,11 +319,11 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
         return results
 
 
-# Convenience functions for backward compatibility
+# Convenience functions
 def create_analyst_models_training_step_refactored(
     config: Optional[PerRegimeTrainingConfig] = None
 ) -> AnalystModelsTrainingStepRefactored:
-    """Create Analyst models training step (refactored)."""
+    """Create Analyst models training step (cleaned)."""
     return AnalystModelsTrainingStepRefactored(config)
 
 
@@ -191,42 +335,6 @@ def execute_analyst_models_training_refactored(
     feature_names: Optional[List[str]] = None,
     hmm_states: Optional[np.ndarray] = None
 ) -> Dict[str, Any]:
-    """Execute Analyst models training step (refactored)."""
+    """Execute Analyst models training step (cleaned) with fast-fail."""
     step = create_analyst_models_training_step_refactored(config)
     return step.execute(X, y, regime_labels, feature_names, hmm_states)
-
-
-# Example usage and comparison
-if __name__ == "__main__":
-    # Example of how to use the refactored version
-    print("Analyst Models Training Step - Refactored Version")
-    print("=" * 50)
-    
-    # Create configuration
-    config = PerRegimeTrainingConfig(
-        model_name="analyst_models",
-        timeframe="5m",
-        model_types=["TEMPORAL_FUSION_TRANSFORMER", "TABNET", "HIST_GRADIENT_BOOSTING"],
-        hpo_n_trials=50,  # Reduced for demo
-        enable_hpo=True,
-        save_models=True,
-        model_save_path="./models/analyst_models_refactored"
-    )
-    
-    # Create training step
-    training_step = create_analyst_models_training_step_refactored(config)
-    
-    print(f"✅ Created training step with {len(config.model_types)} model types")
-    print(f"📊 HPO enabled: {config.enable_hpo}")
-    print(f"💾 Save models: {config.save_models}")
-    print(f"📁 Save path: {config.model_save_path}")
-    
-    # The actual training would be called with:
-    # results = training_step.execute(X, y, regime_labels, feature_names, hmm_states)
-    
-    print("\n🎯 Benefits of refactored version:")
-    print("- Reduced from ~600 lines to ~150 lines (75% reduction)")
-    print("- Uses common dependencies for consistency")
-    print("- Easier to maintain and extend")
-    print("- Standardized error handling and logging")
-    print("- Reusable components across all training modules")

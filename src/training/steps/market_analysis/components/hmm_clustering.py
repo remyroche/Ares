@@ -110,10 +110,11 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Configure HMM clustering
             clustering_config = {
                 'n_clusters': 3,  # Bull, Bear, Sideways
-                'clustering_method': 'hmm_based',
+                'clustering_method': 'hmm_based',  # Options: 'hmm_based', 'kmeans_only', 'multi_algorithm_consensus'
                 'min_cluster_size': 10,
                 'convergence_tolerance': 1e-6,
                 'max_iterations': 100,
+                'random_state': 42,
                 
                 # Regime constraints
                 'max_regimes': 25,  # Maximum 25 regimes allowed
@@ -226,13 +227,24 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             # Prepare data for clustering with memory optimization
             prepared_data = await self._prepare_data_for_clustering_optimized(market_data, regime_discovery, config)
             
-            # Perform HMM clustering with hardware optimization
-            if self.cpu_optimizer and config.get('enable_parallel_processing', True):
-                clustering_result = await self._perform_parallel_hmm_clustering(
+            # Perform clustering with multiple algorithms
+            clustering_method = config.get('clustering_method', 'hmm_based')
+            
+            if clustering_method == 'kmeans_only':
+                clustering_result = await self._perform_kmeans_clustering(
+                    prepared_data, config
+                )
+            elif clustering_method == 'multi_algorithm_consensus':
+                clustering_result = await self._perform_multi_algorithm_clustering(
                     hmm_manager, prepared_data, config
                 )
-            else:
-                clustering_result = await hmm_manager.perform_hmm_clustering(prepared_data, config)
+            else:  # Default: HMM-based clustering
+                if self.cpu_optimizer and config.get('enable_parallel_processing', True):
+                    clustering_result = await self._perform_parallel_hmm_clustering(
+                        hmm_manager, prepared_data, config
+                    )
+                else:
+                    clustering_result = await hmm_manager.perform_hmm_clustering(prepared_data, config)
             
             clustering_time = time.time() - start_time
             clustering_result['clustering_time'] = clustering_time
@@ -901,3 +913,229 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'cluster_assignments': [],
                 'cluster_metrics': {'error': f'Merge failed: {e}'}
             }
+    
+    async def _perform_kmeans_clustering(
+        self, 
+        prepared_data: Any, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform K-means clustering on regime features."""
+        try:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn not available for K-means clustering")
+            
+            market_data = prepared_data.get('market_data')
+            if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
+                raise ValueError("Market data must be a pandas DataFrame for K-means clustering")
+            
+            # Extract regime features for clustering
+            regime_features = self._extract_regime_features(market_data)
+            
+            # Configure K-means
+            n_clusters = config.get('n_clusters', 3)
+            random_state = config.get('random_state', 42)
+            
+            # Perform K-means clustering
+            kmeans = KMeans(
+                n_clusters=n_clusters,
+                random_state=random_state,
+                n_init=10,
+                max_iter=300
+            )
+            
+            cluster_assignments = kmeans.fit_predict(regime_features)
+            
+            # Calculate clustering metrics
+            if len(set(cluster_assignments)) > 1:  # Need at least 2 clusters for metrics
+                silhouette_avg = silhouette_score(regime_features, cluster_assignments)
+                calinski_score = calinski_harabasz_score(regime_features, cluster_assignments)
+            else:
+                silhouette_avg = 0.0
+                calinski_score = 0.0
+            
+            # Create mock HMM models for compatibility
+            mock_models = [{'cluster_center': center, 'cluster_id': i} 
+                          for i, center in enumerate(kmeans.cluster_centers_)]
+            
+            self.logger.info(f"✅ K-means clustering completed: {n_clusters} clusters")
+            self.logger.info(f"📊 Silhouette score: {silhouette_avg:.3f}, Calinski-Harabasz score: {calinski_score:.3f}")
+            
+            return {
+                'hmm_models': mock_models,
+                'cluster_assignments': cluster_assignments.tolist(),
+                'cluster_metrics': {
+                    'clustering_method': 'kmeans',
+                    'n_clusters': n_clusters,
+                    'silhouette_score': silhouette_avg,
+                    'calinski_harabasz_score': calinski_score,
+                    'inertia': kmeans.inertia_,
+                    'cluster_centers': kmeans.cluster_centers_.tolist()
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ K-means clustering failed: {e}")
+            return {
+                'hmm_models': [],
+                'cluster_assignments': [],
+                'cluster_metrics': {
+                    'clustering_method': 'kmeans_fallback',
+                    'error': str(e)
+                }
+            }
+    
+    async def _perform_multi_algorithm_clustering(
+        self, 
+        hmm_manager: Any, 
+        prepared_data: Any, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform clustering using multiple algorithms and combine results."""
+        try:
+            # Run HMM clustering
+            hmm_result = await self._perform_parallel_hmm_clustering(
+                hmm_manager, prepared_data, config
+            )
+            
+            # Run K-means clustering
+            kmeans_result = await self._perform_kmeans_clustering(
+                prepared_data, config
+            )
+            
+            # Combine results using consensus
+            consensus_result = self._combine_clustering_consensus(
+                hmm_result, kmeans_result, config
+            )
+            
+            self.logger.info("✅ Multi-algorithm consensus clustering completed")
+            return consensus_result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Multi-algorithm clustering failed: {e}")
+            # Fallback to HMM clustering
+            return await self._perform_parallel_hmm_clustering(hmm_manager, prepared_data, config)
+    
+    def _extract_regime_features(self, market_data: pd.DataFrame) -> np.ndarray:
+        """Extract features for K-means clustering from market data."""
+        try:
+            features = []
+            
+            # Price-based features
+            if 'close' in market_data.columns:
+                # Returns
+                returns = market_data['close'].pct_change().dropna()
+                features.append(returns.values)
+                
+                # Volatility (rolling standard deviation)
+                volatility = returns.rolling(window=20).std().dropna()
+                features.append(volatility.values)
+                
+                # Price momentum
+                momentum = market_data['close'].pct_change(periods=5).dropna()
+                features.append(momentum.values)
+            
+            # Volume-based features
+            if 'volume' in market_data.columns:
+                volume_returns = market_data['volume'].pct_change().dropna()
+                features.append(volume_returns.values)
+            
+            # High-Low features
+            if 'high' in market_data.columns and 'low' in market_data.columns:
+                price_range = (market_data['high'] - market_data['low']) / market_data['close']
+                features.append(price_range.dropna().values)
+            
+            # Combine features and handle different lengths
+            if features:
+                # Find minimum length to avoid NaN issues
+                min_length = min(len(f) for f in features if len(f) > 0)
+                if min_length > 0:
+                    combined_features = np.column_stack([
+                        f[:min_length] for f in features if len(f) >= min_length
+                    ])
+                    return combined_features
+            
+            # Fallback: use close prices only
+            if 'close' in market_data.columns:
+                close_prices = market_data['close'].values.reshape(-1, 1)
+                return close_prices
+            
+            raise ValueError("No suitable features found for clustering")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Feature extraction failed: {e}")
+            # Return dummy features
+            return np.random.randn(len(market_data), 3)
+    
+    def _combine_clustering_consensus(
+        self, 
+        hmm_result: Dict[str, Any], 
+        kmeans_result: Dict[str, Any], 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Combine HMM and K-means clustering results using consensus."""
+        try:
+            hmm_assignments = hmm_result.get('cluster_assignments', [])
+            kmeans_assignments = kmeans_result.get('cluster_assignments', [])
+            
+            if not hmm_assignments or not kmeans_assignments:
+                # Fallback to whichever method worked
+                return hmm_result if hmm_assignments else kmeans_result
+            
+            # Ensure same length
+            min_length = min(len(hmm_assignments), len(kmeans_assignments))
+            hmm_assignments = hmm_assignments[:min_length]
+            kmeans_assignments = kmeans_assignments[:min_length]
+            
+            # Calculate consensus assignments
+            consensus_assignments = []
+            consensus_weights = []
+            
+            for i in range(min_length):
+                hmm_cluster = hmm_assignments[i]
+                kmeans_cluster = kmeans_assignments[i]
+                
+                # Simple consensus: if both agree, use that cluster
+                if hmm_cluster == kmeans_cluster:
+                    consensus_assignments.append(hmm_cluster)
+                    consensus_weights.append(1.0)
+                else:
+                    # If they disagree, use the more common cluster in the dataset
+                    hmm_count = hmm_assignments.count(hmm_cluster)
+                    kmeans_count = kmeans_assignments.count(kmeans_cluster)
+                    
+                    if hmm_count >= kmeans_count:
+                        consensus_assignments.append(hmm_cluster)
+                        consensus_weights.append(0.5)  # Lower confidence
+                    else:
+                        consensus_assignments.append(kmeans_cluster)
+                        consensus_weights.append(0.5)  # Lower confidence
+            
+            # Calculate consensus metrics
+            agreement_rate = sum(1 for w in consensus_weights if w == 1.0) / len(consensus_weights)
+            
+            # Combine models (prefer HMM models as they're more sophisticated)
+            combined_models = hmm_result.get('hmm_models', [])
+            if not combined_models:
+                combined_models = kmeans_result.get('hmm_models', [])
+            
+            # Combine metrics
+            combined_metrics = {
+                'clustering_method': 'multi_algorithm_consensus',
+                'hmm_metrics': hmm_result.get('cluster_metrics', {}),
+                'kmeans_metrics': kmeans_result.get('cluster_metrics', {}),
+                'agreement_rate': agreement_rate,
+                'consensus_confidence': np.mean(consensus_weights) if NUMPY_AVAILABLE else sum(consensus_weights) / len(consensus_weights)
+            }
+            
+            self.logger.info(f"📊 Consensus clustering: {agreement_rate:.1%} agreement between HMM and K-means")
+            
+            return {
+                'hmm_models': combined_models,
+                'cluster_assignments': consensus_assignments,
+                'cluster_metrics': combined_metrics
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Consensus combination failed: {e}")
+            # Fallback to HMM result
+            return hmm_result

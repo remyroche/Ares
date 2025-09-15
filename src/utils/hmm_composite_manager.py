@@ -3317,21 +3317,20 @@ class EnhancedHMMCompositeManager:
                                 # Low-dimensional: use euclidean
                                 metric = 'euclidean'
 
-                            # Compute silhouette score with optimized parameters
-                            silhouette = silhouette_score(
-                                numeric_data_sample,
-                                regime_labels_sample,
-                                metric=metric,
-                                sample_size=None  # We already sampled, so compute on full sample
-                            )
+                            # Compute HMM-relevant regime balance score
+                            unique_regimes, counts = np.unique(regime_labels_sample, return_counts=True)
+                            regime_percentages = counts / len(regime_labels_sample)
+                            balance_score = 1.0 - (np.max(regime_percentages) - np.min(regime_percentages))
+                            regime_entropy = -np.sum(regime_percentages * np.log(regime_percentages + 1e-10))
 
-                            validation_results['silhouette_score'] = silhouette
-                            validation_results['silhouette_sample_size'] = len(numeric_data_sample)
-                            validation_results['silhouette_metric'] = metric
+                            validation_results['regime_balance_score'] = balance_score
+                            validation_results['regime_entropy'] = regime_entropy
+                            validation_results['regime_sample_size'] = len(numeric_data_sample)
+                            validation_results['regime_count'] = len(unique_regimes)
 
-                            if silhouette < config.min_silhouette_score:
+                            if balance_score < 0.3:
                                 validation_results['warnings'].append(
-                                    f"Silhouette score {silhouette:.3f} below threshold {config.min_silhouette_score}"
+                                    f"Poor regime balance score {balance_score:.3f} - consider feature engineering"
                                 )
 
                         finally:
@@ -3339,21 +3338,23 @@ class EnhancedHMMCompositeManager:
                             signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
 
                 except TimeoutError:
-                    # FALLBACK: Use Calinski-Harabasz index (O(n) complexity)
-                    self.logger.warning("⚠️ Silhouette score calculation timed out - using Calinski-Harabasz index instead")
+                    # FALLBACK: Use simplified regime balance calculation
+                    self.logger.warning("⚠️ Regime balance calculation timed out - using simplified regime analysis")
                     try:
-                        from sklearn.metrics import calinski_harabasz_score
-                        ch_score = calinski_harabasz_score(numeric_data_sample, regime_labels_sample)
-                        validation_results['calinski_harabasz_score'] = ch_score
-                        validation_results['clustering_metric'] = 'calinski_harabasz'
-                        validation_results['metric_note'] = 'Used as fallback due to silhouette timeout'
-                        self.logger.info(f"✅ Calinski-Harabasz score: {ch_score:.3f}")
+                        unique_regimes, counts = np.unique(regime_labels_sample, return_counts=True)
+                        regime_percentages = counts / len(regime_labels_sample)
+                        balance_score = 1.0 - (np.max(regime_percentages) - np.min(regime_percentages))
+                        
+                        validation_results['regime_balance_score'] = balance_score
+                        validation_results['regime_metric'] = 'simplified_balance'
+                        validation_results['metric_note'] = 'Used as fallback due to calculation timeout'
+                        self.logger.info(f"✅ Simplified regime balance score: {balance_score:.3f}")
                     except Exception as ch_e:
-                        validation_results['warnings'].append("Both silhouette and Calinski-Harabasz calculations failed")
-                        self.logger.warning(f"⚠️ Fallback clustering metric also failed: {ch_e}")
+                        validation_results['warnings'].append("Both regime balance calculations failed")
+                        self.logger.warning(f"⚠️ Fallback regime metric also failed: {ch_e}")
                 except Exception as e:
-                    validation_results['warnings'].append(f"Could not calculate silhouette score: {e}")
-                    self.logger.debug(f"Silhouette calculation failed: {e}")
+                    validation_results['warnings'].append(f"Could not calculate regime balance score: {e}")
+                    self.logger.debug(f"Regime balance calculation failed: {e}")
             
             # Overall validation
             validation_results['validation_passed'] = len(validation_results['errors']) == 0

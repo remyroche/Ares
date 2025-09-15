@@ -19,7 +19,7 @@ import warnings
 from .base_framework import BaseFeatureSelectionFramework
 from .data_validation import DataValidator
 from .selection_methods import (
-    MRMRSelector, ElasticNetStabilitySelector, CorrelationBasedFilter,
+    MRMRSelector, ElasticNetStabilitySelector,
     RecursiveFeatureEliminator, FeatureImportanceRanker
 )
 from .stability_analysis import StabilityAnalyzer
@@ -150,7 +150,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             elastic_net_config['mode'] = self.config.get('mode', 'blank')
             self.elastic_net_stability_selector = ElasticNetStabilitySelector(elastic_net_config)
 
-            self.correlation_filter = CorrelationBasedFilter(self.config.get('correlation_filter', {}))
+            # Correlation filter removed - functionality covered by mRMR and other methods
             self.rfe_selector = RecursiveFeatureEliminator(self.config.get('rfe', {}))
             self.importance_ranker = FeatureImportanceRanker(self.config.get('importance', {}))
             _LOGGER.info("✅ Selection methods initialized")
@@ -323,55 +323,68 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             
             _LOGGER.info(f"🎯 Target features: {target_features}")
             
-            # Step 3: Apply selection methods
-            _LOGGER.info("🔍 Step 3: Applying feature selection methods...")
-            selection_results = self._apply_selection_methods(
-                X_cleaned, y_cleaned, feature_names, target_features
+            # Step 3: mRMR Pre-filtering (remove 50% worst features)
+            _LOGGER.info("🔍 Step 3: mRMR pre-filtering (removing 50% worst features)...")
+            mrmr_prefilter_result = self._apply_mrmr_prefiltering(
+                X_cleaned, y_cleaned, feature_names
             )
             
-            # Step 4: Stability analysis (if enabled)
+            # Extract filtered data and feature names
+            X_filtered = mrmr_prefilter_result['filtered_data']
+            y_filtered = mrmr_prefilter_result['filtered_target']
+            filtered_feature_names = mrmr_prefilter_result['filtered_feature_names']
+            mrmr_scores = mrmr_prefilter_result['mrmr_scores']
+            
+            _LOGGER.info(f"📊 mRMR pre-filtering: {len(filtered_feature_names)} features remaining from {len(feature_names)} original")
+            
+            # Step 4: Apply remaining selection methods on filtered data
+            _LOGGER.info("🔍 Step 4: Applying remaining selection methods on filtered data...")
+            selection_results = self._apply_remaining_selection_methods(
+                X_filtered, y_filtered, filtered_feature_names, target_features
+            )
+            
+            # Step 5: Stability analysis (if enabled)
             stability_results = {}
             if enable_stability_analysis:
-                _LOGGER.info("📈 Step 4: Stability analysis...")
+                _LOGGER.info("📈 Step 5: Stability analysis...")
                 stability_results = self._perform_stability_analysis(
-                    X_cleaned, y_cleaned, feature_names, selection_results
+                    X_filtered, y_filtered, filtered_feature_names, selection_results
                 )
             
-            # Step 5: Temporal analysis (if enabled)
+            # Step 6: Temporal analysis (if enabled)
             temporal_results = {}
             if enable_temporal_analysis:
-                _LOGGER.info("⏰ Step 5: Temporal analysis...")
+                _LOGGER.info("⏰ Step 6: Temporal analysis...")
                 temporal_results = self._perform_temporal_analysis(
-                    X_cleaned, y_cleaned, feature_names
+                    X_filtered, y_filtered, filtered_feature_names
                 )
             
-            # Step 6: Causal analysis (if enabled)
+            # Step 7: Causal analysis (if enabled)
             causal_results = {}
             if enable_causal_analysis:
-                _LOGGER.info("🔗 Step 6: Causal analysis...")
+                _LOGGER.info("🔗 Step 7: Causal analysis...")
                 causal_results = self._perform_causal_analysis(
-                    X_cleaned, y_cleaned, feature_names
+                    X_filtered, y_filtered, filtered_feature_names
                 )
             
-            # Step 7: PID analysis (if enabled)
+            # Step 8: PID analysis (if enabled)
             pid_results = {}
             if enable_pid_analysis:
-                _LOGGER.info("🧮 Step 7: Partial Information Decomposition analysis...")
+                _LOGGER.info("🧮 Step 8: Partial Information Decomposition analysis...")
                 pid_results = self._perform_pid_analysis(
-                    X_cleaned, y_cleaned, feature_names
+                    X_filtered, y_filtered, filtered_feature_names
                 )
             
-            # Step 8: Quality assessment
-            _LOGGER.info("📊 Step 8: Quality assessment...")
-            quality_results = self._assess_selection_quality(
-                X_cleaned, y_cleaned, feature_names, selection_results,
-                stability_results, temporal_results, causal_results, pid_results
+            # Step 9: Calculate Statistical Score
+            _LOGGER.info("📊 Step 9: Calculating Statistical Score...")
+            statistical_score = self._calculate_statistical_score(
+                stability_results, temporal_results, causal_results, pid_results, filtered_feature_names
             )
             
-            # Step 9: Final feature selection
-            _LOGGER.info("🎯 Step 9: Final feature selection...")
-            final_selection = self._select_final_features(
-                selection_results, stability_results, quality_results, pid_results
+            # Step 10: Final feature selection with new scoring
+            _LOGGER.info("🎯 Step 10: Final feature selection with new scoring...")
+            final_selection = self._select_final_features_new_scoring(
+                selection_results, statistical_score, mrmr_scores, filtered_feature_names
             )
             
             execution_time = time.time() - start_time
@@ -380,12 +393,14 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             result = {
                 'final_selected_features': final_selection['selected_features'],
                 'final_selected_indices': final_selection['selected_indices'],
+                'mrmr_prefilter_result': mrmr_prefilter_result,
                 'selection_results': selection_results,
                 'stability_results': stability_results,
                 'temporal_results': temporal_results,
                 'causal_results': causal_results,
                 'pid_results': pid_results,
-                'quality_results': quality_results,
+                'statistical_score': statistical_score,
+                'final_scores': final_selection['final_scores'],
                 'validation_result': validation_result,
                 'cleaning_log': cleaning_log,
                 'pipeline_summary': {
@@ -394,7 +409,9 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                     'final_feature_count': len(final_selection['selected_features']),
                     'data_shape_original': X.shape,
                     'data_shape_cleaned': X_cleaned.shape,
-                    'features_removed': cleaning_log.get('features_removed_count', 0),
+                    'data_shape_filtered': X_filtered.shape,
+                    'features_removed_cleaning': cleaning_log.get('features_removed_count', 0),
+                    'features_removed_mrmr': len(feature_names) - len(filtered_feature_names),
                     'model_type': model_type,
                     'stability_analysis_enabled': enable_stability_analysis,
                     'temporal_analysis_enabled': enable_temporal_analysis,
@@ -407,6 +424,12 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             _LOGGER.info(f"✅ Comprehensive feature selection completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Final selection: {len(final_selection['selected_features'])} features")
             _LOGGER.info(f"🎯 Selected features: {final_selection['selected_features']}")
+            
+            # Generate CSV output
+            csv_path = self._generate_csv_output(result, filtered_feature_names)
+            if csv_path:
+                _LOGGER.info(f"📄 CSV output generated: {csv_path}")
+                result['csv_output_path'] = csv_path
             
             return result
             
@@ -428,26 +451,76 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                 'success': False
             }
 
-    def _apply_selection_methods(self, X: np.ndarray, y: np.ndarray, 
-                               feature_names: List[str], target_features: int) -> Dict[str, Any]:
-        """Apply all feature selection methods."""
+    def _apply_mrmr_prefiltering(self, X: np.ndarray, y: np.ndarray, 
+                                feature_names: List[str]) -> Dict[str, Any]:
+        """Apply mRMR pre-filtering to remove 50% worst features."""
+        try:
+            _LOGGER.info("🔍 Applying mRMR pre-filtering (removing 50% worst features)...")
+            
+            # Calculate mRMR scores for all features
+            mrmr_result = self.mrmr_selector.select_features(X, y, feature_names, len(feature_names))
+            
+            if not mrmr_result.get('success', False):
+                _LOGGER.warning("⚠️ mRMR pre-filtering failed, using all features")
+                return {
+                    'filtered_data': X,
+                    'filtered_target': y,
+                    'filtered_feature_names': feature_names,
+                    'mrmr_scores': {},
+                    'removed_features': [],
+                    'success': False
+                }
+            
+            # Get mRMR scores for all features
+            mrmr_scores = mrmr_result.get('scores', {})
+            
+            # Sort features by mRMR score (ascending - worst first)
+            sorted_features = sorted(mrmr_scores.items(), key=lambda x: x[1])
+            
+            # Remove bottom 50% (worst features)
+            n_features_to_remove = len(sorted_features) // 2
+            removed_features = [feat for feat, score in sorted_features[:n_features_to_remove]]
+            kept_features = [feat for feat, score in sorted_features[n_features_to_remove:]]
+            
+            # Create filtered dataset
+            kept_indices = [feature_names.index(feat) for feat in kept_features]
+            X_filtered = X[:, kept_indices]
+            
+            # Create filtered mRMR scores (only for kept features)
+            filtered_mrmr_scores = {feat: mrmr_scores[feat] for feat in kept_features}
+            
+            _LOGGER.info(f"📊 mRMR pre-filtering: Removed {len(removed_features)} worst features, kept {len(kept_features)} best features")
+            
+            return {
+                'filtered_data': X_filtered,
+                'filtered_target': y,
+                'filtered_feature_names': kept_features,
+                'mrmr_scores': filtered_mrmr_scores,
+                'removed_features': removed_features,
+                'success': True
+            }
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ mRMR pre-filtering failed: {e}")
+            return {
+                'filtered_data': X,
+                'filtered_target': y,
+                'filtered_feature_names': feature_names,
+                'mrmr_scores': {},
+                'removed_features': [],
+                'success': False
+            }
+
+    def _apply_remaining_selection_methods(self, X: np.ndarray, y: np.ndarray, 
+                                         feature_names: List[str], target_features: int) -> Dict[str, Any]:
+        """Apply remaining selection methods (excluding mRMR and correlation filtering)."""
         try:
             selection_results = {}
-            
-            # mRMR selection
-            _LOGGER.info("🔍 Applying mRMR selection...")
-            mrmr_result = self.mrmr_selector.select_features(X, y, feature_names, target_features)
-            selection_results['mrmr'] = mrmr_result
             
             # Elastic Net stability selection
             _LOGGER.info("🔍 Applying Elastic Net stability selection...")
             elastic_net_result = self.elastic_net_stability_selector.select_features(X, y, feature_names)
             selection_results['elastic_net_stability'] = elastic_net_result
-            
-            # Correlation-based filtering
-            _LOGGER.info("🔍 Applying correlation-based filtering...")
-            corr_result = self.correlation_filter.select_features(X, y, feature_names)
-            selection_results['correlation_filter'] = corr_result
             
             # Feature importance ranking
             _LOGGER.info("🔍 Applying feature importance ranking...")
@@ -463,11 +536,11 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                 _LOGGER.warning(f"⚠️ RFE selection failed: {e}")
                 selection_results['rfe'] = {'error': str(e), 'success': False}
             
-            _LOGGER.info(f"✅ Applied {len(selection_results)} selection methods")
+            _LOGGER.info(f"✅ Applied {len(selection_results)} remaining selection methods")
             return selection_results
             
         except Exception as e:
-            _LOGGER.error(f"❌ Selection methods application failed: {e}")
+            _LOGGER.error(f"❌ Remaining selection methods application failed: {e}")
             return {'error': str(e)}
 
     def _perform_stability_analysis(self, X: np.ndarray, y: np.ndarray, 
@@ -484,14 +557,12 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                     
                     # Create selection method wrapper
                     def selection_wrapper(X_sub, y_sub, feature_names_sub, **kwargs):
-                        if method_name == 'mrmr':
-                            return self.mrmr_selector.select_features(X_sub, y_sub, feature_names_sub, kwargs.get('n_features', 50))
-                        elif method_name == 'elastic_net_stability':
+                        if method_name == 'elastic_net_stability':
                             return self.elastic_net_stability_selector.select_features(X_sub, y_sub, feature_names_sub)
-                        elif method_name == 'correlation_filter':
-                            return self.correlation_filter.select_features(X_sub, y_sub, feature_names_sub)
                         elif method_name == 'feature_importance':
                             return self.importance_ranker.select_features(X_sub, y_sub, feature_names_sub, kwargs.get('n_features', 50))
+                        elif method_name == 'rfe':
+                            return self.rfe_selector.select_features(X_sub, y_sub, feature_names_sub, kwargs.get('n_features', 50))
                         else:
                             return {'selected_features': [], 'success': False}
                     
@@ -636,6 +707,159 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                 'success': False
             }
 
+    def _calculate_statistical_score(self, stability_results: Dict[str, Any],
+                                   temporal_results: Dict[str, Any],
+                                   causal_results: Dict[str, Any],
+                                   pid_results: Dict[str, Any],
+                                   feature_names: List[str]) -> Dict[str, float]:
+        """Calculate statistical score from stability, temporal, causal, and PID analyses."""
+        try:
+            statistical_scores = {}
+            
+            # Initialize all features with 0 score
+            for feature in feature_names:
+                statistical_scores[feature] = 0.0
+            
+            # Stability analysis contribution (if available)
+            if stability_results and 'error' not in stability_results:
+                for method_name, method_results in stability_results.items():
+                    if method_results.get('success', False):
+                        stability_scores = method_results.get('stability_scores', {})
+                        for feature, score in stability_scores.items():
+                            if feature in statistical_scores:
+                                statistical_scores[feature] += score * 0.4  # 40% weight for stability
+            
+            # Temporal analysis contribution (if available)
+            if temporal_results and 'error' not in temporal_results:
+                temporal_scores = temporal_results.get('temporal_scores', {})
+                for feature, score in temporal_scores.items():
+                    if feature in statistical_scores:
+                        statistical_scores[feature] += score * 0.3  # 30% weight for temporal
+            
+            # Causal analysis contribution (if available)
+            if causal_results and 'error' not in causal_results:
+                causal_scores = causal_results.get('causal_scores', {})
+                for feature, score in causal_scores.items():
+                    if feature in statistical_scores:
+                        statistical_scores[feature] += score * 0.2  # 20% weight for causal
+            
+            # PID analysis contribution (if available)
+            if pid_results and 'error' not in pid_results:
+                pid_scores = pid_results.get('interaction_scores', {})
+                for feature, score in pid_scores.items():
+                    if feature in statistical_scores:
+                        statistical_scores[feature] += score * 0.1  # 10% weight for PID
+            
+            # Normalize scores to 0-1 range
+            if statistical_scores:
+                max_score = max(statistical_scores.values())
+                min_score = min(statistical_scores.values())
+                if max_score > min_score:
+                    for feature in statistical_scores:
+                        statistical_scores[feature] = (statistical_scores[feature] - min_score) / (max_score - min_score)
+            
+            _LOGGER.info(f"📊 Statistical scores calculated for {len(statistical_scores)} features")
+            return statistical_scores
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Statistical score calculation failed: {e}")
+            return {feature: 0.0 for feature in feature_names}
+
+    def _select_final_features_new_scoring(self, selection_results: Dict[str, Any],
+                                         statistical_score: Dict[str, float],
+                                         mrmr_scores: Dict[str, float],
+                                         feature_names: List[str]) -> Dict[str, Any]:
+        """Select final features using new scoring system."""
+        try:
+            # Collect scores from each method
+            elastic_net_scores = {}
+            feature_importance_scores = {}
+            rfe_scores = {}
+            
+            # Extract Elastic Net scores
+            if selection_results.get('elastic_net_stability', {}).get('success', False):
+                elastic_net_result = selection_results['elastic_net_stability']
+                stability_scores = elastic_net_result.get('stability_scores', {})
+                for feature, score in stability_scores.items():
+                    elastic_net_scores[feature] = score
+            
+            # Extract Feature Importance scores
+            if selection_results.get('feature_importance', {}).get('success', False):
+                importance_result = selection_results['feature_importance']
+                importance_scores = importance_result.get('importance_scores', {})
+                for feature, score in importance_scores.items():
+                    feature_importance_scores[feature] = score
+            
+            # Extract RFE scores (convert rankings to scores)
+            if selection_results.get('rfe', {}).get('success', False):
+                rfe_result = selection_results['rfe']
+                rankings = rfe_result.get('feature_rankings', {})
+                max_rank = max(rankings.values()) if rankings else 1
+                for feature, rank in rankings.items():
+                    # Convert ranking to score (lower rank = higher score)
+                    rfe_scores[feature] = 1.0 - (rank - 1) / max(1, max_rank - 1)
+            
+            # Calculate final scores for all features
+            final_scores = {}
+            for feature in feature_names:
+                # New scoring: Statistical (25%) + Elastic Net (25%) + Feature Importance (25%) + RFE (25%)
+                stat_score = statistical_score.get(feature, 0.0)
+                en_score = elastic_net_scores.get(feature, 0.0)
+                fi_score = feature_importance_scores.get(feature, 0.0)
+                rfe_score = rfe_scores.get(feature, 0.0)
+                
+                final_score = (stat_score * 0.25 + 
+                             en_score * 0.25 + 
+                             fi_score * 0.25 + 
+                             rfe_score * 0.25)
+                
+                final_scores[feature] = final_score
+            
+            # Sort features by final score
+            sorted_features = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
+            
+            # Select top features (cap at 50)
+            target_count = min(50, len(sorted_features))
+            selected_features = [feat for feat, score in sorted_features[:target_count]]
+            selected_indices = [feature_names.index(feat) for feat in selected_features]
+            
+            # Create detailed results
+            result = {
+                'selected_features': selected_features,
+                'selected_indices': selected_indices,
+                'final_scores': final_scores,
+                'method_scores': {
+                    'statistical_score': statistical_score,
+                    'elastic_net_scores': elastic_net_scores,
+                    'feature_importance_scores': feature_importance_scores,
+                    'rfe_scores': rfe_scores,
+                    'mrmr_scores': mrmr_scores  # Include for reference but not in final scoring
+                },
+                'scoring_info': {
+                    'statistical_weight': 0.25,
+                    'elastic_net_weight': 0.25,
+                    'feature_importance_weight': 0.25,
+                    'rfe_weight': 0.25,
+                    'mrmr_excluded_from_final': True
+                }
+            }
+            
+            _LOGGER.info(f"✅ Final feature selection completed - {len(selected_features)} features selected")
+            _LOGGER.info(f"📊 Scoring weights: Statistical (25%), Elastic Net (25%), Feature Importance (25%), RFE (25%)")
+            _LOGGER.info(f"📊 mRMR scores included for reference but excluded from final scoring")
+            
+            return result
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Final feature selection failed: {e}")
+            return {
+                'selected_features': [],
+                'selected_indices': [],
+                'final_scores': {},
+                'method_scores': {},
+                'error': str(e)
+            }
+
     def _select_final_features(self, selection_results: Dict[str, Any],
                              stability_results: Dict[str, Any],
                              quality_results: Dict[str, Any],
@@ -732,7 +956,6 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                     'data_validator': hasattr(self, 'data_validator'),
                     'mrmr_selector': hasattr(self, 'mrmr_selector'),
                     'elastic_net_stability_selector': hasattr(self, 'elastic_net_stability_selector'),
-                    'correlation_filter': hasattr(self, 'correlation_filter'),
                     'rfe_selector': hasattr(self, 'rfe_selector'),
                     'importance_ranker': hasattr(self, 'importance_ranker'),
                     'stability_analyzer': hasattr(self, 'stability_analyzer'),
@@ -818,3 +1041,108 @@ Causal Analysis: {'Enabled' if results.get('pipeline_summary', {}).get('causal_a
         except Exception as e:
             _LOGGER.error(f"❌ Comprehensive report generation failed: {e}")
             return f"Error generating comprehensive report: {e}"
+
+    def _generate_csv_output(self, results: Dict[str, Any], feature_names: List[str]) -> Optional[str]:
+        """Generate CSV output with all feature scores and final ranking."""
+        try:
+            import csv
+            import os
+            from datetime import datetime
+            
+            # Create output directory if it doesn't exist
+            output_dir = "feature_selection_results"
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            csv_filename = f"feature_selection_results_{timestamp}.csv"
+            csv_path = os.path.join(output_dir, csv_filename)
+            
+            # Extract all scores
+            final_scores = results.get('final_scores', {})
+            method_scores = results.get('method_scores', {})
+            
+            mrmr_scores = method_scores.get('mrmr_scores', {})
+            statistical_scores = method_scores.get('statistical_score', {})
+            elastic_net_scores = method_scores.get('elastic_net_scores', {})
+            feature_importance_scores = method_scores.get('feature_importance_scores', {})
+            rfe_scores = method_scores.get('rfe_scores', {})
+            
+            # Get final ranking
+            final_ranking = {}
+            if final_scores:
+                sorted_features = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
+                for rank, (feature, score) in enumerate(sorted_features, 1):
+                    final_ranking[feature] = rank
+            
+            # Write CSV file
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                fieldnames = [
+                    'feature_name',
+                    'final_score',
+                    'final_ranking',
+                    'mrmr_score',
+                    'statistical_score',
+                    'elastic_net_score',
+                    'feature_importance_score',
+                    'rfe_score',
+                    'selected'
+                ]
+                
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                # Write data for all features
+                selected_features = set(results.get('final_selected_features', []))
+                
+                for feature in feature_names:
+                    row = {
+                        'feature_name': feature,
+                        'final_score': final_scores.get(feature, 0.0),
+                        'final_ranking': final_ranking.get(feature, 999),
+                        'mrmr_score': mrmr_scores.get(feature, 0.0),
+                        'statistical_score': statistical_scores.get(feature, 0.0),
+                        'elastic_net_score': elastic_net_scores.get(feature, 0.0),
+                        'feature_importance_score': feature_importance_scores.get(feature, 0.0),
+                        'rfe_score': rfe_scores.get(feature, 0.0),
+                        'selected': 'Yes' if feature in selected_features else 'No'
+                    }
+                    writer.writerow(row)
+            
+            # Also create a summary CSV with pipeline information
+            summary_csv_path = os.path.join(output_dir, f"feature_selection_summary_{timestamp}.csv")
+            with open(summary_csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                fieldnames = ['metric', 'value']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                pipeline_summary = results.get('pipeline_summary', {})
+                summary_data = [
+                    {'metric': 'execution_time_seconds', 'value': pipeline_summary.get('execution_time', 0)},
+                    {'metric': 'original_features', 'value': pipeline_summary.get('data_shape_original', (0, 0))[1]},
+                    {'metric': 'features_after_cleaning', 'value': pipeline_summary.get('data_shape_cleaned', (0, 0))[1]},
+                    {'metric': 'features_after_mrmr_filtering', 'value': pipeline_summary.get('data_shape_filtered', (0, 0))[1]},
+                    {'metric': 'features_removed_cleaning', 'value': pipeline_summary.get('features_removed_cleaning', 0)},
+                    {'metric': 'features_removed_mrmr', 'value': pipeline_summary.get('features_removed_mrmr', 0)},
+                    {'metric': 'final_selected_features', 'value': pipeline_summary.get('final_feature_count', 0)},
+                    {'metric': 'model_type', 'value': pipeline_summary.get('model_type', 'unknown')},
+                    {'metric': 'stability_analysis_enabled', 'value': pipeline_summary.get('stability_analysis_enabled', False)},
+                    {'metric': 'temporal_analysis_enabled', 'value': pipeline_summary.get('temporal_analysis_enabled', False)},
+                    {'metric': 'causal_analysis_enabled', 'value': pipeline_summary.get('causal_analysis_enabled', False)},
+                    {'metric': 'pid_analysis_enabled', 'value': pipeline_summary.get('pid_analysis_enabled', False)},
+                    {'metric': 'scoring_weights', 'value': 'Statistical(25%), ElasticNet(25%), FeatureImportance(25%), RFE(25%)'},
+                    {'metric': 'mrmr_excluded_from_final', 'value': 'Yes (used for pre-filtering only)'}
+                ]
+                
+                for row in summary_data:
+                    writer.writerow(row)
+            
+            _LOGGER.info(f"📄 Generated CSV files:")
+            _LOGGER.info(f"  - Detailed results: {csv_path}")
+            _LOGGER.info(f"  - Summary: {summary_csv_path}")
+            
+            return csv_path
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ CSV generation failed: {e}")
+            return None

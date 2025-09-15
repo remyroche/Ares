@@ -32,7 +32,6 @@ from .data_validation import DataValidator
 from .selection_methods import (
     MRMRSelector,
     StabilityWeightedSelector,
-    CorrelationBasedFilter,
     RecursiveFeatureEliminator,
     FeatureImportanceRanker,
     CompositeFeatureScorer,
@@ -57,7 +56,6 @@ __all__ = [
     'DataValidator',
     'MRMRSelector',
     'StabilityWeightedSelector',
-    'CorrelationBasedFilter',
     'RecursiveFeatureEliminator',
     'FeatureImportanceRanker',
     'CompositeFeatureScorer',

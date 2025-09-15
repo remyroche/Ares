@@ -507,20 +507,20 @@ class ElasticNetStabilitySelector:
         _LOGGER.info(f"⚙️ L1 ratio range: {self.l1_ratio_range}")
 
     def _get_bootstrap_count(self) -> int:
-        """Get bootstrap count based on execution mode."""
+        """Get bootstrap count based on execution mode, capped at 50."""
         # Get mode from config, default to 'blank' for backward compatibility
         mode = self.config.get('mode', 'blank').lower()
 
-        # Define bootstrap counts per mode
+        # Define bootstrap counts per mode, capped at 50
         bootstrap_counts = {
-            'full': 100,   # FULL mode: 100 bootstrap samples
+            'full': 50,    # FULL mode: 50 bootstrap samples (capped)
             'blank': 5,    # BLANK mode: 5 bootstrap samples
             'light': 2     # LIGHT mode: 2 bootstrap samples
         }
 
-        bootstrap_count = bootstrap_counts.get(mode, 5)  # Default to 5 if unknown mode
+        bootstrap_count = min(bootstrap_counts.get(mode, 5), 50)  # Cap at 50
 
-        _LOGGER.info(f"📊 Bootstrap count for mode '{mode}': {bootstrap_count}")
+        _LOGGER.info(f"📊 Bootstrap count for mode '{mode}': {bootstrap_count} (capped at 50)")
         return bootstrap_count
 
     def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:

@@ -281,7 +281,7 @@ class BaseFeatureSelectionFramework:
                 'random_state': 42
             },
             'elastic_net_stability': {
-                'n_bootstraps': 100,
+                'n_bootstraps': 50,  # Capped at 50
                 'bootstrap_fraction': 0.8,
                 'stability_threshold': 0.6,
                 'alpha_range': (0.001, 1.0),

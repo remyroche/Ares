@@ -244,8 +244,8 @@ class EnhancedHMMRegimeDetector:
             # Using Hurst exponent approximation for regime persistence
             optimal_window = 6  # 6h - good balance between stability and responsiveness
             
-            # Ensure it's within our 8h cap
-            optimal_window = min(optimal_window, 8)
+            # Ensure reasonable window size for regime detection
+            optimal_window = min(optimal_window, 20)  # Cap at 20h for regime detection
             
             self.logger.info(f"📊 Optimal window size determined: {optimal_window}h")
             return optimal_window
@@ -266,8 +266,8 @@ class EnhancedHMMRegimeDetector:
             # This ensures regime changes are detected promptly while maintaining stability
             optimal_frequency = max(2, window_size // 2)  # At least 2h, typically 1/2 of window
             
-            # Cap at 4h for responsiveness
-            optimal_frequency = min(optimal_frequency, 4)
+            # Cap at 10h for responsiveness
+            optimal_frequency = min(optimal_frequency, 10)
             
             self.logger.info(f"📊 Optimal update frequency determined: {optimal_frequency}h")
             return optimal_frequency

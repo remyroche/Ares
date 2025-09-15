@@ -62,7 +62,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             hmm_config = HMMRegimeConfig(
                 n_regimes=optimal_n_regimes,  # Statistically determined
                 detection_method=RegimeDetectionMethod.ENHANCED_HMM,
-                min_regime_duration=4,  # Minimum 4h per regime (capped at 8h max with 1h timeframe)
+                min_regime_duration=4,  # Minimum 4h per regime
                 transition_threshold=0.1,
                 convergence_tolerance=1e-6,
                 max_iterations=100,
@@ -171,11 +171,10 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             features = self._prepare_features_for_regime_selection(market_data)
             
             if features is None or len(features) < 50:
-                self.logger.warning("Insufficient data for regime selection, using default 3")
-                return 3
+                raise ValueError("Insufficient data for regime selection - need at least 50 samples")
             
-            # Test different numbers of regimes (2-8, capped at 8h max)
-            n_regimes_candidates = range(2, min(9, len(features) // 20))  # Cap at 8, ensure min 20 samples per regime
+            # Test different numbers of regimes (2-20)
+            n_regimes_candidates = range(2, min(21, len(features) // 20))  # Cap at 20, ensure min 20 samples per regime
             aic_scores = []
             bic_scores = []
             
@@ -191,8 +190,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     bic_scores.append(float('inf'))
             
             if not aic_scores or all(score == float('inf') for score in aic_scores):
-                self.logger.warning("All regime candidates failed, using default 3")
-                return 3
+                raise ValueError("All regime candidates failed - unable to determine optimal number of regimes")
             
             # Choose based on BIC (more conservative than AIC)
             optimal_n_regimes = n_regimes_candidates[np.argmin(bic_scores)]
@@ -202,7 +200,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             self.logger.error(f"Failed to determine optimal regimes: {e}")
-            return 3  # Fallback to default
+            raise  # Re-raise the exception instead of falling back
     
     def _prepare_features_for_regime_selection(self, data: pd.DataFrame) -> Optional[np.ndarray]:
         """Prepare features for regime selection analysis."""

@@ -19,7 +19,7 @@ from ..logger import system_logger
 
 # Import enhanced matrix operations
 try:
-    from ..ml_common.matrix_operations import (
+    from ..matrix_operations import (
         get_enhanced_matrix_operations,
         m1_matrix_correlation_analysis
     )

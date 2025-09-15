@@ -52,7 +52,7 @@ except ImportError as e:
 
 # Import vectorized processing core
 try:
-    from ..vectorized_processing_core import get_vectorized_processing_core
+    from .vectorized_core import get_vectorized_processing_core
     VECTORIZED_CORE_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Vectorized processing core not available: {e}")

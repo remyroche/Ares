@@ -58,7 +58,7 @@ except ImportError:
                     return None
 
 # Use standardized matrix operations from ml_common
-from src.utils.ml_common.matrix_operations import get_unified_matrix_operations
+from src.utils.matrix_operations import get_unified_matrix_operations
 
 # Import final feature selection step
 from .final_feature_selection_step import FinalFeatureSelectionStep, run_final_feature_selection_step

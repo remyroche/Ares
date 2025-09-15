@@ -154,6 +154,16 @@ try:
         optimize_batch_size,
         record_batch_performance,
         get_batch_optimization_stats,
+        
+        # Trading indicators
+        compute_trading_indicators,
+        compute_moving_averages,
+        compute_momentum_indicators,
+        compute_volatility_indicators,
+        compute_volume_indicators,
+        compute_trend_indicators,
+        compute_oscillator_indicators,
+        compute_pattern_indicators,
     )
     CONVENIENCE_FUNCTIONS_AVAILABLE = True
 except ImportError as e:
@@ -257,6 +267,20 @@ if CONVENIENCE_FUNCTIONS_AVAILABLE:
         "optimize_batch_size",
         "record_batch_performance",
         "get_batch_optimization_stats",
+    ])
+
+# Add trading indicators to __all__ if available
+if VECTORIZED_CORE_AVAILABLE:
+    __all__.extend([
+        # Trading indicators
+        "compute_trading_indicators",
+        "compute_moving_averages",
+        "compute_momentum_indicators",
+        "compute_volatility_indicators",
+        "compute_volume_indicators",
+        "compute_trend_indicators",
+        "compute_oscillator_indicators",
+        "compute_pattern_indicators",
     ])
 
 # Initialize default custom operations

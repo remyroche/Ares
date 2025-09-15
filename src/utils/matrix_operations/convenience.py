@@ -207,6 +207,103 @@ def get_batch_optimization_stats() -> Dict[str, Any]:
     """Get batch optimization statistics."""
     return _get_batch_optimization_stats()
 
+# Trading indicators convenience functions
+def compute_trading_indicators(data: 'pd.DataFrame', 
+                              config: Optional[Dict[str, Any]] = None) -> 'pd.DataFrame':
+    """Compute comprehensive trading indicators in vectorized fashion."""
+    core = get_vectorized_processing_core()
+    return core.compute_trading_indicators(data, config)
+
+def compute_moving_averages(data: 'pd.DataFrame', 
+                           sma_periods: List[int] = None,
+                           ema_periods: List[int] = None) -> 'pd.DataFrame':
+    """Compute moving averages with custom periods."""
+    if sma_periods is None:
+        sma_periods = [9, 21, 50, 200]
+    if ema_periods is None:
+        ema_periods = [12, 26, 50]
+    
+    config = {
+        'sma_periods': sma_periods,
+        'ema_periods': ema_periods
+    }
+    
+    core = get_vectorized_processing_core()
+    return core._compute_moving_averages(data, config)
+
+def compute_momentum_indicators(data: 'pd.DataFrame',
+                               rsi_period: int = 14,
+                               macd_fast: int = 12,
+                               macd_slow: int = 26,
+                               macd_signal: int = 9) -> 'pd.DataFrame':
+    """Compute momentum indicators with custom parameters."""
+    config = {
+        'rsi_period': rsi_period,
+        'macd_fast': macd_fast,
+        'macd_slow': macd_slow,
+        'macd_signal': macd_signal
+    }
+    
+    core = get_vectorized_processing_core()
+    return core._compute_momentum_indicators(data, config)
+
+def compute_volatility_indicators(data: 'pd.DataFrame',
+                                 bb_period: int = 20,
+                                 bb_std: float = 2.0,
+                                 atr_period: int = 14) -> 'pd.DataFrame':
+    """Compute volatility indicators with custom parameters."""
+    config = {
+        'bb_period': bb_period,
+        'bb_std': bb_std,
+        'atr_period': atr_period
+    }
+    
+    core = get_vectorized_processing_core()
+    return core._compute_volatility_indicators(data, config)
+
+def compute_volume_indicators(data: 'pd.DataFrame',
+                             volume_sma_period: int = 20,
+                             obv_smooth: int = 10) -> 'pd.DataFrame':
+    """Compute volume-based indicators with custom parameters."""
+    config = {
+        'volume_sma_period': volume_sma_period,
+        'obv_smooth': obv_smooth
+    }
+    
+    core = get_vectorized_processing_core()
+    return core._compute_volume_indicators(data, config)
+
+def compute_trend_indicators(data: 'pd.DataFrame',
+                            adx_period: int = 14) -> 'pd.DataFrame':
+    """Compute trend indicators with custom parameters."""
+    config = {
+        'adx_period': adx_period
+    }
+    
+    core = get_vectorized_processing_core()
+    return core._compute_trend_indicators(data, config)
+
+def compute_oscillator_indicators(data: 'pd.DataFrame',
+                                 stoch_k: int = 14,
+                                 stoch_d: int = 3,
+                                 williams_period: int = 14,
+                                 cci_period: int = 20) -> 'pd.DataFrame':
+    """Compute oscillator indicators with custom parameters."""
+    config = {
+        'stoch_k': stoch_k,
+        'stoch_d': stoch_d,
+        'williams_period': williams_period,
+        'cci_period': cci_period
+    }
+    
+    core = get_vectorized_processing_core()
+    return core._compute_oscillator_indicators(data, config)
+
+def compute_pattern_indicators(data: 'pd.DataFrame') -> 'pd.DataFrame':
+    """Compute pattern recognition indicators."""
+    core = get_vectorized_processing_core()
+    return core._compute_pattern_indicators(data, {})
+
 # Additional convenience functions for common operations
 def matrix_multiply(a: 'np.ndarray', b: 'np.ndarray', use_gpu: bool = True) -> 'np.ndarray':
     """Convenient matrix multiplication with GPU option."""

@@ -454,21 +454,6 @@ class EnhancedMLPipelineExample:
         
         return data
 
-    def get_pipeline_status(self) -> Dict[str, Any]:
-        """Get current pipeline status and monitoring data."""
-        try:
-            return {
-                'pipeline_id': self.pipeline_id,
-                'timestamp': datetime.now().isoformat(),
-                'error_summary': self.safeguards.get_error_summary(),
-                'training_summary': self.training_manager.get_training_summary(),
-                'validation_summary': self.model_validator.get_validation_summary(),
-                'interpretability_trends': self.interpretability_reporter.get_interpretability_trends(),
-                'hpo_monitoring': self.hpo_optimizer.get_monitoring_summary()
-            }
-        except Exception as e:
-            self.logger.error(f"❌ Failed to get pipeline status: {e}")
-            return {'error': str(e)}
 
 
 async def main():

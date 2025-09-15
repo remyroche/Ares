@@ -30,11 +30,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import time
 
-from ..common_operations import create_fallback_logger
-from src.utils.hardware.m1_optimizations import M1MemoryOptimizer
-from src.utils.parallel_processing_optimizer import ParallelProcessor
 from .parallel_processing import ParallelProcessingCoordinator
-from .memory_optimization import MemoryEfficientTraining
 
 # Enhanced dependency management with fast fail
 try:
@@ -78,12 +74,8 @@ class HyperparameterOptimization:
         _LOGGER.info("🚀 Initializing Enhanced HyperparameterOptimization...")
 
         # Configuration defaults
-        self.enable_gpu = self.config.get('enable_gpu', True)
         self.enable_parallel = self.config.get('enable_parallel', True)
         self.max_workers = self.config.get('max_workers', 4)
-        self.default_n_trials = self.config.get('default_n_trials', 50)
-        self.default_timeout = self.config.get('default_timeout', 300)
-        self.enable_pruning = self.config.get('enable_pruning', True)
 
         # Enhanced monitoring configuration
         self.enable_monitoring = self.config.get('enable_monitoring', True)
@@ -102,19 +94,12 @@ class HyperparameterOptimization:
             'performance_degradation_threshold': 0.1
         })
 
-        _LOGGER.info(f"⚙️ Configuration - GPU enabled: {self.enable_gpu}")
         _LOGGER.info(f"⚙️ Configuration - Parallel processing: {self.enable_parallel}")
         _LOGGER.info(f"⚙️ Configuration - Max workers: {self.max_workers}")
-        _LOGGER.info(f"⚙️ Configuration - Default trials: {self.default_n_trials}")
-        _LOGGER.info(f"⚙️ Configuration - Default timeout: {self.default_timeout}s")
-        _LOGGER.info(f"⚙️ Configuration - Pruning enabled: {self.enable_pruning}")
         _LOGGER.info(f"⚙️ Configuration - Monitoring enabled: {self.enable_monitoring}")
 
         # Initialize utilities
-        self.gpu_manager = M1MemoryOptimizer() if self.enable_gpu else None
-        self.parallel_processor = ParallelProcessor() if self.enable_parallel else None
         self.parallel_coordinator = ParallelProcessingCoordinator(self.config) if self.enable_parallel else None
-        self.memory_tools = MemoryEfficientTraining(self.config)
 
         # Enhanced optimization tracking
         self.optimization_history = []

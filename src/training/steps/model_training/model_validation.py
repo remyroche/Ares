@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 from pathlib import Path
 from datetime import datetime
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from sklearn.model_selection import cross_val_score
 from collections import defaultdict
 import traceback
 

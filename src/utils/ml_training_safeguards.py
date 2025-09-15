@@ -1106,16 +1106,6 @@ class SmartFastFailHandler:
             'fast_fail_engaged': self.fast_fail_engaged
         }
 
-    def get_failure_summary(self) -> Dict[str, Any]:
-        """Get a summary of all failures."""
-        return {
-            'total_failures': self.failure_count,
-            'critical_failures': self.critical_failure_count,
-            'recoverable_failures': self.recoverable_failure_count,
-            'fast_fail_engaged': self.fast_fail_engaged,
-            'failure_types': [f['error_type'] for f in self.failures[-10:]],  # Last 10 failures
-            'recent_failures': self.failures[-5:]  # Last 5 failure details
-        }
 
 
 # Convenience functions for easy access

@@ -39,7 +39,6 @@ class TrainingManager:
         self.is_initialized = False
         self.current_execution = None
         self.execution_start_time = None
-        self.execution_metrics = {}
         
         self.logger.info("🔍 Enhanced Training Manager initialized with monitoring capabilities")
 

@@ -13,6 +13,7 @@ Components:
 - quality_metrics: Feature selection quality assessment
 - temporal_analysis: Time-based feature analysis
 - causal_analysis: Causal inference and filtering
+- partial_information_decompositor: PID-based feature engineering and interaction analysis
 - main_framework: Main orchestrator that combines all components
 
 Usage:
@@ -44,6 +45,11 @@ from .performance_monitoring import PerformanceMonitor
 from .quality_metrics import QualityMetricsCalculator
 from .temporal_analysis import TemporalAnalyzer
 from .causal_analysis import CausalAnalyzer
+from .partial_information_decompositor import (
+    PartialInformationDecompositor,
+    PIDConfig,
+    PIDResult
+)
 
 __all__ = [
     'FeatureSelectionFramework',
@@ -62,7 +68,10 @@ __all__ = [
     'PerformanceMonitor',
     'QualityMetricsCalculator',
     'TemporalAnalyzer',
-    'CausalAnalyzer'
+    'CausalAnalyzer',
+    'PartialInformationDecompositor',
+    'PIDConfig',
+    'PIDResult'
 ]
 
 __version__ = "2.0.0"

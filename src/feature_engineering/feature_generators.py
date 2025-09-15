@@ -91,7 +91,7 @@ class FeatureGenerators:
 
         # Vectorized processing components
         try:
-            from src.utils.ml_common.matrix_operations import get_unified_matrix_operations
+            from src.utils.matrix_operations import get_unified_matrix_operations
             self.matrix_ops = get_unified_matrix_operations()
             self.vectorized_available = True
             self.logger.info("✅ Matrix operations available for vectorization")

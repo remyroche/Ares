@@ -37,7 +37,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 # Import M1 optimization utilities
 try:
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-    from src.utils.ml_common.matrix_operations import get_unified_matrix_operations, M1EnhancedMatrixOperations
+    from src.utils.matrix_operations import get_unified_matrix_operations, M1EnhancedMatrixOperations
     from src.utils.hardware.memory_optimization import get_memory_manager, MemoryMonitor
     M1_OPTIMIZATIONS_AVAILABLE = True
 except ImportError as e:

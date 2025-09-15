@@ -18,7 +18,7 @@ from src.utils.data.processing.data_processing import DataProcessor
 
 # Import unified matrix operations for optimized calculations
 try:
-    from src.utils.ml_common.matrix_operations import get_unified_matrix_operations
+    from src.utils.matrix_operations import get_unified_matrix_operations
     MATRIX_OPERATIONS_AVAILABLE = True
 except ImportError:
     MATRIX_OPERATIONS_AVAILABLE = False

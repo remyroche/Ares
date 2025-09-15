@@ -25,7 +25,7 @@ from .sr_backtesting_engine import SRBacktestingEngine, BacktestResult, SRLevel
 # Import M1 optimization utilities
 try:
     from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-    from ..ml_common.matrix_operations import get_unified_matrix_operations, M1EnhancedMatrixOperations
+    from ..matrix_operations import get_unified_matrix_operations, M1EnhancedMatrixOperations
     from ..hardware.memory_optimization import get_memory_manager, MemoryMonitor
     M1_OPTIMIZATIONS_AVAILABLE = True
 except ImportError as e:

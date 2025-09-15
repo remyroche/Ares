@@ -33,7 +33,7 @@ import seaborn as sns
 
 # Import system utilities
 from ..logger import get_logger
-from ..ml_common.matrix_operations import get_unified_matrix_operations
+from ..matrix_operations import get_unified_matrix_operations
 
 # Import existing advanced feature selection tools
 try:

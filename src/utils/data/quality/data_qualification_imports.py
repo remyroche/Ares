@@ -186,7 +186,7 @@ class DataQualificationImportManager:
             
             # Matrix Operations
             try:
-                from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
+                from src.utils.matrix_operations import EnhancedMatrixOperations
                 ml_commons['matrix_operations'] = EnhancedMatrixOperations
                 self.logger.debug("✅ EnhancedMatrixOperations imported")
             except ImportError as e:

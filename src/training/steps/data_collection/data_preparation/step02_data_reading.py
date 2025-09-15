@@ -27,7 +27,7 @@ from src.utils.logger import system_logger
 
 # Import optimization utilities for enhanced performance
 try:
-    from src.utils.vectorized_processing_core import get_vectorized_processing_core
+    from src.utils.matrix_operations import get_vectorized_processing_core
     from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
     import logging

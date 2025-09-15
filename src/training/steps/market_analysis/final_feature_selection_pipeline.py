@@ -30,7 +30,7 @@ except ImportError:
 
 # Import system utilities
 from src.utils.logger import get_logger
-from src.utils.ml_common.matrix_operations import get_unified_matrix_operations
+from src.utils.matrix_operations import get_unified_matrix_operations
 
 @dataclass
 class FeatureSelectionConfig:

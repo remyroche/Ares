@@ -15,12 +15,12 @@ from src.utils.logger import system_logger
 logger = system_logger.getChild('Step03HMMRegimeDiscovery')
 
 # Import optimization utilities
-from src.utils.vectorized_processing_core import get_vectorized_processing_core
+from src.utils.matrix_operations import get_vectorized_processing_core
 from src.utils.optimized_data_manager import get_optimized_data_manager
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
+from src.utils.matrix_operations import EnhancedMatrixOperations
 from src.utils.enhanced_step_optimizations import (
     get_step_optimization_manager,
     create_optimization_profile,

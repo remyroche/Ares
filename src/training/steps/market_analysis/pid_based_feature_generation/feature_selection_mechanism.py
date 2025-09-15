@@ -266,19 +266,52 @@ class FeatureSelectionMechanism:
             return result
     
     def _select_interaction_features_from_pid(self, pid_result: PIDResult) -> List[Tuple[str, str]]:
-        """Select interaction features based on synergy scores."""
+        """
+        Select interaction features based on synergy scores.
+        
+        Selection Process:
+        1. Sort all feature pairs by synergy score (highest first)
+        2. Apply minimum synergy threshold filter
+        3. Select top N features up to max_interaction_features limit
+        4. If more than limit, select the highest-scoring features
+        
+        Returns:
+            List of selected feature pairs, ranked by synergy score
+        """
         try:
-            # Sort synergy scores and select top features
+            # Step 1: Sort synergy scores in descending order (highest synergy first)
             synergy_items = sorted(pid_result.synergy.items(), key=lambda x: x[1], reverse=True)
             
+            self.logger.info(f"📊 Analyzing {len(synergy_items)} feature pairs for interaction selection")
+            
+            # Step 2: Apply threshold and select top features
             selected_features = []
+            rejected_count = 0
+            
             for (feat1, feat2), synergy_score in synergy_items:
+                # Apply minimum synergy threshold
                 if synergy_score > self.config.min_synergy_score:
                     selected_features.append((feat1, feat2))
+                    
+                    # Stop when we reach the limit
                     if len(selected_features) >= self.config.max_interaction_features:
+                        self.logger.info(f"📊 Reached interaction feature limit ({self.config.max_interaction_features})")
                         break
+                else:
+                    rejected_count += 1
             
-            self.logger.info(f"📊 Selected {len(selected_features)} interaction features based on synergy")
+            # Log selection statistics
+            total_analyzed = len(synergy_items)
+            selected_count = len(selected_features)
+            self.logger.info(f"📊 Interaction feature selection complete:")
+            self.logger.info(f"   • Total pairs analyzed: {total_analyzed}")
+            self.logger.info(f"   • Selected (synergy > {self.config.min_synergy_score}): {selected_count}")
+            self.logger.info(f"   • Rejected (synergy ≤ {self.config.min_synergy_score}): {rejected_count}")
+            
+            if selected_count > 0:
+                top_synergy = synergy_items[0][1] if synergy_items else 0
+                self.logger.info(f"   • Highest synergy score: {top_synergy:.4f}")
+            
             return selected_features
             
         except Exception as e:
@@ -286,19 +319,52 @@ class FeatureSelectionMechanism:
             return []
     
     def _select_polynomial_features_from_pid(self, pid_result: PIDResult, feature_names: List[str]) -> List[str]:
-        """Select polynomial features based on unique information scores."""
+        """
+        Select polynomial features based on unique information scores.
+        
+        Selection Process:
+        1. Sort all features by unique information score (highest first)
+        2. Apply minimum unique information threshold filter
+        3. Select top N features up to max_polynomial_features limit
+        4. If more than limit, select the highest-scoring features
+        
+        Returns:
+            List of selected features, ranked by unique information score
+        """
         try:
-            # Sort unique information scores and select top features
+            # Step 1: Sort unique information scores in descending order (highest unique info first)
             unique_info_items = sorted(pid_result.unique_info.items(), key=lambda x: x[1], reverse=True)
             
+            self.logger.info(f"📊 Analyzing {len(unique_info_items)} features for polynomial selection")
+            
+            # Step 2: Apply threshold and select top features
             selected_features = []
+            rejected_count = 0
+            
             for feature, unique_score in unique_info_items:
+                # Apply minimum unique information threshold
                 if unique_score > self.config.min_unique_info_score:
                     selected_features.append(feature)
+                    
+                    # Stop when we reach the limit
                     if len(selected_features) >= self.config.max_polynomial_features:
+                        self.logger.info(f"📊 Reached polynomial feature limit ({self.config.max_polynomial_features})")
                         break
+                else:
+                    rejected_count += 1
             
-            self.logger.info(f"📊 Selected {len(selected_features)} polynomial features based on unique information")
+            # Log selection statistics
+            total_analyzed = len(unique_info_items)
+            selected_count = len(selected_features)
+            self.logger.info(f"📊 Polynomial feature selection complete:")
+            self.logger.info(f"   • Total features analyzed: {total_analyzed}")
+            self.logger.info(f"   • Selected (unique info > {self.config.min_unique_info_score}): {selected_count}")
+            self.logger.info(f"   • Rejected (unique info ≤ {self.config.min_unique_info_score}): {rejected_count}")
+            
+            if selected_count > 0:
+                top_unique_info = unique_info_items[0][1] if unique_info_items else 0
+                self.logger.info(f"   • Highest unique information score: {top_unique_info:.4f}")
+            
             return selected_features
             
         except Exception as e:
@@ -306,30 +372,70 @@ class FeatureSelectionMechanism:
             return []
     
     def _select_cross_timeframe_features_from_pid(self, pid_result: PIDResult, feature_names: List[str]) -> List[Tuple[str, str]]:
-        """Select cross-timeframe features based on cross-timeframe analysis."""
+        """
+        Select cross-timeframe features based on cross-timeframe analysis.
+        
+        Selection Process:
+        1. Identify features from different timeframes (1m, 5m, 15m, 30m, 1h, 4h, 1d)
+        2. Filter synergy scores for timeframe features only
+        3. Sort by synergy score (highest first)
+        4. Apply minimum synergy threshold filter
+        5. Select top N cross-timeframe pairs up to max_cross_timeframe_features limit
+        6. If more than limit, select the highest-scoring cross-timeframe pairs
+        
+        Returns:
+            List of selected cross-timeframe feature pairs, ranked by synergy score
+        """
         try:
-            # Identify timeframe features
+            # Step 1: Identify timeframe features
             timeframe_features = self._identify_timeframe_features(feature_names)
+            self.logger.info(f"📊 Identified {len(timeframe_features)} timeframe features")
             
-            # Filter synergy scores for timeframe features only
+            # Step 2: Filter synergy scores for timeframe features only
             timeframe_synergy = {
                 (feat1, feat2): score for (feat1, feat2), score in pid_result.synergy.items()
                 if feat1 in timeframe_features and feat2 in timeframe_features
             }
             
-            # Sort by synergy score and select top cross-timeframe features
+            self.logger.info(f"📊 Found {len(timeframe_synergy)} timeframe feature pairs")
+            
+            # Step 3: Sort by synergy score in descending order (highest synergy first)
             synergy_items = sorted(timeframe_synergy.items(), key=lambda x: x[1], reverse=True)
             
+            # Step 4: Apply threshold and select top cross-timeframe features
             selected_features = []
+            rejected_count = 0
+            same_timeframe_count = 0
+            
             for (feat1, feat2), synergy_score in synergy_items:
+                # Apply minimum synergy threshold
                 if synergy_score > self.config.min_synergy_score:
                     # Check if features are from different timeframes
                     if self._are_different_timeframes(feat1, feat2):
                         selected_features.append((feat1, feat2))
+                        
+                        # Stop when we reach the limit
                         if len(selected_features) >= self.config.max_cross_timeframe_features:
+                            self.logger.info(f"📊 Reached cross-timeframe feature limit ({self.config.max_cross_timeframe_features})")
                             break
+                    else:
+                        same_timeframe_count += 1
+                else:
+                    rejected_count += 1
             
-            self.logger.info(f"📊 Selected {len(selected_features)} cross-timeframe features based on synergy")
+            # Log selection statistics
+            total_analyzed = len(synergy_items)
+            selected_count = len(selected_features)
+            self.logger.info(f"📊 Cross-timeframe feature selection complete:")
+            self.logger.info(f"   • Total timeframe pairs analyzed: {total_analyzed}")
+            self.logger.info(f"   • Selected cross-timeframe (synergy > {self.config.min_synergy_score}): {selected_count}")
+            self.logger.info(f"   • Same timeframe pairs: {same_timeframe_count}")
+            self.logger.info(f"   • Rejected (synergy ≤ {self.config.min_synergy_score}): {rejected_count}")
+            
+            if selected_count > 0:
+                top_synergy = synergy_items[0][1] if synergy_items else 0
+                self.logger.info(f"   • Highest cross-timeframe synergy score: {top_synergy:.4f}")
+            
             return selected_features
             
         except Exception as e:
@@ -529,4 +635,64 @@ class FeatureSelectionMechanism:
             'matrix_ops_available': MATRIX_OPS_AVAILABLE,
             'numpy_available': NUMPY_AVAILABLE,
             'selection_strategy': self.config.selection_strategy.value
+        }
+    
+    def get_selection_statistics(self, result: FeatureSelectionResult) -> Dict[str, Any]:
+        """
+        Get detailed statistics about the feature selection process.
+        
+        Returns:
+            Dictionary with comprehensive selection statistics
+        """
+        return {
+            'selection_summary': {
+                'total_features_analyzed': result.total_features_analyzed,
+                'interaction_features_selected': len(result.interaction_features),
+                'polynomial_features_selected': len(result.polynomial_features),
+                'cross_timeframe_features_selected': len(result.cross_timeframe_features),
+                'total_features_selected': (
+                    len(result.interaction_features) + 
+                    len(result.polynomial_features) + 
+                    len(result.cross_timeframe_features)
+                )
+            },
+            'selection_limits': {
+                'max_interaction_features': self.config.max_interaction_features,
+                'max_polynomial_features': self.config.max_polynomial_features,
+                'max_cross_timeframe_features': self.config.max_cross_timeframe_features,
+                'total_max_features': (
+                    self.config.max_interaction_features + 
+                    self.config.max_polynomial_features + 
+                    self.config.max_cross_timeframe_features
+                )
+            },
+            'selection_thresholds': {
+                'min_synergy_score': self.config.min_synergy_score,
+                'min_unique_info_score': self.config.min_unique_info_score,
+                'max_redundancy_score': self.config.max_redundancy_score
+            },
+            'quality_metrics': {
+                'average_synergy_score': result.average_synergy_score,
+                'average_unique_info_score': result.average_unique_info_score,
+                'average_redundancy_score': result.average_redundancy_score
+            },
+            'selection_efficiency': {
+                'interaction_selection_rate': len(result.interaction_features) / self.config.max_interaction_features,
+                'polynomial_selection_rate': len(result.polynomial_features) / self.config.max_polynomial_features,
+                'cross_timeframe_selection_rate': len(result.cross_timeframe_features) / self.config.max_cross_timeframe_features,
+                'overall_selection_rate': (
+                    len(result.interaction_features) + 
+                    len(result.polynomial_features) + 
+                    len(result.cross_timeframe_features)
+                ) / (
+                    self.config.max_interaction_features + 
+                    self.config.max_polynomial_features + 
+                    self.config.max_cross_timeframe_features
+                )
+            },
+            'execution_info': {
+                'selection_time': result.selection_time,
+                'selection_strategy': result.selection_strategy.value,
+                'pid_analysis_used': result.pid_result is not None
+            }
         }

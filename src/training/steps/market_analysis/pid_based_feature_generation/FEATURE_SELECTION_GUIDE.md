@@ -20,6 +20,52 @@ pid_result = self.pid_decompositor.decompose_information(X, target, feature_name
 - **Redundancy**: Information that is duplicated across features  
 - **Unique Information**: Information that is unique to each feature
 
+### 2. **Feature Selection Limits and Ranking**
+
+**When we have more features than the limits (100/50/50), the system uses intelligent ranking:**
+
+#### **Selection Process for Each Feature Type:**
+
+1. **Sort by Score**: All features are sorted by their relevance score (synergy/unique info)
+2. **Apply Threshold**: Only features above minimum threshold are considered
+3. **Select Top N**: Take the highest-scoring features up to the limit
+4. **Log Statistics**: Detailed logging shows selection efficiency
+
+#### **Example: Interaction Features (Limit: 100)**
+```
+📊 Analyzing 1,000 feature pairs for interaction selection
+📊 Interaction feature selection complete:
+   • Total pairs analyzed: 1,000
+   • Selected (synergy > 0.05): 100
+   • Rejected (synergy ≤ 0.05): 900
+   • Highest synergy score: 0.2341
+📊 Reached interaction feature limit (100)
+```
+
+#### **Example: Polynomial Features (Limit: 50)**
+```
+📊 Analyzing 500 features for polynomial selection
+📊 Polynomial feature selection complete:
+   • Total features analyzed: 500
+   • Selected (unique info > 0.02): 50
+   • Rejected (unique info ≤ 0.02): 450
+   • Highest unique information score: 0.1876
+📊 Reached polynomial feature limit (50)
+```
+
+#### **Example: Cross-Timeframe Features (Limit: 50)**
+```
+📊 Identified 200 timeframe features
+📊 Found 400 timeframe feature pairs
+📊 Cross-timeframe feature selection complete:
+   • Total timeframe pairs analyzed: 400
+   • Selected cross-timeframe (synergy > 0.05): 50
+   • Same timeframe pairs: 150
+   • Rejected (synergy ≤ 0.05): 200
+   • Highest cross-timeframe synergy score: 0.1987
+📊 Reached cross-timeframe feature limit (50)
+```
+
 ### 2. **Selection Criteria**
 
 #### **Interaction Features (Up to 100)**
@@ -132,16 +178,53 @@ The system supports different selection strategies:
 - Fallback strategy using correlation analysis
 - Used when PID analysis is not available
 
-## Quality Metrics
+## Quality Metrics and Selection Statistics
 
-The system provides quality metrics for selected features:
+The system provides comprehensive quality metrics and selection statistics:
 
+### **Basic Quality Metrics**
 ```python
 result.average_synergy_score        # Average synergy of selected features
 result.average_unique_info_score    # Average unique information
 result.average_redundancy_score     # Average redundancy
 result.selection_time               # Time taken for selection
 ```
+
+### **Detailed Selection Statistics**
+```python
+# Get comprehensive selection statistics
+stats = feature_selection.get_selection_statistics(result)
+
+# Selection summary
+stats['selection_summary'] = {
+    'total_features_analyzed': 1000,
+    'interaction_features_selected': 100,
+    'polynomial_features_selected': 50,
+    'cross_timeframe_features_selected': 50,
+    'total_features_selected': 200
+}
+
+# Selection efficiency
+stats['selection_efficiency'] = {
+    'interaction_selection_rate': 1.0,      # 100/100 = 100%
+    'polynomial_selection_rate': 1.0,       # 50/50 = 100%
+    'cross_timeframe_selection_rate': 1.0,  # 50/50 = 100%
+    'overall_selection_rate': 1.0           # 200/200 = 100%
+}
+
+# Quality metrics
+stats['quality_metrics'] = {
+    'average_synergy_score': 0.1234,
+    'average_unique_info_score': 0.0567,
+    'average_redundancy_score': 0.0890
+}
+```
+
+### **Selection Efficiency Interpretation**
+
+- **Selection Rate = 1.0 (100%)**: All available slots filled with high-quality features
+- **Selection Rate = 0.5 (50%)**: Only half the slots filled, indicating strict quality thresholds
+- **Selection Rate = 0.0 (0%)**: No features met quality thresholds, may need threshold adjustment
 
 ## Integration with Optimized Lookback Periods
 

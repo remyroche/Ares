@@ -109,10 +109,10 @@ async def test_market_analysis_pipeline():
         result1 = await pipeline.execute_sub_pipeline('feature_lookback_optimization', config)
         logger.info(f"✅ Feature lookback optimization: {result1.status.value}")
         
-        # Test cross timeframe analysis
-        logger.info("⏰ Testing cross_timeframe_analysis...")
-        result2 = await pipeline.execute_sub_pipeline('cross_timeframe_analysis', config)
-        logger.info(f"✅ Cross timeframe analysis: {result2.status.value}")
+        # Test PID-based feature generation (formerly cross_timeframe_analysis)
+        logger.info("🔧 Testing pid_based_feature_generation...")
+        result2 = await pipeline.execute_sub_pipeline('pid_based_feature_generation', config)
+        logger.info(f"✅ PID-based feature generation: {result2.status.value}")
         
         # Test temporal feature integration
         logger.info("🔄 Testing temporal_feature_integration...")
@@ -279,7 +279,7 @@ async def test_pipeline_sequence():
         # Create pipeline
         pipeline = MarketAnalysisSubPipeline(config)
         
-        # Test the sequence: feature_lookback_optimization -> cross_timeframe_analysis -> temporal_feature_integration
+        # Test the sequence: feature_lookback_optimization -> pid_based_feature_generation -> temporal_feature_integration
         logger.info("🔄 Testing pipeline sequence...")
         
         # Start with feature lookback optimization

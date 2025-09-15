@@ -40,7 +40,7 @@ The system uses a **multi-step ranking process** to handle cases where we have m
 
 #### **Selection Efficiency Metrics:**
 
-The system provides detailed efficiency metrics:
+The system provides detailed efficiency metrics with **dynamic threshold adjustment**:
 
 ```python
 stats = feature_selection.get_selection_statistics(result)
@@ -52,13 +52,53 @@ stats['selection_efficiency'] = {
     'cross_timeframe_selection_rate': 0.8,  # 40/50 = 80% (most slots filled)
     'overall_selection_rate': 0.85          # 170/200 = 85% (overall efficiency)
 }
+
+# Dynamic threshold adjustments
+stats['dynamic_threshold_adjustments'] = {
+    'dynamic_adjustment': True,
+    'adjustments_made': {
+        'min_synergy_score': {
+            'old': 0.05,
+            'new': 0.06,  # Increased by 20% due to higher quality features
+            'improvement': 0.0234
+        },
+        'min_unique_info_score': {
+            'old': 0.02,
+            'new': 0.024,  # Increased by 20% due to higher quality features
+            'improvement': 0.0156
+        }
+    },
+    'quality_improvements': {
+        'synergy_improvement': 0.0234,
+        'unique_info_improvement': 0.0156,
+        'redundancy_improvement': 0.0089
+    }
+}
+```
+
+#### **Dynamic Threshold Adjustment Process:**
+
+**When new features have higher quality than the 150th pre-processing feature:**
+
+1. **Quality Assessment**: Compare new feature quality to reference feature (rank 150)
+2. **Improvement Calculation**: Calculate quality improvements (synergy, unique info, redundancy)
+3. **Threshold Adjustment**: Increase quality thresholds by up to 20% if improvements > 1%
+4. **Adaptive Selection**: Use higher thresholds for future selections
+
+**Example Dynamic Adjustment:**
+```
+🔧 Dynamic threshold adjustments applied:
+   • min_synergy_score: 0.0500 → 0.0600 (improvement: 0.0234)
+   • min_unique_info_score: 0.0200 → 0.0240 (improvement: 0.0156)
+   • max_redundancy_score: 0.8000 → 0.6667 (improvement: 0.0089)
 ```
 
 #### **Quality vs Quantity Trade-off:**
 
 - **High Selection Rate (100%)**: All slots filled with high-quality features
 - **Medium Selection Rate (50-80%)**: Quality thresholds ensure only best features selected
-- **Low Selection Rate (<50%)**: Very strict quality requirements, may need threshold adjustment
+- **Low Selection Rate (<50%)**: Very strict quality requirements, **dynamic adjustment will increase thresholds**
+- **Dynamic Adjustment**: Automatically increases thresholds when new features exceed reference quality
 
 ---
 
@@ -76,9 +116,44 @@ from src.training.steps.market_analysis.components.cross_timeframe_analysis impo
 
 # ✅ NEW imports available (recommended)
 from src.training.steps.market_analysis.pid_based_feature_generation import (
+    # Main orchestrator
+    PIDBasedFeatureOrchestrator,
+    OrchestratorConfig,
+    OrchestratorResult,
+    GenerationStatus,
+    
+    # Feature generators
+    InteractionFeatureGenerator,
+    InteractionConfig,
+    InteractionResult,
+    PolynomialFeatureGenerator,
+    PolynomialConfig,
+    PolynomialResult,
+    CrossTimeframeFeatureGenerator,
+    CrossTimeframeConfig,
+    CrossTimeframeResult,
+    
+    # Feature selection mechanism
+    FeatureSelectionMechanism,
+    FeatureSelectionConfig,
+    FeatureSelectionResult,
+    SelectionStrategy,
+    
+    # Lookback integration
+    OptimizedLookbackIntegration,
+    LookbackIntegrationResult,
+    IntegrationStatus,
+    
+    # Main component
+    PIDBasedFeatureGenerationComponent
+)
+
+# ✅ Alternative: Import from main market_analysis module
+from src.training.steps.market_analysis import (
     PIDBasedFeatureOrchestrator,
     FeatureSelectionMechanism,
-    OptimizedLookbackIntegration
+    OptimizedLookbackIntegration,
+    SelectionStrategy
 )
 ```
 

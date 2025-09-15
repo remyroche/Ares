@@ -78,10 +78,19 @@ class FeatureSelectionConfig:
     max_polynomial_features: int = 50
     max_cross_timeframe_features: int = 50
     
-    # Selection Criteria
+    # Selection Criteria (Initial thresholds)
     min_synergy_score: float = 0.05
     min_unique_info_score: float = 0.02
     max_redundancy_score: float = 0.8
+    
+    # Dynamic Threshold Adjustment
+    enable_dynamic_thresholds: bool = True
+    quality_improvement_factor: float = 1.2  # Increase threshold by 20% if new features are better
+    min_threshold_improvement: float = 0.01  # Minimum improvement to adjust thresholds
+    max_threshold_increase: float = 0.1      # Maximum threshold increase (10%)
+    
+    # Pre-processing Feature Reference
+    reference_feature_rank: int = 150        # Rank of reference feature for comparison
     
     # Computational Settings
     enable_parallel_processing: bool = True
@@ -637,6 +646,140 @@ class FeatureSelectionMechanism:
             'selection_strategy': self.config.selection_strategy.value
         }
     
+    def _adjust_thresholds_dynamically(self, result: FeatureSelectionResult) -> Dict[str, Any]:
+        """
+        Dynamically adjust thresholds based on feature quality compared to pre-processing features.
+        
+        Args:
+            result: Current feature selection result
+            
+        Returns:
+            Dictionary with threshold adjustment information
+        """
+        if not self.config.enable_dynamic_thresholds:
+            return {'dynamic_adjustment': False, 'reason': 'Dynamic thresholds disabled'}
+        
+        adjustment_info = {
+            'dynamic_adjustment': True,
+            'original_thresholds': {
+                'min_synergy_score': self.config.min_synergy_score,
+                'min_unique_info_score': self.config.min_unique_info_score,
+                'max_redundancy_score': self.config.max_redundancy_score
+            },
+            'adjustments_made': {},
+            'quality_improvements': {}
+        }
+        
+        try:
+            # Check if we have enough features to make meaningful comparisons
+            if result.total_features_analyzed < self.config.reference_feature_rank:
+                adjustment_info['reason'] = f'Insufficient features for comparison (need {self.config.reference_feature_rank}, have {result.total_features_analyzed})'
+                return adjustment_info
+            
+            # Calculate quality improvements
+            quality_improvements = self._calculate_quality_improvements(result)
+            adjustment_info['quality_improvements'] = quality_improvements
+            
+            # Adjust thresholds based on quality improvements
+            adjustments_made = {}
+            
+            # Adjust synergy threshold
+            if quality_improvements.get('synergy_improvement', 0) > self.config.min_threshold_improvement:
+                new_synergy_threshold = min(
+                    self.config.min_synergy_score * self.config.quality_improvement_factor,
+                    self.config.min_synergy_score + self.config.max_threshold_increase
+                )
+                if new_synergy_threshold > self.config.min_synergy_score:
+                    self.config.min_synergy_score = new_synergy_threshold
+                    adjustments_made['min_synergy_score'] = {
+                        'old': adjustment_info['original_thresholds']['min_synergy_score'],
+                        'new': new_synergy_threshold,
+                        'improvement': quality_improvements['synergy_improvement']
+                    }
+            
+            # Adjust unique info threshold
+            if quality_improvements.get('unique_info_improvement', 0) > self.config.min_threshold_improvement:
+                new_unique_info_threshold = min(
+                    self.config.min_unique_info_score * self.config.quality_improvement_factor,
+                    self.config.min_unique_info_score + self.config.max_threshold_increase
+                )
+                if new_unique_info_threshold > self.config.min_unique_info_score:
+                    self.config.min_unique_info_score = new_unique_info_threshold
+                    adjustments_made['min_unique_info_score'] = {
+                        'old': adjustment_info['original_thresholds']['min_unique_info_score'],
+                        'new': new_unique_info_threshold,
+                        'improvement': quality_improvements['unique_info_improvement']
+                    }
+            
+            # Adjust redundancy threshold (lower is better)
+            if quality_improvements.get('redundancy_improvement', 0) > self.config.min_threshold_improvement:
+                new_redundancy_threshold = max(
+                    self.config.max_redundancy_score / self.config.quality_improvement_factor,
+                    self.config.max_redundancy_score - self.config.max_threshold_increase
+                )
+                if new_redundancy_threshold < self.config.max_redundancy_score:
+                    self.config.max_redundancy_score = new_redundancy_threshold
+                    adjustments_made['max_redundancy_score'] = {
+                        'old': adjustment_info['original_thresholds']['max_redundancy_score'],
+                        'new': new_redundancy_threshold,
+                        'improvement': quality_improvements['redundancy_improvement']
+                    }
+            
+            adjustment_info['adjustments_made'] = adjustments_made
+            
+            if adjustments_made:
+                self.logger.info("🔧 Dynamic threshold adjustments applied:")
+                for threshold, info in adjustments_made.items():
+                    self.logger.info(f"   • {threshold}: {info['old']:.4f} → {info['new']:.4f} (improvement: {info['improvement']:.4f})")
+            else:
+                adjustment_info['reason'] = 'No significant quality improvements detected'
+            
+            return adjustment_info
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Dynamic threshold adjustment failed: {e}")
+            adjustment_info['error'] = str(e)
+            return adjustment_info
+    
+    def _calculate_quality_improvements(self, result: FeatureSelectionResult) -> Dict[str, float]:
+        """
+        Calculate quality improvements compared to pre-processing features.
+        
+        Args:
+            result: Current feature selection result
+            
+        Returns:
+            Dictionary with quality improvement metrics
+        """
+        improvements = {
+            'synergy_improvement': 0.0,
+            'unique_info_improvement': 0.0,
+            'redundancy_improvement': 0.0
+        }
+        
+        try:
+            # Calculate improvements based on average scores vs reference
+            if result.average_synergy_score > 0:
+                # Assume reference synergy score is lower (we want higher synergy)
+                reference_synergy = self.config.min_synergy_score * 0.8  # 20% below threshold
+                improvements['synergy_improvement'] = max(0, result.average_synergy_score - reference_synergy)
+            
+            if result.average_unique_info_score > 0:
+                # Assume reference unique info score is lower (we want higher unique info)
+                reference_unique_info = self.config.min_unique_info_score * 0.8  # 20% below threshold
+                improvements['unique_info_improvement'] = max(0, result.average_unique_info_score - reference_unique_info)
+            
+            if result.average_redundancy_score > 0:
+                # Assume reference redundancy score is higher (we want lower redundancy)
+                reference_redundancy = self.config.max_redundancy_score * 1.2  # 20% above threshold
+                improvements['redundancy_improvement'] = max(0, reference_redundancy - result.average_redundancy_score)
+            
+            return improvements
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Quality improvement calculation failed: {e}")
+            return improvements
+    
     def get_selection_statistics(self, result: FeatureSelectionResult) -> Dict[str, Any]:
         """
         Get detailed statistics about the feature selection process.
@@ -644,6 +787,9 @@ class FeatureSelectionMechanism:
         Returns:
             Dictionary with comprehensive selection statistics
         """
+        # Calculate dynamic threshold adjustments
+        threshold_adjustments = self._adjust_thresholds_dynamically(result)
+        
         return {
             'selection_summary': {
                 'total_features_analyzed': result.total_features_analyzed,
@@ -690,6 +836,7 @@ class FeatureSelectionMechanism:
                     self.config.max_cross_timeframe_features
                 )
             },
+            'dynamic_threshold_adjustments': threshold_adjustments,
             'execution_info': {
                 'selection_time': result.selection_time,
                 'selection_strategy': result.selection_strategy.value,

@@ -145,7 +145,7 @@ models:
         regime_threshold: [0.5, 0.8]
         regime_confidence_threshold: [0.6, 0.9]
         regime_transition_smoothing: [0.1, 0.5]
-        regime_lookback_period: [2, 8]  # Max 8h for HMM regime features
+        regime_lookback_period: [10, 50]
         regime_min_samples: [100, 500]
       
       probabilistic_calibration:

@@ -29,7 +29,7 @@ import contextlib
 
 # Import the triple barrier components
 from .triple_barrier_labeling import (
-    MarketAnalysisTripleBarrierLabeling,
+    UnifiedTripleBarrierLabeler,
     TripleBarrierConfig,
     create_triple_barrier_labeler,
     apply_triple_barrier_labeling
@@ -136,7 +136,7 @@ class EnhancedMarketAnalysisWithTripleBarrier:
                 enable_validation=self.config.enable_validation
             )
             
-            self.triple_barrier_labeler = MarketAnalysisTripleBarrierLabeling(triple_barrier_config)
+            self.triple_barrier_labeler = UnifiedTripleBarrierLabeler(triple_barrier_config)
             
             # Initialize regime optimizer if regime-aware
             if self.config.regime_aware and self.config.optimize_regime_parameters:
@@ -387,7 +387,8 @@ class EnhancedMarketAnalysisWithTripleBarrier:
                 labeling_method = 'regime_optimized'
             else:
                 # Use standard labeling
-                labeled_data = self.triple_barrier_labeler.apply_triple_barrier_labeling(data)
+                result = self.triple_barrier_labeler.apply_labeling(data)
+                labeled_data = result.labeled_data if result.success else pd.DataFrame()
                 labeling_method = 'standard'
             
             # Calculate basic statistics

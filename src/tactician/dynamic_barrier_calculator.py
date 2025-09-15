@@ -48,9 +48,9 @@ class DynamicBarrierCalculator:
         """Load Analyst triple barrier configuration."""
         try:
             # Try to load from Analyst triple barrier labeling component
-            analyst_config_path = Path("src/training/steps/step06_labeling_components/optimized_triple_barrier_labeling.py")
+            analyst_config_path = Path("src/training/steps/market_analysis/triple_barrier_labeling/unified_labeler.py")
             
-            # Default Analyst values (from the optimized_triple_barrier_labeling.py)
+            # Default Analyst values (from the unified_labeler.py)
             analyst_config = {
                 "profit_take_multiplier": 0.002,  # 0.2%
                 "stop_loss_multiplier": 0.001,    # 0.1%

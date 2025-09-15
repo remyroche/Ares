@@ -1331,7 +1331,7 @@ class LabelingStep:
         self.logger.info(f'   - Time barrier minutes: {self.time_barrier_minutes}')
         self.logger.info(f'   - Max lookahead: {self.max_lookahead}')
         try:
-            from src.training.steps.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer  # type: ignore
+            from src.feature_engineering.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer  # type: ignore
             self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
             self.logger.info('✅ RegimeSpecificTripleBarrierOptimizer initialized successfully')
         except ImportError as e:
@@ -1577,21 +1577,29 @@ class LabelingStep:
     def _create_regime_labeler(self):
         """Create and configure the regime labeler."""
         try:
-            from src.training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling  # type: ignore
-            return RegimeAwareTripleBarrierLabeling(default_profit_take_multiplier=0.002, default_stop_loss_multiplier=0.001, default_time_barrier_minutes=self.time_barrier_minutes, default_max_lookahead=self.max_lookahead)
+            from .triple_barrier_labeling import UnifiedTripleBarrierLabeler, TripleBarrierConfig
+            config = TripleBarrierConfig(
+                profit_take_multiplier=0.002,
+                stop_loss_multiplier=0.001,
+                time_barrier_minutes=self.time_barrier_minutes,
+                max_lookahead=self.max_lookahead,
+                regime_aware=True
+            )
+            return UnifiedTripleBarrierLabeler(config)
         except ImportError as e:
-            self.logger.error(f'❌ Failed to import RegimeAwareTripleBarrierLabeling: {e}')
-            raise RuntimeError(f'Regime aware triple barrier labeling is required but not available: {e}')
+            self.logger.error(f'❌ Failed to import UnifiedTripleBarrierLabeler: {e}')
+            raise RuntimeError(f'Unified triple barrier labeling is required but not available: {e}')
 
     def _generate_labels_with_regime_labeler(self, regime_labeler: Any, data: pd.DataFrame) -> Optional[pd.Series]:
         """Generate labels using the regime labeler."""
         try:
-            labels = regime_labeler.generate_labels(data, regime_column=self.regime_col, time_barrier_minutes=self.time_barrier_minutes, max_lookahead=self.max_lookahead)
-            if labels is not None:
+            result = regime_labeler.apply_labeling(data)
+            if result.success and result.labeled_data is not None:
+                labels = result.labeled_data['label']
                 self.logger.info(f'✅ Generated {len(labels)} regime-aware labels')
                 return labels
             else:
-                raise Exception('Regime-aware labeling returned None')
+                raise Exception(f'Regime-aware labeling failed: {result.error_message}')
         except Exception as e:
             self.logger.warning(f'⚠️ Regime-aware labeling failed: {e}')
             return None

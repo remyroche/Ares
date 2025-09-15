@@ -1628,23 +1628,25 @@ class MarketAnalysisSubPipeline:
             # Ensure regime_analysis is properly populated
             regime_analysis = base_models_result.get('regime_analysis', {})
             if not regime_analysis:
-                # Create default regime analysis if empty
+                # Log warning about missing regime analysis
+                self.logger.warning("⚠️ No regime analysis data returned from HMM training - this indicates a potential issue")
+                
+                # Create minimal fallback with current timestamp to avoid stale data
                 regime_analysis = {
-                    'status': 'completed',
-                    'regime_count': 5,
-                    'regime_distribution': {
-                        'regime_0': {'percentage': 22.14, 'count': 3169},
-                        'regime_1': {'percentage': 19.13, 'count': 2737},
-                        'regime_2': {'percentage': 20.39, 'count': 2918},
-                        'regime_3': {'percentage': 11.45, 'count': 1639},
-                        'regime_4': {'percentage': 26.89, 'count': 3848}
-                    },
+                    'status': 'fallback_data',
+                    'timestamp': datetime.now().isoformat(),
+                    'warning': 'Using fallback data - regime analysis not properly generated',
+                    'regime_count': 'unknown',
                     'model_performance': {
-                        'prediction_accuracy': 98.4,
-                        'temporal_stability': 99.5,
-                        'cross_validation_score': 87.3
+                        'status': 'not_available',
+                        'note': 'Performance metrics not generated during training'
                     }
                 }
+            else:
+                # Add timestamp to ensure data freshness tracking
+                regime_analysis['timestamp'] = datetime.now().isoformat()
+                regime_analysis['data_source'] = 'hmm_training_module'
+                
             artifacts['hmm_model_performance'] = regime_analysis
 
             # Debug logging for HMM metrics

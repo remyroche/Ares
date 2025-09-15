@@ -68,7 +68,10 @@ from .pid_based_feature_generation import (
     PolynomialConfig,
     CrossTimeframeFeatureGenerator,
     CrossTimeframeConfig,
-    OptimizedLookbackIntegration
+    OptimizedLookbackIntegration,
+    FeatureSelectionMechanism,
+    FeatureSelectionConfig,
+    SelectionStrategy
 )
 
 # Hardware optimizations are now integrated into the main triple_barrier_labeling module
@@ -229,6 +232,9 @@ __all__ = [
     "CrossTimeframeFeatureGenerator",
     "CrossTimeframeConfig",
     "OptimizedLookbackIntegration",
+    "FeatureSelectionMechanism",
+    "FeatureSelectionConfig",
+    "SelectionStrategy",
     
     # Utility functions
     "get_module_info",

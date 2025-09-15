@@ -90,6 +90,10 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
     
     def _initialize_components(self):
         """Initialize required components."""
+        # Initialize lookback integration FIRST (before feature generators)
+        self.lookback_integration = OptimizedLookbackIntegration()
+        self.logger.info("✅ Optimized Lookback Integration initialized")
+        
         # Initialize orchestrator configuration
         orchestrator_config = OrchestratorConfig(
             max_interaction_features=100,
@@ -106,10 +110,6 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         # Initialize orchestrator
         self.orchestrator = PIDBasedFeatureOrchestrator(orchestrator_config)
         self.logger.info("✅ PID-Based Feature Orchestrator initialized")
-        
-        # Initialize lookback integration
-        self.lookback_integration = OptimizedLookbackIntegration()
-        self.logger.info("✅ Optimized Lookback Integration initialized")
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""

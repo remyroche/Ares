@@ -41,6 +41,8 @@ except ImportError:
 from .interaction_feature_generator import InteractionFeatureGenerator, InteractionConfig, InteractionResult
 from .polynomial_feature_generator import PolynomialFeatureGenerator, PolynomialConfig, PolynomialResult
 from .cross_timeframe_feature_generator import CrossTimeframeFeatureGenerator, CrossTimeframeConfig, CrossTimeframeResult
+from .optimized_lookback_integration import OptimizedLookbackIntegration, LookbackIntegrationResult
+from .feature_selection_mechanism import FeatureSelectionMechanism, FeatureSelectionConfig, FeatureSelectionResult
 
 # Import matrix operations
 try:

@@ -20,6 +20,7 @@ from .polynomial_feature_generator import PolynomialFeatureGenerator, Polynomial
 from .cross_timeframe_feature_generator import CrossTimeframeFeatureGenerator, CrossTimeframeConfig
 from .pid_based_feature_orchestrator import PIDBasedFeatureOrchestrator, OrchestratorConfig
 from .optimized_lookback_integration import OptimizedLookbackIntegration
+from .feature_selection_mechanism import FeatureSelectionMechanism, FeatureSelectionConfig, SelectionStrategy
 
 __all__ = [
     'InteractionFeatureGenerator',
@@ -30,7 +31,10 @@ __all__ = [
     'CrossTimeframeConfig',
     'PIDBasedFeatureOrchestrator',
     'OrchestratorConfig',
-    'OptimizedLookbackIntegration'
+    'OptimizedLookbackIntegration',
+    'FeatureSelectionMechanism',
+    'FeatureSelectionConfig',
+    'SelectionStrategy'
 ]
 
 __version__ = '2.0.0'

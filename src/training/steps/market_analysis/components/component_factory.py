@@ -17,7 +17,7 @@ from .hmm_clustering import HMMClusteringComponent
 from .regime_data_splitting import RegimeDataSplittingComponent
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
-from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent
+from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
 
 
 class ComponentFactory:
@@ -38,7 +38,8 @@ class ComponentFactory:
         'regime_data_splitting': RegimeDataSplittingComponent,
         # 'triple_barrier_labeling': TripleBarrierLabelingComponent,  # Moved to triple_barrier_labeling package
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
-        'cross_timeframe_analysis': CrossTimeframeAnalysisComponent
+        'cross_timeframe_analysis': CrossTimeframeAnalysisComponent,  # Now uses PID-based feature generation
+        'pid_based_feature_generation': CrossTimeframeAnalysisComponent  # Alias for backward compatibility
     }
     
     @classmethod

@@ -13,7 +13,7 @@ This module provides the complete market analysis sub-pipeline with exactly 11 r
 8. regime_data_splitting - Tag data by regimes
 9. triple_barrier_labeling - Apply triple barrier method
 10. feature_lookback_optimization - Optimize feature lookback periods
-11. cross_timeframe_analysis - Cross timeframe interaction features
+11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -119,7 +119,7 @@ class SubPipelineResult:
             'regime_data_splitting': ['regime_data_splitting_result'],
             'triple_barrier_labeling': ['triple_barrier_labeling_result'],
             'feature_lookback_optimization': ['feature_lookback_optimization_result'],
-            'cross_timeframe_analysis': ['cross_timeframe_analysis_result']
+            'pid_based_feature_generation': ['pid_based_feature_generation_result']
         }
         return artifact_requirements.get(self.sub_pipeline_name, [])
     
@@ -442,17 +442,17 @@ class MarketAnalysisSubPipeline:
                 'optimized_features': results['optimized_features']
             })
             
-            # Stage 11: Cross Timeframe Analysis
-            self.logger.info('🌐 Executing Stage 11: Cross Timeframe Analysis')
-            cross_timeframe_analysis_result = await self.execute_sub_pipeline('cross_timeframe_analysis', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(cross_timeframe_analysis_result, "Cross Timeframe Analysis")
+            # Stage 11: PID-Based Feature Generation
+            self.logger.info('🔧 Executing Stage 11: PID-Based Feature Generation')
+            pid_based_feature_generation_result = await self.execute_sub_pipeline('pid_based_feature_generation', self.config)
+            is_success, error_info = self._validate_sub_pipeline_result(pid_based_feature_generation_result, "PID-Based Feature Generation")
             if not is_success:
                 return error_info
             
             # Extract data from consolidated artifact
-            cross_timeframe_data = cross_timeframe_analysis_result.artifacts.get('cross_timeframe_analysis_result', {})
-            results['cross_timeframe_features'] = cross_timeframe_data.get('cross_timeframe_features', {})
-            results['cross_timeframe_metrics'] = cross_timeframe_data.get('analysis_metrics', {})
+            pid_feature_data = pid_based_feature_generation_result.artifacts.get('pid_based_feature_generation_result', {})
+            results['pid_based_features'] = pid_feature_data.get('combined_features', {})
+            results['pid_feature_metrics'] = pid_feature_data.get('generation_summary', {})
             
             # Final success
             self.logger.info('🎉 Market Analysis Sub-Pipeline completed successfully')

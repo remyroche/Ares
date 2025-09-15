@@ -16,10 +16,9 @@ from sklearn.cluster import MiniBatchKMeans, KMeans  # noqa: F401
 # Metrics
 from sklearn.metrics import (  # noqa: F401
 	balanced_accuracy_score,
-	davies_bouldin_score,
 	f1_score,
 	matthews_corrcoef,
-	silhouette_score,
+	# Note: Removed davies_bouldin_score, silhouette_score as they are not relevant for HMMs
 )
 
 # Model selection

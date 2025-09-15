@@ -26,7 +26,7 @@ from .step03_5_final_regime_clustering import (
     FinalRegimeClusteringStep
 )
 # from .parameter_optimization import ParameterOptimizer  # Temporarily disabled due to syntax errors
-from .ensemble_optimization import EnsembleWeightOptimizer
+# Note: Removed ensemble_optimization import as it contained outdated clustering metrics
 
 __all__ = [
     # Main entry points
@@ -38,5 +38,5 @@ __all__ = [
     'FinalRegimeClusteringStep',
     'EnhancedFeatureEngineer',
     'ParameterOptimizer',
-    'EnsembleWeightOptimizer'
+    # Note: Removed EnsembleWeightOptimizer as it contained outdated clustering metrics
 ]

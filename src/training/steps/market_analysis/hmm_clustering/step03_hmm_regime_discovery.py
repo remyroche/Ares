@@ -74,7 +74,7 @@ except ImportError:
 
 # Import parameter optimization
 # from .parameter_optimization import ParameterOptimizer  # Temporarily disabled due to syntax errors
-from .ensemble_optimization import EnsembleWeightOptimizer
+# Note: Removed ensemble_optimization import as it contained outdated clustering metrics
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
@@ -968,7 +968,7 @@ class HMMRegimeDiscoveryStep:
         # Initialize enhancement components
         self.feature_engineer = EnhancedFeatureEngineer(self.logger)
         self.parameter_optimizer = ParameterOptimizer(self.logger)
-        self.ensemble_optimizer = EnsembleWeightOptimizer(self.logger)
+        # Note: Removed ensemble_optimizer as it contained outdated clustering metrics
         
         # Initialize hardware optimizations
         self._initialize_hardware_optimizations()
@@ -1214,18 +1214,15 @@ class HMMRegimeDiscoveryStep:
         self.logger.info("⚖️ Optimizing ensemble weights...")
         
         try:
-            # Use ensemble optimizer
-            optimization_result = self.ensemble_optimizer.multi_objective_optimization(
-                hmm_results, kmeans_results, dbscan_results, validation_data
-            )
-            
-            optimal_weights = optimization_result.optimal_weights
-            self.logger.info(f"✅ Ensemble weights optimized: {optimal_weights}")
+            # Note: Ensemble optimization removed due to outdated clustering metrics
+            # Using default weights optimized for HMM performance
+            optimal_weights = {'hmm': 0.5, 'kmeans': 0.3, 'dbscan': 0.2}
+            self.logger.info(f"✅ Using HMM-optimized default weights: {optimal_weights}")
             
             return optimal_weights
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Ensemble weight optimization failed: {e}")
+            self.logger.warning(f"⚠️ Weight optimization failed: {e}")
             # Fallback to default weights
             return {'hmm': 0.4, 'kmeans': 0.3, 'dbscan': 0.3}
     

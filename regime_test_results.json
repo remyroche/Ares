@@ -1,0 +1,1589 @@
+{
+  "summary": {
+    "total_tests": 45,
+    "successful_tests": 45,
+    "failed_tests": 0,
+    "success_rate": 1.0
+  },
+  "step_results": {
+    "regime_data_splitting": [
+      {
+        "step": "regime_data_splitting",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "regime_samples": 100,
+          "data_retention": 1.0
+        },
+        "error": null
+      },
+      {
+        "step": "regime_data_splitting",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "regime_samples": 100,
+          "data_retention": 1.0
+        },
+        "error": null
+      },
+      {
+        "step": "regime_data_splitting",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "regime_samples": 100,
+          "data_retention": 1.0
+        },
+        "error": null
+      }
+    ],
+    "triple_barrier_labeling": [
+      {
+        "step": "triple_barrier_labeling",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_labels": 98,
+          "profit_labels": 89,
+          "loss_labels": 9,
+          "label_ratio": 0.98989898989899
+        },
+        "error": null
+      },
+      {
+        "step": "triple_barrier_labeling",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_labels": 99,
+          "profit_labels": 81,
+          "loss_labels": 18,
+          "label_ratio": 1.0
+        },
+        "error": null
+      },
+      {
+        "step": "triple_barrier_labeling",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_labels": 99,
+          "profit_labels": 81,
+          "loss_labels": 18,
+          "label_ratio": 1.0
+        },
+        "error": null
+      }
+    ],
+    "feature_lookback_optimization": [
+      {
+        "step": "feature_lookback_optimization",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "best_lookback": 15,
+          "best_score": 0.824,
+          "features_optimized": 3
+        },
+        "error": null
+      },
+      {
+        "step": "feature_lookback_optimization",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "best_lookback": 15,
+          "best_score": 0.681,
+          "features_optimized": 3
+        },
+        "error": null
+      },
+      {
+        "step": "feature_lookback_optimization",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "best_lookback": 30,
+          "best_score": 0.898,
+          "features_optimized": 3
+        },
+        "error": null
+      }
+    ],
+    "pid_based_feature_generation": [
+      {
+        "step": "pid_based_feature_generation",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "features_generated": 7,
+          "feature_quality": 0.633,
+          "interaction_features": 2,
+          "polynomial_features": 3,
+          "cross_timeframe_features": 2
+        },
+        "error": null
+      },
+      {
+        "step": "pid_based_feature_generation",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "features_generated": 7,
+          "feature_quality": 0.706,
+          "interaction_features": 2,
+          "polynomial_features": 3,
+          "cross_timeframe_features": 2
+        },
+        "error": null
+      },
+      {
+        "step": "pid_based_feature_generation",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "features_generated": 7,
+          "feature_quality": 0.811,
+          "interaction_features": 2,
+          "polynomial_features": 3,
+          "cross_timeframe_features": 2
+        },
+        "error": null
+      }
+    ],
+    "analyst_models_training": [
+      {
+        "step": "analyst_models_training",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.776,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_models_training",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.881,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_models_training",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.719,
+          "regime_specific": true
+        },
+        "error": null
+      }
+    ],
+    "analyst_ensemble_training": [
+      {
+        "step": "analyst_ensemble_training",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.846,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_ensemble_training",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.796,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_ensemble_training",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.828,
+          "regime_specific": true
+        },
+        "error": null
+      }
+    ],
+    "tactician_models_training": [
+      {
+        "step": "tactician_models_training",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.839,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_models_training",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.786,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_models_training",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.863,
+          "regime_specific": false
+        },
+        "error": null
+      }
+    ],
+    "tactician_ensemble_training": [
+      {
+        "step": "tactician_ensemble_training",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.794,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_ensemble_training",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.739,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_ensemble_training",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.854,
+          "regime_specific": false
+        },
+        "error": null
+      }
+    ],
+    "basic_backtesting_pre": [
+      {
+        "step": "basic_backtesting_pre",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.012,
+          "sharpe_ratio": 1.609,
+          "max_drawdown": 0.079
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_pre",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.072,
+          "sharpe_ratio": 1.197,
+          "max_drawdown": 0.071
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_pre",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.14,
+          "sharpe_ratio": 1.867,
+          "max_drawdown": 0.087
+        },
+        "error": null
+      }
+    ],
+    "final_parameters_optimization": [
+      {
+        "step": "final_parameters_optimization",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.091,
+          "sharpe_ratio": 0.52,
+          "max_drawdown": 0.186
+        },
+        "error": null
+      },
+      {
+        "step": "final_parameters_optimization",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.181,
+          "sharpe_ratio": 0.687,
+          "max_drawdown": 0.09
+        },
+        "error": null
+      },
+      {
+        "step": "final_parameters_optimization",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.181,
+          "sharpe_ratio": 0.566,
+          "max_drawdown": 0.141
+        },
+        "error": null
+      }
+    ],
+    "basic_backtesting_post": [
+      {
+        "step": "basic_backtesting_post",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.128,
+          "sharpe_ratio": 1.862,
+          "max_drawdown": 0.178
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_post",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.272,
+          "sharpe_ratio": 0.991,
+          "max_drawdown": 0.099
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_post",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.244,
+          "sharpe_ratio": 1.413,
+          "max_drawdown": 0.159
+        },
+        "error": null
+      }
+    ],
+    "walk_forward_validation": [
+      {
+        "step": "walk_forward_validation",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.122,
+          "sharpe_ratio": 1.274,
+          "max_drawdown": 0.114,
+          "folds": 5,
+          "average_performance": 0.738
+        },
+        "error": null
+      },
+      {
+        "step": "walk_forward_validation",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.2,
+          "sharpe_ratio": 0.679,
+          "max_drawdown": 0.17,
+          "folds": 5,
+          "average_performance": 0.664
+        },
+        "error": null
+      },
+      {
+        "step": "walk_forward_validation",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.254,
+          "sharpe_ratio": 1.073,
+          "max_drawdown": 0.106,
+          "folds": 5,
+          "average_performance": 0.765
+        },
+        "error": null
+      }
+    ],
+    "monte_carlo_simulation": [
+      {
+        "step": "monte_carlo_simulation",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": -0.01,
+          "sharpe_ratio": 0.786,
+          "max_drawdown": 0.059,
+          "simulations": 1000,
+          "confidence_95": 0.086
+        },
+        "error": null
+      },
+      {
+        "step": "monte_carlo_simulation",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.109,
+          "sharpe_ratio": 0.647,
+          "max_drawdown": 0.065,
+          "simulations": 1000,
+          "confidence_95": 0.135
+        },
+        "error": null
+      },
+      {
+        "step": "monte_carlo_simulation",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": -0.089,
+          "sharpe_ratio": 1.441,
+          "max_drawdown": 0.194,
+          "simulations": 1000,
+          "confidence_95": 0.093
+        },
+        "error": null
+      }
+    ],
+    "ab_testing": [
+      {
+        "step": "ab_testing",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.058,
+          "sharpe_ratio": 1.063,
+          "max_drawdown": 0.096
+        },
+        "error": null
+      },
+      {
+        "step": "ab_testing",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.133,
+          "sharpe_ratio": 1.585,
+          "max_drawdown": 0.062
+        },
+        "error": null
+      },
+      {
+        "step": "ab_testing",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.176,
+          "sharpe_ratio": 1.345,
+          "max_drawdown": 0.118
+        },
+        "error": null
+      }
+    ],
+    "reporting": [
+      {
+        "step": "reporting",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.286,
+          "sharpe_ratio": 1.549,
+          "max_drawdown": 0.136
+        },
+        "error": null
+      },
+      {
+        "step": "reporting",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.053,
+          "sharpe_ratio": 0.754,
+          "max_drawdown": 0.071
+        },
+        "error": null
+      },
+      {
+        "step": "reporting",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.13,
+          "sharpe_ratio": 0.563,
+          "max_drawdown": 0.058
+        },
+        "error": null
+      }
+    ]
+  },
+  "regime_results": {
+    "0": [
+      {
+        "step": "regime_data_splitting",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "regime_samples": 100,
+          "data_retention": 1.0
+        },
+        "error": null
+      },
+      {
+        "step": "triple_barrier_labeling",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_labels": 98,
+          "profit_labels": 89,
+          "loss_labels": 9,
+          "label_ratio": 0.98989898989899
+        },
+        "error": null
+      },
+      {
+        "step": "feature_lookback_optimization",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "best_lookback": 15,
+          "best_score": 0.824,
+          "features_optimized": 3
+        },
+        "error": null
+      },
+      {
+        "step": "pid_based_feature_generation",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "features_generated": 7,
+          "feature_quality": 0.633,
+          "interaction_features": 2,
+          "polynomial_features": 3,
+          "cross_timeframe_features": 2
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_models_training",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.776,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_ensemble_training",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.846,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_models_training",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.839,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_ensemble_training",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.794,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_pre",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.012,
+          "sharpe_ratio": 1.609,
+          "max_drawdown": 0.079
+        },
+        "error": null
+      },
+      {
+        "step": "final_parameters_optimization",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.091,
+          "sharpe_ratio": 0.52,
+          "max_drawdown": 0.186
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_post",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.128,
+          "sharpe_ratio": 1.862,
+          "max_drawdown": 0.178
+        },
+        "error": null
+      },
+      {
+        "step": "walk_forward_validation",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.122,
+          "sharpe_ratio": 1.274,
+          "max_drawdown": 0.114,
+          "folds": 5,
+          "average_performance": 0.738
+        },
+        "error": null
+      },
+      {
+        "step": "monte_carlo_simulation",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": -0.01,
+          "sharpe_ratio": 0.786,
+          "max_drawdown": 0.059,
+          "simulations": 1000,
+          "confidence_95": 0.086
+        },
+        "error": null
+      },
+      {
+        "step": "ab_testing",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.058,
+          "sharpe_ratio": 1.063,
+          "max_drawdown": 0.096
+        },
+        "error": null
+      },
+      {
+        "step": "reporting",
+        "regime_id": 0,
+        "success": true,
+        "metrics": {
+          "total_return": 0.286,
+          "sharpe_ratio": 1.549,
+          "max_drawdown": 0.136
+        },
+        "error": null
+      }
+    ],
+    "1": [
+      {
+        "step": "regime_data_splitting",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "regime_samples": 100,
+          "data_retention": 1.0
+        },
+        "error": null
+      },
+      {
+        "step": "triple_barrier_labeling",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_labels": 99,
+          "profit_labels": 81,
+          "loss_labels": 18,
+          "label_ratio": 1.0
+        },
+        "error": null
+      },
+      {
+        "step": "feature_lookback_optimization",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "best_lookback": 15,
+          "best_score": 0.681,
+          "features_optimized": 3
+        },
+        "error": null
+      },
+      {
+        "step": "pid_based_feature_generation",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "features_generated": 7,
+          "feature_quality": 0.706,
+          "interaction_features": 2,
+          "polynomial_features": 3,
+          "cross_timeframe_features": 2
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_models_training",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.881,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_ensemble_training",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.796,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_models_training",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.786,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_ensemble_training",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.739,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_pre",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.072,
+          "sharpe_ratio": 1.197,
+          "max_drawdown": 0.071
+        },
+        "error": null
+      },
+      {
+        "step": "final_parameters_optimization",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.181,
+          "sharpe_ratio": 0.687,
+          "max_drawdown": 0.09
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_post",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.272,
+          "sharpe_ratio": 0.991,
+          "max_drawdown": 0.099
+        },
+        "error": null
+      },
+      {
+        "step": "walk_forward_validation",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.2,
+          "sharpe_ratio": 0.679,
+          "max_drawdown": 0.17,
+          "folds": 5,
+          "average_performance": 0.664
+        },
+        "error": null
+      },
+      {
+        "step": "monte_carlo_simulation",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.109,
+          "sharpe_ratio": 0.647,
+          "max_drawdown": 0.065,
+          "simulations": 1000,
+          "confidence_95": 0.135
+        },
+        "error": null
+      },
+      {
+        "step": "ab_testing",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.133,
+          "sharpe_ratio": 1.585,
+          "max_drawdown": 0.062
+        },
+        "error": null
+      },
+      {
+        "step": "reporting",
+        "regime_id": 1,
+        "success": true,
+        "metrics": {
+          "total_return": 0.053,
+          "sharpe_ratio": 0.754,
+          "max_drawdown": 0.071
+        },
+        "error": null
+      }
+    ],
+    "2": [
+      {
+        "step": "regime_data_splitting",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "regime_samples": 100,
+          "data_retention": 1.0
+        },
+        "error": null
+      },
+      {
+        "step": "triple_barrier_labeling",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_labels": 99,
+          "profit_labels": 81,
+          "loss_labels": 18,
+          "label_ratio": 1.0
+        },
+        "error": null
+      },
+      {
+        "step": "feature_lookback_optimization",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "best_lookback": 30,
+          "best_score": 0.898,
+          "features_optimized": 3
+        },
+        "error": null
+      },
+      {
+        "step": "pid_based_feature_generation",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "features_generated": 7,
+          "feature_quality": 0.811,
+          "interaction_features": 2,
+          "polynomial_features": 3,
+          "cross_timeframe_features": 2
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_models_training",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.719,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "analyst_ensemble_training",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.828,
+          "regime_specific": true
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_models_training",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "models_trained": 1,
+          "training_accuracy": 0.863,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "tactician_ensemble_training",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "models_trained": 3,
+          "training_accuracy": 0.854,
+          "regime_specific": false
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_pre",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.14,
+          "sharpe_ratio": 1.867,
+          "max_drawdown": 0.087
+        },
+        "error": null
+      },
+      {
+        "step": "final_parameters_optimization",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.181,
+          "sharpe_ratio": 0.566,
+          "max_drawdown": 0.141
+        },
+        "error": null
+      },
+      {
+        "step": "basic_backtesting_post",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.244,
+          "sharpe_ratio": 1.413,
+          "max_drawdown": 0.159
+        },
+        "error": null
+      },
+      {
+        "step": "walk_forward_validation",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.254,
+          "sharpe_ratio": 1.073,
+          "max_drawdown": 0.106,
+          "folds": 5,
+          "average_performance": 0.765
+        },
+        "error": null
+      },
+      {
+        "step": "monte_carlo_simulation",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": -0.089,
+          "sharpe_ratio": 1.441,
+          "max_drawdown": 0.194,
+          "simulations": 1000,
+          "confidence_95": 0.093
+        },
+        "error": null
+      },
+      {
+        "step": "ab_testing",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.176,
+          "sharpe_ratio": 1.345,
+          "max_drawdown": 0.118
+        },
+        "error": null
+      },
+      {
+        "step": "reporting",
+        "regime_id": 2,
+        "success": true,
+        "metrics": {
+          "total_return": 0.13,
+          "sharpe_ratio": 0.563,
+          "max_drawdown": 0.058
+        },
+        "error": null
+      }
+    ]
+  },
+  "detailed_results": [
+    {
+      "step": "regime_data_splitting",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "regime_samples": 100,
+        "data_retention": 1.0
+      },
+      "error": null
+    },
+    {
+      "step": "triple_barrier_labeling",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "total_labels": 98,
+        "profit_labels": 89,
+        "loss_labels": 9,
+        "label_ratio": 0.98989898989899
+      },
+      "error": null
+    },
+    {
+      "step": "feature_lookback_optimization",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "best_lookback": 15,
+        "best_score": 0.824,
+        "features_optimized": 3
+      },
+      "error": null
+    },
+    {
+      "step": "pid_based_feature_generation",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "features_generated": 7,
+        "feature_quality": 0.633,
+        "interaction_features": 2,
+        "polynomial_features": 3,
+        "cross_timeframe_features": 2
+      },
+      "error": null
+    },
+    {
+      "step": "analyst_models_training",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "models_trained": 1,
+        "training_accuracy": 0.776,
+        "regime_specific": true
+      },
+      "error": null
+    },
+    {
+      "step": "analyst_ensemble_training",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "models_trained": 3,
+        "training_accuracy": 0.846,
+        "regime_specific": true
+      },
+      "error": null
+    },
+    {
+      "step": "tactician_models_training",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "models_trained": 1,
+        "training_accuracy": 0.839,
+        "regime_specific": false
+      },
+      "error": null
+    },
+    {
+      "step": "tactician_ensemble_training",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "models_trained": 3,
+        "training_accuracy": 0.794,
+        "regime_specific": false
+      },
+      "error": null
+    },
+    {
+      "step": "basic_backtesting_pre",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "total_return": 0.012,
+        "sharpe_ratio": 1.609,
+        "max_drawdown": 0.079
+      },
+      "error": null
+    },
+    {
+      "step": "final_parameters_optimization",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "total_return": 0.091,
+        "sharpe_ratio": 0.52,
+        "max_drawdown": 0.186
+      },
+      "error": null
+    },
+    {
+      "step": "basic_backtesting_post",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "total_return": 0.128,
+        "sharpe_ratio": 1.862,
+        "max_drawdown": 0.178
+      },
+      "error": null
+    },
+    {
+      "step": "walk_forward_validation",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "total_return": 0.122,
+        "sharpe_ratio": 1.274,
+        "max_drawdown": 0.114,
+        "folds": 5,
+        "average_performance": 0.738
+      },
+      "error": null
+    },
+    {
+      "step": "monte_carlo_simulation",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "total_return": -0.01,
+        "sharpe_ratio": 0.786,
+        "max_drawdown": 0.059,
+        "simulations": 1000,
+        "confidence_95": 0.086
+      },
+      "error": null
+    },
+    {
+      "step": "ab_testing",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "total_return": 0.058,
+        "sharpe_ratio": 1.063,
+        "max_drawdown": 0.096
+      },
+      "error": null
+    },
+    {
+      "step": "reporting",
+      "regime_id": 0,
+      "success": true,
+      "metrics": {
+        "total_return": 0.286,
+        "sharpe_ratio": 1.549,
+        "max_drawdown": 0.136
+      },
+      "error": null
+    },
+    {
+      "step": "regime_data_splitting",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "regime_samples": 100,
+        "data_retention": 1.0
+      },
+      "error": null
+    },
+    {
+      "step": "triple_barrier_labeling",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "total_labels": 99,
+        "profit_labels": 81,
+        "loss_labels": 18,
+        "label_ratio": 1.0
+      },
+      "error": null
+    },
+    {
+      "step": "feature_lookback_optimization",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "best_lookback": 15,
+        "best_score": 0.681,
+        "features_optimized": 3
+      },
+      "error": null
+    },
+    {
+      "step": "pid_based_feature_generation",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "features_generated": 7,
+        "feature_quality": 0.706,
+        "interaction_features": 2,
+        "polynomial_features": 3,
+        "cross_timeframe_features": 2
+      },
+      "error": null
+    },
+    {
+      "step": "analyst_models_training",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "models_trained": 1,
+        "training_accuracy": 0.881,
+        "regime_specific": true
+      },
+      "error": null
+    },
+    {
+      "step": "analyst_ensemble_training",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "models_trained": 3,
+        "training_accuracy": 0.796,
+        "regime_specific": true
+      },
+      "error": null
+    },
+    {
+      "step": "tactician_models_training",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "models_trained": 1,
+        "training_accuracy": 0.786,
+        "regime_specific": false
+      },
+      "error": null
+    },
+    {
+      "step": "tactician_ensemble_training",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "models_trained": 3,
+        "training_accuracy": 0.739,
+        "regime_specific": false
+      },
+      "error": null
+    },
+    {
+      "step": "basic_backtesting_pre",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "total_return": 0.072,
+        "sharpe_ratio": 1.197,
+        "max_drawdown": 0.071
+      },
+      "error": null
+    },
+    {
+      "step": "final_parameters_optimization",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "total_return": 0.181,
+        "sharpe_ratio": 0.687,
+        "max_drawdown": 0.09
+      },
+      "error": null
+    },
+    {
+      "step": "basic_backtesting_post",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "total_return": 0.272,
+        "sharpe_ratio": 0.991,
+        "max_drawdown": 0.099
+      },
+      "error": null
+    },
+    {
+      "step": "walk_forward_validation",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "total_return": 0.2,
+        "sharpe_ratio": 0.679,
+        "max_drawdown": 0.17,
+        "folds": 5,
+        "average_performance": 0.664
+      },
+      "error": null
+    },
+    {
+      "step": "monte_carlo_simulation",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "total_return": 0.109,
+        "sharpe_ratio": 0.647,
+        "max_drawdown": 0.065,
+        "simulations": 1000,
+        "confidence_95": 0.135
+      },
+      "error": null
+    },
+    {
+      "step": "ab_testing",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "total_return": 0.133,
+        "sharpe_ratio": 1.585,
+        "max_drawdown": 0.062
+      },
+      "error": null
+    },
+    {
+      "step": "reporting",
+      "regime_id": 1,
+      "success": true,
+      "metrics": {
+        "total_return": 0.053,
+        "sharpe_ratio": 0.754,
+        "max_drawdown": 0.071
+      },
+      "error": null
+    },
+    {
+      "step": "regime_data_splitting",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "regime_samples": 100,
+        "data_retention": 1.0
+      },
+      "error": null
+    },
+    {
+      "step": "triple_barrier_labeling",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "total_labels": 99,
+        "profit_labels": 81,
+        "loss_labels": 18,
+        "label_ratio": 1.0
+      },
+      "error": null
+    },
+    {
+      "step": "feature_lookback_optimization",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "best_lookback": 30,
+        "best_score": 0.898,
+        "features_optimized": 3
+      },
+      "error": null
+    },
+    {
+      "step": "pid_based_feature_generation",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "features_generated": 7,
+        "feature_quality": 0.811,
+        "interaction_features": 2,
+        "polynomial_features": 3,
+        "cross_timeframe_features": 2
+      },
+      "error": null
+    },
+    {
+      "step": "analyst_models_training",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "models_trained": 1,
+        "training_accuracy": 0.719,
+        "regime_specific": true
+      },
+      "error": null
+    },
+    {
+      "step": "analyst_ensemble_training",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "models_trained": 3,
+        "training_accuracy": 0.828,
+        "regime_specific": true
+      },
+      "error": null
+    },
+    {
+      "step": "tactician_models_training",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "models_trained": 1,
+        "training_accuracy": 0.863,
+        "regime_specific": false
+      },
+      "error": null
+    },
+    {
+      "step": "tactician_ensemble_training",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "models_trained": 3,
+        "training_accuracy": 0.854,
+        "regime_specific": false
+      },
+      "error": null
+    },
+    {
+      "step": "basic_backtesting_pre",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "total_return": 0.14,
+        "sharpe_ratio": 1.867,
+        "max_drawdown": 0.087
+      },
+      "error": null
+    },
+    {
+      "step": "final_parameters_optimization",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "total_return": 0.181,
+        "sharpe_ratio": 0.566,
+        "max_drawdown": 0.141
+      },
+      "error": null
+    },
+    {
+      "step": "basic_backtesting_post",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "total_return": 0.244,
+        "sharpe_ratio": 1.413,
+        "max_drawdown": 0.159
+      },
+      "error": null
+    },
+    {
+      "step": "walk_forward_validation",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "total_return": 0.254,
+        "sharpe_ratio": 1.073,
+        "max_drawdown": 0.106,
+        "folds": 5,
+        "average_performance": 0.765
+      },
+      "error": null
+    },
+    {
+      "step": "monte_carlo_simulation",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "total_return": -0.089,
+        "sharpe_ratio": 1.441,
+        "max_drawdown": 0.194,
+        "simulations": 1000,
+        "confidence_95": 0.093
+      },
+      "error": null
+    },
+    {
+      "step": "ab_testing",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "total_return": 0.176,
+        "sharpe_ratio": 1.345,
+        "max_drawdown": 0.118
+      },
+      "error": null
+    },
+    {
+      "step": "reporting",
+      "regime_id": 2,
+      "success": true,
+      "metrics": {
+        "total_return": 0.13,
+        "sharpe_ratio": 0.563,
+        "max_drawdown": 0.058
+      },
+      "error": null
+    }
+  ]
+}

@@ -15,7 +15,7 @@ from .hmm_models_training import HMMModelsTrainingComponent
 from .hmm_ensemble_training import HMMEnsembleTrainingComponent
 from .regime_data_splitting import RegimeDataSplittingComponent
 from .triple_barrier_labeling import TripleBarrierLabelingComponent
-from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
+from ..feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent
 
 

@@ -26,7 +26,7 @@ if np_fallback or pd_fallback:
     import logging
     logging.warning("Using fallback implementations for core dependencies")
 
-from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ...components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from .optimization_reporter import OptimizationReporter
 from .validation_framework import ValidationFramework, ValidationLevel, ValidationStatus
 from .monitoring_metrics import MonitoringMetrics, MetricType, MetricLevel
@@ -59,17 +59,6 @@ class OptimizationMetrics:
     error_rate: float
 
 
-@dataclass
-class ValidationResult:
-    """Result of data validation."""
-    is_valid: bool
-    errors: List[str]
-    warnings: List[str]
-    data_quality_score: float
-    missing_columns: List[str]
-    data_completeness: float
-
-
 class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     """
     Feature Lookback Optimization Component.
@@ -85,7 +74,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.optimization_status = OptimizationStatus.PENDING
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
-        self.validation_result: Optional[ValidationResult] = None
         
         # Performance monitoring
         self.performance_monitor = {
@@ -109,120 +97,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['feature_lookback_optimization_result']
-    
-    def _validate_input_data(self, data: Any) -> ValidationResult:
-        """
-        Comprehensive validation of input data.
-        
-        Args:
-            data: Input data to validate
-            
-        Returns:
-            ValidationResult with validation details
-        """
-        errors = []
-        warnings = []
-        data_quality_score = 0.0
-        missing_columns = []
-        data_completeness = 0.0
-        
-        try:
-            # Check if data is None or empty
-            if data is None:
-                errors.append("Input data is None")
-                return ValidationResult(False, errors, warnings, 0.0, [], 0.0)
-            
-            # Check if data is a DataFrame
-            if not isinstance(data, pd.DataFrame):
-                errors.append(f"Input data must be a pandas DataFrame, got {type(data)}")
-                return ValidationResult(False, errors, warnings, 0.0, [], 0.0)
-            
-            if data.empty:
-                errors.append("Input data is empty")
-                return ValidationResult(False, errors, warnings, 0.0, [], 0.0)
-            
-            # Check required columns
-            required_columns = ['open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in data.columns]
-            
-            if missing_columns:
-                errors.append(f"Missing required columns: {missing_columns}")
-            
-            # Check data completeness
-            total_cells = len(data) * len(data.columns)
-            non_null_cells = data.count().sum()
-            data_completeness = non_null_cells / total_cells if total_cells > 0 else 0.0
-            
-            if data_completeness < 0.8:
-                warnings.append(f"Data completeness is low: {data_completeness:.2%}")
-            
-            # Check for infinite values
-            inf_count = np.isinf(data.select_dtypes(include=[np.number])).sum().sum()
-            if inf_count > 0:
-                warnings.append(f"Found {inf_count} infinite values in numeric columns")
-            
-            # Check for NaN values in critical columns
-            critical_columns = ['open', 'high', 'low', 'close']
-            for col in critical_columns:
-                if col in data.columns:
-                    nan_count = data[col].isna().sum()
-                    if nan_count > 0:
-                        warnings.append(f"Column '{col}' has {nan_count} NaN values")
-            
-            # Calculate data quality score
-            data_quality_score = data_completeness
-            if not missing_columns:
-                data_quality_score += 0.2
-            if inf_count == 0:
-                data_quality_score += 0.1
-            if data_completeness >= 0.95:
-                data_quality_score += 0.1
-            
-            data_quality_score = min(data_quality_score, 1.0)
-            
-            is_valid = len(errors) == 0 and data_quality_score >= 0.6
-            
-            self.logger.info(f"Data validation completed: valid={is_valid}, quality_score={data_quality_score:.3f}")
-            
-            return ValidationResult(is_valid, errors, warnings, data_quality_score, missing_columns, data_completeness)
-            
-        except Exception as e:
-            errors.append(f"Validation error: {str(e)}")
-            self.logger.error(f"Data validation failed: {e}")
-            return ValidationResult(False, errors, warnings, 0.0, [], 0.0)
-    
-    def _validate_pipeline_state(self, pipeline_state: Dict[str, Any]) -> ValidationResult:
-        """
-        Validate pipeline state for required dependencies.
-        
-        Args:
-            pipeline_state: Current pipeline state
-            
-        Returns:
-            ValidationResult with validation details
-        """
-        errors = []
-        warnings = []
-        
-        # Check for triple barrier labeling results
-        triple_barrier_labeling = pipeline_state.get('triple_barrier_labeling_result', {})
-        if not triple_barrier_labeling:
-            errors.append("No triple barrier labeling results available")
-        else:
-            # Validate triple barrier labeling structure
-            required_keys = ['labels', 'barriers', 'metadata']
-            missing_keys = [key for key in required_keys if key not in triple_barrier_labeling]
-            if missing_keys:
-                warnings.append(f"Triple barrier labeling missing keys: {missing_keys}")
-        
-        # Check for regime data splitting results
-        regime_data_splitting = pipeline_state.get('regime_data_splitting_result', {})
-        if not regime_data_splitting:
-            warnings.append("No regime data splitting results available - regime-aware optimization may be limited")
-        
-        is_valid = len(errors) == 0
-        
-        return ValidationResult(is_valid, errors, warnings, 1.0 if is_valid else 0.0, [], 1.0)
     
     def _monitor_performance(self, operation_name: str) -> None:
         """Monitor performance metrics during execution."""
@@ -464,7 +338,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     'timeframe': self.config.timeframe,
                     'features_optimized': len(optimized_features),
                     'optimization_status': self.optimization_status.value,
-                    'data_quality_score': data_validation.data_quality_score,
+                    'data_quality_score': data_validation_summary.quality_score,
                     'performance_metrics': self.performance_monitor
                 }
             )
@@ -720,63 +594,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         except Exception:
             return 0.0
     
-    def _generate_optimization_report(self) -> Dict[str, Any]:
-        """Generate comprehensive optimization report."""
-        if not self.metrics:
-            return {'error': 'No metrics available for report generation'}
-        
-        report = {
-            'summary': {
-                'status': self.optimization_status.value,
-                'execution_time': time.time() - self.start_time if self.start_time else 0.0,
-                'best_lookback_period': self.metrics.best_lookback_period,
-                'best_score': self.metrics.best_score,
-                'total_features_optimized': self.metrics.total_features_optimized
-            },
-            'performance': {
-                'optimization_time': self.metrics.optimization_time,
-                'convergence_iterations': self.metrics.convergence_iterations,
-                'memory_usage_mb': self.metrics.memory_usage_mb,
-                'cpu_usage_percent': self.metrics.cpu_usage_percent
-            },
-            'quality_metrics': {
-                'validation_score': self.metrics.validation_score,
-                'stability_score': self.metrics.stability_score,
-                'regime_coverage': self.metrics.regime_coverage,
-                'error_rate': self.metrics.error_rate
-            },
-            'recommendations': self._generate_recommendations()
-        }
-        
-        return report
-    
-    def _generate_recommendations(self) -> List[str]:
-        """Generate optimization recommendations based on metrics."""
-        recommendations = []
-        
-        if not self.metrics:
-            return ['Unable to generate recommendations - no metrics available']
-        
-        if self.metrics.validation_score < 0.7:
-            recommendations.append("Consider improving data quality or adjusting optimization parameters")
-        
-        if self.metrics.stability_score < 0.6:
-            recommendations.append("Feature lookback periods show high variability - consider regularization")
-        
-        if self.metrics.regime_coverage < 0.8:
-            recommendations.append("Regime coverage is low - consider regime-aware optimization")
-        
-        if self.metrics.error_rate > 0.1:
-            recommendations.append("High error rate detected - review optimization process")
-        
-        if self.metrics.memory_usage_mb > 1000:
-            recommendations.append("High memory usage - consider data chunking or memory optimization")
-        
-        if not recommendations:
-            recommendations.append("Optimization completed successfully with good metrics")
-        
-        return recommendations
-    
     def _create_artifacts(
         self,
         optimization_results: Dict[str, Any],
@@ -959,9 +776,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         prepared_data[col] = fallback_value
                         self.logger.info(f"Created fallback {col} column using close price")
             
-            # Validate data integrity
-            self._validate_prepared_data(prepared_data)
-            
             # Add metadata about preparation
             preparation_metadata = {
                 'original_columns': list(data.columns),
@@ -987,36 +801,3 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 'preparation_method': 'fallback',
                 'preparation_error': str(e)
             }
-    
-    def _validate_prepared_data(self, data: pd.DataFrame) -> None:
-        """Validate prepared data for common issues."""
-        try:
-            # Check for infinite values
-            inf_count = np.isinf(data.select_dtypes(include=[np.number])).sum().sum()
-            if inf_count > 0:
-                self.logger.warning(f"Prepared data contains {inf_count} infinite values")
-            
-            # Check for negative prices (should not happen in OHLC data)
-            price_columns = ['open', 'high', 'low', 'close']
-            for col in price_columns:
-                if col in data.columns:
-                    negative_count = (data[col] <= 0).sum()
-                    if negative_count > 0:
-                        self.logger.warning(f"Column '{col}' has {negative_count} non-positive values")
-            
-            # Check for volume issues
-            if 'volume' in data.columns:
-                negative_volume = (data['volume'] < 0).sum()
-                if negative_volume > 0:
-                    self.logger.warning(f"Volume column has {negative_volume} negative values")
-            
-            # Check for high/low consistency
-            if all(col in data.columns for col in ['high', 'low']):
-                inconsistent_hl = (data['high'] < data['low']).sum()
-                if inconsistent_hl > 0:
-                    self.logger.warning(f"Found {inconsistent_hl} rows where high < low")
-            
-            self.logger.info("✅ Data validation completed")
-            
-        except Exception as e:
-            self.logger.warning(f"Data validation failed: {e}")

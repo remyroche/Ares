@@ -84,6 +84,8 @@ class ModelType(Enum):
     RIDGE_CLASSIFIER = "RidgeClassifier"
     ELASTIC_NET = "ElasticNet"
     ELASTIC_NET_CLASSIFIER = "ElasticNetClassifier"
+    ELASTIC_NET_CV = "ElasticNetCV"
+    ELASTIC_NET_CV_CLASSIFIER = "ElasticNetCVClassifier"
     ELASTIC_NET_QUANTILE = "ElasticNetQuantile"
     QUANTILE_REGRESSION = "QuantileRegression"
     LOGISTIC_REGRESSION = "LogisticRegression"
@@ -297,6 +299,8 @@ class EnhancedModelFactory:
                 model = self._create_ridge_model(model_config)
             elif model_config.model_type in [ModelType.ELASTIC_NET, ModelType.ELASTIC_NET_CLASSIFIER]:
                 model = self._create_elastic_net_model(model_config)
+            elif model_config.model_type in [ModelType.ELASTIC_NET_CV, ModelType.ELASTIC_NET_CV_CLASSIFIER]:
+                model = self._create_elastic_net_cv_model(model_config)
             elif model_config.model_type == ModelType.ELASTIC_NET_QUANTILE:
                 model = self._create_elastic_net_quantile_model(model_config)
             elif model_config.model_type == ModelType.QUANTILE_REGRESSION:
@@ -796,6 +800,28 @@ class EnhancedModelFactory:
         
         return model
     
+    def _create_elastic_net_cv_model(self, model_config: ModelConfig) -> Any:
+        """Create ElasticNetCV model with cross-validation."""
+        
+        from sklearn.linear_model import ElasticNetCV
+        
+        # Default parameters for ElasticNetCV
+        default_params = {
+            'alphas': [0.01, 0.1, 1.0, 10.0],
+            'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9],
+            'cv': 5,
+            'max_iter': 1000,
+            'random_state': 42
+        }
+        
+        # Merge with user parameters
+        params = {**default_params, **model_config.model_params}
+        
+        # Create model
+        model = ElasticNetCV(**params)
+        
+        return model
+    
     def _create_elastic_net_quantile_model(self, model_config: ModelConfig) -> Any:
         """Create Elastic Net with Quantile Regression."""
         
@@ -1013,14 +1039,15 @@ class EnhancedModelFactory:
         return NODE(**params)
     
     def _create_ridge_model(self, model_config: ModelConfig) -> Any:
-        """Create ElasticNet model (replacing Ridge)."""
+        """Create ElasticNetCV model (replacing Ridge with automatic parameter optimization)."""
         
-        from sklearn.linear_model import ElasticNet, ElasticNetClassifier
+        from sklearn.linear_model import ElasticNetCV
         
-        # Default parameters for ElasticNet (replacing Ridge)
+        # Default parameters for ElasticNetCV (replacing Ridge)
         default_params = {
-            'alpha': 1.0,
-            'l1_ratio': 0.5,  # Equal L1 and L2 regularization
+            'alphas': [0.01, 0.1, 1.0, 10.0],
+            'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9],  # Test different L1/L2 ratios
+            'cv': 5,
             'max_iter': 1000,
             'random_state': model_config.random_state
         }
@@ -1028,11 +1055,8 @@ class EnhancedModelFactory:
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
         
-        # Create model (using ElasticNet instead of Ridge)
-        if model_config.model_type == ModelType.RIDGE:
-            model = ElasticNet(**params)
-        else:
-            model = ElasticNetClassifier(**params)
+        # Create model (using ElasticNetCV instead of Ridge for automatic optimization)
+        model = ElasticNetCV(**params)
         
         return model
     

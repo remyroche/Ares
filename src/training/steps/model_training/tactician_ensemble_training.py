@@ -348,13 +348,13 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         """Create mock base models for testing purposes with proper error handling."""
         try:
             from sklearn.ensemble import RandomForestRegressor
-            from sklearn.linear_model import LinearRegression, ElasticNet
+            from sklearn.linear_model import LinearRegression, ElasticNetCV
             
             mock_models = {
                 'node_model': RandomForestRegressor(n_estimators=10, random_state=42, max_depth=3),
                 'catboost_model': RandomForestRegressor(n_estimators=10, random_state=43, max_depth=3),
                 'lightgbm_model': RandomForestRegressor(n_estimators=10, random_state=44, max_depth=3),
-                'elastic_net_model': ElasticNet(alpha=1.0, l1_ratio=0.5, random_state=45)
+                'elastic_net_cv_model': ElasticNetCV(alphas=[0.01, 0.1, 1.0, 10.0], l1_ratio=[0.1, 0.5, 0.9], cv=3, random_state=45)
             }
             
             self.logger.info(f"📊 Created {len(mock_models)} mock base tactician models for ensemble training")

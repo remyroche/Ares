@@ -359,8 +359,8 @@ class HMMStatisticalValidator:
         except Exception:
             return 'UNKNOWN'
 
-    def _get_clustering_improvement_suggestions(self, hmm_data: pd.DataFrame) -> List[str]:
-        """Generate comprehensive suggestions for improving HMM clustering quality."""
+    def _get_hmm_improvement_suggestions(self, hmm_data: pd.DataFrame) -> List[str]:
+        """Generate comprehensive suggestions for improving HMM regime modeling quality."""
         suggestions = []
 
         # Analyze HMM-specific quality metrics (not traditional clustering)
@@ -434,7 +434,7 @@ class HMMStatisticalValidator:
                         ])
 
             except Exception as e:
-                suggestions.append(f"Could not analyze clustering quality: {e}")
+                suggestions.append(f"Could not analyze HMM regime modeling quality: {e}")
 
         return suggestions
 
@@ -649,17 +649,17 @@ class HMMStatisticalValidator:
             else:
                 scalability = 'LIMITED'
 
-            # Add comprehensive clustering quality improvement suggestions
-            clustering_suggestions = []
+            # Add comprehensive HMM regime modeling improvement suggestions
+            hmm_suggestions = []
             try:
-                if hasattr(self, '_get_clustering_improvement_suggestions'):
-                    clustering_suggestions = self._get_clustering_improvement_suggestions(hmm_data)
-                    self.logger.debug(f"Generated {len(clustering_suggestions)} clustering improvement suggestions")
+                if hasattr(self, '_get_hmm_improvement_suggestions'):
+                    hmm_suggestions = self._get_hmm_improvement_suggestions(hmm_data)
+                    self.logger.debug(f"Generated {len(hmm_suggestions)} HMM regime modeling improvement suggestions")
                 else:
-                    self.logger.warning("Clustering improvement suggestions method not found")
+                    self.logger.warning("HMM improvement suggestions method not found")
             except Exception as e:
-                self.logger.error(f"Error generating clustering suggestions: {e}")
-                clustering_suggestions = [f"Error generating suggestions: {e}"]
+                self.logger.error(f"Error generating HMM suggestions: {e}")
+                hmm_suggestions = [f"Error generating suggestions: {e}"]
 
             result = {
                 'training_time_seconds': training_time,
@@ -668,10 +668,10 @@ class HMMStatisticalValidator:
                 'parallelization_potential': 'HIGH',
                 'data_size_processed': data_size,
                 'feature_count': n_features,
-                'clustering_improvement_suggestions': clustering_suggestions
+                'hmm_improvement_suggestions': hmm_suggestions
             }
 
-            self.logger.debug(f"Computational efficiency assessment completed with {len(clustering_suggestions)} suggestions")
+            self.logger.debug(f"Computational efficiency assessment completed with {len(hmm_suggestions)} suggestions")
             return result
 
         except Exception as e:

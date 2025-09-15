@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Any, Callable, List
 import numpy as np
 import pandas as pd
-from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+# Note: Removed silhouette_score, calinski_harabasz_score, davies_bouldin_score 
+# as these traditional clustering metrics are not relevant for HMMs
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 
@@ -1418,21 +1419,39 @@ class HMMRegimeDiscoveryStep:
         return interpretation
     
     def _calculate_regime_quality_metrics(self, features: pd.DataFrame, predictions: np.ndarray) -> Dict[str, float]:
-        """Calculate quality metrics for regime detection"""
+        """Calculate HMM-relevant quality metrics for regime detection"""
         try:
-            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+            # Calculate HMM-relevant metrics instead of traditional clustering metrics
+            unique_regimes, counts = np.unique(predictions, return_counts=True)
+            total_samples = len(predictions)
+            
+            # Regime balance score (how evenly distributed regimes are)
+            regime_percentages = counts / total_samples
+            max_percentage = np.max(regime_percentages)
+            min_percentage = np.min(regime_percentages)
+            balance_score = 1.0 - (max_percentage - min_percentage)
+            
+            # Regime count and distribution
+            regime_count = len(unique_regimes)
+            regime_entropy = -np.sum(regime_percentages * np.log(regime_percentages + 1e-10))
             
             quality_metrics = {
-                'silhouette_score': silhouette_score(features, predictions),
-                'calinski_harabasz_score': calinski_harabasz_score(features, predictions),
-                'davies_bouldin_score': davies_bouldin_score(features, predictions)
+                'regime_balance_score': balance_score,
+                'regime_count': regime_count,
+                'regime_entropy': regime_entropy,
+                'max_regime_percentage': max_percentage,
+                'min_regime_percentage': min_percentage,
+                'regime_distribution_quality': 'EXCELLENT' if balance_score > 0.7 else 'GOOD' if balance_score > 0.5 else 'MODERATE'
             }
         except Exception as e:
-            self.logger.warning(f"Quality metrics calculation failed: {e}")
+            self.logger.warning(f"HMM quality metrics calculation failed: {e}")
             quality_metrics = {
-                'silhouette_score': 0.0,
-                'calinski_harabasz_score': 0.0,
-                'davies_bouldin_score': 0.0
+                'regime_balance_score': 0.0,
+                'regime_count': 0,
+                'regime_entropy': 0.0,
+                'max_regime_percentage': 0.0,
+                'min_regime_percentage': 0.0,
+                'regime_distribution_quality': 'UNKNOWN'
             }
         
         return quality_metrics
@@ -1452,14 +1471,16 @@ class HMMRegimeDiscoveryStep:
         else:
             recommendations.append(f"Regime count ({n_regimes}) appears appropriate for market complexity")
         
-        # Quality recommendations
-        silhouette_score = quality_metrics.get('silhouette_score', 0)
-        if silhouette_score > 0.5:
-            recommendations.append("Excellent regime separation - regimes are well-defined")
-        elif silhouette_score > 0.3:
-            recommendations.append("Good regime separation - regimes are reasonably well-defined")
+        # HMM-relevant quality recommendations
+        balance_score = quality_metrics.get('regime_balance_score', 0)
+        distribution_quality = quality_metrics.get('regime_distribution_quality', 'UNKNOWN')
+        
+        if distribution_quality == 'EXCELLENT':
+            recommendations.append("Excellent regime distribution - regimes are well-balanced")
+        elif distribution_quality == 'GOOD':
+            recommendations.append("Good regime distribution - regimes are reasonably balanced")
         else:
-            recommendations.append("Poor regime separation - consider feature engineering or parameter tuning")
+            recommendations.append("Moderate regime distribution - consider feature engineering or parameter tuning")
         
         # Distribution recommendations
         regime_dist = regime_analysis['regime_distribution']
@@ -5106,13 +5127,13 @@ class HMMRegimeDiscoveryStep:
 
     @log_all_calls
     @handles_errors(fallback={})
-    def _calculate_cluster_quality_metrics(self, features_scaled: Any, cluster_labels: Any, kmeans_model: Any) -> dict[str, Any]:
-        """Calculate comprehensive cluster quality metrics."""
+    def _calculate_hmm_regime_quality_metrics(self, features_scaled: Any, cluster_labels: Any, kmeans_model: Any) -> dict[str, Any]:
+        """Calculate HMM-relevant regime quality metrics."""
         try:
-            self.logger.info('📊 Calculating cluster quality metrics...')
+            self.logger.info('📊 Calculating HMM regime quality metrics...')
             self.logger.info(f'   - Input features shape: {features_scaled.shape}')
-            self.logger.info(f'   - Cluster labels shape: {cluster_labels.shape}')
-            self.logger.info(f'   - Unique clusters: {len(np.unique(cluster_labels))}')
+            self.logger.info(f'   - Regime labels shape: {cluster_labels.shape}')
+            self.logger.info(f'   - Unique regimes: {len(np.unique(cluster_labels))}')
             
             metrics = {}
             

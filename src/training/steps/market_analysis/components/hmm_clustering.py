@@ -148,6 +148,11 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 hmm_models, cluster_assignments, market_data, clustering_config
             )
             
+            # Generate detailed metrics for each HMM cluster
+            cluster_detailed_metrics = self._generate_cluster_detailed_metrics(
+                hmm_models, cluster_assignments, market_data, clustering_config
+            )
+            
             # Create single consolidated artifact
             artifacts = {
                 'hmm_clustering_result': {
@@ -155,6 +160,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'cluster_assignments': cluster_assignments,
                     'cluster_metrics': cluster_metrics,
                     'cluster_quality_metrics': quality_metrics,
+                    'cluster_detailed_metrics': cluster_detailed_metrics,
                     'clustering_summary': {
                         'total_clusters': len(hmm_models),
                         'total_assignments': len(cluster_assignments),
@@ -419,6 +425,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"✅ Cluster quality validation completed in {validation_time:.2f}s")
             self.logger.info(f"📊 Overall quality score: {overall_score:.2f} ({'PASSED' if quality_metrics['validation_passed'] else 'FAILED'})")
             self.logger.info(f"📈 Regime range: 2-150 → Clusters: {len(hmm_models)}")
+            self.logger.info(f"📋 Detailed cluster metrics generated for {len(hmm_models)} clusters")
             
             return quality_metrics
             
@@ -719,6 +726,608 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             recommendations.append("Cluster quality is good - no specific recommendations")
         
         return recommendations
+    
+    def _generate_cluster_detailed_metrics(
+        self, 
+        hmm_models: List[Any], 
+        cluster_assignments: List[int], 
+        market_data: Any,
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Generate detailed metrics for each HMM cluster."""
+        start_time = time.time()
+        
+        try:
+            if not PANDAS_AVAILABLE or not isinstance(market_data, pd.DataFrame):
+                return {'error': 'Pandas not available or invalid market data for detailed metrics'}
+            
+            if not cluster_assignments or not hmm_models:
+                return {'error': 'No cluster assignments or models available'}
+            
+            detailed_metrics = {}
+            unique_clusters = sorted(set(cluster_assignments))
+            
+            self.logger.info(f"📊 Generating detailed metrics for {len(unique_clusters)} clusters")
+            
+            for cluster_id in unique_clusters:
+                cluster_metrics = self._analyze_single_cluster(
+                    cluster_id, hmm_models, cluster_assignments, market_data
+                )
+                detailed_metrics[f'cluster_{cluster_id}'] = cluster_metrics
+            
+            # Add cluster comparison metrics
+            comparison_metrics = self._generate_cluster_comparison_metrics(
+                detailed_metrics, cluster_assignments, market_data
+            )
+            detailed_metrics['cluster_comparison'] = comparison_metrics
+            
+            # Add cluster performance metrics
+            performance_metrics = self._generate_cluster_performance_metrics(
+                detailed_metrics, cluster_assignments, market_data
+            )
+            detailed_metrics['cluster_performance'] = performance_metrics
+            
+            generation_time = time.time() - start_time
+            detailed_metrics['generation_time'] = generation_time
+            
+            self.logger.info(f"✅ Detailed cluster metrics generated in {generation_time:.2f}s")
+            
+            return detailed_metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Detailed cluster metrics generation failed: {e}")
+            return {
+                'error': str(e),
+                'generation_time': time.time() - start_time
+            }
+    
+    def _analyze_single_cluster(
+        self, 
+        cluster_id: int, 
+        hmm_models: List[Any], 
+        cluster_assignments: List[int], 
+        market_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Analyze a single cluster in detail."""
+        try:
+            # Get cluster data
+            cluster_mask = np.array(cluster_assignments) == cluster_id
+            cluster_data = market_data[cluster_mask]
+            
+            if len(cluster_data) < 2:
+                return {'error': f'Insufficient data for cluster {cluster_id}'}
+            
+            cluster_metrics = {
+                'cluster_id': cluster_id,
+                'sample_count': len(cluster_data),
+                'sample_percentage': (len(cluster_data) / len(market_data)) * 100,
+                'data_range': {
+                    'start_index': int(cluster_mask.argmax()),
+                    'end_index': int(len(cluster_mask) - 1 - cluster_mask[::-1].argmax()),
+                    'duration_samples': len(cluster_data)
+                }
+            }
+            
+            # Price analysis
+            if 'close' in cluster_data.columns:
+                price_metrics = self._analyze_cluster_prices(cluster_data)
+                cluster_metrics['price_analysis'] = price_metrics
+            
+            # Volume analysis
+            if 'volume' in cluster_data.columns:
+                volume_metrics = self._analyze_cluster_volume(cluster_data)
+                cluster_metrics['volume_analysis'] = volume_metrics
+            
+            # Volatility analysis
+            if 'high' in cluster_data.columns and 'low' in cluster_data.columns:
+                volatility_metrics = self._analyze_cluster_volatility(cluster_data)
+                cluster_metrics['volatility_analysis'] = volatility_metrics
+            
+            # Trend analysis
+            trend_metrics = self._analyze_cluster_trend(cluster_data)
+            cluster_metrics['trend_analysis'] = trend_metrics
+            
+            # HMM model analysis
+            if cluster_id < len(hmm_models):
+                hmm_metrics = self._analyze_cluster_hmm_model(hmm_models[cluster_id])
+                cluster_metrics['hmm_model_analysis'] = hmm_metrics
+            
+            # Cluster characteristics
+            characteristics = self._determine_cluster_characteristics(cluster_metrics)
+            cluster_metrics['characteristics'] = characteristics
+            
+            return cluster_metrics
+            
+        except Exception as e:
+            return {'error': f'Analysis failed for cluster {cluster_id}: {e}'}
+    
+    def _analyze_cluster_prices(self, cluster_data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze price characteristics of a cluster."""
+        try:
+            close_prices = cluster_data['close']
+            returns = close_prices.pct_change().dropna()
+            
+            return {
+                'price_range': {
+                    'min_price': float(close_prices.min()),
+                    'max_price': float(close_prices.max()),
+                    'price_spread': float(close_prices.max() - close_prices.min()),
+                    'price_spread_pct': float((close_prices.max() - close_prices.min()) / close_prices.min() * 100)
+                },
+                'returns_analysis': {
+                    'mean_return': float(returns.mean()),
+                    'std_return': float(returns.std()),
+                    'min_return': float(returns.min()),
+                    'max_return': float(returns.max()),
+                    'positive_return_pct': float((returns > 0).mean() * 100),
+                    'sharpe_ratio': float(returns.mean() / returns.std()) if returns.std() > 0 else 0.0
+                },
+                'price_momentum': {
+                    'first_price': float(close_prices.iloc[0]),
+                    'last_price': float(close_prices.iloc[-1]),
+                    'total_return': float((close_prices.iloc[-1] - close_prices.iloc[0]) / close_prices.iloc[0] * 100),
+                    'price_trend': 'bullish' if close_prices.iloc[-1] > close_prices.iloc[0] else 'bearish'
+                }
+            }
+        except Exception as e:
+            return {'error': f'Price analysis failed: {e}'}
+    
+    def _analyze_cluster_volume(self, cluster_data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze volume characteristics of a cluster."""
+        try:
+            volume = cluster_data['volume']
+            volume_returns = volume.pct_change().dropna()
+            
+            return {
+                'volume_stats': {
+                    'mean_volume': float(volume.mean()),
+                    'median_volume': float(volume.median()),
+                    'std_volume': float(volume.std()),
+                    'min_volume': float(volume.min()),
+                    'max_volume': float(volume.max())
+                },
+                'volume_volatility': {
+                    'volume_cv': float(volume.std() / volume.mean()) if volume.mean() > 0 else 0.0,
+                    'volume_trend': 'increasing' if volume.iloc[-1] > volume.iloc[0] else 'decreasing'
+                },
+                'volume_anomalies': {
+                    'high_volume_threshold': float(volume.quantile(0.9)),
+                    'low_volume_threshold': float(volume.quantile(0.1)),
+                    'high_volume_samples': int((volume > volume.quantile(0.9)).sum()),
+                    'low_volume_samples': int((volume < volume.quantile(0.1)).sum())
+                }
+            }
+        except Exception as e:
+            return {'error': f'Volume analysis failed: {e}'}
+    
+    def _analyze_cluster_volatility(self, cluster_data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze volatility characteristics of a cluster."""
+        try:
+            high = cluster_data['high']
+            low = cluster_data['low']
+            close = cluster_data['close']
+            
+            # True Range and ATR
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = true_range.rolling(window=14).mean()
+            
+            # Price ranges
+            daily_ranges = (high - low) / close * 100
+            
+            return {
+                'volatility_metrics': {
+                    'mean_daily_range_pct': float(daily_ranges.mean()),
+                    'std_daily_range_pct': float(daily_ranges.std()),
+                    'max_daily_range_pct': float(daily_ranges.max()),
+                    'min_daily_range_pct': float(daily_ranges.min()),
+                    'mean_atr': float(atr.mean()),
+                    'atr_volatility': float(atr.std())
+                },
+                'volatility_classification': {
+                    'volatility_level': self._classify_volatility(daily_ranges.mean()),
+                    'volatility_consistency': 'consistent' if daily_ranges.std() < daily_ranges.mean() * 0.5 else 'inconsistent'
+                }
+            }
+        except Exception as e:
+            return {'error': f'Volatility analysis failed: {e}'}
+    
+    def _analyze_cluster_trend(self, cluster_data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze trend characteristics of a cluster."""
+        try:
+            close = cluster_data['close']
+            
+            # Simple moving averages
+            sma_5 = close.rolling(window=5).mean()
+            sma_20 = close.rolling(window=20).mean() if len(close) >= 20 else close.rolling(window=len(close)).mean()
+            
+            # Trend strength
+            trend_strength = abs(sma_5.iloc[-1] - sma_20.iloc[-1]) / sma_20.iloc[-1] * 100 if len(sma_20) > 0 else 0
+            
+            return {
+                'trend_metrics': {
+                    'trend_direction': 'upward' if sma_5.iloc[-1] > sma_20.iloc[-1] else 'downward' if len(sma_5) > 0 and len(sma_20) > 0 else 'neutral',
+                    'trend_strength': float(trend_strength),
+                    'trend_consistency': self._assess_trend_consistency(close)
+                },
+                'moving_averages': {
+                    'sma_5': float(sma_5.iloc[-1]) if len(sma_5) > 0 else None,
+                    'sma_20': float(sma_20.iloc[-1]) if len(sma_20) > 0 else None,
+                    'ma_cross': 'golden' if sma_5.iloc[-1] > sma_20.iloc[-1] else 'death' if len(sma_5) > 0 and len(sma_20) > 0 else 'none'
+                }
+            }
+        except Exception as e:
+            return {'error': f'Trend analysis failed: {e}'}
+    
+    def _analyze_cluster_hmm_model(self, hmm_model: Any) -> Dict[str, Any]:
+        """Analyze HMM model characteristics for a cluster."""
+        try:
+            model_metrics = {
+                'model_type': str(type(hmm_model).__name__),
+                'model_available': hmm_model is not None
+            }
+            
+            if hasattr(hmm_model, 'n_components'):
+                model_metrics['n_components'] = hmm_model.n_components
+            
+            if hasattr(hmm_model, 'covariance_type'):
+                model_metrics['covariance_type'] = hmm_model.covariance_type
+            
+            if hasattr(hmm_model, 'means_'):
+                model_metrics['means'] = hmm_model.means_.tolist() if hasattr(hmm_model.means_, 'tolist') else str(hmm_model.means_)
+            
+            if hasattr(hmm_model, 'covars_'):
+                model_metrics['covariances_available'] = True
+                model_metrics['covariance_shape'] = hmm_model.covars_.shape if hasattr(hmm_model.covars_, 'shape') else 'unknown'
+            
+            return model_metrics
+            
+        except Exception as e:
+            return {'error': f'HMM model analysis failed: {e}'}
+    
+    def _determine_cluster_characteristics(self, cluster_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Determine overall characteristics of a cluster."""
+        try:
+            characteristics = {
+                'cluster_type': 'unknown',
+                'market_condition': 'unknown',
+                'risk_level': 'unknown',
+                'trading_opportunity': 'unknown'
+            }
+            
+            # Determine cluster type based on price analysis
+            if 'price_analysis' in cluster_metrics:
+                price_analysis = cluster_metrics['price_analysis']
+                if 'price_momentum' in price_analysis:
+                    total_return = price_analysis['price_momentum']['total_return']
+                    if total_return > 2:
+                        characteristics['cluster_type'] = 'bullish'
+                    elif total_return < -2:
+                        characteristics['cluster_type'] = 'bearish'
+                    else:
+                        characteristics['cluster_type'] = 'sideways'
+            
+            # Determine market condition based on volatility
+            if 'volatility_analysis' in cluster_metrics:
+                vol_analysis = cluster_metrics['volatility_analysis']
+                if 'volatility_classification' in vol_analysis:
+                    vol_level = vol_analysis['volatility_classification']['volatility_level']
+                    characteristics['market_condition'] = vol_level
+            
+            # Determine risk level
+            if 'price_analysis' in cluster_metrics and 'volatility_analysis' in cluster_metrics:
+                price_std = cluster_metrics['price_analysis']['returns_analysis']['std_return']
+                vol_level = cluster_metrics['volatility_analysis']['volatility_classification']['volatility_level']
+                
+                if price_std > 0.02 or vol_level == 'high':
+                    characteristics['risk_level'] = 'high'
+                elif price_std > 0.01 or vol_level == 'medium':
+                    characteristics['risk_level'] = 'medium'
+                else:
+                    characteristics['risk_level'] = 'low'
+            
+            # Determine trading opportunity
+            if characteristics['cluster_type'] != 'unknown' and characteristics['risk_level'] != 'unknown':
+                if characteristics['cluster_type'] in ['bullish', 'bearish'] and characteristics['risk_level'] in ['low', 'medium']:
+                    characteristics['trading_opportunity'] = 'high'
+                elif characteristics['cluster_type'] == 'sideways' and characteristics['risk_level'] == 'low':
+                    characteristics['trading_opportunity'] = 'medium'
+                else:
+                    characteristics['trading_opportunity'] = 'low'
+            
+            return characteristics
+            
+        except Exception as e:
+            return {'error': f'Characteristic determination failed: {e}'}
+    
+    def _classify_volatility(self, mean_daily_range: float) -> str:
+        """Classify volatility level based on mean daily range."""
+        if mean_daily_range > 3.0:
+            return 'high'
+        elif mean_daily_range > 1.5:
+            return 'medium'
+        else:
+            return 'low'
+    
+    def _assess_trend_consistency(self, prices: pd.Series) -> str:
+        """Assess trend consistency."""
+        if len(prices) < 3:
+            return 'insufficient_data'
+        
+        # Count direction changes
+        direction_changes = 0
+        for i in range(1, len(prices)):
+            if (prices.iloc[i] > prices.iloc[i-1]) != (prices.iloc[i-1] > prices.iloc[i-2] if i > 1 else True):
+                direction_changes += 1
+        
+        change_ratio = direction_changes / (len(prices) - 2)
+        
+        if change_ratio < 0.2:
+            return 'very_consistent'
+        elif change_ratio < 0.4:
+            return 'consistent'
+        elif change_ratio < 0.6:
+            return 'moderate'
+        else:
+            return 'inconsistent'
+    
+    def _generate_cluster_comparison_metrics(
+        self, 
+        detailed_metrics: Dict[str, Any], 
+        cluster_assignments: List[int], 
+        market_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Generate comparison metrics between clusters."""
+        try:
+            comparison = {
+                'cluster_count': len([k for k in detailed_metrics.keys() if k.startswith('cluster_')]),
+                'cluster_distribution': self._calculate_cluster_distribution(cluster_assignments),
+                'cluster_rankings': {}
+            }
+            
+            # Rank clusters by various metrics
+            rankings = {
+                'by_sample_count': [],
+                'by_return': [],
+                'by_volatility': [],
+                'by_volume': []
+            }
+            
+            for cluster_key, metrics in detailed_metrics.items():
+                if cluster_key.startswith('cluster_') and 'error' not in metrics:
+                    cluster_id = metrics.get('cluster_id', 0)
+                    
+                    # Sample count ranking
+                    sample_count = metrics.get('sample_count', 0)
+                    rankings['by_sample_count'].append((cluster_id, sample_count))
+                    
+                    # Return ranking
+                    if 'price_analysis' in metrics and 'price_momentum' in metrics['price_analysis']:
+                        total_return = metrics['price_analysis']['price_momentum']['total_return']
+                        rankings['by_return'].append((cluster_id, total_return))
+                    
+                    # Volatility ranking
+                    if 'volatility_analysis' in metrics and 'volatility_metrics' in metrics['volatility_analysis']:
+                        volatility = metrics['volatility_analysis']['volatility_metrics']['mean_daily_range_pct']
+                        rankings['by_volatility'].append((cluster_id, volatility))
+                    
+                    # Volume ranking
+                    if 'volume_analysis' in metrics and 'volume_stats' in metrics['volume_analysis']:
+                        volume = metrics['volume_analysis']['volume_stats']['mean_volume']
+                        rankings['by_volume'].append((cluster_id, volume))
+            
+            # Sort rankings
+            for ranking_type, ranking_list in rankings.items():
+                if ranking_list:
+                    sorted_ranking = sorted(ranking_list, key=lambda x: x[1], reverse=True)
+                    comparison['cluster_rankings'][ranking_type] = {
+                        'best': sorted_ranking[0] if sorted_ranking else None,
+                        'worst': sorted_ranking[-1] if sorted_ranking else None,
+                        'all_rankings': sorted_ranking
+                    }
+            
+            return comparison
+            
+        except Exception as e:
+            return {'error': f'Cluster comparison failed: {e}'}
+    
+    def _generate_cluster_performance_metrics(
+        self, 
+        detailed_metrics: Dict[str, Any], 
+        cluster_assignments: List[int], 
+        market_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Generate performance metrics for clusters."""
+        try:
+            performance = {
+                'overall_performance': {},
+                'cluster_performance': {},
+                'performance_insights': []
+            }
+            
+            # Calculate overall performance metrics
+            total_samples = len(cluster_assignments)
+            unique_clusters = set(cluster_assignments)
+            
+            performance['overall_performance'] = {
+                'total_clusters': len(unique_clusters),
+                'total_samples': total_samples,
+                'avg_samples_per_cluster': total_samples / len(unique_clusters) if unique_clusters else 0,
+                'cluster_balance': self._calculate_cluster_balance(cluster_assignments)
+            }
+            
+            # Calculate individual cluster performance
+            for cluster_key, metrics in detailed_metrics.items():
+                if cluster_key.startswith('cluster_') and 'error' not in metrics:
+                    cluster_id = metrics.get('cluster_id', 0)
+                    
+                    cluster_perf = {
+                        'sample_efficiency': metrics.get('sample_count', 0) / total_samples * 100,
+                        'data_quality': self._assess_data_quality(metrics),
+                        'market_impact': self._assess_market_impact(metrics)
+                    }
+                    
+                    performance['cluster_performance'][f'cluster_{cluster_id}'] = cluster_perf
+            
+            # Generate performance insights
+            performance['performance_insights'] = self._generate_performance_insights(performance)
+            
+            return performance
+            
+        except Exception as e:
+            return {'error': f'Performance metrics generation failed: {e}'}
+    
+    def _calculate_cluster_balance(self, cluster_assignments: List[int]) -> Dict[str, Any]:
+        """Calculate cluster balance metrics."""
+        cluster_counts = {}
+        for assignment in cluster_assignments:
+            cluster_counts[assignment] = cluster_counts.get(assignment, 0) + 1
+        
+        if not cluster_counts:
+            return {'balance_score': 0.0, 'is_balanced': False}
+        
+        counts = list(cluster_counts.values())
+        mean_count = sum(counts) / len(counts)
+        std_count = np.std(counts) if NUMPY_AVAILABLE else 0
+        
+        balance_score = max(0, 1 - (std_count / mean_count)) if mean_count > 0 else 0
+        is_balanced = balance_score > 0.7
+        
+        return {
+            'balance_score': balance_score,
+            'is_balanced': is_balanced,
+            'cluster_counts': cluster_counts,
+            'count_std': std_count,
+            'count_mean': mean_count
+        }
+    
+    def _assess_data_quality(self, cluster_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Assess data quality for a cluster."""
+        quality_score = 0.0
+        quality_factors = []
+        
+        # Check if all analyses are available
+        analyses = ['price_analysis', 'volume_analysis', 'volatility_analysis', 'trend_analysis']
+        available_analyses = sum(1 for analysis in analyses if analysis in cluster_metrics and 'error' not in cluster_metrics[analysis])
+        
+        if available_analyses == len(analyses):
+            quality_score += 0.4
+            quality_factors.append('all_analyses_available')
+        elif available_analyses >= 2:
+            quality_score += 0.2
+            quality_factors.append('partial_analyses_available')
+        
+        # Check sample count
+        sample_count = cluster_metrics.get('sample_count', 0)
+        if sample_count >= 100:
+            quality_score += 0.3
+            quality_factors.append('sufficient_samples')
+        elif sample_count >= 50:
+            quality_score += 0.2
+            quality_factors.append('moderate_samples')
+        
+        # Check data completeness
+        if 'data_range' in cluster_metrics:
+            duration = cluster_metrics['data_range']['duration_samples']
+            if duration >= 50:
+                quality_score += 0.3
+                quality_factors.append('good_duration')
+        
+        return {
+            'quality_score': quality_score,
+            'quality_level': 'high' if quality_score >= 0.8 else 'medium' if quality_score >= 0.5 else 'low',
+            'quality_factors': quality_factors
+        }
+    
+    def _assess_market_impact(self, cluster_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Assess market impact of a cluster."""
+        impact_score = 0.0
+        impact_factors = []
+        
+        # Price impact
+        if 'price_analysis' in cluster_metrics and 'price_momentum' in cluster_metrics['price_analysis']:
+            total_return = abs(cluster_metrics['price_analysis']['price_momentum']['total_return'])
+            if total_return > 5:
+                impact_score += 0.4
+                impact_factors.append('high_price_impact')
+            elif total_return > 2:
+                impact_score += 0.2
+                impact_factors.append('moderate_price_impact')
+        
+        # Volume impact
+        if 'volume_analysis' in cluster_metrics and 'volume_anomalies' in cluster_metrics['volume_analysis']:
+            high_volume_samples = cluster_metrics['volume_analysis']['volume_anomalies']['high_volume_samples']
+            total_samples = cluster_metrics.get('sample_count', 1)
+            if high_volume_samples / total_samples > 0.2:
+                impact_score += 0.3
+                impact_factors.append('high_volume_activity')
+        
+        # Volatility impact
+        if 'volatility_analysis' in cluster_metrics and 'volatility_classification' in cluster_metrics['volatility_analysis']:
+            vol_level = cluster_metrics['volatility_analysis']['volatility_classification']['volatility_level']
+            if vol_level == 'high':
+                impact_score += 0.3
+                impact_factors.append('high_volatility')
+        
+        return {
+            'impact_score': impact_score,
+            'impact_level': 'high' if impact_score >= 0.7 else 'medium' if impact_score >= 0.4 else 'low',
+            'impact_factors': impact_factors
+        }
+    
+    def _generate_performance_insights(self, performance_metrics: Dict[str, Any]) -> List[str]:
+        """Generate performance insights based on metrics."""
+        insights = []
+        
+        try:
+            # Overall performance insights
+            overall = performance_metrics.get('overall_performance', {})
+            cluster_balance = overall.get('cluster_balance', {})
+            
+            if cluster_balance.get('is_balanced', False):
+                insights.append("✅ Clusters are well-balanced with good sample distribution")
+            else:
+                insights.append("⚠️ Cluster distribution is imbalanced - consider rebalancing")
+            
+            # Individual cluster insights
+            cluster_perf = performance_metrics.get('cluster_performance', {})
+            high_quality_clusters = 0
+            high_impact_clusters = 0
+            
+            for cluster_key, perf in cluster_perf.items():
+                data_quality = perf.get('data_quality', {})
+                market_impact = perf.get('market_impact', {})
+                
+                if data_quality.get('quality_level') == 'high':
+                    high_quality_clusters += 1
+                
+                if market_impact.get('impact_level') == 'high':
+                    high_impact_clusters += 1
+            
+            if high_quality_clusters > 0:
+                insights.append(f"📊 {high_quality_clusters} clusters have high data quality")
+            
+            if high_impact_clusters > 0:
+                insights.append(f"🎯 {high_impact_clusters} clusters show high market impact")
+            
+            # Sample efficiency insights
+            total_clusters = len(cluster_perf)
+            if total_clusters > 0:
+                avg_efficiency = sum(perf.get('sample_efficiency', 0) for perf in cluster_perf.values()) / total_clusters
+                if avg_efficiency > 30:
+                    insights.append("📈 Good sample efficiency across clusters")
+                elif avg_efficiency < 20:
+                    insights.append("📉 Low sample efficiency - consider increasing data or reducing clusters")
+            
+            if not insights:
+                insights.append("ℹ️ No specific performance insights available")
+            
+            return insights
+            
+        except Exception as e:
+            return [f"❌ Performance insights generation failed: {e}"]
     
     async def _prepare_data_for_clustering_optimized(
         self, 

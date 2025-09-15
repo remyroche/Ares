@@ -31,7 +31,7 @@ class SRClusteringComponent(BaseMarketAnalysisComponent):
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        return ['clustered_levels']
+        return ['sr_clustering_result']
     
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -88,14 +88,24 @@ class SRClusteringComponent(BaseMarketAnalysisComponent):
             if not clustered_levels:
                 raise ValueError("SR clustering completed but no clusters were created")
             
+            # Create single consolidated artifact
             artifacts = {
-                'clustered_levels': clustered_levels,
-                'cluster_metrics': cluster_metrics,
-                'clustering_summary': {
-                    'total_clusters': len(clustered_levels),
-                    'total_original_levels': len(sr_levels),
-                    'clustering_efficiency': len(clustered_levels) / len(sr_levels) if sr_levels else 0.0,
-                    'clustering_time': clustering_result.get('clustering_time', 0.0)
+                'sr_clustering_result': {
+                    'clustered_levels': clustered_levels,
+                    'cluster_metrics': cluster_metrics,
+                    'clustering_summary': {
+                        'total_clusters': len(clustered_levels),
+                        'total_original_levels': len(sr_levels),
+                        'clustering_efficiency': len(clustered_levels) / len(sr_levels) if sr_levels else 0.0,
+                        'clustering_time': clustering_result.get('clustering_time', 0.0)
+                    },
+                    'metadata': {
+                        'symbol': self.config.symbol,
+                        'exchange': self.config.exchange,
+                        'timeframe': self.config.timeframe,
+                        'original_levels': len(sr_levels),
+                        'execution_timestamp': datetime.now().isoformat()
+                    }
                 }
             }
             

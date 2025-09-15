@@ -31,7 +31,7 @@ class SRDetectionComponent(BaseMarketAnalysisComponent):
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        return ['sr_levels']
+        return ['sr_detection_result']
     
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -88,14 +88,24 @@ class SRDetectionComponent(BaseMarketAnalysisComponent):
                 if not all_levels:
                     raise ValueError("SR detection completed but no levels were detected")
                 
+                # Create single consolidated artifact
                 artifacts = {
-                    'sr_levels': all_levels,
-                    'sr_metrics': sr_metrics,
-                    'detection_summary': {
-                        'total_levels': len(all_levels),
-                        'support_levels': len([l for l in all_levels if l.get('type') == 'support']),
-                        'resistance_levels': len([l for l in all_levels if l.get('type') == 'resistance']),
-                        'detection_time': result.get('execution_time', 0.0)
+                    'sr_detection_result': {
+                        'sr_levels': all_levels,
+                        'sr_metrics': sr_metrics,
+                        'detection_summary': {
+                            'total_levels': len(all_levels),
+                            'support_levels': len([l for l in all_levels if l.get('type') == 'support']),
+                            'resistance_levels': len([l for l in all_levels if l.get('type') == 'resistance']),
+                            'detection_time': result.get('execution_time', 0.0)
+                        },
+                        'metadata': {
+                            'symbol': self.config.symbol,
+                            'exchange': self.config.exchange,
+                            'timeframe': self.config.timeframe,
+                            'data_points': len(market_data) if market_data is not None else 0,
+                            'execution_timestamp': datetime.now().isoformat()
+                        }
                     }
                 }
                 

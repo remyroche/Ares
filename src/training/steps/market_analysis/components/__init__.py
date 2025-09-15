@@ -16,6 +16,9 @@ from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
 from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
+from .hmm_clustering import HMMClusteringComponent
+from .hmm_models_training import HMMModelsTrainingComponent
+from .hmm_ensemble_training import HMMEnsembleTrainingComponent
 
 __all__ = [
     'BaseMarketAnalysisComponent',
@@ -26,5 +29,8 @@ __all__ = [
     'SRParameterOptimizationComponent',
     'SRDetectionComponent',
     'SRClusteringComponent',
-    'HMMRegimeDiscoveryComponent'
+    'HMMRegimeDiscoveryComponent',
+    'HMMClusteringComponent',
+    'HMMModelsTrainingComponent',
+    'HMMEnsembleTrainingComponent'
 ]

@@ -21,7 +21,10 @@ def test_file_structure():
         "src/training/steps/market_analysis/components/sr_parameter_optimization.py",
         "src/training/steps/market_analysis/components/sr_detection.py",
         "src/training/steps/market_analysis/components/sr_clustering.py",
-        "src/training/steps/market_analysis/components/hmm_regime_discovery.py"
+        "src/training/steps/market_analysis/components/hmm_regime_discovery.py",
+        "src/training/steps/market_analysis/components/hmm_clustering.py",
+        "src/training/steps/market_analysis/components/hmm_models_training.py",
+        "src/training/steps/market_analysis/components/hmm_ensemble_training.py"
     ]
     
     try:

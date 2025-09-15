@@ -31,7 +31,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        return ['regime_models', 'regime_assignments']
+        return ['hmm_regime_discovery_result']
     
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -93,15 +93,25 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             if not regime_models or not regime_assignments:
                 raise ValueError("HMM regime discovery completed but no regimes were discovered")
             
+            # Create single consolidated artifact
             artifacts = {
-                'regime_models': regime_models,
-                'regime_assignments': regime_assignments,
-                'regime_metrics': regime_metrics,
-                'regime_discovery_summary': {
-                    'total_regimes': len(regime_models),
-                    'total_assignments': len(regime_assignments),
-                    'regime_distribution': self._calculate_regime_distribution(regime_assignments),
-                    'discovery_time': regime_result.get('discovery_time', 0.0)
+                'hmm_regime_discovery_result': {
+                    'regime_models': regime_models,
+                    'regime_assignments': regime_assignments,
+                    'regime_metrics': regime_metrics,
+                    'regime_discovery_summary': {
+                        'total_regimes': len(regime_models),
+                        'total_assignments': len(regime_assignments),
+                        'regime_distribution': self._calculate_regime_distribution(regime_assignments),
+                        'discovery_time': regime_result.get('discovery_time', 0.0)
+                    },
+                    'metadata': {
+                        'symbol': self.config.symbol,
+                        'exchange': self.config.exchange,
+                        'timeframe': self.config.timeframe,
+                        'data_points': len(market_data) if market_data is not None else 0,
+                        'execution_timestamp': datetime.now().isoformat()
+                    }
                 }
             }
             

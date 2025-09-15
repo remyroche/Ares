@@ -10,6 +10,9 @@ from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
 from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
+from .hmm_clustering import HMMClusteringComponent
+from .hmm_models_training import HMMModelsTrainingComponent
+from .hmm_ensemble_training import HMMEnsembleTrainingComponent
 
 
 class ComponentFactory:
@@ -24,6 +27,9 @@ class ComponentFactory:
         'sr_detection': SRDetectionComponent,
         'sr_clustering': SRClusteringComponent,
         'hmm_regime_discovery': HMMRegimeDiscoveryComponent,
+        'hmm_clustering': HMMClusteringComponent,
+        'hmm_models_training': HMMModelsTrainingComponent,
+        'hmm_ensemble_training': HMMEnsembleTrainingComponent,
         # Add more components as they are created
     }
     

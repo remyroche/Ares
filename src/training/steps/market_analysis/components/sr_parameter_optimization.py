@@ -44,7 +44,7 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        return ['optimized_parameters', 'quality_thresholds']
+        return ['sr_parameter_optimization_result']
     
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -129,18 +129,28 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
             quality_thresholds = optimization_result.get('quality_thresholds', {})
             parameter_optimization_metrics = optimization_result.get('parameter_optimization_metrics', {})
             
-            # Validate that we have the required artifacts
+            # Validate that we have the required data
             if not optimized_parameters or not quality_thresholds:
-                raise ValueError("Parameter optimization failed to produce required artifacts")
+                raise ValueError("Parameter optimization failed to produce required data")
             
+            # Create single consolidated artifact
             artifacts = {
-                'optimized_parameters': optimized_parameters,
-                'quality_thresholds': quality_thresholds,
-                'parameter_optimization_metrics': parameter_optimization_metrics,
-                'optimization_summary': {
-                    'total_combinations_tested': optimization_result.get('total_combinations_tested', 0),
-                    'best_score': optimization_result.get('best_score', 0.0),
-                    'optimization_time': optimization_result.get('optimization_time', 0.0)
+                'sr_parameter_optimization_result': {
+                    'optimized_parameters': optimized_parameters,
+                    'quality_thresholds': quality_thresholds,
+                    'parameter_optimization_metrics': parameter_optimization_metrics,
+                    'optimization_summary': {
+                        'total_combinations_tested': optimization_result.get('total_combinations_tested', 0),
+                        'best_score': optimization_result.get('best_score', 0.0),
+                        'optimization_time': optimization_result.get('optimization_time', 0.0)
+                    },
+                    'metadata': {
+                        'symbol': self.config.symbol,
+                        'exchange': self.config.exchange,
+                        'timeframe': self.config.timeframe,
+                        'data_points': len(market_data) if market_data is not None else 0,
+                        'execution_timestamp': datetime.now().isoformat()
+                    }
                 }
             }
             

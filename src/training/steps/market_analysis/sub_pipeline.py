@@ -162,17 +162,17 @@ class SubPipelineResult:
     def _get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts for this sub-pipeline."""
         artifact_requirements = {
-            'sr_parameter_optimization': ['optimized_parameters', 'quality_thresholds'],
-            'sr_detection': ['sr_levels'],
-            'sr_clustering': ['clustered_levels'],
-            'hmm_regime_discovery': ['regime_models', 'regime_assignments'],
-            'hmm_clustering': ['hmm_models', 'cluster_assignments'],
-            'hmm_models_training': ['hmm_base_models', 'training_metrics'],
-            'hmm_ensemble_training': ['hmm_ensemble_models', 'ensemble_metrics'],
-            'regime_data_splitting': ['regime_data', 'regime_stats'],
-            'triple_barrier_labeling': ['labeled_data', 'labeling_metrics'],
-            'feature_lookback_optimization': ['optimization_results', 'optimized_features'],
-            'cross_timeframe_analysis': ['cross_timeframe_features', 'analysis_metrics']
+            'sr_parameter_optimization': ['sr_parameter_optimization_result'],
+            'sr_detection': ['sr_detection_result'],
+            'sr_clustering': ['sr_clustering_result'],
+            'hmm_regime_discovery': ['hmm_regime_discovery_result'],
+            'hmm_clustering': ['hmm_clustering_result'],
+            'hmm_models_training': ['hmm_models_training_result'],
+            'hmm_ensemble_training': ['hmm_ensemble_training_result'],
+            'regime_data_splitting': ['regime_data_splitting_result'],
+            'triple_barrier_labeling': ['triple_barrier_labeling_result'],
+            'feature_lookback_optimization': ['feature_lookback_optimization_result'],
+            'cross_timeframe_analysis': ['cross_timeframe_analysis_result']
         }
         return artifact_requirements.get(self.sub_pipeline_name, [])
     
@@ -332,9 +332,11 @@ class MarketAnalysisSubPipeline:
             if not is_success:
                 return error_info
             
-            results['optimized_parameters'] = param_optimization_result.artifacts.get('optimized_parameters', {})
-            results['quality_thresholds'] = param_optimization_result.artifacts.get('quality_thresholds', {})
-            results['parameter_optimization_metrics'] = param_optimization_result.artifacts.get('parameter_optimization_metrics', {})
+            # Extract data from consolidated artifact
+            sr_optimization_result = param_optimization_result.artifacts.get('sr_parameter_optimization_result', {})
+            results['optimized_parameters'] = sr_optimization_result.get('optimized_parameters', {})
+            results['quality_thresholds'] = sr_optimization_result.get('quality_thresholds', {})
+            results['parameter_optimization_metrics'] = sr_optimization_result.get('parameter_optimization_metrics', {})
             
             # Update pipeline state for next components
             self._current_pipeline_state.update({
@@ -349,8 +351,10 @@ class MarketAnalysisSubPipeline:
             if not is_success:
                 return error_info
             
-            results['sr_levels'] = detection_result.artifacts.get('sr_levels', [])
-            results['sr_metrics'] = detection_result.artifacts.get('sr_metrics', {})
+            # Extract data from consolidated artifact
+            sr_detection_result = detection_result.artifacts.get('sr_detection_result', {})
+            results['sr_levels'] = sr_detection_result.get('sr_levels', [])
+            results['sr_metrics'] = sr_detection_result.get('sr_metrics', {})
             self.logger.info(f"SR Detection: {len(results['sr_levels'])} levels detected")
             
             # Update pipeline state for next components

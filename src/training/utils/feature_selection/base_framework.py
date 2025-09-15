@@ -35,7 +35,7 @@ try:
     from src.utils.common_operations import create_fallback_logger, safe_dataframe_operation
     from src.utils.hardware.m1_gpu_utils import M1GPUManager
     from src.utils.parallel_processing_optimizer import ParallelProcessor
-    from src.utils.ml_common.matrix_operations import (
+    from src.utils.matrix_operations import (
         safe_correlation_matrix, safe_matrix_multiply, get_unified_matrix_operations
     )
     from src.utils.performance_utils import PerformanceMonitor, performance_timer, memory_monitor

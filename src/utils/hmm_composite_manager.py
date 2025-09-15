@@ -92,7 +92,7 @@ except ImportError:
 
 # Import enhanced matrix operations for GPU acceleration
 try:
-    from .ml_common.matrix_operations import get_unified_matrix_operations  # type: ignore[import]
+    from .matrix_operations import get_unified_matrix_operations  # type: ignore[import]
     MATRIX_OPS_AVAILABLE = True
 except ImportError:
     MATRIX_OPS_AVAILABLE = False

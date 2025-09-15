@@ -24,7 +24,11 @@ def test_file_structure():
         "src/training/steps/market_analysis/components/hmm_regime_discovery.py",
         "src/training/steps/market_analysis/components/hmm_clustering.py",
         "src/training/steps/market_analysis/components/hmm_models_training.py",
-        "src/training/steps/market_analysis/components/hmm_ensemble_training.py"
+        "src/training/steps/market_analysis/components/hmm_ensemble_training.py",
+        "src/training/steps/market_analysis/components/regime_data_splitting.py",
+        "src/training/steps/market_analysis/components/triple_barrier_labeling.py",
+        "src/training/steps/market_analysis/components/feature_lookback_optimization.py",
+        "src/training/steps/market_analysis/components/cross_timeframe_analysis.py"
     ]
     
     try:

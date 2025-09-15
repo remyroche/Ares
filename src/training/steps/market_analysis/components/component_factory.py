@@ -13,6 +13,10 @@ from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
 from .hmm_clustering import HMMClusteringComponent
 from .hmm_models_training import HMMModelsTrainingComponent
 from .hmm_ensemble_training import HMMEnsembleTrainingComponent
+from .regime_data_splitting import RegimeDataSplittingComponent
+from .triple_barrier_labeling import TripleBarrierLabelingComponent
+from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
+from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent
 
 
 class ComponentFactory:
@@ -30,7 +34,10 @@ class ComponentFactory:
         'hmm_clustering': HMMClusteringComponent,
         'hmm_models_training': HMMModelsTrainingComponent,
         'hmm_ensemble_training': HMMEnsembleTrainingComponent,
-        # Add more components as they are created
+        'regime_data_splitting': RegimeDataSplittingComponent,
+        'triple_barrier_labeling': TripleBarrierLabelingComponent,
+        'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
+        'cross_timeframe_analysis': CrossTimeframeAnalysisComponent
     }
     
     @classmethod

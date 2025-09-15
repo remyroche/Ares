@@ -861,7 +861,7 @@ class MLTacticsManager:
 
     def _calculate_combined_confidence(self, predictions: dict[str, Any], analyst_confidence: float = 0.5) -> float:
         """
-        Calculate combined confidence from Analyst and Tactician predictions.
+        Calculate combined confidence from Analyst and Tactician predictions using non-linear transformations.
 
         Args:
             predictions: Tactician predictions dictionary
@@ -871,10 +871,17 @@ class MLTacticsManager:
             float: Combined confidence score
         """
         try:
-            combined_confidence = analyst_confidence * self.confidence_weights['analyst_weight']
+            # Apply logarithmic transformation to analyst confidence for more nuanced scaling
+            analyst_confidence_scaled = np.log2(1 + analyst_confidence * 2) / 2
+            combined_confidence = analyst_confidence_scaled * self.confidence_weights['analyst_weight']
+            
             for barrier_type, prediction in predictions.items():
                 if prediction and 'confidence' in prediction:
                     confidence = prediction['confidence']
+                    
+                    # Apply fractional power transformation to individual confidences
+                    confidence_scaled = np.power(confidence, 0.8)
+                    
                     if barrier_type == 'fifty_percent':
                         weight = self.confidence_weights['fifty_percent_1m_weight']
                     elif barrier_type == 'twenty_five_percent':
@@ -885,7 +892,11 @@ class MLTacticsManager:
                         weight = self.confidence_weights['twenty_five_percent_5m_weight']
                     else:
                         weight = 0.0
-                    combined_confidence += confidence * weight
+                    
+                    combined_confidence += confidence_scaled * weight
+            
+            # Apply final non-linear transformation to the combined result
+            combined_confidence = np.power(combined_confidence, 0.9)
             return np.clip(combined_confidence, 0.0, 1.0)
         except Exception as e:
             self.logger.exception(failed(f'❌ Combined confidence calculation failed: {e}'))

@@ -314,7 +314,7 @@ class HistoricalSRAnalyzer:
         self.logger.info(f"✅ Extracted bounce history for {len(bounce_history)} levels")
     
     def get_level_reliability_score(self, price: float, level_type: str) -> float:
-        """Calculate reliability score for a level based on historical data."""
+        """Calculate reliability score for a level based on historical data using non-linear transformations."""
         level_key = f"{level_type}_{price:.6f}"
         
         if level_key not in self.level_evolution_data:
@@ -324,31 +324,44 @@ class HistoricalSRAnalyzer:
         touch_data = self.touch_history.get(level_key, {})
         bounce_data = self.bounce_history.get(level_key, {})
         
-        # Calculate reliability based on multiple factors
+        # Calculate reliability based on multiple factors with non-linear transformations
         factors = []
         
-        # Factor 1: Level age (older levels are more reliable)
+        # Factor 1: Level age (older levels are more reliable) - use logarithmic scaling
         if evolution_data['evolution']:
             latest_age = evolution_data['evolution'][-1]['age_hours']
             age_score = min(latest_age / 24.0, 1.0)  # Normalize to 1.0 for 24+ hours
+            # Apply logarithmic transformation for diminishing returns
+            age_score = np.log2(1 + age_score * 2) / 2
             factors.append(age_score * 0.2)
         
-        # Factor 2: Touch frequency (more touches = more reliable)
+        # Factor 2: Touch frequency (more touches = more reliable) - use square root scaling
         touch_frequency = touch_data.get('touch_frequency', 0.0)
         touch_score = min(touch_frequency / 10.0, 1.0)  # Normalize to 1.0 for 10+ touches/hour
+        # Apply square root transformation for more gradual increase
+        touch_score = np.sqrt(touch_score)
         factors.append(touch_score * 0.3)
         
-        # Factor 3: Bounce success rate
+        # Factor 3: Bounce success rate - use fractional power scaling
         bounce_rate = bounce_data.get('avg_bounce_rate', 0.0)
+        # Apply fractional power (0.8) for more gradual scaling
+        bounce_rate = np.power(bounce_rate, 0.8)
         factors.append(bounce_rate * 0.3)
         
-        # Factor 4: Strength consistency
+        # Factor 4: Strength consistency - use exponential decay
         strength_volatility = bounce_data.get('strength_volatility', 1.0)
         consistency_score = max(0.0, 1.0 - strength_volatility)
+        # Apply exponential transformation for more dramatic effect
+        consistency_score = np.exp(-2 * (1 - consistency_score))
         factors.append(consistency_score * 0.2)
         
-        # Calculate weighted reliability score
-        reliability_score = sum(factors) if factors else 0.5
+        # Calculate weighted reliability score using geometric mean for non-linear combination
+        if factors:
+            # Use geometric mean for more balanced non-linear combination
+            reliability_score = np.power(np.prod(factors), 1.0 / len(factors))
+        else:
+            reliability_score = 0.5
+        
         return min(max(reliability_score, 0.0), 1.0)
     
     def get_level_probability_features(self, price: float, level_type: str) -> Dict[str, float]:

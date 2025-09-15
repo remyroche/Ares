@@ -4642,12 +4642,14 @@ class HMMRegimeDiscoveryStep:
             return pd.DataFrame()
 
     def _calculate_cluster_intensity(self, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
-        """Calculate cluster intensity scores."""
+        """Calculate cluster intensity scores using non-linear transformations."""
         try:
             intensity = np.zeros(len(cluster_labels))
             for cluster_id, char in composite_analysis.get('cluster_characteristics', {}).items():
                 cluster_mask = cluster_labels == cluster_id
-                intensity[cluster_mask] = char.get('percentage', 0) / 100
+                raw_intensity = char.get('percentage', 0) / 100
+                # Apply square root transformation for more gradual intensity scaling
+                intensity[cluster_mask] = np.sqrt(raw_intensity)
             return intensity
         except Exception:
             return np.zeros(len(cluster_labels))
@@ -4669,7 +4671,21 @@ class HMMRegimeDiscoveryStep:
             intensity_df.loc[cluster_mask, 'volatility_intensity'] = self._calculate_volatility_intensity(features, cluster_mask)
             intensity_df.loc[cluster_mask, 'momentum_intensity'] = self._calculate_momentum_intensity(features, cluster_mask)
             intensity_df.loc[cluster_mask, 'volume_intensity'] = self._calculate_volume_intensity(features, cluster_mask)
-            intensity_df.loc[cluster_mask, 'combined_intensity'] = intensity_df.loc[cluster_mask, 'cluster_intensity'] * 0.3 + intensity_df.loc[cluster_mask, 'volatility_intensity'] * 0.3 + intensity_df.loc[cluster_mask, 'momentum_intensity'] * 0.2 + intensity_df.loc[cluster_mask, 'volume_intensity'] * 0.2
+            # Apply non-linear combination using geometric mean for more balanced scaling
+            cluster_int = intensity_df.loc[cluster_mask, 'cluster_intensity']
+            vol_int = intensity_df.loc[cluster_mask, 'volatility_intensity']
+            mom_int = intensity_df.loc[cluster_mask, 'momentum_intensity']
+            vol_ratio_int = intensity_df.loc[cluster_mask, 'volume_intensity']
+            
+            # Use weighted geometric mean for non-linear combination
+            combined_intensity = np.power(
+                np.power(cluster_int, 0.3) * 
+                np.power(vol_int, 0.3) * 
+                np.power(mom_int, 0.2) * 
+                np.power(vol_ratio_int, 0.2), 
+                1.0
+            )
+            intensity_df.loc[cluster_mask, 'combined_intensity'] = combined_intensity
             self.logger.info(f'✅ Created intensity DataFrame: {len(intensity_df)} rows, {len(intensity_df.columns)} columns')
             return intensity_df
         except Exception as e:
@@ -4677,10 +4693,12 @@ class HMMRegimeDiscoveryStep:
             return pd.DataFrame()
 
     def _calculate_volatility_intensity(self, features: Any, cluster_mask: Any) -> float:
-        """Calculate volatility intensity for a cluster."""
+        """Calculate volatility intensity for a cluster using non-linear transformations."""
         try:
             if 'volatility_20' in features.columns:
-                return features.loc[cluster_mask, 'volatility_20'].mean()
+                raw_volatility = features.loc[cluster_mask, 'volatility_20'].mean()
+                # Apply logarithmic transformation for more nuanced volatility scaling
+                return np.log2(1 + raw_volatility * 10) / 10
             return 0.0
         except Exception:
             return 0.0
@@ -5606,19 +5624,23 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             return np.ones(len(cluster_labels))
 
     def _calculate_momentum_intensity(self, features: Any, cluster_mask: Any) -> float:
-        """Calculate momentum intensity for a cluster."""
+        """Calculate momentum intensity for a cluster using non-linear transformations."""
         try:
             if 'price_momentum_5' in features.columns:
-                return abs(features.loc[cluster_mask, 'price_momentum_5'].mean())
+                raw_momentum = abs(features.loc[cluster_mask, 'price_momentum_5'].mean())
+                # Apply fractional power transformation (0.7) for more gradual momentum scaling
+                return np.power(raw_momentum, 0.7)
             return 0.0
         except Exception:
             return 0.0
 
     def _calculate_volume_intensity(self, features: Any, cluster_mask: Any) -> float:
-        """Calculate volume intensity for a cluster."""
+        """Calculate volume intensity for a cluster using non-linear transformations."""
         try:
             if 'volume_ratio_10' in features.columns:
-                return features.loc[cluster_mask, 'volume_ratio_10'].mean()
+                raw_volume = features.loc[cluster_mask, 'volume_ratio_10'].mean()
+                # Apply square root transformation for more gradual volume scaling
+                return np.sqrt(raw_volume)
             return 1.0
         except Exception:
             return 1.0

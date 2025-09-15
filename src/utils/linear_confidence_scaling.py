@@ -42,7 +42,8 @@ class LinearConfidenceScaler:
 
     def calculate_linear_confidence_multiplier(self, confidence: float, intensity: float = 1.0, reliability: float = 1.0) -> float:
         """
-        Calculate linear confidence multiplier based on confidence, intensity, and reliability.
+        Calculate non-linear confidence multiplier based on confidence, intensity, and reliability.
+        Uses logarithmic and fractional power transformations for more nuanced scaling.
         
         Args:
             confidence: Base confidence score (0.0 to 1.0)
@@ -50,14 +51,21 @@ class LinearConfidenceScaler:
             reliability: Signal reliability (0.0 to 1.0)
             
         Returns:
-            Linear confidence multiplier
+            Non-linear confidence multiplier
         """
         confidence = np.clip(confidence, 0.0, 1.0)
+        
+        # Apply logarithmic transformation to confidence for more nuanced scaling
         if confidence < self.confidence_min_threshold:
-            base_multiplier = self.confidence_min_multiplier
+            # Use exponential decay for low confidence
+            base_multiplier = self.confidence_min_multiplier * np.exp(-2 * (self.confidence_min_threshold - confidence))
         else:
+            # Use logarithmic scaling for higher confidence values
             normalized_confidence = (confidence - self.confidence_min_threshold) / (self.confidence_max_threshold - self.confidence_min_threshold)
-            base_multiplier = self.confidence_min_multiplier + (self.confidence_max_multiplier - self.confidence_min_multiplier) * normalized_confidence
+            # Apply log transformation with base 2 for more gradual increase
+            log_scaled = np.log2(1 + normalized_confidence)
+            base_multiplier = self.confidence_min_multiplier + (self.confidence_max_multiplier - self.confidence_min_multiplier) * log_scaled
+        
         intensity_multiplier = self._calculate_intensity_multiplier(intensity)
         reliability_multiplier = self._calculate_reliability_multiplier(reliability)
         final_multiplier = base_multiplier * intensity_multiplier * reliability_multiplier * self.confidence_scaling_factor
@@ -65,29 +73,47 @@ class LinearConfidenceScaler:
         return float(final_multiplier)
 
     def _calculate_intensity_multiplier(self, intensity: float) -> float:
-        """Calculate intensity-based multiplier."""
+        """Calculate intensity-based multiplier using non-linear transformations."""
         intensity = np.clip(intensity, 0.0, 1.0)
+        
         if intensity < 0.5:
-            intensity_multiplier = self.low_intensity_reduction + (1.0 - self.low_intensity_reduction) * (intensity / 0.5)
+            # Use square root transformation for low intensity (more gradual increase)
+            normalized_low = intensity / 0.5
+            sqrt_scaled = np.sqrt(normalized_low)
+            intensity_multiplier = self.low_intensity_reduction + (1.0 - self.low_intensity_reduction) * sqrt_scaled
         else:
-            normalized_intensity = (intensity - 0.5) / 0.5
-            intensity_multiplier = 1.0 + (self.high_intensity_boost - 1.0) * normalized_intensity
+            # Use fractional power (0.7) for high intensity (more gradual increase than linear)
+            normalized_high = (intensity - 0.5) / 0.5
+            power_scaled = np.power(normalized_high, 0.7)
+            intensity_multiplier = 1.0 + (self.high_intensity_boost - 1.0) * power_scaled
+        
         return float(intensity_multiplier)
 
     def _calculate_reliability_multiplier(self, reliability: float) -> float:
-        """Calculate reliability-based multiplier."""
+        """Calculate reliability-based multiplier using non-linear transformations."""
         reliability = np.clip(reliability, 0.0, 1.0)
+        
         if reliability >= 0.8:
-            reliability_multiplier = 1.0 + (reliability - 0.8) * 0.5
+            # Use logarithmic scaling for high reliability (diminishing returns)
+            high_reliability = (reliability - 0.8) / 0.2
+            log_scaled = np.log2(1 + high_reliability)
+            reliability_multiplier = 1.0 + log_scaled * 0.3
         elif reliability <= 0.5:
-            reliability_multiplier = 0.7 + reliability / 0.5 * 0.3
+            # Use exponential decay for low reliability
+            low_reliability = reliability / 0.5
+            exp_scaled = np.exp(-2 * (1 - low_reliability))
+            reliability_multiplier = 0.7 + 0.3 * exp_scaled
         else:
-            reliability_multiplier = 1.0
+            # Use fractional power for medium reliability
+            medium_reliability = (reliability - 0.5) / 0.3
+            power_scaled = np.power(medium_reliability, 0.8)
+            reliability_multiplier = 1.0 + power_scaled * 0.1
+        
         return float(reliability_multiplier)
 
     def calculate_position_size_multiplier(self, confidence: float, intensity: float = 1.0, reliability: float = 1.0, risk_score: float = 0.0) -> float:
         """
-        Calculate position size multiplier using linear confidence scaling.
+        Calculate position size multiplier using non-linear confidence scaling.
         
         Args:
             confidence: Base confidence score
@@ -99,15 +125,20 @@ class LinearConfidenceScaler:
             Position size multiplier
         """
         confidence_multiplier = self.calculate_linear_confidence_multiplier(confidence, intensity, reliability)
-        risk_adjustment = 1.0 - risk_score * self.risk_scaling_factor
+        
+        # Apply non-linear risk adjustment using exponential decay
+        risk_adjustment = np.exp(-risk_score * self.risk_scaling_factor * 2)
         risk_adjustment = np.clip(risk_adjustment, 0.3, 1.0)
-        intensity_adjustment = self.intensity_position_multiplier
+        
+        # Apply non-linear intensity adjustment using square root
+        intensity_adjustment = np.sqrt(self.intensity_position_multiplier)
+        
         final_multiplier = confidence_multiplier * risk_adjustment * intensity_adjustment
         return float(np.clip(final_multiplier, 0.1, 3.0))
 
     def calculate_leverage_multiplier(self, confidence: float, intensity: float = 1.0, reliability: float = 1.0, risk_score: float = 0.0) -> float:
         """
-        Calculate leverage multiplier using linear confidence scaling.
+        Calculate leverage multiplier using non-linear confidence scaling.
         
         Args:
             confidence: Base confidence score
@@ -119,8 +150,11 @@ class LinearConfidenceScaler:
             Leverage multiplier
         """
         confidence_multiplier = self.calculate_linear_confidence_multiplier(confidence, intensity, reliability)
-        risk_adjustment = 1.0 - risk_score * self.risk_scaling_factor * 1.5
+        
+        # Apply non-linear risk adjustment using exponential decay (more aggressive for leverage)
+        risk_adjustment = np.exp(-risk_score * self.risk_scaling_factor * 3)
         risk_adjustment = np.clip(risk_adjustment, 0.2, 1.0)
+        
         leverage_multiplier = confidence_multiplier * risk_adjustment
         return float(np.clip(leverage_multiplier, 0.3, 2.0))
 

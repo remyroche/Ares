@@ -6,13 +6,26 @@ designed for Apple Silicon's unified memory architecture.
 """
 
 import logging
-import psutil
 import gc
-import pandas as pd
 from typing import Any, Dict, List, Optional, Set
 import sys
 import threading
 import time
+
+# Optional dependencies
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +100,10 @@ class M1MemoryOptimizer:
 
     def _check_memory_pressure(self):
         """Check current memory pressure."""
+        if not PSUTIL_AVAILABLE:
+            self.memory_pressure = 0.0
+            return
+            
         try:
             memory = psutil.virtual_memory()
             self.memory_pressure = float(memory.percent) / 100.0
@@ -149,13 +166,16 @@ class M1MemoryOptimizer:
         """Clear various caches."""
         try:
             # Clear pandas cache if available
-            if hasattr(pd, '_cache'):
+            if PANDAS_AVAILABLE and hasattr(pd, '_cache'):
                 pd._cache.clear()
 
             # Clear numpy's internal caches
-            import numpy as np
-            if hasattr(np, 'array'):
-                # Force cleanup of array caches
+            try:
+                import numpy as np
+                if hasattr(np, 'array'):
+                    # Force cleanup of array caches
+                    pass
+            except ImportError:
                 pass
 
         except Exception as e:
@@ -165,8 +185,7 @@ class M1MemoryOptimizer:
         """Aggressively clear all caches."""
         try:
             # Clear pandas caches
-            import pandas as pd
-            if hasattr(pd, 'core'):
+            if PANDAS_AVAILABLE and hasattr(pd, 'core'):
                 # Clear common pandas caches
                 pass
 
@@ -178,6 +197,10 @@ class M1MemoryOptimizer:
 
     def _free_unused_memory(self):
         """Attempt to free unused memory."""
+        if not PSUTIL_AVAILABLE:
+            gc.collect()
+            return
+            
         try:
             # Get current memory usage
             before = psutil.virtual_memory().used
@@ -199,6 +222,10 @@ class M1MemoryOptimizer:
 
     def optimize_dataframe_memory(self, df):
         """Optimize DataFrame memory usage for M1."""
+        if not PANDAS_AVAILABLE:
+            self.logger.warning("Pandas not available, returning DataFrame as-is")
+            return df
+            
         if df is None or df.empty:
             return df
 
@@ -244,6 +271,17 @@ class M1MemoryOptimizer:
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get current memory statistics."""
+        if not PSUTIL_AVAILABLE:
+            return {
+                'total_memory': 0,
+                'available_memory': 0,
+                'used_memory': 0,
+                'memory_percent': 0,
+                'memory_pressure': self.memory_pressure,
+                'protected_objects': len(self.protected_objects),
+                'psutil_available': False
+            }
+            
         try:
             memory = psutil.virtual_memory()
             return {
@@ -252,7 +290,8 @@ class M1MemoryOptimizer:
                 'used_memory': memory.used,
                 'memory_percent': memory.percent,
                 'memory_pressure': self.memory_pressure,
-                'protected_objects': len(self.protected_objects)
+                'protected_objects': len(self.protected_objects),
+                'psutil_available': True
             }
         except Exception as e:
             return {'error': str(e)}
@@ -261,7 +300,7 @@ class M1MemoryOptimizer:
         """Get current memory usage statistics (alias for get_memory_stats)."""
         return self.get_memory_stats()
 
-    def load_dataframe(self, file_path: str, **kwargs) -> pd.DataFrame:
+    def load_dataframe(self, file_path: str, **kwargs):
         """Load a DataFrame from file with M1 memory optimization.
         
         Args:
@@ -271,6 +310,10 @@ class M1MemoryOptimizer:
         Returns:
             Optimized DataFrame
         """
+        if not PANDAS_AVAILABLE:
+            self.logger.error("Pandas not available, cannot load DataFrame")
+            raise ImportError("Pandas is required to load DataFrames")
+            
         try:
             # Determine file type and load accordingly
             if file_path.endswith('.parquet'):
@@ -303,6 +346,9 @@ class M1MemoryOptimizer:
 # Global instance - lazy initialization to avoid circular import issues
 _m1_memory_optimizer_instance: Optional[M1MemoryOptimizer] = None
 
+# Create global instance for backward compatibility
+m1_memory_optimizer = None
+
 
 def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None) -> M1MemoryOptimizer:
     """Get the M1 memory optimizer instance.
@@ -313,24 +359,28 @@ def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None) -> M1Memory
     Returns:
         M1MemoryOptimizer instance
     """
-    global _m1_memory_optimizer_instance
+    global _m1_memory_optimizer_instance, m1_memory_optimizer
 
     try:
         # Lazy initialization to avoid circular import issues
         if _m1_memory_optimizer_instance is None:
             _m1_memory_optimizer_instance = M1MemoryOptimizer(memory_limit_gb=memory_limit_gb)
+            m1_memory_optimizer = _m1_memory_optimizer_instance
         else:
             # If a memory limit is specified and it's different from the current instance, create a new one
             if memory_limit_gb and (not hasattr(_m1_memory_optimizer_instance, 'memory_limit_gb') or
                                    _m1_memory_optimizer_instance.memory_limit_gb != memory_limit_gb):
                 _m1_memory_optimizer_instance = M1MemoryOptimizer(memory_limit_gb=memory_limit_gb)
+                m1_memory_optimizer = _m1_memory_optimizer_instance
 
         return _m1_memory_optimizer_instance
 
     except Exception as e:
         # Fallback: return a basic instance without memory limit if initialization fails
         logger.warning(f"Failed to initialize M1 memory optimizer: {e}. Using basic instance.")
-        return M1MemoryOptimizer(memory_limit_gb=None)
+        _m1_memory_optimizer_instance = M1MemoryOptimizer(memory_limit_gb=None)
+        m1_memory_optimizer = _m1_memory_optimizer_instance
+        return _m1_memory_optimizer_instance
 
 
 def start_m1_memory_monitoring():

@@ -14,17 +14,23 @@ Key Components:
 - enhanced_market_analysis_with_triple_barrier: Integrated pipeline
 """
 
-# Import core triple barrier components
+# Import core triple barrier components from new package
 from .triple_barrier_labeling import (
-    MarketAnalysisTripleBarrierLabeling,
+    UnifiedTripleBarrierLabeler,
     TripleBarrierConfig,
+    TripleBarrierResult,
     create_triple_barrier_labeler,
     apply_triple_barrier_labeling,
-    benchmark_triple_barrier_methods,
-    DEFAULT_PROFIT_TAKE_MULTIPLIER,
-    DEFAULT_STOP_LOSS_MULTIPLIER,
-    DEFAULT_TRANSACTION_COST
+    # Exception classes
+    TripleBarrierError,
+    ValidationError,
+    ConfigurationError,
+    HardwareOptimizationError,
+    DataQualityError
 )
+
+# Legacy compatibility - map old names to new implementation
+MarketAnalysisTripleBarrierLabeling = UnifiedTripleBarrierLabeler
 
 # Import regime-aware optimizer
 from .regime_aware_triple_barrier_optimizer import (
@@ -118,11 +124,18 @@ def quick_start_example():
     
     # Apply triple barrier labeling
     print("\n🏷️ Applying triple barrier labeling...")
-    labeled_data = apply_triple_barrier_labeling(data)
+    result = apply_triple_barrier_labeling(data)
     
-    print(f"✅ Labeling completed:")
-    print(f"   → Labeled samples: {len(labeled_data)}")
-    print(f"   → Label distribution: {labeled_data['label'].value_counts().to_dict()}")
+    if result.success:
+        labeled_data = result.labeled_data
+        print(f"✅ Labeling completed:")
+        print(f"   → Labeled samples: {result.total_labels_generated}")
+        print(f"   → Label distribution: {result.label_distribution}")
+        print(f"   → Quality score: {result.data_quality_score:.2%}")
+        print(f"   → Execution time: {result.execution_duration:.2f}s")
+    else:
+        print(f"❌ Labeling failed: {result.error_message}")
+        return None
     
     # Calculate basic metrics
     if 'net_profit_pct' in labeled_data.columns:
@@ -138,29 +151,36 @@ def quick_start_example():
     
     # Validate results
     print("\n🔍 Validating results...")
-    is_valid = quick_validate_triple_barrier(data, labeled_data)
+    is_valid = result.validation_passed
     print(f"✅ Validation result: {'PASSED' if is_valid else 'FAILED'}")
+    if result.validation_warnings:
+        print(f"   → Warnings: {len(result.validation_warnings)}")
     
     print("\n🎉 Quick start example completed successfully!")
     print("\nFor more advanced usage, see:")
     print("   → TRIPLE_BARRIER_DOCUMENTATION.md")
-    print("   → test_triple_barrier_labeling.py")
+    print("   → triple_barrier_labeling/test_unified_labeler.py")
     
     return labeled_data
 
 # Export all public components
 __all__ = [
-    # Core triple barrier components
-    "MarketAnalysisTripleBarrierLabeling",
-    "TripleBarrierConfig", 
+    # Core triple barrier components (new unified implementation)
+    "UnifiedTripleBarrierLabeler",
+    "TripleBarrierConfig",
+    "TripleBarrierResult",
     "create_triple_barrier_labeler",
     "apply_triple_barrier_labeling",
-    "benchmark_triple_barrier_methods",
     
-    # Constants
-    "DEFAULT_PROFIT_TAKE_MULTIPLIER",
-    "DEFAULT_STOP_LOSS_MULTIPLIER", 
-    "DEFAULT_TRANSACTION_COST",
+    # Exception classes
+    "TripleBarrierError",
+    "ValidationError",
+    "ConfigurationError",
+    "HardwareOptimizationError",
+    "DataQualityError",
+    
+    # Legacy compatibility
+    "MarketAnalysisTripleBarrierLabeling",
     
     # Regime-aware optimizer
     "RegimeAwareTripleBarrierOptimizer",

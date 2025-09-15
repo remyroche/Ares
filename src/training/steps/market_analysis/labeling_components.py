@@ -43,7 +43,7 @@ class RegimeAwareLabeling:
             
             # Initialize regime barrier optimizer
             try:
-                from .training.steps.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
+                from src.feature_engineering.step06_labeling_components.regime_specific_triple_barrier_optimizer import RegimeSpecificTripleBarrierOptimizer
                 self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
                 self.logger.info('✅ RegimeSpecificTripleBarrierOptimizer initialized successfully')
             except ImportError as e:
@@ -80,15 +80,17 @@ class RegimeAwareLabeling:
     def create_regime_labeler(self):
         """Create and configure the regime labeler."""
         try:
-            from .training.steps.step06_labeling_components.regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
-            return RegimeAwareTripleBarrierLabeling(
-                default_profit_take_multiplier = 0.002,
-                default_stop_loss_multiplier = 0.001,
-                default_time_barrier_minutes = self.time_barrier_minutes,
-                default_max_lookahead = self.max_lookahead
+            from .triple_barrier_labeling import UnifiedTripleBarrierLabeler, TripleBarrierConfig
+            config = TripleBarrierConfig(
+                profit_take_multiplier = 0.002,
+                stop_loss_multiplier = 0.001,
+                time_barrier_minutes = self.time_barrier_minutes,
+                max_lookahead = self.max_lookahead,
+                regime_aware = True
             )
+            return UnifiedTripleBarrierLabeler(config)
         except ImportError as e:
-            self.logger.error(f'❌ Failed to import RegimeAwareTripleBarrierLabeling: {e}')
+            self.logger.error(f'❌ Failed to import UnifiedTripleBarrierLabeler: {e}')
             return None
     
     def generate_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:

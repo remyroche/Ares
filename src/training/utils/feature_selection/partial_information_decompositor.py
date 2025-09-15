@@ -30,11 +30,13 @@ from dataclasses import dataclass, field
 try:
     from src.utils.math_validation import (
         safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
-        safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile
+        safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile,
+        MathValidationError, validate_positive, validate_range
     )
-    from src.utils.common_operations import create_fallback_logger
+    MATH_VALIDATION_AVAILABLE = True
 except ImportError as e:
-    warnings.warn(f"Some utilities not available: {e}")
+    warnings.warn(f"Math validation utilities not available: {e}")
+    MATH_VALIDATION_AVAILABLE = False
     # Create fallback implementations
     def safe_divide(a, b): return a / b if b != 0 else 0
     def safe_log(x): return np.log(np.maximum(x, 1e-10))
@@ -47,13 +49,66 @@ except ImportError as e:
     def safe_std(x): return np.std(x) if len(x) > 1 else 0
     def safe_percentile(x, p): return np.percentile(x, p) if len(x) > 0 else 0
 
+# Import common operations and utilities
+try:
+    from src.utils.common_operations import (
+        create_fallback_logger, create_fallback_decorator,
+        safe_dataframe_operation, get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        create_directory_safe, get_file_size, validate_file_path
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    warnings.warn(f"Common operations not available: {e}")
+    COMMON_OPERATIONS_AVAILABLE = False
+
+# Import serialization utilities
+try:
+    from src.utils.serialization_utils import JSONSerializer, PickleSerializer
+    SERIALIZATION_AVAILABLE = True
+except ImportError as e:
+    warnings.warn(f"Serialization utilities not available: {e}")
+    SERIALIZATION_AVAILABLE = False
+
+# Import parquet utilities
+try:
+    from src.utils.parquet_utils import ParquetUtils
+    PARQUET_AVAILABLE = True
+except ImportError as e:
+    warnings.warn(f"Parquet utilities not available: {e}")
+    PARQUET_AVAILABLE = False
+
+# Import matrix operations
+try:
+    from src.utils.matrix_operations import get_unified_matrix_operations
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    warnings.warn(f"Matrix operations not available: {e}")
+    MATRIX_OPERATIONS_AVAILABLE = False
+
+# Import ML common utilities
+try:
+    from src.utils.ml_common import tprint
+    from src.utils.ml_common.validation.lookahead_bias_detector import (
+        get_global_detector, validate_no_future_data, LookaheadBiasError
+    )
+    from src.utils.ml_common.validation.thresholding import AdaptiveThresholding
+    ML_COMMON_AVAILABLE = True
+except ImportError as e:
+    warnings.warn(f"ML common utilities not available: {e}")
+    ML_COMMON_AVAILABLE = False
+
 # Enhanced dependency management
 try:
     from src.utils.logger import get_logger
     _LOGGER = get_logger("FeatureSelection.PartialInformationDecompositor")
+    if COMMON_OPERATIONS_AVAILABLE:
+        _LOGGER = create_fallback_logger(_LOGGER, "FeatureSelection.PartialInformationDecompositor")
 except Exception as e:
-    _LOGGER = logging.getLogger("FeatureSelection.PartialInformationDecompositor")
-    _LOGGER.setLevel(logging.INFO)
+    if COMMON_OPERATIONS_AVAILABLE:
+        _LOGGER = create_fallback_logger(None, "FeatureSelection.PartialInformationDecompositor")
+    else:
+        _LOGGER = logging.getLogger("FeatureSelection.PartialInformationDecompositor")
+        _LOGGER.setLevel(logging.INFO)
 
 logger = _LOGGER
 
@@ -93,6 +148,65 @@ class PIDConfig:
     # Sampling for large datasets
     sample_size: Optional[int] = None
     random_state: int = 42
+    
+    def __post_init__(self):
+        """Validate configuration parameters using math validation utilities."""
+        if MATH_VALIDATION_AVAILABLE:
+            try:
+                # Validate thresholds are in valid ranges
+                self.synergy_threshold = validate_range(
+                    self.synergy_threshold, 0.0, 1.0, "synergy_threshold"
+                )
+                self.redundancy_threshold = validate_range(
+                    self.redundancy_threshold, 0.0, 1.0, "redundancy_threshold"
+                )
+                self.unique_info_threshold = validate_range(
+                    self.unique_info_threshold, 0.0, 1.0, "unique_info_threshold"
+                )
+                self.cross_timeframe_threshold = validate_range(
+                    self.cross_timeframe_threshold, 0.0, 1.0, "cross_timeframe_threshold"
+                )
+                
+                # Validate positive integers
+                self.max_timeframe_lag = validate_positive(
+                    self.max_timeframe_lag, "max_timeframe_lag"
+                )
+                self.max_polynomial_degree = validate_positive(
+                    self.max_polynomial_degree, "max_polynomial_degree"
+                )
+                self.max_interaction_features = validate_positive(
+                    self.max_interaction_features, "max_interaction_features"
+                )
+                self.max_features_for_full_pid = validate_positive(
+                    self.max_features_for_full_pid, "max_features_for_full_pid"
+                )
+                self.max_interaction_order = validate_positive(
+                    self.max_interaction_order, "max_interaction_order"
+                )
+                self.max_iterations = validate_positive(
+                    self.max_iterations, "max_iterations"
+                )
+                
+                # Validate convergence threshold
+                self.convergence_threshold = validate_finite(
+                    self.convergence_threshold, "convergence_threshold"
+                )
+                
+                if self.sample_size is not None:
+                    self.sample_size = validate_positive(
+                        self.sample_size, "sample_size"
+                    )
+                    
+                self.random_state = validate_finite(
+                    self.random_state, "random_state"
+                )
+                
+            except MathValidationError as e:
+                logger.warning(f"⚠️ Configuration validation warning: {e}")
+                # Use default values for invalid parameters
+                self.synergy_threshold = 0.1
+                self.redundancy_threshold = 0.15
+                self.unique_info_threshold = 0.05
 
 
 @dataclass
@@ -123,11 +237,71 @@ class PartialInformationDecompositor:
         self.config = config or PIDConfig()
         self.logger = logger.getChild('PartialInformationDecompositor')
         
+        # Initialize hardware optimizations
+        self._initialize_hardware_optimizations()
+        
+        # Initialize matrix operations
+        self._initialize_matrix_operations()
+        
+        # Initialize ML utilities
+        self._initialize_ml_utilities()
+        
         _LOGGER.info("🔍 PartialInformationDecompositor initialized")
         _LOGGER.info(f"⚙️ Synergy threshold: {self.config.synergy_threshold}")
         _LOGGER.info(f"⚙️ Redundancy threshold: {self.config.redundancy_threshold}")
         _LOGGER.info(f"⚙️ Max polynomial degree: {self.config.max_polynomial_degree}")
         _LOGGER.info(f"⚙️ Max interaction features: {self.config.max_interaction_features}")
+    
+    def _initialize_hardware_optimizations(self):
+        """Initialize hardware optimization utilities."""
+        try:
+            if COMMON_OPERATIONS_AVAILABLE:
+                self.gpu_manager = get_m1_gpu_manager()
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+                
+                if self.gpu_manager:
+                    _LOGGER.info("✅ M1 GPU manager initialized")
+                if self.memory_optimizer:
+                    _LOGGER.info("✅ M1 memory optimizer initialized")
+                if self.cpu_optimizer:
+                    _LOGGER.info("✅ M1 CPU optimizer initialized")
+            else:
+                self.gpu_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.gpu_manager = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+    
+    def _initialize_matrix_operations(self):
+        """Initialize matrix operations utilities."""
+        try:
+            if MATRIX_OPERATIONS_AVAILABLE:
+                self.matrix_ops = get_unified_matrix_operations()
+                _LOGGER.info("✅ Unified matrix operations initialized")
+            else:
+                self.matrix_ops = None
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ Matrix operations initialization failed: {e}")
+            self.matrix_ops = None
+    
+    def _initialize_ml_utilities(self):
+        """Initialize ML utilities."""
+        try:
+            if ML_COMMON_AVAILABLE:
+                self.lookahead_detector = get_global_detector()
+                self.adaptive_thresholding = AdaptiveThresholding()
+                _LOGGER.info("✅ ML utilities initialized")
+            else:
+                self.lookahead_detector = None
+                self.adaptive_thresholding = None
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ ML utilities initialization failed: {e}")
+            self.lookahead_detector = None
+            self.adaptive_thresholding = None
 
     def decompose_information(self, X: np.ndarray, y: np.ndarray, 
                             feature_names: List[str]) -> PIDResult:
@@ -210,23 +384,65 @@ class PartialInformationDecompositor:
             return result
 
     def _preprocess_data(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Preprocess data for PID analysis."""
-        # Handle infinity and NaN values
-        X_clean = np.nan_to_num(X, nan=0.0, posinf=1e10, neginf=-1e10)
-        y_clean = np.nan_to_num(y, nan=0.0, posinf=1e10, neginf=-1e10)
+        """Preprocess data for PID analysis with hardware optimizations."""
+        # Memory optimization check
+        if self.memory_optimizer:
+            memory_status = self.memory_optimizer.check_memory_status()
+            if memory_status.get('pressure', False):
+                _LOGGER.info("🧠 Memory pressure detected, using optimized preprocessing")
         
-        # Standardize features
+        # Handle infinity and NaN values with math validation
+        if MATH_VALIDATION_AVAILABLE:
+            X_clean = np.nan_to_num(X, nan=0.0, posinf=1e10, neginf=-1e10)
+            y_clean = np.nan_to_num(y, nan=0.0, posinf=1e10, neginf=-1e10)
+            
+            # Validate finite values
+            if not validate_finite(X_clean):
+                _LOGGER.warning("⚠️ Non-finite values detected in X after cleaning")
+            if not validate_finite(y_clean):
+                _LOGGER.warning("⚠️ Non-finite values detected in y after cleaning")
+        else:
+            X_clean = np.nan_to_num(X, nan=0.0, posinf=1e10, neginf=-1e10)
+            y_clean = np.nan_to_num(y, nan=0.0, posinf=1e10, neginf=-1e10)
+        
+        # Lookahead bias detection
+        if self.lookahead_detector:
+            try:
+                validate_no_future_data(X_clean, y_clean)
+                _LOGGER.debug("✅ No lookahead bias detected")
+            except LookaheadBiasError as e:
+                _LOGGER.warning(f"⚠️ Lookahead bias detected: {e}")
+        
+        # Standardize features with hardware optimization
         if SKLEARN_AVAILABLE:
             scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X_clean)
+            if self.matrix_ops:
+                # Use optimized matrix operations if available
+                X_scaled = self.matrix_ops.standardize_matrix(X_clean, scaler)
+            else:
+                X_scaled = scaler.fit_transform(X_clean)
         else:
-            # Manual standardization
-            X_scaled = (X_clean - np.mean(X_clean, axis=0)) / (np.std(X_clean, axis=0) + 1e-10)
+            # Manual standardization with safe operations
+            if MATH_VALIDATION_AVAILABLE:
+                X_mean = safe_mean(X_clean, axis=0)
+                X_std = safe_std(X_clean, axis=0)
+                X_scaled = safe_divide(X_clean - X_mean, X_std + 1e-10)
+            else:
+                X_scaled = (X_clean - np.mean(X_clean, axis=0)) / (np.std(X_clean, axis=0) + 1e-10)
         
-        # Sample data if too large
+        # Sample data if too large (with memory optimization)
         if self.config.sample_size and len(X_scaled) > self.config.sample_size:
+            if self.memory_optimizer:
+                # Use memory-optimized sampling
+                optimal_sample_size = self.memory_optimizer.get_optimal_sample_size(
+                    len(X_scaled), self.config.sample_size
+                )
+                sample_size = min(self.config.sample_size, optimal_sample_size)
+            else:
+                sample_size = self.config.sample_size
+                
             np.random.seed(self.config.random_state)
-            indices = np.random.choice(len(X_scaled), self.config.sample_size, replace=False)
+            indices = np.random.choice(len(X_scaled), sample_size, replace=False)
             X_scaled = X_scaled[indices]
             y_clean = y_clean[indices]
             _LOGGER.info(f"📊 Sampled data to {len(X_scaled)} samples")
@@ -745,13 +961,18 @@ class PartialInformationDecompositor:
     def save_analysis_results(self, pid_result: PIDResult, output_path: str = None):
         """Save PID analysis results to file with datetime in filename."""
         try:
-            import json
             from datetime import datetime
             
             # Generate filename with datetime if not provided
             if output_path is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_path = f"pid_analysis_results_{timestamp}.json"
+            
+            # Ensure output directory exists
+            if COMMON_OPERATIONS_AVAILABLE:
+                output_dir = os.path.dirname(output_path)
+                if output_dir:
+                    create_directory_safe(output_dir)
             
             # Convert results to serializable format
             results_dict = {
@@ -785,11 +1006,22 @@ class PartialInformationDecompositor:
                 'convergence_info': pid_result.convergence_info
             }
             
-            with open(output_path, 'w') as f:
-                json.dump(results_dict, f, indent=2)
-            
-            _LOGGER.info(f"💾 PID analysis results saved to {output_path}")
-            return output_path
+            # Use serialization utilities if available
+            if SERIALIZATION_AVAILABLE:
+                success = JSONSerializer.save(results_dict, output_path)
+                if success:
+                    _LOGGER.info(f"💾 PID analysis results saved to {output_path}")
+                    return output_path
+                else:
+                    _LOGGER.error(f"❌ Failed to save PID results using JSONSerializer")
+                    return None
+            else:
+                # Fallback to manual JSON writing
+                import json
+                with open(output_path, 'w') as f:
+                    json.dump(results_dict, f, indent=2)
+                _LOGGER.info(f"💾 PID analysis results saved to {output_path}")
+                return output_path
             
         except Exception as e:
             _LOGGER.error(f"❌ Failed to save PID results: {e}")
@@ -809,6 +1041,12 @@ class PartialInformationDecompositor:
             if output_path is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_path = f"expanded_feature_matrix_{timestamp}.parquet"
+            
+            # Ensure output directory exists
+            if COMMON_OPERATIONS_AVAILABLE:
+                output_dir = os.path.dirname(output_path)
+                if output_dir:
+                    create_directory_safe(output_dir)
             
             # Create DataFrame with feature names
             df = pd.DataFrame(expanded_X, columns=expanded_names)
@@ -830,10 +1068,29 @@ class PartialInformationDecompositor:
                 }
             }
             
-            # Save as parquet for efficiency
-            df.to_parquet(output_path, index=False)
+            # Save as parquet with validation
+            if PARQUET_AVAILABLE:
+                parquet_utils = ParquetUtils()
+                
+                # Validate before saving
+                validation_result = parquet_utils.validate_dataframe_for_parquet(df)
+                if validation_result.get('valid', True):
+                    df.to_parquet(output_path, index=False)
+                    
+                    # Validate saved file
+                    saved_validation = parquet_utils.validate_parquet_file(output_path)
+                    if saved_validation.get('valid', False):
+                        _LOGGER.info(f"💾 Expanded feature matrix saved and validated: {output_path}")
+                    else:
+                        _LOGGER.warning(f"⚠️ Saved parquet file validation failed: {saved_validation.get('error')}")
+                else:
+                    _LOGGER.warning(f"⚠️ DataFrame validation failed: {validation_result.get('error')}")
+                    # Save anyway as fallback
+                    df.to_parquet(output_path, index=False)
+            else:
+                # Fallback to direct parquet saving
+                df.to_parquet(output_path, index=False)
             
-            _LOGGER.info(f"💾 Expanded feature matrix saved to {output_path}")
             _LOGGER.info(f"📊 Matrix shape: {X.shape} → {expanded_X.shape}")
             _LOGGER.info(f"🔧 Generated features: {len(expanded_names) - len(feature_names)} new features")
             
@@ -852,7 +1109,10 @@ class PartialInformationDecompositor:
             from datetime import datetime
             
             # Create output directory if it doesn't exist
-            os.makedirs(output_dir, exist_ok=True)
+            if COMMON_OPERATIONS_AVAILABLE:
+                create_directory_safe(output_dir)
+            else:
+                os.makedirs(output_dir, exist_ok=True)
             
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
@@ -881,9 +1141,18 @@ class PartialInformationDecompositor:
                 }
             }
             
-            with open(importance_path, 'w') as f:
-                json.dump(importance_data, f, indent=2)
-            artifacts['feature_importance'] = importance_path
+            # Use serialization utilities if available
+            if SERIALIZATION_AVAILABLE:
+                success = JSONSerializer.save(importance_data, importance_path)
+                if success:
+                    artifacts['feature_importance'] = importance_path
+                else:
+                    _LOGGER.warning("⚠️ Failed to save feature importance using JSONSerializer")
+            else:
+                import json
+                with open(importance_path, 'w') as f:
+                    json.dump(importance_data, f, indent=2)
+                artifacts['feature_importance'] = importance_path
             
             # 4. Save interaction summary
             summary_path = os.path.join(output_dir, f"interaction_summary_{timestamp}.json")
@@ -908,9 +1177,18 @@ class PartialInformationDecompositor:
                 }
             }
             
-            with open(summary_path, 'w') as f:
-                json.dump(summary_data, f, indent=2)
-            artifacts['interaction_summary'] = summary_path
+            # Use serialization utilities if available
+            if SERIALIZATION_AVAILABLE:
+                success = JSONSerializer.save(summary_data, summary_path)
+                if success:
+                    artifacts['interaction_summary'] = summary_path
+                else:
+                    _LOGGER.warning("⚠️ Failed to save interaction summary using JSONSerializer")
+            else:
+                import json
+                with open(summary_path, 'w') as f:
+                    json.dump(summary_data, f, indent=2)
+                artifacts['interaction_summary'] = summary_path
             
             _LOGGER.info(f"🎉 Comprehensive PID artifacts created in {output_dir}")
             _LOGGER.info(f"📁 Generated {len(artifacts)} artifact files with timestamp {timestamp}")
@@ -920,3 +1198,39 @@ class PartialInformationDecompositor:
         except Exception as e:
             _LOGGER.error(f"❌ Failed to create comprehensive artifacts: {e}")
             return {}
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics using hardware optimization utilities."""
+        metrics = {
+            'hardware_optimizations': {
+                'gpu_available': self.gpu_manager is not None,
+                'memory_optimizer_available': self.memory_optimizer is not None,
+                'cpu_optimizer_available': self.cpu_optimizer is not None,
+                'matrix_ops_available': self.matrix_ops is not None
+            },
+            'utility_availability': {
+                'math_validation': MATH_VALIDATION_AVAILABLE,
+                'common_operations': COMMON_OPERATIONS_AVAILABLE,
+                'serialization': SERIALIZATION_AVAILABLE,
+                'parquet': PARQUET_AVAILABLE,
+                'ml_common': ML_COMMON_AVAILABLE
+            }
+        }
+        
+        # Get memory status if available
+        if self.memory_optimizer:
+            try:
+                memory_status = self.memory_optimizer.check_memory_status()
+                metrics['memory_status'] = memory_status
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ Failed to get memory status: {e}")
+        
+        # Get GPU status if available
+        if self.gpu_manager:
+            try:
+                gpu_status = self.gpu_manager.get_gpu_status()
+                metrics['gpu_status'] = gpu_status
+            except Exception as e:
+                _LOGGER.warning(f"⚠️ Failed to get GPU status: {e}")
+        
+        return metrics

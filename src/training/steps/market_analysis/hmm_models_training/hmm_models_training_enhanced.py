@@ -501,7 +501,7 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     
     def _create_model(self, model_type: str, **kwargs) -> Any:
         """
-        Create model instance using factory pattern with error handling.
+        Create model instance with enhanced factory pattern and fallback to original registry.
         
         Args:
             model_type: Type of model to create
@@ -511,8 +511,42 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
             Model instance
         """
         try:
-            # Use factory pattern for model creation
+            # Try factory pattern first
             return ModelFactory.create_model(model_type, **kwargs)
+        except Exception as factory_error:
+            self.logger.warning(f"⚠️ Factory pattern failed for {model_type}: {factory_error}, trying original registry")
+            
+            # Fallback to original model registry
+            if model_type not in self.model_registry:
+                raise ValueError(f"Unknown model type: {model_type}")
+            
+            model_config = self.model_registry[model_type]
+            
+            # Handle special cases (preserving original logic)
+            if model_type == 'tcn':
+                # Create a simple TCN-like model using available libraries
+                from sklearn.ensemble import RandomForestClassifier
+                return RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42,
+                    n_jobs=-1
+                )
+            
+            # Handle sklearn models (preserving original logic)
+            elif model_type == 'logistic_regression':
+                from sklearn.linear_model import LogisticRegression
+                params = {**model_config['params'], **kwargs}
+                return LogisticRegression(**params)
+            
+            # Handle LightGBM (preserving original logic)
+            elif model_type == 'lightgbm':
+                import lightgbm as lgb
+                params = {**model_config['params'], **kwargs}
+                return lgb.LGBMClassifier(**params)
+            
+            else:
+                raise ValueError(f"Model type {model_type} not implemented")
                 
         except Exception as e:
             self.logger.error(f"❌ Failed to create model {model_type}: {e}")
@@ -547,16 +581,40 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
                 predictions = model.predict(X)
                 accuracy = np.mean(predictions == y)
                 
-                # Calculate additional metrics
-                try:
-                    from sklearn.metrics import f1_score, precision_score, recall_score
-                    metrics.f1_score = f1_score(y, predictions, average='weighted')
-                    metrics.precision = precision_score(y, predictions, average='weighted')
-                    metrics.recall = recall_score(y, predictions, average='weighted')
-                except Exception as e:
-                    metrics.warnings.append(f"Advanced metrics calculation failed: {e}")
-                
-                metrics.accuracy = accuracy
+                # Use evaluation utilities if available (preserving original functionality)
+                if self.evaluation_utils is not None:
+                    try:
+                        eval_metrics = self.evaluation_utils.evaluate_model_performance(
+                            model, X, y,
+                            metrics=['accuracy', 'f1_score', 'precision', 'recall'],
+                            is_classification=True
+                        )
+                        metrics.accuracy = eval_metrics.get('accuracy', accuracy)
+                        metrics.f1_score = eval_metrics.get('f1_score', 0.0)
+                        metrics.precision = eval_metrics.get('precision', 0.0)
+                        metrics.recall = eval_metrics.get('recall', 0.0)
+                    except Exception as e:
+                        metrics.warnings.append(f"Evaluation utilities failed: {e}")
+                        # Fallback to basic metrics
+                        metrics.accuracy = accuracy
+                        try:
+                            from sklearn.metrics import f1_score, precision_score, recall_score
+                            metrics.f1_score = f1_score(y, predictions, average='weighted')
+                            metrics.precision = precision_score(y, predictions, average='weighted')
+                            metrics.recall = recall_score(y, predictions, average='weighted')
+                        except Exception as e2:
+                            metrics.warnings.append(f"Fallback metrics calculation failed: {e2}")
+                else:
+                    # Fallback evaluation (preserving original functionality)
+                    try:
+                        from sklearn.metrics import f1_score, precision_score, recall_score
+                        metrics.accuracy = accuracy
+                        metrics.f1_score = f1_score(y, predictions, average='weighted')
+                        metrics.precision = precision_score(y, predictions, average='weighted')
+                        metrics.recall = recall_score(y, predictions, average='weighted')
+                    except Exception as e:
+                        metrics.warnings.append(f"Fallback metrics calculation failed: {e}")
+                        metrics.accuracy = accuracy
                 
                 # Get feature importance
                 feature_importance = None

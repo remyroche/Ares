@@ -27,6 +27,7 @@ from .performance_monitoring import PerformanceMonitor, MemoryOptimizer
 from .quality_metrics import QualityMetricsCalculator
 from .temporal_analysis import TemporalAnalyzer
 from .causal_analysis import CausalAnalyzer
+from .partial_information_decompositor import PartialInformationDecompositor, PIDConfig
 
 
 def filter_raw_market_data_columns(feature_names: List[str]) -> Tuple[List[str], List[str]]:
@@ -162,6 +163,10 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             self.quality_calculator = QualityMetricsCalculator(self.config.get('quality_metrics', {}))
             self.temporal_analyzer = TemporalAnalyzer(self.config.get('temporal_analysis', {}))
             self.causal_analyzer = CausalAnalyzer(self.config.get('causal_analysis', {}))
+            
+            # PID decompositor component
+            pid_config = PIDConfig(**self.config.get('partial_information_decompositor', {}))
+            self.pid_decompositor = PartialInformationDecompositor(pid_config)
             _LOGGER.info("✅ Analysis components initialized")
             
             # Performance monitoring
@@ -286,7 +291,8 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                                           model_type: str = 'default',
                                           enable_stability_analysis: bool = True,
                                           enable_temporal_analysis: bool = False,
-                                          enable_causal_analysis: bool = False) -> Dict[str, Any]:
+                                          enable_causal_analysis: bool = False,
+                                          enable_pid_analysis: bool = False) -> Dict[str, Any]:
         """Run comprehensive feature selection pipeline."""
         start_time = time.time()
         _LOGGER.info(f"🚀 Starting comprehensive feature selection pipeline...")
@@ -347,17 +353,25 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                     X_cleaned, y_cleaned, feature_names
                 )
             
-            # Step 7: Quality assessment
-            _LOGGER.info("📊 Step 7: Quality assessment...")
+            # Step 7: PID analysis (if enabled)
+            pid_results = {}
+            if enable_pid_analysis:
+                _LOGGER.info("🧮 Step 7: Partial Information Decomposition analysis...")
+                pid_results = self._perform_pid_analysis(
+                    X_cleaned, y_cleaned, feature_names
+                )
+            
+            # Step 8: Quality assessment
+            _LOGGER.info("📊 Step 8: Quality assessment...")
             quality_results = self._assess_selection_quality(
                 X_cleaned, y_cleaned, feature_names, selection_results,
-                stability_results, temporal_results, causal_results
+                stability_results, temporal_results, causal_results, pid_results
             )
             
-            # Step 8: Final feature selection
-            _LOGGER.info("🎯 Step 8: Final feature selection...")
+            # Step 9: Final feature selection
+            _LOGGER.info("🎯 Step 9: Final feature selection...")
             final_selection = self._select_final_features(
-                selection_results, stability_results, quality_results
+                selection_results, stability_results, quality_results, pid_results
             )
             
             execution_time = time.time() - start_time
@@ -370,6 +384,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                 'stability_results': stability_results,
                 'temporal_results': temporal_results,
                 'causal_results': causal_results,
+                'pid_results': pid_results,
                 'quality_results': quality_results,
                 'validation_result': validation_result,
                 'cleaning_log': cleaning_log,
@@ -383,7 +398,8 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                     'model_type': model_type,
                     'stability_analysis_enabled': enable_stability_analysis,
                     'temporal_analysis_enabled': enable_temporal_analysis,
-                    'causal_analysis_enabled': enable_causal_analysis
+                    'causal_analysis_enabled': enable_causal_analysis,
+                    'pid_analysis_enabled': enable_pid_analysis
                 },
                 'success': True
             }
@@ -403,6 +419,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                 'stability_results': {},
                 'temporal_results': {},
                 'causal_results': {},
+                'pid_results': {},
                 'quality_results': {},
                 'pipeline_summary': {
                     'execution_time': time.time() - start_time,
@@ -531,7 +548,8 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                                 selection_results: Dict[str, Any],
                                 stability_results: Dict[str, Any],
                                 temporal_results: Dict[str, Any],
-                                causal_results: Dict[str, Any]) -> Dict[str, Any]:
+                                causal_results: Dict[str, Any],
+                                pid_results: Dict[str, Any] = None) -> Dict[str, Any]:
         """Assess quality of feature selection results."""
         try:
             # Get the best selection result (for now, use mRMR as default)
@@ -565,9 +583,63 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             _LOGGER.error(f"❌ Quality assessment failed: {e}")
             return {'error': str(e)}
 
+    def _perform_pid_analysis(self, X: np.ndarray, y: np.ndarray, 
+                            feature_names: List[str]) -> Dict[str, Any]:
+        """Perform partial information decomposition analysis."""
+        try:
+            _LOGGER.info("🧮 Starting PID analysis...")
+            
+            # Run PID decomposition
+            pid_result = self.pid_decompositor.decompose_information(X, y, feature_names)
+            
+            # Generate artifacts with datetime
+            artifacts = self.pid_decompositor.create_comprehensive_artifact(
+                X, y, feature_names, pid_result, output_dir="pid_artifacts"
+            )
+            
+            # Extract key information
+            pid_analysis = {
+                'redundancy_scores': pid_result.redundancy,
+                'synergy_scores': pid_result.synergy,
+                'unique_info_scores': pid_result.unique_info,
+                'polynomial_features': pid_result.polynomial_features,
+                'interaction_features': pid_result.interaction_features,
+                'cross_timeframe_features': pid_result.cross_timeframe_features,
+                'significant_interactions': pid_result.significant_interactions,
+                'feature_pairs_analyzed': pid_result.feature_pairs_analyzed,
+                'execution_time': pid_result.execution_time,
+                'artifacts_generated': artifacts,
+                'success': True
+            }
+            
+            _LOGGER.info(f"✅ PID analysis completed in {pid_result.execution_time:.3f}s")
+            _LOGGER.info(f"📊 Found {pid_result.significant_interactions} significant interactions")
+            _LOGGER.info(f"🔧 Generated {len(pid_result.polynomial_features)} polynomial features")
+            _LOGGER.info(f"🔧 Generated {len(pid_result.interaction_features)} interaction features")
+            _LOGGER.info(f"🔧 Generated {len(pid_result.cross_timeframe_features)} cross-timeframe features")
+            
+            return pid_analysis
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ PID analysis failed: {e}")
+            return {
+                'redundancy_scores': {},
+                'synergy_scores': {},
+                'unique_info_scores': {},
+                'polynomial_features': [],
+                'interaction_features': [],
+                'cross_timeframe_features': [],
+                'significant_interactions': 0,
+                'feature_pairs_analyzed': 0,
+                'execution_time': 0.0,
+                'error': str(e),
+                'success': False
+            }
+
     def _select_final_features(self, selection_results: Dict[str, Any],
                              stability_results: Dict[str, Any],
-                             quality_results: Dict[str, Any]) -> Dict[str, Any]:
+                             quality_results: Dict[str, Any],
+                             pid_results: Dict[str, Any] = None) -> Dict[str, Any]:
         """Select final features based on all results."""
         try:
             # Collect all successful selections

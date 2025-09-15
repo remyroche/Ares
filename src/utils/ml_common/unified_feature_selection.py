@@ -46,6 +46,23 @@ try:
 except ImportError:
     EXISTING_COMPONENTS_AVAILABLE = False
 
+# Import feature generation system
+try:
+    from ...feature_generation.core.feature_bank import FeatureBank, FeatureBankConfig
+    from ...feature_generation.core.feature_generator import FeatureCategory
+    FEATURE_GENERATION_AVAILABLE = True
+except ImportError:
+    FEATURE_GENERATION_AVAILABLE = False
+
+# Import PID module
+try:
+    from .partial_information_decomposition import (
+        PartialInformationDecomposition, PIDConfig, create_pid_module
+    )
+    PID_AVAILABLE = True
+except ImportError:
+    PID_AVAILABLE = False
+
 # Import matrix operations
 try:
     from .matrix_operations_example import get_unified_matrix_operations
@@ -113,6 +130,25 @@ class UnifiedFeatureSelectionConfig:
     save_results: bool = True
     output_dir: str = "feature_selection_results"
     verbose: bool = True
+    
+    # Feature generation integration
+    build_on_feature_generation: bool = True
+    feature_categories: List[str] = field(default_factory=lambda: [
+        "returns", "momentum", "volume", "volatility", "trend", "oscillator",
+        "support_resistance", "candlestick_pattern", "hmm_regime", "cross_timeframe",
+        "microstructure", "entropy", "autoencoder", "order_flow", "time"
+    ])
+    
+    # PID integration
+    enable_pid: bool = True
+    pid_config: Optional[Dict[str, Any]] = None
+    
+    # Iteration limits for specific methods
+    lasso_max_iterations: int = 50  # Default: 50, Blank mode: 5, Light mode: 2
+    mrmr_max_iterations: int = 50   # Default: 50, Blank mode: 5, Light mode: 2
+    
+    # Execution mode
+    execution_mode: str = "full"  # "full", "blank", "light"
 
 
 class UnifiedFeatureSelector:
@@ -128,6 +164,9 @@ class UnifiedFeatureSelector:
         self.config = config or UnifiedFeatureSelectionConfig()
         self.logger = logger.getChild('UnifiedFeatureSelector')
         
+        # Adjust iteration limits based on execution mode
+        self._adjust_iteration_limits()
+        
         # Initialize components
         self._initialize_components()
         
@@ -135,11 +174,25 @@ class UnifiedFeatureSelector:
         self.results: Dict[str, Any] = {}
         self.feature_sets: Dict[str, List[str]] = {}
         self.feature_scores: Dict[str, Dict[str, float]] = {}
+        self.generated_features: Dict[str, Any] = {}
         
         self.logger.info("🚀 UnifiedFeatureSelector initialized")
         self.logger.info(f"📊 Target features: {self.config.target_features}")
         self.logger.info(f"🎯 Task type: {self.config.task_type}")
         self.logger.info(f"🎯 Prediction target: {self.config.prediction_target}")
+        self.logger.info(f"🔧 Execution mode: {self.config.execution_mode}")
+        self.logger.info(f"🔧 LASSO max iterations: {self.config.lasso_max_iterations}")
+        self.logger.info(f"🔧 mRMR max iterations: {self.config.mrmr_max_iterations}")
+    
+    def _adjust_iteration_limits(self):
+        """Adjust iteration limits based on execution mode."""
+        if self.config.execution_mode == "blank":
+            self.config.lasso_max_iterations = 5
+            self.config.mrmr_max_iterations = 5
+        elif self.config.execution_mode == "light":
+            self.config.lasso_max_iterations = 2
+            self.config.mrmr_max_iterations = 2
+        # "full" mode uses the default values (50)
     
     def _initialize_components(self):
         """Initialize all available components."""
@@ -173,31 +226,293 @@ class UnifiedFeatureSelector:
                 self.logger.info("✅ Configuration loaded")
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to load configuration: {e}")
+        
+        # Initialize feature generation system
+        if FEATURE_GENERATION_AVAILABLE and self.config.build_on_feature_generation:
+            try:
+                feature_bank_config = FeatureBankConfig(
+                    enable_matrix_operations=self.config.use_matrix_operations,
+                    enable_gpu_acceleration=True,
+                    enable_lookback_optimization=True,
+                    enable_parallel_processing=self.config.enable_parallel_processing
+                )
+                self.components['feature_bank'] = FeatureBank(feature_bank_config)
+                self.logger.info("✅ Feature generation system initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize feature generation: {e}")
+        
+        # Initialize PID module
+        if PID_AVAILABLE and self.config.enable_pid:
+            try:
+                pid_config = PIDConfig()
+                if self.config.pid_config:
+                    # Update PID config with custom settings
+                    for key, value in self.config.pid_config.items():
+                        if hasattr(pid_config, key):
+                            setattr(pid_config, key, value)
+                
+                self.components['pid_module'] = create_pid_module(pid_config)
+                self.logger.info("✅ PID module initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize PID module: {e}")
+        
+        # Initialize mRMR selector
+        try:
+            from ...training.utils.feature_selection.selection_methods import MRMRSelector
+            mrmr_config = {
+                'max_iterations': self.config.mrmr_max_iterations,
+                'relevance_method': 'mutual_info',
+                'redundancy_method': 'correlation'
+            }
+            self.components['mrmr_selector'] = MRMRSelector(mrmr_config)
+            self.logger.info("✅ mRMR selector initialized")
+        except ImportError:
+            self.logger.warning("⚠️ mRMR selector not available")
+    
+    def generate_features_from_bank(
+        self,
+        data: pd.DataFrame,
+        categories: Optional[List[str]] = None
+    ) -> Tuple[np.ndarray, List[str]]:
+        """
+        Generate features using the feature generation system.
+        
+        Args:
+            data: Input data DataFrame
+            categories: List of feature categories to generate
+            
+        Returns:
+            Tuple of (feature_matrix, feature_names)
+        """
+        if not self.config.build_on_feature_generation or 'feature_bank' not in self.components:
+            self.logger.warning("⚠️ Feature generation not available")
+            return np.array([]), []
+        
+        self.logger.info("🔧 Generating features using feature bank")
+        
+        if categories is None:
+            categories = self.config.feature_categories
+        
+        try:
+            feature_bank = self.components['feature_bank']
+            
+            # Generate features by category
+            generated_features = {}
+            for category in categories:
+                try:
+                    category_features = feature_bank.generate_features_by_category(
+                        data, category
+                    )
+                    generated_features.update(category_features)
+                    self.logger.info(f"✅ Generated {len(category_features)} features for {category}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to generate features for {category}: {e}")
+            
+            # Convert to matrix format
+            if generated_features:
+                feature_df = pd.DataFrame(generated_features)
+                feature_matrix = feature_df.values
+                feature_names = feature_df.columns.tolist()
+                
+                # Store generated features
+                self.generated_features = generated_features
+                
+                self.logger.info(f"✅ Generated {len(feature_names)} total features")
+                return feature_matrix, feature_names
+            else:
+                self.logger.warning("⚠️ No features generated")
+                return np.array([]), []
+                
+        except Exception as e:
+            self.logger.error(f"❌ Feature generation failed: {e}")
+            return np.array([]), []
+    
+    def create_pid_features(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        feature_names: List[str],
+        timeframe_data: Optional[Dict[str, np.ndarray]] = None
+    ) -> Tuple[np.ndarray, List[str]]:
+        """
+        Create polynomial and cross-timeframe features using PID.
+        
+        Args:
+            X: Feature matrix
+            y: Target variable
+            feature_names: List of feature names
+            timeframe_data: Optional timeframe data for cross-timeframe features
+            
+        Returns:
+            Tuple of (enhanced_feature_matrix, enhanced_feature_names)
+        """
+        if not self.config.enable_pid or 'pid_module' not in self.components:
+            self.logger.warning("⚠️ PID module not available")
+            return X, feature_names
+        
+        self.logger.info("🔍 Creating PID-based features")
+        
+        try:
+            pid_module = self.components['pid_module']
+            
+            # Compute PID and create features
+            pid_results = pid_module.compute_pid(X, y, feature_names)
+            
+            # Create polynomial features
+            polynomial_features = pid_module.create_polynomial_features(X, feature_names)
+            
+            # Create cross-timeframe features if data provided
+            cross_timeframe_features = {}
+            if timeframe_data:
+                cross_timeframe_features = pid_module.create_cross_timeframe_features(
+                    X, feature_names, timeframe_data
+                )
+            
+            # Combine all features
+            enhanced_features = {}
+            enhanced_feature_names = feature_names.copy()
+            
+            # Add polynomial features
+            for name, feature_data in polynomial_features.items():
+                enhanced_features[name] = feature_data
+                enhanced_feature_names.append(name)
+            
+            # Add cross-timeframe features
+            for name, feature_data in cross_timeframe_features.items():
+                enhanced_features[name] = feature_data
+                enhanced_feature_names.append(name)
+            
+            # Create enhanced feature matrix
+            if enhanced_features:
+                enhanced_df = pd.DataFrame(enhanced_features)
+                enhanced_X = np.column_stack([X, enhanced_df.values])
+                
+                self.logger.info(f"✅ Created {len(enhanced_features)} PID-based features")
+                return enhanced_X, enhanced_feature_names
+            else:
+                self.logger.info("ℹ️ No PID-based features created")
+                return X, feature_names
+                
+        except Exception as e:
+            self.logger.error(f"❌ PID feature creation failed: {e}")
+            return X, feature_names
+    
+    def _mrmr_selection_with_limits(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        feature_names: List[str],
+        n_features: int
+    ) -> Dict[str, Any]:
+        """
+        Perform mRMR selection with iteration limits.
+        
+        Args:
+            X: Feature matrix
+            y: Target vector
+            feature_names: List of feature names
+            n_features: Number of features to select
+            
+        Returns:
+            Dictionary containing mRMR selection results
+        """
+        if 'mrmr_selector' not in self.components:
+            self.logger.warning("⚠️ mRMR selector not available")
+            return {
+                'selected_features': [],
+                'feature_scores': {},
+                'method': 'mrmr',
+                'error': 'mRMR selector not available'
+            }
+        
+        self.logger.info(f"🔍 Performing mRMR selection with {self.config.mrmr_max_iterations} max iterations")
+        
+        try:
+            mrmr_selector = self.components['mrmr_selector']
+            
+            # Perform mRMR selection with iteration limit
+            result = mrmr_selector.select_features(X, y, feature_names, n_features)
+            
+            if result['success']:
+                self.logger.info(f"✅ mRMR selected {len(result['selected_features'])} features")
+                return {
+                    'selected_features': result['selected_features'],
+                    'feature_scores': result['scores'],
+                    'method': 'mrmr',
+                    'n_selected': len(result['selected_features']),
+                    'selection_ratio': len(result['selected_features']) / len(feature_names)
+                }
+            else:
+                self.logger.warning(f"⚠️ mRMR selection failed: {result.get('error', 'Unknown error')}")
+                return {
+                    'selected_features': [],
+                    'feature_scores': {},
+                    'method': 'mrmr',
+                    'error': result.get('error', 'Unknown error')
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ mRMR selection failed: {e}")
+            return {
+                'selected_features': [],
+                'feature_scores': {},
+                'method': 'mrmr',
+                'error': str(e)
+            }
     
     def select_features(
         self,
         X: Union[np.ndarray, pd.DataFrame],
         y: Union[np.ndarray, pd.Series, List],
         feature_names: Optional[List[str]] = None,
-        target_sizes: Optional[List[int]] = None
+        target_sizes: Optional[List[int]] = None,
+        input_data: Optional[pd.DataFrame] = None,
+        timeframe_data: Optional[Dict[str, np.ndarray]] = None
     ) -> Dict[str, Any]:
         """
-        Perform unified feature selection.
+        Perform unified feature selection with feature generation integration.
         
         Args:
             X: Feature matrix
             y: Target vector
             feature_names: List of feature names
             target_sizes: List of target feature set sizes
+            input_data: Optional raw data for feature generation
+            timeframe_data: Optional timeframe data for cross-timeframe features
             
         Returns:
             Dictionary containing all feature selection results
         """
         start_time = time.time()
-        self.logger.info("🔍 Starting unified feature selection")
+        self.logger.info("🔍 Starting unified feature selection with feature generation")
         
-        # Prepare data
+        # Step 1: Generate features from feature bank if enabled
+        if self.config.build_on_feature_generation and input_data is not None:
+            self.logger.info("🔧 Step 1: Generating features from feature bank")
+            generated_X, generated_names = self.generate_features_from_bank(input_data)
+            
+            if generated_X.size > 0:
+                # Combine with existing features
+                if isinstance(X, pd.DataFrame):
+                    X_combined = pd.concat([X, pd.DataFrame(generated_X, columns=generated_names)], axis=1)
+                    feature_names_combined = X_combined.columns.tolist()
+                else:
+                    X_combined = np.column_stack([X, generated_X])
+                    feature_names_combined = (feature_names or [f'feature_{i}' for i in range(X.shape[1])]) + generated_names
+                
+                X = X_combined
+                feature_names = feature_names_combined
+                self.logger.info(f"✅ Combined features: {X.shape[1]} total features")
+        
+        # Step 2: Prepare data
         X_processed, y_processed, feature_names_processed = self._prepare_data(X, y, feature_names)
+        
+        # Step 3: Create PID-based features if enabled
+        if self.config.enable_pid:
+            self.logger.info("🔍 Step 2: Creating PID-based features")
+            X_processed, feature_names_processed = self.create_pid_features(
+                X_processed, y_processed, feature_names_processed, timeframe_data
+            )
         
         # Set default target sizes if not provided
         if target_sizes is None:
@@ -397,9 +712,14 @@ class UnifiedFeatureSelector:
             filter_indices = [feature_names.index(feat) for feat in filter_features]
             X_filtered = X[:, filter_indices]
             
-            # Apply wrapper method
-            wrapper_result = self._wrapper_selection(X_filtered, y, filter_features, config)
-            final_features = wrapper_result['selected_features']
+            # Apply mRMR method with iteration limits
+            mrmr_result = self._mrmr_selection_with_limits(X_filtered, y, filter_features, config.target_features)
+            if mrmr_result['selected_features']:
+                final_features = mrmr_result['selected_features']
+            else:
+                # Fallback to wrapper method
+                wrapper_result = self._wrapper_selection(X_filtered, y, filter_features, config)
+                final_features = wrapper_result['selected_features']
         else:
             final_features = filter_features
         
@@ -525,7 +845,11 @@ class UnifiedFeatureSelector:
         
         # Choose estimator
         if self.config.task_type == "regression":
-            estimator = LassoCV(cv=config.cv_folds, random_state=config.random_state)
+            estimator = LassoCV(
+                cv=config.cv_folds, 
+                random_state=config.random_state,
+                max_iter=self.config.lasso_max_iterations
+            )
         else:
             estimator = RandomForestClassifier(n_estimators=100, random_state=config.random_state)
         

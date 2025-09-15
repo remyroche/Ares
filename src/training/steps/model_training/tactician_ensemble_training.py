@@ -316,8 +316,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     def _prepare_base_models(self, base_tactician_models: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Prepare and validate base tactician models."""
         if base_tactician_models is None or not base_tactician_models:
-            self.logger.warning("⚠️ No base tactician models provided, creating mock models")
-            return self._create_mock_base_models()
+            self.logger.info("📊 No base tactician models provided, creating from configuration...")
+            base_tactician_models = self._create_base_models_from_config()
         
         # Validate base models
         valid_models = {}
@@ -328,11 +328,32 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 self.logger.warning(f"⚠️ Base model '{name}' is None, skipping")
         
         if not valid_models:
-            self.logger.warning("⚠️ No valid base models found, creating mock models")
-            return self._create_mock_base_models()
+            self.logger.error("❌ No valid base models found. All provided models are None.")
+            raise ValueError("At least one valid base tactician model is required for ensemble training.")
         
         self.logger.info(f"✅ Using {len(valid_models)} base tactician models: {list(valid_models.keys())}")
         return valid_models
+    
+    def _create_base_models_from_config(self) -> Dict[str, Any]:
+        """Create base tactician models from configuration."""
+        try:
+            from src.utils.ml_common.models.model_factory import create_tactician_models
+            
+            self.logger.info("🏭 Creating tactician models from configuration...")
+            models = create_tactician_models()
+            
+            if not models:
+                raise ValueError("Failed to create any tactician models from configuration")
+            
+            self.logger.info(f"✅ Created {len(models)} tactician models: {list(models.keys())}")
+            return models
+            
+        except ImportError as e:
+            self.logger.error(f"❌ Failed to import model factory: {e}")
+            raise RuntimeError("Cannot create tactician models: model factory not available") from e
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create tactician models from configuration: {e}")
+            raise RuntimeError(f"Tactician model creation failed: {e}") from e
     
     def _create_error_result(self, error_type: str, error_message: str) -> Dict[str, Any]:
         """Create standardized error result."""
@@ -344,28 +365,6 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             'progress_tracker': [progress.__dict__ for progress in self.progress_tracker]
         }
     
-    def _create_mock_base_models(self) -> Dict[str, Any]:
-        """Create mock base models for testing purposes with proper error handling."""
-        try:
-            from sklearn.ensemble import RandomForestRegressor
-            from sklearn.linear_model import LinearRegression, Ridge
-            
-            mock_models = {
-                'node_model': RandomForestRegressor(n_estimators=10, random_state=42, max_depth=3),
-                'catboost_model': RandomForestRegressor(n_estimators=10, random_state=43, max_depth=3),
-                'lightgbm_model': RandomForestRegressor(n_estimators=10, random_state=44, max_depth=3),
-                'ridge_model': Ridge(alpha=1.0, random_state=45)
-            }
-            
-            self.logger.info(f"📊 Created {len(mock_models)} mock base tactician models for ensemble training")
-            return mock_models
-            
-        except ImportError as e:
-            self.logger.error(f"Failed to import sklearn models for mock creation: {e}")
-            raise RuntimeError("Cannot create mock models: sklearn not available") from e
-        except Exception as e:
-            self.logger.error(f"Failed to create mock base models: {e}")
-            raise RuntimeError(f"Mock model creation failed: {e}") from e
     
     def _combine_all_model_inputs(
         self,

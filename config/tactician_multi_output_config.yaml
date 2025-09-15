@@ -48,36 +48,51 @@ tactician_config:
         random_state: 42
         verbosity: -1
     
-    linear_ridge:
-      model_type: "Ridge"
+    linear_elastic_net:
+      model_type: "ElasticNetCV"
       params:
-        alpha: 1.0
+        alphas: [0.01, 0.1, 1.0, 10.0]
+        l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
+        cv: 5
+        max_iter: 1000
         random_state: 42
   
   # Meta model configuration
   meta_models:
     entry_timing:
-      model_type: "Ridge"
+      model_type: "ElasticNetCV"
       params:
-        alpha: 0.5
+        alphas: [0.01, 0.1, 0.5, 1.0, 5.0]
+        l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
+        cv: 5
+        max_iter: 1000
         random_state: 42
     
     position_size:
-      model_type: "Ridge"
+      model_type: "ElasticNetCV"
       params:
-        alpha: 1.0
+        alphas: [0.01, 0.1, 1.0, 5.0, 10.0]
+        l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
+        cv: 5
+        max_iter: 1000
         random_state: 42
     
     stop_loss:
-      model_type: "Ridge"
+      model_type: "ElasticNetCV"
       params:
-        alpha: 2.0
+        alphas: [0.01, 0.1, 1.0, 2.0, 5.0, 10.0]
+        l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
+        cv: 5
+        max_iter: 1000
         random_state: 42
     
     take_profit:
-      model_type: "Ridge"
+      model_type: "ElasticNetCV"
       params:
-        alpha: 1.5
+        alphas: [0.01, 0.1, 0.5, 1.0, 1.5, 5.0]
+        l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
+        cv: 5
+        max_iter: 1000
         random_state: 42
   
   # Training configuration

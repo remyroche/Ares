@@ -84,6 +84,8 @@ class ModelType(Enum):
     RIDGE_CLASSIFIER = "RidgeClassifier"
     ELASTIC_NET = "ElasticNet"
     ELASTIC_NET_CLASSIFIER = "ElasticNetClassifier"
+    ELASTIC_NET_CV = "ElasticNetCV"
+    ELASTIC_NET_CV_CLASSIFIER = "ElasticNetCVClassifier"
     ELASTIC_NET_QUANTILE = "ElasticNetQuantile"
     QUANTILE_REGRESSION = "QuantileRegression"
     LOGISTIC_REGRESSION = "LogisticRegression"
@@ -297,6 +299,8 @@ class EnhancedModelFactory:
                 model = self._create_ridge_model(model_config)
             elif model_config.model_type in [ModelType.ELASTIC_NET, ModelType.ELASTIC_NET_CLASSIFIER]:
                 model = self._create_elastic_net_model(model_config)
+            elif model_config.model_type in [ModelType.ELASTIC_NET_CV, ModelType.ELASTIC_NET_CV_CLASSIFIER]:
+                model = self._create_elastic_net_cv_model(model_config)
             elif model_config.model_type == ModelType.ELASTIC_NET_QUANTILE:
                 model = self._create_elastic_net_quantile_model(model_config)
             elif model_config.model_type == ModelType.QUANTILE_REGRESSION:
@@ -796,6 +800,28 @@ class EnhancedModelFactory:
         
         return model
     
+    def _create_elastic_net_cv_model(self, model_config: ModelConfig) -> Any:
+        """Create ElasticNetCV model with cross-validation."""
+        
+        from sklearn.linear_model import ElasticNetCV
+        
+        # Default parameters for ElasticNetCV
+        default_params = {
+            'alphas': [0.01, 0.1, 1.0, 10.0],
+            'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9],
+            'cv': 5,
+            'max_iter': 1000,
+            'random_state': 42
+        }
+        
+        # Merge with user parameters
+        params = {**default_params, **model_config.model_params}
+        
+        # Create model
+        model = ElasticNetCV(**params)
+        
+        return model
+    
     def _create_elastic_net_quantile_model(self, model_config: ModelConfig) -> Any:
         """Create Elastic Net with Quantile Regression."""
         
@@ -1013,24 +1039,24 @@ class EnhancedModelFactory:
         return NODE(**params)
     
     def _create_ridge_model(self, model_config: ModelConfig) -> Any:
-        """Create Ridge model."""
+        """Create ElasticNetCV model (replacing Ridge with automatic parameter optimization)."""
         
-        from sklearn.linear_model import Ridge, RidgeClassifier
+        from sklearn.linear_model import ElasticNetCV
         
-        # Default parameters
+        # Default parameters for ElasticNetCV (replacing Ridge)
         default_params = {
-            'alpha': 1.0,
+            'alphas': [0.01, 0.1, 1.0, 10.0],
+            'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9],  # Test different L1/L2 ratios
+            'cv': 5,
+            'max_iter': 1000,
             'random_state': model_config.random_state
         }
         
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
         
-        # Create model
-        if model_config.model_type == ModelType.RIDGE:
-            model = Ridge(**params)
-        else:
-            model = RidgeClassifier(**params)
+        # Create model (using ElasticNetCV instead of Ridge for automatic optimization)
+        model = ElasticNetCV(**params)
         
         return model
     
@@ -1133,15 +1159,16 @@ def create_analyst_models() -> Dict[str, Any]:
 
 
 def create_tactician_models() -> Dict[str, Any]:
-    """Create all Tactician (1m) models."""
+    """Create all Tactician (1m) models with ElasticNetCV as the primary linear model."""
     factory = EnhancedModelFactory()
     models = {}
     
-    # Tactician fixed models
+    # Tactician models including ElasticNetCV
     tactician_models = {
         "tabnet_attention": ModelType.TABNET_ATTENTION,  # TabNet with attention
         "xgboost_custom": ModelType.XGBOOST_CUSTOM,  # XGBoost with custom objectives
         "hist_gb": ModelType.HIST_GRADIENT_BOOSTING,  # HistGradientBoosting
+        "elastic_net_cv": ModelType.ELASTIC_NET_CV,  # ElasticNetCV with automatic parameter optimization
         "elastic_quantile": ModelType.ELASTIC_NET_QUANTILE  # ElasticNet with quantile regression
     }
     
@@ -1151,7 +1178,15 @@ def create_tactician_models() -> Dict[str, Any]:
             model_name=f"tactician_{name}",
             is_multi_output=True,
             n_outputs=4,
-            output_names=["entry_timing", "position_size", "stop_loss", "take_profit"]
+            output_names=["entry_timing", "position_size", "stop_loss", "take_profit"],
+            model_params={
+                # ElasticNetCV specific parameters for tactician models
+                'alphas': [0.01, 0.1, 1.0, 10.0],
+                'l1_ratio': [0.1, 0.3, 0.5, 0.7, 0.9],
+                'cv': 5,
+                'max_iter': 1000,
+                'random_state': 42
+            } if model_type == ModelType.ELASTIC_NET_CV else {}
         )
         models[name] = factory.create_model(config)
     

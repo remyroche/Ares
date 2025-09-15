@@ -64,6 +64,30 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Core feature generation not available: {e}")
 
+# Base calculations
+try:
+    from .base_calculations import (
+        BaseCalculator,
+        BaseCalculationType,
+        BaseCalculationConfig,
+        PriceReturnsCalculator,
+        ReturnsVWAPCalculator,
+        PriceLevelsCalculator,
+        VolumeWeightedCalculator,
+        create_base_calculator,
+        get_base_calculator,
+        calculate_price_returns,
+        calculate_returns_vwap,
+        calculate_price_levels,
+        calculate_volume_weighted
+    )
+    BASE_CALCULATIONS_AVAILABLE = True
+except ImportError as e:
+    BASE_CALCULATIONS_AVAILABLE = False
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Base calculations not available: {e}")
+
 # Category-specific generators
 try:
     from .categories import (
@@ -75,7 +99,14 @@ try:
         HMMRegimeFeatureGenerator,
         VolatilityFeatureGenerator,
         TrendFeatureGenerator,
-        OscillatorFeatureGenerator
+        OscillatorFeatureGenerator,
+        InteractionFeatureGenerator,
+        CrossTimeframeInteractionGenerator,
+        FeatureRatioGenerator,
+        PolynomialFeatureGenerator,
+        CorrelationInteractionGenerator,
+        create_interaction_generators,
+        create_default_interaction_generators
     )
     CATEGORIES_AVAILABLE = True
 except ImportError as e:
@@ -168,6 +199,24 @@ if CORE_AVAILABLE:
         "list_available_categories"
     ])
 
+# Base calculations
+if BASE_CALCULATIONS_AVAILABLE:
+    __all__.extend([
+        "BaseCalculator",
+        "BaseCalculationType",
+        "BaseCalculationConfig",
+        "PriceReturnsCalculator",
+        "ReturnsVWAPCalculator",
+        "PriceLevelsCalculator",
+        "VolumeWeightedCalculator",
+        "create_base_calculator",
+        "get_base_calculator",
+        "calculate_price_returns",
+        "calculate_returns_vwap",
+        "calculate_price_levels",
+        "calculate_volume_weighted"
+    ])
+
 # Category generators
 if CATEGORIES_AVAILABLE:
     __all__.extend([
@@ -179,7 +228,14 @@ if CATEGORIES_AVAILABLE:
         "HMMRegimeFeatureGenerator",
         "VolatilityFeatureGenerator",
         "TrendFeatureGenerator",
-        "OscillatorFeatureGenerator"
+        "OscillatorFeatureGenerator",
+        "InteractionFeatureGenerator",
+        "CrossTimeframeInteractionGenerator",
+        "FeatureRatioGenerator",
+        "PolynomialFeatureGenerator",
+        "CorrelationInteractionGenerator",
+        "create_interaction_generators",
+        "create_default_interaction_generators"
     ])
 
 # Optimization

@@ -22,6 +22,15 @@ from .oscillator import OscillatorFeatureGenerator
 from .support_resistance import SupportResistanceFeatureGenerator
 from .candlestick_pattern import CandlestickPatternFeatureGenerator
 from .hmm_regime import HMMRegimeFeatureGenerator
+from .interaction import (
+    InteractionFeatureGenerator,
+    CrossTimeframeInteractionGenerator,
+    FeatureRatioGenerator,
+    PolynomialFeatureGenerator,
+    CorrelationInteractionGenerator,
+    create_interaction_generators,
+    create_default_interaction_generators
+)
 
 __all__ = [
     "ReturnsFeatureGenerator",
@@ -32,5 +41,12 @@ __all__ = [
     "OscillatorFeatureGenerator",
     "SupportResistanceFeatureGenerator",
     "CandlestickPatternFeatureGenerator",
-    "HMMRegimeFeatureGenerator"
+    "HMMRegimeFeatureGenerator",
+    "InteractionFeatureGenerator",
+    "CrossTimeframeInteractionGenerator",
+    "FeatureRatioGenerator",
+    "PolynomialFeatureGenerator",
+    "CorrelationInteractionGenerator",
+    "create_interaction_generators",
+    "create_default_interaction_generators"
 ]

@@ -3,17 +3,24 @@ Momentum Feature Generator
 
 This module provides feature generators for momentum-based indicators,
 including RSI, MACD, Stochastic, and other momentum oscillators.
+Supports different base calculations: price returns, returns-based VWAP, etc.
 """
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, Literal
 
 from ..core.feature_generator import (
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
     VectorizedFeatureGenerator
+)
+from ..base_calculations import (
+    BaseCalculator,
+    BaseCalculationType,
+    BaseCalculationConfig,
+    create_base_calculator
 )
 
 class MomentumFeatureGenerator(VectorizedFeatureGenerator):
@@ -196,28 +203,83 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         return pd.Series(rsi, index=data.index, name=f'rsi_{lookback}')
 
 class RSIGenerator(FeatureGenerator):
-    """Generator for RSI (Relative Strength Index)."""
+    """Generator for RSI (Relative Strength Index) with different base calculations."""
     
-    def __init__(self, period: int = 14):
-        """Initialize RSI generator."""
+    def __init__(self, 
+                 period: int = 14,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize RSI generator.
+        
+        Args:
+            period: RSI period
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"rsi_{period}",
+            name=f"rsi_{period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Relative Strength Index over {period} periods",
-            required_columns=["close"],
+            description=f"RSI over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=2,
-            max_lookback=50
+            max_lookback=50,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate RSI."""
-        close_prices = data['close']
+        """Generate RSI based on the specified base calculation."""
+        # Calculate base values (returns, returns_vwap, etc.)
+        base_values = self.base_calculator.calculate(data)
         
+        # Calculate RSI based on base values
+        if self.base_calculation == BaseCalculationType.PRICE_RETURNS:
+            # For price returns, RSI is calculated on the returns themselves
+            return self._calculate_rsi_from_returns(base_values)
+        elif self.base_calculation == BaseCalculationType.RETURNS_VWAP:
+            # For returns-based VWAP, RSI is calculated on the VWAP returns
+            return self._calculate_rsi_from_returns(base_values)
+        else:
+            # For other base calculations, calculate RSI on the values
+            return self._calculate_rsi_from_values(base_values)
+    
+    def _calculate_rsi_from_returns(self, returns: pd.Series) -> pd.Series:
+        """Calculate RSI from returns."""
+        # Separate gains and losses
+        gains = returns.where(returns > 0, 0)
+        losses = -returns.where(returns < 0, 0)
+        
+        # Calculate average gains and losses using Wilder's smoothing
+        avg_gains = gains.ewm(alpha=1/self.period, adjust=False).mean()
+        avg_losses = losses.ewm(alpha=1/self.period, adjust=False).mean()
+        
+        # Calculate RS and RSI
+        rs = avg_gains / avg_losses
+        rsi = 100 - (100 / (1 + rs))
+        
+        return rsi
+    
+    def _calculate_rsi_from_values(self, values: pd.Series) -> pd.Series:
+        """Calculate RSI from values (like price levels)."""
         # Calculate price changes
-        delta = close_prices.diff()
+        delta = values.diff()
         
         # Separate gains and losses
         gains = delta.where(delta > 0, 0)
@@ -234,31 +296,63 @@ class RSIGenerator(FeatureGenerator):
         return rsi
 
 class MACDGenerator(FeatureGenerator):
-    """Generator for MACD (Moving Average Convergence Divergence)."""
+    """Generator for MACD (Moving Average Convergence Divergence) with different base calculations."""
     
-    def __init__(self, fast: int = 12, slow: int = 26, signal: int = 9):
-        """Initialize MACD generator."""
+    def __init__(self, 
+                 fast: int = 12, 
+                 slow: int = 26, 
+                 signal: int = 9,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 **base_kwargs):
+        """
+        Initialize MACD generator.
+        
+        Args:
+            fast: Fast EMA period
+            slow: Slow EMA period
+            signal: Signal line EMA period
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"macd_{fast}_{slow}_{signal}",
+            name=f"macd_{fast}_{slow}_{signal}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"MACD with fast={fast}, slow={slow}, signal={signal}",
-            required_columns=["close"],
+            description=f"MACD with fast={fast}, slow={slow}, signal={signal} based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=slow,
             min_lookback=slow,
-            max_lookback=slow
+            max_lookback=slow,
+            parameters={
+                'fast': fast,
+                'slow': slow,
+                'signal': signal,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.fast = fast
         self.slow = slow
         self.signal = signal
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate MACD line."""
-        close_prices = data['close']
+        """Generate MACD line based on the specified base calculation."""
+        # Calculate base values
+        base_values = self.base_calculator.calculate(data)
         
-        # Calculate EMAs
-        ema_fast = close_prices.ewm(span=self.fast).mean()
-        ema_slow = close_prices.ewm(span=self.slow).mean()
+        # Calculate EMAs on base values
+        ema_fast = base_values.ewm(span=self.fast).mean()
+        ema_slow = base_values.ewm(span=self.slow).mean()
         
         # Calculate MACD line
         macd = ema_fast - ema_slow

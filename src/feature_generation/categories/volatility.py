@@ -3,17 +3,24 @@ Volatility Feature Generator
 
 This module provides feature generators for volatility-based indicators,
 including Bollinger Bands, ATR, and other volatility measures.
+Supports different base calculations: price returns, returns-based VWAP, etc.
 """
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
     VectorizedFeatureGenerator
+)
+from ..base_calculations import (
+    BaseCalculator,
+    BaseCalculationType,
+    BaseCalculationConfig,
+    create_base_calculator
 )
 
 class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
@@ -63,28 +70,74 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
         return np.concatenate([[np.nan], volatility])
 
 class BollingerBandsGenerator(FeatureGenerator):
-    """Generator for Bollinger Bands."""
+    """Generator for Bollinger Bands with different base calculations."""
     
-    def __init__(self, period: int = 20, std_dev: float = 2.0):
+    def __init__(self, 
+                 period: int = 20, 
+                 std_dev: float = 2.0,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 band_type: str = "upper",  # "upper", "lower", "middle"
+                 **base_kwargs):
+        """
+        Initialize Bollinger Bands generator.
+        
+        Args:
+            period: Bollinger Bands period
+            std_dev: Standard deviation multiplier
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            band_type: Type of band to generate ("upper", "lower", "middle")
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"bb_upper_{period}_{std_dev}",
+            name=f"bb_{band_type}_{period}_{std_dev}_{base_calculation.value}",
             category=FeatureCategory.VOLATILITY,
-            description=f"Bollinger Bands Upper with period={period}, std={std_dev}",
-            required_columns=["close"],
+            description=f"Bollinger Bands {band_type} with period={period}, std={std_dev} based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=period,
-            max_lookback=period
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'std_dev': std_dev,
+                'base_calculation': base_calculation.value,
+                'band_type': band_type,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
         self.std_dev = std_dev
+        self.base_calculation = base_calculation
+        self.band_type = band_type
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        close = data['close']
-        sma = close.rolling(window=self.period).mean()
-        std = close.rolling(window=self.period).std()
-        upper_band = sma + (std * self.std_dev)
-        return upper_band
+        """Generate Bollinger Bands based on the specified base calculation."""
+        # Calculate base values
+        base_values = self.base_calculator.calculate(data)
+        
+        # Calculate Bollinger Bands on base values
+        sma = base_values.rolling(window=self.period).mean()
+        std = base_values.rolling(window=self.period).std()
+        
+        if self.band_type == "upper":
+            band = sma + (std * self.std_dev)
+        elif self.band_type == "lower":
+            band = sma - (std * self.std_dev)
+        elif self.band_type == "middle":
+            band = sma
+        else:
+            raise ValueError(f"Invalid band_type: {self.band_type}")
+        
+        return band
 
 class ATRGenerator(FeatureGenerator):
     """Generator for Average True Range."""

@@ -57,9 +57,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             # Configure HMM regime detection
             hmm_config = HMMRegimeConfig(
-                n_regimes=3,  # Bull, Bear, Sideways
+                n_regimes=20, 
                 detection_method=RegimeDetectionMethod.ENHANCED_HMM,
-                min_regime_duration=10,  # Minimum bars per regime
+                min_regime_duration=4,  # Minimum bars per regime
                 transition_threshold=0.1,
                 convergence_tolerance=1e-6,
                 max_iterations=100,

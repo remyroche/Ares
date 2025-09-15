@@ -25,7 +25,7 @@ Successfully implemented the **20 most important entropy features** for financia
 - **α values**: 0.3, 0.5, 2.0, 3.0 for Rényi entropy
 - **Time horizons**: Short-term vs long-term perspectives
 
-**File**: `/workspace/src/feature_generation/categories/top20_entropy.py`
+**File**: `/workspace/src/feature_generation/categories/entropy.py` (Integrated)
 
 ---
 
@@ -75,7 +75,7 @@ For each of the 4 regimes (0-3), across 3 time windows (10, 20, 50):
 - **4 Regime-Specific Features** × 4 Regimes × 3 Windows = 48 features
 - **Total: 72 regime features**
 
-**File**: `/workspace/src/feature_generation/categories/regime.py`
+**File**: `/workspace/src/feature_generation/categories/hmm_regime.py` (Advanced HMM system)
 
 ---
 

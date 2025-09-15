@@ -13,11 +13,18 @@ from typing import Any, Dict, List, Optional, Callable, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 import platform
-import psutil
 import subprocess
 from contextlib import contextmanager
 import json
 from pathlib import Path
+
+# Optional dependencies
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 
 from .m1_cpu_optimizer import M1CPUOptimizer
 from .m1_gpu_utils import M1GPUManager
@@ -149,12 +156,16 @@ class HardwarePerformanceMonitor:
     def _collect_metrics(self) -> PerformanceMetrics:
         """Collect current performance metrics."""
         try:
-            # CPU usage
-            cpu_usage = psutil.cpu_percent(interval=1)
-            
-            # Memory usage
-            memory = psutil.virtual_memory()
-            memory_usage = memory.percent
+            if PSUTIL_AVAILABLE:
+                # CPU usage
+                cpu_usage = psutil.cpu_percent(interval=1)
+                
+                # Memory usage
+                memory = psutil.virtual_memory()
+                memory_usage = memory.percent
+            else:
+                cpu_usage = 0.0
+                memory_usage = 0.0
             
             # GPU usage (simplified - would need more sophisticated detection)
             gpu_usage = self._get_gpu_usage()

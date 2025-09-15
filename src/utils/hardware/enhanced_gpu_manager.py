@@ -13,11 +13,24 @@ import queue
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-import numpy as np
-import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import weakref
 import gc
+
+# Optional dependencies
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 from .m1_gpu_utils import M1GPUManager
 
@@ -390,15 +403,16 @@ class ComputePipeline:
         # Simulate GPU backtesting
         time.sleep(0.2)  # Simulate computation time
         
+        import random
         return {
             'operation_id': operation.operation_id,
             'result_type': 'backtesting_simulation',
             'success': True,
             'execution_time': 0.2,
             'gpu_accelerated': True,
-            'total_trades': np.random.randint(100, 1000),
-            'win_rate': np.random.uniform(0.4, 0.7),
-            'profit_factor': np.random.uniform(0.8, 1.5)
+            'total_trades': random.randint(100, 1000),
+            'win_rate': random.uniform(0.4, 0.7),
+            'profit_factor': random.uniform(0.8, 1.5)
         }
         
     def _execute_monte_carlo(self, operation: GPUOperation) -> Dict[str, Any]:
@@ -406,6 +420,7 @@ class ComputePipeline:
         # Simulate GPU Monte Carlo
         time.sleep(0.3)  # Simulate computation time
         
+        import random
         return {
             'operation_id': operation.operation_id,
             'result_type': 'monte_carlo',
@@ -413,8 +428,8 @@ class ComputePipeline:
             'execution_time': 0.3,
             'gpu_accelerated': True,
             'n_simulations': operation.parameters.get('n_simulations', 1000),
-            'mean_return': np.random.normal(0.05, 0.02),
-            'var_95': np.random.uniform(-0.1, -0.05)
+            'mean_return': random.uniform(0.03, 0.07),
+            'var_95': random.uniform(-0.1, -0.05)
         }
         
     def _execute_generic_operation(self, operation: GPUOperation) -> Dict[str, Any]:
@@ -698,8 +713,8 @@ class EnhancedM1GPUManager(M1GPUManager):
         self.logger.info(f"🔄 Batched {len(operation_ids)} operations")
         return operation_ids
         
-    def optimize_tensor_operations_advanced(self, data: np.ndarray, 
-                                          operation_type: GPUOperationType) -> np.ndarray:
+    def optimize_tensor_operations_advanced(self, data, 
+                                          operation_type: GPUOperationType):
         """Advanced tensor operation optimization."""
         if not self.mps_available:
             self.logger.debug("MPS not available, using CPU operations")
@@ -708,7 +723,12 @@ class EnhancedM1GPUManager(M1GPUManager):
         try:
             # Allocate memory from appropriate pool
             pool_name = self._get_pool_for_operation_type(operation_type)
-            size_mb = data.nbytes / (1024 * 1024)
+            
+            # Calculate size - handle both numpy arrays and other data types
+            if NUMPY_AVAILABLE and hasattr(data, 'nbytes'):
+                size_mb = data.nbytes / (1024 * 1024)
+            else:
+                size_mb = 1.0  # Default size for non-numpy data
             
             memory_address = self.memory_pool_manager.allocate_from_pool(
                 pool_name, size_mb, f"tensor_op_{int(time.time())}"
@@ -742,8 +762,8 @@ class EnhancedM1GPUManager(M1GPUManager):
         else:
             return 'matrix_operations'  # Default
             
-    def _simulate_gpu_tensor_operation(self, data: np.ndarray, 
-                                     operation_type: GPUOperationType) -> np.ndarray:
+    def _simulate_gpu_tensor_operation(self, data, 
+                                     operation_type: GPUOperationType):
         """Simulate GPU tensor operation."""
         # Simulate GPU computation time
         time.sleep(0.01)
@@ -751,13 +771,16 @@ class EnhancedM1GPUManager(M1GPUManager):
         # Apply some transformation based on operation type
         if operation_type == GPUOperationType.MATRIX_MULTIPLICATION:
             # Simulate matrix multiplication
-            if data.ndim == 2:
+            if NUMPY_AVAILABLE and hasattr(data, 'ndim') and data.ndim == 2:
                 return np.dot(data, data.T)
             else:
                 return data * 2
         elif operation_type == GPUOperationType.TENSOR_OPERATIONS:
             # Simulate tensor operations
-            return np.sqrt(data**2 + 1)
+            if NUMPY_AVAILABLE:
+                return np.sqrt(data**2 + 1)
+            else:
+                return data
         else:
             # Generic operation
             return data * 1.1

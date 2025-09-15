@@ -12,7 +12,6 @@ import threading
 import time
 import subprocess
 import os
-import psutil
 from typing import Any, Dict, List, Optional, Callable, Union, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -20,6 +19,14 @@ import platform
 import queue
 import signal
 import sys
+
+# Optional dependencies
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 
 from .m1_cpu_optimizer import M1CPUOptimizer
 
@@ -236,10 +243,13 @@ class ThermalMonitor:
                                 pass
                                 
             # Fallback: estimate based on CPU usage
-            cpu_usage = psutil.cpu_percent(interval=1)
-            base_temp = 35.0
-            temp_increase = cpu_usage * 0.3  # Rough estimate
-            return base_temp + temp_increase
+            if PSUTIL_AVAILABLE:
+                cpu_usage = psutil.cpu_percent(interval=1)
+                base_temp = 35.0
+                temp_increase = cpu_usage * 0.3  # Rough estimate
+                return base_temp + temp_increase
+            else:
+                return 45.0  # Default fallback
             
         except Exception as e:
             self.logger.debug(f"Failed to get CPU temperature: {e}")

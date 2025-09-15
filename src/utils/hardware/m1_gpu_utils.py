@@ -6,11 +6,24 @@ for machine learning and data processing operations.
 """
 
 import logging
-import numpy as np
-import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
 import sys
 import platform
+
+# Optional dependencies
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +88,12 @@ class M1GPUManager:
 
         return info
 
-    def optimize_tensor_operations(self, data: np.ndarray) -> np.ndarray:
+    def optimize_tensor_operations(self, data):
         """Optimize tensor operations for M1 GPU."""
+        if not NUMPY_AVAILABLE:
+            self.logger.warning("Numpy not available, returning data as-is")
+            return data
+            
         if not self.mps_available:
             self.logger.debug("MPS not available, using CPU operations")
             return data
@@ -140,8 +157,12 @@ def is_mps_available() -> bool:
     return m1_gpu_manager.mps_available
 
 
-def optimize_dataframe_for_m1(df: pd.DataFrame) -> pd.DataFrame:
+def optimize_dataframe_for_m1(df):
     """Optimize DataFrame operations for M1."""
+    if not PANDAS_AVAILABLE or not NUMPY_AVAILABLE:
+        logger.warning("Pandas or Numpy not available, returning DataFrame as-is")
+        return df
+        
     if not m1_gpu_manager.is_m1:
         return df
 
@@ -161,14 +182,20 @@ def optimize_dataframe_for_m1(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def create_m1_optimized_array(data: Union[list, np.ndarray], dtype: np.dtype = np.float32) -> np.ndarray:
+def create_m1_optimized_array(data, dtype=None):
     """Create numpy array optimized for M1."""
+    if not NUMPY_AVAILABLE:
+        logger.warning("Numpy not available, returning data as-is")
+        return data
+        
     if not m1_gpu_manager.is_m1:
         return np.array(data, dtype=dtype)
 
     try:
         # Use float32 by default for M1 optimization
-        if dtype == np.float64:
+        if dtype is None:
+            dtype = np.float32
+        elif dtype == np.float64:
             logger.info("Converting float64 to float32 for M1 optimization")
             dtype = np.float32
 
@@ -217,7 +244,7 @@ async def m1_backtesting_simulate(
         logger.info("🚀 Executing M1 GPU-accelerated backtesting simulation")
 
         # Convert data to PyTorch tensors if needed
-        if isinstance(gpu_data, pd.DataFrame):
+        if PANDAS_AVAILABLE and isinstance(gpu_data, pd.DataFrame):
             # Convert DataFrame to tensor
             numeric_data = gpu_data.select_dtypes(include=[np.number])
             if not numeric_data.empty:
@@ -371,7 +398,7 @@ async def m1_monte_carlo_simulate(
         logger.info(f"🎲 Executing M1 GPU-accelerated Monte Carlo simulation ({n_simulations} simulations)")
 
         # Convert data to PyTorch tensors if needed
-        if isinstance(data, pd.DataFrame):
+        if PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             # Convert DataFrame to tensor
             numeric_data = data.select_dtypes(include=[np.number])
             if not numeric_data.empty:

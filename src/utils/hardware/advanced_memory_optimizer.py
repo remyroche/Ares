@@ -9,9 +9,6 @@ import logging
 import time
 import threading
 import gc
-import psutil
-import numpy as np
-import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Set
 from dataclasses import dataclass, field
 from enum import Enum
@@ -21,6 +18,28 @@ import asyncio
 from collections import deque, defaultdict
 import json
 from pathlib import Path
+
+# Optional dependencies
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 from .m1_memory_optimizer import M1MemoryOptimizer
 
@@ -353,7 +372,15 @@ class PredictiveMemoryManager:
             predicted_usage = current_usage + (trend * future_time)
             
             # Calculate confidence based on data consistency
-            usage_variance = np.var(usages) if len(usages) > 1 else 0
+            if NUMPY_AVAILABLE and len(usages) > 1:
+                usage_variance = np.var(usages)
+            else:
+                # Simple variance calculation without numpy
+                if len(usages) > 1:
+                    mean_usage = sum(usages) / len(usages)
+                    usage_variance = sum((u - mean_usage) ** 2 for u in usages) / len(usages)
+                else:
+                    usage_variance = 0
             confidence = max(0, 1 - (usage_variance / max(1, current_usage)))
             
             # Identify contributing factors
@@ -650,7 +677,7 @@ class AdvancedM1MemoryOptimizer(M1MemoryOptimizer):
             
         return success
         
-    def optimize_dataframe_advanced(self, df: pd.DataFrame) -> pd.DataFrame:
+    def optimize_dataframe_advanced(self, df):
         """Advanced DataFrame optimization with intelligent pooling."""
         if df is None or df.empty:
             return df
@@ -783,7 +810,7 @@ def get_advanced_memory_optimizer(memory_limit_gb: Optional[float] = None,
         
     return _advanced_memory_optimizer
 
-def optimize_dataframe_advanced(df: pd.DataFrame) -> pd.DataFrame:
+def optimize_dataframe_advanced(df):
     """Convenience function for advanced DataFrame optimization."""
     optimizer = get_advanced_memory_optimizer()
     return optimizer.optimize_dataframe_advanced(df)

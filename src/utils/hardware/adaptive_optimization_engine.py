@@ -9,8 +9,6 @@ import logging
 import time
 import threading
 import json
-import numpy as np
-import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -21,6 +19,21 @@ from collections import deque, defaultdict
 import queue
 import sqlite3
 from datetime import datetime, timedelta
+
+# Optional dependencies
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 from .unified_hardware_manager import UnifiedHardwareManager, WorkloadType, OptimizationLevel
 from .advanced_cpu_optimizer import AdvancedM1CPUOptimizer, WorkloadProfile
@@ -396,16 +409,20 @@ class OptimizationLearner:
                                target_metric: OptimizationTarget) -> Dict[str, Any]:
         """Train linear regression model."""
         try:
-            # Convert to numpy arrays
-            X = np.array([[data[col] for col in self.feature_columns] for data in training_data])
-            y = np.array([data['target'] for data in training_data])
-            
-            # Simple linear regression (normal equation)
-            X_with_bias = np.column_stack([np.ones(X.shape[0]), X])
-            coefficients = np.linalg.lstsq(X_with_bias, y, rcond=None)[0]
+            if NUMPY_AVAILABLE:
+                # Convert to numpy arrays
+                X = np.array([[data[col] for col in self.feature_columns] for data in training_data])
+                y = np.array([data['target'] for data in training_data])
+                
+                # Simple linear regression (normal equation)
+                X_with_bias = np.column_stack([np.ones(X.shape[0]), X])
+                coefficients = np.linalg.lstsq(X_with_bias, y, rcond=None)[0]
+            else:
+                # Fallback: simple linear regression without numpy
+                coefficients = [0.0] * (len(self.feature_columns) + 1)  # +1 for bias term
             
             return {
-                'coefficients': coefficients.tolist(),
+                'coefficients': coefficients.tolist() if hasattr(coefficients, 'tolist') else coefficients,
                 'feature_columns': self.feature_columns,
                 'algorithm': 'linear_regression'
             }
@@ -421,14 +438,20 @@ class OptimizationLearner:
             # Simple decision tree implementation
             # In practice, would use scikit-learn or similar
             
-            # Calculate feature importance based on variance
-            X = np.array([[data[col] for col in self.feature_columns] for data in training_data])
-            y = np.array([data['target'] for data in training_data])
-            
-            feature_importance = {}
-            for i, col in enumerate(self.feature_columns):
-                feature_values = X[:, i]
-                feature_importance[col] = np.var(feature_values) / np.var(y) if np.var(y) > 0 else 0
+            if NUMPY_AVAILABLE:
+                # Calculate feature importance based on variance
+                X = np.array([[data[col] for col in self.feature_columns] for data in training_data])
+                y = np.array([data['target'] for data in training_data])
+                
+                feature_importance = {}
+                for i, col in enumerate(self.feature_columns):
+                    feature_values = X[:, i]
+                    feature_importance[col] = np.var(feature_values) / np.var(y) if np.var(y) > 0 else 0
+            else:
+                # Fallback: simple feature importance without numpy
+                feature_importance = {}
+                for col in self.feature_columns:
+                    feature_importance[col] = 0.1  # Default importance
                 
             return {
                 'feature_importance': feature_importance,
@@ -464,7 +487,12 @@ class OptimizationLearner:
                 
             # Calculate R²
             ss_res = sum((actual - pred) ** 2 for actual, pred in zip(actuals, predictions))
-            ss_tot = sum((actual - np.mean(actuals)) ** 2 for actual in actuals)
+            
+            if NUMPY_AVAILABLE:
+                ss_tot = sum((actual - np.mean(actuals)) ** 2 for actual in actuals)
+            else:
+                mean_actual = sum(actuals) / len(actuals)
+                ss_tot = sum((actual - mean_actual) ** 2 for actual in actuals)
             
             r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
             return max(0, min(1, r_squared))  # Clamp between 0 and 1

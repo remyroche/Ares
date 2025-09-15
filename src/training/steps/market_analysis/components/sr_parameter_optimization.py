@@ -7,11 +7,24 @@ This component optimizes Support/Resistance detection parameters using backtesti
 import asyncio
 import json
 import logging
-import numpy as np
-import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
+
+# Handle optional dependencies gracefully
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
@@ -153,19 +166,23 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
                 error_message=str(e)
             )
     
-    async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
+    async def _load_market_data(self, data: Any) -> Optional[Any]:
         """Load and prepare market data for optimization."""
         if data is None:
             return None
         
-        if isinstance(data, pd.DataFrame):
+        if PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             return data.copy()
         
         # Handle other data types if needed
-        return None
+        return data
     
-    def _prepare_data_for_backtesting(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _prepare_data_for_backtesting(self, data: Any) -> Any:
         """Prepare data for backtesting with proper datetime indexing."""
+        if not PANDAS_AVAILABLE or not isinstance(data, pd.DataFrame):
+            self.logger.warning("Pandas not available or data is not a DataFrame, skipping data preparation")
+            return data
+            
         self.logger.info(f"Data index type before conversion: {type(data.index)}")
         self.logger.info(f"Data columns: {list(data.columns)}")
         self.logger.info(f"Data shape: {data.shape}")

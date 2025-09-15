@@ -318,6 +318,10 @@ class MarketAnalysisSubPipeline:
             self.config.exchange = training_input.get('exchange', 'binance')
             self.config.timeframe = training_input.get('timeframe', '1m')
             
+            # Set current data and pipeline state for components
+            self._current_data = data
+            self._current_pipeline_state = pipeline_state
+            
             # Execute the SR optimization pipeline in the correct order
             results = {}
             
@@ -332,6 +336,12 @@ class MarketAnalysisSubPipeline:
             results['quality_thresholds'] = param_optimization_result.artifacts.get('quality_thresholds', {})
             results['parameter_optimization_metrics'] = param_optimization_result.artifacts.get('parameter_optimization_metrics', {})
             
+            # Update pipeline state for next components
+            self._current_pipeline_state.update({
+                'optimized_parameters': results['optimized_parameters'],
+                'quality_thresholds': results['quality_thresholds']
+            })
+            
             # Stage 2: SR Detection (using optimized parameters)
             self.logger.info('🎯 Executing Stage 2: SR Detection with Optimized Parameters')
             detection_result = await self.execute_sub_pipeline('sr_detection', self.config)
@@ -342,6 +352,11 @@ class MarketAnalysisSubPipeline:
             results['sr_levels'] = detection_result.artifacts.get('sr_levels', [])
             results['sr_metrics'] = detection_result.artifacts.get('sr_metrics', {})
             self.logger.info(f"SR Detection: {len(results['sr_levels'])} levels detected")
+            
+            # Update pipeline state for next components
+            self._current_pipeline_state.update({
+                'sr_levels': results['sr_levels']
+            })
             
             # Stage 3: SR Clustering (using optimized parameters)
             self.logger.info('🚀 Executing Stage 3: SR Clustering with Optimized Parameters')
@@ -628,10 +643,10 @@ class MarketAnalysisSubPipeline:
                 component_config = self._convert_to_component_config(config)
                 component = ComponentFactory.create_component(sub_pipeline_name, component_config)
                 
-                # Get data from pipeline state (this would need to be passed in)
-                # For now, we'll use None and let the component handle it
-                data = None  # TODO: Pass actual data from pipeline state
-                pipeline_state = {}  # TODO: Pass actual pipeline state
+                # Get data and pipeline state from the main execute method
+                # This will be passed from the main execute method
+                data = getattr(self, '_current_data', None)
+                pipeline_state = getattr(self, '_current_pipeline_state', {})
                 
                 component_result = await component._execute_with_timing(data, pipeline_state)
                 

@@ -8,6 +8,8 @@ from typing import Dict, Type, Any, Optional
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig
 from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
+from .sr_clustering import SRClusteringComponent
+from .hmm_regime_discovery import HMMRegimeDiscoveryComponent
 
 
 class ComponentFactory:
@@ -20,6 +22,8 @@ class ComponentFactory:
     _components: Dict[str, Type[BaseMarketAnalysisComponent]] = {
         'sr_parameter_optimization': SRParameterOptimizationComponent,
         'sr_detection': SRDetectionComponent,
+        'sr_clustering': SRClusteringComponent,
+        'hmm_regime_discovery': HMMRegimeDiscoveryComponent,
         # Add more components as they are created
     }
     

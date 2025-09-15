@@ -9,6 +9,7 @@ from datetime import datetime
 import logging
 
 from src.utils.logger import system_logger
+from .artifact_manager import ArtifactManager
 
 
 @dataclass
@@ -58,6 +59,14 @@ class BaseMarketAnalysisComponent(ABC):
         self.logger = system_logger.getChild(self.__class__.__name__)
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
+        
+        # Initialize artifact manager
+        self.artifact_manager = ArtifactManager(
+            base_dir="artifacts",
+            symbol=self.config.symbol,
+            exchange=self.config.exchange,
+            timeframe=self.config.timeframe
+        )
     
     @abstractmethod
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
@@ -127,6 +136,23 @@ class BaseMarketAnalysisComponent(ABC):
         self.logger.info(f"Completed {self.__class__.__name__} execution in {duration:.2f}s")
         return duration
     
+    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """
+        Save artifacts using the centralized artifact manager.
+        
+        Args:
+            artifacts: Dictionary of artifacts to save
+            metadata: Optional metadata to include
+            
+        Returns:
+            Dictionary mapping artifact names to file paths
+            
+        Raises:
+            Exception: If artifact saving fails
+        """
+        component_name = self.__class__.__name__.replace('Component', '').lower()
+        return await self.artifact_manager.save_artifacts(component_name, artifacts, metadata)
+    
     async def _execute_with_timing(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute the component with timing and error handling.
@@ -146,6 +172,9 @@ class BaseMarketAnalysisComponent(ABC):
             # Validate artifacts if execution was successful
             if result.success and not self.validate_artifacts(result.artifacts):
                 self.logger.error("Component execution succeeded but produced invalid artifacts")
+                # Clean up any partial artifacts
+                component_name = self.__class__.__name__.replace('Component', '').lower()
+                self.artifact_manager.cleanup_failed_artifacts(component_name)
                 return ComponentResult(
                     success=False,
                     artifacts=result.artifacts,
@@ -154,12 +183,34 @@ class BaseMarketAnalysisComponent(ABC):
                     metadata=result.metadata
                 )
             
+            # Save artifacts if execution was successful
+            if result.success and result.artifacts:
+                try:
+                    saved_files = await self.save_artifacts(result.artifacts, result.metadata)
+                    result.metadata['saved_files'] = saved_files
+                    self.logger.info(f"✅ Artifacts saved successfully: {list(saved_files.keys())}")
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to save artifacts: {e}")
+                    # Clean up any partial artifacts
+                    component_name = self.__class__.__name__.replace('Component', '').lower()
+                    self.artifact_manager.cleanup_failed_artifacts(component_name)
+                    return ComponentResult(
+                        success=False,
+                        artifacts=result.artifacts,
+                        error_message=f"Artifact saving failed: {e}",
+                        execution_time=self._end_execution(),
+                        metadata=result.metadata
+                    )
+            
             # Update execution time
             result.execution_time = self._end_execution()
             return result
             
         except Exception as e:
             self.logger.error(f"Component execution failed: {e}")
+            # Clean up any partial artifacts
+            component_name = self.__class__.__name__.replace('Component', '').lower()
+            self.artifact_manager.cleanup_failed_artifacts(component_name)
             return ComponentResult(
                 success=False,
                 artifacts={},

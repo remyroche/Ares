@@ -507,12 +507,8 @@ class UnifiedFeatureSelector:
         # Step 2: Prepare data
         X_processed, y_processed, feature_names_processed = self._prepare_data(X, y, feature_names)
         
-        # Step 3: Create PID-based features if enabled
-        if self.config.enable_pid:
-            self.logger.info("🔍 Step 2: Creating PID-based features")
-            X_processed, feature_names_processed = self.create_pid_features(
-                X_processed, y_processed, feature_names_processed, timeframe_data
-            )
+        # Note: PID-based features are now independent and should be called separately
+        # when needed for market_analysis/cross_timeframe_analysis pipeline
         
         # Set default target sizes if not provided
         if target_sizes is None:

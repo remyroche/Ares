@@ -1,9 +1,12 @@
 """
 Partial Information Decomposition (PID) Module
 
-This module provides Partial Information Decomposition capabilities for creating
-polynomial and cross-timeframe features. PID decomposes the mutual information
-between multiple variables into unique, redundant, and synergistic components.
+This module provides Partial Information Decomposition capabilities for determining
+feature complementarity. PID decomposes the mutual information between multiple 
+variables into unique, redundant, and synergistic components.
+
+This module is independent from the feature selection pipeline and is designed
+to be integrated with market_analysis/cross_timeframe_analysis pipeline.
 
 Author: AI Assistant
 Date: 2024-01-XX
@@ -34,11 +37,16 @@ class PIDConfig:
     
     # Polynomial feature parameters
     max_polynomial_degree: int = 3
-    max_interaction_terms: int = 5
+    max_polynomial_features: int = 50  # Up to 50 polynomial features
     polynomial_threshold: float = 0.1
+    
+    # Interaction feature parameters
+    max_interaction_features: int = 100  # Up to 100 most relevant interaction features
+    interaction_threshold: float = 0.15
     
     # Cross-timeframe parameters
     timeframes: List[str] = None  # ["1m", "5m", "15m", "1h", "4h", "1d"]
+    max_cross_timeframe_features: int = 50  # Up to 50 cross-timeframe features
     cross_timeframe_threshold: float = 0.15
     
     # Performance parameters
@@ -57,11 +65,14 @@ class PIDConfig:
 
 class PartialInformationDecomposition:
     """
-    Partial Information Decomposition (PID) for feature engineering.
+    Partial Information Decomposition (PID) for determining feature complementarity.
     
     This class provides methods to decompose mutual information between variables
-    into unique, redundant, and synergistic components, which can be used to
-    create polynomial and cross-timeframe features.
+    into unique, redundant, and synergistic components. It determines what features
+    are complementary and provides guidance for feature generation in the 
+    market_analysis/cross_timeframe_analysis pipeline.
+    
+    This module is independent from the feature selection pipeline.
     """
     
     def __init__(self, config: Optional[PIDConfig] = None):
@@ -361,6 +372,7 @@ class PartialInformationDecomposition:
     def create_polynomial_features(self, X: np.ndarray, feature_names: List[str]) -> Dict[str, np.ndarray]:
         """
         Create polynomial features based on PID analysis.
+        Creates up to max_polynomial_features (default: 50) polynomial features.
         
         Args:
             X: Feature matrix
@@ -376,6 +388,7 @@ class PartialInformationDecomposition:
             self.compute_pid(X, np.zeros(X.shape[0]), feature_names)
         
         polynomial_features = {}
+        feature_count = 0
         
         # Create polynomial features for high-synergistic feature pairs
         if 'synergistic_information' in self.pid_results:
@@ -384,7 +397,10 @@ class PartialInformationDecomposition:
             # Sort by synergistic information
             sorted_synergistic = sorted(synergistic_features.items(), key=lambda x: x[1], reverse=True)
             
-            for feature_pair, synergy_score in sorted_synergistic[:self.config.max_interaction_terms]:
+            for feature_pair, synergy_score in sorted_synergistic:
+                if feature_count >= self.config.max_polynomial_features:
+                    break
+                    
                 if synergy_score > self.config.polynomial_threshold:
                     # Parse feature names
                     if '_' in feature_pair:
@@ -397,21 +413,37 @@ class PartialInformationDecomposition:
                             
                             # Create polynomial features
                             for degree in range(2, self.config.max_polynomial_degree + 1):
+                                if feature_count >= self.config.max_polynomial_features:
+                                    break
+                                    
                                 # X1^degree
                                 poly_name = f"{feature1_name}_poly_{degree}"
                                 polynomial_features[poly_name] = np.power(X[:, idx1], degree)
+                                feature_count += 1
+                                
+                                if feature_count >= self.config.max_polynomial_features:
+                                    break
                                 
                                 # X2^degree
                                 poly_name = f"{feature2_name}_poly_{degree}"
                                 polynomial_features[poly_name] = np.power(X[:, idx2], degree)
+                                feature_count += 1
+                                
+                                if feature_count >= self.config.max_polynomial_features:
+                                    break
                                 
                                 # X1 * X2^(degree-1)
                                 poly_name = f"{feature1_name}_{feature2_name}_poly_{degree}"
                                 polynomial_features[poly_name] = X[:, idx1] * np.power(X[:, idx2], degree - 1)
+                                feature_count += 1
+                                
+                                if feature_count >= self.config.max_polynomial_features:
+                                    break
                                 
                                 # X1^(degree-1) * X2
                                 poly_name = f"{feature2_name}_{feature1_name}_poly_{degree}"
                                 polynomial_features[poly_name] = np.power(X[:, idx1], degree - 1) * X[:, idx2]
+                                feature_count += 1
                             
                         except ValueError:
                             self.logger.warning(f"⚠️ Could not find features for {feature_pair}")
@@ -420,13 +452,111 @@ class PartialInformationDecomposition:
         # Store results
         self.polynomial_features = polynomial_features
         
-        self.logger.info(f"✅ Created {len(polynomial_features)} polynomial features")
+        self.logger.info(f"✅ Created {len(polynomial_features)} polynomial features (max: {self.config.max_polynomial_features})")
         return polynomial_features
+    
+    def create_interaction_features(self, X: np.ndarray, feature_names: List[str]) -> Dict[str, np.ndarray]:
+        """
+        Create interaction features based on PID analysis.
+        Creates up to max_interaction_features (default: 100) most relevant interaction features.
+        
+        Args:
+            X: Feature matrix
+            feature_names: List of feature names
+            
+        Returns:
+            Dictionary containing interaction features
+        """
+        self.logger.info("🔍 Creating interaction features based on PID")
+        
+        if not self.pid_results:
+            self.logger.warning("⚠️ No PID results available, computing PID first")
+            self.compute_pid(X, np.zeros(X.shape[0]), feature_names)
+        
+        interaction_features = {}
+        feature_count = 0
+        
+        # Create interaction features for high-redundant information pairs
+        if 'redundant_information' in self.pid_results:
+            redundant_features = self.pid_results['redundant_information']
+            
+            # Sort by redundant information (high redundancy indicates good interaction potential)
+            sorted_redundant = sorted(redundant_features.items(), key=lambda x: x[1], reverse=True)
+            
+            for feature_pair, redundant_score in sorted_redundant:
+                if feature_count >= self.config.max_interaction_features:
+                    break
+                    
+                if redundant_score > self.config.interaction_threshold:
+                    # Parse feature names
+                    if '_' in feature_pair:
+                        feature1_name, feature2_name = feature_pair.split('_', 1)
+                        
+                        # Find feature indices
+                        try:
+                            idx1 = feature_names.index(feature1_name)
+                            idx2 = feature_names.index(feature2_name)
+                            
+                            # Create various interaction features
+                            # Basic multiplication
+                            interaction_name = f"{feature1_name}_{feature2_name}_mult"
+                            interaction_features[interaction_name] = X[:, idx1] * X[:, idx2]
+                            feature_count += 1
+                            
+                            if feature_count >= self.config.max_interaction_features:
+                                break
+                            
+                            # Ratio (with protection against division by zero)
+                            interaction_name = f"{feature1_name}_{feature2_name}_ratio"
+                            interaction_features[interaction_name] = X[:, idx1] / (X[:, idx2] + 1e-10)
+                            feature_count += 1
+                            
+                            if feature_count >= self.config.max_interaction_features:
+                                break
+                            
+                            # Difference
+                            interaction_name = f"{feature1_name}_{feature2_name}_diff"
+                            interaction_features[interaction_name] = X[:, idx1] - X[:, idx2]
+                            feature_count += 1
+                            
+                            if feature_count >= self.config.max_interaction_features:
+                                break
+                            
+                            # Sum
+                            interaction_name = f"{feature1_name}_{feature2_name}_sum"
+                            interaction_features[interaction_name] = X[:, idx1] + X[:, idx2]
+                            feature_count += 1
+                            
+                            if feature_count >= self.config.max_interaction_features:
+                                break
+                            
+                            # Min/Max
+                            interaction_name = f"{feature1_name}_{feature2_name}_min"
+                            interaction_features[interaction_name] = np.minimum(X[:, idx1], X[:, idx2])
+                            feature_count += 1
+                            
+                            if feature_count >= self.config.max_interaction_features:
+                                break
+                                
+                            interaction_name = f"{feature1_name}_{feature2_name}_max"
+                            interaction_features[interaction_name] = np.maximum(X[:, idx1], X[:, idx2])
+                            feature_count += 1
+                            
+                        except ValueError:
+                            self.logger.warning(f"⚠️ Could not find features for {feature_pair}")
+                            continue
+        
+        # Store results
+        self.interaction_features = interaction_features
+        
+        self.logger.info(f"✅ Created {len(interaction_features)} interaction features (max: {self.config.max_interaction_features})")
+        return interaction_features
     
     def create_cross_timeframe_features(self, X: np.ndarray, feature_names: List[str], 
                                       timeframe_data: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """
         Create cross-timeframe features based on PID analysis.
+        Creates up to max_cross_timeframe_features (default: 50) cross-timeframe features.
         
         Args:
             X: Feature matrix
@@ -443,6 +573,7 @@ class PartialInformationDecomposition:
             self.compute_pid(X, np.zeros(X.shape[0]), feature_names)
         
         cross_timeframe_features = {}
+        feature_count = 0
         
         # Create cross-timeframe features for high-redundant information
         if 'redundant_information' in self.pid_results:
@@ -452,6 +583,9 @@ class PartialInformationDecomposition:
             sorted_redundant = sorted(redundant_features.items(), key=lambda x: x[1], reverse=True)
             
             for feature_pair, redundant_score in sorted_redundant:
+                if feature_count >= self.config.max_cross_timeframe_features:
+                    break
+                    
                 if redundant_score > self.config.cross_timeframe_threshold:
                     # Parse feature names
                     if '_' in feature_pair:
@@ -460,6 +594,9 @@ class PartialInformationDecomposition:
                         # Create cross-timeframe features
                         for tf1 in self.config.timeframes:
                             for tf2 in self.config.timeframes:
+                                if feature_count >= self.config.max_cross_timeframe_features:
+                                    break
+                                    
                                 if tf1 != tf2 and tf1 in timeframe_data and tf2 in timeframe_data:
                                     try:
                                         # Find feature indices in each timeframe
@@ -474,6 +611,7 @@ class PartialInformationDecomposition:
                                             cross_timeframe_features[cross_name] = (
                                                 tf1_features[:, 0] / (tf2_features[:, 0] + 1e-10)
                                             )
+                                            feature_count += 1
                                         
                                     except Exception as e:
                                         self.logger.warning(f"⚠️ Failed to create cross-timeframe feature: {e}")
@@ -482,7 +620,7 @@ class PartialInformationDecomposition:
         # Store results
         self.cross_timeframe_features = cross_timeframe_features
         
-        self.logger.info(f"✅ Created {len(cross_timeframe_features)} cross-timeframe features")
+        self.logger.info(f"✅ Created {len(cross_timeframe_features)} cross-timeframe features (max: {self.config.max_cross_timeframe_features})")
         return cross_timeframe_features
     
     def get_pid_summary(self) -> Dict[str, Any]:
@@ -530,7 +668,7 @@ def compute_pid_and_create_features(
     config: Optional[PIDConfig] = None
 ) -> Dict[str, Any]:
     """
-    Convenience function to compute PID and create polynomial/cross-timeframe features.
+    Convenience function to compute PID and create polynomial/interaction/cross-timeframe features.
     
     Args:
         X: Feature matrix
@@ -547,10 +685,13 @@ def compute_pid_and_create_features(
     # Compute PID
     pid_results = pid_module.compute_pid(X, y, feature_names)
     
-    # Create polynomial features
+    # Create polynomial features (up to 50)
     polynomial_features = pid_module.create_polynomial_features(X, feature_names)
     
-    # Create cross-timeframe features if data provided
+    # Create interaction features (up to 100 most relevant)
+    interaction_features = pid_module.create_interaction_features(X, feature_names)
+    
+    # Create cross-timeframe features if data provided (up to 50)
     cross_timeframe_features = {}
     if timeframe_data:
         cross_timeframe_features = pid_module.create_cross_timeframe_features(
@@ -560,6 +701,7 @@ def compute_pid_and_create_features(
     return {
         'pid_results': pid_results,
         'polynomial_features': polynomial_features,
+        'interaction_features': interaction_features,
         'cross_timeframe_features': cross_timeframe_features,
         'pid_summary': pid_module.get_pid_summary()
     }

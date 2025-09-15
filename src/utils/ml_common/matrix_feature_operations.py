@@ -19,9 +19,11 @@ from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.stats import pearsonr, spearmanr
 
-# Import matrix operations if available
+# Import matrix operations from existing system
 try:
-    from .matrix_operations_example import get_unified_matrix_operations
+    from ...utils.matrix_operations.unified_operations import UnifiedMatrixOperations
+    from ...utils.matrix_operations.vectorized_core import VectorizedCore
+    from ...utils.matrix_operations.enhanced_operations import EnhancedOperations
     MATRIX_OPERATIONS_AVAILABLE = True
 except ImportError:
     MATRIX_OPERATIONS_AVAILABLE = False
@@ -44,16 +46,22 @@ class MatrixFeatureOperations:
         self.use_gpu = use_gpu
         self.use_parallel = use_parallel
         
-        # Initialize matrix operations if available
+        # Initialize matrix operations from existing system
         if MATRIX_OPERATIONS_AVAILABLE:
             try:
-                self.matrix_ops = get_unified_matrix_operations()
-                self.logger.info("✅ Matrix operations initialized")
+                self.unified_ops = UnifiedMatrixOperations()
+                self.vectorized_core = VectorizedCore()
+                self.enhanced_ops = EnhancedOperations()
+                self.logger.info("✅ Matrix operations initialized from existing system")
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to initialize matrix operations: {e}")
-                self.matrix_ops = None
+                self.unified_ops = None
+                self.vectorized_core = None
+                self.enhanced_ops = None
         else:
-            self.matrix_ops = None
+            self.unified_ops = None
+            self.vectorized_core = None
+            self.enhanced_ops = None
             self.logger.warning("⚠️ Matrix operations not available, using fallback implementations")
     
     def correlation_matrix(

@@ -16,6 +16,8 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
+import time
+import traceback
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -217,6 +219,11 @@ class CrossTimeframeAnalysisPipeline:
                 'correlation_threshold': self.config.correlation_threshold
             }
             
+            # Add error tracking to analysis metadata
+            analysis_metadata['feature_generation_errors'] = getattr(self, 'feature_generation_errors', [])
+            analysis_metadata['error_count'] = len(getattr(self, 'feature_generation_errors', []))
+            analysis_metadata['success_rate'] = 1.0 - (len(getattr(self, 'feature_generation_errors', [])) / max(1, len(timeframes) * 4))  # Assuming 4 feature types per timeframe
+            
             result = CrossTimeframeResult(
                 cross_timeframe_features=cross_timeframe_features,
                 interaction_metrics=interaction_metrics,
@@ -231,6 +238,24 @@ class CrossTimeframeAnalysisPipeline:
             
         except Exception as e:
             self.logger.error(f"❌ Cross timeframe analysis failed: {e}")
+            self.logger.error(f"❌ Error details: {traceback.format_exc()}")
+            
+            # Generate comprehensive error report
+            error_report = {
+                'error_type': 'pipeline_execution_error',
+                'message': str(e),
+                'timestamp': time.time(),
+                'traceback': traceback.format_exc(),
+                'context': {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframes': timeframes,
+                    'data_dir': data_dir
+                }
+            }
+            
+            # Log error report
+            self.logger.error(f"❌ Error report: {json.dumps(error_report, indent=2)}")
             raise
     
     async def _load_multi_timeframe_data(
@@ -286,9 +311,21 @@ class CrossTimeframeAnalysisPipeline:
                 continue
         
         if not timeframe_data:
-            raise ValueError("No timeframe data could be loaded")
+            error_msg = f"No timeframe data could be loaded for {symbol} on {exchange}"
+            self.logger.error(f"❌ {error_msg}")
+            self.logger.error(f"❌ Attempted timeframes: {timeframes}")
+            self.logger.error(f"❌ Data directory: {data_dir}")
+            raise ValueError(error_msg)
         
-        self.logger.info(f"📊 Successfully loaded data for {len(timeframe_data)} timeframes")
+        # Validate minimum timeframe requirement
+        min_required_timeframes = getattr(self.config, 'min_required_timeframes', 2)
+        if len(timeframe_data) < min_required_timeframes:
+            error_msg = f"Insufficient timeframes loaded: {len(timeframe_data)} < {min_required_timeframes}"
+            self.logger.error(f"❌ {error_msg}")
+            self.logger.error(f"❌ Loaded timeframes: {list(timeframe_data.keys())}")
+            raise ValueError(error_msg)
+        
+        self.logger.info(f"📊 Successfully loaded data for {len(timeframe_data)} timeframes: {list(timeframe_data.keys())}")
         return timeframe_data
     
     async def _resample_data(self, data: pd.DataFrame, target_timeframe: str) -> pd.DataFrame:
@@ -517,7 +554,17 @@ class CrossTimeframeAnalysisPipeline:
                             features[f'corr_{tf1}_{tf2}_5'] = corr_5
                             features[f'corr_{tf1}_{tf2}_20'] = corr_20
                         except Exception as e:
-                            self.logger.warning(f"⚠️ Failed to compute correlation features for {tf1}-{tf2}: {e}")
+                            error_msg = f"Failed to compute correlation features for {tf1}-{tf2}: {e}"
+                            self.logger.warning(f"⚠️ {error_msg}")
+                            # Track the error for reporting
+                            if not hasattr(self, 'feature_generation_errors'):
+                                self.feature_generation_errors = []
+                            self.feature_generation_errors.append({
+                                'type': 'correlation_features',
+                                'timeframes': f"{tf1}-{tf2}",
+                                'error': error_msg,
+                                'timestamp': time.time()
+                            })
 
                     # Momentum features
                     if 'momentum' in self.config.interaction_features:
@@ -527,7 +574,16 @@ class CrossTimeframeAnalysisPipeline:
                             features[f'mom_diff_{tf1}_{tf2}'] = mom1 - mom2
                             features[f'mom_ratio_{tf1}_{tf2}'] = mom1 / (mom2 + 1e-10)
                         except Exception as e:
-                            self.logger.warning(f"⚠️ Failed to compute momentum features for {tf1}-{tf2}: {e}")
+                            error_msg = f"Failed to compute momentum features for {tf1}-{tf2}: {e}"
+                            self.logger.warning(f"⚠️ {error_msg}")
+                            if not hasattr(self, 'feature_generation_errors'):
+                                self.feature_generation_errors = []
+                            self.feature_generation_errors.append({
+                                'type': 'momentum_features',
+                                'timeframes': f"{tf1}-{tf2}",
+                                'error': error_msg,
+                                'timestamp': time.time()
+                            })
 
                     # Volatility features
                     if 'volatility' in self.config.interaction_features:
@@ -537,7 +593,16 @@ class CrossTimeframeAnalysisPipeline:
                             features[f'vol_ratio_{tf1}_{tf2}'] = vol1 / (vol2 + 1e-10)
                             features[f'vol_diff_{tf1}_{tf2}'] = vol1 - vol2
                         except Exception as e:
-                            self.logger.warning(f"⚠️ Failed to compute volatility features for {tf1}-{tf2}: {e}")
+                            error_msg = f"Failed to compute volatility features for {tf1}-{tf2}: {e}"
+                            self.logger.warning(f"⚠️ {error_msg}")
+                            if not hasattr(self, 'feature_generation_errors'):
+                                self.feature_generation_errors = []
+                            self.feature_generation_errors.append({
+                                'type': 'volatility_features',
+                                'timeframes': f"{tf1}-{tf2}",
+                                'error': error_msg,
+                                'timestamp': time.time()
+                            })
 
                     # Volume features
                     if 'volume' in self.config.interaction_features:
@@ -545,7 +610,16 @@ class CrossTimeframeAnalysisPipeline:
                             vol_ratio = data1_aligned['volume'] / (data2_aligned['volume'] + 1e-10)
                             features[f'volume_ratio_{tf1}_{tf2}'] = vol_ratio
                         except Exception as e:
-                            self.logger.warning(f"⚠️ Failed to compute volume features for {tf1}-{tf2}: {e}")
+                            error_msg = f"Failed to compute volume features for {tf1}-{tf2}: {e}"
+                            self.logger.warning(f"⚠️ {error_msg}")
+                            if not hasattr(self, 'feature_generation_errors'):
+                                self.feature_generation_errors = []
+                            self.feature_generation_errors.append({
+                                'type': 'volume_features',
+                                'timeframes': f"{tf1}-{tf2}",
+                                'error': error_msg,
+                                'timestamp': time.time()
+                            })
 
                     self.logger.info(f"✅ Generated cross-timeframe features for {tf1}-{tf2} pair")
             
@@ -629,11 +703,34 @@ class CrossTimeframeAnalysisPipeline:
             # Remove rows with NaN values
             features = features.dropna()
             
+            # Validate feature generation results
+            min_required_features = getattr(self.config, 'min_required_features', 10)
+            if len(features.columns) < min_required_features:
+                error_msg = f"Insufficient features generated: {len(features.columns)} < {min_required_features}"
+                self.logger.error(f"❌ {error_msg}")
+                self.logger.error(f"❌ Generated features: {list(features.columns)}")
+                raise ValueError(error_msg)
+            
+            # Check for empty features
+            if features.empty:
+                error_msg = "Feature engineering produced empty DataFrame"
+                self.logger.error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Report feature generation errors if any
+            if hasattr(self, 'feature_generation_errors') and self.feature_generation_errors:
+                self.logger.warning(f"⚠️ Feature generation completed with {len(self.feature_generation_errors)} errors:")
+                for error in self.feature_generation_errors:
+                    self.logger.warning(f"  - {error['type']} for {error['timeframes']}: {error['error']}")
+            
             self.logger.info(f"🔧 Engineered {len(features.columns)} cross timeframe features")
+            self.logger.info(f"📊 Feature sample: {list(features.columns)[:5]}...")  # Show first 5 features
+            
             return features
             
         except Exception as e:
             self.logger.error(f"❌ Cross timeframe feature engineering failed: {e}")
+            self.logger.error(f"❌ Error details: {traceback.format_exc()}")
             raise
     
     async def _calculate_interaction_metrics(

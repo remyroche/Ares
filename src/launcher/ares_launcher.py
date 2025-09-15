@@ -245,10 +245,10 @@ class AresLauncher:
             'market_analysis': {
                 'next_stage': 'model_training',
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
-                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata', 'cross_timeframe_features'],
+                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata', 'pid_based_features'],
                 'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
                                 'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-                                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis',
+                                'feature_lookback_optimization', 'fractional_differentiation', 'pid_based_feature_generation',
                                 'sr_feature_integration']
             },
             'model_training': {
@@ -897,7 +897,7 @@ class AresLauncher:
             'triple_barrier_labeling': "Apply triple barrier method",
             'feature_lookback_optimization': "Optimize feature lookback periods",
             'fractional_differentiation': "Apply fractional differentiation",
-            'cross_timeframe_analysis': "Cross timeframe interaction features",
+            'pid_based_feature_generation': "PID-based feature generation with interaction, polynomial, and cross-timeframe features",
             'sr_feature_integration': "Integrate SR-specific features into feature set",
             
             # Model Training (10 sub-pipelines)
@@ -948,8 +948,8 @@ class AresLauncher:
             'triple_barrier_labeling': ['regime_data_splitting'],
             'feature_lookback_optimization': ['triple_barrier_labeling'],
             'fractional_differentiation': ['feature_lookback_optimization'],
-            'cross_timeframe_analysis': ['fractional_differentiation'],
-            'sr_feature_integration': ['cross_timeframe_analysis'],
+            'pid_based_feature_generation': ['fractional_differentiation'],
+            'sr_feature_integration': ['pid_based_feature_generation'],
             
             # Model Training dependencies
             'hmm_training': ['sr_feature_integration'],
@@ -1001,7 +1001,7 @@ class AresLauncher:
             'triple_barrier_labeling': ['labels.parquet'],
             'feature_lookback_optimization': ['optimized_features.parquet'],
             'fractional_differentiation': ['fractional_features.parquet'],
-            'cross_timeframe_analysis': ['cross_tf_features.parquet'],
+            'pid_based_feature_generation': ['pid_based_features.parquet'],
             'sr_feature_integration': ['sr_features.json'],
             
             # Model Training outputs

@@ -37,6 +37,9 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
 
+# Import component system
+from .components import ComponentFactory, ComponentConfig
+
 logger = system_logger.getChild('MarketAnalysisSubPipeline')
 
 # Import ML commons utilities with conditional loading to avoid circular imports
@@ -125,6 +128,58 @@ class SubPipelineResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
     error_message: Optional[str] = None
     artifacts: Dict[str, Any] = field(default_factory=dict)
+    
+    @property
+    def success(self) -> bool:
+        """Check if sub-pipeline completed successfully."""
+        return self.status == SubPipelineStatus.COMPLETED and self.error_message is None
+    
+    @property
+    def is_complete(self) -> bool:
+        """Check if sub-pipeline produced a complete report with all required artifacts."""
+        if not self.success:
+            return False
+        
+        # Define required artifacts for each sub-pipeline
+        required_artifacts = self._get_required_artifacts()
+        
+        # Check if all required artifacts are present and non-empty
+        for artifact_name in required_artifacts:
+            if artifact_name not in self.artifacts:
+                return False
+            artifact_value = self.artifacts[artifact_name]
+            
+            # Check for empty values
+            if artifact_value is None:
+                return False
+            if isinstance(artifact_value, (list, dict)) and len(artifact_value) == 0:
+                return False
+            if isinstance(artifact_value, str) and artifact_value.strip() == "":
+                return False
+        
+        return True
+    
+    def _get_required_artifacts(self) -> List[str]:
+        """Get list of required artifacts for this sub-pipeline."""
+        artifact_requirements = {
+            'sr_parameter_optimization': ['optimized_parameters', 'quality_thresholds'],
+            'sr_detection': ['sr_levels'],
+            'sr_clustering': ['clustered_levels'],
+            'hmm_regime_discovery': ['regime_models', 'regime_assignments'],
+            'hmm_clustering': ['hmm_models', 'cluster_assignments'],
+            'hmm_models_training': ['hmm_base_models', 'training_metrics'],
+            'hmm_ensemble_training': ['hmm_ensemble_models', 'ensemble_metrics'],
+            'regime_data_splitting': ['regime_data', 'regime_stats'],
+            'triple_barrier_labeling': ['labeled_data', 'labeling_metrics'],
+            'feature_lookback_optimization': ['optimization_results', 'optimized_features'],
+            'cross_timeframe_analysis': ['cross_timeframe_features', 'analysis_metrics']
+        }
+        return artifact_requirements.get(self.sub_pipeline_name, [])
+    
+    @property
+    def execution_time(self) -> float:
+        """Get execution time in seconds."""
+        return self.duration_seconds or 0.0
 
 class MarketAnalysisSubPipeline:
     """
@@ -167,6 +222,48 @@ class MarketAnalysisSubPipeline:
             'feature_lookback_optimization': self._feature_lookback_optimization_pipeline,
             'cross_timeframe_analysis': self._cross_timeframe_analysis_pipeline
         }
+    
+    def _validate_sub_pipeline_result(self, result: SubPipelineResult, stage_name: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        """
+        Validate sub-pipeline result and return success status and error info.
+        
+        Returns:
+            Tuple of (is_success, error_dict_or_none)
+        """
+        if result.is_complete:
+            self.logger.info(f"✅ {stage_name} completed with complete report")
+            return True, None
+        elif result.success:
+            self.logger.warning(f"⚠️ {stage_name} completed but report is incomplete")
+            return False, {
+                'success': False,
+                'error': f"{stage_name} produced incomplete report - missing required artifacts",
+                'stage': result.sub_pipeline_name,
+                'incomplete_artifacts': result.artifacts
+            }
+        else:
+            self.logger.error(f"❌ {stage_name} failed: {result.error_message}")
+            return False, {
+                'success': False,
+                'error': f"{stage_name} failed: {result.error_message}",
+                'stage': result.sub_pipeline_name
+            }
+    
+    def _convert_to_component_config(self, sub_config: SubPipelineConfig) -> ComponentConfig:
+        """Convert SubPipelineConfig to ComponentConfig."""
+        return ComponentConfig(
+            symbol=sub_config.symbol,
+            exchange=sub_config.exchange,
+            timeframe=sub_config.timeframe,
+            data_dir=sub_config.data_dir,
+            start_date=sub_config.start_date,
+            end_date=sub_config.end_date,
+            force_rerun=sub_config.force_rerun,
+            validation_enabled=sub_config.validation_enabled,
+            monitoring_enabled=sub_config.monitoring_enabled,
+            fast_mode=sub_config.fast_mode,
+            custom_params=sub_config.custom_params
+        )
     
     def _convert_old_config(self, config: Dict[str, Any]) -> SubPipelineConfig:
         """Convert old config format to SubPipelineConfig."""
@@ -227,33 +324,24 @@ class MarketAnalysisSubPipeline:
             # Stage 1: SR Parameter Optimization (BEFORE detection and clustering)
             self.logger.info('🎯 Executing Stage 1: SR Parameter Optimization')
             param_optimization_result = await self.execute_sub_pipeline('sr_parameter_optimization', self.config)
-            if param_optimization_result.success:
-                results['optimized_parameters'] = param_optimization_result.artifacts.get('optimized_parameters', {})
-                results['quality_thresholds'] = param_optimization_result.artifacts.get('quality_thresholds', {})
-                results['parameter_optimization_metrics'] = param_optimization_result.artifacts.get('parameter_optimization_metrics', {})
-                self.logger.info(f"✅ SR Parameter Optimization completed")
-            else:
-                self.logger.error(f"❌ SR Parameter Optimization failed: {param_optimization_result.error}")
-                return {
-                    'success': False,
-                    'error': f"SR Parameter Optimization failed: {param_optimization_result.error}",
-                    'stage': 'sr_parameter_optimization'
-                }
+            is_success, error_info = self._validate_sub_pipeline_result(param_optimization_result, "SR Parameter Optimization")
+            if not is_success:
+                return error_info
+            
+            results['optimized_parameters'] = param_optimization_result.artifacts.get('optimized_parameters', {})
+            results['quality_thresholds'] = param_optimization_result.artifacts.get('quality_thresholds', {})
+            results['parameter_optimization_metrics'] = param_optimization_result.artifacts.get('parameter_optimization_metrics', {})
             
             # Stage 2: SR Detection (using optimized parameters)
             self.logger.info('🎯 Executing Stage 2: SR Detection with Optimized Parameters')
             detection_result = await self.execute_sub_pipeline('sr_detection', self.config)
-            if detection_result.success:
-                results['sr_levels'] = detection_result.artifacts.get('sr_levels', [])
-                results['sr_metrics'] = detection_result.artifacts.get('sr_metrics', {})
-                self.logger.info(f"✅ SR Detection completed: {len(results['sr_levels'])} levels detected")
-            else:
-                self.logger.error(f"❌ SR Detection failed: {detection_result.error}")
-                return {
-                    'success': False,
-                    'error': f"SR Detection failed: {detection_result.error}",
-                    'stage': 'sr_detection'
-                }
+            is_success, error_info = self._validate_sub_pipeline_result(detection_result, "SR Detection")
+            if not is_success:
+                return error_info
+            
+            results['sr_levels'] = detection_result.artifacts.get('sr_levels', [])
+            results['sr_metrics'] = detection_result.artifacts.get('sr_metrics', {})
+            self.logger.info(f"SR Detection: {len(results['sr_levels'])} levels detected")
             
             # Stage 3: SR Clustering (using optimized parameters)
             self.logger.info('🚀 Executing Stage 3: SR Clustering with Optimized Parameters')
@@ -534,12 +622,31 @@ class MarketAnalysisSubPipeline:
         )
         
         try:
-            if sub_pipeline_name not in self.sub_pipelines:
-                raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
-            
-            # Execute the sub-pipeline
-            pipeline_func = self.sub_pipelines[sub_pipeline_name]
-            artifacts = await pipeline_func(config)
+            # Try to use component system first
+            if ComponentFactory.is_component_available(sub_pipeline_name):
+                self.logger.info(f"Using component system for {sub_pipeline_name}")
+                component_config = self._convert_to_component_config(config)
+                component = ComponentFactory.create_component(sub_pipeline_name, component_config)
+                
+                # Get data from pipeline state (this would need to be passed in)
+                # For now, we'll use None and let the component handle it
+                data = None  # TODO: Pass actual data from pipeline state
+                pipeline_state = {}  # TODO: Pass actual pipeline state
+                
+                component_result = await component._execute_with_timing(data, pipeline_state)
+                
+                if component_result.success:
+                    artifacts = component_result.artifacts
+                else:
+                    raise Exception(component_result.error_message)
+            else:
+                # Fall back to legacy pipeline methods
+                if sub_pipeline_name not in self.sub_pipelines:
+                    raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+                
+                # Execute the sub-pipeline
+                pipeline_func = self.sub_pipelines[sub_pipeline_name]
+                artifacts = await pipeline_func(config)
             
             # Update result
             end_time = datetime.now()

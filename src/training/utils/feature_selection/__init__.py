@@ -37,7 +37,7 @@ from .selection_methods import (
     FeatureImportanceRanker,
     CompositeFeatureScorer,
     CrossValidatedSelector,
-    LassoStabilitySelector,
+    ElasticNetStabilitySelector,
     TreeBasedEnsembleSelector
 )
 from .stability_analysis import StabilityAnalyzer
@@ -62,7 +62,7 @@ __all__ = [
     'FeatureImportanceRanker',
     'CompositeFeatureScorer',
     'CrossValidatedSelector',
-    'LassoStabilitySelector',
+    'ElasticNetStabilitySelector',
     'TreeBasedEnsembleSelector',
     'StabilityAnalyzer',
     'PerformanceMonitor',

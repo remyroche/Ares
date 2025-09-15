@@ -19,7 +19,7 @@ import warnings
 from .base_framework import BaseFeatureSelectionFramework
 from .data_validation import DataValidator
 from .selection_methods import (
-    MRMRSelector, LassoStabilitySelector, CorrelationBasedFilter,
+    MRMRSelector, ElasticNetStabilitySelector, CorrelationBasedFilter,
     RecursiveFeatureEliminator, FeatureImportanceRanker
 )
 from .stability_analysis import StabilityAnalyzer
@@ -145,10 +145,10 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             # Selection methods
             self.mrmr_selector = MRMRSelector(self.config.get('mrmr', {}))
 
-            # Pass mode information to lasso stability selector for bootstrap count configuration
-            lasso_config = self.config.get('lasso_stability', {})
-            lasso_config['mode'] = self.config.get('mode', 'blank')
-            self.lasso_stability_selector = LassoStabilitySelector(lasso_config)
+            # Pass mode information to elastic net stability selector for bootstrap count configuration
+            elastic_net_config = self.config.get('elastic_net_stability', {})
+            elastic_net_config['mode'] = self.config.get('mode', 'blank')
+            self.elastic_net_stability_selector = ElasticNetStabilitySelector(elastic_net_config)
 
             self.correlation_filter = CorrelationBasedFilter(self.config.get('correlation_filter', {}))
             self.rfe_selector = RecursiveFeatureEliminator(self.config.get('rfe', {}))
@@ -439,10 +439,10 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             mrmr_result = self.mrmr_selector.select_features(X, y, feature_names, target_features)
             selection_results['mrmr'] = mrmr_result
             
-            # LASSO stability selection
-            _LOGGER.info("🔍 Applying LASSO stability selection...")
-            lasso_result = self.lasso_stability_selector.select_features(X, y, feature_names)
-            selection_results['lasso_stability'] = lasso_result
+            # Elastic Net stability selection
+            _LOGGER.info("🔍 Applying Elastic Net stability selection...")
+            elastic_net_result = self.elastic_net_stability_selector.select_features(X, y, feature_names)
+            selection_results['elastic_net_stability'] = elastic_net_result
             
             # Correlation-based filtering
             _LOGGER.info("🔍 Applying correlation-based filtering...")
@@ -486,8 +486,8 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                     def selection_wrapper(X_sub, y_sub, feature_names_sub, **kwargs):
                         if method_name == 'mrmr':
                             return self.mrmr_selector.select_features(X_sub, y_sub, feature_names_sub, kwargs.get('n_features', 50))
-                        elif method_name == 'lasso_stability':
-                            return self.lasso_stability_selector.select_features(X_sub, y_sub, feature_names_sub)
+                        elif method_name == 'elastic_net_stability':
+                            return self.elastic_net_stability_selector.select_features(X_sub, y_sub, feature_names_sub)
                         elif method_name == 'correlation_filter':
                             return self.correlation_filter.select_features(X_sub, y_sub, feature_names_sub)
                         elif method_name == 'feature_importance':
@@ -731,7 +731,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                 'components_initialized': {
                     'data_validator': hasattr(self, 'data_validator'),
                     'mrmr_selector': hasattr(self, 'mrmr_selector'),
-                    'lasso_stability_selector': hasattr(self, 'lasso_stability_selector'),
+                    'elastic_net_stability_selector': hasattr(self, 'elastic_net_stability_selector'),
                     'correlation_filter': hasattr(self, 'correlation_filter'),
                     'rfe_selector': hasattr(self, 'rfe_selector'),
                     'importance_ranker': hasattr(self, 'importance_ranker'),

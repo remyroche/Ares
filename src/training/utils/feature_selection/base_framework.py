@@ -280,11 +280,12 @@ class BaseFeatureSelectionFramework:
                 'tol': 1e-4,
                 'random_state': 42
             },
-            'lasso_stability': {
+            'elastic_net_stability': {
                 'n_bootstraps': 100,
                 'bootstrap_fraction': 0.8,
                 'stability_threshold': 0.6,
                 'alpha_range': (0.001, 1.0),
+                'l1_ratio_range': (0.1, 0.9),  # Balance between L1 and L2 regularization
                 'cv_folds': 5
             },
             'tree_ensemble': {

@@ -478,25 +478,33 @@ class MRMRSelector:
         return safe_mean(redundancies) if redundancies else 0.0
 
 
-class LassoStabilitySelector:
-    """LASSO-based stability selection for feature selection."""
+class ElasticNetStabilitySelector:
+    """Elastic Net-based stability selection for feature selection.
+    
+    Elastic Net combines L1 (LASSO) and L2 (Ridge) regularization, providing:
+    - Better handling of correlated features (unlike LASSO which arbitrarily selects one)
+    - More stable feature selection across different data samples
+    - Balanced feature selection and shrinkage
+    """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize LASSO stability selector."""
+        """Initialize Elastic Net stability selector."""
         self.config = config or {}
-        self.logger = logger.getChild('LassoStabilitySelector')
+        self.logger = logger.getChild('ElasticNetStabilitySelector')
 
         self.n_bootstraps = self._get_bootstrap_count()
         self.bootstrap_fraction = self.config.get('bootstrap_fraction', 0.8)
         self.stability_threshold = self.config.get('stability_threshold', 0.6)
         self.alpha_range = self.config.get('alpha_range', (0.001, 1.0))
+        self.l1_ratio_range = self.config.get('l1_ratio_range', (0.1, 0.9))  # Balance between L1 and L2
         self.cv_folds = self.config.get('cv_folds', 5)
         self.random_state = self.config.get('random_state', 42)
         
-        _LOGGER.info("🔍 LassoStabilitySelector initialized")
+        _LOGGER.info("🔍 ElasticNetStabilitySelector initialized")
         _LOGGER.info(f"⚙️ Bootstrap samples: {self.n_bootstraps}")
         _LOGGER.info(f"⚙️ Bootstrap fraction: {self.bootstrap_fraction}")
         _LOGGER.info(f"⚙️ Stability threshold: {self.stability_threshold}")
+        _LOGGER.info(f"⚙️ L1 ratio range: {self.l1_ratio_range}")
 
     def _get_bootstrap_count(self) -> int:
         """Get bootstrap count based on execution mode."""
@@ -516,17 +524,17 @@ class LassoStabilitySelector:
         return bootstrap_count
 
     def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
-        """Perform LASSO stability selection."""
+        """Perform Elastic Net stability selection."""
         start_time = time.time()
-        _LOGGER.info(f"🔍 Starting LASSO stability selection...")
+        _LOGGER.info(f"🔍 Starting Elastic Net stability selection...")
         _LOGGER.info(f"📊 Parameters - Bootstrap samples: {self.n_bootstraps}, Data shape: {X.shape}")
 
         try:
             if not SKLEARN_AVAILABLE:
-                raise ImportError("Scikit-learn is required for LASSO stability selection")
+                raise ImportError("Scikit-learn is required for Elastic Net stability selection")
 
             # Preprocess data to handle infinity values
-            X = preprocess_features_for_ml(X, "LASSO stability selection", feature_names)
+            X = preprocess_features_for_ml(X, "Elastic Net stability selection", feature_names)
 
             n_samples, n_features = X.shape
             bootstrap_size = int(n_samples * self.bootstrap_fraction)
@@ -534,6 +542,7 @@ class LassoStabilitySelector:
             # Initialize feature selection counts
             feature_selection_counts = np.zeros(n_features)
             alpha_values = []
+            l1_ratio_values = []
             
             # Perform bootstrap sampling
             np.random.seed(self.random_state)
@@ -546,18 +555,31 @@ class LassoStabilitySelector:
                 X_bootstrap = X[bootstrap_indices]
                 y_bootstrap = y[bootstrap_indices]
                 
-                # Fit LASSO with cross-validation
-                lasso_cv = LassoCV(alphas=np.logspace(
+                # Fit Elastic Net with cross-validation
+                # Use a range of l1_ratio values to find optimal balance between L1 and L2
+                l1_ratios = np.linspace(self.l1_ratio_range[0], self.l1_ratio_range[1], 10)
+                alphas = np.logspace(
                     np.log10(self.alpha_range[0]), 
                     np.log10(self.alpha_range[1]), 
                     50
-                ), cv=self.cv_folds, random_state=self.random_state, max_iter=1000)
+                )
                 
-                lasso_cv.fit(X_bootstrap, y_bootstrap)
-                alpha_values.append(lasso_cv.alpha_)
+                elastic_net_cv = ElasticNetCV(
+                    l1_ratio=l1_ratios,
+                    alphas=alphas,
+                    cv=self.cv_folds, 
+                    random_state=self.random_state, 
+                    max_iter=1000,
+                    n_jobs=1  # Avoid nested parallelism issues
+                )
+                
+                elastic_net_cv.fit(X_bootstrap, y_bootstrap)
+                alpha_values.append(elastic_net_cv.alpha_)
+                l1_ratio_values.append(elastic_net_cv.l1_ratio_)
                 
                 # Count selected features (non-zero coefficients)
-                selected_features = np.abs(lasso_cv.coef_) > 1e-6
+                # Use a more conservative threshold for Elastic Net due to L2 regularization
+                selected_features = np.abs(elastic_net_cv.coef_) > 1e-5
                 feature_selection_counts += selected_features.astype(int)
             
             # Calculate stability scores
@@ -577,30 +599,39 @@ class LassoStabilitySelector:
                 'selected_indices': stable_features.tolist(),
                 'stability_scores': stability_scores_dict,
                 'all_stability_scores': {feature_names[i]: stability_scores[i] for i in range(n_features)},
-                'method': 'lasso_stability',
+                'method': 'elastic_net_stability',
                 'parameters': {
                     'n_bootstraps': self.n_bootstraps,
                     'bootstrap_fraction': self.bootstrap_fraction,
                     'stability_threshold': self.stability_threshold,
                     'alpha_range': self.alpha_range,
+                    'l1_ratio_range': self.l1_ratio_range,
                     'cv_folds': self.cv_folds
+                },
+                'optimization_info': {
+                    'avg_alpha': np.mean(alpha_values),
+                    'avg_l1_ratio': np.mean(l1_ratio_values),
+                    'alpha_std': np.std(alpha_values),
+                    'l1_ratio_std': np.std(l1_ratio_values)
                 },
                 'execution_time': execution_time,
                 'success': True
             }
             
-            _LOGGER.info(f"✅ LASSO stability selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"✅ Elastic Net stability selection completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Selected {len(stable_features)} stable features: {selected_feature_names}")
+            _LOGGER.info(f"📊 Average L1 ratio: {np.mean(l1_ratio_values):.3f} (L1/L2 balance)")
+            _LOGGER.info(f"📊 Average alpha: {np.mean(alpha_values):.3f} (regularization strength)")
             
             return result
             
         except Exception as e:
-            _LOGGER.error(f"❌ LASSO stability selection failed: {e}")
+            _LOGGER.error(f"❌ Elastic Net stability selection failed: {e}")
             return {
                 'selected_features': [],
                 'selected_indices': [],
                 'stability_scores': {},
-                'method': 'lasso_stability',
+                'method': 'elastic_net_stability',
                 'error': str(e),
                 'success': False
             }

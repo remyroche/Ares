@@ -21,7 +21,18 @@ from .trend import TrendFeatureGenerator
 from .oscillator import OscillatorFeatureGenerator
 from .support_resistance import SupportResistanceFeatureGenerator
 from .candlestick_pattern import CandlestickPatternFeatureGenerator
-from .hmm_regime import HMMRegimeFeatureGenerator
+from .hmm_regime import (
+    HMMRegimeFeatureGenerator,
+    HMMRegimeLabelGenerator,
+    HMMRegimeProbabilityGenerator,
+    HMMRegimeTransitionGenerator,
+    HMMRegimeDurationGenerator,
+    HMMRegimeStabilityGenerator,
+    create_hmm_regime_generators,
+    create_default_hmm_regime_generators,
+    create_advanced_hmm_regime_generators,
+    create_minimal_hmm_regime_generators
+)
 from .interaction import (
     InteractionFeatureGenerator,
     CrossTimeframeInteractionGenerator,
@@ -50,6 +61,15 @@ __all__ = [
     "SupportResistanceFeatureGenerator",
     "CandlestickPatternFeatureGenerator",
     "HMMRegimeFeatureGenerator",
+    "HMMRegimeLabelGenerator",
+    "HMMRegimeProbabilityGenerator",
+    "HMMRegimeTransitionGenerator",
+    "HMMRegimeDurationGenerator",
+    "HMMRegimeStabilityGenerator",
+    "create_hmm_regime_generators",
+    "create_default_hmm_regime_generators",
+    "create_advanced_hmm_regime_generators",
+    "create_minimal_hmm_regime_generators",
     "InteractionFeatureGenerator",
     "CrossTimeframeInteractionGenerator",
     "FeatureRatioGenerator",

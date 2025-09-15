@@ -159,7 +159,7 @@ def quick_start_example():
     print("\n🎉 Quick start example completed successfully!")
     print("\nFor more advanced usage, see:")
     print("   → TRIPLE_BARRIER_DOCUMENTATION.md")
-    print("   → test_triple_barrier_labeling.py")
+    print("   → triple_barrier_labeling/test_unified_labeler.py")
     
     return labeled_data
 

@@ -387,7 +387,8 @@ class EnhancedMarketAnalysisWithTripleBarrier:
                 labeling_method = 'regime_optimized'
             else:
                 # Use standard labeling
-                labeled_data = self.triple_barrier_labeler.apply_triple_barrier_labeling(data)
+                result = self.triple_barrier_labeler.apply_labeling(data)
+                labeled_data = result.labeled_data if result.success else pd.DataFrame()
                 labeling_method = 'standard'
             
             # Calculate basic statistics

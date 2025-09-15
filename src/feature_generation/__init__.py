@@ -74,12 +74,14 @@ try:
         ReturnsVWAPCalculator,
         PriceLevelsCalculator,
         VolumeWeightedCalculator,
+        VolumeReturnsCalculator,
         create_base_calculator,
         get_base_calculator,
         calculate_price_returns,
         calculate_returns_vwap,
         calculate_price_levels,
-        calculate_volume_weighted
+        calculate_volume_weighted,
+        calculate_volume_returns
     )
     BASE_CALCULATIONS_AVAILABLE = True
 except ImportError as e:
@@ -209,12 +211,14 @@ if BASE_CALCULATIONS_AVAILABLE:
         "ReturnsVWAPCalculator",
         "PriceLevelsCalculator",
         "VolumeWeightedCalculator",
+        "VolumeReturnsCalculator",
         "create_base_calculator",
         "get_base_calculator",
         "calculate_price_returns",
         "calculate_returns_vwap",
         "calculate_price_levels",
-        "calculate_volume_weighted"
+        "calculate_volume_weighted",
+        "calculate_volume_returns"
     ])
 
 # Category generators

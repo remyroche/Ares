@@ -302,7 +302,7 @@ class MACDGenerator(FeatureGenerator):
                  fast: int = 12, 
                  slow: int = 26, 
                  signal: int = 9,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize MACD generator.
@@ -438,7 +438,7 @@ class StochasticGenerator(FeatureGenerator):
     def __init__(self, 
                  k_period: int = 14, 
                  d_period: int = 3,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Stochastic generator.
@@ -510,9 +510,9 @@ class StochasticGenerator(FeatureGenerator):
 class WilliamsRGenerator(FeatureGenerator):
     """Generator for Williams %R with different base calculations."""
     
-    def __init__(self, 
+    def __init__(self,
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Williams %R generator.
@@ -583,7 +583,7 @@ class ROCGenerator(FeatureGenerator):
     
     def __init__(self, 
                  period: int = 10,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize ROC generator.
@@ -643,7 +643,7 @@ class MomentumGenerator(FeatureGenerator):
     
     def __init__(self, 
                  period: int = 10,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Momentum generator.

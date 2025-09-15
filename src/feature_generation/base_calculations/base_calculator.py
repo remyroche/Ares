@@ -21,6 +21,7 @@ class BaseCalculationType(Enum):
     RETURNS_VWAP = "returns_vwap"
     PRICE_LEVELS = "price_levels"
     VOLUME_WEIGHTED = "volume_weighted"
+    VOLUME_RETURNS = "volume_returns"
 
 @dataclass
 class BaseCalculationConfig:
@@ -312,6 +313,52 @@ class VolumeWeightedCalculator(BaseCalculator):
         """Get required columns for volume-weighted calculation."""
         return [self.config.price_column, self.config.volume_column]
 
+class VolumeReturnsCalculator(BaseCalculator):
+    """
+    Calculator for volume returns calculations.
+    
+    This calculator provides volume returns (percentage changes in volume) which can be used as a base
+    for various volume-based technical indicators.
+    """
+    
+    def __init__(self, config: Optional[BaseCalculationConfig] = None):
+        """
+        Initialize the volume returns calculator.
+        
+        Args:
+            config: Base calculation configuration
+        """
+        if config is None:
+            config = BaseCalculationConfig(
+                calculation_type=BaseCalculationType.VOLUME_RETURNS,
+                volume_column="volume",
+                lookback_period=1
+            )
+        super().__init__(config)
+    
+    def calculate(self, data: pd.DataFrame) -> pd.Series:
+        """
+        Calculate volume returns.
+        
+        Args:
+            data: Input data DataFrame
+            
+        Returns:
+            Volume returns as pandas Series
+        """
+        self.validate_data(data)
+        
+        volume = data[self.config.volume_column]
+        
+        # Calculate volume returns (percentage change)
+        volume_returns = volume.pct_change(periods=self.config.lookback_period)
+        
+        return volume_returns
+    
+    def get_required_columns(self) -> List[str]:
+        """Get required columns for volume returns calculation."""
+        return [self.config.volume_column]
+
 # Factory functions
 def create_base_calculator(calculation_type: Union[str, BaseCalculationType], **kwargs) -> BaseCalculator:
     """
@@ -345,6 +392,8 @@ def create_base_calculator(calculation_type: Union[str, BaseCalculationType], **
         return PriceLevelsCalculator(config)
     elif calculation_type == BaseCalculationType.VOLUME_WEIGHTED:
         return VolumeWeightedCalculator(config)
+    elif calculation_type == BaseCalculationType.VOLUME_RETURNS:
+        return VolumeReturnsCalculator(config)
     else:
         raise ValueError(f"Unsupported calculation type: {calculation_type}")
 
@@ -454,5 +503,26 @@ def calculate_volume_weighted(data: pd.DataFrame,
         price_column=price_column,
         volume_column=volume_column,
         vwap_period=period
+    ))
+    return calculator.calculate(data)
+
+def calculate_volume_returns(data: pd.DataFrame,
+                           volume_column: str = "volume",
+                           lookback_period: int = 1) -> pd.Series:
+    """
+    Calculate volume returns.
+    
+    Args:
+        data: Input data DataFrame
+        volume_column: Name of the volume column
+        lookback_period: Lookback period for returns calculation
+        
+    Returns:
+        Volume returns as pandas Series
+    """
+    calculator = VolumeReturnsCalculator(BaseCalculationConfig(
+        calculation_type=BaseCalculationType.VOLUME_RETURNS,
+        volume_column=volume_column,
+        lookback_period=lookback_period
     ))
     return calculator.calculate(data)

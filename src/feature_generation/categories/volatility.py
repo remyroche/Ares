@@ -75,7 +75,7 @@ class BollingerBandsGenerator(FeatureGenerator):
     def __init__(self, 
                  period: int = 20, 
                  std_dev: float = 2.0,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  band_type: str = "upper",  # "upper", "lower", "middle"
                  **base_kwargs):
         """
@@ -144,7 +144,7 @@ class ATRGenerator(FeatureGenerator):
     
     def __init__(self, 
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize ATR generator.

@@ -72,7 +72,7 @@ class SMAGenerator(FeatureGenerator):
     
     def __init__(self, 
                  period: int = 20,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize SMA generator.
@@ -124,7 +124,7 @@ class EMAGenerator(FeatureGenerator):
     
     def __init__(self, 
                  period: int = 20,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize EMA generator.

@@ -7,13 +7,17 @@ including volume ratios, OBV, VWAP, and other volume-related features.
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
     VectorizedFeatureGenerator
+)
+from ..base_calculations import (
+    BaseCalculationType,
+    create_base_calculator
 )
 
 class VolumeFeatureGenerator(VectorizedFeatureGenerator):
@@ -127,53 +131,101 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
         return pd.Series(volume_ma, index=data.index, name=f'volume_ma_{lookback}')
 
 class VolumeMAGenerator(FeatureGenerator):
-    """Generator for Volume Moving Average."""
+    """Generator for Volume Moving Average with different base calculations."""
     
-    def __init__(self, period: int = 20):
-        """Initialize Volume MA generator."""
+    def __init__(self, 
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.VOLUME_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize Volume MA generator.
+        
+        Args:
+            period: Volume MA period
+            base_calculation: Base calculation type (volume_returns, volume_weighted, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"volume_ma_{period}",
+            name=f"volume_ma_{period}_{base_calculation.value}",
             category=FeatureCategory.VOLUME,
-            description=f"Volume Moving Average over {period} periods",
-            required_columns=["volume"],
+            description=f"Volume Moving Average over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=1,
-            max_lookback=50
+            max_lookback=50,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Volume Moving Average."""
-        volume = data['volume']
-        volume_ma = volume.rolling(window=self.period).mean()
+        """Generate Volume Moving Average based on the specified base calculation."""
+        base_values = self.base_calculator.calculate(data)
+        volume_ma = base_values.rolling(window=self.period).mean()
         
         return volume_ma
 
 class VolumeRatioGenerator(FeatureGenerator):
-    """Generator for Volume Ratio (current volume / average volume)."""
+    """Generator for Volume Ratio with different base calculations."""
     
-    def __init__(self, period: int = 20):
-        """Initialize Volume Ratio generator."""
+    def __init__(self, 
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.VOLUME_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize Volume Ratio generator.
+        
+        Args:
+            period: Volume ratio period
+            base_calculation: Base calculation type (volume_returns, volume_weighted, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"volume_ratio_{period}",
+            name=f"volume_ratio_{period}_{base_calculation.value}",
             category=FeatureCategory.VOLUME,
-            description=f"Volume Ratio over {period} periods",
-            required_columns=["volume"],
+            description=f"Volume Ratio over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=1,
-            max_lookback=50
+            max_lookback=50,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Volume Ratio."""
-        volume = data['volume']
-        volume_ma = volume.rolling(window=self.period).mean()
-        
-        # Calculate volume ratio
-        volume_ratio = volume / volume_ma
+        """Generate Volume Ratio based on the specified base calculation."""
+        base_values = self.base_calculator.calculate(data)
+        avg_base_values = base_values.rolling(window=self.period).mean()
+        volume_ratio = base_values / avg_base_values
         
         return volume_ratio
 
@@ -215,7 +267,7 @@ class VWAPGenerator(FeatureGenerator):
     
     def __init__(self, 
                  period: int = 20,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize VWAP generator.

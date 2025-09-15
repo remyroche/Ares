@@ -48,7 +48,7 @@ class SRDetectionComponent(BaseMarketAnalysisComponent):
         
         try:
             # Import SR detection step
-            from src.training.steps.market_analysis.sr_detection import SRDetectionStep
+            from ..sr_detection import SRDetectionStep
             
             # Get market data
             market_data = await self._load_market_data(data)

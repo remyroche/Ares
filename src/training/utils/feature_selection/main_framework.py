@@ -592,6 +592,11 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
             # Run PID decomposition
             pid_result = self.pid_decompositor.decompose_information(X, y, feature_names)
             
+            # Generate artifacts with datetime
+            artifacts = self.pid_decompositor.create_comprehensive_artifact(
+                X, y, feature_names, pid_result, output_dir="pid_artifacts"
+            )
+            
             # Extract key information
             pid_analysis = {
                 'redundancy_scores': pid_result.redundancy,
@@ -603,6 +608,7 @@ class FeatureSelectionFramework(BaseFeatureSelectionFramework):
                 'significant_interactions': pid_result.significant_interactions,
                 'feature_pairs_analyzed': pid_result.feature_pairs_analyzed,
                 'execution_time': pid_result.execution_time,
+                'artifacts_generated': artifacts,
                 'success': True
             }
             

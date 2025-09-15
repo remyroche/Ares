@@ -742,22 +742,46 @@ class PartialInformationDecompositor:
         
         return importance_scores
 
-    def save_analysis_results(self, pid_result: PIDResult, output_path: str):
-        """Save PID analysis results to file."""
+    def save_analysis_results(self, pid_result: PIDResult, output_path: str = None):
+        """Save PID analysis results to file with datetime in filename."""
         try:
             import json
+            from datetime import datetime
+            
+            # Generate filename with datetime if not provided
+            if output_path is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_path = f"pid_analysis_results_{timestamp}.json"
             
             # Convert results to serializable format
             results_dict = {
-                'redundancy': {f"{k[0]}_{k[1]}": v for k, v in pid_result.redundancy.items()},
-                'synergy': {f"{k[0]}_{k[1]}": v for k, v in pid_result.synergy.items()},
-                'unique_info': pid_result.unique_info,
-                'polynomial_features': pid_result.polynomial_features,
-                'interaction_features': pid_result.interaction_features,
-                'cross_timeframe_features': pid_result.cross_timeframe_features,
-                'feature_pairs_analyzed': pid_result.feature_pairs_analyzed,
-                'significant_interactions': pid_result.significant_interactions,
-                'execution_time': pid_result.execution_time,
+                'analysis_metadata': {
+                    'timestamp': datetime.now().isoformat(),
+                    'execution_time': pid_result.execution_time,
+                    'feature_pairs_analyzed': pid_result.feature_pairs_analyzed,
+                    'significant_interactions': pid_result.significant_interactions,
+                    'config_used': {
+                        'synergy_threshold': self.config.synergy_threshold,
+                        'redundancy_threshold': self.config.redundancy_threshold,
+                        'unique_info_threshold': self.config.unique_info_threshold,
+                        'max_polynomial_degree': self.config.max_polynomial_degree,
+                        'max_interaction_features': self.config.max_interaction_features,
+                        'cross_timeframe_threshold': self.config.cross_timeframe_threshold
+                    }
+                },
+                'information_measures': {
+                    'redundancy': {f"{k[0]}_{k[1]}": v for k, v in pid_result.redundancy.items()},
+                    'synergy': {f"{k[0]}_{k[1]}": v for k, v in pid_result.synergy.items()},
+                    'unique_info': pid_result.unique_info
+                },
+                'generated_features': {
+                    'polynomial_features': pid_result.polynomial_features,
+                    'interaction_features': pid_result.interaction_features,
+                    'cross_timeframe_features': pid_result.cross_timeframe_features,
+                    'total_generated': (len(pid_result.polynomial_features) + 
+                                      len(pid_result.interaction_features) + 
+                                      len(pid_result.cross_timeframe_features))
+                },
                 'convergence_info': pid_result.convergence_info
             }
             
@@ -765,6 +789,134 @@ class PartialInformationDecompositor:
                 json.dump(results_dict, f, indent=2)
             
             _LOGGER.info(f"💾 PID analysis results saved to {output_path}")
+            return output_path
             
         except Exception as e:
             _LOGGER.error(f"❌ Failed to save PID results: {e}")
+            return None
+
+    def save_feature_matrix_artifact(self, X: np.ndarray, feature_names: List[str], 
+                                   pid_result: PIDResult, output_path: str = None):
+        """Save expanded feature matrix as artifact with datetime."""
+        try:
+            from datetime import datetime
+            import pandas as pd
+            
+            # Generate expanded feature matrix
+            expanded_X, expanded_names = self.generate_feature_matrix(X, feature_names, pid_result)
+            
+            # Generate filename with datetime if not provided
+            if output_path is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_path = f"expanded_feature_matrix_{timestamp}.parquet"
+            
+            # Create DataFrame with feature names
+            df = pd.DataFrame(expanded_X, columns=expanded_names)
+            
+            # Add metadata
+            df.attrs = {
+                'original_features': len(feature_names),
+                'expanded_features': len(expanded_names),
+                'polynomial_features': len(pid_result.polynomial_features),
+                'interaction_features': len(pid_result.interaction_features),
+                'cross_timeframe_features': len(pid_result.cross_timeframe_features),
+                'significant_interactions': pid_result.significant_interactions,
+                'creation_timestamp': datetime.now().isoformat(),
+                'pid_config': {
+                    'synergy_threshold': self.config.synergy_threshold,
+                    'redundancy_threshold': self.config.redundancy_threshold,
+                    'max_polynomial_degree': self.config.max_polynomial_degree,
+                    'max_interaction_features': self.config.max_interaction_features
+                }
+            }
+            
+            # Save as parquet for efficiency
+            df.to_parquet(output_path, index=False)
+            
+            _LOGGER.info(f"💾 Expanded feature matrix saved to {output_path}")
+            _LOGGER.info(f"📊 Matrix shape: {X.shape} → {expanded_X.shape}")
+            _LOGGER.info(f"🔧 Generated features: {len(expanded_names) - len(feature_names)} new features")
+            
+            return output_path
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Failed to save feature matrix artifact: {e}")
+            return None
+
+    def create_comprehensive_artifact(self, X: np.ndarray, y: np.ndarray, 
+                                    feature_names: List[str], pid_result: PIDResult,
+                                    output_dir: str = "pid_artifacts") -> Dict[str, str]:
+        """Create comprehensive artifacts with datetime in filenames."""
+        try:
+            import os
+            from datetime import datetime
+            
+            # Create output directory if it doesn't exist
+            os.makedirs(output_dir, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            artifacts = {}
+            
+            # 1. Save PID analysis results
+            analysis_path = os.path.join(output_dir, f"pid_analysis_{timestamp}.json")
+            artifacts['analysis_results'] = self.save_analysis_results(pid_result, analysis_path)
+            
+            # 2. Save expanded feature matrix
+            matrix_path = os.path.join(output_dir, f"expanded_features_{timestamp}.parquet")
+            artifacts['feature_matrix'] = self.save_feature_matrix_artifact(X, feature_names, pid_result, matrix_path)
+            
+            # 3. Save feature importance scores
+            importance_scores = self.get_feature_importance_scores(pid_result)
+            importance_path = os.path.join(output_dir, f"feature_importance_{timestamp}.json")
+            
+            importance_data = {
+                'timestamp': datetime.now().isoformat(),
+                'feature_importance_scores': importance_scores,
+                'top_features': sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)[:20],
+                'pid_config': {
+                    'synergy_threshold': self.config.synergy_threshold,
+                    'redundancy_threshold': self.config.redundancy_threshold,
+                    'unique_info_threshold': self.config.unique_info_threshold
+                }
+            }
+            
+            with open(importance_path, 'w') as f:
+                json.dump(importance_data, f, indent=2)
+            artifacts['feature_importance'] = importance_path
+            
+            # 4. Save interaction summary
+            summary_path = os.path.join(output_dir, f"interaction_summary_{timestamp}.json")
+            summary_data = {
+                'timestamp': datetime.now().isoformat(),
+                'significant_interactions': [
+                    {
+                        'features': f"{pair[0]}_{pair[1]}",
+                        'synergy_score': score,
+                        'redundancy_score': pid_result.redundancy.get(pair, 0)
+                    }
+                    for pair, score in sorted(pid_result.synergy.items(), key=lambda x: x[1], reverse=True)
+                    if score > self.config.synergy_threshold
+                ],
+                'feature_generation_summary': {
+                    'polynomial_features_count': len(pid_result.polynomial_features),
+                    'interaction_features_count': len(pid_result.interaction_features),
+                    'cross_timeframe_features_count': len(pid_result.cross_timeframe_features),
+                    'total_new_features': (len(pid_result.polynomial_features) + 
+                                         len(pid_result.interaction_features) + 
+                                         len(pid_result.cross_timeframe_features))
+                }
+            }
+            
+            with open(summary_path, 'w') as f:
+                json.dump(summary_data, f, indent=2)
+            artifacts['interaction_summary'] = summary_path
+            
+            _LOGGER.info(f"🎉 Comprehensive PID artifacts created in {output_dir}")
+            _LOGGER.info(f"📁 Generated {len(artifacts)} artifact files with timestamp {timestamp}")
+            
+            return artifacts
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Failed to create comprehensive artifacts: {e}")
+            return {}

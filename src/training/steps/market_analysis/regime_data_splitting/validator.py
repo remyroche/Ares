@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import pandas as pd  # noqa: F401
 from src.utils.logger import system_logger
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from ...standardized_parquet_handler import standardized_parquet_handler
 
 # Standardized imports from utils
 from src.utils.core.common import (

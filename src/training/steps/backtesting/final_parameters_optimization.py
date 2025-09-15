@@ -25,6 +25,10 @@ import logging
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
+from src.utils.nonlinear_optimization_helpers import (
+    NonLinearConfig, NonLinearParameterSampler, apply_nonlinear_scoring,
+    create_enhanced_search_space, convert_parameters_to_original_space
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +41,14 @@ class FinalParametersOptimizer:
     separate from hyperparameter optimization during training.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], nonlinear_config: Optional[NonLinearConfig] = None):
         """Initialize the final parameters optimizer."""
         self.config = config
         self.logger = logger.getChild('FinalParametersOptimizer')
+        
+        # Non-linear optimization configuration
+        self.nonlinear_config = nonlinear_config or NonLinearConfig()
+        self.parameter_sampler = NonLinearParameterSampler(self.nonlinear_config)
         
         # Parameter categories for optimization
         self.categories = [
@@ -53,10 +61,14 @@ class FinalParametersOptimizer:
         # Default search spaces for each category
         self.default_search_spaces = self._get_default_search_spaces()
         
+        # Enhanced search spaces with non-linear transformations
+        self.enhanced_search_spaces = self._create_enhanced_search_spaces()
+        
         # Optimization settings
         self.n_trials = config.get('n_trials', 50)
         self.timeout = config.get('timeout', 300)
         self.study_name = config.get('study_name', 'final_parameters_optimization')
+        self.use_nonlinear_optimization = config.get('use_nonlinear_optimization', True)
         
         self.logger.info("🚀 Final Parameters Optimizer initialized")
         self.logger.info(f"📊 Optimization categories: {len(self.categories)}")
@@ -64,11 +76,27 @@ class FinalParametersOptimizer:
         self.logger.info(f"⏱️ Timeout: {self.timeout}s")
         self.logger.info(f"📝 Study name: {self.study_name}")
         self.logger.info(f"🎯 Categories to optimize: {', '.join(self.categories)}")
+        self.logger.info(f"🚀 Non-linear optimization: {self.use_nonlinear_optimization}")
+        if self.use_nonlinear_optimization:
+            self.logger.info(f"   • Log sampling: {self.nonlinear_config.use_log_sampling}")
+            self.logger.info(f"   • Fractional powers: {self.nonlinear_config.use_fractional_powers}")
+            self.logger.info(f"   • Sigmoid transforms: {self.nonlinear_config.use_sigmoid_transforms}")
+            self.logger.info(f"   • Adaptive transforms: {self.nonlinear_config.use_adaptive_transforms}")
     
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
+    
+    def _create_enhanced_search_spaces(self) -> Dict[str, Dict[str, Any]]:
+        """Create enhanced search spaces with non-linear transformation metadata."""
+        enhanced_spaces = {}
+        
+        for category, space in self.default_search_spaces.items():
+            enhanced_spaces[category] = create_enhanced_search_space(space, self.nonlinear_config)
+        
+        return enhanced_spaces
+    
     def _get_default_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Get default search spaces for parameter categories."""
         return {
@@ -210,7 +238,7 @@ class FinalParametersOptimizer:
     async def _optimize_category(self, category: str, calibration_results: Dict[str, Any], 
                                previous_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Optimize parameters for a specific category.
+        Enhanced optimization for a specific category with non-linear transformations.
         
         Args:
             category: Parameter category to optimize
@@ -222,46 +250,99 @@ class FinalParametersOptimizer:
         """
         try:
             self.logger.info(f"🔍 Analyzing search space for category: {category}")
-            search_space = self.default_search_spaces.get(category, {})
+            
+            # Use enhanced search space if non-linear optimization is enabled
+            if self.use_nonlinear_optimization and category in self.enhanced_search_spaces:
+                search_space = self.enhanced_search_spaces[category]
+                self.logger.info(f"🚀 Using enhanced non-linear search space for {category}")
+            else:
+                search_space = self.default_search_spaces.get(category, {})
+                self.logger.info(f"📊 Using standard search space for {category}")
+            
             if not search_space:
                 self.logger.warning(f"⚠️ No search space found for category: {category}")
                 return {}
             
             self.logger.info(f"📊 Search space parameters: {len(search_space)}")
             for param_name, param_config in search_space.items():
-                self.logger.debug(f"   • {param_name}: {param_config['type']} [{param_config.get('min', 'N/A')}-{param_config.get('max', 'N/A')}]")
+                if self.use_nonlinear_optimization and 'transform_type' in param_config:
+                    transform_type = param_config['transform_type']
+                    self.logger.debug(f"   • {param_name}: {param_config['type']} [{param_config.get('min', 'N/A')}-{param_config.get('max', 'N/A')}] (transform: {transform_type})")
+                else:
+                    self.logger.debug(f"   • {param_name}: {param_config['type']} [{param_config.get('min', 'N/A')}-{param_config.get('max', 'N/A')}]")
             
             study_name = f'{self.study_name}_{category}'
+            if self.use_nonlinear_optimization:
+                study_name += '_enhanced'
+            
             self.logger.info(f"📝 Creating Optuna study: {study_name}")
             
-            study = optuna.create_study(
-                study_name=study_name,
-                direction='maximize',
-                storage='sqlite:///optuna_studies.db',
-                load_if_exists=True
-            )
+            # Use enhanced sampler for non-linear optimization
+            if self.use_nonlinear_optimization:
+                sampler = optuna.samplers.TPESampler(
+                    n_startup_trials=10,
+                    n_ei_candidates=24,
+                    gamma=lambda x: min(int(0.25 * x), 25),
+                    prior_weight=1.0,
+                    consider_magic_clip=True,
+                    consider_endpoints=True
+                )
+                study = optuna.create_study(
+                    study_name=study_name,
+                    direction='maximize',
+                    sampler=sampler,
+                    storage='sqlite:///optuna_studies_enhanced.db',
+                    load_if_exists=True
+                )
+            else:
+                study = optuna.create_study(
+                    study_name=study_name,
+                    direction='maximize',
+                    storage='sqlite:///optuna_studies.db',
+                    load_if_exists=True
+                )
             
             self.logger.info(f"🎯 Starting optimization with {self.n_trials} trials (timeout: {self.timeout}s)")
             
             def objective(trial):
                 return self._objective_function(trial, category, search_space, calibration_results)
             
+            start_time = time.time()
             study.optimize(objective, n_trials=self.n_trials, timeout=self.timeout)
+            optimization_time = time.time() - start_time
             
             best_params = study.best_params
             best_value = study.best_value
             
+            # Convert parameters back to original space for reporting
+            if self.use_nonlinear_optimization:
+                converted_params = convert_parameters_to_original_space(best_params, search_space)
+            else:
+                converted_params = best_params
+            
             self.logger.info(f"🏆 Best parameters for {category}:")
-            for param, value in best_params.items():
+            for param, value in converted_params.items():
                 self.logger.info(f"   • {param}: {value}")
             self.logger.info(f"📈 Best objective value: {best_value:.4f}")
+            self.logger.info(f"⏱️ Optimization time: {optimization_time:.2f}s")
             
-            return {
-                'best_params': best_params,
+            # Enhanced convergence analysis
+            convergence_analysis = self._analyze_convergence(study)
+            
+            result = {
+                'best_params': converted_params,
                 'best_value': best_value,
                 'study_name': study_name,
-                'n_trials': self.n_trials
+                'n_trials': self.n_trials,
+                'optimization_time': optimization_time,
+                'convergence_analysis': convergence_analysis
             }
+            
+            if self.use_nonlinear_optimization:
+                result['enhancement_methods_used'] = self._get_used_enhancement_methods(search_space)
+                result['nonlinear_optimization'] = True
+            
+            return result
             
         except Exception as e:
             self.logger.error(f"❌ Error optimizing category {category}: {e}")
@@ -272,7 +353,7 @@ class FinalParametersOptimizer:
                           search_space: Dict[str, Dict[str, Any]], 
                           calibration_results: Dict[str, Any]) -> float:
         """
-        Objective function for Optuna optimization.
+        Enhanced objective function for Optuna optimization with non-linear sampling.
         
         Args:
             trial: Optuna trial object
@@ -285,21 +366,47 @@ class FinalParametersOptimizer:
         """
         try:
             params = {}
-            for param_name, param_config in search_space.items():
-                if param_config['type'] == 'float':
-                    params[param_name] = trial.suggest_float(
-                        param_name, param_config['min'], param_config['max']
-                    )
-                elif param_config['type'] == 'int':
-                    params[param_name] = trial.suggest_int(
-                        param_name, param_config['min'], param_config['max']
-                    )
-                elif param_config['type'] == 'bool':
-                    params[param_name] = trial.suggest_categorical(
-                        param_name, [True, False]
-                    )
             
+            # Use enhanced search space if non-linear optimization is enabled
+            if self.use_nonlinear_optimization and category in self.enhanced_search_spaces:
+                enhanced_space = self.enhanced_search_spaces[category]
+                for param_name, param_config in enhanced_space.items():
+                    if param_config['type'] == 'float':
+                        # Use enhanced non-linear sampling
+                        transform_type = param_config.get('transform_type', 'auto')
+                        params[param_name] = self.parameter_sampler.suggest_enhanced_float(
+                            trial, param_name, param_config['min'], param_config['max'], transform_type
+                        )
+                    elif param_config['type'] == 'int':
+                        # Use enhanced non-linear sampling for integers
+                        transform_type = param_config.get('transform_type', 'auto')
+                        params[param_name] = self.parameter_sampler.suggest_enhanced_int(
+                            trial, param_name, param_config['min'], param_config['max'], transform_type
+                        )
+                    elif param_config['type'] == 'bool':
+                        params[param_name] = trial.suggest_categorical(param_name, [True, False])
+            else:
+                # Fallback to original linear sampling
+                for param_name, param_config in search_space.items():
+                    if param_config['type'] == 'float':
+                        params[param_name] = trial.suggest_float(
+                            param_name, param_config['min'], param_config['max']
+                        )
+                    elif param_config['type'] == 'int':
+                        params[param_name] = trial.suggest_int(
+                            param_name, param_config['min'], param_config['max']
+                        )
+                    elif param_config['type'] == 'bool':
+                        params[param_name] = trial.suggest_categorical(param_name, [True, False])
+            
+            # Evaluate configuration
             score = self._evaluate_configuration(category, params, calibration_results)
+            
+            # Apply non-linear scoring enhancements
+            if self.use_nonlinear_optimization:
+                enhanced_score = apply_nonlinear_scoring(score, params, category)
+                return enhanced_score
+            
             return score
             
         except Exception as e:
@@ -959,6 +1066,69 @@ class FinalParametersOptimizer:
         except Exception as e:
             self.logger.error(f'Error generating optimization report: {e}')
             return {'error': str(e)}
+    
+    def _analyze_convergence(self, study: optuna.Study) -> Dict[str, Any]:
+        """Analyze convergence characteristics of the optimization."""
+        try:
+            if len(study.trials) < 5:
+                return {'convergence_quality': 'insufficient_data'}
+            
+            values = [t.value for t in study.trials if t.value is not None]
+            if not values:
+                return {'convergence_quality': 'no_valid_trials'}
+            
+            # Calculate convergence metrics
+            best_values = []
+            current_best = float('-inf')
+            for value in values:
+                if value > current_best:
+                    current_best = value
+                best_values.append(current_best)
+            
+            # Improvement rate
+            total_improvement = best_values[-1] - best_values[0]
+            improvement_rate = total_improvement / len(values) if len(values) > 0 else 0
+            
+            # Convergence stability (variance in last 20% of trials)
+            last_portion = int(len(best_values) * 0.2)
+            if last_portion > 1:
+                recent_values = best_values[-last_portion:]
+                convergence_variance = np.var(recent_values)
+            else:
+                convergence_variance = 0
+            
+            # Convergence quality assessment
+            if improvement_rate > 0.01 and convergence_variance < 0.001:
+                convergence_quality = 'excellent'
+            elif improvement_rate > 0.005 and convergence_variance < 0.01:
+                convergence_quality = 'good'
+            elif improvement_rate > 0.001:
+                convergence_quality = 'fair'
+            else:
+                convergence_quality = 'poor'
+            
+            return {
+                'convergence_quality': convergence_quality,
+                'total_improvement': total_improvement,
+                'improvement_rate': improvement_rate,
+                'convergence_variance': convergence_variance,
+                'final_best_value': best_values[-1],
+                'n_trials': len(values)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Convergence analysis failed: {e}")
+            return {'convergence_quality': 'analysis_failed', 'error': str(e)}
+    
+    def _get_used_enhancement_methods(self, search_space: Dict[str, Dict[str, Any]]) -> List[str]:
+        """Get list of enhancement methods used in the search space."""
+        methods = set()
+        for param_config in search_space.values():
+            if 'transform_type' in param_config:
+                transform_type = param_config['transform_type']
+                if transform_type in ['log', 'power', 'sigmoid', 'adaptive']:
+                    methods.add(transform_type)
+        return list(methods)
 
 
 # Convenience functions for easy integration
@@ -966,9 +1136,10 @@ async def optimize_final_parameters(calibration_results: Dict[str, Any],
                                   config: Dict[str, Any],
                                   symbol: str = "ETHUSDT",
                                   exchange: str = "BINANCE",
-                                  data_dir: str = "data/training") -> Dict[str, Any]:
+                                  data_dir: str = "data/training",
+                                  nonlinear_config: Optional[NonLinearConfig] = None) -> Dict[str, Any]:
     """
-    Convenience function to optimize final parameters.
+    Enhanced convenience function to optimize final parameters with optional non-linear transformations.
     
     Args:
         calibration_results: Results from confidence calibration
@@ -976,11 +1147,12 @@ async def optimize_final_parameters(calibration_results: Dict[str, Any],
         symbol: Trading symbol
         exchange: Exchange name
         data_dir: Data directory
+        nonlinear_config: Non-linear optimization configuration (optional)
         
     Returns:
         Optimization results
     """
-    optimizer = FinalParametersOptimizer(config)
+    optimizer = FinalParametersOptimizer(config, nonlinear_config)
     
     # Load previous results for warm start
     previous_results = await optimizer.load_optimization_results(symbol, exchange, data_dir)
@@ -1002,8 +1174,20 @@ async def optimize_final_parameters(calibration_results: Dict[str, Any],
     start_time = datetime.now()
     report = await optimizer.generate_optimization_report(optimization_results, start_time)
     
-    return {
+    result = {
         'final_parameters': optimization_results,
         'optimization_report': report,
         'validation_passed': validation_passed
     }
+    
+    # Add non-linear optimization summary if used
+    if optimizer.use_nonlinear_optimization:
+        result['nonlinear_optimization'] = True
+        result['enhancement_summary'] = {
+            'use_log_sampling': optimizer.nonlinear_config.use_log_sampling,
+            'use_fractional_powers': optimizer.nonlinear_config.use_fractional_powers,
+            'use_sigmoid_transforms': optimizer.nonlinear_config.use_sigmoid_transforms,
+            'use_adaptive_transforms': optimizer.nonlinear_config.use_adaptive_transforms
+        }
+    
+    return result

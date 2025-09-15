@@ -31,6 +31,10 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from .parallel_processing import ParallelProcessingCoordinator
+from ...nonlinear_optimization_helpers import (
+    NonLinearConfig, NonLinearParameterSampler, apply_nonlinear_scoring,
+    create_enhanced_search_space
+)
 
 # Enhanced dependency management with fast fail
 try:
@@ -66,10 +70,15 @@ except ImportError:
 class HyperparameterOptimization:
     """Enhanced hyperparameter optimization utilities with monitoring and failure detection."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, nonlinear_config: Optional[NonLinearConfig] = None):
         """Initialize hyperparameter optimization utilities with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('HPOUtils')
+        
+        # Non-linear optimization configuration
+        self.nonlinear_config = nonlinear_config or NonLinearConfig()
+        self.parameter_sampler = NonLinearParameterSampler(self.nonlinear_config)
+        self.use_nonlinear_optimization = self.config.get('use_nonlinear_optimization', True)
         
         _LOGGER.info("🚀 Initializing Enhanced HyperparameterOptimization...")
 
@@ -97,6 +106,7 @@ class HyperparameterOptimization:
         _LOGGER.info(f"⚙️ Configuration - Parallel processing: {self.enable_parallel}")
         _LOGGER.info(f"⚙️ Configuration - Max workers: {self.max_workers}")
         _LOGGER.info(f"⚙️ Configuration - Monitoring enabled: {self.enable_monitoring}")
+        _LOGGER.info(f"🚀 Configuration - Non-linear optimization: {self.use_nonlinear_optimization}")
 
         # Initialize utilities
         self.parallel_coordinator = ParallelProcessingCoordinator(self.config) if self.enable_parallel else None
@@ -110,7 +120,21 @@ class HyperparameterOptimization:
         _LOGGER.debug("🔧 Initializing default search spaces...")
         self.default_search_spaces = self._initialize_default_search_spaces()
         
+        # Enhanced search spaces with non-linear transformations
+        if self.use_nonlinear_optimization:
+            _LOGGER.debug("🚀 Creating enhanced search spaces with non-linear transformations...")
+            self.enhanced_search_spaces = self._create_enhanced_search_spaces()
+        
         _LOGGER.info("✅ Enhanced HyperparameterOptimization initialized successfully")
+    
+    def _create_enhanced_search_spaces(self) -> Dict[str, Dict[str, Any]]:
+        """Create enhanced search spaces with non-linear transformation metadata."""
+        enhanced_spaces = {}
+        
+        for model_type, space in self.default_search_spaces.items():
+            enhanced_spaces[model_type] = create_enhanced_search_space(space, self.nonlinear_config)
+        
+        return enhanced_spaces
 
     def start_study_monitoring(self, study_id: str, study_name: str) -> Dict[str, Any]:
         """Start monitoring a new HPO study."""
@@ -648,9 +672,10 @@ class HyperparameterOptimization:
                             pruner: Optional[str] = 'median',
                             storage: Optional[str] = None,
                             study_name: Optional[str] = None,
-                            timeout: Optional[int] = None) -> Dict[str, Any]:
+                            timeout: Optional[int] = None,
+                            use_enhanced_search_space: bool = True) -> Dict[str, Any]:
         """
-        Perform Bayesian hyperparameter optimization.
+        Perform enhanced Bayesian hyperparameter optimization with non-linear transformations.
 
         Args:
             model_factory: Function that creates model with given parameters
@@ -659,46 +684,29 @@ class HyperparameterOptimization:
             search_space: Dictionary defining the search space
             n_trials: Number of optimization trials
             acquisition_function: Acquisition function ('ucb', 'ei', 'poi')
+            use_enhanced_search_space: Whether to use enhanced non-linear search space
 
         Returns:
-            Bayesian optimization results
+            Enhanced Bayesian optimization results
         """
         try:
-            self.logger.info(f"🎲 Starting Bayesian optimization with {acquisition_function} acquisition")
+            self.logger.info(f"🎲 Starting enhanced Bayesian optimization with {acquisition_function} acquisition")
+            if use_enhanced_search_space and self.use_nonlinear_optimization:
+                self.logger.info("🚀 Using enhanced non-linear search space")
 
             if not OPTUNA_AVAILABLE:
                 raise ImportError("Optuna required for Bayesian optimization")
 
-            def objective(trial):
-                params = {}
+            # Use enhanced search space if requested and available
+            if use_enhanced_search_space and self.use_nonlinear_optimization:
+                enhanced_space = create_enhanced_search_space(search_space, self.nonlinear_config)
+                actual_search_space = enhanced_space
+            else:
+                actual_search_space = search_space
 
-                # Sample from search space
-                for param_name, param_config in search_space.items():
-                    if isinstance(param_config, dict):
-                        param_type = param_config.get('type', 'float')
-                        if param_type == 'float':
-                            params[param_name] = trial.suggest_float(
-                                param_name,
-                                param_config['low'],
-                                param_config['high']
-                            )
-                        elif param_type == 'int':
-                            params[param_name] = trial.suggest_int(
-                                param_name,
-                                param_config['low'],
-                                param_config['high']
-                            )
-                        elif param_type == 'categorical':
-                            params[param_name] = trial.suggest_categorical(
-                                param_name,
-                                param_config['choices']
-                            )
-                    else:
-                        # Legacy format support
-                        if isinstance(param_config, tuple) and len(param_config) == 2:
-                            params[param_name] = trial.suggest_float(
-                                param_name, param_config[0], param_config[1]
-                            )
+            def objective(trial):
+                # Use enhanced parameter sampling
+                params = self._sample_hyperparameters(trial, model_factory, actual_search_space)
 
                 # Create and evaluate model
                 model = model_factory(**params)
@@ -1194,49 +1202,73 @@ class HyperparameterOptimization:
             return search_space
 
     def _sample_hyperparameters(self, trial: Any, model_factory: Callable, search_space: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Sample hyperparameters for a trial based on the provided search space."""
+        """Enhanced hyperparameter sampling with non-linear transformations."""
         try:
             if search_space is None:
                 # Fallback to default parameters if no search space provided
-                params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 50, 300),
-                    'max_depth': trial.suggest_int('max_depth', 3, 10)
-                }
+                if self.use_nonlinear_optimization:
+                    params = {
+                        'n_estimators': self.parameter_sampler.suggest_enhanced_int(trial, 'n_estimators', 50, 300),
+                        'max_depth': self.parameter_sampler.suggest_enhanced_int(trial, 'max_depth', 3, 10)
+                    }
+                else:
+                    params = {
+                        'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+                        'max_depth': trial.suggest_int('max_depth', 3, 10)
+                    }
                 return params
 
             params = {}
             for param_name, param_config in search_space.items():
-                if param_config['type'] == 'int':
-                    params[param_name] = trial.suggest_int(
-                        param_name, 
-                        param_config['low'], 
-                        param_config['high'],
-                        step=param_config.get('step', 1)
-                    )
-                elif param_config['type'] == 'float':
-                    if param_config.get('log', False):
-                        params[param_name] = trial.suggest_float(
+                if self.use_nonlinear_optimization and 'transform_type' in param_config:
+                    # Use enhanced non-linear sampling
+                    transform_type = param_config.get('transform_type', 'auto')
+                    
+                    if param_config['type'] == 'int':
+                        params[param_name] = self.parameter_sampler.suggest_enhanced_int(
+                            trial, param_name, param_config['low'], param_config['high'], transform_type
+                        )
+                    elif param_config['type'] == 'float':
+                        params[param_name] = self.parameter_sampler.suggest_enhanced_float(
+                            trial, param_name, param_config['low'], param_config['high'], transform_type
+                        )
+                    elif param_config['type'] == 'categorical':
+                        params[param_name] = trial.suggest_categorical(
+                            param_name, param_config['choices']
+                        )
+                else:
+                    # Fallback to original sampling
+                    if param_config['type'] == 'int':
+                        params[param_name] = trial.suggest_int(
                             param_name, 
                             param_config['low'], 
                             param_config['high'],
-                            log=True
+                            step=param_config.get('step', 1)
                         )
-                    else:
-                        params[param_name] = trial.suggest_float(
+                    elif param_config['type'] == 'float':
+                        if param_config.get('log', False):
+                            params[param_name] = trial.suggest_float(
+                                param_name, 
+                                param_config['low'], 
+                                param_config['high'],
+                                log=True
+                            )
+                        else:
+                            params[param_name] = trial.suggest_float(
+                                param_name, 
+                                param_config['low'], 
+                                param_config['high']
+                            )
+                    elif param_config['type'] == 'categorical':
+                        params[param_name] = trial.suggest_categorical(
                             param_name, 
-                            param_config['low'], 
-                            param_config['high']
+                            param_config['choices']
                         )
-                elif param_config['type'] == 'categorical':
-                    params[param_name] = trial.suggest_categorical(
-                        param_name, 
-                        param_config['choices']
-                    )
 
             return params
 
         except Exception as e:
-            self.logger.warning(f"Hyperparameter sampling failed: {e}")
+            self.logger.warning(f"Enhanced hyperparameter sampling failed: {e}")
             return {}
 
     def _evaluate_performance_objectives(self, model: Any, X: np.ndarray, y: np.ndarray,

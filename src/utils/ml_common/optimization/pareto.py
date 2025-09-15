@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Tuple, Callable, Optional
 import math
 import time
 import numpy as np
+from ...nonlinear_optimization_helpers import NonLinearConfig
 
 # Import torch for GPU acceleration
 try:
@@ -72,12 +73,16 @@ class Solution:
 
 
 class ParetoFront:
-    """Enhanced Pareto front utilities with M1 optimization."""
+    """Enhanced Pareto front utilities with M1 optimization and non-linear transformations."""
 
-    def __init__(self):
+    def __init__(self, nonlinear_config: Optional[NonLinearConfig] = None):
         self.logger = _LOGGER
-        self.logger.info("🚀 Initializing ParetoFront...")
+        self.logger.info("🚀 Initializing Enhanced ParetoFront...")
         start_time = time.time()
+        
+        # Non-linear optimization configuration
+        self.nonlinear_config = nonlinear_config or NonLinearConfig()
+        self.use_nonlinear_objectives = self.nonlinear_config.use_log_sampling or self.nonlinear_config.use_fractional_powers
         
         self.gpu_manager = M1GPUManager() if GPU_AVAILABLE else None
         if self.gpu_manager:
@@ -91,30 +96,133 @@ class ParetoFront:
         else:
             self.logger.debug("ℹ️ CPU optimizer not initialized (CPU optimizer not available)")
         
+        if self.use_nonlinear_objectives:
+            self.logger.info("🚀 Non-linear objective transformations enabled")
+        
         init_time = time.time() - start_time
-        self.logger.info(f"✅ ParetoFront initialized in {init_time:.3f}s")
+        self.logger.info(f"✅ Enhanced ParetoFront initialized in {init_time:.3f}s")
+    
+    def _apply_nonlinear_objective_transformations(self, solutions: List[Solution], 
+                                                 objectives: ObjectiveDirection) -> List[Solution]:
+        """Apply non-linear transformations to objectives for better optimization."""
+        if not self.use_nonlinear_objectives:
+            return solutions
+        
+        transformed_solutions = []
+        for solution in solutions:
+            transformed_metrics = {}
+            for metric_name, value in solution.metrics.items():
+                if metric_name in objectives:
+                    direction = objectives[metric_name]
+                    
+                    # Apply non-linear transformations based on metric characteristics
+                    if metric_name in ['pnl', 'sharpe', 'win_rate'] and direction == 'max':
+                        # Apply log transformation for financial metrics (with offset to handle negatives)
+                        if value > 0:
+                            transformed_value = np.log(1 + value)
+                        else:
+                            transformed_value = -np.log(1 + abs(value))
+                    elif metric_name in ['drawdown', 'volatility', 'risk'] and direction == 'min':
+                        # Apply power transformation for risk metrics
+                        transformed_value = value ** 0.5  # Square root to reduce extreme values
+                    elif metric_name in ['training_time', 'inference_time'] and direction == 'min':
+                        # Apply log transformation for time metrics
+                        transformed_value = np.log(1 + value)
+                    else:
+                        # Keep original value for other metrics
+                        transformed_value = value
+                    
+                    transformed_metrics[metric_name] = transformed_value
+                else:
+                    transformed_metrics[metric_name] = value
+            
+            transformed_solutions.append(Solution(
+                metrics=transformed_metrics,
+                params=solution.params
+            ))
+        
+        return transformed_solutions
+    
+    def _reverse_nonlinear_objective_transformations(self, solutions: List[Solution], 
+                                                   objectives: ObjectiveDirection) -> List[Solution]:
+        """Reverse non-linear transformations for final results."""
+        if not self.use_nonlinear_objectives:
+            return solutions
+        
+        reversed_solutions = []
+        for solution in solutions:
+            reversed_metrics = {}
+            for metric_name, value in solution.metrics.items():
+                if metric_name in objectives:
+                    direction = objectives[metric_name]
+                    
+                    # Reverse non-linear transformations
+                    if metric_name in ['pnl', 'sharpe', 'win_rate'] and direction == 'max':
+                        # Reverse log transformation
+                        if value > 0:
+                            reversed_value = np.exp(value) - 1
+                        else:
+                            reversed_value = -(np.exp(abs(value)) - 1)
+                    elif metric_name in ['drawdown', 'volatility', 'risk'] and direction == 'min':
+                        # Reverse power transformation
+                        reversed_value = value ** 2
+                    elif metric_name in ['training_time', 'inference_time'] and direction == 'min':
+                        # Reverse log transformation
+                        reversed_value = np.exp(value) - 1
+                    else:
+                        # Keep original value
+                        reversed_value = value
+                    
+                    reversed_metrics[metric_name] = reversed_value
+                else:
+                    reversed_metrics[metric_name] = value
+            
+            reversed_solutions.append(Solution(
+                metrics=reversed_metrics,
+                params=solution.params
+            ))
+        
+        return reversed_solutions
 
     # @auto_memory_skim_decorator("pareto_front_construction")  # Commented out due to import issues
     def compute_pareto_front_gpu(
         self,
         solutions: List[Solution],
         objectives: ObjectiveDirection,
-        use_gpu: bool = True
+        use_gpu: bool = True,
+        use_nonlinear_transforms: bool = True
     ) -> List[Solution]:
-        """Compute Pareto front with GPU acceleration and memory optimization."""
+        """Compute Pareto front with GPU acceleration, memory optimization, and non-linear transformations."""
         if not solutions:
             return []
 
+        # Apply non-linear transformations if enabled
+        if use_nonlinear_transforms and self.use_nonlinear_objectives:
+            self.logger.debug("🚀 Applying non-linear objective transformations")
+            transformed_solutions = self._apply_nonlinear_objective_transformations(solutions, objectives)
+        else:
+            transformed_solutions = solutions
+
         # Estimate memory requirements and optimize if needed
         if MEMORY_OPTIMIZER_AVAILABLE:
-            estimated_memory_mb = len(solutions) * len(objectives) * 8 / (1024**2)
+            estimated_memory_mb = len(transformed_solutions) * len(objectives) * 8 / (1024**2)
             # Memory optimization would be implemented here when available
             _LOGGER.debug(f"Estimated memory usage: {estimated_memory_mb:.2f} MB for pareto front construction")
 
-        if use_gpu and self.gpu_manager and len(solutions) > 100:
-            return self._compute_pareto_front_gpu(solutions, objectives)
+        # Compute Pareto front
+        if use_gpu and self.gpu_manager and len(transformed_solutions) > 100:
+            pareto_front = self._compute_pareto_front_gpu(transformed_solutions, objectives)
         else:
-            return compute_pareto_front(solutions, objectives)
+            pareto_front = compute_pareto_front(transformed_solutions, objectives)
+
+        # Reverse non-linear transformations if they were applied
+        if use_nonlinear_transforms and self.use_nonlinear_objectives:
+            self.logger.debug("🔄 Reversing non-linear objective transformations")
+            final_pareto_front = self._reverse_nonlinear_objective_transformations(pareto_front, objectives)
+        else:
+            final_pareto_front = pareto_front
+
+        return final_pareto_front
 
     def _compute_pareto_front_gpu(
         self,
@@ -452,11 +560,18 @@ def scalarize_financial_goals(
     metrics: Dict[str, float],
     weights: Optional[Dict[str, float]] = None,
     fallback_objectives: Optional[ObjectiveDirection] = None,
+    use_nonlinear_scaling: bool = True,
 ) -> float:
-    """Return a scalar score from metrics using default financial weights.
+    """Return a scalar score from metrics using default financial weights with optional non-linear scaling.
 
     If keys 'pnl', 'win_rate', 'sharpe' are present, use weights (default DEFAULT_FINANCIAL_WEIGHTS).
     Otherwise, fall back to a simple weighted sum across provided objectives (max => +, min => -).
+    
+    Args:
+        metrics: Dictionary of metric values
+        weights: Optional weights for metrics
+        fallback_objectives: Fallback objectives if financial keys not present
+        use_nonlinear_scaling: Whether to apply non-linear scaling to metrics
     """
     if weights is None:
         weights = DEFAULT_FINANCIAL_WEIGHTS
@@ -468,7 +583,28 @@ def scalarize_financial_goals(
         score = 0.0
         for k in available:
             try:
-                score += (weights[k] / total_w) * float(metrics.get(k, 0.0))
+                raw_value = float(metrics.get(k, 0.0))
+                
+                # Apply non-linear scaling if enabled
+                if use_nonlinear_scaling:
+                    if k == 'pnl':
+                        # Apply log scaling to PnL for better handling of extreme values
+                        if raw_value > 0:
+                            scaled_value = np.log(1 + raw_value)
+                        else:
+                            scaled_value = -np.log(1 + abs(raw_value))
+                    elif k == 'sharpe':
+                        # Apply sigmoid-like scaling to Sharpe ratio
+                        scaled_value = 2 / (1 + np.exp(-raw_value)) - 1
+                    elif k == 'win_rate':
+                        # Apply power scaling to win rate for better discrimination
+                        scaled_value = raw_value ** 1.5
+                    else:
+                        scaled_value = raw_value
+                else:
+                    scaled_value = raw_value
+                
+                score += (weights[k] / total_w) * scaled_value
             except Exception:
                 pass
         return float(score)
@@ -478,6 +614,19 @@ def scalarize_financial_goals(
     if fallback_objectives:
         for k, direction in fallback_objectives.items():
             v = float(metrics.get(k, 0.0))
+            
+            # Apply non-linear scaling if enabled
+            if use_nonlinear_scaling:
+                if direction == 'max':
+                    # Apply log scaling for maximization objectives
+                    if v > 0:
+                        v = np.log(1 + v)
+                    else:
+                        v = -np.log(1 + abs(v))
+                else:
+                    # Apply square root scaling for minimization objectives
+                    v = np.sqrt(max(0, v))
+            
             score += v if direction == 'max' else -v
     return float(score)
 
@@ -485,30 +634,34 @@ def scalarize_financial_goals(
 # Global instance with proper cleanup
 _pareto_front = None
 
-def get_pareto_front() -> ParetoFront:
-    """Get global ParetoFront instance with M1 optimization."""
+def get_pareto_front(nonlinear_config: Optional[NonLinearConfig] = None) -> ParetoFront:
+    """Get global ParetoFront instance with M1 optimization and non-linear transformations."""
     global _pareto_front
     if _pareto_front is None:
-        _pareto_front = ParetoFront()
+        _pareto_front = ParetoFront(nonlinear_config)
     return _pareto_front
 
 
 class ParetoOptimizer:
-    """Wrapper class for ParetoFront functionality to maintain compatibility."""
+    """Enhanced wrapper class for ParetoFront functionality with non-linear transformations."""
 
-    def __init__(self):
-        """Initialize ParetoOptimizer with ParetoFront instance."""
-        self.pareto_front = ParetoFront()
+    def __init__(self, nonlinear_config: Optional[NonLinearConfig] = None):
+        """Initialize ParetoOptimizer with enhanced ParetoFront instance."""
+        self.pareto_front = ParetoFront(nonlinear_config)
         self.logger = _LOGGER
-        self.logger.info("🚀 Initializing ParetoOptimizer...")
+        self.logger.info("🚀 Initializing Enhanced ParetoOptimizer...")
 
-    def optimize(self, solutions: List[Solution], objectives: ObjectiveDirection) -> List[Solution]:
-        """Optimize solutions using Pareto front computation."""
-        return self.pareto_front.compute_pareto_front_gpu(solutions, objectives)
+    def optimize(self, solutions: List[Solution], objectives: ObjectiveDirection, 
+                use_nonlinear_transforms: bool = True) -> List[Solution]:
+        """Optimize solutions using enhanced Pareto front computation with non-linear transformations."""
+        return self.pareto_front.compute_pareto_front_gpu(
+            solutions, objectives, use_nonlinear_transforms=use_nonlinear_transforms
+        )
 
-    def select_best(self, solutions: List[Solution], objectives: ObjectiveDirection) -> Optional[Solution]:
-        """Select the best solution using knee point selection."""
-        pareto_front = self.optimize(solutions, objectives)
+    def select_best(self, solutions: List[Solution], objectives: ObjectiveDirection,
+                   use_nonlinear_transforms: bool = True) -> Optional[Solution]:
+        """Select the best solution using knee point selection with non-linear transformations."""
+        pareto_front = self.optimize(solutions, objectives, use_nonlinear_transforms)
         return select_knee_point(pareto_front, objectives)
 
 

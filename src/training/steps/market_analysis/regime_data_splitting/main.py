@@ -87,7 +87,7 @@ def standardize_result(result: Any) -> StepResult:
             status=StepResultStatus.COMPLETED,
             data=result
         )
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from ...standardized_parquet_handler import standardized_parquet_handler
 from src.utils.logger import system_logger
 # Core decorators imports
 from src.core.decorators import (

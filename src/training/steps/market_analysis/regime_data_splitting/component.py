@@ -32,7 +32,7 @@ except ImportError as e:
     pd = None
     IMPORT_ERRORS.append(f"pandas: {e}")
 
-from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ..components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 
 

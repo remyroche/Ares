@@ -163,6 +163,20 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Backwards compatibility not available: {e}")
 
+# HMM compatibility layer
+try:
+    from .compatibility.hmm_compatibility import (
+        HMMCompatibleFeatureGenerators,
+        FeatureGenerators,
+        get_hmm_compatible_generators
+    )
+    HMM_COMPATIBILITY_AVAILABLE = True
+except ImportError as e:
+    HMM_COMPATIBILITY_AVAILABLE = False
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"HMM compatibility not available: {e}")
+
 # Convenience functions
 try:
     from .convenience import (
@@ -268,6 +282,14 @@ if COMPATIBILITY_AVAILABLE:
         "migrate_legacy_features",
         "get_legacy_adapter", 
         "enable_legacy_compatibility"
+    ])
+
+# HMM compatibility
+if HMM_COMPATIBILITY_AVAILABLE:
+    __all__.extend([
+        "HMMCompatibleFeatureGenerators",
+        "FeatureGenerators",
+        "get_hmm_compatible_generators"
     ])
 
 # Convenience functions

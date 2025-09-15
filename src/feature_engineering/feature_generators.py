@@ -2431,3 +2431,20 @@ def create_cdl_three_white_soldiers_config(**kwargs) -> Dict[str, Any]:
 def create_cdl_harami_config(**kwargs) -> Dict[str, Any]:
     """Create Harami Pattern feature configuration."""
     return create_feature_generator_config('cdl_harami', **kwargs)
+
+# Compatibility redirect for new unified feature generation system
+# This allows existing code to continue working while we migrate to the new system
+try:
+    from .feature_generators_compatibility import FeatureGenerators as CompatibleFeatureGenerators
+    # Export the compatible version
+    FeatureGenerators = CompatibleFeatureGenerators
+    logger.info("✅ FeatureGenerators redirected to new unified system")
+except ImportError:
+    # Try standalone compatibility
+    try:
+        from .standalone_hmm_compatibility import FeatureGenerators as StandaloneFeatureGenerators
+        FeatureGenerators = StandaloneFeatureGenerators
+        logger.info("✅ FeatureGenerators using standalone compatibility")
+    except ImportError:
+        # Keep the original class if compatibility modules are not available
+        logger.info("ℹ️ Using original FeatureGenerators class")

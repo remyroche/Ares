@@ -254,10 +254,16 @@ class HMMModelsTrainingEnhanced(BaseTrainingStep):
     def _initialize_components(self):
         """Initialize training components with comprehensive error handling."""
         try:
-            # Initialize feature generator
-            from src.feature_engineering.feature_generators import FeatureGenerators
-            self.feature_generator = FeatureGenerators()
-            self.logger.info("✅ Feature generator initialized")
+            # Initialize feature generator with fallback compatibility
+            try:
+                from src.feature_engineering.feature_generators import FeatureGenerators
+                self.feature_generator = FeatureGenerators()
+                self.logger.info("✅ Feature generator initialized from feature_engineering")
+            except ImportError:
+                # Fallback to standalone compatibility
+                from src.hmm_feature_compatibility import FeatureGenerators
+                self.feature_generator = FeatureGenerators()
+                self.logger.info("✅ Feature generator initialized from standalone compatibility")
         except ImportError as e:
             self.logger.warning(f"⚠️ Feature generator not available: {e}")
             self.feature_generator = None

@@ -77,43 +77,43 @@ data_preparation:
     analyst:
       signal_strength:
         method: "price_momentum"
-        lookback_periods: [5, 10, 20]
+        lookback_periods: [2, 4, 8]  # Max 8h for HMM regime features
         threshold: 0.02
       
       confidence:
         method: "volatility_based"
-        lookback_periods: [20, 50]
+        lookback_periods: [2, 4, 8]  # Max 8h for HMM regime features
         confidence_threshold: 0.8
       
       risk_score:
         method: "drawdown_based"
-        lookback_periods: [50, 100]
+        lookback_periods: [2, 4, 8]  # Max 8h for HMM regime features
         risk_threshold: 0.05
       
       regime_label:
         method: "hmm_based"
         n_regimes: 3
-        lookback_periods: [100, 200]
+        lookback_periods: [2, 4, 8]  # Max 8h for HMM regime features
     
     tactician:
       entry_timing:
         method: "momentum_based"
-        lookback_periods: [5, 10, 20]
+        lookback_periods: [2, 4, 8]  # Max 8h for HMM regime features
         momentum_threshold: 0.01
       
       position_size:
         method: "kelly_criterion"
-        lookback_periods: [50, 100]
+        lookback_periods: [2, 4, 8]  # Max 8h for HMM regime features
         max_position_size: 0.1
       
       stop_loss:
         method: "atr_based"
-        lookback_periods: [20, 50]
+        lookback_periods: [2, 4, 8]  # Max 8h for HMM regime features
         atr_multiplier: 2.0
       
       take_profit:
         method: "risk_reward_ratio"
-        lookback_periods: [20, 50]
+        lookback_periods: [2, 4, 8]  # Max 8h for HMM regime features
         risk_reward_ratio: 2.0
   
   # Data validation

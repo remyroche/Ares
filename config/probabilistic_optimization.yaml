@@ -145,7 +145,7 @@ models:
         regime_threshold: [0.5, 0.8]
         regime_confidence_threshold: [0.6, 0.9]
         regime_transition_smoothing: [0.1, 0.5]
-        regime_lookback_period: [10, 50]
+        regime_lookback_period: [2, 8]  # Max 8h for HMM regime features
         regime_min_samples: [100, 500]
       
       probabilistic_calibration:
@@ -182,22 +182,22 @@ data_preparation:
     # Price-based features
     price_features:
       enabled: true
-      return_lookbacks: [1, 5, 10, 20]
-      volatility_lookbacks: [20, 50, 100]
-      trend_lookbacks: [20, 50, 200]
+      return_lookbacks: [1, 2, 4, 8]  # Max 8h for HMM regime features
+      volatility_lookbacks: [2, 4, 8]  # Max 8h for HMM regime features
+      trend_lookbacks: [2, 4, 8]  # Max 8h for HMM regime features
     
     # Volume features
     volume_features:
       enabled: true
-      volume_lookbacks: [20, 50]
-      volume_volatility_lookbacks: [20, 50]
+      volume_lookbacks: [2, 4, 8]  # Max 8h for HMM regime features
+      volume_volatility_lookbacks: [2, 4, 8]  # Max 8h for HMM regime features
     
     # Technical indicators
     technical_indicators:
       enabled: true
-      rsi_periods: [14, 21]
-      macd_periods: [12, 26, 9]
-      bollinger_periods: [20, 50]
+      rsi_periods: [2, 4, 8]  # Max 8h for HMM regime features
+      macd_periods: [2, 4, 8]  # Max 8h for HMM regime features
+      bollinger_periods: [2, 4, 8]  # Max 8h for HMM regime features
     
     # Market microstructure
     microstructure:

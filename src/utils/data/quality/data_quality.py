@@ -155,9 +155,21 @@ class QualityResult:
 
 class DataQualityFramework:
     """Unified data quality framework with validation, cleaning, and profiling."""
+    
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, thresholds: Optional[QualityThresholds] = None):
+        """Singleton pattern implementation."""
+        if cls._instance is None:
+            cls._instance = super(DataQualityFramework, cls).__new__(cls)
+        return cls._instance
 
     def __init__(self, thresholds: Optional[QualityThresholds] = None) -> None:
-        """Initialize data quality framework."""
+        """Initialize data quality framework (only once due to singleton)."""
+        if self._initialized:
+            return
+            
         self.logger = system_logger.getChild('DataQualityFramework')
         self.thresholds = thresholds or QualityThresholds()
 
@@ -217,7 +229,8 @@ class DataQualityFramework:
             }
         }
 
-        self.logger.info('🔧 Unified Data Quality Framework initialized')
+        self.logger.info('🔧 Unified Data Quality Framework initialized (singleton)')
+        self._initialized = True
 
     def validate_dataframe_quality(self, df: pd.DataFrame, context: str = '') -> QualityResult:
         """Validate DataFrame quality with comprehensive checks."""

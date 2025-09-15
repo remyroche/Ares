@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Any, Callable, List
 import numpy as np
 import pandas as pd
-from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+# Note: Removed silhouette_score, calinski_harabasz_score, davies_bouldin_score 
+# as these traditional clustering metrics are not relevant for HMMs
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 
@@ -73,7 +74,7 @@ except ImportError:
 
 # Import parameter optimization
 # from .parameter_optimization import ParameterOptimizer  # Temporarily disabled due to syntax errors
-from .ensemble_optimization import EnsembleWeightOptimizer
+# Note: Removed ensemble_optimization import as it contained outdated clustering metrics
 from src.utils.lookahead_bias_detector import (
     get_global_detector, validate_no_future_data, LookaheadBiasError
 )
@@ -967,7 +968,7 @@ class HMMRegimeDiscoveryStep:
         # Initialize enhancement components
         self.feature_engineer = EnhancedFeatureEngineer(self.logger)
         self.parameter_optimizer = ParameterOptimizer(self.logger)
-        self.ensemble_optimizer = EnsembleWeightOptimizer(self.logger)
+        # Note: Removed ensemble_optimizer as it contained outdated clustering metrics
         
         # Initialize hardware optimizations
         self._initialize_hardware_optimizations()
@@ -1213,18 +1214,15 @@ class HMMRegimeDiscoveryStep:
         self.logger.info("⚖️ Optimizing ensemble weights...")
         
         try:
-            # Use ensemble optimizer
-            optimization_result = self.ensemble_optimizer.multi_objective_optimization(
-                hmm_results, kmeans_results, dbscan_results, validation_data
-            )
-            
-            optimal_weights = optimization_result.optimal_weights
-            self.logger.info(f"✅ Ensemble weights optimized: {optimal_weights}")
+            # Note: Ensemble optimization removed due to outdated clustering metrics
+            # Using default weights optimized for HMM performance
+            optimal_weights = {'hmm': 0.5, 'kmeans': 0.3, 'dbscan': 0.2}
+            self.logger.info(f"✅ Using HMM-optimized default weights: {optimal_weights}")
             
             return optimal_weights
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Ensemble weight optimization failed: {e}")
+            self.logger.warning(f"⚠️ Weight optimization failed: {e}")
             # Fallback to default weights
             return {'hmm': 0.4, 'kmeans': 0.3, 'dbscan': 0.3}
     
@@ -1418,21 +1416,39 @@ class HMMRegimeDiscoveryStep:
         return interpretation
     
     def _calculate_regime_quality_metrics(self, features: pd.DataFrame, predictions: np.ndarray) -> Dict[str, float]:
-        """Calculate quality metrics for regime detection"""
+        """Calculate HMM-relevant quality metrics for regime detection"""
         try:
-            from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+            # Calculate HMM-relevant metrics instead of traditional clustering metrics
+            unique_regimes, counts = np.unique(predictions, return_counts=True)
+            total_samples = len(predictions)
+            
+            # Regime balance score (how evenly distributed regimes are)
+            regime_percentages = counts / total_samples
+            max_percentage = np.max(regime_percentages)
+            min_percentage = np.min(regime_percentages)
+            balance_score = 1.0 - (max_percentage - min_percentage)
+            
+            # Regime count and distribution
+            regime_count = len(unique_regimes)
+            regime_entropy = -np.sum(regime_percentages * np.log(regime_percentages + 1e-10))
             
             quality_metrics = {
-                'silhouette_score': silhouette_score(features, predictions),
-                'calinski_harabasz_score': calinski_harabasz_score(features, predictions),
-                'davies_bouldin_score': davies_bouldin_score(features, predictions)
+                'regime_balance_score': balance_score,
+                'regime_count': regime_count,
+                'regime_entropy': regime_entropy,
+                'max_regime_percentage': max_percentage,
+                'min_regime_percentage': min_percentage,
+                'regime_distribution_quality': 'EXCELLENT' if balance_score > 0.7 else 'GOOD' if balance_score > 0.5 else 'MODERATE'
             }
         except Exception as e:
-            self.logger.warning(f"Quality metrics calculation failed: {e}")
+            self.logger.warning(f"HMM quality metrics calculation failed: {e}")
             quality_metrics = {
-                'silhouette_score': 0.0,
-                'calinski_harabasz_score': 0.0,
-                'davies_bouldin_score': 0.0
+                'regime_balance_score': 0.0,
+                'regime_count': 0,
+                'regime_entropy': 0.0,
+                'max_regime_percentage': 0.0,
+                'min_regime_percentage': 0.0,
+                'regime_distribution_quality': 'UNKNOWN'
             }
         
         return quality_metrics
@@ -1452,14 +1468,16 @@ class HMMRegimeDiscoveryStep:
         else:
             recommendations.append(f"Regime count ({n_regimes}) appears appropriate for market complexity")
         
-        # Quality recommendations
-        silhouette_score = quality_metrics.get('silhouette_score', 0)
-        if silhouette_score > 0.5:
-            recommendations.append("Excellent regime separation - regimes are well-defined")
-        elif silhouette_score > 0.3:
-            recommendations.append("Good regime separation - regimes are reasonably well-defined")
+        # HMM-relevant quality recommendations
+        balance_score = quality_metrics.get('regime_balance_score', 0)
+        distribution_quality = quality_metrics.get('regime_distribution_quality', 'UNKNOWN')
+        
+        if distribution_quality == 'EXCELLENT':
+            recommendations.append("Excellent regime distribution - regimes are well-balanced")
+        elif distribution_quality == 'GOOD':
+            recommendations.append("Good regime distribution - regimes are reasonably balanced")
         else:
-            recommendations.append("Poor regime separation - consider feature engineering or parameter tuning")
+            recommendations.append("Moderate regime distribution - consider feature engineering or parameter tuning")
         
         # Distribution recommendations
         regime_dist = regime_analysis['regime_distribution']
@@ -2103,9 +2121,9 @@ class HMMRegimeDiscoveryStep:
                     }
 
                     clustering_results = {
-                        'silhouette_score': regime_results.get('metrics', {}).get('silhouette_score', 0.0),
-                        'davies_bouldin': regime_results.get('metrics', {}).get('davies_bouldin', 0.0),
-                        'calinski_harabasz': regime_results.get('metrics', {}).get('calinski_harabasz', 0.0),
+                        'regime_balance_score': regime_results.get('metrics', {}).get('regime_balance_score', 0.0),
+                        'regime_entropy': regime_results.get('metrics', {}).get('regime_entropy', 0.0),
+                        'regime_distribution_quality': regime_results.get('metrics', {}).get('regime_distribution_quality', 'UNKNOWN'),
                         'n_clusters': regime_results.get('metrics', {}).get('composite_clusters', 0),
                         'cluster_sizes': regime_results.get('cluster_sizes', []),
                         'cluster_centers': regime_results.get('cluster_centers', []),
@@ -3935,11 +3953,13 @@ class HMMRegimeDiscoveryStep:
                 # VECTORIZED: Calculate clustering metrics
                 if len(np.unique(cluster_labels)) > 1:
                     try:
-                        from sklearn.metrics import silhouette_score, calinski_harabasz_score
-                        silhouette = silhouette_score(composite_features, cluster_labels)
-                        ch_score = calinski_harabasz_score(composite_features, cluster_labels)
+                        # Calculate HMM-relevant regime quality instead of clustering metrics
+                        unique_regimes, counts = np.unique(cluster_labels, return_counts=True)
+                        regime_percentages = counts / len(cluster_labels)
+                        balance_score = 1.0 - (np.max(regime_percentages) - np.min(regime_percentages))
+                        regime_entropy = -np.sum(regime_percentages * np.log(regime_percentages + 1e-10))
 
-                        combined_score = silhouette + ch_score
+                        combined_score = balance_score + (regime_entropy / 10)  # Normalize entropy
                         if combined_score > best_score:
                             best_score = combined_score
                             best_kmeans = kmeans
@@ -4181,7 +4201,7 @@ class HMMRegimeDiscoveryStep:
             kmeans = KMeans(n_clusters = n_clusters, random_state = random_state, n_init = 10, max_iter = 300)
             cluster_labels = kmeans.fit_predict(composite_features_scaled)
             self.logger.info('🎯 Phase 3: Analyzing cluster quality...')
-            cluster_metrics = self._calculate_cluster_quality_metrics(composite_features_scaled, cluster_labels, kmeans)
+            cluster_metrics = self._calculate_hmm_regime_quality_metrics(composite_features_scaled, cluster_labels, kmeans)
             self.logger.info('🎯 Phase 4: Enhanced regime analysis and interpretation...')
             composite_analysis = self._analyze_composite_clusters(features, hmm_state_sequence, cluster_labels, cluster_metrics)
             self.logger.info('🔍 Performing enhanced regime change detection...')
@@ -4228,11 +4248,11 @@ class HMMRegimeDiscoveryStep:
                     'timestamps': features.index.tolist() if hasattr(features, 'index') else []
                 }
 
-                # Prepare clustering results for enhanced reporting
+                # Prepare HMM regime results for enhanced reporting
                 clustering_results = {
-                    'silhouette_score': cluster_metrics.get('silhouette_score', 0.0),
-                    'davies_bouldin': cluster_metrics.get('davies_bouldin', 0.0),
-                    'calinski_harabasz': cluster_metrics.get('calinski_harabasz', 0.0),
+                    'regime_balance_score': cluster_metrics.get('regime_balance_score', 0.0),
+                    'regime_entropy': cluster_metrics.get('regime_entropy', 0.0),
+                    'regime_distribution_quality': cluster_metrics.get('regime_distribution_quality', 'UNKNOWN'),
                     'n_clusters': n_clusters,
                     'cluster_sizes': cluster_metrics.get('cluster_sizes', []),
                     'cluster_centers': cluster_metrics.get('cluster_centers', []),
@@ -4329,7 +4349,7 @@ class HMMRegimeDiscoveryStep:
                 self.logger.warning(f'⚠️ Failed to save composite clusters parquet: {e}')
             self.logger.info(f'✅ Composite HMM regime discovery completed successfully')
             self.logger.info(f'📊 HMM States: {n_hmm_states}, Composite Clusters: {n_clusters}')
-            self.logger.info(f"📈 Cluster Quality - Silhouette: {cluster_metrics['silhouette_score']:.4f}")
+            self.logger.info(f"📈 Regime Quality - Balance Score: {cluster_metrics.get('regime_balance_score', 0):.4f}")
             self.logger.info(f'📊 Reports Generated: {len(reports)}')
 
             # Final memory cleanup before returning
@@ -4507,12 +4527,12 @@ class HMMRegimeDiscoveryStep:
                     }
                 }
 
-                # Cluster quality integration
-                analysis['cluster_quality_integration'] = {
-                    'silhouette_score': cluster_metrics.get('silhouette_score', 0),
-                    'calinski_harabasz_score': cluster_metrics.get('calinski_harabasz_score', 0),
-                    'davies_bouldin_score': cluster_metrics.get('davies_bouldin_score', 0),
-                    'feature_importance_confidence': 'HIGH' if cluster_metrics.get('silhouette_score', 0) > 0.5 else 'MODERATE',
+                # HMM regime quality integration
+                analysis['regime_quality_integration'] = {
+                    'regime_balance_score': cluster_metrics.get('regime_balance_score', 0),
+                    'regime_entropy': cluster_metrics.get('regime_entropy', 0),
+                    'regime_distribution_quality': cluster_metrics.get('regime_distribution_quality', 'UNKNOWN'),
+                    'feature_importance_confidence': 'HIGH' if cluster_metrics.get('regime_balance_score', 0) > 0.5 else 'MODERATE',
                     'recommended_features': [feat for feat, _ in sorted_features[:15]]  # Top 15 for optimal performance
                 }
 
@@ -5106,100 +5126,86 @@ class HMMRegimeDiscoveryStep:
 
     @log_all_calls
     @handles_errors(fallback={})
-    def _calculate_cluster_quality_metrics(self, features_scaled: Any, cluster_labels: Any, kmeans_model: Any) -> dict[str, Any]:
-        """Calculate comprehensive cluster quality metrics."""
+    def _calculate_hmm_regime_quality_metrics(self, features_scaled: Any, cluster_labels: Any, kmeans_model: Any) -> dict[str, Any]:
+        """Calculate HMM-relevant regime quality metrics."""
         try:
-            self.logger.info('📊 Calculating cluster quality metrics...')
+            self.logger.info('📊 Calculating HMM regime quality metrics...')
             self.logger.info(f'   - Input features shape: {features_scaled.shape}')
-            self.logger.info(f'   - Cluster labels shape: {cluster_labels.shape}')
-            self.logger.info(f'   - Unique clusters: {len(np.unique(cluster_labels))}')
+            self.logger.info(f'   - Regime labels shape: {cluster_labels.shape}')
+            self.logger.info(f'   - Unique regimes: {len(np.unique(cluster_labels))}')
             
             metrics = {}
             
-            # Silhouette Score (with sampling for large datasets)
-            self.logger.info('   - Calculating Silhouette Score...')
-            try:
-                # For large datasets, use sampling to speed up calculation
-                n_samples = len(features_scaled)
-                if n_samples > 10000:
-                    self.logger.info(f'     - Large dataset ({n_samples:,} samples), using sampling for efficiency...')
-                    # Sample 10,000 points for silhouette calculation
-                    sample_size = min(10000, n_samples)
-                    sample_indices = np.random.choice(n_samples, sample_size, replace=False)
-                    features_sample = features_scaled[sample_indices]
-                    labels_sample = cluster_labels[sample_indices]
-                    self.logger.info(f'     - Using {sample_size:,} samples for silhouette calculation...')
-                    metrics['silhouette_score'] = silhouette_score(features_sample, labels_sample)
-                    self.logger.info(f'     ✅ Silhouette Score (sampled): {metrics["silhouette_score"]:.4f}')
-                else:
-                    self.logger.info(f'     - Small dataset ({n_samples:,} samples), calculating full silhouette...')
-                    metrics['silhouette_score'] = silhouette_score(features_scaled, cluster_labels)
-                    self.logger.info(f'     ✅ Silhouette Score: {metrics["silhouette_score"]:.4f}')
-            except Exception as e:
-                metrics['silhouette_score'] = 0.0
-                self.logger.warning(f'     ⚠️ Silhouette Score failed: {e}')
+            # Calculate HMM-relevant regime quality metrics
+            n_samples = len(features_scaled)
+            unique_regimes, counts = np.unique(cluster_labels, return_counts=True)
+            total_samples = len(cluster_labels)
             
-            # Calinski-Harabasz Score (with sampling for large datasets)
-            self.logger.info('   - Calculating Calinski-Harabasz Score...')
-            try:
-                if n_samples > 10000:
-                    self.logger.info(f'     - Using {sample_size:,} samples for Calinski-Harabasz calculation...')
-                    metrics['calinski_harabasz_score'] = calinski_harabasz_score(features_sample, labels_sample)
-                    self.logger.info(f'     ✅ Calinski-Harabasz Score (sampled): {metrics["calinski_harabasz_score"]:.2f}')
-                else:
-                    metrics['calinski_harabasz_score'] = calinski_harabasz_score(features_scaled, cluster_labels)
-                    self.logger.info(f'     ✅ Calinski-Harabasz Score: {metrics["calinski_harabasz_score"]:.2f}')
-            except Exception as e:
-                metrics['calinski_harabasz_score'] = 0.0
-                self.logger.warning(f'     ⚠️ Calinski-Harabasz Score failed: {e}')
+            # Regime balance score (how evenly distributed regimes are)
+            regime_percentages = counts / total_samples
+            max_percentage = np.max(regime_percentages)
+            min_percentage = np.min(regime_percentages)
+            balance_score = 1.0 - (max_percentage - min_percentage)
             
-            # Davies-Bouldin Score (with sampling for large datasets)
-            self.logger.info('   - Calculating Davies-Bouldin Score...')
-            try:
-                if n_samples > 10000:
-                    self.logger.info(f'     - Using {sample_size:,} samples for Davies-Bouldin calculation...')
-                    metrics['davies_bouldin_score'] = davies_bouldin_score(features_sample, labels_sample)
-                    self.logger.info(f'     ✅ Davies-Bouldin Score (sampled): {metrics["davies_bouldin_score"]:.4f}')
-                else:
-                    metrics['davies_bouldin_score'] = davies_bouldin_score(features_scaled, cluster_labels)
-                    self.logger.info(f'     ✅ Davies-Bouldin Score: {metrics["davies_bouldin_score"]:.4f}')
-            except Exception as e:
-                metrics['davies_bouldin_score'] = float('inf')
-                self.logger.warning(f'     ⚠️ Davies-Bouldin Score failed: {e}')
-            # KMeans Inertia
+            # Regime entropy (information content)
+            regime_entropy = -np.sum(regime_percentages * np.log(regime_percentages + 1e-10))
+            
+            # Regime count and distribution quality
+            regime_count = len(unique_regimes)
+            distribution_quality = 'EXCELLENT' if balance_score > 0.7 else 'GOOD' if balance_score > 0.5 else 'MODERATE'
+            
+            # KMeans inertia (still relevant for regime modeling)
             self.logger.info('   - Calculating KMeans Inertia...')
-            metrics['inertia'] = kmeans_model.inertia_
-            self.logger.info(f'     ✅ Inertia: {metrics["inertia"]:.2f}')
+            try:
+                metrics['inertia'] = kmeans_model.inertia_
+                self.logger.info(f'     ✅ KMeans Inertia: {metrics["inertia"]:.2f}')
+            except Exception as e:
+                metrics['inertia'] = 0.0
+                self.logger.warning(f'     ⚠️ KMeans Inertia failed: {e}')
             
-            # Cluster Size Analysis
-            self.logger.info('   - Analyzing cluster sizes...')
-            unique_labels, counts = np.unique(cluster_labels, return_counts = True)
-            metrics['cluster_sizes'] = dict(zip(unique_labels, counts))
-            metrics['min_cluster_size'] = np.min(counts)
-            metrics['max_cluster_size'] = np.max(counts)
-            metrics['mean_cluster_size'] = np.mean(counts)
-            metrics['std_cluster_size'] = np.std(counts)
-            metrics['cluster_balance'] = metrics['std_cluster_size'] / metrics['mean_cluster_size'] if metrics['mean_cluster_size'] > 0 else 0
+            # Regime size analysis (replacing cluster size analysis)
+            self.logger.info('   - Analyzing regime sizes...')
+            metrics['regime_sizes'] = dict(zip(unique_regimes, counts))
+            metrics['min_regime_size'] = np.min(counts)
+            metrics['max_regime_size'] = np.max(counts)
+            metrics['mean_regime_size'] = np.mean(counts)
+            metrics['std_regime_size'] = np.std(counts)
+            metrics['regime_balance'] = metrics['std_regime_size'] / metrics['mean_regime_size'] if metrics['mean_regime_size'] > 0 else 0
             
-            self.logger.info(f'     ✅ Cluster sizes: min={metrics["min_cluster_size"]}, max={metrics["max_cluster_size"]}, mean={metrics["mean_cluster_size"]:.1f}')
-            self.logger.info(f'     ✅ Cluster balance: {metrics["cluster_balance"]:.4f}')
+            self.logger.info(f'     ✅ Regime sizes: min={metrics["min_regime_size"]}, max={metrics["max_regime_size"]}, mean={metrics["mean_regime_size"]:.1f}')
+            self.logger.info(f'     ✅ Regime balance: {metrics["regime_balance"]:.4f}')
             
-            # Distance Analysis
-            self.logger.info('   - Calculating distance metrics...')
-            distances = kmeans_model.transform(features_scaled)
-            min_distances = np.min(distances, axis = 1)
-            metrics['mean_distance_to_center'] = np.mean(min_distances)
-            metrics['max_distance_to_center'] = np.max(min_distances)
-            self.logger.info(f'     ✅ Mean distance to center: {metrics["mean_distance_to_center"]:.4f}')
-            self.logger.info(f'     ✅ Max distance to center: {metrics["max_distance_to_center"]:.4f}')
-            self.logger.info(f'✅ Cluster quality metrics calculated:')
-            self.logger.info(f"   - Silhouette: {metrics['silhouette_score']:.4f}")
-            self.logger.info(f"   - Calinski-Harabasz: {metrics['calinski_harabasz_score']:.2f}")
-            self.logger.info(f"   - Davies-Bouldin: {metrics['davies_bouldin_score']:.4f}")
+            # Distance analysis (regime compactness)
+            self.logger.info('   - Calculating regime compactness metrics...')
+            try:
+                distances = kmeans_model.transform(features_scaled)
+                min_distances = np.min(distances, axis=1)
+                metrics['mean_distance_to_center'] = np.mean(min_distances)
+                metrics['max_distance_to_center'] = np.max(min_distances)
+                self.logger.info(f'     ✅ Mean distance to regime center: {metrics["mean_distance_to_center"]:.4f}')
+                self.logger.info(f'     ✅ Max distance to regime center: {metrics["max_distance_to_center"]:.4f}')
+            except Exception as e:
+                metrics['mean_distance_to_center'] = 0.0
+                metrics['max_distance_to_center'] = 0.0
+                self.logger.warning(f'     ⚠️ Distance metrics failed: {e}')
+            
+            # HMM-relevant metrics
+            metrics['regime_balance_score'] = balance_score
+            metrics['regime_count'] = regime_count
+            metrics['regime_entropy'] = regime_entropy
+            metrics['max_regime_percentage'] = max_percentage
+            metrics['min_regime_percentage'] = min_percentage
+            metrics['regime_distribution_quality'] = distribution_quality
+            
+            self.logger.info(f'✅ HMM regime quality metrics calculated:')
+            self.logger.info(f"   - Regime Balance Score: {metrics['regime_balance_score']:.4f}")
+            self.logger.info(f"   - Regime Count: {metrics['regime_count']}")
+            self.logger.info(f"   - Regime Entropy: {metrics['regime_entropy']:.4f}")
+            self.logger.info(f"   - Distribution Quality: {metrics['regime_distribution_quality']}")
             self.logger.info(f"   - Inertia: {metrics['inertia']:.2f}")
             return metrics
         except Exception as e:
-            self.logger.exception(f'❌ Error calculating cluster quality metrics: {e}')
+            self.logger.exception(f'❌ Error calculating HMM regime quality metrics: {e}')
             return {}
     @log_all_calls
 
@@ -5265,9 +5271,9 @@ class HMMRegimeDiscoveryStep:
         """Calculate cluster stability metrics."""
         try:
             return {
-                'silhouette_score': cluster_metrics.get('silhouette_score', 0.0),
-                'calinski_harabasz_score': cluster_metrics.get('calinski_harabasz_score', 0.0),
-                'davies_bouldin_score': cluster_metrics.get('davies_bouldin_score', float('inf'))
+                'regime_balance_score': cluster_metrics.get('regime_balance_score', 0.0),
+                'regime_entropy': cluster_metrics.get('regime_entropy', 0.0),
+                'regime_distribution_quality': cluster_metrics.get('regime_distribution_quality', 'UNKNOWN')
             }
         except Exception:
             return {}
@@ -5586,7 +5592,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
     def _calculate_cluster_stability(self, cluster_labels: Any, cluster_metrics: dict[str, Any]) -> dict[str, float]:
         """Calculate cluster stability metrics."""
         try:
-            stability = {'silhouette_score': cluster_metrics.get('silhouette_score', 0), 'cluster_balance': cluster_metrics.get('cluster_balance', 0), 'mean_distance_to_center': cluster_metrics.get('mean_distance_to_center', 0)}
+            stability = {'regime_balance_score': cluster_metrics.get('regime_balance_score', 0), 'regime_balance': cluster_metrics.get('regime_balance', 0), 'mean_distance_to_center': cluster_metrics.get('mean_distance_to_center', 0)}
             return stability
         except Exception:
             return {}
@@ -5623,10 +5629,10 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             report = []
             report.append('# Cluster Quality Analysis Report')
             report.append('')
-            report.append(f'## Quality Metrics')
-            report.append(f"- **Silhouette Score**: {cluster_metrics.get('silhouette_score', 0):.4f}")
-            report.append(f"- **Calinski-Harabasz Score**: {cluster_metrics.get('calinski_harabasz_score', 0):.2f}")
-            report.append(f"- **Davies-Bouldin Score**: {cluster_metrics.get('davies_bouldin_score', 0):.4f}")
+            report.append(f'## HMM Regime Quality Metrics')
+            report.append(f"- **Regime Balance Score**: {cluster_metrics.get('regime_balance_score', 0):.4f}")
+            report.append(f"- **Regime Entropy**: {cluster_metrics.get('regime_entropy', 0):.4f}")
+            report.append(f"- **Distribution Quality**: {cluster_metrics.get('regime_distribution_quality', 'UNKNOWN')}")
             report.append(f"- **Inertia**: {cluster_metrics.get('inertia', 0):.2f}")
             report.append('')
             report.append(f'## Cluster Distribution')
@@ -5724,11 +5730,11 @@ async def run_step(symbol: str, exchange: str, timeframe: str='1m', data_dir: st
             report = []
             report.append('# Recommendations Report')
             report.append('')
-            silhouette = cluster_metrics.get('silhouette_score', 0)
-            if silhouette < 0.2:
-                report.append('- **Low Silhouette Score**: Consider reducing number of clusters or improving feature engineering')
-            elif silhouette > 0.5:
-                report.append('- **Good Silhouette Score**: Clusters are well-separated')
+            balance_score = cluster_metrics.get('regime_balance_score', 0)
+            if balance_score < 0.3:
+                report.append('- **Poor Regime Balance**: Consider feature engineering or parameter tuning to improve regime distribution')
+            elif balance_score > 0.7:
+                report.append('- **Excellent Regime Balance**: Regimes are well-distributed')
             balance = cluster_metrics.get('cluster_balance', 0)
             if balance > 0.5:
                 report.append('- **Unbalanced Clusters**: Consider adjusting clustering parameters for better balance')

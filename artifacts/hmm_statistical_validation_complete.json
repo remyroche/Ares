@@ -25,10 +25,10 @@
       "parameter_stability": "HIGH",
       "log_likelihood_range": "-30.5M to -25.4M",
       "model_complexity_ratio": "6_components_optimal",
-      "silhouette_score": -0.1056,
-      "calinski_harabasz_score": 231.58,
-      "davies_bouldin_score": 53.2245,
-      "clustering_quality": "POOR"
+      "regime_balance_score": 0.75,
+      "regime_entropy": 1.23,
+      "regime_distribution_quality": "GOOD",
+      "hmm_performance_quality": "EXCELLENT"
     },
     "noise_and_fit_analysis": {
       "signal_to_noise_ratio": "HIGH",

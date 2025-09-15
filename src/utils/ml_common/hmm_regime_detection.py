@@ -72,7 +72,7 @@ try:
     from sklearn.mixture import GaussianMixture
     from sklearn.cluster import KMeans
     from sklearn.preprocessing import StandardScaler
-    from sklearn.metrics import silhouette_score, calinski_harabasz_score
+    # Note: Removed silhouette_score and calinski_harabasz_score as they're not relevant for HMMs
     from hmmlearn import hmm
     HMM_AVAILABLE = True
 except ImportError:

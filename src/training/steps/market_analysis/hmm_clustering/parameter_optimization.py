@@ -31,7 +31,8 @@ except ImportError:
 # Sklearn imports
 try:
     from sklearn.model_selection import cross_val_score, ParameterGrid
-    from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+    # Note: Removed silhouette_score, calinski_harabasz_score, davies_bouldin_score 
+    # as these traditional clustering metrics are not relevant for HMMs
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False

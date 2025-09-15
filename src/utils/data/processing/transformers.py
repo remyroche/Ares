@@ -16,10 +16,19 @@ import time
 
 class DataStreamingManager:
     """Manages data streaming and chunking for large datasets."""
+    
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, chunk_size: int = 10000, memory_threshold: float = 0.8, overlap_size: int = 100, enable_compression: bool = True):
+        """Singleton pattern implementation."""
+        if cls._instance is None:
+            cls._instance = super(DataStreamingManager, cls).__new__(cls)
+        return cls._instance
 
     def __init__(self, chunk_size: int = 10000, memory_threshold: float = 0.8, overlap_size: int = 100, enable_compression: bool = True) -> None:
         """
-        Initialize data streaming manager.
+        Initialize data streaming manager (only once due to singleton).
         
         Args:
             chunk_size: Number of rows per chunk
@@ -27,6 +36,9 @@ class DataStreamingManager:
             overlap_size: Number of overlapping rows between chunks
             enable_compression: Enable data compression for storage
         """
+        if self._initialized:
+            return
+            
         self.logger = system_logger.getChild('DataStreamingManager')
         self.chunk_size = chunk_size
         self.memory_threshold = memory_threshold
@@ -34,7 +46,8 @@ class DataStreamingManager:
         self.enable_compression = enable_compression
         self.standards = PipelineStandards(self.logger)
         self.performance_metrics = {'chunks_processed': 0, 'total_rows_processed': 0, 'memory_usage_peak': 0.0, 'processing_time_total': 0.0, 'compression_ratio': 0.0}
-        self.logger.info(f'🚀 DataStreamingManager initialized: chunk_size={chunk_size}, memory_threshold={memory_threshold}')
+        self.logger.info(f'🚀 DataStreamingManager initialized (singleton): chunk_size={chunk_size}, memory_threshold={memory_threshold}')
+        self._initialized = True
 
     def get_memory_usage(self) -> float:
         """Get current memory usage as percentage."""

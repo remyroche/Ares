@@ -142,17 +142,19 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self._handle_initialization_error(e)
             raise
     
-    def _start_phase(self, phase: TrainingPhase) -> None:
-        """Start tracking a training phase."""
+    def _start_phase(self, phase: TrainingPhase, context: Optional[Dict[str, Any]] = None) -> None:
+        """Start tracking a training phase with structured logging."""
         self.training_metrics[phase] = TrainingMetrics(
             phase=phase,
             start_time=time.time()
         )
-        self.logger.info(f"🔄 Starting phase: {phase.value}")
+        
+        # Log phase start with structured format
+        self._log_phase_start(phase, context)
     
     def _complete_phase(self, phase: TrainingPhase, success: bool = True, 
                        error_message: Optional[str] = None, **kwargs) -> None:
-        """Complete a training phase with metrics."""
+        """Complete a training phase with metrics and structured logging."""
         if phase in self.training_metrics:
             metrics = self.training_metrics[phase]
             metrics.end_time = time.time()
@@ -165,11 +167,28 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     setattr(metrics, key, value)
             
             duration = metrics.duration
-            status = "✅" if success else "❌"
-            self.logger.info(f"{status} Completed phase: {phase.value} in {duration:.2f}s")
+            
+            # Prepare metrics for structured logging
+            phase_metrics = {
+                'duration': duration,
+                'samples_processed': metrics.samples_processed,
+                'features_count': metrics.features_count,
+                'models_trained': metrics.models_trained,
+                'warnings_issued': metrics.warnings_issued,
+                'errors_encountered': metrics.errors_encountered,
+                'memory_usage_mb': metrics.memory_usage_mb
+            }
+            
+            # Log phase completion with structured format
+            self._log_phase_complete(phase, success, duration, phase_metrics)
             
             if not success and error_message:
-                self.logger.error(f"❌ Phase {phase.value} failed: {error_message}")
+                self._log_structured_event(
+                    event_type="phase_error",
+                    phase=phase.value,
+                    message=f"Phase failed: {error_message}",
+                    level="error"
+                )
     
     def _validate_configuration(self, config: PerRegimeTrainingConfig) -> None:
         """Validate training configuration."""
@@ -239,66 +258,24 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 validation_results['errors'].append(error_msg)
                 validation_results['is_valid'] = False
             
-            # Data quality analysis
+            # Data quality analysis using utility functions
             data_quality = {}
             
-            # Check for NaN values with detailed analysis
-            x_nan_count = np.sum(np.isnan(X))
-            y_nan_count = np.sum(np.isnan(y))
+            # Validate features quality
+            feature_quality = self._validate_data_quality(X, "features", max_nan_percentage=10.0, max_inf_percentage=1.0)
+            data_quality['features'] = feature_quality
+            validation_results['warnings'].extend(feature_quality['warnings'])
+            validation_results['errors'].extend(feature_quality['errors'])
+            if not feature_quality['is_valid']:
+                validation_results['is_valid'] = False
             
-            if x_nan_count > 0:
-                nan_percentage = (x_nan_count / X.size) * 100
-                warning_msg = f"Found {x_nan_count} NaN values in features ({nan_percentage:.2f}%)"
-                validation_results['warnings'].append(warning_msg)
-                data_quality['feature_nan_count'] = x_nan_count
-                data_quality['feature_nan_percentage'] = nan_percentage
-                
-                # Check if NaN percentage is critical
-                if nan_percentage > 10:
-                    error_msg = f"Critical: {nan_percentage:.2f}% of features are NaN"
-                    validation_results['errors'].append(error_msg)
-                    validation_results['is_valid'] = False
-            
-            if y_nan_count > 0:
-                nan_percentage = (y_nan_count / y.size) * 100
-                warning_msg = f"Found {y_nan_count} NaN values in targets ({nan_percentage:.2f}%)"
-                validation_results['warnings'].append(warning_msg)
-                data_quality['target_nan_count'] = y_nan_count
-                data_quality['target_nan_percentage'] = nan_percentage
-                
-                # Check if NaN percentage is critical
-                if nan_percentage > 5:
-                    error_msg = f"Critical: {nan_percentage:.2f}% of targets are NaN"
-                    validation_results['errors'].append(error_msg)
-                    validation_results['is_valid'] = False
-            
-            # Check for infinite values with detailed analysis
-            x_inf_count = np.sum(np.isinf(X))
-            y_inf_count = np.sum(np.isinf(y))
-            
-            if x_inf_count > 0:
-                inf_percentage = (x_inf_count / X.size) * 100
-                warning_msg = f"Found {x_inf_count} infinite values in features ({inf_percentage:.2f}%)"
-                validation_results['warnings'].append(warning_msg)
-                data_quality['feature_inf_count'] = x_inf_count
-                data_quality['feature_inf_percentage'] = inf_percentage
-                
-                if inf_percentage > 1:
-                    error_msg = f"Critical: {inf_percentage:.2f}% of features are infinite"
-                    validation_results['errors'].append(error_msg)
-                    validation_results['is_valid'] = False
-            
-            if y_inf_count > 0:
-                inf_percentage = (y_inf_count / y.size) * 100
-                warning_msg = f"Found {y_inf_count} infinite values in targets ({inf_percentage:.2f}%)"
-                validation_results['warnings'].append(warning_msg)
-                data_quality['target_inf_count'] = y_inf_count
-                data_quality['target_inf_percentage'] = inf_percentage
-                
-                if inf_percentage > 1:
-                    error_msg = f"Critical: {inf_percentage:.2f}% of targets are infinite"
-                    validation_results['errors'].append(error_msg)
-                    validation_results['is_valid'] = False
+            # Validate targets quality (stricter thresholds)
+            target_quality = self._validate_data_quality(y, "targets", max_nan_percentage=5.0, max_inf_percentage=1.0)
+            data_quality['targets'] = target_quality
+            validation_results['warnings'].extend(target_quality['warnings'])
+            validation_results['errors'].extend(target_quality['errors'])
+            if not target_quality['is_valid']:
+                validation_results['is_valid'] = False
             
             # Regime distribution analysis
             unique_regimes = np.unique(regime_labels)
@@ -441,6 +418,186 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             validation_results['errors'].append(str(e))
             return validation_results
     
+    def _comprehensive_validation_check(self, 
+                                      X: np.ndarray, 
+                                      y: np.ndarray, 
+                                      regime_labels: np.ndarray,
+                                      phase_name: str,
+                                      additional_arrays: Optional[Dict[str, np.ndarray]] = None) -> Dict[str, Any]:
+        """Comprehensive validation check for any phase of training."""
+        validation_summary = {
+            'phase': phase_name,
+            'is_valid': True,
+            'warnings': [],
+            'errors': [],
+            'metrics': {},
+            'recommendations': []
+        }
+        
+        try:
+            # Basic shape validation
+            arrays_to_validate = {
+                'features': X,
+                'targets': y,
+                'regime_labels': regime_labels
+            }
+            
+            if additional_arrays:
+                arrays_to_validate.update(additional_arrays)
+            
+            shape_validation = self._validate_array_shapes(arrays_to_validate, X.shape[0])
+            if not shape_validation['is_valid']:
+                validation_summary['errors'].extend(shape_validation['errors'])
+                validation_summary['is_valid'] = False
+            
+            # Data quality validation
+            feature_quality = self._validate_data_quality(X, f"{phase_name}_features", max_nan_percentage=10.0, max_inf_percentage=1.0)
+            target_quality = self._validate_data_quality(y, f"{phase_name}_targets", max_nan_percentage=5.0, max_inf_percentage=1.0)
+            
+            validation_summary['warnings'].extend(feature_quality['warnings'])
+            validation_summary['warnings'].extend(target_quality['warnings'])
+            validation_summary['errors'].extend(feature_quality['errors'])
+            validation_summary['errors'].extend(target_quality['errors'])
+            
+            if not feature_quality['is_valid'] or not target_quality['is_valid']:
+                validation_summary['is_valid'] = False
+            
+            # Regime analysis
+            unique_regimes = np.unique(regime_labels)
+            regime_counts = np.bincount(regime_labels)
+            min_regime_size = np.min(regime_counts)
+            max_regime_size = np.max(regime_counts)
+            regime_balance = min_regime_size / max_regime_size if max_regime_size > 0 else 0
+            
+            validation_summary['metrics'] = {
+                'samples': X.shape[0],
+                'features': X.shape[1],
+                'regimes': len(unique_regimes),
+                'min_regime_size': min_regime_size,
+                'max_regime_size': max_regime_size,
+                'regime_balance': regime_balance,
+                'feature_nan_percentage': feature_quality['nan_percentage'],
+                'target_nan_percentage': target_quality['nan_percentage']
+            }
+            
+            # Generate recommendations
+            if regime_balance < 0.1:
+                validation_summary['recommendations'].append("Very low regime balance - consider data augmentation")
+            
+            if feature_quality['nan_percentage'] > 5:
+                validation_summary['recommendations'].append("High NaN percentage in features - consider imputation")
+            
+            if target_quality['nan_percentage'] > 2:
+                validation_summary['recommendations'].append("High NaN percentage in targets - review data pipeline")
+            
+            if min_regime_size < self.config.min_samples_per_regime:
+                validation_summary['recommendations'].append("Some regimes have insufficient samples - consider reducing min_samples_per_regime")
+            
+            # Log validation results
+            if validation_summary['is_valid']:
+                self.logger.info(f"✅ {phase_name} validation passed")
+            else:
+                self.logger.error(f"❌ {phase_name} validation failed")
+                for error in validation_summary['errors']:
+                    self.logger.error(f"❌ {error}")
+            
+            if validation_summary['warnings']:
+                for warning in validation_summary['warnings']:
+                    self.logger.warning(f"⚠️ {warning}")
+            
+            if validation_summary['recommendations']:
+                for recommendation in validation_summary['recommendations']:
+                    self.logger.info(f"💡 {recommendation}")
+            
+            return validation_summary
+            
+        except Exception as e:
+            validation_summary['is_valid'] = False
+            validation_summary['errors'].append(f"Validation check failed: {e}")
+            self.logger.error(f"❌ {phase_name} validation check failed: {e}")
+            return validation_summary
+    
+    def _log_structured_event(self, event_type: str, phase: str, message: str, 
+                             metrics: Optional[Dict[str, Any]] = None, 
+                             level: str = "info") -> None:
+        """Log structured events with consistent formatting."""
+        try:
+            log_data = {
+                'event_type': event_type,
+                'phase': phase,
+                'message': message,
+                'timestamp': time.time(),
+                'memory_mb': self._get_memory_usage()
+            }
+            
+            if metrics:
+                log_data['metrics'] = metrics
+            
+            # Format structured log message
+            structured_msg = f"[{event_type.upper()}] {phase}: {message}"
+            if metrics:
+                structured_msg += f" | Metrics: {metrics}"
+            
+            # Log with appropriate level
+            if level == "error":
+                self.logger.error(structured_msg)
+            elif level == "warning":
+                self.logger.warning(structured_msg)
+            elif level == "debug":
+                self.logger.debug(structured_msg)
+            else:
+                self.logger.info(structured_msg)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to log structured event: {e}")
+    
+    def _log_phase_start(self, phase: TrainingPhase, context: Optional[Dict[str, Any]] = None) -> None:
+        """Log phase start with context."""
+        self._log_structured_event(
+            event_type="phase_start",
+            phase=phase.value,
+            message=f"Starting {phase.value} phase",
+            metrics=context,
+            level="info"
+        )
+    
+    def _log_phase_complete(self, phase: TrainingPhase, success: bool, 
+                           duration: float, metrics: Optional[Dict[str, Any]] = None) -> None:
+        """Log phase completion with results."""
+        event_type = "phase_success" if success else "phase_failure"
+        message = f"Completed {phase.value} phase in {duration:.2f}s"
+        
+        if not success:
+            message += " (FAILED)"
+        
+        self._log_structured_event(
+            event_type=event_type,
+            phase=phase.value,
+            message=message,
+            metrics=metrics,
+            level="error" if not success else "info"
+        )
+    
+    def _log_data_quality_issue(self, issue_type: str, details: Dict[str, Any]) -> None:
+        """Log data quality issues with structured format."""
+        self._log_structured_event(
+            event_type="data_quality_issue",
+            phase="validation",
+            message=f"Data quality issue: {issue_type}",
+            metrics=details,
+            level="warning"
+        )
+    
+    def _log_performance_metric(self, metric_name: str, value: float, unit: str = "") -> None:
+        """Log performance metrics with structured format."""
+        self._log_structured_event(
+            event_type="performance_metric",
+            phase="training",
+            message=f"Performance metric: {metric_name}",
+            metrics={metric_name: f"{value:.2f}{unit}"},
+            level="info"
+        )
+    
     def execute(
         self,
         X: np.ndarray,
@@ -475,9 +632,25 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.overall_start_time = time.time()
             
             # Phase 1: Data Validation
-            self._start_phase(TrainingPhase.DATA_VALIDATION)
+            validation_context = {
+                'samples': X.shape[0],
+                'features': X.shape[1],
+                'regimes': len(np.unique(regime_labels))
+            }
+            self._start_phase(TrainingPhase.DATA_VALIDATION, validation_context)
+            
             try:
                 validation_results = self._validate_input_data(X, y, regime_labels)
+                
+                # Log data quality issues if any
+                if validation_results.get('warnings'):
+                    for warning in validation_results['warnings']:
+                        self._log_data_quality_issue("warning", {'message': warning})
+                
+                if validation_results.get('errors'):
+                    for error in validation_results['errors']:
+                        self._log_data_quality_issue("error", {'message': error})
+                
                 self._complete_phase(TrainingPhase.DATA_VALIDATION, success=True, 
                                    samples_processed=X.shape[0], features_count=X.shape[1],
                                    warnings_issued=len(validation_results.get('warnings', [])),
@@ -487,13 +660,31 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 raise
             
             # Phase 2: Feature Preparation
-            self._start_phase(TrainingPhase.FEATURE_PREPARATION)
+            feature_context = {
+                'original_samples': X.shape[0],
+                'original_features': X.shape[1],
+                'has_analyst_signals': analyst_signals is not None,
+                'has_hmm_features': hmm_regime_features is not None,
+                'has_analyst_models': all_analyst_models_outputs is not None
+            }
+            self._start_phase(TrainingPhase.FEATURE_PREPARATION, feature_context)
+            
             try:
                 X, y, regime_labels, feature_names, preparation_metrics = self._prepare_features(
                     X, y, regime_labels, feature_names, hmm_states, 
                     analyst_signals, analyst_model_outputs, hmm_regime_features, 
                     all_analyst_models_outputs
                 )
+                
+                # Log feature preparation metrics
+                if preparation_metrics.get('green_light_filtering'):
+                    gl_filtering = preparation_metrics['green_light_filtering']
+                    self._log_performance_metric(
+                        "green_light_rate", 
+                        gl_filtering.get('green_light_rate', 0) * 100, 
+                        "%"
+                    )
+                
                 self._complete_phase(TrainingPhase.FEATURE_PREPARATION, success=True,
                                    samples_processed=X.shape[0], features_count=X.shape[1],
                                    warnings_issued=len(preparation_metrics.get('warnings', [])),

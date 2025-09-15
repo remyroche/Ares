@@ -6,7 +6,6 @@ for trained ML models in the trading pipeline with enhanced error detection,
 monitoring, and reporting capabilities.
 """
 
-import asyncio
 import pandas as pd
 import numpy as np
 from typing import Any, Dict, List, Optional
@@ -18,7 +17,7 @@ from collections import defaultdict
 import traceback
 
 from src.utils.logger import get_system_logger
-from src.utils.ml_training_safeguards import MLTrainingSafeguards, ErrorRecord, ErrorSeverity
+from src.utils.ml_training_safeguards import MLTrainingSafeguards
 
 logger = get_system_logger().getChild('ModelValidation')
 
@@ -36,8 +35,6 @@ class ModelValidationStep:
         # Enhanced error detection and monitoring
         self.safeguards = MLTrainingSafeguards(self.config.get('safeguards', {}))
         self.validation_history = []
-        self.error_summary = defaultdict(int)
-        self.performance_tracking = {}
         
         # Validation configuration
         self.validation_thresholds = self.config.get('validation_thresholds', {
@@ -180,8 +177,7 @@ class ModelValidationStep:
                     'average_metrics': dict(avg_metrics)
                 },
                 'error_summary': error_summary,
-                'recent_validations': recent_validations,
-                'performance_tracking': self.performance_tracking
+                'recent_validations': recent_validations
             }
             
         except Exception as e:

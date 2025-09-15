@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, Optional, Any
 """Enhanced core training manager with comprehensive monitoring and error detection.
 
 This module provides the main training manager that coordinates
@@ -9,11 +9,9 @@ from typing import Any, Dict, Optional
 from ..simplified_training_manager import SimplifiedTrainingManager
 from src.utils.logger import system_logger
 from src.core.decorators.errors import handles_errors
-from src.utils.ml_training_safeguards import MLTrainingSafeguards, ErrorRecord, ErrorSeverity
+from src.utils.ml_training_safeguards import MLTrainingSafeguards
 import logging
-import time
 from datetime import datetime
-from collections import defaultdict
 
 class TrainingManager:
     """Enhanced main training manager for the ML pipeline with comprehensive monitoring.
@@ -36,8 +34,6 @@ class TrainingManager:
         # Enhanced monitoring and error detection
         self.safeguards = MLTrainingSafeguards(config.get('safeguards', {}))
         self.training_history = []
-        self.error_summary = defaultdict(int)
-        self.performance_metrics = {}
         
         # Execution tracking
         self.is_initialized = False
@@ -140,8 +136,7 @@ class TrainingManager:
                     'current_execution': self.current_execution
                 },
                 'error_summary': error_summary,
-                'recent_executions': self.training_history[-10:] if self.training_history else [],
-                'performance_metrics': self.performance_metrics
+                'recent_executions': self.training_history[-10:] if self.training_history else []
             }
             
         except Exception as e:

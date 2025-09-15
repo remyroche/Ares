@@ -27,12 +27,9 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from datetime import datetime
 import logging
-from functools import partial
 from concurrent.futures import ThreadPoolExecutor
-import warnings
 import time
 
-from ..math_validation import safe_divide, safe_log
 from ..common_operations import create_fallback_logger
 from src.utils.hardware.m1_optimizations import M1MemoryOptimizer
 from src.utils.parallel_processing_optimizer import ParallelProcessor
@@ -123,8 +120,6 @@ class HyperparameterOptimization:
         self.optimization_history = []
         self.active_studies = {}
         self.trial_results = {}
-        self.convergence_tracking = {}
-        self.failure_tracking = {}
 
         # Default search spaces for common models
         _LOGGER.debug("🔧 Initializing default search spaces...")
@@ -151,8 +146,6 @@ class HyperparameterOptimization:
             
             self.active_studies[study_id] = study_info
             self.trial_results[study_id] = []
-            self.convergence_tracking[study_id] = []
-            self.failure_tracking[study_id] = []
             
             _LOGGER.info(f"🚀 Started monitoring HPO study: {study_name} ({study_id})")
             return study_info

@@ -19,12 +19,11 @@ Key Features:
 import logging
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict, deque
 import traceback
 import threading
-import time
 import json
 from pathlib import Path
 from enum import Enum
@@ -125,8 +124,6 @@ class MLTrainingSafeguards:
         })
         
         # Monitoring state
-        self.monitoring_active = False
-        self.monitor_thread = None
         self.lock = threading.Lock()
         
         # Error classification rules
@@ -562,8 +559,7 @@ class MLTrainingSafeguards:
                 'category_distribution': dict(category_counts),
                 'component_distribution': dict(component_counts),
                 'most_frequent_errors': most_frequent,
-                'unresolved_errors': sum(1 for err in self.error_history if not err.resolved),
-                'monitoring_active': self.monitoring_active
+                'unresolved_errors': sum(1 for err in self.error_history if not err.resolved)
             }
 
     @staticmethod

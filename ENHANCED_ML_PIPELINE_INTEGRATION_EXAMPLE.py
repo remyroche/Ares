@@ -21,7 +21,7 @@ import pandas as pd
 import numpy as np
 
 # Import enhanced components
-from src.utils.ml_training_safeguards import MLTrainingSafeguards, ErrorSeverity, ErrorCategory
+from src.utils.ml_training_safeguards import MLTrainingSafeguards
 from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
 from src.training.model_interpretability.interpretability_reporter import InterpretabilityReporter
 from src.training.core.training_manager import TrainingManager
@@ -48,7 +48,6 @@ class EnhancedMLPipelineExample:
         
         # Pipeline state
         self.pipeline_id = f"enhanced_pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.execution_metrics = {}
         
         self.logger.info(f"🚀 Enhanced ML Pipeline Example initialized with ID: {self.pipeline_id}")
 

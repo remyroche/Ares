@@ -10,6 +10,7 @@ including SHAP and LIME analysis outputs.
 """
 
 from pathlib import Path
+import numpy as np
 
 from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
@@ -17,6 +18,7 @@ from src.utils.common_operations import (
     timed_operation, format_bytes, safe_log_metric, safe_log_params
 )
 from src.utils.logger import system_logger
+from src.core.decorators import validates, log_call, traced
 
 class InterpretabilityReporter:
     """Enhanced reporter for model interpretability results with comprehensive monitoring."""

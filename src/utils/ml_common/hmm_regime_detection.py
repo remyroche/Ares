@@ -117,9 +117,9 @@ class HMMRegimeConfig:
     economic_significance_threshold: float = 0.05
     
     # Mode-based regime limits
-    light_mode_max_regimes: int = 3
+    light_mode_max_regimes: int = 2
     blank_mode_max_regimes: int = 5
-    full_mode_max_regimes: int = 50
+    full_mode_max_regimes: int = 150
     
     def get_max_regimes_for_mode(self, mode: str) -> int:
         """Get the maximum number of regimes allowed for a given mode."""
@@ -329,7 +329,7 @@ class EnhancedHMMRegimeDetector:
         if mode:
             max_regimes = config.get_max_regimes_for_mode(mode)
             if config.n_components > max_regimes:
-                self.logger.info(f"🔧 Limiting n_components from {config.n_components} to {max_regimes} for {mode} mode")
+                self.logger.info(f"🔧 Limiting n_components from {config.n_components} to {max_regimes} for {mode} mode (range: 2-150)")
                 config.n_components = max_regimes
         
         try:

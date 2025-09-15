@@ -64,9 +64,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 economic_significance_threshold=0.05,
                 
                 # Mode-based regime limits
-                light_mode_max_regimes=3,
+                light_mode_max_regimes=2,
                 blank_mode_max_regimes=5,
-                full_mode_max_regimes=50
+                full_mode_max_regimes=150
             )
             
             # Create HMM regime detector
@@ -74,6 +74,7 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             
             # Determine optimization mode from config or default to 'blank'
             optimization_mode = getattr(self.config, 'optimization_mode', 'blank')
+            self.logger.info(f'🔧 HMM Regime Discovery mode: {optimization_mode} (range: 2-150 regimes)')
             
             # Perform regime discovery
             regime_result = await self._perform_regime_discovery(
@@ -106,12 +107,18 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         'exchange': self.config.exchange,
                         'timeframe': self.config.timeframe,
                         'data_points': len(market_data) if market_data is not None else 0,
-                        'execution_timestamp': datetime.now().isoformat()
+                        'execution_timestamp': datetime.now().isoformat(),
+                        'regime_limits': {
+                            'light_mode_max': 2,
+                            'blank_mode_max': 5,
+                            'full_mode_max': 150,
+                            'current_mode': optimization_mode
+                        }
                     }
                 }
             }
             
-            self.logger.info(f'✅ HMM Regime Discovery completed: {len(regime_models)} regimes discovered')
+            self.logger.info(f'✅ HMM Regime Discovery completed: {len(regime_models)} regimes discovered (range: 2-150)')
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -120,7 +127,9 @@ class HMMRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'exchange': self.config.exchange,
                     'timeframe': self.config.timeframe,
                     'data_points': len(market_data),
-                    'regime_count': len(regime_models)
+                    'regime_count': len(regime_models),
+                    'regime_range': '2-150',
+                    'optimization_mode': optimization_mode
                 }
             )
             

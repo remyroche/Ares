@@ -98,6 +98,9 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             if not hmm_regime_discovery:
                 raise ValueError("No HMM regime discovery results available for clustering")
             
+            input_regimes = len(hmm_regime_discovery.get('regime_models', []))
+            self.logger.info(f'🔧 HMM Clustering: Processing {input_regimes} regimes → 3 clusters (Bull/Bear/Sideways)')
+            
             # Configure HMM clustering
             clustering_config = {
                 'n_clusters': 3,  # Bull, Bear, Sideways
@@ -107,7 +110,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                 'max_iterations': 100,
                 
                 # Regime constraints
-                'max_regimes': 25,  # Maximum 25 regimes allowed
+                'max_regimes': 25,  # Maximum 25 clusters allowed (regimes are clustered into fewer groups)
                 'min_regime_sample_percentage': 0.01,  # 1% minimum sample threshold
                 
                 # Hardware optimization
@@ -158,19 +161,30 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                         'cluster_distribution': self._calculate_cluster_distribution(cluster_assignments),
                         'clustering_time': clustering_result.get('clustering_time', 0.0),
                         'quality_score': quality_metrics.get('overall_quality_score', 0.0),
-                        'validation_passed': quality_metrics.get('validation_passed', False)
+                        'validation_passed': quality_metrics.get('validation_passed', False),
+                        'regime_reduction': {
+                            'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
+                            'output_clusters': len(hmm_models),
+                            'reduction_ratio': len(hmm_models) / max(1, len(hmm_regime_discovery.get('regime_models', [])))
+                        }
                     },
                     'metadata': {
                         'symbol': self.config.symbol,
                         'exchange': self.config.exchange,
                         'timeframe': self.config.timeframe,
                         'data_points': len(market_data) if market_data is not None else 0,
-                        'execution_timestamp': datetime.now().isoformat()
+                        'execution_timestamp': datetime.now().isoformat(),
+                        'clustering_info': {
+                            'input_regimes': len(hmm_regime_discovery.get('regime_models', [])),
+                            'output_clusters': len(hmm_models),
+                            'max_regimes_supported': 150,
+                            'max_clusters_allowed': 25
+                        }
                     }
                 }
             }
             
-            self.logger.info(f'✅ HMM Clustering completed: {len(hmm_models)} clusters created')
+            self.logger.info(f'✅ HMM Clustering completed: {len(hmm_models)} clusters created (from up to 150 regimes)')
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -178,7 +192,8 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
                     'symbol': self.config.symbol,
                     'exchange': self.config.exchange,
                     'timeframe': self.config.timeframe,
-                    'cluster_count': len(hmm_models)
+                    'cluster_count': len(hmm_models),
+                    'regime_to_cluster_reduction': f"{len(hmm_regime_discovery.get('regime_models', []))} → {len(hmm_models)}"
                 }
             )
             
@@ -403,6 +418,7 @@ class HMMClusteringComponent(BaseMarketAnalysisComponent):
             
             self.logger.info(f"✅ Cluster quality validation completed in {validation_time:.2f}s")
             self.logger.info(f"📊 Overall quality score: {overall_score:.2f} ({'PASSED' if quality_metrics['validation_passed'] else 'FAILED'})")
+            self.logger.info(f"📈 Regime range: 2-150 → Clusters: {len(hmm_models)}")
             
             return quality_metrics
             

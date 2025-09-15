@@ -433,121 +433,270 @@ class MACDHistogramGenerator(FeatureGenerator):
         return histogram
 
 class StochasticGenerator(FeatureGenerator):
-    """Generator for Stochastic Oscillator."""
+    """Generator for Stochastic Oscillator with different base calculations."""
     
-    def __init__(self, k_period: int = 14, d_period: int = 3):
-        """Initialize Stochastic generator."""
+    def __init__(self, 
+                 k_period: int = 14, 
+                 d_period: int = 3,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 **base_kwargs):
+        """
+        Initialize Stochastic generator.
+        
+        Args:
+            k_period: %K period
+            d_period: %D period
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"stochastic_k_{k_period}_d_{d_period}",
+            name=f"stochastic_k_{k_period}_d_{d_period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Stochastic Oscillator with K={k_period}, D={d_period}",
-            required_columns=["high", "low", "close"],
+            description=f"Stochastic Oscillator with K={k_period}, D={d_period} based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=k_period,
             min_lookback=k_period,
-            max_lookback=k_period
+            max_lookback=k_period,
+            parameters={
+                'k_period': k_period,
+                'd_period': d_period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.k_period = k_period
         self.d_period = d_period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Stochastic %K."""
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        # Calculate lowest low and highest high over K period
-        lowest_low = low.rolling(window=self.k_period).min()
-        highest_high = high.rolling(window=self.k_period).max()
-        
-        # Calculate %K
-        k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
-        
-        return k_percent
+        """Generate Stochastic based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            # Traditional Stochastic calculation on price levels
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate lowest low and highest high over K period
+            lowest_low = low.rolling(window=self.k_period).min()
+            highest_high = high.rolling(window=self.k_period).max()
+            
+            # Calculate %K
+            k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
+            
+            return k_percent
+        else:
+            # For other base calculations, calculate Stochastic on the base values
+            base_values = self.base_calculator.calculate(data)
+            
+            # Calculate rolling min/max on base values
+            lowest_low = base_values.rolling(window=self.k_period).min()
+            highest_high = base_values.rolling(window=self.k_period).max()
+            
+            # Calculate %K
+            k_percent = 100 * ((base_values - lowest_low) / (highest_high - lowest_low))
+            
+            return k_percent
 
 class WilliamsRGenerator(FeatureGenerator):
-    """Generator for Williams %R."""
+    """Generator for Williams %R with different base calculations."""
     
-    def __init__(self, period: int = 14):
-        """Initialize Williams %R generator."""
+    def __init__(self, 
+                 period: int = 14,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 **base_kwargs):
+        """
+        Initialize Williams %R generator.
+        
+        Args:
+            period: Williams %R period
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"williams_r_{period}",
+            name=f"williams_r_{period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Williams %R over {period} periods",
-            required_columns=["high", "low", "close"],
+            description=f"Williams %R over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=period,
-            max_lookback=period
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Williams %R."""
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        # Calculate highest high and lowest low over period
-        highest_high = high.rolling(window=self.period).max()
-        lowest_low = low.rolling(window=self.period).min()
-        
-        # Calculate Williams %R
-        williams_r = -100 * ((highest_high - close) / (highest_high - lowest_low))
-        
-        return williams_r
+        """Generate Williams %R based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            # Traditional Williams %R calculation on price levels
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate highest high and lowest low over period
+            highest_high = high.rolling(window=self.period).max()
+            lowest_low = low.rolling(window=self.period).min()
+            
+            # Calculate Williams %R
+            williams_r = -100 * ((highest_high - close) / (highest_high - lowest_low))
+            
+            return williams_r
+        else:
+            # For other base calculations, calculate Williams %R on the base values
+            base_values = self.base_calculator.calculate(data)
+            
+            # Calculate rolling min/max on base values
+            highest_high = base_values.rolling(window=self.period).max()
+            lowest_low = base_values.rolling(window=self.period).min()
+            
+            # Calculate Williams %R
+            williams_r = -100 * ((highest_high - base_values) / (highest_high - lowest_low))
+            
+            return williams_r
 
 class ROCGenerator(FeatureGenerator):
-    """Generator for Rate of Change (ROC)."""
+    """Generator for Rate of Change (ROC) with different base calculations."""
     
-    def __init__(self, period: int = 10):
-        """Initialize ROC generator."""
+    def __init__(self, 
+                 period: int = 10,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 **base_kwargs):
+        """
+        Initialize ROC generator.
+        
+        Args:
+            period: ROC period
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"roc_{period}",
+            name=f"roc_{period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Rate of Change over {period} periods",
-            required_columns=["close"],
+            description=f"Rate of Change over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=period,
-            max_lookback=period
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Rate of Change."""
-        close_prices = data['close']
-        
-        # Calculate ROC
-        roc = ((close_prices - close_prices.shift(self.period)) / close_prices.shift(self.period)) * 100
-        
-        return roc
+        """Generate ROC based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            # Traditional ROC calculation on price levels
+            close_prices = data['close']
+            
+            # Calculate ROC
+            roc = ((close_prices - close_prices.shift(self.period)) / close_prices.shift(self.period)) * 100
+            
+            return roc
+        else:
+            # For other base calculations, calculate ROC on the base values
+            base_values = self.base_calculator.calculate(data)
+            
+            # Calculate ROC on base values
+            roc = ((base_values - base_values.shift(self.period)) / base_values.shift(self.period)) * 100
+            return roc
 
 class MomentumGenerator(FeatureGenerator):
-    """Generator for Momentum indicator."""
+    """Generator for Momentum indicator with different base calculations."""
     
-    def __init__(self, period: int = 10):
-        """Initialize Momentum generator."""
+    def __init__(self, 
+                 period: int = 10,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 **base_kwargs):
+        """
+        Initialize Momentum generator.
+        
+        Args:
+            period: Momentum period
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"momentum_{period}",
+            name=f"momentum_{period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Momentum over {period} periods",
-            required_columns=["close"],
+            description=f"Momentum over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=period,
-            max_lookback=period
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Momentum."""
-        close_prices = data['close']
-        
-        # Calculate Momentum
-        momentum = close_prices - close_prices.shift(self.period)
-        
-        return momentum
+        """Generate Momentum based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            # Traditional Momentum calculation on price levels
+            close_prices = data['close']
+            
+            # Calculate Momentum
+            momentum = close_prices - close_prices.shift(self.period)
+            
+            return momentum
+        else:
+            # For other base calculations, calculate Momentum on the base values
+            base_values = self.base_calculator.calculate(data)
+            
+            # Calculate Momentum on base values
+            momentum = base_values - base_values.shift(self.period)
+            return momentum
 
 # Factory functions for creating momentum generators
 def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:

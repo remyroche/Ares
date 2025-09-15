@@ -211,36 +211,72 @@ class OBVGenerator(FeatureGenerator):
         return obv
 
 class VWAPGenerator(FeatureGenerator):
-    """Generator for Volume Weighted Average Price (VWAP)."""
+    """Generator for Volume Weighted Average Price (VWAP) with different base calculations."""
     
-    def __init__(self, period: int = 20):
-        """Initialize VWAP generator."""
+    def __init__(self, 
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 **base_kwargs):
+        """
+        Initialize VWAP generator.
+        
+        Args:
+            period: VWAP period
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"vwap_{period}",
+            name=f"vwap_{period}_{base_calculation.value}",
             category=FeatureCategory.VOLUME,
-            description=f"Volume Weighted Average Price over {period} periods",
-            required_columns=["high", "low", "close", "volume"],
+            description=f"Volume Weighted Average Price over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=1,
-            max_lookback=50
+            max_lookback=50,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate VWAP."""
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        volume = data['volume']
-        
-        # Calculate typical price
-        typical_price = (high + low + close) / 3
-        
-        # Calculate VWAP
-        vwap = (typical_price * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
-        
-        return vwap
+        """Generate VWAP based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            # Traditional VWAP calculation on price levels
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate typical price
+            typical_price = (high + low + close) / 3
+            
+            # Calculate VWAP
+            vwap = (typical_price * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+            
+            return vwap
+        else:
+            # For other base calculations, calculate VWAP on the base values
+            base_values = self.base_calculator.calculate(data)
+            volume = data['volume']
+            
+            # Calculate VWAP on base values
+            vwap = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+            
+            return vwap
 
 class VolumeROCGenerator(FeatureGenerator):
     """Generator for Volume Rate of Change."""

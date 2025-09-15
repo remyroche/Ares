@@ -140,37 +140,72 @@ class BollingerBandsGenerator(FeatureGenerator):
         return band
 
 class ATRGenerator(FeatureGenerator):
-    """Generator for Average True Range."""
+    """Generator for Average True Range with different base calculations."""
     
-    def __init__(self, period: int = 14):
+    def __init__(self, 
+                 period: int = 14,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 **base_kwargs):
+        """
+        Initialize ATR generator.
+        
+        Args:
+            period: ATR period
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"atr_{period}",
+            name=f"atr_{period}_{base_calculation.value}",
             category=FeatureCategory.VOLATILITY,
-            description=f"Average True Range over {period} periods",
-            required_columns=["high", "low", "close"],
+            description=f"Average True Range over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=period,
-            max_lookback=period
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        # Calculate True Range
-        tr1 = high - low
-        tr2 = abs(high - close.shift(1))
-        tr3 = abs(low - close.shift(1))
-        
-        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        
-        # Calculate ATR
-        atr = true_range.rolling(window=self.period).mean()
-        
-        return atr
+        """Generate ATR based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            # Traditional ATR calculation on price levels
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate True Range
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            
+            # Calculate ATR
+            atr = true_range.rolling(window=self.period).mean()
+            return atr
+        else:
+            # For other base calculations, calculate ATR on the base values
+            base_values = self.base_calculator.calculate(data)
+            
+            # Calculate rolling standard deviation as volatility measure
+            atr = base_values.rolling(window=self.period).std()
+            return atr
 
 def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of volatility feature generators."""

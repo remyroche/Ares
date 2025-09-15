@@ -120,24 +120,55 @@ class SMAGenerator(FeatureGenerator):
         return sma
 
 class EMAGenerator(FeatureGenerator):
-    """Generator for Exponential Moving Average."""
+    """Generator for Exponential Moving Average with different base calculations."""
     
-    def __init__(self, period: int = 20):
+    def __init__(self, 
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 **base_kwargs):
+        """
+        Initialize EMA generator.
+        
+        Args:
+            period: EMA period
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
         config = FeatureConfig(
-            name=f"ema_{period}",
+            name=f"ema_{period}_{base_calculation.value}",
             category=FeatureCategory.TREND,
-            description=f"Exponential Moving Average over {period} periods",
-            required_columns=["close"],
+            description=f"Exponential Moving Average over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
             default_lookback=period,
             min_lookback=period,
-            max_lookback=period
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
         )
         super().__init__(config)
         self.period = period
+        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        close = data['close']
-        ema = close.ewm(span=self.period).mean()
+        """Generate EMA based on the specified base calculation."""
+        # Calculate base values
+        base_values = self.base_calculator.calculate(data)
+        
+        # Calculate EMA on base values
+        ema = base_values.ewm(span=self.period).mean()
+        
         return ema
 
 def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:

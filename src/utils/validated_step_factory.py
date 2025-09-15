@@ -172,7 +172,7 @@ class ValidatedStepFactory:
             'step02_5_sr_optimization': ('src.training.steps.market_analysis.sub_pipeline', 'MarketAnalysisSubPipeline'),
             'step2_5_sr_optimization': ('src.training.steps.market_analysis.sub_pipeline', 'MarketAnalysisSubPipeline'),
             'step03_hmm_regime_discovery': ('src.training.steps.data_collection.data_preparation.step03_hmm_regime_discovery', 'Step03HMMRegimeDiscovery'),
-            'step04_regime_data_splitting': ('src.training.steps.step08_regime_data_splitting', 'RegimeDataSplittingStep'),
+            'step04_regime_data_splitting': ('src.training.steps.market_analysis.regime_data_splitting.main', 'RegimeDataSplittingStep'),
             'step05_labeling': ('src.training.steps.step5_labeling', 'LabelingStep'),
             'step06_advanced_feature_engineering': ('src.training.steps.data_collection.feature_engineering.step06_feature_engineering', 'FeatureEngineeringStep'),
             'step08_advanced_feature_selection': ('src.training.steps.data_collection.feature_engineering.step08_advanced_feature_selection', 'FeatureSelectionStep'),

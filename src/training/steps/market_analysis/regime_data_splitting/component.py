@@ -16,13 +16,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 # Handle optional dependencies with explicit error reporting
+IMPORT_ERRORS = []
+
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError as e:
     NUMPY_AVAILABLE = False
     np = None
-    IMPORT_ERRORS = [f"numpy: {e}"]
+    IMPORT_ERRORS.append(f"numpy: {e}")
 
 try:
     import pandas as pd

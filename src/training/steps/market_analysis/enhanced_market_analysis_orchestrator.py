@@ -28,10 +28,10 @@ from src.training.steps.market_analysis.progress_monitor import progress_monitor
 from src.utils.common_operations import get_current_datetime, get_logger, safe_file_exists, format_datetime, safe_json_dump
 from src.utils.validator_orchestrator import ValidatorOrchestrator
 from src.utils.step_dependency_validator import StepDependencyValidator
-from .step04_regime_data_splitting import RegimeDataSplittingStep
+from .regime_data_splitting.main import RegimeDataSplittingStep
 # Import validators
 from .enhanced_step_validator import EnhancedStepValidator
-from .step04_regime_data_splitting_validator import Step4RegimeDataSplittingValidator as RegimeDataSplittingValidator
+from .regime_data_splitting.validator import Step4RegimeDataSplittingValidator as RegimeDataSplittingValidator
 from .step05_labeling_validator import Step5LabelingValidator as LabelingValidator
 # from .step06_feature_engineering_validator import Step6FeatureEngineeringValidator as FeatureEngineeringValidator  # Module not found
 # Fallback validator

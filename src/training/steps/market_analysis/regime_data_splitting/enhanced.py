@@ -50,7 +50,7 @@ from src.core.errors import (
 )
 
 from src.utils.logger import system_logger
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from ...standardized_parquet_handler import standardized_parquet_handler
 
 logger = system_logger.getChild('RegimeDataSplittingEnhanced')
 

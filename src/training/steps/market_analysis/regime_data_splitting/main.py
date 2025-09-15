@@ -4,6 +4,9 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 import pandas as pd
 
+# Import pipeline standards early to avoid usage before import
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
 # Common types defined locally
 from enum import Enum
 from dataclasses import dataclass, field
@@ -225,7 +228,6 @@ from src.utils.math_validation import (
     MathValidationError
 )
 from src.utils.parquet_utils import get_parquet_utils
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Direct utility imports (replacing dependency injection)
 from src.utils.common_operations import CommonOperations

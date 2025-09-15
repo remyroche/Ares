@@ -127,8 +127,8 @@ class MultiTimeframeConfig:
 @dataclass
 class StreamingConfig:
     """Configuration for streaming HMM."""
-    window_size: int = 8  # Max 8h for HMM regime features (8 periods of 1h)
-    update_frequency: int = 4  # Update every 4 periods (4h) for HMM regime features
+    window_size: int = 8  # Cap at 8 periods for HMM regime features (8h max with 1h timeframe)
+    update_frequency: int = 4  # Update every 4 periods (4h max with 1h timeframe)
     adaptation_rate: float = 0.1
     stability_threshold: float = 0.8
     max_regime_changes: int = 10

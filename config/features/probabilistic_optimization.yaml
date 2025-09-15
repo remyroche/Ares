@@ -182,22 +182,22 @@ data_preparation:
     # Price-based features
     price_features:
       enabled: true
-      return_lookbacks: [1, 2, 4, 8]  # Max 8h for HMM regime features
-      volatility_lookbacks: [2, 4, 8]  # Max 8h for HMM regime features
-      trend_lookbacks: [2, 4, 8]  # Max 8h for HMM regime features
+      return_lookbacks: [1, 5, 10, 20]
+      volatility_lookbacks: [20, 50, 100]
+      trend_lookbacks: [20, 50, 200]
     
     # Volume features
     volume_features:
       enabled: true
-      volume_lookbacks: [2, 4, 8]  # Max 8h for HMM regime features
-      volume_volatility_lookbacks: [2, 4, 8]  # Max 8h for HMM regime features
+      volume_lookbacks: [20, 50]
+      volume_volatility_lookbacks: [20, 50]
     
     # Technical indicators
     technical_indicators:
       enabled: true
-      rsi_periods: [2, 4, 8]  # Max 8h for HMM regime features
-      macd_periods: [2, 4, 8]  # Max 8h for HMM regime features
-      bollinger_periods: [2, 4, 8]  # Max 8h for HMM regime features
+      rsi_periods: [14, 21]
+      macd_periods: [12, 26, 9]
+      bollinger_periods: [20, 50]
     
     # Market microstructure
     microstructure:

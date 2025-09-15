@@ -58,6 +58,22 @@ from .enhanced_market_analysis_with_triple_barrier import (
     quick_triple_barrier_analysis
 )
 
+# Import PID-based feature generation
+from .pid_based_feature_generation import (
+    PIDBasedFeatureOrchestrator,
+    OrchestratorConfig,
+    InteractionFeatureGenerator,
+    InteractionConfig,
+    PolynomialFeatureGenerator,
+    PolynomialConfig,
+    CrossTimeframeFeatureGenerator,
+    CrossTimeframeConfig,
+    OptimizedLookbackIntegration,
+    FeatureSelectionMechanism,
+    FeatureSelectionConfig,
+    SelectionStrategy
+)
+
 # Hardware optimizations are now integrated into the main triple_barrier_labeling module
 
 # Version information
@@ -71,7 +87,8 @@ COMPONENTS = [
     "triple_barrier_labeling",
     "regime_aware_triple_barrier_optimizer", 
     "triple_barrier_validator",
-    "enhanced_market_analysis_with_triple_barrier"
+    "enhanced_market_analysis_with_triple_barrier",
+    "pid_based_feature_generation"
 ]
 
 # Convenience function to get module information
@@ -94,7 +111,10 @@ def get_module_info():
             "Comprehensive validation framework",
             "Seamless pipeline integration",
             "Transaction cost modeling",
-            "Binary and ternary classification support"
+            "Binary and ternary classification support",
+            "PID-based feature generation with interaction, polynomial, and cross-timeframe features",
+            "Optimized lookback period integration",
+            "Matrix operations for hardware-optimized computations"
         ]
     }
 
@@ -202,6 +222,19 @@ __all__ = [
     "run_enhanced_market_analysis_with_triple_barrier",
     "quick_triple_barrier_analysis",
     
+    # PID-based feature generation
+    "PIDBasedFeatureOrchestrator",
+    "OrchestratorConfig",
+    "InteractionFeatureGenerator",
+    "InteractionConfig",
+    "PolynomialFeatureGenerator",
+    "PolynomialConfig",
+    "CrossTimeframeFeatureGenerator",
+    "CrossTimeframeConfig",
+    "OptimizedLookbackIntegration",
+    "FeatureSelectionMechanism",
+    "FeatureSelectionConfig",
+    "SelectionStrategy",
     
     # Utility functions
     "get_module_info",

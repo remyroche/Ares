@@ -59,7 +59,7 @@ migration:
       description: "Update feature engineering for multi-output support"
       status: "pending"
       components:
-        - "cross_timeframe_analysis_integration.py"
+        - "pid_based_feature_generation_integration.py"
         - "multi_timeframe_training_analysis.py"
     
     phase7:

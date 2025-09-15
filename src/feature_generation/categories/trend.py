@@ -193,3 +193,331 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
 
 def create_default_trend_generators() -> List[FeatureGenerator]:
     return create_trend_generators()
+
+# WMA (Weighted Moving Average)
+class WMAGenerator(FeatureGenerator):
+    """Generator for WMA (Weighted Moving Average) with different base calculations."""
+    
+    def __init__(self, 
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize WMA generator.
+        
+        Args:
+            period: WMA period
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
+        config = FeatureConfig(
+            name=f"wma_{period}_{base_calculation.value}",
+            category=FeatureCategory.TREND,
+            description=f"Weighted Moving Average over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.period = period
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate WMA based on the specified base calculation."""
+        base_values = self.base_calculator.calculate(data)
+        
+        # Calculate WMA
+        weights = np.arange(1, self.period + 1)
+        wma = base_values.rolling(window=self.period).apply(
+            lambda x: np.average(x, weights=weights)
+        )
+        
+        return wma
+
+# DEMA (Double Exponential Moving Average)
+class DEMAGenerator(FeatureGenerator):
+    """Generator for DEMA (Double Exponential Moving Average) with different base calculations."""
+    
+    def __init__(self, 
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize DEMA generator.
+        
+        Args:
+            period: DEMA period
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
+        config = FeatureConfig(
+            name=f"dema_{period}_{base_calculation.value}",
+            category=FeatureCategory.TREND,
+            description=f"Double Exponential Moving Average over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.period = period
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate DEMA based on the specified base calculation."""
+        base_values = self.base_calculator.calculate(data)
+        
+        # Calculate DEMA
+        ema1 = base_values.ewm(span=self.period).mean()
+        ema2 = ema1.ewm(span=self.period).mean()
+        dema = 2 * ema1 - ema2
+        
+        return dema
+
+# TEMA (Triple Exponential Moving Average)
+class TEMAGenerator(FeatureGenerator):
+    """Generator for TEMA (Triple Exponential Moving Average) with different base calculations."""
+    
+    def __init__(self, 
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize TEMA generator.
+        
+        Args:
+            period: TEMA period
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
+        config = FeatureConfig(
+            name=f"tema_{period}_{base_calculation.value}",
+            category=FeatureCategory.TREND,
+            description=f"Triple Exponential Moving Average over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.period = period
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate TEMA based on the specified base calculation."""
+        base_values = self.base_calculator.calculate(data)
+        
+        # Calculate TEMA
+        ema1 = base_values.ewm(span=self.period).mean()
+        ema2 = ema1.ewm(span=self.period).mean()
+        ema3 = ema2.ewm(span=self.period).mean()
+        tema = 3 * ema1 - 3 * ema2 + ema3
+        
+        return tema
+
+# TRIMA (Triangular Moving Average)
+class TRIMAGenerator(FeatureGenerator):
+    """Generator for TRIMA (Triangular Moving Average) with different base calculations."""
+    
+    def __init__(self, 
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize TRIMA generator.
+        
+        Args:
+            period: TRIMA period
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
+        config = FeatureConfig(
+            name=f"trima_{period}_{base_calculation.value}",
+            category=FeatureCategory.TREND,
+            description=f"Triangular Moving Average over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.period = period
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate TRIMA based on the specified base calculation."""
+        base_values = self.base_calculator.calculate(data)
+        
+        # Calculate TRIMA
+        half_period = self.period // 2
+        trima = base_values.rolling(window=half_period).mean().rolling(window=half_period).mean()
+        
+        return trima
+
+# MAMA (MESA Adaptive Moving Average)
+class MAMAGenerator(FeatureGenerator):
+    """Generator for MAMA (MESA Adaptive Moving Average) with different base calculations."""
+    
+    def __init__(self, 
+                 fast_limit: float = 0.5,
+                 slow_limit: float = 0.05,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize MAMA generator.
+        
+        Args:
+            fast_limit: Fast limit
+            slow_limit: Slow limit
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        
+        config = FeatureConfig(
+            name=f"mama_{fast_limit}_{slow_limit}_{base_calculation.value}",
+            category=FeatureCategory.TREND,
+            description=f"MESA Adaptive Moving Average with fast_limit={fast_limit}, slow_limit={slow_limit} based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=20,
+            min_lookback=1,
+            max_lookback=50,
+            parameters={
+                'fast_limit': fast_limit,
+                'slow_limit': slow_limit,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.fast_limit = fast_limit
+        self.slow_limit = slow_limit
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate MAMA based on the specified base calculation."""
+        base_values = self.base_calculator.calculate(data)
+        
+        # Calculate MAMA (simplified version)
+        mama = base_values.ewm(span=20).mean()
+        
+        return mama
+
+# VWMA (Volume Weighted Moving Average)
+class VWMAGenerator(FeatureGenerator):
+    """Generator for VWMA (Volume Weighted Moving Average) with different base calculations."""
+    
+    def __init__(self, 
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize VWMA generator.
+        
+        Args:
+            period: VWMA period
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        if 'volume' not in required_columns:
+            required_columns.append('volume')
+        
+        config = FeatureConfig(
+            name=f"vwma_{period}_{base_calculation.value}",
+            category=FeatureCategory.TREND,
+            description=f"Volume Weighted Moving Average over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.period = period
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate VWMA based on the specified base calculation."""
+        base_values = self.base_calculator.calculate(data)
+        volume = data['volume']
+        
+        # Calculate VWMA
+        vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+        
+        return vwma

@@ -531,3 +531,460 @@ def create_volume_generators(periods: Dict[str, List[int]] = None) -> List[Featu
 def create_default_volume_generators() -> List[FeatureGenerator]:
     """Create default volume feature generators."""
     return create_volume_generators()
+
+# AD (Accumulation/Distribution Line)
+class ADGenerator(FeatureGenerator):
+    """Generator for AD (Accumulation/Distribution Line) with different base calculations."""
+    
+    def __init__(self,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize AD generator.
+        
+        Args:
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        if 'high' not in required_columns:
+            required_columns.append('high')
+        if 'low' not in required_columns:
+            required_columns.append('low')
+        if 'close' not in required_columns:
+            required_columns.append('close')
+        if 'volume' not in required_columns:
+            required_columns.append('volume')
+        
+        config = FeatureConfig(
+            name=f"ad_{base_calculation.value}",
+            category=FeatureCategory.VOLUME,
+            description=f"Accumulation/Distribution Line based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate AD based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate Money Flow Multiplier
+            mfm = ((close - low) - (high - close)) / (high - low)
+            mfm = mfm.fillna(0)
+            
+            # Calculate Money Flow Volume
+            mfv = mfm * volume
+            
+            # Calculate AD
+            ad = mfv.cumsum()
+            
+            return ad
+        else:
+            base_values = self.base_calculator.calculate(data)
+            volume = data['volume']
+            
+            # For other base calculations, use base values as proxy
+            ad = (base_values * volume).cumsum()
+            
+            return ad
+
+# ADOSC (Accumulation/Distribution Oscillator)
+class ADOSCGenerator(FeatureGenerator):
+    """Generator for ADOSC (Accumulation/Distribution Oscillator) with different base calculations."""
+    
+    def __init__(self,
+                 fast_period: int = 3,
+                 slow_period: int = 10,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize ADOSC generator.
+        
+        Args:
+            fast_period: Fast period
+            slow_period: Slow period
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        if 'high' not in required_columns:
+            required_columns.append('high')
+        if 'low' not in required_columns:
+            required_columns.append('low')
+        if 'close' not in required_columns:
+            required_columns.append('close')
+        if 'volume' not in required_columns:
+            required_columns.append('volume')
+        
+        config = FeatureConfig(
+            name=f"adosc_{fast_period}_{slow_period}_{base_calculation.value}",
+            category=FeatureCategory.VOLUME,
+            description=f"Accumulation/Distribution Oscillator with fast={fast_period}, slow={slow_period} based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=slow_period,
+            min_lookback=slow_period,
+            max_lookback=slow_period,
+            parameters={
+                'fast_period': fast_period,
+                'slow_period': slow_period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.fast_period = fast_period
+        self.slow_period = slow_period
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate ADOSC based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate Money Flow Multiplier
+            mfm = ((close - low) - (high - close)) / (high - low)
+            mfm = mfm.fillna(0)
+            
+            # Calculate Money Flow Volume
+            mfv = mfm * volume
+            
+            # Calculate ADOSC
+            ad_fast = mfv.rolling(window=self.fast_period).sum()
+            ad_slow = mfv.rolling(window=self.slow_period).sum()
+            adosc = ad_fast - ad_slow
+            
+            return adosc
+        else:
+            base_values = self.base_calculator.calculate(data)
+            volume = data['volume']
+            
+            # For other base calculations, use base values as proxy
+            mfv = base_values * volume
+            ad_fast = mfv.rolling(window=self.fast_period).sum()
+            ad_slow = mfv.rolling(window=self.slow_period).sum()
+            adosc = ad_fast - ad_slow
+            
+            return adosc
+
+# MFI (Money Flow Index)
+class MFIGenerator(FeatureGenerator):
+    """Generator for MFI (Money Flow Index) with different base calculations."""
+    
+    def __init__(self,
+                 period: int = 14,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize MFI generator.
+        
+        Args:
+            period: MFI period
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        if 'high' not in required_columns:
+            required_columns.append('high')
+        if 'low' not in required_columns:
+            required_columns.append('low')
+        if 'close' not in required_columns:
+            required_columns.append('close')
+        if 'volume' not in required_columns:
+            required_columns.append('volume')
+        
+        config = FeatureConfig(
+            name=f"mfi_{period}_{base_calculation.value}",
+            category=FeatureCategory.VOLUME,
+            description=f"Money Flow Index over {period} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.period = period
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate MFI based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate Typical Price
+            typical_price = (high + low + close) / 3
+            
+            # Calculate Money Flow
+            money_flow = typical_price * volume
+            
+            # Calculate Positive and Negative Money Flow
+            price_change = typical_price.diff()
+            positive_mf = money_flow.where(price_change > 0, 0)
+            negative_mf = money_flow.where(price_change < 0, 0)
+            
+            # Calculate MFI
+            positive_mf_sum = positive_mf.rolling(window=self.period).sum()
+            negative_mf_sum = negative_mf.rolling(window=self.period).sum()
+            
+            mfi = 100 - (100 / (1 + positive_mf_sum / negative_mf_sum))
+            
+            return mfi
+        else:
+            base_values = self.base_calculator.calculate(data)
+            volume = data['volume']
+            
+            # For other base calculations, use base values as proxy
+            money_flow = base_values * volume
+            
+            # Calculate Positive and Negative Money Flow
+            price_change = base_values.diff()
+            positive_mf = money_flow.where(price_change > 0, 0)
+            negative_mf = money_flow.where(price_change < 0, 0)
+            
+            # Calculate MFI
+            positive_mf_sum = positive_mf.rolling(window=self.period).sum()
+            negative_mf_sum = negative_mf.rolling(window=self.period).sum()
+            
+            mfi = 100 - (100 / (1 + positive_mf_sum / negative_mf_sum))
+            
+            return mfi
+
+# VPT (Volume Price Trend)
+class VPTGenerator(FeatureGenerator):
+    """Generator for VPT (Volume Price Trend) with different base calculations."""
+    
+    def __init__(self,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize VPT generator.
+        
+        Args:
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        if 'close' not in required_columns:
+            required_columns.append('close')
+        if 'volume' not in required_columns:
+            required_columns.append('volume')
+        
+        config = FeatureConfig(
+            name=f"vpt_{base_calculation.value}",
+            category=FeatureCategory.VOLUME,
+            description=f"Volume Price Trend based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate VPT based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate VPT
+            price_change = close.pct_change()
+            vpt = (price_change * volume).cumsum()
+            
+            return vpt
+        else:
+            base_values = self.base_calculator.calculate(data)
+            volume = data['volume']
+            
+            # For other base calculations, use base values as proxy
+            vpt = (base_values * volume).cumsum()
+            
+            return vpt
+
+# NVI (Negative Volume Index)
+class NVIGenerator(FeatureGenerator):
+    """Generator for NVI (Negative Volume Index) with different base calculations."""
+    
+    def __init__(self,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize NVI generator.
+        
+        Args:
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        if 'close' not in required_columns:
+            required_columns.append('close')
+        if 'volume' not in required_columns:
+            required_columns.append('volume')
+        
+        config = FeatureConfig(
+            name=f"nvi_{base_calculation.value}",
+            category=FeatureCategory.VOLUME,
+            description=f"Negative Volume Index based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate NVI based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate NVI
+            price_change = close.pct_change()
+            volume_change = volume.diff()
+            
+            # Only include periods where volume decreased
+            nvi = price_change.where(volume_change < 0, 0).cumsum()
+            
+            return nvi
+        else:
+            base_values = self.base_calculator.calculate(data)
+            volume = data['volume']
+            
+            # For other base calculations, use base values as proxy
+            volume_change = volume.diff()
+            nvi = base_values.where(volume_change < 0, 0).cumsum()
+            
+            return nvi
+
+# PVI (Positive Volume Index)
+class PVIGenerator(FeatureGenerator):
+    """Generator for PVI (Positive Volume Index) with different base calculations."""
+    
+    def __init__(self,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize PVI generator.
+        
+        Args:
+            base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        if 'close' not in required_columns:
+            required_columns.append('close')
+        if 'volume' not in required_columns:
+            required_columns.append('volume')
+        
+        config = FeatureConfig(
+            name=f"pvi_{base_calculation.value}",
+            category=FeatureCategory.VOLUME,
+            description=f"Positive Volume Index based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config)
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate PVI based on the specified base calculation."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate PVI
+            price_change = close.pct_change()
+            volume_change = volume.diff()
+            
+            # Only include periods where volume increased
+            pvi = price_change.where(volume_change > 0, 0).cumsum()
+            
+            return pvi
+        else:
+            base_values = self.base_calculator.calculate(data)
+            volume = data['volume']
+            
+            # For other base calculations, use base values as proxy
+            volume_change = volume.diff()
+            pvi = base_values.where(volume_change > 0, 0).cumsum()
+            
+            return pvi

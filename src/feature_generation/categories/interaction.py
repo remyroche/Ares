@@ -393,3 +393,394 @@ def create_interaction_generators(config: Dict[str, Any] = None) -> List[Feature
 def create_default_interaction_generators() -> List[FeatureGenerator]:
     """Create default interaction feature generators."""
     return create_interaction_generators()
+
+# Polynomial Feature Generator
+class PolynomialFeatureGenerator(FeatureGenerator):
+    """Generator for polynomial features (squared, cubed, etc.)."""
+    
+    def __init__(self,
+                 feature_name: str,
+                 degree: int = 2,
+                 base_calculation: str = "price_returns"):
+        """
+        Initialize polynomial feature generator.
+        
+        Args:
+            feature_name: Name of the base feature
+            degree: Polynomial degree (2 for squared, 3 for cubed, etc.)
+            base_calculation: Base calculation type
+        """
+        config = FeatureConfig(
+            name=f"{feature_name}_polynomial_{degree}",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Polynomial feature of degree {degree} for {feature_name}",
+            required_columns=["close"],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'feature_name': feature_name,
+                'degree': degree,
+                'base_calculation': base_calculation
+            }
+        )
+        super().__init__(config)
+        self.feature_name = feature_name
+        self.degree = degree
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate polynomial feature."""
+        # This is a placeholder - in practice, you'd get the base feature
+        # and apply the polynomial transformation
+        base_values = data['close'].pct_change()  # Placeholder
+        
+        # Apply polynomial transformation
+        polynomial_feature = base_values ** self.degree
+        
+        return polynomial_feature
+
+# Feature Ratio Generator
+class FeatureRatioGenerator(FeatureGenerator):
+    """Generator for feature ratio combinations."""
+    
+    def __init__(self,
+                 feature1_name: str,
+                 feature2_name: str,
+                 base_calculation: str = "price_returns"):
+        """
+        Initialize feature ratio generator.
+        
+        Args:
+            feature1_name: Name of the first feature
+            feature2_name: Name of the second feature
+            base_calculation: Base calculation type
+        """
+        config = FeatureConfig(
+            name=f"{feature1_name}_{feature2_name}_ratio",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Ratio of {feature1_name} to {feature2_name}",
+            required_columns=["close"],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'feature1_name': feature1_name,
+                'feature2_name': feature2_name,
+                'base_calculation': base_calculation
+            }
+        )
+        super().__init__(config)
+        self.feature1_name = feature1_name
+        self.feature2_name = feature2_name
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate feature ratio."""
+        # This is a placeholder - in practice, you'd get both features
+        # and calculate their ratio
+        feature1 = data['close'].pct_change()  # Placeholder
+        feature2 = data['close'].rolling(20).mean()  # Placeholder
+        
+        # Calculate ratio with safe division
+        ratio = feature1 / feature2.replace(0, np.nan)
+        
+        return ratio
+
+# Feature Difference Generator
+class FeatureDifferenceGenerator(FeatureGenerator):
+    """Generator for feature difference combinations."""
+    
+    def __init__(self,
+                 feature1_name: str,
+                 feature2_name: str,
+                 base_calculation: str = "price_returns"):
+        """
+        Initialize feature difference generator.
+        
+        Args:
+            feature1_name: Name of the first feature
+            feature2_name: Name of the second feature
+            base_calculation: Base calculation type
+        """
+        config = FeatureConfig(
+            name=f"{feature1_name}_{feature2_name}_diff",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Difference of {feature1_name} and {feature2_name}",
+            required_columns=["close"],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'feature1_name': feature1_name,
+                'feature2_name': feature2_name,
+                'base_calculation': base_calculation
+            }
+        )
+        super().__init__(config)
+        self.feature1_name = feature1_name
+        self.feature2_name = feature2_name
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate feature difference."""
+        # This is a placeholder - in practice, you'd get both features
+        # and calculate their difference
+        feature1 = data['close'].pct_change()  # Placeholder
+        feature2 = data['close'].rolling(20).mean()  # Placeholder
+        
+        # Calculate difference
+        difference = feature1 - feature2
+        
+        return difference
+
+# Feature Product Generator
+class FeatureProductGenerator(FeatureGenerator):
+    """Generator for feature product combinations."""
+    
+    def __init__(self,
+                 feature1_name: str,
+                 feature2_name: str,
+                 base_calculation: str = "price_returns"):
+        """
+        Initialize feature product generator.
+        
+        Args:
+            feature1_name: Name of the first feature
+            feature2_name: Name of the second feature
+            base_calculation: Base calculation type
+        """
+        config = FeatureConfig(
+            name=f"{feature1_name}_{feature2_name}_product",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Product of {feature1_name} and {feature2_name}",
+            required_columns=["close"],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'feature1_name': feature1_name,
+                'feature2_name': feature2_name,
+                'base_calculation': base_calculation
+            }
+        )
+        super().__init__(config)
+        self.feature1_name = feature1_name
+        self.feature2_name = feature2_name
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate feature product."""
+        # This is a placeholder - in practice, you'd get both features
+        # and calculate their product
+        feature1 = data['close'].pct_change()  # Placeholder
+        feature2 = data['close'].rolling(20).mean()  # Placeholder
+        
+        # Calculate product
+        product = feature1 * feature2
+        
+        return product
+
+# Cross-timeframe Ratio Generator
+class CrossTimeframeRatioGenerator(FeatureGenerator):
+    """Generator for cross-timeframe ratio features."""
+    
+    def __init__(self,
+                 feature_name: str,
+                 timeframe1: str,
+                 timeframe2: str,
+                 base_calculation: str = "price_returns"):
+        """
+        Initialize cross-timeframe ratio generator.
+        
+        Args:
+            feature_name: Name of the base feature
+            timeframe1: First timeframe
+            timeframe2: Second timeframe
+            base_calculation: Base calculation type
+        """
+        config = FeatureConfig(
+            name=f"{feature_name}_{timeframe1}_{timeframe2}_ratio",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Cross-timeframe ratio of {feature_name} between {timeframe1} and {timeframe2}",
+            required_columns=["close"],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'feature_name': feature_name,
+                'timeframe1': timeframe1,
+                'timeframe2': timeframe2,
+                'base_calculation': base_calculation
+            }
+        )
+        super().__init__(config)
+        self.feature_name = feature_name
+        self.timeframe1 = timeframe1
+        self.timeframe2 = timeframe2
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate cross-timeframe ratio."""
+        # This is a placeholder - in practice, you'd get the feature
+        # from both timeframes and calculate their ratio
+        feature_tf1 = data['close'].pct_change()  # Placeholder
+        feature_tf2 = data['close'].rolling(20).mean()  # Placeholder
+        
+        # Calculate cross-timeframe ratio
+        ratio = feature_tf1 / feature_tf2.replace(0, np.nan)
+        
+        return ratio
+
+# Cross-timeframe Difference Generator
+class CrossTimeframeDifferenceGenerator(FeatureGenerator):
+    """Generator for cross-timeframe difference features."""
+    
+    def __init__(self,
+                 feature_name: str,
+                 timeframe1: str,
+                 timeframe2: str,
+                 base_calculation: str = "price_returns"):
+        """
+        Initialize cross-timeframe difference generator.
+        
+        Args:
+            feature_name: Name of the base feature
+            timeframe1: First timeframe
+            timeframe2: Second timeframe
+            base_calculation: Base calculation type
+        """
+        config = FeatureConfig(
+            name=f"{feature_name}_{timeframe1}_{timeframe2}_diff",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Cross-timeframe difference of {feature_name} between {timeframe1} and {timeframe2}",
+            required_columns=["close"],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'feature_name': feature_name,
+                'timeframe1': timeframe1,
+                'timeframe2': timeframe2,
+                'base_calculation': base_calculation
+            }
+        )
+        super().__init__(config)
+        self.feature_name = feature_name
+        self.timeframe1 = timeframe1
+        self.timeframe2 = timeframe2
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate cross-timeframe difference."""
+        # This is a placeholder - in practice, you'd get the feature
+        # from both timeframes and calculate their difference
+        feature_tf1 = data['close'].pct_change()  # Placeholder
+        feature_tf2 = data['close'].rolling(20).mean()  # Placeholder
+        
+        # Calculate cross-timeframe difference
+        difference = feature_tf1 - feature_tf2
+        
+        return difference
+
+# Cross-timeframe Product Generator
+class CrossTimeframeProductGenerator(FeatureGenerator):
+    """Generator for cross-timeframe product features."""
+    
+    def __init__(self,
+                 feature_name: str,
+                 timeframe1: str,
+                 timeframe2: str,
+                 base_calculation: str = "price_returns"):
+        """
+        Initialize cross-timeframe product generator.
+        
+        Args:
+            feature_name: Name of the base feature
+            timeframe1: First timeframe
+            timeframe2: Second timeframe
+            base_calculation: Base calculation type
+        """
+        config = FeatureConfig(
+            name=f"{feature_name}_{timeframe1}_{timeframe2}_product",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Cross-timeframe product of {feature_name} between {timeframe1} and {timeframe2}",
+            required_columns=["close"],
+            default_lookback=1,
+            min_lookback=1,
+            max_lookback=1,
+            parameters={
+                'feature_name': feature_name,
+                'timeframe1': timeframe1,
+                'timeframe2': timeframe2,
+                'base_calculation': base_calculation
+            }
+        )
+        super().__init__(config)
+        self.feature_name = feature_name
+        self.timeframe1 = timeframe1
+        self.timeframe2 = timeframe2
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate cross-timeframe product."""
+        # This is a placeholder - in practice, you'd get the feature
+        # from both timeframes and calculate their product
+        feature_tf1 = data['close'].pct_change()  # Placeholder
+        feature_tf2 = data['close'].rolling(20).mean()  # Placeholder
+        
+        # Calculate cross-timeframe product
+        product = feature_tf1 * feature_tf2
+        
+        return product
+
+# Correlation Interaction Generator
+class CorrelationInteractionGenerator(FeatureGenerator):
+    """Generator for correlation-based interaction features."""
+    
+    def __init__(self,
+                 feature1_name: str,
+                 feature2_name: str,
+                 window: int = 20,
+                 base_calculation: str = "price_returns"):
+        """
+        Initialize correlation interaction generator.
+        
+        Args:
+            feature1_name: Name of the first feature
+            feature2_name: Name of the second feature
+            window: Correlation window
+            base_calculation: Base calculation type
+        """
+        config = FeatureConfig(
+            name=f"{feature1_name}_{feature2_name}_correlation_{window}",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Rolling correlation between {feature1_name} and {feature2_name} over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={
+                'feature1_name': feature1_name,
+                'feature2_name': feature2_name,
+                'window': window,
+                'base_calculation': base_calculation
+            }
+        )
+        super().__init__(config)
+        self.feature1_name = feature1_name
+        self.feature2_name = feature2_name
+        self.window = window
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate correlation interaction."""
+        # This is a placeholder - in practice, you'd get both features
+        # and calculate their rolling correlation
+        feature1 = data['close'].pct_change()  # Placeholder
+        feature2 = data['close'].rolling(20).mean()  # Placeholder
+        
+        # Calculate rolling correlation
+        correlation = feature1.rolling(window=self.window).corr(feature2)
+        
+        return correlation

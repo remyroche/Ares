@@ -1,19 +1,22 @@
 """
 Support/Resistance Feature Generator
 
-This module provides feature generators for support and resistance features,
-including pivot points, levels, and breakout indicators.
+This module provides feature generators for support/resistance-based indicators.
 """
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
     VectorizedFeatureGenerator
+)
+from ..base_calculations import (
+    BaseCalculationType,
+    create_base_calculator
 )
 
 class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
@@ -29,15 +32,16 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
         return FeatureConfig(
             name="support_resistance_features",
             category=FeatureCategory.SUPPORT_RESISTANCE,
-            description="Comprehensive support/resistance features including pivot points and levels",
-            required_columns=["high", "low", "close"],
-            optional_columns=["open"],
+            description="Comprehensive support/resistance features including pivot points, Fibonacci, and volume profile",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
             default_lookback=20,
-            min_lookback=2,
-            max_lookback=50,
+            min_lookback=1,
+            max_lookback=100,
             parameters={
-                "pivot_periods": [20],
-                "level_windows": [10, 20]
+                "pivot_windows": [5, 10, 20],
+                "fibonacci_levels": [0.236, 0.382, 0.5, 0.618, 0.786],
+                "volume_profile_windows": [5, 10, 20]
             },
             matrix_optimized=True,
             gpu_accelerated=False
@@ -48,21 +52,197 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Placeholder implementation
-        high_prices = data['high'].values
-        resistance = np.zeros_like(high_prices)
-        return pd.Series(resistance, index=data.index, name='resistance_placeholder')
+        close_prices = data['close'].values
+        sr = np.zeros_like(close_prices)
+        return pd.Series(sr, index=data.index, name='sr_placeholder')
 
-def create_support_resistance_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
-    """Create a set of support/resistance feature generators."""
-    if periods is None:
-        periods = {
-            'pivot': [20],
-            'levels': [10, 20]
-        }
+# Support Level Generator
+class SupportLevelGenerator(FeatureGenerator):
+    """Generator for support level features."""
     
-    generators = []
-    return generators
+    def __init__(self, level: int = 1, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        required_columns = self.base_calculator.get_required_columns()
+        if 'low' not in required_columns:
+            required_columns.append('low')
+        
+        config = FeatureConfig(
+            name=f"support_level_{level}_{window}_{base_calculation.value}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"Support level {level} over {window} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'level': level, 'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
+        )
+        super().__init__(config)
+        self.level = level
+        self.window = window
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate support level."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            low = data['low']
+            support_level = low.rolling(window=self.window).min()
+        else:
+            base_values = self.base_calculator.calculate(data)
+            support_level = base_values.rolling(window=self.window).min()
+        return support_level
+
+# Resistance Level Generator
+class ResistanceLevelGenerator(FeatureGenerator):
+    """Generator for resistance level features."""
+    
+    def __init__(self, level: int = 1, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        required_columns = self.base_calculator.get_required_columns()
+        if 'high' not in required_columns:
+            required_columns.append('high')
+        
+        config = FeatureConfig(
+            name=f"resistance_level_{level}_{window}_{base_calculation.value}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"Resistance level {level} over {window} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'level': level, 'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
+        )
+        super().__init__(config)
+        self.level = level
+        self.window = window
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate resistance level."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            high = data['high']
+            resistance_level = high.rolling(window=self.window).max()
+        else:
+            base_values = self.base_calculator.calculate(data)
+            resistance_level = base_values.rolling(window=self.window).max()
+        return resistance_level
+
+# Pivot Point Generator
+class PivotPointGenerator(FeatureGenerator):
+    """Generator for pivot point features."""
+    
+    def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        required_columns = self.base_calculator.get_required_columns()
+        if 'high' not in required_columns:
+            required_columns.append('high')
+        if 'low' not in required_columns:
+            required_columns.append('low')
+        if 'close' not in required_columns:
+            required_columns.append('close')
+        
+        config = FeatureConfig(
+            name=f"pivot_point_{window}_{base_calculation.value}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"Pivot point over {window} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
+        )
+        super().__init__(config)
+        self.window = window
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate pivot point."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            pivot_point = (high + low + close) / 3
+        else:
+            base_values = self.base_calculator.calculate(data)
+            pivot_point = base_values.rolling(window=self.window).mean()
+        return pivot_point
+
+# Fibonacci Level Generator
+class FibonacciLevelGenerator(FeatureGenerator):
+    """Generator for Fibonacci level features."""
+    
+    def __init__(self, level: float = 0.618, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+        
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+        required_columns = self.base_calculator.get_required_columns()
+        if 'high' not in required_columns:
+            required_columns.append('high')
+        if 'low' not in required_columns:
+            required_columns.append('low')
+        
+        config = FeatureConfig(
+            name=f"fibonacci_{level}_{window}_{base_calculation.value}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"Fibonacci level {level} over {window} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'level': level, 'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
+        )
+        super().__init__(config)
+        self.level = level
+        self.window = window
+        self.base_calculation = base_calculation
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Fibonacci level."""
+        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            high = data['high']
+            low = data['low']
+            range_size = high.rolling(window=self.window).max() - low.rolling(window=self.window).min()
+            fibonacci_level = low.rolling(window=self.window).min() + (range_size * self.level)
+        else:
+            base_values = self.base_calculator.calculate(data)
+            fibonacci_level = base_values.rolling(window=self.window).quantile(self.level)
+        return fibonacci_level
 
 def create_default_support_resistance_generators() -> List[FeatureGenerator]:
-    return create_support_resistance_generators()
+    """Create default support/resistance feature generators."""
+    windows = [5, 10, 20]
+    fibonacci_levels = [0.236, 0.382, 0.5, 0.618, 0.786]
+    
+    generators = []
+    
+    # Create generators for each window
+    for window in windows:
+        generators.extend([
+            SupportLevelGenerator(1, window),
+            SupportLevelGenerator(2, window),
+            SupportLevelGenerator(3, window),
+            SupportLevelGenerator(4, window),
+            SupportLevelGenerator(5, window),
+            ResistanceLevelGenerator(1, window),
+            ResistanceLevelGenerator(2, window),
+            ResistanceLevelGenerator(3, window),
+            ResistanceLevelGenerator(4, window),
+            ResistanceLevelGenerator(5, window),
+            PivotPointGenerator(window),
+        ])
+    
+    # Create Fibonacci level generators
+    for level in fibonacci_levels:
+        for window in windows:
+            generators.append(FibonacciLevelGenerator(level, window))
+    
+    return generators

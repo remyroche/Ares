@@ -29,6 +29,12 @@ class FeatureCategory(Enum):
     HMM_REGIME = "hmm_regime"
     CROSS_TIMEFRAME = "cross_timeframe"
     MICROSTRUCTURE = "microstructure"
+    ENTROPY = "entropy"
+    AUTOENCODER = "autoencoder"
+    ORDER_FLOW = "order_flow"
+    REGIME = "regime"
+    LEGACY = "legacy"
+    TIME = "time"
     CUSTOM = "custom"
 
 @dataclass

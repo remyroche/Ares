@@ -146,7 +146,7 @@ except ImportError:
     AdvancedEnsembleClustering = None
 
 try:
-    from src.utils.ml_common.matrix_operations import get_unified_matrix_operations as get_vectorized_operations_manager
+    from src.utils.matrix_operations import get_unified_matrix_operations as get_vectorized_operations_manager
     OPTIMIZED_VECTORIZED_AVAILABLE = True
 except ImportError:
     OPTIMIZED_VECTORIZED_AVAILABLE = False
@@ -258,7 +258,7 @@ from src.utils.hardware.m1_cpu_optimizer import (
 # Enhanced reporting system removed - using financial metrics logger instead
 ENHANCED_REPORTING_AVAILABLE = False
 from src.utils.vectorized_processing_core import OptimizedPipelineExecutor, PipelineStage, PipelineExecutionMode
-from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations, ErrorHandler
+from src.utils.matrix_operations import EnhancedMatrixOperations, ErrorHandler
 from src.utils.enhanced_step_optimizations import IntelligentOptimizationSelector, OptimizationStrategy, WorkloadType, OptimizationProfile
 # Optimized data manager - using fallback implementation
 class OptimizedDataManager:

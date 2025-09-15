@@ -17,7 +17,7 @@ def test_new_operations():
     print('=' * 50)
 
     try:
-        from src.utils.ml_common.matrix_operations import get_unified_matrix_operations
+        from src.utils.matrix_operations import get_unified_matrix_operations
         print('✅ Successfully imported matrix operations')
 
         # Initialize matrix operations

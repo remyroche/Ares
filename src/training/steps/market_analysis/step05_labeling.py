@@ -47,7 +47,7 @@ try:
 
     # Processing Core Optimizations
     from src.utils.vectorized_processing_core import get_vectorized_processing_core
-    from src.utils.ml_common.matrix_operations import EnhancedMatrixOperations
+    from src.utils.matrix_operations import EnhancedMatrixOperations
     from src.utils.enhanced_step_optimizations import get_step_optimization_manager
 
     # Data Management Optimizations - using fallback

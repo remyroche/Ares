@@ -127,7 +127,7 @@ def demonstrate_matrix_operations():
     start_time = time.time()
 
     try:
-        from src.utils.ml_common.matrix_operations import get_unified_matrix_operations
+        from src.utils.matrix_operations import get_unified_matrix_operations
 
         matrix_ops = get_unified_matrix_operations()
         C_optimized = matrix_ops.matrix_multiply(A, B)
